@@ -500,7 +500,7 @@ function createQueryBrowserHarness(options = {}) {
     harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
-    harness.runScript('tools/workbench/src/main/webapp/scripts/query.js');
+    harness.runScript(options.queryScriptPath || 'tools/workbench/src/main/webapp/scripts/query.js');
 
     explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
     explainTriggerCancel.onclick = () => context.workbench.query.cancelExplain();

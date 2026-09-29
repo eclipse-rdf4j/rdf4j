@@ -35,7 +35,7 @@ public class RemoveServlet extends TransformationServlet {
 	private final Logger logger = LoggerFactory.getLogger(RemoveServlet.class);
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		String objectParameter = req.getParameter("obj");
 		try {
@@ -59,7 +59,6 @@ public class RemoveServlet extends TransformationServlet {
 		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(xslPath, "remove.xsl");
 			builder.start("error-message", "subj", "pred", "obj", CONTEXT);
 			builder.link(List.of(INFO));
 			builder.result(exc.getMessage(), req.getParameter("subj"), req.getParameter("pred"), objectParameter,
@@ -83,9 +82,8 @@ public class RemoveServlet extends TransformationServlet {
 	}
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
-		builder.transform(xslPath, "remove.xsl");
 		builder.start();
 		builder.link(List.of(INFO));
 		builder.end();

@@ -21,6 +21,28 @@ module workbench {
 
         var AMP = decodeURIComponent('%26');
 
+        function getMountedQueryPage(): any {
+            var queryPage: any = (<any>workbench).queryPage;
+            return queryPage && typeof queryPage.isMounted === 'function' && queryPage.isMounted()
+                ? queryPage : null;
+        }
+
+        function isStreamPagingParameter(name: string): boolean {
+            return name === OFFSET || name === 'limit_query' || name.indexOf('limit_') === 0;
+        }
+
+        function changeStreamPagingParameter(queryPage: any, name: string, value: any): boolean {
+            if (!queryPage || typeof queryPage.changePageParameter !== 'function'
+                    || !isStreamPagingParameter(name)) {
+                return false;
+            }
+            var numericValue = typeof value === 'number' ? value : parseInt(String(value), 10);
+            if (!isFinite(numericValue) || numericValue < 0) {
+                return false;
+            }
+            return queryPage.changePageParameter(name, numericValue);
+        }
+
         function addCookieToUrlQueryIfPresent(url: string, name: string){
             var value = workbench.getCookie(name);
             if (value) {
@@ -206,11 +228,14 @@ module workbench {
         }
 
         /**
-         * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
+         * Invoked in the graph and tuple result views for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         export function addGraphParam(name: string) {
             var value = <string>$('#' + name).val();
+            if (name !== 'Accept' && changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             var url = document.location.href;
             if (isEmbeddedResultPage() && name !== 'Accept') {
                 submitGraphParamRequest(name, value);
@@ -271,6 +296,9 @@ module workbench {
          * @param {number} value The value of the query parameter.
          */
         export function addPagingParam(name: string, value: number) {
+            if (changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             if (isEmbeddedResultPage() || document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
@@ -290,7 +318,7 @@ module workbench {
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Changes the limit query
+         * Invoked in the tuple and explore views. Changes the limit query
          * parameter and navigates to the new URL.
          */
         export function addLimit(page: string) {
@@ -299,18 +327,28 @@ module workbench {
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Increments the offset query
+         * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         export function nextOffset(page: string) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.nextPage === 'function') {
+                queryPage.nextPage();
+                return;
+            }
             addPagingParam(OFFSET, getOffset() + getLimit(page));
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Decrements the offset query
+         * Invoked in the tuple and explore views. Decrements the offset query
          * parameter and navigates to the new URL.
          */
         export function previousOffset(page: string) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.previousPage === 'function') {
+                queryPage.previousPage();
+                return;
+            }
             addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
         }
 

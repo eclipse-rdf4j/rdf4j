@@ -425,15 +425,25 @@ test('native form and mobile navigation disclosures reverse within narrow layout
 		const animation = element.getAnimations({ subtree: false })
 			.find(candidate => candidate.playState === 'running');
 		const frames = animation.effect.getKeyframes();
+		const style = getComputedStyle(element);
+		const borderBoxInsets = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+			+ parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+		const firstKeyframeHeight = parseFloat(frames[0].height);
 		return {
 			before,
-			firstKeyframeHeight: parseFloat(frames[0].height),
+			firstKeyframeHeight,
+			firstKeyframeBorderBoxHeight: style.boxSizing === 'border-box'
+				? firstKeyframeHeight
+				: firstKeyframeHeight + borderBoxInsets,
+			boxSizing: style.boxSizing,
+			borderBoxInsets,
 			currentHeight: element.getBoundingClientRect().height
 		};
 	});
 	await expect(advancedSummary).toHaveAttribute('aria-expanded', 'true');
 	await expect.poll(() => advancedContent.evaluate(element => element.inert)).toBe(false);
-	expect(Math.abs(advancedReverse.firstKeyframeHeight - advancedReverse.before)).toBeLessThanOrEqual(0.001);
+	console.log(`NATIVE_DISCLOSURE_REVERSE_BOX_MODEL ${JSON.stringify(advancedReverse)}`);
+	expect(Math.abs(advancedReverse.firstKeyframeBorderBoxHeight - advancedReverse.before)).toBeLessThanOrEqual(0.001);
 	expect(advancedReverse.currentHeight).toBeGreaterThan(0);
 	await waitForOwnedAnimations(advanced);
 	await advancedSummary.evaluate(element => element.click());

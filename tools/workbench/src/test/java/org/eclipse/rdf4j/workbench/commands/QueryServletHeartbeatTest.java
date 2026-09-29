@@ -26,40 +26,60 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.GZIPInputStream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponse;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class QueryServletHeartbeatTest {
 
 	private static final String QUERY = "select ?s where { values ?s { <urn:s> } }";
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	@Test
 	void generatesAnInternalIdAndCompletesXmlAfterMultipleProbes() throws Exception {
@@ -84,7 +104,7 @@ class QueryServletHeartbeatTest {
 		WorkbenchRequest request = request(QUERY, null, null);
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				servlet.service(request, response, "/transformations");
+				servlet.service(request, response);
 			} catch (Throwable e) {
 				failure.set(e);
 			}
@@ -118,7 +138,7 @@ class QueryServletHeartbeatTest {
 				.thenThrow(new MalformedQueryException("bad syntax"));
 
 		try {
-			servlet.service(request(QUERY, null, null), responseWith(output), "/transformations");
+			servlet.service(request(QUERY, null, null), responseWith(output));
 
 			assertThat(output.flushCount).isLessThanOrEqualTo(2);
 			assertThat(output.asString()).doesNotStartWith(" ").contains("bad syntax");
@@ -147,7 +167,7 @@ class QueryServletHeartbeatTest {
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				servlet.service(request(QUERY, null, null), responseWith(output), "/transformations");
+				servlet.service(request(QUERY, null, null), responseWith(output));
 			} catch (Throwable e) {
 				failure.set(e);
 			}
@@ -166,6 +186,501 @@ class QueryServletHeartbeatTest {
 			queryThread.join(5000);
 			coordinator.shutdown();
 		}
+	}
+
+	@Test
+	void postProbePageDataFailureEndsWithATerminalErrorRecord() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		CountDownLatch releaseEvaluation = new CountDownLatch(1);
+		ProbeServletOutputStream output = new ProbeServletOutputStream(1);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
+			throw new QueryEvaluationException("evaluation failed after response commitment");
+		});
+
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread queryThread = Thread.startVirtualThread(() -> {
+			try {
+				servlet.service(pageDataRequest(QUERY), responseWith(output));
+			} catch (Throwable e) {
+				failure.set(e);
+			}
+		});
+		try {
+			assertThat(output.flushes.await(5, TimeUnit.SECONDS)).isTrue();
+			releaseEvaluation.countDown();
+			queryThread.join(5000);
+			assertThat(queryThread.isAlive()).isFalse();
+			assertThat(failure.get()).isNull();
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			assertThat(records).extracting(record -> record.path("type").asText())
+					.contains("head", "error")
+					.endsWith("error");
+			JsonNode terminal = records.get(records.size() - 1);
+			assertThat(terminal.path("code").asText()).isEqualTo("incomplete");
+			assertThat(terminal.path("message").asText())
+					.contains("visible results are incomplete")
+					.doesNotContain("evaluation failed after response commitment");
+		} finally {
+			releaseEvaluation.countDown();
+			queryThread.join(5000);
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void queryTimeoutAfterStreamingRowsEmitsAnActionableTimeoutRecord() throws Exception {
+		assertQueryTimeoutErrorAfterRows(new QueryInterruptedException("query execution timed out"), false);
+	}
+
+	@Test
+	void wrappedRemoteQueryTimeoutAfterStreamingRowsIsClassifiedAsTimeout() throws Exception {
+		assertQueryTimeoutErrorAfterRows(new HTTPQueryEvaluationException("remote query failed",
+				new QueryEvaluationException("remote result parser failed",
+						new QueryResultParseException("QUERY_EVALUATION_ERROR: Query evaluation took too long"))),
+				true);
+	}
+
+	@Test
+	void remoteLiteralTooLongAfterStreamingRowsIsNotClassifiedAsTimeout() throws Exception {
+		assertQueryErrorAfterRows(new HTTPQueryEvaluationException("remote query failed",
+				new QueryEvaluationException("remote result parser failed",
+						new QueryResultParseException("QUERY_EVALUATION_ERROR: Literal too long"))),
+				true, "incomplete");
+	}
+
+	@Test
+	void remoteCircuitBreakerAfterStreamingRowsKeepsItsTypedReason() throws Exception {
+		assertQueryErrorAfterRows(new HTTPQueryEvaluationException("remote query failed",
+				new QueryEvaluationException("remote result parser failed",
+						new QueryResultParseException("QUERY_EVALUATION_ERROR: "
+								+ "Query rejected by global memory circuit breaker (state=CRITICAL)"))),
+				true, "circuit-breaker");
+	}
+
+	@Test
+	void remoteTruncatedTupleStreamAfterRowsIsIncompleteNotTimeout() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger resultCalls = new AtomicInteger();
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+
+		when(repository.getRepositoryURL()).thenReturn("http://localhost/repositories/test");
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if (resultCalls.getAndIncrement() < 32) {
+				return true;
+			}
+			throw new HTTPQueryEvaluationException("remote query failed",
+					new QueryResultParseException("Unexpected end of result: java.io.EOFException"));
+		});
+		when(result.next()).thenReturn(binding("urn:streamed"));
+
+		HttpServletResponse response = responseWith(output);
+		when(response.isCommitted()).thenAnswer(invocation -> output.bytes().length > 0);
+		try {
+			servlet.service(pageDataRequest(QUERY), response);
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			JsonNode rows = records.stream()
+					.filter(record -> record.path("type").asText().equals("rows"))
+					.findFirst()
+					.orElseThrow();
+			JsonNode terminal = records.get(records.size() - 1);
+			assertThat(rows.path("values")).hasSize(32);
+			assertThat(terminal.path("type").asText()).isEqualTo("error");
+			assertThat(terminal.path("code").asText()).isEqualTo("incomplete");
+			assertThat(terminal.path("message").asText().toLowerCase(Locale.ROOT))
+					.contains("incomplete", "increase query timeout")
+					.doesNotContain("eofexception", "query timed out.");
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void constructTimeoutAfterStatementsKeepsTheGraphRowsAndTypedTimeout() throws Exception {
+		List<JsonNode> records = graphFailureAfterRows(
+				new QueryInterruptedException("query execution timed out"), false);
+		JsonNode rows = records.stream()
+				.filter(record -> record.path("type").asText().equals("rows"))
+				.findFirst()
+				.orElseThrow();
+		JsonNode terminal = records.get(records.size() - 1);
+		assertThat(rows.path("values")).hasSize(32);
+		assertThat(rows.path("values").get(0)).hasSize(4);
+		assertThat(terminal.path("type").asText()).isEqualTo("error");
+		assertThat(terminal.path("code").asText()).isEqualTo("timeout");
+		assertThat(terminal.path("message").asText()).contains("Query timed out");
+	}
+
+	@Test
+	void remoteConstructEofAfterStatementsIsIncompleteAndDoesNotClaimTimeout() throws Exception {
+		List<JsonNode> records = graphFailureAfterRows(
+				new HTTPQueryEvaluationException("remote graph result failed",
+						new QueryResultParseException("Unexpected end of RDF result: java.io.EOFException")),
+				true);
+		JsonNode rows = records.stream()
+				.filter(record -> record.path("type").asText().equals("rows"))
+				.findFirst()
+				.orElseThrow();
+		JsonNode terminal = records.get(records.size() - 1);
+		assertThat(rows.path("values")).hasSize(32);
+		assertThat(terminal.path("type").asText()).isEqualTo("error");
+		assertThat(terminal.path("code").asText()).isEqualTo("incomplete");
+		assertThat(terminal.path("message").asText().toLowerCase(Locale.ROOT))
+				.contains("visible results are incomplete", "increase query timeout")
+				.doesNotContain("eofexception", "query timed out.");
+	}
+
+	private List<JsonNode> graphFailureAfterRows(Throwable failure, boolean remote) throws Exception {
+		Repository repository = remote ? mock(HTTPRepository.class) : mock(Repository.class);
+		if (remote) {
+			when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
+		}
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		GraphQuery graphQuery = mock(GraphQuery.class);
+		GraphQueryResult result = mock(GraphQueryResult.class);
+		AtomicInteger resultCalls = new AtomicInteger();
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+		String query = "construct { ?s ?p ?o } where { values (?s ?p ?o) { (<urn:s> <urn:p> <urn:o>) } }";
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"),
+						SimpleValueFactory.getInstance().createIRI("urn:context"));
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, query)).thenReturn(graphQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(graphQuery.evaluate()).thenReturn(result);
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if (resultCalls.getAndIncrement() < 32) {
+				return true;
+			}
+			throw failure;
+		});
+		when(result.next()).thenReturn(statement);
+		HttpServletResponse response = responseWith(output);
+		when(response.isCommitted()).thenAnswer(invocation -> output.bytes().length > 0);
+		try {
+			servlet.service(pageDataRequest(query), response);
+			return output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	private void assertQueryTimeoutErrorAfterRows(Throwable timeout, boolean remote) throws Exception {
+		assertQueryErrorAfterRows(timeout, remote, "timeout");
+	}
+
+	private void assertQueryErrorAfterRows(Throwable failure, boolean remote, String expectedCode) throws Exception {
+		Repository repository = remote ? mock(HTTPRepository.class) : mock(Repository.class);
+		if (remote) {
+			when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
+		}
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger resultCalls = new AtomicInteger();
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if (resultCalls.getAndIncrement() < 32) {
+				return true;
+			}
+			throw failure;
+		});
+		when(result.next()).thenReturn(binding("urn:streamed"));
+
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getInt("query-timeout")).thenReturn(1);
+		when(request.getParameter("query-timeout")).thenReturn("1");
+		HttpServletResponse response = responseWith(output);
+		when(response.isCommitted()).thenAnswer(invocation -> output.bytes().length > 0);
+		try {
+			servlet.service(request, response);
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			JsonNode rows = records.stream()
+					.filter(record -> record.path("type").asText().equals("rows"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(rows.path("values")).hasSize(32);
+			JsonNode terminal = records.get(records.size() - 1);
+			assertThat(terminal.path("type").asText()).isEqualTo("error");
+			assertThat(terminal.path("status").asInt()).isEqualTo("timeout".equals(expectedCode)
+					|| "circuit-breaker".equals(expectedCode) ? HttpServletResponse.SC_SERVICE_UNAVAILABLE
+							: HttpServletResponse.SC_BAD_GATEWAY);
+			assertThat(terminal.path("code").asText()).isEqualTo(expectedCode);
+			if ("timeout".equals(expectedCode)) {
+				assertThat(terminal.path("message").asText().toLowerCase(Locale.ROOT))
+						.contains("timed out", "1 second", "query timeout");
+			} else if ("incomplete".equals(expectedCode)) {
+				assertThat(terminal.path("message").asText().toLowerCase(Locale.ROOT))
+						.contains("visible results are incomplete");
+			} else {
+				assertThat(terminal.path("message").asText())
+						.isEqualTo("The server stopped this query because of memory pressure. Try again later.");
+			}
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void successfulPageDataQueryDeclaresItsTypedResultView() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		try {
+			FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+			ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+
+			servlet.service(pageDataRequest(QUERY), responseWith(output));
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("view");
+				assertThat(record.path("id").asText()).isEqualTo("query-result-tuple");
+			});
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("rows");
+				assertThat(record.path("values").get(0).get(0).path("kind").asText()).isEqualTo("iri");
+				assertThat(record.path("values").get(0).get(0).path("value").asText()).isEqualTo("urn:s");
+			});
+			assertThat(records.get(records.size() - 1).path("type").asText()).isEqualTo("end");
+		} finally {
+			coordinator.shutdown();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void successfulPageDataGraphQueryDeclaresContextColumnAndTypedView() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		String query = "construct { ?s ?p ?o } where { values (?s ?p ?o) { (<urn:s> <urn:p> <urn:o>) } }";
+		IRI context = SimpleValueFactory.getInstance().createIRI("urn:context");
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), context);
+		try {
+			GraphQuery graphQuery = mock(GraphQuery.class);
+			when(repository.getConnection()).thenReturn(connection);
+			when(connection.prepareQuery(QueryLanguage.SPARQL, query)).thenReturn(graphQuery);
+			when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+			when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
+			FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+			ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+
+			servlet.service(pageDataRequest(query), responseWith(output));
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("view");
+				assertThat(record.path("id").asText()).isEqualTo("query-result-graph");
+			});
+			assertThat(records).anySatisfy(record -> assertThat(record.path("values").toString())
+					.isEqualTo("[\"subject\",\"predicate\",\"object\",\"context\"]"));
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("rows");
+				assertThat(record.path("values").get(0)).hasSize(4);
+				assertThat(record.path("values").get(0).get(3).path("value").asText()).isEqualTo("urn:context");
+			});
+			assertThat(records.get(records.size() - 1).path("type").asText()).isEqualTo("end");
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void successfulPageDataBooleanQueryDeclaresItsTypedView() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		String query = "ask { ?s ?p ?o }";
+		try {
+			BooleanQuery booleanQuery = mock(BooleanQuery.class);
+			when(repository.getConnection()).thenReturn(connection);
+			when(connection.prepareQuery(QueryLanguage.SPARQL, query)).thenReturn(booleanQuery);
+			when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+			when(booleanQuery.evaluate()).thenReturn(true);
+			FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+			ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+
+			servlet.service(pageDataRequest(query), responseWith(output));
+
+			List<JsonNode> records = output.asString()
+					.lines()
+					.map(String::trim)
+					.filter(line -> !line.isEmpty())
+					.map(JSON_MAPPER::readTree)
+					.toList();
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("view");
+				assertThat(record.path("id").asText()).isEqualTo("query-result-boolean");
+			});
+			assertThat(records).anySatisfy(record -> {
+				assertThat(record.path("type").asText()).isEqualTo("boolean");
+				assertThat(record.path("value").asBoolean()).isTrue();
+			});
+			assertThat(records.get(records.size() - 1).path("type").asText()).isEqualTo("end");
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void unlimitedPageDataStreamsRowsBeforeTheResultFinishesAndReportsItsTotal() throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CountDownLatch firstBatchReached = new CountDownLatch(1);
+		CountDownLatch releaseRemainingRows = new CountDownLatch(1);
+		try {
+			TupleQuery tupleQuery = mock(TupleQuery.class);
+			List<BindingSet> bindings = new ArrayList<>();
+			for (int i = 0; i < 40; i++) {
+				bindings.add(binding("urn:s" + i));
+			}
+			when(repository.getConnection()).thenReturn(connection);
+			when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+			when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+			when(tupleQuery.evaluate()).thenReturn(pausingResult(bindings, firstBatchReached, releaseRemainingRows));
+			FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+			ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			Thread queryThread = Thread.startVirtualThread(() -> {
+				try {
+					servlet.service(pageDataRequest(QUERY), responseWith(output));
+				} catch (Throwable e) {
+					failure.set(e);
+				}
+			});
+			try {
+				assertThat(firstBatchReached.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThat(output.asString()).contains("\"type\":\"rows\"")
+						.doesNotContain("\"type\":\"end\"");
+				releaseRemainingRows.countDown();
+				queryThread.join(5000);
+				assertThat(queryThread.isAlive()).isFalse();
+				assertThat(failure.get()).isNull();
+
+				List<JsonNode> records = output.asString()
+						.lines()
+						.map(String::trim)
+						.filter(line -> !line.isEmpty())
+						.map(JSON_MAPPER::readTree)
+						.toList();
+				JsonNode end = records.get(records.size() - 1);
+				assertThat(end.path("type").asText()).isEqualTo("end");
+				assertThat(end.path("metadata").path("total-result-count").asLong()).isEqualTo(40);
+				assertThat(records.stream()
+						.filter(record -> "rows".equals(record.path("type").asText()))
+						.mapToInt(record -> record.path("values").size())
+						.sum()).isEqualTo(40);
+			} finally {
+				releaseRemainingRows.countDown();
+				queryThread.join(5000);
+				connection.close();
+			}
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	private static TupleQueryResult pausingResult(List<BindingSet> bindings, CountDownLatch firstBatchReached,
+			CountDownLatch releaseRemainingRows) {
+		return new IteratingTupleQueryResult(List.of("s"), new CloseableIteration<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				if (index == 32) {
+					firstBatchReached.countDown();
+					try {
+						if (!releaseRemainingRows.await(5, TimeUnit.SECONDS)) {
+							throw new IllegalStateException("Timed out waiting to release remaining rows");
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting to release remaining rows", e);
+					}
+				}
+				return index < bindings.size();
+			}
+
+			@Override
+			public BindingSet next() {
+				return bindings.get(index++);
+			}
+
+			@Override
+			public void close() {
+			}
+		});
 	}
 
 	@Test
@@ -200,7 +715,7 @@ class QueryServletHeartbeatTest {
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				servlet.service(request(QUERY, null, null), responseWith(output), "/transformations");
+				servlet.service(request(QUERY, null, null), responseWith(output));
 			} catch (Throwable e) {
 				failure.set(e);
 			}
@@ -230,7 +745,7 @@ class QueryServletHeartbeatTest {
 			HttpServletResponse response = responseWith(output);
 			String query = "construct { ?s ?p ?o } where { values (?s ?p ?o) { (<urn:s> <urn:p> \"o\") } }";
 
-			servlet.service(request(query, "text/turtle", "gzip"), response, "/transformations");
+			servlet.service(request(query, "text/turtle", "gzip"), response);
 
 			byte[] uncompressed;
 			try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(output.bytes()))) {
@@ -265,7 +780,7 @@ class QueryServletHeartbeatTest {
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				servlet.service(request(QUERY, "text/csv", null), responseWith(output), "/transformations");
+				servlet.service(request(QUERY, "text/csv", null), responseWith(output));
 			} catch (Throwable e) {
 				failure.set(e);
 			}
@@ -307,7 +822,7 @@ class QueryServletHeartbeatTest {
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				servlet.service(headRequest, responseWith(output), "/transformations");
+				servlet.service(headRequest, responseWith(output));
 			} catch (Throwable e) {
 				failure.set(e);
 			}
@@ -349,8 +864,7 @@ class QueryServletHeartbeatTest {
 			AtomicReference<Throwable> firstFailure = new AtomicReference<>();
 			Thread firstRequest = Thread.startVirtualThread(() -> {
 				try {
-					servlet.service(request(QUERY, null, null, requestId), responseWith(firstOutput),
-							"/transformations");
+					servlet.service(request(QUERY, null, null, requestId), responseWith(firstOutput));
 				} catch (Throwable e) {
 					firstFailure.set(e);
 				}
@@ -362,7 +876,7 @@ class QueryServletHeartbeatTest {
 			assertThat(firstFailure.get()).isInstanceOf(IOException.class);
 
 			ProbeServletOutputStream secondOutput = new ProbeServletOutputStream(0);
-			servlet.service(request(QUERY, null, null, requestId), responseWith(secondOutput), "/transformations");
+			servlet.service(request(QUERY, null, null, requestId), responseWith(secondOutput));
 			assertThat(secondOutput.asString()).contains("query-result-status");
 		} finally {
 			coordinator.shutdown();
@@ -386,7 +900,7 @@ class QueryServletHeartbeatTest {
 		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
 
 		try {
-			servlet.service(request(QUERY, null, null, requestId), responseWith(output), "/transformations");
+			servlet.service(request(QUERY, null, null, requestId), responseWith(output));
 
 			assertThat(output.bytes()).isEmpty();
 			verify(connection, never()).prepareQuery(QueryLanguage.SPARQL, QUERY);
@@ -435,6 +949,18 @@ class QueryServletHeartbeatTest {
 		when(request.getInt("know_total")).thenReturn(0);
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getContextPath()).thenReturn("");
+		return request;
+	}
+
+	private static WorkbenchRequest pageDataRequest(String query) throws Exception {
+		WorkbenchRequest request = request(query, null, null);
+		Map<String, Object> attributes = new HashMap<>();
+		when(request.getHeader("Accept")).thenReturn(WorkbenchPageProtocol.ACCEPT);
+		doAnswer(invocation -> {
+			attributes.put(invocation.getArgument(0), invocation.getArgument(1));
+			return null;
+		}).when(request).setAttribute(anyString(), any());
+		when(request.getAttribute(anyString())).thenAnswer(invocation -> attributes.get(invocation.getArgument(0)));
 		return request;
 	}
 

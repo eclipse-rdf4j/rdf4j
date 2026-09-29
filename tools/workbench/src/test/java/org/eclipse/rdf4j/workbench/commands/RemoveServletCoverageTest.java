@@ -46,9 +46,8 @@ class RemoveServletCoverageTest {
 	void serviceRendersStaticShell() throws Exception {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 
-		new RemoveServlet().service(builder, "/transform");
+		new RemoveServlet().service(builder);
 
-		verify(builder).transform("/transform", "remove.xsl");
 		verify(builder).start();
 		verify(builder).link(List.of("info"));
 		verify(builder).end();
@@ -71,9 +70,8 @@ class RemoveServletCoverageTest {
 		when(request.isParameterPresent(CONTEXT)).thenReturn(false);
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
-		verify(builder).transform("/transform", "remove.xsl");
 		verify(builder).start("error-message", "subj", "pred", "obj", CONTEXT);
 		verify(builder).link(List.of("info"));
 		verify(builder).result("No values", null, null, null, null);
@@ -101,7 +99,7 @@ class RemoveServletCoverageTest {
 		when(request.getParameter("obj")).thenReturn(encoded);
 		when(request.isParameterPresent(CONTEXT)).thenReturn(false);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection, times(2)).remove(isNull(), isNull(), org.mockito.ArgumentMatchers.<Value>any());
 		verify(connection).getValueFactory();
@@ -125,9 +123,8 @@ class RemoveServletCoverageTest {
 		when(request.isParameterPresent(CONTEXT)).thenReturn(false);
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
-		verify(builder).transform("/transform", "remove.xsl");
 		verify(builder).start("error-message", "subj", "pred", "obj", CONTEXT);
 		verify(builder).link(List.of("info"));
 		verify(builder).result("bad predicate", null, "bad", null, null);
@@ -151,7 +148,7 @@ class RemoveServletCoverageTest {
 		when(request.isParameterPresent(CONTEXT)).thenReturn(true);
 		when(request.getResource(CONTEXT)).thenReturn(context);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).clear(context);
 		verify(response).sendRedirect("summary");
@@ -175,7 +172,7 @@ class RemoveServletCoverageTest {
 		when(plainRequest.getValue("obj")).thenReturn(null);
 		when(plainRequest.isParameterPresent(CONTEXT)).thenReturn(false);
 
-		servlet.doPost(plainRequest, response, "/transform");
+		servlet.doPost(plainRequest, response);
 
 		verify(connection).remove((org.eclipse.rdf4j.model.Resource) isNull(),
 				org.mockito.ArgumentMatchers.eq(predicate),
@@ -188,7 +185,7 @@ class RemoveServletCoverageTest {
 		when(scopedRequest.isParameterPresent(CONTEXT)).thenReturn(true);
 		when(scopedRequest.getResource(CONTEXT)).thenReturn(context);
 
-		servlet.doPost(scopedRequest, response, "/transform");
+		servlet.doPost(scopedRequest, response);
 
 		verify(connection).remove((org.eclipse.rdf4j.model.Resource) isNull(),
 				org.mockito.ArgumentMatchers.eq(predicate),
@@ -215,7 +212,7 @@ class RemoveServletCoverageTest {
 		when(request.isParameterPresent(CONTEXT)).thenReturn(true);
 		when(request.getResource(CONTEXT)).thenReturn(context);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).remove(subject, predicate, object, context);
 		verify(response).sendRedirect("summary");
@@ -239,7 +236,7 @@ class RemoveServletCoverageTest {
 		when(request.isParameterPresent(CONTEXT)).thenReturn(true);
 		when(request.getResource(CONTEXT)).thenReturn(context);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).remove((org.eclipse.rdf4j.model.Resource) isNull(),
 				(org.eclipse.rdf4j.model.IRI) isNull(), org.mockito.ArgumentMatchers.eq(object),

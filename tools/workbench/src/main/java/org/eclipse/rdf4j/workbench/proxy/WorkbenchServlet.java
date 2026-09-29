@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.proxy;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -18,12 +19,14 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -36,6 +39,8 @@ import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
+import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
+import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPageUrl;
@@ -45,6 +50,8 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,6 +128,10 @@ public class WorkbenchServlet extends AbstractServlet {
 		if (!policy.isRouteAllowed(route)) {
 			WorkbenchPolicyResponse.sendHiddenPage(resp);
 			return;
+		}
+		if (!landingRequest) {
+			WorkbenchViewRegistry.viewIdForRoute(route)
+					.ifPresent(viewId -> req.setAttribute(WorkbenchPageProtocol.PAGE_VIEW_ID_ATTRIBUTE, viewId));
 		}
 		if (landingRequest) {
 			resp.sendRedirect(WorkbenchPageUrl.resolveWorkbenchPath(req, landingPath));
@@ -210,14 +221,48 @@ public class WorkbenchServlet extends AbstractServlet {
 	 */
 	private void handleUnauthorizedException(final HttpServletRequest req, final HttpServletResponse resp)
 			throws IOException, QueryResultHandlerException {
+		if (WorkbenchPageProtocol.requestsHtmlNavigation(req) || WorkbenchPageProtocol.requestsPageData(req)) {
+			writeUnauthorizedPageModel(req, resp);
+			return;
+		}
 		// Invalid credentials or insufficient authorization. Present
 		// entry form again with error message.
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		builder.transform(this.getTransformationUrl(req), "server.xsl");
 		builder.start("error-message");
 		builder.result(
 				"The entered credentials entered either failed to authenticate to the RDF4J server, or were unauthorized for the requested operation.");
 		builder.end();
+	}
+
+	private void writeUnauthorizedPageModel(HttpServletRequest request, HttpServletResponse response)
+			throws IOException, QueryResultHandlerException {
+		ByteArrayOutputStream pageData = new ByteArrayOutputStream();
+		WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(pageData);
+		String viewId = pageViewId(request);
+		pageWriter.view(viewId);
+		TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
+		builder.start("error-message")
+				.link(List.of("info"))
+				.result(
+						"The entered credentials entered either failed to authenticate to the RDF4J server, or were unauthorized for the requested operation.")
+				.end();
+		if (WorkbenchPageProtocol.requestsHtmlNavigation(request)) {
+			WorkbenchHtmlShell.writeInitialPageModel(request, response, config, viewId, pageData.toByteArray());
+			return;
+		}
+		WorkbenchPageProtocol.configureDynamicPageResponse(response);
+		response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		response.setContentType(WorkbenchPageProtocol.CONTENT_TYPE);
+		pageData.writeTo(response.getOutputStream());
+		response.flushBuffer();
+	}
+
+	private String pageViewId(HttpServletRequest request) {
+		Object requestViewId = request.getAttribute(WorkbenchPageProtocol.PAGE_VIEW_ID_ATTRIBUTE);
+		if (requestViewId instanceof String viewId && !viewId.isBlank()) {
+			return viewId;
+		}
+		return WorkbenchViewRegistry.viewIdForRoute(getRoutePath(request.getPathInfo())).orElse("server");
 	}
 
 	private File asLocalFile(final URL rdf) {
@@ -255,11 +300,6 @@ public class WorkbenchServlet extends AbstractServlet {
 			repositories.putIfAbsent(repoID, createdServlet);
 			repositories.get(repoID).service(http, resp);
 		}
-	}
-
-	private String getTransformationUrl(final HttpServletRequest req) {
-		final String contextPath = req.getContextPath();
-		return contextPath + config.getInitParameter(WorkbenchGateway.TRANSFORMATIONS);
 	}
 
 	/**

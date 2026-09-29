@@ -59,7 +59,7 @@ class QueryServletEdgeCoverageTest {
 		when(successResponse.getWriter()).thenReturn(new PrintWriter(successBody));
 		successServlet.setRepository(successRepository);
 
-		successServlet.service(successRequest, successResponse, "/transform");
+		successServlet.service(successRequest, successResponse);
 
 		assertThat(successBody.toString()).contains("\"content\":\"tracked-plan\"");
 		verify(successRequest, never()).startAsync(any(), any());
@@ -87,7 +87,7 @@ class QueryServletEdgeCoverageTest {
 		cancelledServlet.substituteAsyncExplainCoordinator(cancelledCoordinator);
 
 		try {
-			cancelledServlet.service(cancelledRequest, cancelledResponse, "/transform");
+			cancelledServlet.service(cancelledRequest, cancelledResponse);
 
 			assertThat(cancelledBody.toString()).isEmpty();
 			verify(cancelledResponse, never()).setStatus(HttpServletResponse.SC_OK);
@@ -111,7 +111,7 @@ class QueryServletEdgeCoverageTest {
 		when(malformedResponse.getWriter()).thenReturn(new PrintWriter(malformedBody));
 		malformedServlet.setRepository(malformedRepository);
 
-		malformedServlet.service(malformedRequest, malformedResponse, "/transform");
+		malformedServlet.service(malformedRequest, malformedResponse);
 
 		assertThat(malformedBody.toString()).contains("\"error\":\"tracked bad syntax\"");
 		verify(malformedRequest, never()).startAsync(any(), any());
@@ -126,7 +126,7 @@ class QueryServletEdgeCoverageTest {
 		when(failingResponse.getWriter()).thenReturn(new PrintWriter(failingBody));
 		failingServlet.setRepository(failingRepository);
 
-		failingServlet.service(failingRequest, failingResponse, "/transform");
+		failingServlet.service(failingRequest, failingResponse);
 
 		assertThat(failingBody.toString()).contains("\"error\":\"tracked repository boom\"");
 		verify(failingRequest, never()).startAsync(any(), any());
@@ -146,7 +146,7 @@ class QueryServletEdgeCoverageTest {
 		when(writerResponse.getWriter()).thenThrow(new IOException("writer offline"));
 		writerServlet.setRepository(writerRepository);
 
-		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse, "/transform"))
+		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse))
 				.doesNotThrowAnyException();
 		verify(writerRequest, never()).startAsync(any(), any());
 	}

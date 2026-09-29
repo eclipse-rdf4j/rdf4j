@@ -157,7 +157,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 
 			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
 			verify(response).setContentType("application/xml");
@@ -343,7 +343,7 @@ public class QueryServletTest {
 		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 
 		try {
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
 		} finally {
 			repository.shutDown();
@@ -370,7 +370,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 
 			assertThat(outputStream.asString()).contains("<sparql");
 		} finally {
@@ -430,7 +430,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			verify(cookieHandler).addCookie(request, response, QueryServlet.REF, "hash");
 			verify(cookieHandler).addCookie(request, response, QueryServlet.QUERY,
@@ -546,7 +546,7 @@ public class QueryServletTest {
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(request, response)).doesNotThrowAnyException();
 		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
 				eq(true), eq(100), eq(17));
 	}
@@ -586,7 +586,7 @@ public class QueryServletTest {
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(request, response)).doesNotThrowAnyException();
 		verify(storage).updateQuery(savedQuery, "", true, QueryLanguage.SPARQL, SHORT_QUERY, true, 100, 17);
 	}
 
@@ -622,7 +622,7 @@ public class QueryServletTest {
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(request, response)).doesNotThrowAnyException();
 		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
 				eq(true), eq(100), eq(0));
 	}
@@ -663,7 +663,7 @@ public class QueryServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-		assertThatThrownBy(() -> servlet.service(request, response, "/transformations"))
+		assertThatThrownBy(() -> servlet.service(request, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
 
@@ -699,7 +699,7 @@ public class QueryServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		servlet.service(request, response, "/transformations");
+		servlet.service(request, response);
 
 		verify(request, never()).startAsync(any(), any());
 		assertThat(body.toString()).contains("\"content\":\"plan\"");
@@ -736,7 +736,7 @@ public class QueryServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		servlet.service(request, response, "/transformations");
+		servlet.service(request, response);
 
 		verify(request, never()).startAsync(any(), any());
 		assertThat(body.toString()).contains("\"error\":\"Missing parameter: explain-request-id\"");
@@ -751,7 +751,7 @@ public class QueryServletTest {
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 
-		servlet.doPost(request, response, "/transformations");
+		servlet.doPost(request, response);
 
 		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: explain-request-id");
 
@@ -761,7 +761,7 @@ public class QueryServletTest {
 		when(unknownRequest.getParameter("explain-request-id")).thenReturn("completed-explanation");
 		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
 
-		servlet.doPost(unknownRequest, unknownResponse, "/transformations");
+		servlet.doPost(unknownRequest, unknownResponse);
 
 		verify(unknownResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
 	}
@@ -814,7 +814,7 @@ public class QueryServletTest {
 		try {
 			Future<?> explainFuture = executor
 					.submit(() -> {
-						servlet.service(explainRequest, explainResponse, "/transformations");
+						servlet.service(explainRequest, explainResponse);
 						return null;
 					});
 
@@ -842,7 +842,7 @@ public class QueryServletTest {
 		when(blankRequest.getParameter("query-request-id")).thenReturn("   ");
 		HttpServletResponse blankResponse = mock(HttpServletResponse.class);
 
-		servlet.doPost(blankRequest, blankResponse, "/transformations");
+		servlet.doPost(blankRequest, blankResponse);
 
 		verify(blankResponse).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: query-request-id");
 
@@ -852,7 +852,7 @@ public class QueryServletTest {
 		when(unknownRequest.getParameter("query-request-id")).thenReturn("completed-request");
 		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
 
-		servlet.doPost(unknownRequest, unknownResponse, "/transformations");
+		servlet.doPost(unknownRequest, unknownResponse);
 
 		verify(unknownResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
 	}
@@ -913,7 +913,7 @@ public class QueryServletTest {
 
 		try {
 			Future<?> queryFuture = executor.submit(() -> {
-				servlet.service(queryRequest, queryResponse, "/transformations");
+				servlet.service(queryRequest, queryResponse);
 				return null;
 			});
 
@@ -1002,17 +1002,17 @@ public class QueryServletTest {
 
 		try {
 			Future<?> queryFuture = executor.submit(() -> {
-				servlet.service(queryRequest, queryResponse, "/transformations");
+				servlet.service(queryRequest, queryResponse);
 				return null;
 			});
 			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
-			servlet.doPost(firstCancelRequest, firstCancelResponse, "/transformations");
+			servlet.doPost(firstCancelRequest, firstCancelResponse);
 			verify(firstCancelResponse).sendError(eq(HttpServletResponse.SC_BAD_GATEWAY), anyString());
 			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThatCode(() -> queryFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
 
-			servlet.doPost(secondCancelRequest, secondCancelResponse, "/transformations");
+			servlet.doPost(secondCancelRequest, secondCancelResponse);
 			verify(secondCancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
 			assertThat(remoteCancelCalls).hasValue(2);
 		} finally {
@@ -1039,7 +1039,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			verify(response).setHeader("Content-Encoding", "gzip");
 		} finally {
@@ -1065,7 +1065,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			verify(response, never()).setHeader("Content-Encoding", "gzip");
 		} finally {
@@ -1106,7 +1106,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			String responseBody = outputStream.asString();
 			assertThat(responseBody)
@@ -1149,7 +1149,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			String responseBody = outputStream.asString();
 			assertThat(responseBody)
@@ -1199,7 +1199,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			String responseBody = outputStream.asString();
 			assertThat(responseBody)
@@ -1242,7 +1242,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			servlet.service(request, response, "/transformations");
+			servlet.service(request, response);
 
 			String responseBody = outputStream.asString();
 			assertThat(countOccurrences(responseBody, "<variable name='__workbench_query_text'/>")).isEqualTo(1);
@@ -1324,9 +1324,9 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 			if (post) {
-				policyServlet.doPost(request, response, "/transformations");
+				policyServlet.doPost(request, response);
 			} else {
-				policyServlet.service(request, response, "/transformations");
+				policyServlet.service(request, response);
 			}
 
 			verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
@@ -1374,9 +1374,9 @@ public class QueryServletTest {
 			when(response.getOutputStream()).thenReturn(outputStream);
 			when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 			if (post) {
-				policyServlet.doPost(request, response, "/transformations");
+				policyServlet.doPost(request, response);
 			} else {
-				policyServlet.service(request, response, "/transformations");
+				policyServlet.service(request, response);
 			}
 
 			verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
@@ -1409,7 +1409,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 
 			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
 			verify(response).setContentType("application/xml");
@@ -1464,9 +1464,9 @@ public class QueryServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		if (post) {
-			policyServlet.doPost(request, response, "/transformations");
+			policyServlet.doPost(request, response);
 		} else {
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 		}
 
 		verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
@@ -1504,7 +1504,7 @@ public class QueryServletTest {
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-		policyServlet.service(request, response, "/transformations");
+		policyServlet.service(request, response);
 
 		verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
 		verify(repository, never()).getConnection();
@@ -1547,7 +1547,7 @@ public class QueryServletTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getOutputStream()).thenReturn(outputStream);
 
-			policyServlet.service(request, response, "/transformations");
+			policyServlet.service(request, response);
 			return outputStream.asString();
 		} finally {
 			repository.shutDown();

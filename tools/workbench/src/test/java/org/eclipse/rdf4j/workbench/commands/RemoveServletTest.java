@@ -50,7 +50,7 @@ public class RemoveServletTest {
 		servlet.setRepository(repository);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		when(repository.getConnection()).thenReturn(connection);
-		servlet.doPost(request, mock(HttpServletResponse.class), "");
+		servlet.doPost(request, mock(HttpServletResponse.class));
 		verify(connection).clear(eq(context));
 	}
 }

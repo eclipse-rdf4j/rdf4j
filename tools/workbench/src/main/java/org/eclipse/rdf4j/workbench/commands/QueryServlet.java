@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -56,12 +57,16 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
+import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,6 +93,15 @@ public class QueryServlet extends TransformationServlet {
 	protected static final String QUERY = "query";
 
 	private static final String QUERY_TIMEOUT = "query-timeout";
+
+	private static final String BINARY_QUERY_EVALUATION_ERROR_PREFIX = "QUERY_EVALUATION_ERROR:";
+	private static final String BINARY_QUERY_TIMEOUT_ERROR = BINARY_QUERY_EVALUATION_ERROR_PREFIX
+			+ " Query evaluation took too long";
+	private static final String BINARY_QUERY_CIRCUIT_BREAKER_REJECTION_PREFIX = BINARY_QUERY_EVALUATION_ERROR_PREFIX
+			+ " Query rejected by global memory circuit breaker";
+	private static final String BINARY_QUERY_CIRCUIT_BREAKER_CANCELLATION_PREFIX = BINARY_QUERY_EVALUATION_ERROR_PREFIX
+			+ " Query cancelled by global memory circuit breaker";
+	private static final String QUERY_CIRCUIT_BREAKER_MESSAGE = "The server stopped this query because of memory pressure. Try again later.";
 
 	private static final String ACTION = "action";
 
@@ -210,7 +224,15 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	public final void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		if (req.getCharacterEncoding() == null) {
+			req.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		}
 		this.writeQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
+		if (WorkbenchPageProtocol.requestsQueryExecutionPostShell(req)) {
+			WorkbenchHtmlShell.writeQueryExecutionShell(req, resp, config,
+					WorkbenchViewRegistry.viewId(getClass()).orElse("query"));
+			return;
+		}
 		super.service(req, resp);
 	}
 
@@ -229,7 +251,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	protected void service(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, RDF4JException, BadRequestException {
 		final String action = getRequestAction(req);
 		if (ACTION_GET.equals(action)) {
@@ -262,7 +284,7 @@ public class QueryServlet extends TransformationServlet {
 				}
 			}
 			WorkbenchRequest effectiveRequest = withConfiguredDefaultsForDisabledFeatures(req);
-			handleStandardBrowserRequest(effectiveRequest, resp, xslPath);
+			handleStandardBrowserRequest(effectiveRequest, resp);
 		}
 	}
 
@@ -785,7 +807,55 @@ public class QueryServlet extends TransformationServlet {
 		return isExplainTimeout(throwable.getCause());
 	}
 
-	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+	private boolean isStreamedQueryTimeout(Throwable throwable) {
+		if (throwable == null) {
+			return false;
+		}
+		if (throwable instanceof QueryInterruptedException) {
+			return QueryCircuitBreaker.asCircuitBreakerException((QueryInterruptedException) throwable) == null;
+		}
+		if (throwable instanceof QueryResultParseException) {
+			return BINARY_QUERY_TIMEOUT_ERROR.equals(throwable.getMessage());
+		}
+		return isStreamedQueryTimeout(throwable.getCause());
+	}
+
+	private boolean isStreamedQueryCircuitBreaker(Throwable throwable) {
+		if (throwable == null) {
+			return false;
+		}
+		if (QueryCircuitBreaker.asCircuitBreakerException(throwable) != null) {
+			return true;
+		}
+		if (throwable instanceof QueryResultParseException) {
+			String message = throwable.getMessage();
+			return message != null && (message.startsWith(BINARY_QUERY_CIRCUIT_BREAKER_REJECTION_PREFIX)
+					|| message.startsWith(BINARY_QUERY_CIRCUIT_BREAKER_CANCELLATION_PREFIX));
+		}
+		return isStreamedQueryCircuitBreaker(throwable.getCause());
+	}
+
+	private String queryTimeoutMessage(WorkbenchRequest req) {
+		int timeoutSeconds;
+		try {
+			timeoutSeconds = Integer.parseInt(req.getParameter(QUERY_TIMEOUT));
+		} catch (NumberFormatException e) {
+			timeoutSeconds = 0;
+		}
+		if (timeoutSeconds <= 0) {
+			return "Query timed out. Increase Query timeout in Options and run it again.";
+		}
+		String duration = timeoutSeconds == 1 ? "1 second" : timeoutSeconds + " seconds";
+		return "Query timed out after " + duration
+				+ ". Increase Query timeout in Options and run it again.";
+	}
+
+	private String incompleteQueryMessage() {
+		return "The result stream ended before the query completed. The visible results are incomplete. "
+				+ "If the query timed out, increase Query timeout in Options and run it again.";
+	}
+
+	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp)
 			throws IOException, RDF4JException, QueryResultHandlerException {
 		CancellableOperationCoordinator.Handle handle = null;
 		String queryRequestId = null;
@@ -816,18 +886,35 @@ public class QueryServlet extends TransformationServlet {
 			cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
 			boolean downloadResponse = setContentType(req, resp);
 			out = getResponseOutputStream(req, resp, downloadResponse);
-			service(req, resp, out, xslPath, handle, responseHeartbeat);
+			service(req, resp, out, handle, responseHeartbeat);
 			responseCompleted = handle == null || handle.isActive();
 		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
 			stopResponseHeartbeat(responseHeartbeat[0]);
 			if (isCancelled(handle)) {
 				return;
 			}
-			LOGGER.warn(exc.toString(), exc);
-			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
+			if (isStreamedQueryCircuitBreaker(exc)) {
+				LOGGER.warn(exc.toString(), exc);
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "circuit-breaker", QUERY_CIRCUIT_BREAKER_MESSAGE);
+				responseCompleted = true;
 				return;
 			}
-			writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0], exc.getMessage());
+			if (isStreamedQueryTimeout(exc)) {
+				LOGGER.warn(exc.toString(), exc);
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "timeout", queryTimeoutMessage(req));
+				responseCompleted = true;
+				return;
+			}
+			LOGGER.warn(exc.toString(), exc);
+			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
+				writeCommittedPageDataError(req, responseHeartbeat[0], HttpServletResponse.SC_BAD_GATEWAY,
+						"incomplete", incompleteQueryMessage());
+				responseCompleted = WorkbenchPageProtocol.requestsPageData(req);
+				return;
+			}
+			writeBrowserErrorResponse(req, resp, out, handle, responseHeartbeat[0], exc.getMessage());
 			responseCompleted = true;
 		} catch (QueryInterruptedException exc) {
 			stopResponseHeartbeat(responseHeartbeat[0]);
@@ -835,21 +922,16 @@ public class QueryServlet extends TransformationServlet {
 				return;
 			}
 			LOGGER.warn(exc.toString(), exc);
-			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
-				return;
-			}
 			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
 					.asCircuitBreakerException(exc);
 			if (breakerException != null) {
 				applyRetryAfter(resp, breakerException);
-				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-				writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0],
-						breakerException.getMessage());
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "circuit-breaker", QUERY_CIRCUIT_BREAKER_MESSAGE);
 				responseCompleted = true;
 			} else {
-				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-				writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0],
-						"Query evaluation took too long");
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "timeout", queryTimeoutMessage(req));
 				responseCompleted = true;
 			}
 		} catch (RDF4JException | IOException exc) {
@@ -860,6 +942,32 @@ public class QueryServlet extends TransformationServlet {
 			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
 				String requestId = handle == null ? "untracked" : handle.getRequestId();
 				LOGGER.warn("Query response failed after commitment for request {}", requestId, exc);
+				if (exc instanceof RDF4JException) {
+					if (isStreamedQueryCircuitBreaker(exc)) {
+						writeCommittedPageDataError(req, responseHeartbeat[0],
+								HttpServletResponse.SC_SERVICE_UNAVAILABLE, "circuit-breaker",
+								QUERY_CIRCUIT_BREAKER_MESSAGE);
+					} else if (isStreamedQueryTimeout(exc)) {
+						writeCommittedPageDataError(req, responseHeartbeat[0],
+								HttpServletResponse.SC_SERVICE_UNAVAILABLE, "timeout", queryTimeoutMessage(req));
+					} else {
+						writeCommittedPageDataError(req, responseHeartbeat[0],
+								HttpServletResponse.SC_BAD_GATEWAY, "incomplete", incompleteQueryMessage());
+					}
+					responseCompleted = WorkbenchPageProtocol.requestsPageData(req);
+				}
+				return;
+			}
+			if (exc instanceof RDF4JException && isStreamedQueryCircuitBreaker(exc)) {
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "circuit-breaker", QUERY_CIRCUIT_BREAKER_MESSAGE);
+				responseCompleted = true;
+				return;
+			}
+			if (exc instanceof RDF4JException && isStreamedQueryTimeout(exc)) {
+				writeQueryFailureResponse(req, resp, out, handle, responseHeartbeat[0],
+						HttpServletResponse.SC_SERVICE_UNAVAILABLE, "timeout", queryTimeoutMessage(req));
+				responseCompleted = true;
 				return;
 			}
 			throw exc;
@@ -1013,7 +1121,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, BadRequestException, RDF4JException {
 		final String action = getRequestAction(req);
 		if ("save".equals(action)) {
@@ -1033,7 +1141,6 @@ public class QueryServlet extends TransformationServlet {
 				 * in the editor
 				 */
 				final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-				builder.transform(xslPath, "query.xsl");
 				builder.start(EDIT_PARAMS);
 				builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 				final String queryLn = req.getParameter(EDIT_PARAMS[0]);
@@ -1054,7 +1161,7 @@ public class QueryServlet extends TransformationServlet {
 				return;
 			}
 			if (canReadSavedQuery(req)) {
-				service(req, resp, xslPath);
+				service(req, resp);
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
@@ -1250,7 +1357,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
-			final String xslPath, CancellableOperationCoordinator.Handle handle,
+			CancellableOperationCoordinator.Handle handle,
 			QueryResponseHeartbeat[] responseHeartbeat)
 			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -1261,7 +1368,7 @@ public class QueryServlet extends TransformationServlet {
 							currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
 							() -> {
 								try {
-									evaluateQuery(req, resp, out, xslPath, con, handle, responseHeartbeat);
+									evaluateQuery(req, resp, out, con, handle, responseHeartbeat);
 								} catch (Exception e) {
 									throw new TrackedQueryExecutionException(e);
 								}
@@ -1282,12 +1389,12 @@ public class QueryServlet extends TransformationServlet {
 				}
 				return;
 			}
-			evaluateQuery(req, resp, out, xslPath, con, handle, responseHeartbeat);
+			evaluateQuery(req, resp, out, con, handle, responseHeartbeat);
 		}
 	}
 
 	private void evaluateQuery(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
-			final String xslPath, RepositoryConnection con, CancellableOperationCoordinator.Handle handle,
+			RepositoryConnection con, CancellableOperationCoordinator.Handle handle,
 			QueryResponseHeartbeat[] responseHeartbeat)
 			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
 		String query = getQueryText(req);
@@ -1306,7 +1413,6 @@ public class QueryServlet extends TransformationServlet {
 			}
 		}
 		if (query.isEmpty()) {
-			builder.transform(xslPath, isEmbeddedRequest(req) ? "query-result-empty.xsl" : "query.xsl");
 			builder.start();
 			if (isEmbeddedRequest(req)) {
 				builder.metadata(EMBEDDED, true);
@@ -1320,7 +1426,7 @@ public class QueryServlet extends TransformationServlet {
 			builder.end();
 		} else {
 			try {
-				EVAL.extractQueryAndEvaluate(builder, resp, writerOutput, xslPath, con, query, req, this.cookies,
+				EVAL.extractQueryAndEvaluate(builder, resp, writerOutput, con, query, req, this.cookies,
 						getResponseQueryText(req, query), getRepositoryReference(), heartbeat,
 						getQueryDownloadDefaultLimit());
 			} catch (MalformedQueryException exc) {
@@ -1347,15 +1453,26 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void writeBrowserErrorResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
-			String xslPath, CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
+			CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
 			String message) throws IOException, QueryResultHandlerException {
+		writeBrowserErrorResponse(req, resp, out, handle, responseHeartbeat,
+				HttpServletResponse.SC_BAD_REQUEST, null, message);
+	}
+
+	private void writeBrowserErrorResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
+			CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
+			int status, String code, String message) throws IOException, QueryResultHandlerException {
 		if (responseHeartbeat != null) {
 			responseHeartbeat.stop();
 		}
+		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			writePageDataError(req, resp, out, responseHeartbeat, status, code, message);
+			return;
+		}
+		resp.setStatus(status);
 		OutputStream writerOutput = responseHeartbeat == null ? out : responseHeartbeat.getOutputStream();
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, writerOutput);
 		boolean embedded = isEmbeddedRequest(req);
-		builder.transform(xslPath, embedded ? "query-result-error.xsl" : "query.xsl");
 		builder.start("error-message");
 		builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		if (embedded) {
@@ -1368,6 +1485,63 @@ public class QueryServlet extends TransformationServlet {
 		}
 		builder.result(message);
 		builder.end();
+		if (responseHeartbeat != null) {
+			responseHeartbeat.complete();
+		}
+	}
+
+	private void writeCommittedPageDataError(WorkbenchRequest req, QueryResponseHeartbeat responseHeartbeat,
+			int status, String message) throws QueryResultHandlerException, IOException {
+		writeCommittedPageDataError(req, responseHeartbeat, status, null, message);
+	}
+
+	private void writeCommittedPageDataError(WorkbenchRequest req, QueryResponseHeartbeat responseHeartbeat,
+			int status, String code, String message) throws QueryResultHandlerException, IOException {
+		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			writePageDataError(req, null, null, responseHeartbeat, status, code, message);
+		}
+	}
+
+	private void writeQueryFailureResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
+			CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
+			int status, String code, String message) throws IOException, QueryResultHandlerException {
+		if (hasCommittedResponse(responseHeartbeat, resp)) {
+			writeCommittedPageDataError(req, responseHeartbeat, status, code, message);
+		} else {
+			resp.setStatus(status);
+			writeBrowserErrorResponse(req, resp, out, handle, responseHeartbeat, status, code, message);
+		}
+	}
+
+	private void writePageDataError(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
+			QueryResponseHeartbeat responseHeartbeat, int status, String message)
+			throws QueryResultHandlerException, IOException {
+		writePageDataError(req, resp, out, responseHeartbeat, status, null, message);
+	}
+
+	private void writePageDataError(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
+			QueryResponseHeartbeat responseHeartbeat, int status, String code, String message)
+			throws QueryResultHandlerException, IOException {
+		if (resp != null) {
+			resp.setStatus(status);
+		}
+		Object existingWriter = req.getAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE);
+		WorkbenchPageResultWriter pageWriter;
+		if (existingWriter instanceof WorkbenchPageResultWriter) {
+			pageWriter = (WorkbenchPageResultWriter) existingWriter;
+		} else {
+			OutputStream writerOutput = responseHeartbeat == null ? out : responseHeartbeat.getOutputStream();
+			if (writerOutput == null && resp != null) {
+				writerOutput = resp.getOutputStream();
+			}
+			if (writerOutput == null) {
+				throw new IOException("Workbench page error has no response output stream");
+			}
+			pageWriter = new WorkbenchPageResultWriter(writerOutput);
+			req.setAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE, pageWriter);
+		}
+		pageWriter.error(status, code, message == null ? "Workbench request failed" : message);
+		pageWriter.flush();
 		if (responseHeartbeat != null) {
 			responseHeartbeat.complete();
 		}

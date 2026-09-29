@@ -8,7 +8,7 @@ var workbench;
     var namespaces;
     (function (namespaces) {
         /**
-         * Invoked by #prefix-select element in namespaces.xsl.
+         * Invoked by the rendered #prefix-select element.
          */
         function updatePrefix() {
             var select = $('#prefix-select');

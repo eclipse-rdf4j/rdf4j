@@ -16,6 +16,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -459,7 +460,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 
 	private static boolean supports(FileFormat format, Collection<? extends RioSetting<?>> supportedSettings) {
 		if (format instanceof TupleQueryResultFormat) {
-			if (TupleQueryResultFormat.JSON.equals(format)) {
+			if (TupleQueryResultFormat.JSON.equals(format) || isNewlineDelimitedJson(format)) {
 				return true;
 			}
 			return TupleQueryResultFormat.SPARQL.equals(format) && supportsXmlDeclarationSetting(supportedSettings);
@@ -485,6 +486,11 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 				|| RDFFormat.TRIG.equals(format)
 				|| RDFFormat.NTRIPLES.equals(format)
 				|| RDFFormat.NQUADS.equals(format);
+	}
+
+	private static boolean isNewlineDelimitedJson(FileFormat format) {
+		String mimeType = format.getDefaultMIMEType();
+		return mimeType != null && mimeType.toLowerCase(Locale.ROOT).endsWith("ndjson");
 	}
 
 	private static boolean supportsXmlDeclarationSetting(Collection<? extends RioSetting<?>> supportedSettings) {

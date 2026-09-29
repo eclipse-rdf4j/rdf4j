@@ -27,6 +27,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -51,8 +53,12 @@ import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class SavedQueriesServletTest {
+
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	@Test
 	void initWrapsQueryStorageFailures() {
@@ -89,7 +95,32 @@ class SavedQueriesServletTest {
 		servlet.service(request, response);
 
 		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq("alice"), any());
-		assertThat(response.getBody()).contains("team-query").contains("saved-queries.xsl");
+		assertThat(response.getBody()).contains("team-query").doesNotContain("saved-queries.xsl");
+	}
+
+	@Test
+	void pageDataResponseStartsOnlyTheSavedQueryResult() throws Exception {
+		QueryStorage storage = mock(QueryStorage.class);
+		Repository repository = accessibleRepository();
+		when(storage.checkAccess(repository)).thenReturn(true);
+		doAnswer(invocation -> {
+			TupleResultBuilder builder = invocation.getArgument(2);
+			builder.variables("queryName");
+			builder.result("team-query");
+			return null;
+		}).when(storage).selectSavedQueries(any(), any(), any());
+
+		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/saved");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
+
+		servlet.service(request, response);
+
+		List<JsonNode> records = response.getBody().lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "links", "vars", "rows", "end");
+		assertThat(records.get(4).path("values").get(0).get(0).path("value").asText()).isEqualTo("team-query");
 	}
 
 	@Test

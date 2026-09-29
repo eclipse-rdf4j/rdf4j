@@ -39,7 +39,7 @@ public class UpdateServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)
 			throws Exception, IOException {
 		// All POST requests are expected to contain a SPARQL/Update 'update' parameter.
 		try {
@@ -49,7 +49,6 @@ public class UpdateServlet extends TransformationServlet {
 		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(xslPath, "update.xsl");
 			builder.start("error-message", "update");
 			builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 
@@ -72,10 +71,9 @@ public class UpdateServlet extends TransformationServlet {
 	}
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
 		// All GET requests are assumed to be to present the update editor page.
-		builder.transform(xslPath, "update.xsl");
 		builder.start();
 		builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		builder.end();

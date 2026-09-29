@@ -13,6 +13,25 @@ var workbench;
         paging.LIMIT = 'limit';
         paging.LIM_ID = '#' + paging.LIMIT;
         var AMP = decodeURIComponent('%26');
+        function getMountedQueryPage() {
+            var queryPage = workbench.queryPage;
+            return queryPage && typeof queryPage.isMounted === 'function' && queryPage.isMounted()
+                ? queryPage : null;
+        }
+        function isStreamPagingParameter(name) {
+            return name === OFFSET || name === 'limit_query' || name.indexOf('limit_') === 0;
+        }
+        function changeStreamPagingParameter(queryPage, name, value) {
+            if (!queryPage || typeof queryPage.changePageParameter !== 'function'
+                || !isStreamPagingParameter(name)) {
+                return false;
+            }
+            var numericValue = typeof value === 'number' ? value : parseInt(String(value), 10);
+            if (!isFinite(numericValue) || numericValue < 0) {
+                return false;
+            }
+            return queryPage.changePageParameter(name, numericValue);
+        }
         function addCookieToUrlQueryIfPresent(url, name) {
             var value = workbench.getCookie(name);
             if (value) {
@@ -179,11 +198,14 @@ var workbench;
             document.body.removeChild(form);
         }
         /**
-         * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
+         * Invoked in the graph and tuple result views for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         function addGraphParam(name) {
             var value = $('#' + name).val();
+            if (name !== 'Accept' && changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             var url = document.location.href;
             if (isEmbeddedResultPage() && name !== 'Accept') {
                 submitGraphParamRequest(name, value);
@@ -243,6 +265,9 @@ var workbench;
          * @param {number} value The value of the query parameter.
          */
         function addPagingParam(name, value) {
+            if (changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             if (isEmbeddedResultPage() || document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
@@ -262,7 +287,7 @@ var workbench;
         }
         paging.addPagingParam = addPagingParam;
         /**
-         * Invoked in tuple.xsl and explore.xsl. Changes the limit query
+         * Invoked in the tuple and explore views. Changes the limit query
          * parameter and navigates to the new URL.
          */
         function addLimit(page) {
@@ -271,18 +296,28 @@ var workbench;
         }
         paging.addLimit = addLimit;
         /**
-         * Invoked in tuple.xsl and explore.xsl. Increments the offset query
+         * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         function nextOffset(page) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.nextPage === 'function') {
+                queryPage.nextPage();
+                return;
+            }
             addPagingParam(OFFSET, getOffset() + getLimit(page));
         }
         paging.nextOffset = nextOffset;
         /**
-         * Invoked in tuple.xsl and explore.xsl. Decrements the offset query
+         * Invoked in the tuple and explore views. Decrements the offset query
          * parameter and navigates to the new URL.
          */
         function previousOffset(page) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.previousPage === 'function') {
+                queryPage.previousPage();
+                return;
+            }
             addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
         }
         paging.previousOffset = previousOffset;

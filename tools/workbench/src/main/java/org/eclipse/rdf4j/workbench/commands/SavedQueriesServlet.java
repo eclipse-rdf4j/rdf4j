@@ -60,10 +60,9 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	protected void service(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, RDF4JException, BadRequestException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		builder.transform(xslPath, "saved-queries.xsl");
 		builder.start();
 		builder.link(List.of(INFO));
 		this.getSavedQueries(req, builder);
@@ -71,7 +70,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 	}
 
 	@Override
-	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
+	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp)
 			throws BadRequestException, IOException, RDF4JException {
 		final String urn = wreq.getParameter("delete");
 		if (null == urn || urn.isEmpty()) {
@@ -90,7 +89,7 @@ public class SavedQueriesServlet extends TransformationServlet {
 				throw new BadRequestException("User '" + userName + "' may not delete query id " + urn);
 			}
 		}
-		this.service(wreq, resp, xslPath);
+		this.service(wreq, resp);
 	}
 
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)

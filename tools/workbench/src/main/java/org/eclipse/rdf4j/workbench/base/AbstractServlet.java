@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
@@ -25,6 +26,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.slf4j.Logger;
@@ -58,25 +61,12 @@ public abstract class AbstractServlet implements Servlet {
 	protected static final String APPLICATION_JAVASCRIPT = "application/javascript";
 
 	/**
-	 * This response content type is used in cases where application/xml is explicitly requested, or in cases where the
-	 * user agent is known to be a commonly available browser.
-	 */
-	protected static final String APPLICATION_XML = "application/xml";
-
-	/**
-	 * This response content type is used for SPARQL Results XML results in non-browser user agents or other cases where
-	 * application/xml is not specifically requested.
+	 * This response content type is used for SPARQL Results XML results.
 	 */
 	protected static final String APPLICATION_SPARQL_RESULTS_XML = "application/sparql-results+xml";
 
 	protected static final String TEXT_HTML = "text/html";
 	protected static final String TEXT_PLAIN = "text/plain";
-
-	protected static final String USER_AGENT = "User-Agent";
-
-	protected static final String MSIE = "MSIE";
-
-	protected static final String MOZILLA = "Mozilla";
 
 	/**
 	 * JSONP property for enabling/disabling jsonp functionality.
@@ -214,6 +204,23 @@ public abstract class AbstractServlet implements Servlet {
 	 */
 	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
 			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+		if (WorkbenchPageProtocol.requestsPageData(req)
+				|| Boolean.TRUE.equals(req.getAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE))) {
+			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
+			resp.setContentType(WorkbenchPageProtocol.CONTENT_TYPE);
+			WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(outputStream);
+			req.setAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE, pageWriter);
+			var viewId = WorkbenchViewRegistry.pageRequestViewId(getClass(), req);
+			if (viewId.isPresent()) {
+				try {
+					pageWriter.view(viewId.get());
+				} catch (QueryResultHandlerException e) {
+					throw new IOException("Unable to write Workbench view", e);
+				}
+			}
+			return new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
+		}
+
 		String contentType;
 		QueryResultWriter resultWriter = checkJSONP(req, outputStream);
 
@@ -226,32 +233,6 @@ public abstract class AbstractServlet implements Servlet {
 			// determine output format
 			resultWriter = getResultWriter(req, resp, outputStream);
 			contentType = resultWriter.getQueryResultFormat().getDefaultMIMEType();
-		}
-
-		// HACK: In order to make XSLT stylesheet driven user interface work,
-		// browser user agents must receive application/xml if they are going to
-		// actually get application/sparql-results+xml
-		// NOTE: This will test against both BooleanQueryResultsFormat and
-		// TupleQueryResultsFormat
-		if (contentType.equals(APPLICATION_SPARQL_RESULTS_XML)) {
-			String uaHeader = req.getHeader(USER_AGENT);
-			String acceptHeader = req.getHeader(ACCEPT);
-
-			if (acceptHeader != null && acceptHeader.contains(APPLICATION_SPARQL_RESULTS_XML)) {
-				// Do nothing, leave the contentType as
-				// application/sparql-results+xml
-			}
-			// Switch back to application/xml for user agents who claim to be
-			// Mozilla compatible
-			else if (uaHeader != null && uaHeader.contains(MOZILLA)) {
-				contentType = APPLICATION_XML;
-			}
-			// Switch back to application/xml for user agents who accept either
-			// application/xml or text/html
-			else if (acceptHeader != null
-					&& (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML))) {
-				contentType = APPLICATION_XML;
-			}
 		}
 
 		// Setup qname support for result writers who declare that they support it

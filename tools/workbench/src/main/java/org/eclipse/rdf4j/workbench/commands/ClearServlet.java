@@ -30,7 +30,7 @@ public class ClearServlet extends TransformationServlet {
 	private final Logger logger = LoggerFactory.getLogger(ClearServlet.class);
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		try {
 			try (RepositoryConnection con = repository.getConnection()) {
@@ -46,7 +46,6 @@ public class ClearServlet extends TransformationServlet {
 		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(xslPath, "clear.xsl");
 			builder.start("error-message", CONTEXT);
 			builder.link(List.of(INFO));
 			builder.result(exc.getMessage(), req.getParameter(CONTEXT));
@@ -55,10 +54,9 @@ public class ClearServlet extends TransformationServlet {
 	}
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = new TupleResultBuilder(out);
-		builder.transform(xslPath, "clear.xsl");
 		builder.start();
 		builder.link(List.of(INFO));
 		builder.end();

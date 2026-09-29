@@ -578,6 +578,36 @@ test('large primary query edits do not create raw query cookies from empty state
     assert.equal(harness.context.workbench.getCookie('ref'), '');
 });
 
+test('primary query draft survives a page reload in the same tab without a query cookie', () => {
+    const sessionValues = new Map();
+    const sessionStorage = {
+        getItem(key) {
+            return sessionValues.has(key) ? sessionValues.get(key) : null;
+        },
+        setItem(key, value) {
+            sessionValues.set(key, String(value));
+        },
+        removeItem(key) {
+            sessionValues.delete(key);
+        }
+    };
+    const href = 'http://localhost:8080/rdf4j-workbench/repositories/test/query';
+    const query = 'SELECT * WHERE {?draft ?p ?o}';
+    const firstPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
+
+    firstPage.runPageLoad();
+    firstPage.context.workbench.query.setQueryValue(query);
+    firstPage.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+    assert.equal(sessionValues.get('workbench:query-draft:/rdf4j-workbench/repositories/test/query'), query);
+
+    const reloadedPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
+    reloadedPage.runPageLoad();
+
+    assert.equal(reloadedPage.context.workbench.query.getQueryValue(), query);
+    assert.equal(reloadedPage.context.workbench.getCookie('query'), '',
+        'the tab draft should restore independently of cookie persistence');
+});
+
 test('query compare flow covers auto-explain, compare refresh, diff modal, and compare cancellation', () => {
     const harness = createQueryBrowserHarness({
         initialExplanation: 'Primary explanation',

@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.app.config.Configuration;
@@ -81,14 +82,29 @@ class WorkbenchPolicyBootPackagingTest {
 		assertThat(location.getPath())
 				.isEqualTo("/boot-mount/rdf4j-workbench/repositories/NONE/server");
 
-		ResponseEntity<String> landing = restTemplate.getForEntity(resolve(location), String.class);
+		HttpHeaders htmlHeaders = new HttpHeaders();
+		htmlHeaders.set(HttpHeaders.ACCEPT, "text/html");
+		ResponseEntity<String> landing = restTemplate.exchange(resolve(location), HttpMethod.GET,
+				new HttpEntity<>(htmlHeaders), String.class);
 		assertThat(landing.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(landing.getBody())
-				.contains("href='/boot-mount/rdf4j-workbench/transformations/server.xsl'");
+				.contains("data-workbench-view=\"server\"")
+				.doesNotContain("/transformations/");
 
 		ResponseEntity<String> stylesheet = restTemplate.getForEntity(
 				workbenchUrl("/transformations/server.xsl"), String.class);
-		assertThat(stylesheet.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(stylesheet.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+	}
+
+	@Test
+	void workbenchBundleDoesNotPackageStylesheetResources() throws IOException {
+		Path workbenchWebapp = webappResourceExtractor.getServerDocBase().resolve("rdf4j-workbench");
+		try (Stream<Path> resources = Files.walk(workbenchWebapp)) {
+			List<Path> stylesheets = resources.filter(Files::isRegularFile)
+					.filter(path -> path.getFileName().toString().endsWith(".xsl"))
+					.toList();
+			assertThat(stylesheets).as("Workbench package must not include XSL resources").isEmpty();
+		}
 	}
 
 	@Test

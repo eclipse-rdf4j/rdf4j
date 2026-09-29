@@ -54,7 +54,7 @@ public class ExportServlet extends TupleServlet {
 	private static final int TIMEOUT_DEFAULT_SECONDS = 12 * 60 * 60;
 
 	public ExportServlet() {
-		super("export.xsl", "subject", "predicate", "object", "context");
+		super("subject", "predicate", "object", "context");
 	}
 
 	@Override
@@ -63,12 +63,12 @@ public class ExportServlet extends TupleServlet {
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		int timeoutSeconds = getTimeoutSeconds(req);
 		String action = req.getParameter(ACTION_PARAMETER);
 		if (PREVIEW_ACTION.equals(action)) {
 			getRequestedPreviewLimit(req);
-			super.service(req, resp, xslPath);
+			super.service(req, resp);
 		} else if (DOWNLOAD_ACTION.equals(action)
 				|| (action == null && req.isParameterPresent("Accept"))) {
 			if (!req.isParameterPresent("Accept")) {
@@ -98,7 +98,7 @@ public class ExportServlet extends TupleServlet {
 			if (action != null) {
 				throw new BadRequestException("Unsupported export action: " + action);
 			}
-			super.service(req, resp, xslPath);
+			super.service(req, resp);
 		}
 	}
 

@@ -445,7 +445,7 @@ class WorkbenchPagePolicyTest {
 		}
 
 		@Override
-		protected void service(WorkbenchRequest request, HttpServletResponse response, String xslPath) {
+		protected void service(WorkbenchRequest request, HttpServletResponse response) {
 			invocationCount++;
 			response.setStatus(HttpServletResponse.SC_ACCEPTED);
 		}

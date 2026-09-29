@@ -1,0 +1,1075 @@
+/// <reference path="workbenchViews.ts" />
+/// <reference lib="es2015.promise" />
+
+// WARNING: Do not edit the generated workbenchApp.js file. Edit this source
+// and run the Workbench TypeScript compiler instead.
+
+// Browser bootstrap for structured Workbench page models. Route-changing POST
+// forms remain browser-owned; only eligible GET shells fetch page data here.
+module workbench {
+    export interface PageModel {
+        viewId: string;
+        vars: string[];
+        /** The current bounded window only; complete rows remain in rowStore. */
+        rows: any[][];
+        rowStart: number;
+        rowCount: number;
+        rowTopSpacer: number;
+        rowBottomSpacer: number;
+        pickerRows: any[][];
+        pickerStart: number;
+        pickerPageSize: number;
+        rowStore: any;
+        namespaceMap: { [prefix: string]: string };
+        links: string[];
+        metadata: { [key: string]: any };
+        boolean?: boolean;
+        linked?: { [key: string]: any };
+        workbench?: any;
+    }
+
+    export interface LitRuntime {
+        html: (strings: TemplateStringsArray, ...values: any[]) => any;
+        render: (template: any, root: Element) => void;
+        nothing?: any;
+    }
+
+    export module app {
+        export const ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
+        const scriptPromiseKey = '__rdf4jWorkbenchScriptPromises';
+        const litPromiseKey = '__rdf4jWorkbenchLitPromise';
+        const loadRoutineKey = '__rdf4jWorkbenchLoadRoutineRun';
+
+        function invalid(message: string): Error {
+            return new Error('Invalid Workbench page model: ' + message);
+        }
+
+        function isObject(value: any): boolean {
+            return value !== null && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        function mergeValues(target: { [key: string]: any }, source: any): void {
+            if (!isObject(source)) {
+                throw invalid('metadata values must be an object');
+            }
+            Object.keys(source).forEach((key) => {
+                target[key] = source[key];
+            });
+        }
+
+        function namespaceMap(value: any): { [prefix: string]: string } {
+            const result: { [prefix: string]: string } = {};
+            if (Array.isArray(value)) {
+                value.forEach((entry: any) => {
+                    if (isObject(entry) && typeof entry.prefix === 'string' && typeof entry.name === 'string') {
+                        result[entry.prefix + ':'] = entry.name;
+                    }
+                });
+            } else if (isObject(value)) {
+                Object.keys(value).forEach((prefix) => {
+                    result[prefix.charAt(prefix.length - 1) === ':' ? prefix : prefix + ':'] = String(value[prefix]);
+                });
+            }
+            return result;
+        }
+
+        function termValue(value: any): string {
+            if (typeof value === 'string') {
+                return value;
+            }
+            return isObject(value) && typeof value.value === 'string' ? value.value : '';
+        }
+
+        function attribute(mount: any, name: string): string {
+            if (mount && typeof mount.getAttribute === 'function') {
+                return mount.getAttribute(name) || '';
+            }
+            if (mount && mount.dataset) {
+                const dataName = name.replace(/^data-/, '').replace(/-([a-z])/g,
+                    (_match: string, letter: string) => letter.toUpperCase());
+                return mount.dataset[dataName] || '';
+            }
+            return '';
+        }
+
+        function decodeBase64UrlUtf8(encoded: string, label: string): string {
+            if (!/^[A-Za-z0-9_-]+$/.test(encoded) || encoded.length % 4 === 1) {
+                throw invalid(label + ' is not base64url');
+            }
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const decode = targetWindow && typeof targetWindow.atob === 'function'
+                ? targetWindow.atob.bind(targetWindow) : null;
+            if (!decode) {
+                throw invalid(label + ' cannot be decoded in this browser');
+            }
+            let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) { base64 += '='; }
+            let decodedText: string;
+            try {
+                const binary = decode(base64);
+                let escaped = '';
+                for (let index = 0; index < binary.length; index++) {
+                    const hex = binary.charCodeAt(index).toString(16);
+                    escaped += '%' + (hex.length === 1 ? '0' : '') + hex;
+                }
+                decodedText = decodeURIComponent(escaped);
+            } catch (error) {
+                throw invalid(label + ' is not valid UTF-8 base64url data');
+            }
+            return decodedText;
+        }
+
+        function decodeInitialPost(encoded: string): any {
+            const json = decodeBase64UrlUtf8(encoded, 'initial POST descriptor');
+            let parameters: any;
+            try {
+                parameters = JSON.parse(json);
+            } catch (error) {
+                throw invalid('initial POST descriptor is not valid JSON');
+            }
+            if (!isObject(parameters)) {
+                throw invalid('initial POST descriptor must be a parameter object');
+            }
+            const names = Object.keys(parameters);
+            for (let index = 0; index < names.length; index++) {
+                const name = names[index];
+                const value = parameters[name];
+                if (!name || (typeof value !== 'string' && (!Array.isArray(value)
+                        || value.some((item: any) => typeof item !== 'string')))) {
+                    throw invalid('initial POST parameters must contain string values');
+                }
+            }
+            const actions = Array.isArray(parameters.action) ? parameters.action : [parameters.action];
+            if (actions.length !== 1 || actions[0] !== 'exec') {
+                throw invalid('initial POST action must be exec');
+            }
+            const queries = Array.isArray(parameters.query) ? parameters.query : [parameters.query];
+            if (!queries.length || typeof queries[0] !== 'string' || !queries[0].trim()) {
+                throw invalid('initial query execution must contain a query');
+            }
+            return parameters;
+        }
+
+        function decodeInitialModel(encoded: string): any {
+            const payload = decodeBase64UrlUtf8(encoded, 'initial page model');
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const ResponseConstructor = targetWindow && targetWindow.Response;
+            if (typeof ResponseConstructor !== 'function') {
+                throw invalid('initial page model requires the Fetch Response API');
+            }
+            return new ResponseConstructor(payload, {
+                status: 200,
+                headers: { 'Content-Type': ACCEPT + '; charset=UTF-8' }
+            });
+        }
+
+        function consumeInitialPost(mount: any, viewId: string): any {
+            const encoded = attribute(mount, 'data-workbench-initial-post');
+            if (!encoded) {
+                return null;
+            }
+            if (mount && typeof mount.removeAttribute === 'function') {
+                mount.removeAttribute('data-workbench-initial-post');
+            } else if (mount && typeof mount.setAttribute === 'function') {
+                mount.setAttribute('data-workbench-initial-post', '');
+                mount.setAttribute('data-workbench-initial-post-consumed', 'true');
+            }
+            if (viewId !== 'query') {
+                throw invalid('initial POST descriptor is only valid for the query view');
+            }
+            return decodeInitialPost(encoded);
+        }
+
+        function consumeInitialModel(mount: any): string | null {
+            const encoded = attribute(mount, 'data-workbench-initial-model');
+            if (!encoded) {
+                return null;
+            }
+            // Remove the POST response payload before decoding so repeated
+            // bootstrap calls cannot replay its page model or request.
+            if (mount && typeof mount.removeAttribute === 'function') {
+                mount.removeAttribute('data-workbench-initial-model');
+            } else if (mount && typeof mount.setAttribute === 'function') {
+                mount.setAttribute('data-workbench-initial-model', '');
+            }
+            if (mount && typeof mount.setAttribute === 'function') {
+                mount.setAttribute('data-workbench-initial-model-consumed', 'true');
+            }
+            return encoded;
+        }
+
+        function formElements(form: any): any[] {
+            const elements = form && form.elements;
+            const result: any[] = [];
+            for (let index = 0; elements && index < elements.length; index++) {
+                result.push(elements[index]);
+            }
+            return result;
+        }
+
+        function appendHiddenParameter(form: any, document: any, name: string, value: string): void {
+            if (!document || !document.createElement || !form || !form.appendChild) {
+                throw invalid('query form cannot preserve initial POST parameters');
+            }
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        }
+
+        /** Stage the original form parameter map for one controller-owned submit. */
+        function stageInitialQueryParameters(form: any, document: any, parameters: any): () => void {
+            if (!form) {
+                throw invalid('initial query execution has no query form');
+            }
+            const controls = formElements(form);
+            const saved: any[] = controls.map((control: any) => ({
+                control,
+                value: control.value,
+                checked: control.checked,
+                disabled: control.disabled
+            }));
+            const names = Object.keys(parameters);
+            controls.forEach((control: any) => {
+                if (!control || !control.name || control.name === 'query-request-id'
+                        || Object.prototype.hasOwnProperty.call(parameters, control.name)) {
+                    return;
+                }
+                if (control.type === 'checkbox' || control.type === 'radio') {
+                    control.checked = false;
+                }
+                control.disabled = true;
+            });
+            names.forEach((name) => {
+                const rawValues = parameters[name];
+                const values: string[] = Array.isArray(rawValues) ? rawValues : [rawValues];
+                const matches = controls.filter((control: any) => control && control.name === name);
+                if (!matches.length) {
+                    values.forEach((value) => appendHiddenParameter(form, document, name, value));
+                    return;
+                }
+                const type = String(matches[0].type || '').toLowerCase();
+                if (type === 'checkbox' || type === 'radio') {
+                    matches.forEach((control: any) => {
+                        control.disabled = false;
+                        control.checked = values.indexOf(String(control.value || '')) >= 0;
+                    });
+                    values.forEach((value) => {
+                        if (!matches.some((control: any) => String(control.value || '') === value)) {
+                            appendHiddenParameter(form, document, name, value);
+                        }
+                    });
+                    return;
+                }
+                if (String(matches[0].tagName || '').toLowerCase() === 'select' && matches[0].multiple) {
+                    const select = matches[0];
+                    select.disabled = false;
+                    const options = select.options || [];
+                    const selectedValues: string[] = [];
+                    for (let optionIndex = 0; optionIndex < options.length; optionIndex++) {
+                        const option = options[optionIndex];
+                        option.selected = values.indexOf(String(option.value)) >= 0;
+                        if (option.selected) { selectedValues.push(String(option.value)); }
+                    }
+                    values.forEach((value) => {
+                        if (selectedValues.indexOf(value) < 0) {
+                            appendHiddenParameter(form, document, name, value);
+                        }
+                    });
+                    return;
+                }
+                values.forEach((value, valueIndex) => {
+                    if (valueIndex < matches.length) {
+                        matches[valueIndex].value = value;
+                        matches[valueIndex].disabled = false;
+                    } else {
+                        appendHiddenParameter(form, document, name, value);
+                    }
+                });
+                for (let matchIndex = values.length; matchIndex < matches.length; matchIndex++) {
+                    matches[matchIndex].disabled = true;
+                }
+            });
+            return () => {
+                saved.forEach((entry: any) => {
+                    entry.control.disabled = entry.disabled;
+                    if (entry.control.type === 'checkbox' || entry.control.type === 'radio') {
+                        entry.control.checked = entry.checked;
+                    }
+                });
+            };
+        }
+
+        function basePathFor(mount: any): string {
+            return attribute(mount, 'data-workbench-base-path').replace(/\/+$/, '');
+        }
+
+        function currentUrlFor(mount: any, dependencies: any): string {
+            if (dependencies && dependencies.currentUrl) {
+                return String(dependencies.currentUrl);
+            }
+            const document = mount && mount.ownerDocument;
+            const location = document && document.location ? document.location
+                : (typeof window !== 'undefined' ? window.location : null);
+            if (!location || !location.href) {
+                throw new Error('Workbench page shell has no current URL');
+            }
+            return String(location.href);
+        }
+
+        function fetchFunction(dependencies: any): (url: string, options: any) => Promise<any> {
+            if (dependencies && dependencies.fetch) {
+                return dependencies.fetch;
+            }
+            if (typeof window !== 'undefined' && window.fetch) {
+                return window.fetch.bind(window);
+            }
+            throw new Error('Fetch is unavailable in this browser');
+        }
+
+        function parseLinkedPath(value: string): string {
+            try {
+                return decodeURIComponent(value);
+            } catch (error) {
+                throw invalid('link path is not correctly encoded');
+            }
+        }
+
+        function linkedUrl(currentUrl: string, path: string): string {
+            const url = new URL(parseLinkedPath(path), currentUrl);
+            if (url.origin !== new URL(currentUrl).origin) {
+                throw invalid('linked model must remain on the current origin');
+            }
+            return url.toString();
+        }
+
+        function queryStream(): any {
+            const stream = (workbench as any).queryStream;
+            if (!stream || typeof stream.consumeNdjsonResponse !== 'function'
+                    || typeof stream.createRowStore !== 'function') {
+                throw new Error('The shared Workbench stream runtime is unavailable');
+            }
+            return stream;
+        }
+
+        function newPageModel(rowStore: any): PageModel {
+            return {
+                viewId: '',
+                vars: [],
+                rows: [],
+                rowStart: 0,
+                rowCount: 0,
+                rowTopSpacer: 0,
+                rowBottomSpacer: 0,
+                pickerRows: [],
+                pickerStart: 0,
+                pickerPageSize: 50,
+                rowStore,
+                namespaceMap: {},
+                links: [],
+                metadata: {},
+                linked: {}
+            };
+        }
+
+        function acceptPageRecord(model: PageModel, state: any, record: any): Promise<void> {
+            if (!isObject(record) || typeof record.type !== 'string') {
+                throw invalid('each record must have a type');
+            }
+            switch (record.type) {
+                case 'head':
+                    return Promise.resolve();
+                case 'view':
+                    if (state.haveView || typeof record.id !== 'string' || !record.id) {
+                        throw invalid('view must contain one stable id');
+                    }
+                    model.viewId = record.id;
+                    state.haveView = true;
+                    return Promise.resolve();
+                case 'metadata':
+                    mergeValues(model.metadata, record.values);
+                    if (Object.prototype.hasOwnProperty.call(record.values, 'namespaceMap')) {
+                        model.namespaceMap = namespaceMap(record.values.namespaceMap);
+                        model.metadata.namespaceMap = model.namespaceMap;
+                    }
+                    return Promise.resolve();
+                case 'vars':
+                    if (state.haveVars || !Array.isArray(record.values)
+                            || record.values.some((value: any) => typeof value !== 'string')) {
+                        throw invalid('vars must contain one string array');
+                    }
+                    model.vars = record.values.slice();
+                    state.haveVars = true;
+                    return Promise.resolve();
+                case 'namespaces':
+                    if (!Array.isArray(record.values)
+                            || record.values.some((namespace: any) => !isObject(namespace)
+                                || typeof namespace.prefix !== 'string' || typeof namespace.name !== 'string')) {
+                        throw invalid('namespaces must contain prefix/name pairs');
+                    }
+                    record.values.forEach((namespace: any) => {
+                        model.namespaceMap[namespace.prefix + ':'] = namespace.name;
+                    });
+                    model.metadata.namespaceMap = model.namespaceMap;
+                    return Promise.resolve();
+                case 'links':
+                    if (!Array.isArray(record.values)
+                            || record.values.some((value: any) => typeof value !== 'string')) {
+                        throw invalid('links must contain a string array');
+                    }
+                    record.values.forEach((value: string) => model.links.push(value));
+                    return Promise.resolve();
+                case 'rows':
+                    if (!Array.isArray(record.values)
+                            || record.values.some((row: any) => !Array.isArray(row)
+                                || (state.haveVars && row.length !== model.vars.length))) {
+                        throw invalid('rows must contain positional arrays matching vars');
+                    }
+                    state.rowsSeen = true;
+                    if (model.viewId === '_internal/namespaces' || model.viewId === 'namespace-metadata') {
+                        const prefixIndex = model.vars.indexOf('prefix');
+                        const nameIndex = model.vars.indexOf('namespace') >= 0
+                            ? model.vars.indexOf('namespace') : model.vars.indexOf('name');
+                        if (prefixIndex >= 0 && nameIndex >= 0) {
+                            record.values.forEach((row: any[]) => {
+                                const prefixTerm = row[prefixIndex];
+                                const prefix = termValue(prefixTerm);
+                                const name = termValue(row[nameIndex]);
+                                if (prefixTerm !== null && typeof prefixTerm !== 'undefined' && name) {
+                                    model.namespaceMap[prefix.charAt(prefix.length - 1) === ':'
+                                        ? prefix : prefix + ':'] = name;
+                                }
+                            });
+                            model.metadata.namespaceMap = model.namespaceMap;
+                        }
+                        return Promise.resolve();
+                    }
+                    return model.rowStore.append(record.values).then(() => {});
+                case 'boolean':
+                    if (typeof record.value !== 'boolean') {
+                        throw invalid('boolean must contain a boolean value');
+                    }
+                    model.boolean = record.value;
+                    return Promise.resolve();
+                case 'end':
+                    if (record.metadata !== undefined) {
+                        mergeValues(model.metadata, record.metadata);
+                    }
+                    state.haveTerminal = true;
+                    return Promise.resolve();
+                case 'error':
+                    state.error = new Error(record.message || ('Workbench page request failed'
+                        + (record.status ? ' (' + record.status + ')' : '')));
+                    return Promise.resolve();
+                default:
+                    throw invalid('unsupported event type ' + record.type);
+            }
+        }
+
+        function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string): Promise<PageModel> {
+            const stream = queryStream();
+            return stream.createRowStore().then((rowStore: any) => {
+                const model = newPageModel(rowStore);
+                const state: { haveView: boolean; haveVars: boolean; haveTerminal: boolean;
+                    rowsSeen: boolean; error: Error | null } = {
+                    haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
+                };
+                return fetcher(url, {
+                    headers: { Accept: ACCEPT },
+                    credentials: 'same-origin'
+                }).then((response: any) => {
+                    if (!response || response.ok === false) {
+                        const status = response && response.status ? ' (' + response.status + ')' : '';
+                        throw new Error('Unable to load Workbench page data' + status);
+                    }
+                    return stream.consumeNdjsonResponse(response, {
+                        onRecord: (record: any) => acceptPageRecord(model, state, record)
+                    });
+                }).then((outcome: any) => {
+                    if (state.error) {
+                        throw state.error;
+                    }
+                    if (outcome && outcome.type === 'error') {
+                        throw new Error(outcome.message || ('Workbench page request failed'
+                            + (outcome.status ? ' (' + outcome.status + ')' : '')));
+                    }
+                    if (!state.haveView || !state.haveTerminal) {
+                        throw invalid('view and end are required');
+                    }
+                    return rowStore.count().then((rowCount: number) => {
+                        model.rowCount = rowCount;
+                        model.workbench = model.metadata.workbench || {};
+                        return model;
+                    });
+                }).then(null, (error: any) => rowStore.dispose().then(() => { throw error; }));
+            });
+        }
+
+        function requestedLinkedModels(model: PageModel): string[] {
+            const allowed: { [key: string]: boolean } = {
+                'info': true,
+                '_internal/namespaces': true
+            };
+            const selected: string[] = [];
+            model.links.forEach((link) => {
+                const path = parseLinkedPath(link);
+                if (allowed[path] && selected.indexOf(path) < 0) {
+                    selected.push(path);
+                }
+            });
+            return selected;
+        }
+
+        function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
+                              model: PageModel): Promise<void> {
+            const paths = requestedLinkedModels(model);
+            return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path))
+                .then((linked) => {
+                    if (path === '_internal/namespaces') {
+                        model.linked.namespaces = { namespaceMap: linked.namespaceMap };
+                        return linked.rowStore.dispose();
+                    }
+                    return prepareInitialRows(linked).then(() => {
+                        const workbenchInfo = linked.metadata.workbench
+                            || (workbench.views && typeof workbench.views.linkedInfoMetadata === 'function'
+                                ? workbench.views.linkedInfoMetadata(linked) : {});
+                        model.workbench = workbenchInfo;
+                        model.linked.info = { metadata: linked.metadata, workbench: workbenchInfo };
+                        return linked.rowStore.dispose();
+                    });
+                }))).then(() => {
+                const info = model.linked.info;
+                if (info) {
+                    model.workbench = info.workbench || info.metadata.workbench || {};
+                }
+            });
+        }
+
+        function scriptUrl(basePath: string, name: string): string {
+            return basePath + '/scripts/' + name;
+        }
+
+        function loadClassicScript(url: string, dependencies: any): Promise<void> {
+            if (dependencies && dependencies.skipScripts) {
+                return Promise.resolve();
+            }
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const document = targetWindow && targetWindow.document;
+            if (!document || !document.createElement) {
+                return Promise.resolve();
+            }
+            const existing = document.querySelector('script[src="' + url.replace(/"/g, '%22') + '"]');
+            if (existing && existing.getAttribute('data-workbench-loaded') === 'true') {
+                return Promise.resolve();
+            }
+            if (!targetWindow[scriptPromiseKey]) {
+                targetWindow[scriptPromiseKey] = {};
+            }
+            const promises = targetWindow[scriptPromiseKey];
+            if (promises[url]) {
+                return promises[url];
+            }
+            promises[url] = new Promise<void>((resolve, reject) => {
+                const script = existing || document.createElement('script');
+                script.src = url;
+                script.async = false;
+                script.onload = () => {
+                    script.setAttribute('data-workbench-loaded', 'true');
+                    resolve();
+                };
+                script.onerror = () => reject(new Error('Unable to load Workbench script ' + url));
+                if (!existing) {
+                    (document.head || document.body).appendChild(script);
+                } else if (existing.getAttribute('data-workbench-loaded') === 'true') {
+                    resolve();
+                }
+            });
+            return promises[url];
+        }
+
+        function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
+            let sequence: Promise<void> = Promise.resolve();
+            ['workbenchViews.js', 'queryStream.js', 'workbench-theme.js'].forEach((name) => {
+                sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            });
+            return sequence.then(() => {
+                if (!workbench.views || typeof workbench.views.render !== 'function') {
+                    throw new Error('The Workbench route renderer is unavailable');
+                }
+                queryStream();
+            });
+        }
+
+        function prepareInitialRows(model: PageModel): Promise<void> {
+            let count = 0;
+            if (model.viewId === 'create' || model.viewId === 'add') {
+                // These rows describe form fields and select choices, not a data result table.
+                count = model.rowCount;
+            } else if (model.viewId === 'summary' || model.viewId === 'information' || model.viewId === 'server') {
+                count = Math.min(1, model.rowCount);
+            } else if (model.viewId === 'info' && !model.metadata.workbench) {
+                // The linked Info endpoint's small fixed rows describe shell settings,
+                // policy-visible navigation, and format capabilities rather than a data table.
+                count = model.rowCount;
+            }
+            if (!count) {
+                return Promise.resolve();
+            }
+            return model.rowStore.read(0, count).then((rows: any[][]) => {
+                model.rows = rows;
+                model.rowStart = 0;
+            });
+        }
+
+        function configureTheme(mount: any, workbenchInfo: any): void {
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const theme = targetWindow && targetWindow.RDF4JWorkbenchTheme;
+            if (!theme) {
+                return;
+            }
+            const defaults = workbenchInfo.defaults || workbenchInfo;
+            const configuredDefault = defaults['default-workbench-theme'] || defaults.defaultTheme || 'system';
+            const defaultValue = configuredDefault && configuredDefault.kind
+                ? configuredDefault.value : configuredDefault;
+            if (typeof theme.configure === 'function') {
+                theme.configure(String(defaultValue));
+            }
+            const document = mount && mount.ownerDocument;
+            const control = document && document.getElementById
+                ? document.getElementById('workbench-theme') : null;
+            if (typeof theme.connectControl === 'function') {
+                theme.connectControl(control);
+            }
+        }
+
+        function configureNamespaces(model: PageModel): void {
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            if (!targetWindow) {
+                return;
+            }
+            const linked = model.linked && model.linked.namespaces;
+            const source = linked && linked.namespaceMap ? linked.namespaceMap : model.namespaceMap;
+            const mappings = namespaceMap(source || {});
+            targetWindow.sparqlNamespaces = mappings;
+            targetWindow.namespaces = mappings;
+        }
+
+        const scrollPositionStoragePrefix = 'rdf4j.workbench.scroll-position.v1:';
+
+        function scrollPositionStorage(targetWindow: any): any {
+            try {
+                return targetWindow && targetWindow.sessionStorage;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function scrollPositionKey(targetWindow: any): string | null {
+            const navigation = targetWindow && targetWindow.navigation;
+            const entry = navigation && navigation.currentEntry;
+            const entryKey = entry && entry.key;
+            if (typeof entryKey === 'string' && entryKey) {
+                return scrollPositionStoragePrefix + 'entry:' + encodeURIComponent(entryKey);
+            }
+            const document = targetWindow && targetWindow.document;
+            const location = document && document.location ? document.location : targetWindow && targetWindow.location;
+            return location && location.href
+                ? scrollPositionStoragePrefix + 'url:' + encodeURIComponent(String(location.href)) : null;
+        }
+
+        function isHistoryTraversal(targetWindow: any): boolean {
+            const performanceObject = targetWindow && targetWindow.performance;
+            if (!performanceObject) {
+                return false;
+            }
+            if (typeof performanceObject.getEntriesByType === 'function') {
+                try {
+                    const entries = performanceObject.getEntriesByType('navigation');
+                    if (entries && entries.length > 0 && entries[0] && typeof entries[0].type === 'string') {
+                        return entries[0].type === 'back_forward';
+                    }
+                } catch (error) {
+                    // Use the legacy navigation timing entry when the modern API is unavailable.
+                }
+            }
+            return !!(performanceObject.navigation && performanceObject.navigation.type === 2);
+        }
+
+        function savedScrollPosition(targetWindow: any): { key: string; y: number } | null {
+            if (!isHistoryTraversal(targetWindow)) {
+                return null;
+            }
+            const storage = scrollPositionStorage(targetWindow);
+            const key = scrollPositionKey(targetWindow);
+            if (!storage || typeof storage.getItem !== 'function' || !key) {
+                return null;
+            }
+            try {
+                const value = storage.getItem(key);
+                if (value === null) {
+                    return null;
+                }
+                const y = Number(value);
+                return isFinite(y) && y >= 0 ? { key, y } : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function saveScrollPosition(targetWindow: any, event: any): void {
+            if (!event || event.persisted !== false) {
+                return;
+            }
+            const storage = scrollPositionStorage(targetWindow);
+            const key = scrollPositionKey(targetWindow);
+            if (!storage || typeof storage.setItem !== 'function' || !key) {
+                return;
+            }
+            const scrollY = Number(typeof targetWindow.scrollY === 'number'
+                ? targetWindow.scrollY : targetWindow.pageYOffset);
+            if (!isFinite(scrollY) || scrollY < 0) {
+                return;
+            }
+            try {
+                storage.setItem(key, String(scrollY));
+            } catch (error) {
+                // Native history restoration remains available if session storage is disabled.
+            }
+        }
+
+        function restoreScrollPosition(targetWindow: any, saved: { key: string; y: number } | null): void {
+            if (!saved) {
+                return;
+            }
+            const storage = scrollPositionStorage(targetWindow);
+            if (typeof targetWindow.scrollTo !== 'function') {
+                return;
+            }
+            targetWindow.scrollTo(0, saved.y);
+            if (storage && typeof storage.removeItem === 'function') {
+                try {
+                    storage.removeItem(saved.key);
+                } catch (error) {
+                    // The restored value is harmless and will be overwritten on the next pagehide.
+                }
+            }
+        }
+
+        function releaseRowStore(model: PageModel, disposer?: () => void): void {
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            if (!targetWindow || !targetWindow.addEventListener) {
+                return;
+            }
+            let released = false;
+            const release = (event: any) => {
+                if (event && event.persisted === true) {
+                    return;
+                }
+                if (released) {
+                    return;
+                }
+                released = true;
+                saveScrollPosition(targetWindow, event);
+                queryStream().markCurrentRowStoresForRecovery(event);
+                if (disposer) {
+                    disposer();
+                }
+                if (model.rowStore) {
+                    model.rowStore.dispose();
+                }
+                if (targetWindow.removeEventListener) {
+                    targetWindow.removeEventListener('pagehide', release, false);
+                }
+            };
+            targetWindow.addEventListener('pagehide', release, false);
+        }
+
+        function runtimeFor(mount: any, dependencies: any): Promise<LitRuntime> {
+            if (dependencies && dependencies.runtime) {
+                return Promise.resolve(dependencies.runtime);
+            }
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            if (!targetWindow) {
+                return Promise.reject(new Error('Workbench Lit runtime is unavailable'));
+            }
+            if (targetWindow.RDF4JLitHTML) {
+                return Promise.resolve(targetWindow.RDF4JLitHTML);
+            }
+            if (targetWindow[litPromiseKey]) {
+                return targetWindow[litPromiseKey];
+            }
+            const document = mount && mount.ownerDocument ? mount.ownerDocument : targetWindow.document;
+            const bridge = scriptUrl(basePathFor(mount), 'workbench-lit-html.mjs');
+            targetWindow[litPromiseKey] = new Promise<LitRuntime>((resolve, reject) => {
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = bridge;
+                script.onload = () => targetWindow.RDF4JLitHTML
+                    ? resolve(targetWindow.RDF4JLitHTML)
+                    : reject(new Error('Local Lit bridge loaded without exposing its runtime'));
+                script.onerror = () => reject(new Error('Unable to load local Lit runtime'));
+                (document.head || document.body).appendChild(script);
+            });
+            return targetWindow[litPromiseKey];
+        }
+
+        function routeScripts(viewId: string, model: PageModel): string[] {
+            switch (viewId) {
+                case 'server': return ['server.js'];
+                case 'create':
+                    if (model.vars.indexOf('fieldId') >= 0) {
+                        return ['create.js'];
+                    }
+                    if (model.vars.indexOf('location') >= 0
+                            && model.vars.indexOf('description') >= 0
+                            && model.vars.indexOf('id') >= 0) {
+                        return ['create.js', 'create-federate.js'];
+                    }
+                    return [];
+                case 'delete': return ['delete.js'];
+                case 'namespaces': return ['namespaces.js'];
+                case 'explore': return ['paging.js', 'explore.js'];
+                case 'saved-queries':
+                    return ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'];
+                case 'export': return ['paging.js', 'export.js'];
+                case 'add': return ['add.js'];
+                case 'update':
+                    return ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'];
+                case 'query':
+                    return ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
+                        'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js',
+                        'viz/full.render.js', 'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js',
+                        'paging.js', 'query.js'];
+                default: return [];
+            }
+        }
+
+        function installLegacyHelpers(basePath: string, dependencies: any): Promise<void> {
+            const windowObject: any = typeof window !== 'undefined' ? window : null;
+            const promises: Promise<void>[] = [];
+            if (windowObject && typeof windowObject.workbench !== 'undefined'
+                    && typeof windowObject.workbench.addLoad !== 'function') {
+                // The global namespace may exist before its compatibility helpers
+                // when a static page shell loaded only the new renderer bundle.
+                promises.push(loadClassicScript(scriptUrl(basePath, 'template.js'), dependencies));
+            } else if (windowObject && !windowObject.workbench) {
+                promises.push(loadClassicScript(scriptUrl(basePath, 'template.js'), dependencies));
+            }
+            if (windowObject && !windowObject.jQuery) {
+                promises.push(loadClassicScript(scriptUrl(basePath, 'jquery-1.11.0.min.js'), dependencies));
+            }
+            return Promise.all(promises).then((): void => {});
+        }
+
+        function installRouteRuntime(basePath: string, viewId: string, model: PageModel,
+                                     dependencies: any): Promise<void> {
+            const route = routeScripts(viewId, model);
+            let sequence = Promise.resolve();
+            route.forEach((name) => {
+                sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            });
+            return sequence;
+        }
+
+        function prepareLegacyLoadBarrier(mount: any): () => void {
+            const windowObject: any = typeof window !== 'undefined' ? window : null;
+            if (!windowObject || windowObject[loadRoutineKey]) {
+                return () => {};
+            }
+            const document = mount && mount.ownerDocument ? mount.ownerDocument : windowObject.document;
+            const original = windowObject.onload;
+            let ready = false;
+            let loadSeen = !!(document && document.readyState === 'complete');
+            let invoked = false;
+            const invokeOriginal = (event?: any) => {
+                if (invoked) {
+                    return;
+                }
+                invoked = true;
+                windowObject[loadRoutineKey] = true;
+                if (typeof original === 'function') {
+                    original.call(windowObject, event);
+                }
+            };
+            windowObject.onload = (event?: any) => {
+                loadSeen = true;
+                if (ready) {
+                    invokeOriginal(event);
+                }
+            };
+            return () => {
+                ready = true;
+                if (document && document.readyState === 'complete') {
+                    loadSeen = true;
+                }
+                if (loadSeen) {
+                    invokeOriginal();
+                }
+            };
+        }
+
+        function renderFailure(mount: any, error: any): void {
+            const document = mount && mount.ownerDocument;
+            if (!document || !document.createElement) {
+                return;
+            }
+            const message = document.createElement('p');
+            message.className = 'error';
+            message.setAttribute('role', 'alert');
+            message.textContent = 'Unable to load this Workbench page: '
+                + (error && error.message ? error.message : String(error));
+            while (mount.firstChild) {
+                mount.removeChild(mount.firstChild);
+            }
+            mount.appendChild(message);
+        }
+
+        /** Fetch, combine, and render an eligible HTML shell exactly once. */
+        function bootstrapAfterRecovery(mount: any, dependencies: any, basePath: string): Promise<any> {
+            if (attribute(mount, 'data-workbench-fetch-page-model') !== 'true') {
+                return Promise.resolve({ status: 'skipped' });
+            }
+            if (attribute(mount, 'data-workbench-initial-model-consumed') === 'true') {
+                return Promise.resolve({ status: 'skipped' });
+            }
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const scrollToRestore = savedScrollPosition(targetWindow);
+            const viewId = attribute(mount, 'data-workbench-view');
+            if (!viewId) {
+                return Promise.reject(new Error('Workbench page shell is missing its view id'));
+            }
+            let initialPost: any = null;
+            let initialModel: any = null;
+            try {
+                initialPost = consumeInitialPost(mount, viewId);
+                const encodedInitialModel = consumeInitialModel(mount);
+                if (initialPost && encodedInitialModel) {
+                    throw invalid('query execution and initial page model descriptors cannot be combined');
+                }
+                initialModel = encodedInitialModel ? decodeInitialModel(encodedInitialModel) : null;
+            } catch (error) {
+                renderFailure(mount, error);
+                return Promise.reject(error);
+            }
+            const currentUrl = currentUrlFor(mount, dependencies);
+            const fetcher = fetchFunction(dependencies);
+            return (initialModel
+                ? loadModel(() => Promise.resolve(initialModel), currentUrl)
+                : loadModel(fetcher, currentUrl))
+                .then((model) => {
+                    if (model.viewId !== viewId) {
+                        throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
+                    }
+                    return linkedModels(fetcher, currentUrl, model).then(() => prepareInitialRows(model)).then(() => {
+                        configureNamespaces(model);
+                        return model;
+                    });
+                }).then((model) => Promise.all([
+                    runtimeFor(mount, dependencies),
+                    installLegacyHelpers(basePath, dependencies)
+                ]).then((loaded) => ({ model, runtime: loaded[0] as LitRuntime }))).then((state) => {
+                const document = mount && mount.ownerDocument;
+                if (document && document.body && document.body.classList) {
+                    document.body.classList.add('workbench-body');
+                }
+                const context: any = {
+                    basePath: basePathFor(mount),
+                    repositoryId: attribute(mount, 'data-workbench-repository-id'),
+                    workbench: state.model.workbench || {},
+                    linked: state.model.linked,
+                    pageModel: state.model,
+                    runtime: state.runtime,
+                    executionFormId: 'query-form',
+                    resultsMountId: 'query-results'
+                };
+                const rendered = workbench.views.render(mount, state.model, context, state.runtime);
+                configureTheme(mount, context.workbench);
+                if (document && document.getElementById && document.getElementById('noscript-message')) {
+                    document.getElementById('noscript-message').style.display = 'none';
+                }
+                const rowWindows = workbench.views.bindRowWindows
+                    ? workbench.views.bindRowWindows(mount, state.model, context, state.runtime)
+                    : Promise.resolve(null);
+                return Promise.resolve(rowWindows).then((disposeRows: any) => {
+                    releaseRowStore(state.model, disposeRows);
+                    return installRouteRuntime(basePath, viewId, state.model, dependencies).then(() => {
+                        const runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
+                        let restoreInitialPost: (() => void) | null = null;
+                        if (viewId === 'query') {
+                            const target = mount.querySelector
+                                ? mount.querySelector('#query-page-content') : mount;
+                            const queryPage = (workbench as any).queryPage;
+                            if (queryPage && typeof queryPage.renderInto === 'function') {
+                                queryPage.renderInto(target, state.model, context);
+                                if (initialPost) {
+                                    const form = document && document.getElementById
+                                        ? document.getElementById(context.executionFormId) : null;
+                                    restoreInitialPost = stageInitialQueryParameters(form, document, initialPost);
+                                }
+                            } else if (target && document) {
+                                const warning = document.createElement('p');
+                                warning.className = 'error';
+                                warning.setAttribute('role', 'alert');
+                                warning.textContent = 'The query page renderer is unavailable.';
+                                target.appendChild(warning);
+                            }
+                        }
+                        runLegacyLoadHandlers();
+                        if (initialPost) {
+                            const queryPage = (workbench as any).queryPage;
+                            if (!queryPage || typeof queryPage.submitExecution !== 'function') {
+                                if (restoreInitialPost) { restoreInitialPost(); }
+                                throw new Error('The initial query execution controller is unavailable');
+                            }
+                            try {
+                                queryPage.submitExecution();
+                            } finally {
+                                if (restoreInitialPost) { restoreInitialPost(); }
+                            }
+                        }
+                        restoreScrollPosition(targetWindow, scrollToRestore);
+                        return { status: 'rendered', model: state.model, rendered };
+                    });
+                });
+            }).catch((error) => {
+                renderFailure(mount, error);
+                throw error;
+            });
+        }
+
+        export function bootstrap(mount: any, dependencies?: any): Promise<any> {
+            const basePath = basePathFor(mount);
+            return loadSharedRuntime(basePath, dependencies)
+                .then(() => queryStream().recoverPendingRowStores())
+                .then(() => bootstrapAfterRecovery(mount, dependencies, basePath), (error: any) => {
+                    if (attribute(mount, 'data-workbench-fetch-page-model') === 'true') {
+                        renderFailure(mount, error);
+                    }
+                    throw error;
+                });
+        }
+
+        function startFromDocument(): void {
+            const document = typeof window !== 'undefined' ? window.document : null;
+            const mount = document && document.getElementById('workbench-app');
+            if (!mount || attribute(mount, 'data-workbench-bootstrap-started') === 'true') {
+                return;
+            }
+            mount.setAttribute('data-workbench-bootstrap-started', 'true');
+            bootstrap(mount).catch((error) => {
+                if (typeof console !== 'undefined' && console.error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        if (typeof window !== 'undefined' && window.document) {
+            if (window.document.readyState === 'loading') {
+                window.document.addEventListener('DOMContentLoaded', startFromDocument, { once: true });
+            } else {
+                startFromDocument();
+            }
+        }
+    }
+}

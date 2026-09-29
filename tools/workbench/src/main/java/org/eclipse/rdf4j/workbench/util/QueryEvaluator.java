@@ -168,7 +168,6 @@ public final class QueryEvaluator {
 	 * @param builder   used to build the response
 	 * @param resp      the response object
 	 * @param out       the output writer
-	 * @param xslPath   style sheet path
 	 * @param con       connection to repository
 	 * @param queryText the query text, having been pulled using
 	 *                  {@link org.eclipse.rdf4j.workbench.commands.QueryServlet} from one of three request parameters:
@@ -179,19 +178,19 @@ public final class QueryEvaluator {
 	 * @throws RDF4JException      if there's a problem preparing the query
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
 			throws BadRequestException, RDF4JException {
-		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+		extractQueryAndEvaluate(builder, resp, out, con, queryText, req, cookies, responseQueryText,
 				extractRepositoryId(con));
 	}
 
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final String repositoryId)
 			throws BadRequestException, RDF4JException {
-		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+		extractQueryAndEvaluate(builder, resp, out, con, queryText, req, cookies, responseQueryText,
 				repositoryId, null);
 	}
 
@@ -200,11 +199,11 @@ public final class QueryEvaluator {
 	 * is started only after query preparation and after the final result writer is known.
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final String repositoryId, final QueryResponseHeartbeat responseHeartbeat)
 			throws BadRequestException, RDF4JException {
-		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+		extractQueryAndEvaluate(builder, resp, out, con, queryText, req, cookies, responseQueryText,
 				repositoryId, responseHeartbeat, 0);
 	}
 
@@ -213,7 +212,7 @@ public final class QueryEvaluator {
 	 * The configured default applies whether or not the user-facing download-limit control is enabled.
 	 */
 	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final String repositoryId, final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
 			throws BadRequestException, RDF4JException {
@@ -221,7 +220,7 @@ public final class QueryEvaluator {
 				QueryCircuitBreakerHandle.Source.WORKBENCH, repositoryId, queryText);
 		try {
 			QUERY_CIRCUIT_BREAKER.execute(breakerHandle, con, () -> {
-				extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies,
+				extractQueryAndEvaluateInternal(builder, resp, out, con, queryText, req, cookies,
 						responseQueryText, responseHeartbeat, defaultDownloadLimit);
 				return null;
 			});
@@ -231,24 +230,24 @@ public final class QueryEvaluator {
 	}
 
 	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
 			throws BadRequestException, RDF4JException {
-		extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+		extractQueryAndEvaluateInternal(builder, resp, out, con, queryText, req, cookies, responseQueryText,
 				null);
 	}
 
 	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final QueryResponseHeartbeat responseHeartbeat)
 			throws BadRequestException, RDF4JException {
-		extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+		extractQueryAndEvaluateInternal(builder, resp, out, con, queryText, req, cookies, responseQueryText,
 				responseHeartbeat, 0);
 	}
 
 	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
-			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final OutputStream out, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
 			throws BadRequestException, RDF4JException {
@@ -256,7 +255,7 @@ public final class QueryEvaluator {
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
 			ExplainQueryResult explainQueryResult = explain(query, req);
-			explainQuery(builder, xslPath, explainQueryResult);
+			explainQuery(builder, explainQueryResult);
 			return;
 		}
 
@@ -286,7 +285,7 @@ public final class QueryEvaluator {
 				}
 			}
 		}
-		this.evaluate(builder, out, xslPath, req, resp, cookies, con, query, evaluateCookie, paged, offset, limit,
+		this.evaluate(builder, out, req, resp, cookies, con, query, evaluateCookie, paged, offset, limit,
 				responseQueryText, knownTotalResultCount, responseHeartbeat);
 	}
 
@@ -372,9 +371,8 @@ public final class QueryEvaluator {
 				req.getExplainFormatValue(), req.getExplainLevelName());
 	}
 
-	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
+	private void explainQuery(final TupleResultBuilder builder,
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
-		builder.transform(xslPath, "query.xsl");
 		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
 		builder.link(List.of(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
@@ -447,7 +445,6 @@ public final class QueryEvaluator {
 	 *
 	 * @param builder     response builder helper for generating the XML response to the client, which <em>must not</em>
 	 *                    have had start() called on it
-	 * @param xslPath     needed to begin writing response body after writing result count cookie
 	 * @param req         needed to write result count cookie
 	 * @param resp        needed to write result count cookie
 	 * @param cookies     needed to write result count cookie
@@ -456,18 +453,23 @@ public final class QueryEvaluator {
 	 * @param paged       whether to display a limited subset
 	 * @throws QueryResultHandlerException
 	 */
-	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+	public void evaluateTupleQuery(final TupleResultBuilder builder, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText)
 			throws QueryEvaluationException, QueryResultHandlerException {
-		evaluateTupleQuery(builder, xslPath, req, resp, cookies, query, writeCookie, paged, offset, limit,
+		evaluateTupleQuery(builder, req, resp, cookies, query, writeCookie, paged, offset, limit,
 				responseQueryText, null);
 	}
 
-	private void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+	private void evaluateTupleQuery(final TupleResultBuilder builder, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText, Integer knownTotalResultCount)
 			throws QueryEvaluationException, QueryResultHandlerException {
+		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			evaluateTupleQueryPageData(builder, req, query, writeCookie, paged, offset, limit,
+					responseQueryText, knownTotalResultCount);
+			return;
+		}
 		List<BindingSet> bindings;
 		final String[] names;
 		try (TupleQueryResult result = query.evaluate()) {
@@ -478,7 +480,6 @@ public final class QueryEvaluator {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
 		int totalResultCount = knownTotalResultCount == null ? bindings.size() : knownTotalResultCount;
-		builder.transform(xslPath, "tuple.xsl");
 		builder.start(names);
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
@@ -494,6 +495,39 @@ public final class QueryEvaluator {
 			addResult(builder, names, values, set);
 		}
 		builder.end();
+	}
+
+	private void evaluateTupleQueryPageData(final TupleResultBuilder builder, WorkbenchRequest req,
+			TupleQuery query, boolean countAllResults, boolean paged, int offset, int limit, String responseQueryText,
+			Integer knownTotalResultCount) throws QueryEvaluationException, QueryResultHandlerException {
+		try (TupleQueryResult result = query.evaluate()) {
+			String[] names = result.getBindingNames().toArray(new String[0]);
+			builder.start(names);
+			builder.link(List.of(INFO));
+			addWorkbenchMetadata(builder, req, responseQueryText);
+
+			long firstSelected = countAllResults ? Math.max(0, offset) : 0;
+			long afterLastSelected = countAllResults && paged
+					? firstSelected + Math.max(0, limit)
+					: Long.MAX_VALUE;
+			long resultCount = 0;
+			List<Object> values = new ArrayList<>(names.length);
+			while (result.hasNext()) {
+				BindingSet bindingSet = result.next();
+				if (resultCount >= firstSelected && resultCount < afterLastSelected) {
+					addResult(builder, names, values, bindingSet);
+				}
+				resultCount++;
+				if (resultCount % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+					checkpointMaterialization("WORKBENCH_TUPLE_RESULT");
+				}
+			}
+			long totalResultCount = knownTotalResultCount == null ? resultCount : knownTotalResultCount;
+			builder.terminalMetadata(METADATA_TOTAL_RESULT_COUNT, totalResultCount);
+			builder.terminalMetadata("result-offset", Math.max(0, offset));
+			builder.terminalMetadata("result-limit", paged ? Math.max(0, limit) : 0);
+			builder.end();
+		}
 	}
 
 	private void addResult(final TupleResultBuilder builder, final String[] names, final List<Object> values,
@@ -533,7 +567,6 @@ public final class QueryEvaluator {
 	 *
 	 * @param builder     response builder helper for generating the XML response to the client, which <em>must not</em>
 	 *                    have had start() called on it
-	 * @param xslPath     needed to begin writing response body after writing result count cookie
 	 * @param req         needed to write result count cookie
 	 * @param resp        needed to write result count cookie
 	 * @param cookies     needed to write result count cookie
@@ -541,16 +574,20 @@ public final class QueryEvaluator {
 	 * @param writeCookie whether to write the total result count cookie
 	 * @throws QueryResultHandlerException
 	 */
-	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+	private void evaluateGraphQuery(final TupleResultBuilder builder, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText, Integer knownTotalResultCount)
 			throws QueryEvaluationException, QueryResultHandlerException {
+		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			evaluateGraphQueryPageData(builder, req, query, writeCookie, paged, offset, limit,
+					responseQueryText, knownTotalResultCount);
+			return;
+		}
 		List<Statement> statements = collectStatements(query);
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
 		int totalResultCount = knownTotalResultCount == null ? statements.size() : knownTotalResultCount;
-		builder.transform(xslPath, "graph.xsl");
 		builder.start("subject", "predicate", "object");
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
@@ -567,6 +604,38 @@ public final class QueryEvaluator {
 					statement.getContext());
 		}
 		builder.end();
+	}
+
+	private void evaluateGraphQueryPageData(final TupleResultBuilder builder, WorkbenchRequest req,
+			GraphQuery query, boolean countAllResults, boolean paged, int offset, int limit, String responseQueryText,
+			Integer knownTotalResultCount) throws QueryEvaluationException, QueryResultHandlerException {
+		try (GraphQueryResult result = query.evaluate()) {
+			builder.start("subject", "predicate", "object", "context");
+			builder.link(List.of(INFO));
+			addWorkbenchMetadata(builder, req, responseQueryText);
+
+			long firstSelected = countAllResults ? Math.max(0, offset) : 0;
+			long afterLastSelected = countAllResults && paged
+					? firstSelected + Math.max(0, limit)
+					: Long.MAX_VALUE;
+			long resultCount = 0;
+			while (result.hasNext()) {
+				Statement statement = result.next();
+				if (resultCount >= firstSelected && resultCount < afterLastSelected) {
+					builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							statement.getContext());
+				}
+				resultCount++;
+				if (resultCount % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+					checkpointMaterialization("WORKBENCH_GRAPH_RESULT");
+				}
+			}
+			long totalResultCount = knownTotalResultCount == null ? resultCount : knownTotalResultCount;
+			builder.terminalMetadata(METADATA_TOTAL_RESULT_COUNT, totalResultCount);
+			builder.terminalMetadata("result-offset", Math.max(0, offset));
+			builder.terminalMetadata("result-limit", paged ? Math.max(0, limit) : 0);
+			builder.end();
+		}
 	}
 
 	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query, int limit)
@@ -610,15 +679,18 @@ public final class QueryEvaluator {
 		builder.bool(result);
 	}
 
-	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
+	private void evaluate(final TupleResultBuilder builder, final OutputStream out,
 			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, RepositoryConnection con,
 			final Query query, boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText,
 			Integer knownTotalResultCount, QueryResponseHeartbeat responseHeartbeat)
 			throws RDF4JException, BadRequestException {
 		if (query instanceof TupleQuery) {
+			if (WorkbenchPageProtocol.requestsPageData(req)) {
+				builder.view("query-result-tuple");
+			}
 			startResponseHeartbeat(builder, responseHeartbeat);
 			writeNamespaces(builder, con);
-			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
+			this.evaluateTupleQuery(builder, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
 					offset, limit, responseQueryText, knownTotalResultCount);
 		} else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
@@ -627,9 +699,12 @@ public final class QueryEvaluator {
 			if (query instanceof GraphQuery) {
 				GraphQuery graphQuery = (GraphQuery) query;
 				if (null == format) {
+					if (WorkbenchPageProtocol.requestsPageData(req)) {
+						builder.view("query-result-graph");
+					}
 					startResponseHeartbeat(builder, responseHeartbeat);
 					writeNamespaces(builder, con);
-					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
+					this.evaluateGraphQuery(builder, req, resp, cookies, graphQuery, writeCookie, paged,
 							offset, limit, responseQueryText, knownTotalResultCount);
 				} else {
 					RDFWriter writer = Rio.createWriter(format, out);
@@ -640,10 +715,12 @@ public final class QueryEvaluator {
 					this.evaluateGraphQuery(writer, graphQuery, limit);
 				}
 			} else if (query instanceof BooleanQuery) {
+				if (WorkbenchPageProtocol.requestsPageData(req)) {
+					builder.view("query-result-boolean");
+				}
 				startResponseHeartbeat(builder, responseHeartbeat);
 				boolean result = this.evaluateBooleanQuery((BooleanQuery) query);
 				writeNamespaces(builder, con);
-				builder.transform(xslPath, "boolean.xsl");
 				builder.startBoolean();
 				addWorkbenchMetadata(builder, req, responseQueryText);
 				this.writeBooleanResult(builder, result);

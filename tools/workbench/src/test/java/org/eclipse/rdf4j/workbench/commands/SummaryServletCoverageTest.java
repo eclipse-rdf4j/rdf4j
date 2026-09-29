@@ -59,7 +59,7 @@ class SummaryServletCoverageTest {
 
 		Thread.currentThread().interrupt();
 		try {
-			servlet.service(builder, "transformations");
+			servlet.service(builder);
 		} finally {
 			Thread.interrupted();
 		}

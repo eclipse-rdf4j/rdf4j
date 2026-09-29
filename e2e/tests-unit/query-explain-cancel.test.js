@@ -29,6 +29,17 @@ test('does not start a manual compare refresh when that UI feature is disabled',
     assert.equal(harness.requestsByAction('explain').length, automaticExplainCount);
 });
 
+test('Explain transport does not impose a fixed client timeout', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.click('explain-trigger');
+
+    const request = harness.pendingExplainRequests[0];
+    assert.ok(request, 'Explain should start its asynchronous request');
+    assert.equal(Object.prototype.hasOwnProperty.call(request.options, 'timeout'), false,
+        'long-running query explanations remain governed by the configured server timeout');
+});
+
 test('cancels the active slow explain request after level change and explicit cancel', () => {
     const harness = createQueryBrowserHarness({
         serverRequestIds: ['request-1', 'request-2']

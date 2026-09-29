@@ -61,7 +61,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldUseExplainInsteadOfEvaluateWhenExplainParameterIsPresent() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -79,12 +78,11 @@ class QueryEvaluatorTest {
 		when(explanation.toString()).thenReturn("optimized plan");
 		when(tupleQuery.evaluate()).thenThrow(new AssertionError("evaluate() should not run when explain is selected"));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(tupleQuery).explain(Explanation.Level.Optimized);
 		verify(tupleQuery, never()).evaluate();
-		verify(builder).transform(xslPath, "query.xsl");
 		verify(builder).start("explanation", "explanation-format", "explanation-level");
 		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("optimized plan", "text", "Optimized");
@@ -94,7 +92,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldUseDotExplanationWhenExplainFormatIsDot() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -112,7 +109,7 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toDot()).thenReturn("digraph Explanation {}");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder).result("digraph Explanation {}", "dot", "Optimized");
@@ -122,7 +119,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldUseJsonExplanationWhenExplainFormatIsJson() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -139,7 +135,7 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toJson()).thenReturn("{\"plan\":\"value\"}");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized");
@@ -149,7 +145,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldApplyQueryTimeoutWhenTimeoutParameterIsProvided() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -167,7 +162,7 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toString()).thenReturn("optimized plan");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(tupleQuery).setMaxExecutionTime(12);
@@ -176,7 +171,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldRejectTupleQueryWhenCircuitBreakerIsHighPressure() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -202,7 +196,7 @@ class QueryEvaluatorTest {
 		withBreakerProperties(() -> {
 			QueryInterruptedException exception = assertThrows(QueryInterruptedException.class,
 					() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(),
-							xslPath, con, queryText, req, cookies, null));
+							con, queryText, req, cookies, null));
 			assertThat(exception).hasMessageContaining("circuit breaker");
 		});
 
@@ -212,7 +206,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldAbortTupleMaterializationWhenBreakerTurnsCriticalMidStream() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -241,7 +234,7 @@ class QueryEvaluatorTest {
 		withBreakerProperties("0", "0", "0", () -> {
 			QueryInterruptedException exception = assertThrows(QueryInterruptedException.class,
 					() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(),
-							xslPath, con, queryText, req, cookies, null));
+							con, queryText, req, cookies, null));
 			assertThat(exception).hasMessageContaining("circuit breaker");
 		});
 
@@ -253,7 +246,6 @@ class QueryEvaluatorTest {
 	void shouldReapplyInferAndTimeoutWhenPagingUsesKnownTotalResultCount() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
 		String pagedQueryText = queryText + "\nlimit 10\noffset 20";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -278,7 +270,7 @@ class QueryEvaluatorTest {
 		when(tupleQueryResult.hasNext()).thenReturn(false);
 		when(tupleQueryResult.iterator()).thenReturn(List.<BindingSet>of().iterator());
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, queryText);
 
 		verify(initialQuery).setIncludeInferred(true);
@@ -293,7 +285,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldUseDedicatedDownloadLimitWhenDownloadingTupleResults() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -316,7 +307,7 @@ class QueryEvaluatorTest {
 		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
@@ -326,7 +317,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldDownloadAllResultsFromTheBeginningWhenNoDownloadLimitIsSelected() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -348,7 +338,7 @@ class QueryEvaluatorTest {
 		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder, times(3)).result(org.mockito.ArgumentMatchers.any(Object[].class));
@@ -358,7 +348,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldApplyConfiguredDefaultDownloadCapWithoutChangingAuthoredLimitOrOffset() throws Exception {
 		String queryText = "select * where { ?s ?p ?o } limit 2 offset 1";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -381,7 +370,7 @@ class QueryEvaluatorTest {
 		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null, "workbench-test", null, 1);
 
 		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
@@ -392,7 +381,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldApplyAnExplicitDownloadCapWithoutRewritingAuthoredLimitAndOffset() throws Exception {
 		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -414,7 +402,7 @@ class QueryEvaluatorTest {
 		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
@@ -424,7 +412,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldApplyAnExplicitDownloadCapToRdfGraphSerialization() throws Exception {
 		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -453,7 +440,7 @@ class QueryEvaluatorTest {
 		when(graphQueryResult.hasNext()).thenReturn(true, true, true, false);
 		when(graphQueryResult.next()).thenReturn(first, second, third);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(graphQueryResult, times(2)).next();
@@ -462,7 +449,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldApplyAnExplicitDownloadCapWhenKnownTotalAndAuthoredLimitArePresent() throws Exception {
 		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -483,7 +469,7 @@ class QueryEvaluatorTest {
 		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));

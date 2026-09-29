@@ -68,12 +68,12 @@ html[data-theme="dark"] .query-form {
 }
 
 .query-explanation-controls-row-class {
-    margin-top: 0.5em;
-    margin-left: -0.1em;
+    margin-top: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-controls-row-class .query-form__field--controls {
     position: relative;
+    column-gap: 16px;
 }
 
 .query-explanation-status {
@@ -258,26 +258,40 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 
 .query-explanation-settings {
     display: inline-flex;
+    position: relative;
+    z-index: 9;
 }
 
 .query-explanation-settings__panel {
     position: absolute;
-    bottom: calc(100% + 0.5rem);
+    top: calc(100% + 0.5rem);
+    bottom: auto;
     left: 0;
+    transform-origin: 50% 0;
     z-index: 8;
-    width: fit-content;
-    max-width: 100%;
+    width: min(22rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
     box-sizing: border-box;
     padding: 0.85rem;
-    border: 1px solid var(--workbench-soft-rule);
+    border: 0;
     border-radius: var(--workbench-radius);
     background: var(--workbench-surface);
     color: var(--query-code-ink);
-    box-shadow: var(--workbench-shadow);
+    box-shadow: inset 0 0 0 1px var(--workbench-soft-rule), var(--workbench-shadow);
 }
 
 .query-explanation-settings__panel[hidden] {
     display: none;
+}
+
+@media (max-width: 640px) {
+    .query-explanation-settings__panel {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+    }
 }
 
 .query-explanation-settings__section + .query-explanation-settings__section {

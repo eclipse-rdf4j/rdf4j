@@ -1,8 +1,29 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createListBrowserHarness } = require('./list-browser-harness.js');
+
+function compilePagingSource() {
+    const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-paging-source-contract-'));
+    const outputPath = path.join(outputDirectory, 'paging.js');
+    const sourcePath = path.resolve(__dirname,
+        '../../tools/workbench/src/main/webapp/scripts/ts/paging.ts');
+    const compilation = spawnSync('tsc', [
+        '--target', 'ES2017',
+        '--lib', 'ES2017,DOM',
+        '--skipLibCheck',
+        '--outFile', outputPath,
+        sourcePath
+    ], { encoding: 'utf8' });
+    assert.equal(compilation.status, 0,
+        `paging.ts must compile for its in-repo source contract:\n${compilation.stdout}${compilation.stderr}`);
+    return outputPath;
+}
 
 function option(harness, select, value, text, selected) {
     const element = harness.registerElement('option', {
@@ -202,4 +223,36 @@ test('paging helpers cover url, query, and cookie branches', () => {
     showDataType.trigger('change');
     assert.equal(link.textContent, 'http://example.com/long');
     assert.match(harness.document.cookie, /show-datatypes=true/);
+});
+
+test('mounted query streams own server paging while explicit downloads remain native', () => {
+    const changes = [];
+    const calls = [];
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        workbench: {
+            queryPage: {
+                isMounted() { return true; },
+                nextPage() { calls.push('next'); return true; },
+                previousPage() { calls.push('previous'); return true; },
+                changePageParameter(name, value) { changes.push([name, value]); return true; }
+            }
+        }
+    });
+    const limit = harness.registerElement('select', { id: 'limit_query', value: '25' });
+    const downloadLimit = harness.registerElement('input', { id: 'download_limit', value: '100' });
+    harness.document.body.appendChild(limit);
+    harness.document.body.appendChild(downloadLimit);
+    harness.runScript(compilePagingSource());
+
+    const paging = harness.context.workbench.paging;
+    paging.nextOffset('query');
+    paging.previousOffset('query');
+    paging.addPagingParam('limit_query', 50);
+    paging.addGraphParam('Accept');
+
+    assert.deepEqual(calls, ['next', 'previous']);
+    assert.deepEqual(changes, [['limit_query', 50]]);
+    assert.equal(harness.document.lastSubmittedForm.action, 'query',
+        'raw Accept downloads remain explicit browser POSTs');
 });

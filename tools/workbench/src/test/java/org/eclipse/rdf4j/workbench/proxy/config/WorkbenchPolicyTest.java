@@ -16,7 +16,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.InputStream;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -31,68 +30,56 @@ class WorkbenchPolicyTest {
 	 * and compare-refresh share the server's action=explain operation; server enforcement remains on query-explain and
 	 * explicit Explain options. YASQE's editor fullscreen button and F11 shortcut are separate from result fullscreen.
 	 */
-	private static final Map<String, List<String>> QUERY_FEATURE_CONTROL_MATRIX = Map.ofEntries(
-			Map.entry("query-execution",
-					List.of("query.xsl#exec", "QueryServlet?action=exec", "implicit query/download")),
-			Map.entry("query-language", List.of("query.xsl#queryLn")),
-			Map.entry("query-save", List.of("query.xsl#save-query-toggle", "query.xsl#save")),
-			Map.entry("query-private-save", List.of("query.xsl#save-private")),
-			Map.entry("query-options", List.of("query.xsl#query-options-toggle")),
-			Map.entry("query-explain", List.of("query.xsl#explain-trigger", "QueryServlet?action=explain")),
-			Map.entry("explain-level-unoptimized", List.of("query.xsl#explain-level option[Unoptimized]")),
-			Map.entry("explain-level-optimized", List.of("query.xsl#explain-level option[Optimized]")),
-			Map.entry("explain-level-executed", List.of("query.xsl#explain-level option[Executed]")),
-			Map.entry("explain-level-telemetry", List.of("query.xsl#explain-level option[Telemetry]")),
-			Map.entry("explain-level-timed", List.of("query.xsl#explain-level option[Timed]")),
-			Map.entry("explain-format-text", List.of("query.xsl#explain-format option[text]")),
-			Map.entry("explain-format-dot", List.of("query.xsl#explain-format option[dot]")),
-			Map.entry("explain-format-json", List.of("query.xsl#explain-format option[json]")),
-			Map.entry("explain-view-text",
-					List.of("query.xsl#query-explanation", "query.xsl#query-explanation-compare")),
-			Map.entry("explain-view-dot", List.of("query.xsl#query-explanation-dot-view",
-					"query.xsl#query-explanation-dot-view-compare")),
-			Map.entry("explain-view-json", List.of("query.xsl#query-explanation-json-view",
-					"query.xsl#query-explanation-json-view-compare")),
-			Map.entry("explain-download", List.of("query.xsl#download-explanation", "query.js#downloadExplanation")),
-			Map.entry("explain-copy", List.of("query.xsl#copy-explanation", "query.xsl#copy-explanation-compare",
-					"query.xsl#query-compare-copy")),
-			Map.entry("explain-cancel", List.of("query.xsl#explain-trigger-cancel",
-					"query.xsl#explain-compare-cancel", "query.js#cancelExplain")),
-			Map.entry("query-compare", List.of("query.xsl#compare-toggle")),
-			Map.entry("query-diff", List.of("query.xsl#query-diff-trigger")),
-			Map.entry("query-swap", List.of("query.xsl#query-compare-swap")),
-			Map.entry("query-refresh",
-					List.of("query.xsl#explain-compare-trigger", "query.ts#runCompareExplain guard")),
-			Map.entry("result-layout", List.of("tuple.xsl#result-layout", "graph.xsl#result-layout")),
-			Map.entry("result-wrap", List.of("tuple.xsl#result-wrap-values", "graph.xsl#result-wrap-values")),
-			Map.entry("result-totals", List.of("tuple.xsl result count title", "graph.xsl result count title")),
-			Map.entry("result-paging", List.of("tuple.xsl#previousX", "tuple.xsl#nextX")),
-			Map.entry("result-download-format", List.of("tuple.xsl#Accept", "graph.xsl#Accept")),
-			Map.entry("result-download-limit", List.of("tuple.xsl#download_limit", "graph.xsl#download_limit")),
-			Map.entry("result-fullscreen", List.of("query.xsl#query-results-fullscreen",
-					"tuple.xsl#query-result-fullscreen", "graph.xsl#query-result-fullscreen")),
-			Map.entry("query-rerun", List.of("query.xsl#rerun-explanation", "query.ts#runExplain guard")),
-			Map.entry("query-cancel", List.of("query.xsl#query-cancel", "query.js#cancelQuery")),
-			Map.entry("editor-namespaces", List.of("query.js#loadNamespaces",
-					"query.xsl#query-options-panel button[resetNamespaces]")),
-			Map.entry("editor-sidebar", List.of("query.xsl#query-sidebar-toggle")),
-			Map.entry("result-page-size", List.of("query.xsl#limit_query", "tuple.xsl#limit_query",
-					"graph.xsl#limit_query")),
-			Map.entry("query-timeout", List.of("query.xsl#query-timeout")),
-			Map.entry("query-inferred-statements", List.of("query.xsl#infer")),
-			Map.entry("result-download", List.of("tuple.xsl .query-result-download-action input[type=submit]",
-					"graph.xsl .query-result-download-action input[type=submit]")),
-			Map.entry("result-show-datatypes", List.of("tuple.xsl#show-datatypes")),
-			Map.entry("explain-highlight-syntax", List.of("query.xsl#explanation-highlight-syntax")),
-			Map.entry("explain-highlight-hotspot", List.of("query.xsl#explanation-highlight-hotspot")),
-			Map.entry("explain-property-selection", List.of("query.xsl#explanation-properties-all",
-					"query.xsl#explanation-properties-none", "query.js#explanation-property-options")),
-			Map.entry("editor-fullscreen", List.of(
-					"yasqe.js#.fullscreenToggleBtns", "query.ts#F11 editor-fullscreen policy")),
-			Map.entry("result-download-format-tuple", List.of("tuple.xsl#Accept from info tuple-download-format")),
-			Map.entry("result-download-format-graph", List.of("graph.xsl#Accept from info graph-download-format")),
-			Map.entry("result-page-previous", List.of("tuple.xsl#previousX")),
-			Map.entry("result-page-next", List.of("tuple.xsl#nextX")));
+	/** Policy feature identifiers rendered by the Workbench query and result views. */
+	private static final Set<String> BUILT_IN_QUERY_FEATURE_IDS = Set.of(
+			"query-execution",
+			"query-language",
+			"query-save",
+			"query-private-save",
+			"query-options",
+			"query-explain",
+			"explain-level-unoptimized",
+			"explain-level-optimized",
+			"explain-level-executed",
+			"explain-level-telemetry",
+			"explain-level-timed",
+			"explain-format-text",
+			"explain-format-dot",
+			"explain-format-json",
+			"explain-view-text",
+			"explain-view-dot",
+			"explain-view-json",
+			"explain-download",
+			"explain-copy",
+			"explain-cancel",
+			"query-compare",
+			"query-diff",
+			"query-swap",
+			"query-refresh",
+			"result-layout",
+			"result-wrap",
+			"result-totals",
+			"result-paging",
+			"result-download-format",
+			"result-download-limit",
+			"result-fullscreen",
+			"query-rerun",
+			"query-cancel",
+			"editor-namespaces",
+			"editor-sidebar",
+			"result-page-size",
+			"query-timeout",
+			"query-inferred-statements",
+			"result-download",
+			"result-show-datatypes",
+			"explain-highlight-syntax",
+			"explain-highlight-hotspot",
+			"explain-property-selection",
+			"editor-fullscreen",
+			"result-download-format-tuple",
+			"result-download-format-graph",
+			"result-page-previous",
+			"result-page-next");
 
 	@Test
 	void omissionAndHiddenGroupDenyCanonicalPagesEvenWhenVisibleItemLinksToOne() {
@@ -182,11 +169,10 @@ class WorkbenchPolicyTest {
 
 	@Test
 	void builtInQueryFeatureIdsAreStableImmutableAndEagerlyValidated() {
-		Set<String> expected = QUERY_FEATURE_CONTROL_MATRIX.keySet();
+		Set<String> expected = BUILT_IN_QUERY_FEATURE_IDS;
 		WorkbenchPolicy defaults = WorkbenchPolicy.fromProperties(new Properties(), Set.of());
 		assertThat(expected).hasSize(48);
 		assertThat(defaults.getQueryFeatureIds()).containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(QUERY_FEATURE_CONTROL_MATRIX.values()).allSatisfy(controls -> assertThat(controls).isNotEmpty());
 
 		Properties properties = new Properties();
 		for (String id : expected) {
@@ -220,7 +206,7 @@ class WorkbenchPolicyTest {
 
 	@Test
 	void packagedDefaultsEnableEveryBuiltInQueryFeature() throws Exception {
-		Set<String> expected = QUERY_FEATURE_CONTROL_MATRIX.keySet();
+		Set<String> expected = BUILT_IN_QUERY_FEATURE_IDS;
 		Properties packagedDefaults = new Properties();
 		try (InputStream input = getClass().getResourceAsStream(
 				"/org/eclipse/rdf4j/common/app/config/defaults/workbench.properties")) {

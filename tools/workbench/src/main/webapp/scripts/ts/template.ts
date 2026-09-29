@@ -19,6 +19,16 @@ module workbench {
         opacityPriority: string;
     }
 
+    interface DisclosureBoxStyle {
+        boxSizing: string;
+        paddingTop: string;
+        paddingBottom: string;
+        borderTopWidth: string;
+        borderBottomWidth: string;
+        marginBlockStart: string;
+        marginBlockEnd: string;
+    }
+
     interface OwnedMotion {
         element: HTMLElement;
         animation: Animation;
@@ -131,6 +141,54 @@ module workbench {
 
     function elementHeight(element: HTMLElement): number {
         return element && element.getBoundingClientRect ? element.getBoundingClientRect().height : 0;
+    }
+
+    function cssHeightFromBorderBox(element: HTMLElement, borderBoxHeight: number,
+                                    style?: DisclosureBoxStyle): number {
+        var computedStyle = style || window.getComputedStyle(element);
+        if (computedStyle.boxSizing === 'border-box') {
+            return borderBoxHeight;
+        }
+        var verticalInsets = parseFloat(computedStyle.paddingTop) + parseFloat(computedStyle.paddingBottom)
+            + parseFloat(computedStyle.borderTopWidth) + parseFloat(computedStyle.borderBottomWidth);
+        return Math.max(0, borderBoxHeight - verticalInsets);
+    }
+
+    function snapshotDisclosureBoxStyle(style: CSSStyleDeclaration): DisclosureBoxStyle {
+        return {
+            boxSizing: style.boxSizing,
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            borderTopWidth: style.borderTopWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            marginBlockStart: style.marginBlockStart,
+            marginBlockEnd: style.marginBlockEnd
+        };
+    }
+
+    function disclosureBoxKeyframe(element: HTMLElement, borderBoxHeight: number,
+                                    style: DisclosureBoxStyle): any {
+        return {
+            height: cssHeightFromBorderBox(element, borderBoxHeight, style) + 'px',
+            paddingTop: style.paddingTop,
+            paddingBottom: style.paddingBottom,
+            borderTopWidth: style.borderTopWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            marginBlockStart: style.marginBlockStart,
+            marginBlockEnd: style.marginBlockEnd
+        };
+    }
+
+    function collapsedDisclosureKeyframe(): any {
+        return {
+            height: '0px',
+            paddingTop: '0px',
+            paddingBottom: '0px',
+            borderTopWidth: '0px',
+            borderBottomWidth: '0px',
+            marginBlockStart: '0px',
+            marginBlockEnd: '0px'
+        };
     }
 
     function dispatchWorkbenchResize(): void {
@@ -258,9 +316,13 @@ module workbench {
     }
 
     function collapsedDisclosureHeight(state: NativeDisclosureState): number {
-        var style = window.getComputedStyle ? window.getComputedStyle(state.details) : null;
-        var border = style ? parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth) : 0;
-        return elementHeight(state.summary) + border;
+        var detailsStyle = window.getComputedStyle(state.details);
+        var summaryStyle = window.getComputedStyle(state.summary);
+        var summaryMargins = parseFloat(summaryStyle.marginTop) + parseFloat(summaryStyle.marginBottom);
+        var collapsedBorderBoxHeight = elementHeight(state.summary) + summaryMargins
+            + parseFloat(detailsStyle.paddingTop) + parseFloat(detailsStyle.paddingBottom)
+            + parseFloat(detailsStyle.borderTopWidth) + parseFloat(detailsStyle.borderBottomWidth);
+        return cssHeightFromBorderBox(state.details, collapsedBorderBoxHeight, detailsStyle);
     }
 
     export function setNativeDisclosureOpen(details: HTMLDetailsElement, expanded: boolean, animate?: boolean): void {
@@ -281,7 +343,8 @@ module workbench {
             return;
         }
 
-        var startHeight = elementHeight(details);
+        var detailsStyle = window.getComputedStyle(details);
+        var startHeight = cssHeightFromBorderBox(details, elementHeight(details), detailsStyle);
         var motion = cancelOwnedMotion(details);
         var styles = motion ? motion.styles : captureMotionStyles(details);
         state.requestedOpen = expanded;
@@ -311,7 +374,9 @@ module workbench {
             return;
         }
 
-        var endHeight = expanded ? elementHeight(details) : collapsedDisclosureHeight(state);
+        var endHeight = expanded
+            ? cssHeightFromBorderBox(details, elementHeight(details), window.getComputedStyle(details))
+            : collapsedDisclosureHeight(state);
         if (!details.open && !expanded) {
             restoreMotionStyles(details, styles);
             return;
@@ -524,10 +589,9 @@ module workbench {
         }
 
         var startHeight = existingMotion ? elementHeight(panel) : (panel.hidden ? 0 : elementHeight(panel));
-        var computedPanelStyle = window.getComputedStyle(panel);
-        var startOpacity = existingMotion ? parseFloat(computedPanelStyle.opacity) : (expanded ? 0 : 1);
-        var startTransform = existingMotion ? computedPanelStyle.transform
-            : (expanded ? 'translateY(-2px) scaleY(0.985)' : 'none');
+        // Copy the animated box values before canceling: getComputedStyle returns a live declaration, so
+        // reading it after cancelOwnedMotion would use the unanimated styles instead of the current frame.
+        var computedPanelStyle = snapshotDisclosureBoxStyle(window.getComputedStyle(panel));
         var motion = cancelOwnedMotion(panel);
         var styles = motion ? motion.styles : captureMotionStyles(panel);
         state.expanded = expanded;
@@ -549,6 +613,7 @@ module workbench {
             panel.setAttribute('aria-hidden', expanded ? state.ariaHidden : 'true');
         }
         var endHeight = expanded ? elementHeight(panel) : 0;
+        var endPanelStyle = snapshotDisclosureBoxStyle(window.getComputedStyle(panel));
         dispatchWorkbenchResize();
         if (animate === false) {
             panel.hidden = !expanded;
@@ -556,20 +621,13 @@ module workbench {
             return;
         }
         panel.style.overflow = 'hidden';
-        var keyframes: any[] = [
-            { height: startHeight + 'px' },
-            { height: endHeight + 'px' }
-        ];
-        if (anchorTrack) {
-            keyframes = [
-                { height: startHeight + 'px', opacity: startOpacity, transform: startTransform },
-                {
-                    height: endHeight + 'px',
-                    opacity: expanded ? 1 : 0,
-                    transform: expanded ? 'none' : 'translateY(-2px) scaleY(0.985)'
-                }
-            ];
-        }
+        var startBox = expanded && !existingMotion
+            ? collapsedDisclosureKeyframe()
+            : disclosureBoxKeyframe(panel, startHeight, computedPanelStyle);
+        var endBox = expanded
+            ? disclosureBoxKeyframe(panel, endHeight, endPanelStyle)
+            : collapsedDisclosureKeyframe();
+        var keyframes: any[] = [startBox, endBox];
         startOwnedMotion(panel, keyframes, motionDisclosureDuration, styles, function() {
             panel.hidden = !expanded;
             (<any>panel).inert = expanded ? state.inert : true;
@@ -840,5 +898,42 @@ workbench.addLoad(function installDisclosureToggles() {
                 );
             };
         })(toggle, panel, container), false);
+    }
+});
+
+/**
+ * Keep native select controls keyboard and screen-reader accessible while
+ * giving every Workbench page and embedded result one shared chevron style.
+ */
+workbench.addLoad(function installSharedSelectControls() {
+    var selects = document.querySelectorAll('select');
+    var iconNamespace = 'http://www.w3.org/2000/svg';
+    for (var i = 0; i < selects.length; i++) {
+        var select = <HTMLSelectElement>selects[i];
+        if (select.parentElement && select.parentElement.classList.contains('workbench-select-control')) {
+            continue;
+        }
+
+        var parent = select.parentNode;
+        if (!parent) {
+            continue;
+        }
+
+        var control = document.createElement('span');
+        control.className = 'workbench-select-control';
+        parent.insertBefore(control, select);
+        control.appendChild(select);
+
+        var chevron = document.createElementNS(iconNamespace, 'svg');
+        chevron.setAttribute('class', 'workbench-action-icon workbench-select-chevron');
+        chevron.setAttribute('viewBox', '0 0 24 24');
+        chevron.setAttribute('width', '16');
+        chevron.setAttribute('height', '16');
+        chevron.setAttribute('focusable', 'false');
+        chevron.setAttribute('aria-hidden', 'true');
+        var chevronPath = document.createElementNS(iconNamespace, 'path');
+        chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
+        chevron.appendChild(chevronPath);
+        control.appendChild(chevron);
     }
 });

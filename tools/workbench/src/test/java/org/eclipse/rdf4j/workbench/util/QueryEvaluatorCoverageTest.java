@@ -141,10 +141,9 @@ class QueryEvaluatorCoverageTest {
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, queryText);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, queryText);
 
-		verify(builder).transform("transformations", "graph.xsl");
 		verify(builder).start("subject", "predicate", "object");
 		verify(builder).metadata("query-text", queryText);
 		verify(builder).metadata("infer", false);
@@ -184,12 +183,11 @@ class QueryEvaluatorCoverageTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
 		verify(graphQuery).evaluate();
 		verify(response).setContentType("text/turtle");
-		verify(builder, never()).transform(any(), any());
 	}
 
 	@Test
@@ -233,7 +231,7 @@ class QueryEvaluatorCoverageTest {
 
 		Thread queryThread = Thread.startVirtualThread(() -> {
 			try {
-				QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, output, "transformations",
+				QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, output,
 						connection,
 						queryText, request, cookies, null, "repository", heartbeat);
 			} catch (Throwable e) {
@@ -294,8 +292,8 @@ class QueryEvaluatorCoverageTest {
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(first, second)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
 		verify(cookies).addTotalResultCountCookie(request, response, 2);
 		verify(builder, never()).metadata(any(), any());
@@ -332,8 +330,8 @@ class QueryEvaluatorCoverageTest {
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, queryText);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, queryText);
 
 		verify(builder).metadata("query-text", queryText);
 		verify(builder).metadata("query-language", "SPARQL");
@@ -366,10 +364,9 @@ class QueryEvaluatorCoverageTest {
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(booleanQuery.evaluate()).thenReturn(true);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
-		verify(builder).transform("transformations", "boolean.xsl");
 		verify(builder).startBoolean();
 		verify(builder).bool(true);
 		verify(builder).endBoolean();
@@ -398,8 +395,8 @@ class QueryEvaluatorCoverageTest {
 		when(booleanQuery.evaluate()).thenReturn(true);
 
 		try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("boolean-1")) {
-			QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-					"transformations", connection, queryText, request, cookies, queryText);
+			QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+					queryText, request, cookies, queryText);
 		}
 
 		verify(builder).metadata("query-request-id", "boolean-1");
@@ -426,7 +423,7 @@ class QueryEvaluatorCoverageTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, "describe ?s where { ?s ?p ?o }")).thenReturn(query);
 
 		assertThatThrownBy(() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response,
-				new ByteArrayOutputStream(), "transformations", connection, "describe ?s where { ?s ?p ?o }", request,
+				new ByteArrayOutputStream(), connection, "describe ?s where { ?s ?p ?o }", request,
 				cookies, null))
 						.isInstanceOf(BadRequestException.class)
 						.hasMessageContaining("Unknown query type:");
@@ -475,8 +472,8 @@ class QueryEvaluatorCoverageTest {
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(graphQuery.evaluate()).thenReturn(new IteratingGraphQueryResult(Map.of(), List.of(statement)));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(),
-				"transformations", connection, queryText, request, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, response, new ByteArrayOutputStream(), connection,
+				queryText, request, cookies, null);
 
 		verify(cookies).addTotalResultCountCookie(request, response, 5);
 		verify(connection, times(2)).prepareQuery(QueryLanguage.SPARQL, queryText);

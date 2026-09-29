@@ -38,8 +38,8 @@
 		<servlet-name>workbench</servlet-name>
 		<servlet-class>org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway</servlet-class>
 		<init-param>
-			<param-name>transformations</param-name>
-			<param-value>/transformations</param-value>
+			<param-name>workbenchBasePath</param-name>
+			<param-value></param-value>
 		</init-param>
 		<init-param>
 			<param-name>default-server</param-name>

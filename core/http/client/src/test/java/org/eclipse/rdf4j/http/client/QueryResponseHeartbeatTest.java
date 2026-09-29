@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -125,6 +126,8 @@ class QueryResponseHeartbeatTest {
 
 	@Test
 	void gatesTheHeartbeatByExactKnownFormats() throws Exception {
+		assertSupported(new TupleQueryResultFormat("Workbench page data",
+				"application/vnd.rdf4j.workbench+ndjson", StandardCharsets.UTF_8, "ndjson"));
 		assertSupported(TupleQueryResultFormat.JSON);
 		assertSupported(BooleanQueryResultFormat.JSON);
 		assertSupported(RDFFormat.JSONLD);

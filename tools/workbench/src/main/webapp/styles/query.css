@@ -85,14 +85,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.1em;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-form__field--controls-group {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.1em;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-form__field--actions #query-name {
@@ -242,7 +242,7 @@ body.workbench-body:has(#query-page) #workbench-page-surface {
 	grid-template-areas: "primary primary spacer save options";
 	align-items: start;
 	column-gap: 0.6rem;
-	row-gap: 0.35rem;
+	row-gap: 0;
 	margin-top: 0.25rem;
 }
 
@@ -367,16 +367,19 @@ body.workbench-body .query-page .query-actions-toolbar__primary > * {
 	grid-column: 1 / -1;
 	grid-row: auto;
 	width: fit-content;
+	min-height: 0;
 	max-width: 100%;
 	justify-self: start;
+	margin-block-start: 0.35rem;
 	margin-inline-start: var(--workbench-disclosure-panel-start, 0px);
 	box-sizing: border-box;
-	border: 1px solid var(--query-rule);
+	border: 0;
 	border-radius: 8px;
 	padding: 0.7rem;
 	position: relative;
 	transform-origin: var(--workbench-disclosure-anchor-x, 50%) 0;
 	background: var(--query-surface);
+	box-shadow: inset 0 0 0 1px var(--query-rule);
 }
 
 .query-actions-toolbar > .query-disclosure.is-open > .query-disclosure__toggle,
@@ -840,12 +843,19 @@ body.workbench-body .query-result-embedded .query-disclosure__toggle:hover {
 	background: var(--query-surface);
 }
 
-.query-result-embedded #query-result-download-toggle {
+.query-result-embedded .query-result-download-toggle {
 	grid-area: download;
 }
 
-.query-result-embedded #query-result-options-toggle {
+.query-result-embedded .query-result-options-toggle {
 	grid-area: options;
+}
+
+.query-result-embedded .query-result-download-toggle,
+.query-result-embedded .query-result-options-toggle {
+	justify-self: start;
+	width: fit-content;
+	max-width: 100%;
 }
 
 .query-result-embedded #query-result-fullscreen {
@@ -855,8 +865,8 @@ body.workbench-body .query-result-embedded .query-disclosure__toggle:hover {
 	z-index: 2;
 }
 
-.query-result-embedded #query-result-download-toggle,
-.query-result-embedded #query-result-options-toggle,
+.query-result-embedded .query-result-download-toggle,
+.query-result-embedded .query-result-options-toggle,
 .query-result-embedded #query-result-fullscreen {
     grid-row: 1;
 }
@@ -868,7 +878,7 @@ body.workbench-body .query-result-embedded .query-disclosure__toggle:hover {
 .query-result-embedded .query-result-disclosure-panels {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
-	row-gap: 0.35rem;
+	row-gap: 0;
 	width: 100%;
 	min-width: 0;
 	max-width: 100%;
@@ -879,16 +889,19 @@ body.workbench-body .query-result-embedded .query-disclosure__toggle:hover {
 	grid-column: 1 / -1;
 	box-sizing: border-box;
 	width: fit-content;
+	min-height: 0;
 	min-width: 0;
 	max-width: 100%;
 	margin: 0;
+	margin-block-end: 8px;
 	margin-inline-start: var(--workbench-disclosure-panel-start, 0px);
 	padding: 0.75rem;
-    border: 1px solid var(--query-rule);
+	border: 0;
 	border-radius: 8px;
 	position: relative;
 	transform-origin: var(--workbench-disclosure-anchor-x, 50%) 0;
 	background: var(--query-soft);
+	box-shadow: inset 0 0 0 1px var(--query-rule);
 }
 
 .query-result-embedded .query-result-disclosure-panels > .query-disclosure__panel > form {
@@ -1112,6 +1125,16 @@ body.workbench-body .query-result-embedded .query-disclosure__toggle:hover {
     max-width: 100%;
 }
 
+.query-result-layout > .ERROR {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.query-page .workbench-select-control > select,
+.query-result-embedded .workbench-select-control > select {
+	padding-right: 36px;
+}
+
 .query-result-table-wrap {
     max-width: 100%;
     min-width: 0;
@@ -1254,11 +1277,48 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     }
 
     .query-actions-toolbar {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-            "primary primary"
-            "save options";
-        gap: 0.45rem;
+            "primary"
+            "save"
+            "options";
+        column-gap: var(--workbench-control-gap, 8px);
+        row-gap: var(--workbench-control-gap, 8px);
+    }
+
+    .query-actions-toolbar > .query-disclosure {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        column-gap: var(--workbench-control-gap, 8px);
+        row-gap: 0;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .query-actions-toolbar > #save-query-disclosure {
+        grid-area: save;
+    }
+
+    .query-actions-toolbar > #query-options-disclosure {
+        grid-area: options;
+    }
+
+    .query-actions-toolbar > #save-query-disclosure > #save-query-toggle,
+    .query-actions-toolbar > #query-options-disclosure > #query-options-toggle {
+        grid-area: auto;
+    }
+
+    .query-actions-toolbar > .query-disclosure > .query-disclosure__toggle {
+        grid-area: auto;
+    }
+
+    .query-actions-toolbar > .query-disclosure > .query-disclosure__panel {
+        grid-area: auto;
+        width: 100%;
+        max-width: 100%;
+        justify-self: stretch;
+        margin-block-start: 8px;
+        margin-inline-start: 0;
     }
 
     .query-actions-toolbar__primary {
@@ -1319,8 +1379,8 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
 		}
 	}
 
-	.query-result-embedded #query-result-download-toggle,
-	.query-result-embedded #query-result-options-toggle,
+	.query-result-embedded .query-result-download-toggle,
+	.query-result-embedded .query-result-options-toggle,
 	.query-result-embedded #query-result-fullscreen {
 		grid-row: auto;
 	}
@@ -1344,7 +1404,7 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
         justify-self: start;
     }
 
-    .query-result-embedded #query-result-options-toggle {
+    .query-result-embedded .query-result-options-toggle {
         justify-self: end;
     }
 
@@ -1397,4 +1457,9 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     body.query-result-embedded-body .query-result-embedded .query-disclosure__toggle {
         min-height: var(--workbench-touch-height);
     }
+}
+
+body.workbench-body .query-page .workbench-select-control > select,
+body.query-result-embedded-body .query-result-embedded .workbench-select-control > select {
+	padding-right: 36px;
 }

@@ -18,7 +18,7 @@ var workbench;
 })(workbench || (workbench = {}));
 /**
  * Invoked by the "Create" button on the form for all but
- * create-federate.xsl. Checks with the InfoServlet for the user-provided id
+ * Create form views. Checks with the InfoServlet for the user-provided id
  * for the existence of the id already, giving a chance to back out if it
  * does. Depends on the current behavior of getting a failure response (500
  * Internal Server Error at present), when the ID does not exist.
@@ -89,6 +89,18 @@ workbench.addLoad(function createPageLoaded() {
         details.className = 'workbench-advanced';
         var summary = document.createElement('summary');
         summary.textContent = table.getAttribute('data-advanced-label') || 'Advanced settings';
+        var iconNamespace = 'http://www.w3.org/2000/svg';
+        var chevron = document.createElementNS(iconNamespace, 'svg');
+        chevron.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
+        chevron.setAttribute('viewBox', '0 0 24 24');
+        chevron.setAttribute('width', '16');
+        chevron.setAttribute('height', '16');
+        chevron.setAttribute('focusable', 'false');
+        chevron.setAttribute('aria-hidden', 'true');
+        var chevronPath = document.createElementNS(iconNamespace, 'path');
+        chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
+        chevron.appendChild(chevronPath);
+        summary.appendChild(chevron);
         details.appendChild(summary);
         var advancedTable = document.createElement('table');
         advancedTable.className = 'dataentry workbench-advanced-fields';

@@ -52,9 +52,8 @@ public class SummaryServlet extends TransformationServlet {
 	private static final Logger LOGGER = LoggerFactory.getLogger(SummaryServlet.class);
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
-		builder.transform(xslPath, "summary.xsl");
 		builder.metadata(EFFECTIVE_CONFIG_TURTLE, getEffectiveConfigTurtle());
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(List.of(INFO));

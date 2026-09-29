@@ -298,7 +298,7 @@ public class Rdf4jServerWorkbenchApplication {
 
 	private Map<String, String> workbenchInitParameters(String contextPath) {
 		Map<String, String> params = new LinkedHashMap<>();
-		params.put("transformations", "/rdf4j-workbench/transformations");
+		params.put("workbenchBasePath", "/rdf4j-workbench");
 		String serverPath = getServerPath(contextPath);
 		params.put("default-server", serverPath);
 		params.put("accepted-server-prefixes", serverPath);

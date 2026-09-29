@@ -14,139 +14,34 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.StringReader;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.Base64;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import javax.xml.transform.Templates;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
-
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.ParserConfig;
+import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponse;
 
 class AddServletTest {
-
-	private static final Path ADD_XSL = Paths.get("src", "main", "webapp", "transformations", "add.xsl");
-
-	@Test
-	void addPageRendersIsolationOptionsFromResults() throws Exception {
-		TransformerFactory factory = TransformerFactory.newInstance();
-		StreamSource stylesheet = new StreamSource(ADD_XSL.toFile());
-		stylesheet.setSystemId(ADD_XSL.toUri().toString());
-		Templates templates = factory.newTemplates(stylesheet);
-		Transformer transformer = templates.newTransformer();
-
-		String sparqlResults = ""
-				+ "<?xml version=\"1.0\"?>\n"
-				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n"
-				+ "  <head />\n"
-				+ "  <results>\n"
-				+ "    <result>\n"
-				+ "      <binding name=\"isolation-level-option\">\n"
-				+ "        <literal>NONE</literal>\n"
-				+ "      </binding>\n"
-				+ "      <binding name=\"isolation-level-option-label\">\n"
-				+ "        <literal>None</literal>\n"
-				+ "      </binding>\n"
-				+ "    </result>\n"
-				+ "    <result>\n"
-				+ "      <binding name=\"isolation-level-option\">\n"
-				+ "        <literal>READ_COMMITTED</literal>\n"
-				+ "      </binding>\n"
-				+ "      <binding name=\"isolation-level-option-label\">\n"
-				+ "        <literal>Read Committed</literal>\n"
-				+ "      </binding>\n"
-				+ "    </result>\n"
-				+ "  </results>\n"
-				+ "</sparql>\n";
-
-		StringWriter html = new StringWriter();
-		transformer.transform(new StreamSource(new StringReader(sparqlResults)), new StreamResult(html));
-		String output = html.toString();
-
-		assertThat(output).contains("value=\"NONE\"")
-				.contains(">None<")
-				.contains("value=\"READ_COMMITTED\"")
-				.contains(">Read Committed<")
-				.doesNotContain("value=\"SNAPSHOT\"");
-	}
-
-	@Test
-	void addPageUsesTransactionSettingParam() throws Exception {
-		TransformerFactory factory = TransformerFactory.newInstance();
-		StreamSource stylesheet = new StreamSource(ADD_XSL.toFile());
-		stylesheet.setSystemId(ADD_XSL.toUri().toString());
-		Templates templates = factory.newTemplates(stylesheet);
-		Transformer transformer = templates.newTransformer();
-
-		String sparqlResults = ""
-				+ "<?xml version=\"1.0\"?>\n"
-				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n"
-				+ "  <head />\n"
-				+ "  <results />\n"
-				+ "</sparql>\n";
-
-		StringWriter html = new StringWriter();
-		transformer.transform(new StreamSource(new StringReader(sparqlResults)), new StreamResult(html));
-		String output = html.toString();
-
-		assertThat(output)
-				.contains("name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"");
-	}
-
-	@Test
-	void addContextOverrideIsOptIn() throws Exception {
-		TransformerFactory factory = TransformerFactory.newInstance();
-		StreamSource stylesheet = new StreamSource(ADD_XSL.toFile());
-		stylesheet.setSystemId(ADD_XSL.toUri().toString());
-		Transformer transformer = factory.newTemplates(stylesheet).newTransformer();
-		String sparqlResults = ""
-				+ "<?xml version=\"1.0\"?>\n"
-				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n"
-				+ "  <head />\n"
-				+ "  <results><result>"
-				+ "<binding name=\"baseURI\"><literal>https://example.org/base</literal></binding>"
-				+ "</result></results>\n"
-				+ "</sparql>\n";
-		StringWriter html = new StringWriter();
-		transformer.transform(new StreamSource(new StringReader(sparqlResults)), new StreamResult(html));
-		String output = html.toString();
-		int contextToggle = output.indexOf("id=\"overrideContext\"");
-		int contextToggleEnd = output.indexOf('>', contextToggle);
-		int contextField = output.indexOf("id=\"context\"");
-		int contextFieldEnd = output.indexOf('>', contextField);
-
-		assertThat(contextToggle).isGreaterThanOrEqualTo(0);
-		assertThat(output.substring(contextToggle, contextToggleEnd)).doesNotContain("checked");
-		assertThat(contextField).isGreaterThanOrEqualTo(0);
-		assertThat(output.substring(contextField, contextFieldEnd))
-				.contains("disabled")
-				.doesNotContain("https://example.org/base");
-		assertThat(output)
-				.contains("aria-describedby=\"context-help\"")
-				.contains("RDF context may be an IRI, blank node, or the default graph.")
-				.contains(
-						"With override off, embedded contexts are preserved; contextless data uses the default graph.")
-				.contains("Base URI resolves relative RDF identifiers; it does not choose a graph context.");
-	}
 
 	@Test
 	void doPostReadsTransactionSettingParameter() throws Exception {
@@ -172,10 +67,49 @@ class AddServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		servlet.doPost(request, response, "");
+		servlet.doPost(request, response);
 
 		verify(connection).commit();
 		verify(request).getParameter("transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel");
+	}
+
+	@Test
+	void nativeValidationPostReturnsAnInlinePageModelWithoutReplayingTheUpload() throws Exception {
+		AddServlet servlet = new TestAddServlet();
+		Repository repository = mock(Repository.class);
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		servlet.setRepository(repository);
+		servlet.setRepositoryManager(mock(RepositoryManager.class));
+		servlet.init(TestServletConfig.withParams("add", "default-Content-Type", "autodetect"));
+
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/rdf4j-workbench/repositories/repo/add");
+		request.setContextPath("/rdf4j-workbench");
+		request.setServletPath("/repositories/repo/add");
+		request.setPathInfo("/repo/add");
+		request.addHeader("Accept", "text/html,application/xhtml+xml");
+		request.addParameter("url", "not-a-valid-url");
+		request.addParameter("baseURI", "https://example.test/base");
+		request.addParameter("Content-Type", "text/turtle");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getContentType()).startsWith("text/html");
+		String html = response.getContentAsString();
+		assertThat(html)
+				.contains("data-workbench-view=\"add\"", "data-workbench-initial-model=")
+				.doesNotContain("<?xml-stylesheet", ".xsl");
+		assertThat(initialPageModel(html))
+				.contains("\"id\":\"add\"", "\"type\":\"view\"", "not-a-valid-url", "\"type\":\"end\"");
+		verify(repository, never()).getConnection();
+	}
+
+	private static String initialPageModel(String html) {
+		Matcher matcher = Pattern.compile("data-workbench-initial-model=\"([^\"]+)\"").matcher(html);
+		if (!matcher.find()) {
+			throw new AssertionError("HTML response is missing its inline Workbench page model");
+		}
+		return new String(Base64.getUrlDecoder().decode(matcher.group(1)), StandardCharsets.UTF_8);
 	}
 
 	@Test
@@ -189,7 +123,7 @@ class AddServletTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		servlet.service(request, response, "");
+		servlet.service(request, response);
 	}
 
 	@Test
@@ -210,7 +144,7 @@ class AddServletTest {
 		RecordingServletOutputStream outputStream = new RecordingServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		assertThatCode(() -> servlet.doPost(request, response, "transformations")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(request, response)).doesNotThrowAnyException();
 
 		assertThat(outputStream.asString())
 				.contains("<binding name='transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'>")
@@ -235,7 +169,7 @@ class AddServletTest {
 		RecordingServletOutputStream outputStream = new RecordingServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		assertThatCode(() -> servlet.doPost(request, response, "transformations")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(request, response)).doesNotThrowAnyException();
 
 		String output = outputStream.asString();
 		assertThat(output)
@@ -259,7 +193,7 @@ class AddServletTest {
 		RecordingServletOutputStream outputStream = new RecordingServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		assertThat(outputStream.asString())
 				.contains("<binding name='transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'>")

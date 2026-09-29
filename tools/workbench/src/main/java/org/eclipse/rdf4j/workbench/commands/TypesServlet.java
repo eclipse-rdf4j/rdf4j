@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 public class TypesServlet extends TupleServlet {
 
 	public TypesServlet() {
-		super("types.xsl", "type");
+		super("type");
 	}
 
 	private static final String DISTINCT_TYPE = "SELECT DISTINCT ?type WHERE { ?subj a ?type }";

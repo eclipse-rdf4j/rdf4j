@@ -74,8 +74,8 @@ class CommandServletCoverageTest {
 		when(request.isParameterPresent("context")).thenReturn(false, true);
 		when(request.getResource("context")).thenReturn(context);
 
-		servlet.doPost(request, response, "/transform");
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
+		servlet.doPost(request, response);
 
 		verify(connection).clear();
 		verify(connection).clear(context);
@@ -98,16 +98,14 @@ class CommandServletCoverageTest {
 		when(request.getParameter("context")).thenReturn("not-a-resource");
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
-		verify(builder).transform("/transform", "clear.xsl");
 		verify(builder).start("error-message", "context");
 		verify(builder).link(List.of("info"));
 		verify(builder).result("bad context", "not-a-resource");
 		verify(builder).end();
 
-		servlet.service(builder, "/transform");
-		verify(builder, org.mockito.Mockito.times(2)).transform("/transform", "clear.xsl");
+		servlet.service(builder);
 		verify(builder).start();
 	}
 
@@ -121,7 +119,7 @@ class CommandServletCoverageTest {
 		servlet.setRepositoryManager(manager);
 		when(request.getParameter("id")).thenReturn("memory");
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(manager).removeRepository("memory");
 		verify(response).sendRedirect("../");
@@ -144,11 +142,10 @@ class CommandServletCoverageTest {
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 		assertThat(body.toString()).isEqualTo("{\"safe\":true}");
 
-		servlet.service(request, response, "/transform");
-		verify(builder).transform("/transform", "delete.xsl");
+		servlet.service(request, response);
 		verify(builder).start("readable", "writeable", "id", "description", "location");
 		verify(builder).link(List.of("info"));
 		verify(builder).result(true, false, "memory", "Memory repo", info.getLocation());
@@ -169,7 +166,7 @@ class CommandServletCoverageTest {
 		when(request.getParameter("Accept")).thenReturn("text/turtle");
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setContentType("text/turtle");
 		verify(response).setHeader("Content-disposition", "attachment; filename=export.ttl");
@@ -204,10 +201,9 @@ class CommandServletCoverageTest {
 		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(builder).prefix("ex", "urn:ex:");
-		verify(builder).transform("/transform", "export.xsl");
 		verify(builder).start("subject", "predicate", "object", "context");
 		verify(builder).link(List.of("info"));
 		verify(builder).metadata("statement-preview-requested", true);
@@ -243,7 +239,7 @@ class CommandServletCoverageTest {
 		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(connection, never()).export(any());
 		verify(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
@@ -256,9 +252,8 @@ class CommandServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		InformationServletForTest servlet = new InformationServletForTest();
 
-		servlet.service(builder, "/transform");
+		servlet.service(builder);
 
-		verify(builder).transform("/transform", "information.xsl");
 		verify(builder).start("version", "os", "jvm", "user", "memory-used", "maximum-memory");
 		verify(builder).link(List.of("info"));
 		ArgumentCaptor<Object[]> resultCaptor = ArgumentCaptor.forClass(Object[].class);
@@ -286,13 +281,12 @@ class CommandServletCoverageTest {
 		when(request.getParameter("namespace")).thenReturn("urn:ex:", "");
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.doPost(request, response, "/transform");
-		servlet.doPost(request, response, "/transform");
-		servlet.service(builder, "/transform");
+		servlet.doPost(request, response);
+		servlet.doPost(request, response);
+		servlet.service(builder);
 
 		verify(connection).setNamespace("ex", "urn:ex:");
 		verify(connection).removeNamespace("ex");
-		verify(builder, org.mockito.Mockito.times(3)).transform("/transform", "namespaces.xsl");
 		verify(builder, org.mockito.Mockito.times(3)).start("prefix", "namespace");
 		verify(builder, org.mockito.Mockito.times(3)).link(List.of("info"));
 		verify(builder, org.mockito.Mockito.times(3)).result("ex", "urn:ex:");
@@ -309,9 +303,8 @@ class CommandServletCoverageTest {
 		servlet.setRepositoryManager(manager);
 		when(manager.getAllRepositoryInfos()).thenReturn(List.of(info));
 
-		servlet.service(builder, "/transform");
+		servlet.service(builder);
 
-		verify(builder).transform("/transform", "repositories.xsl");
 		verify(builder).start("readable", "writeable", "id", "description", "location");
 		verify(builder).link(List.of("info"));
 		verify(builder).result(true, false, "memory", "Memory repo", "http://example.com/memory");
@@ -369,22 +362,20 @@ class CommandServletCoverageTest {
 		when(request.getParameter("update")).thenReturn("insert data {}", "broken update", "broken update");
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 		verify(update).execute();
 		verify(response).sendRedirect("summary");
 
 		when(connection.prepareUpdate(org.eclipse.rdf4j.query.QueryLanguage.SPARQL, "broken update"))
 				.thenThrow(new RepositoryException("bad update"));
-		servlet.doPost(request, response, "/transform");
-		verify(builder).transform("/transform", "update.xsl");
+		servlet.doPost(request, response);
 		verify(builder).start("error-message", "update");
 		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("bad update", "broken update");
 		verify(builder).end();
 
 		assertThat(servlet.getCookieNames()).containsExactly("Content-Type");
-		servlet.service(builder, "/transform");
-		verify(builder, org.mockito.Mockito.times(2)).transform("/transform", "update.xsl");
+		servlet.service(builder);
 	}
 
 	private static BindingSet bindingSet(String name, IRI value) {

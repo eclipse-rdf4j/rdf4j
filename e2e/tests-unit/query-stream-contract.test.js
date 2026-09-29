@@ -1,0 +1,748 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const vm = require('node:vm');
+const { spawnSync } = require('node:child_process');
+const { FakeDocument } = require('./browser-fakes.js');
+
+const streamSource = path.resolve(__dirname,
+    '../../tools/workbench/src/main/webapp/scripts/ts/queryStream.ts');
+
+class InMemoryWorker {
+    constructor() {
+        this.rows = [];
+        this.messages = [];
+        this.storeId = 'test-store';
+        this.listeners = new Map();
+        this.terminated = false;
+    }
+
+    addEventListener(type, listener) {
+        const listeners = this.listeners.get(type) || [];
+        listeners.push(listener);
+        this.listeners.set(type, listeners);
+    }
+
+    removeEventListener(type, listener) {
+        this.listeners.set(type, (this.listeners.get(type) || []).filter(candidate => candidate !== listener));
+    }
+
+    postMessage(message) {
+        this.messages.push(message);
+        queueMicrotask(() => {
+            const response = { requestId: message.requestId, ok: true };
+            if (message.op === 'create') {
+                response.storeId = this.storeId;
+            } else if (message.op === 'append') {
+                this.rows.push(...message.rows);
+                response.count = this.rows.length;
+            } else if (message.op === 'read') {
+                response.rows = this.rows.slice(message.start, message.start + message.count);
+                response.count = this.rows.length;
+            } else if (message.op === 'count') {
+                response.count = this.rows.length;
+            } else if (message.op === 'dispose') {
+                this.rows = [];
+                response.disposed = true;
+            }
+            (this.listeners.get('message') || []).forEach(listener => listener({ data: response }));
+        });
+    }
+
+    terminate() {
+        this.terminated = true;
+    }
+}
+
+function inMemoryRowStore() {
+    let rows = [];
+    return {
+        async append(batch) { rows.push(...batch); return rows.length; },
+        async read(start, count) { return rows.slice(start, start + count); },
+        async count() { return rows.length; },
+        async dispose() { rows = []; }
+    };
+}
+
+function loadQueryStreamApi() {
+    const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-stream-contract-'));
+    const outputPath = path.join(outputDirectory, 'queryStream.js');
+    const compilation = spawnSync('tsc', [
+        '--target', 'ES2017',
+        '--lib', 'ES2017,DOM',
+        '--skipLibCheck',
+        '--outFile', outputPath,
+        streamSource
+    ], { encoding: 'utf8' });
+
+    assert.equal(compilation.status, 0,
+        `queryStream.ts must compile for its in-repo parser contract:\n${compilation.stdout}${compilation.stderr}`);
+
+    const sessionValues = new Map();
+    const localValues = new Map();
+    const testWindow = {
+        sessionStorage: {
+            getItem(key) { return sessionValues.has(key) ? sessionValues.get(key) : null; },
+            setItem(key, value) { sessionValues.set(key, String(value)); },
+            removeItem(key) { sessionValues.delete(key); }
+        },
+        localStorage: {
+            get length() { return localValues.size; },
+            key(index) { return [...localValues.keys()][index] || null; },
+            getItem(key) { return localValues.has(key) ? localValues.get(key) : null; },
+            setItem(key, value) { localValues.set(key, String(value)); },
+            removeItem(key) { localValues.delete(key); }
+        }
+    };
+    const context = vm.createContext({
+        workbench: {},
+        window: testWindow,
+        TextDecoder: require('node:util').TextDecoder,
+        URLSearchParams
+    });
+    vm.runInContext(fs.readFileSync(outputPath, 'utf8'), context, { filename: outputPath });
+    const api = context.workbench.queryStream;
+    api.__testWorkbench = context.workbench;
+    api.__testWindow = testWindow;
+    api.__testSessionValues = sessionValues;
+    api.__testLocalValues = localValues;
+    return api;
+}
+
+test('NDJSON parser emits complete typed records as chunks arrive', () => {
+    const queryStream = loadQueryStreamApi();
+    assert.equal(typeof queryStream.NdjsonResultParser, 'function');
+
+    const actual = [];
+    const parser = new queryStream.NdjsonResultParser(record => actual.push(record));
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['subject', 'value'] },
+        { type: 'namespaces', values: [{ prefix: 'ex', name: 'http://example.com/' }] },
+        { type: 'links', values: ['https://example.com/help'] },
+        { type: 'metadata', values: { limit: 0, offset: 0 } },
+        {
+            type: 'rows',
+            values: [[
+                { kind: 'iri', value: 'http://example.com/s' },
+                {
+                    kind: 'triple',
+                    subject: { kind: 'bnode', value: 'b1' },
+                    predicate: { kind: 'iri', value: 'http://example.com/p' },
+                    object: { kind: 'literal', value: 'line one\nline two', language: 'en' }
+                }
+            ], [null, { kind: 'literal', value: 'plain' }]]
+        },
+        { type: 'end', metadata: { count: 2, hasMore: false } }
+    ];
+    const wire = records.map(record => JSON.stringify(record) + '\r\n').join('');
+    const firstRecordEnd = wire.indexOf('\n') + 1;
+
+    parser.push(wire.slice(0, firstRecordEnd));
+    assert.equal(actual.length, 1, 'a complete record should be delivered before the response ends');
+    parser.push(wire.slice(firstRecordEnd, firstRecordEnd + 19));
+    parser.push(wire.slice(firstRecordEnd + 19, Math.floor(wire.length / 2)));
+    parser.push(wire.slice(Math.floor(wire.length / 2)));
+    parser.finish();
+
+    assert.equal(JSON.stringify(actual), JSON.stringify(records));
+});
+
+test('query stream sends exactly one typed request and exposes terminal metadata', async () => {
+    const queryStream = loadQueryStreamApi();
+    const requests = [];
+    const received = [];
+    const wire = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['value'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'answer' }]] },
+        { type: 'end', metadata: { count: 1, hasMore: false } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    const encoded = new TextEncoder().encode(wire);
+    let delivered = false;
+
+    const outcome = await queryStream.executeQueryStream('/repositories/test/query', [
+        { name: 'action', value: 'exec' },
+        { name: 'query', value: 'SELECT ?value WHERE { VALUES ?value { "answer" } }' }
+    ], {
+        fetcher: async (url, init) => {
+            requests.push({ url, init });
+            return {
+                ok: true,
+                status: 200,
+                body: {
+                    getReader() {
+                        return {
+                            async read() {
+                                if (delivered) {
+                                    return { done: true, value: undefined };
+                                }
+                                delivered = true;
+                                return { done: false, value: encoded };
+                            },
+                            async cancel() {
+                            }
+                        };
+                    }
+                }
+            };
+        },
+        onRecord: record => received.push(record)
+    });
+
+    assert.equal(requests.length, 1, 'an execution descriptor should produce one POST');
+    assert.equal(requests[0].url, '/repositories/test/query');
+    assert.equal(requests[0].init.method, 'POST');
+    assert.equal(requests[0].init.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(requests[0].init.body.some(parameter => parameter.name === 'Accept'), false);
+    assert.equal(outcome.type, 'end');
+    assert.equal(outcome.metadata.count, 1);
+    assert.equal(received.filter(record => record.type === 'rows').length, 1);
+});
+
+test('stale query streams stop notifying the renderer and cancel their reader', async () => {
+    const queryStream = loadQueryStreamApi();
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'boolean' },
+        { type: 'boolean', value: true },
+        { type: 'end', metadata: { count: 1 } }
+    ].map(record => JSON.stringify(record) + '\n');
+    let current = true;
+    let index = 0;
+    let canceled = false;
+    const received = [];
+
+    const outcome = await queryStream.executeQueryStream('/query', [], {
+        fetcher: async () => ({
+            ok: true,
+            status: 200,
+            body: {
+                getReader() {
+                    return {
+                        async read() {
+                            if (index >= records.length) {
+                                return { done: true, value: undefined };
+                            }
+                            const value = new TextEncoder().encode(records[index++]);
+                            return { done: false, value };
+                        },
+                        async cancel() {
+                            canceled = true;
+                        }
+                    };
+                }
+            }
+        }),
+        isCurrent: () => current,
+        onRecord: record => {
+            received.push(record);
+            if (record.type === 'view') {
+                current = false;
+            }
+        }
+    });
+
+    assert.equal(outcome.type, 'stale');
+    assert.equal(received.some(record => record.type === 'boolean'), false);
+    assert.equal(canceled, true);
+});
+
+test('virtual row window stays bounded and includes the visible range', () => {
+    const queryStream = loadQueryStreamApi();
+    const heights = new queryStream.MeasuredRowHeights(100000, 50);
+    const range = heights.range(450000, 500, 5, 80);
+
+    assert.equal(range.start <= 9000, true);
+    assert.equal(range.end > 9009, true);
+    assert.equal(range.end - range.start <= 80, true);
+    assert.equal(range.topSpacer, heights.offsetOf(range.start));
+    assert.equal(range.bottomSpacer, heights.offsetOf(100000) - heights.offsetOf(range.end));
+    assert.equal(heights.offsetOf(100000), 5000000);
+});
+
+test('parser rejects an unsupported version and rows outside their variables', () => {
+    const queryStream = loadQueryStreamApi();
+    const parser = new queryStream.NdjsonResultParser(() => {});
+
+    assert.throws(() => parser.push('{"type":"head","version":2}\n'), /version/i);
+
+    const wrongWidth = new queryStream.QueryResultState();
+    wrongWidth.accept({ type: 'view', id: 'tuple' });
+    wrongWidth.accept({ type: 'vars', values: ['subject', 'object'] });
+    assert.throws(() => wrongWidth.accept({ type: 'rows', values: [[null]] }), /row|variable/i);
+});
+
+test('graph results retain the four positional statement variables', () => {
+    const queryStream = loadQueryStreamApi();
+    const state = new queryStream.QueryResultState();
+    state.accept({ type: 'view', id: 'graph' });
+    assert.throws(() => state.accept({
+        type: 'vars', values: ['subject', 'predicate', 'object']
+    }), /graph|context/i);
+});
+
+test('terminal paging metadata computes the displayed range and server continuation', () => {
+    const queryStream = loadQueryStreamApi();
+    assert.equal(typeof queryStream.calculateResultPaging, 'function');
+
+    const page = queryStream.calculateResultPaging(7, 0, 0, {
+        'total-result-count': 37,
+        'result-offset': 20,
+        'result-limit': 10
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(page)), {
+        offset: 20,
+        limit: 10,
+        rowCount: 7,
+        totalCount: 37,
+        firstRow: 21,
+        lastRow: 27,
+        hasPrevious: true,
+        hasNext: true
+    });
+
+    const unlimited = queryStream.calculateResultPaging(100000, 0, 0, {
+        'total-result-count': 100000,
+        'result-offset': 0,
+        'result-limit': 0
+    });
+    assert.equal(unlimited.lastRow, 100000);
+    assert.equal(unlimited.hasNext, false, 'limit_query=0 keeps one complete unlimited result');
+});
+
+test('execution form binding is explicit and leaves raw downloads native', () => {
+    const queryStream = loadQueryStreamApi();
+    assert.equal(typeof queryStream.bindExecutionForms, 'function');
+
+    function form(id, targetId, accept) {
+        const listeners = new Map();
+        const attributes = new Map([
+            ['id', id],
+            ['data-workbench-query-execution', 'true'],
+            ['data-workbench-results-target', targetId]
+        ]);
+        const controls = accept ? [{ name: 'Accept', value: accept }] : [{ name: 'action', value: 'exec' }];
+        return {
+            id,
+            elements: controls,
+            attributes,
+            getAttribute(name) { return attributes.get(name); },
+            addEventListener(type, callback) {
+                const existing = listeners.get(type) || [];
+                existing.push(callback);
+                listeners.set(type, existing);
+            },
+            removeEventListener(type, callback) {
+                listeners.set(type, (listeners.get(type) || []).filter(candidate => candidate !== callback));
+            },
+            listeners
+        };
+    }
+
+    const execution = form('saved-query-exec', 'saved-query-result', '');
+    const rawDownload = form('saved-query-download', 'saved-query-download-result', 'text/csv');
+    const otherNativePost = form('save-query', 'save-query-result', '');
+    otherNativePost.attributes.set('data-workbench-query-execution', 'false');
+    const targets = new Map([
+        ['saved-query-result', { ownerDocument: { createElement() { return {}; } } }],
+        ['saved-query-download-result', {}],
+        ['save-query-result', {}]
+    ]);
+    const root = {
+        querySelectorAll(selector) {
+            assert.equal(selector, 'form[data-workbench-query-execution="true"]');
+            return [execution, rawDownload, otherNativePost];
+        },
+        ownerDocument: { getElementById(id) { return targets.get(id); } }
+    };
+
+    const dispose = queryStream.bindExecutionForms(root, {
+        rowStoreOptions: { workerFactory: () => new InMemoryWorker() }
+    });
+    assert.equal(execution.listeners.get('submit').length, 1);
+    assert.equal(rawDownload.listeners.get('submit'), undefined);
+    assert.equal(otherNativePost.listeners.get('submit'), undefined);
+    dispose();
+    assert.equal(execution.listeners.get('submit').length, 0);
+});
+
+test('re-binding a saved-query window binds new forms and disposes detached forms', () => {
+    const queryStream = loadQueryStreamApi();
+    const document = {
+        getElementById() { return {}; }
+    };
+    function executionForm(id) {
+        const listeners = new Map();
+        const attributes = new Map([
+            ['id', id],
+            ['method', 'post'],
+            ['action', 'query'],
+            ['data-workbench-query-execution', 'true'],
+            ['data-workbench-results-target', id + '-results']
+        ]);
+        const controls = [{ name: 'action', value: 'exec' }];
+        return {
+            id,
+            method: 'post',
+            elements: controls,
+            getAttribute(name) { return attributes.get(name) || null; },
+            addEventListener(type, callback) {
+                listeners.set(type, [...(listeners.get(type) || []), callback]);
+            },
+            removeEventListener(type, callback) {
+                listeners.set(type, (listeners.get(type) || []).filter(candidate => candidate !== callback));
+            },
+            listeners
+        };
+    }
+    const first = executionForm('saved-exec-first');
+    const second = executionForm('saved-exec-second');
+    let visibleForms = [first];
+    const root = {
+        ownerDocument: document,
+        querySelectorAll() { return visibleForms; }
+    };
+    const dispose = queryStream.bindExecutionForms(root);
+    assert.equal(first.listeners.get('submit').length, 1);
+
+    visibleForms = [second];
+    queryStream.bindExecutionForms(root);
+    assert.equal(first.listeners.get('submit').length, 0);
+    assert.equal(second.listeners.get('submit').length, 1);
+
+    dispose();
+    assert.equal(second.listeners.get('submit').length, 0);
+});
+
+test('a bound execution form streams once into its declared result mount', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const form = document.createElement('form');
+    form.setAttribute('id', 'saved-query-exec-0');
+    form.setAttribute('method', 'post');
+    form.setAttribute('action', '/repositories/test/query');
+    form.setAttribute('data-workbench-query-execution', 'true');
+    form.setAttribute('data-workbench-results-target', 'saved-query-results-0');
+    const action = document.createElement('input');
+    action.name = 'action';
+    action.value = 'exec';
+    const query = document.createElement('textarea');
+    query.name = 'query';
+    query.value = 'SELECT * WHERE {?s ?p ?o}';
+    form.appendChild(action);
+    form.appendChild(query);
+    const target = document.createElement('section');
+    target.setAttribute('id', 'saved-query-results-0');
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+
+    const requests = [];
+    const wire = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['value'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'streamed' }]] },
+        { type: 'end', metadata: { 'total-result-count': 2, 'result-offset': 0, 'result-limit': 1 } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    const bytes = new TextEncoder().encode(wire);
+    queryStream.__testWindow.fetch = async (url, init) => {
+        requests.push({ url, init });
+        let delivered = false;
+        return {
+            ok: true,
+            status: 200,
+            body: {
+                getReader() {
+                    return {
+                        async read() {
+                            if (delivered) {
+                                return { done: true, value: undefined };
+                            }
+                            delivered = true;
+                            return { done: false, value: bytes };
+                        },
+                        async cancel() {
+                        }
+                    };
+                }
+            }
+        };
+    };
+
+    const root = {
+        ownerDocument: document,
+        querySelectorAll() { return [form]; }
+    };
+    const dispose = queryStream.bindExecutionForms(root, {
+        rowStoreOptions: { workerFactory: () => new InMemoryWorker() }
+    });
+    const submitEvent = form.trigger('submit');
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(submitEvent.defaultPrevented, true);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, '/repositories/test/query');
+    assert.equal(requests[0].init.method, 'POST');
+    assert.equal(requests[0].init.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(requests[0].init.body.get('action'), 'exec');
+    assert.equal(requests[0].init.body.get('query'), 'SELECT * WHERE {?s ?p ?o}');
+    assert.ok(requests[0].init.body.get('query-request-id'));
+    assert.equal(target.getAttribute('aria-busy'), 'false');
+    assert.equal(target.querySelector('.query-result-status').textContent, 'Rows 1–1 of 2.',
+        target.querySelector('.ERROR').textContent);
+    assert.equal(target.querySelector('td').textContent, '"streamed"');
+    assert.match(document.cookie, /total_result_count=2/);
+
+    form.trigger('submit');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests[1].init.body.get('know_total'), '2',
+        'the completed stream count must be reused for the next paged request');
+
+    const pageSize = target.querySelectorAll('select').find(select => select.name === 'stream-result-limit');
+    assert.ok(pageSize, 'result options expose the query page-size control');
+    pageSize.value = '10';
+    pageSize.trigger('change');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.length, 3, 'changing page size starts one new query execution');
+    assert.equal(requests[2].init.body.get('limit_query'), '10');
+    assert.equal(requests[2].init.body.get('offset'), '0');
+    dispose();
+});
+
+test('unlimited result rendering keeps every row in worker storage and bounds table DOM', async () => {
+    const queryStream = loadQueryStreamApi();
+    assert.equal(typeof queryStream.QueryResultRenderer, 'function');
+
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        requestedLimit: 0, maxDomRows: 80, rowStore: inMemoryRowStore()
+    });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    await renderer.accept({ type: 'rows', values: Array.from({ length: 100000 }, () => [null]) });
+    await renderer.accept({ type: 'end', metadata: {
+        'total-result-count': 100000,
+        'result-offset': 0,
+        'result-limit': 0
+    } });
+
+    assert.equal(renderer.state.rowCount, 100000);
+    assert.equal(Array.isArray(renderer.state.rows), false,
+        'unlimited results must not retain an all-rows array on the main thread');
+    assert.equal(renderer.tableBody.children.length <= 82, true,
+        'the live table must contain at most 80 rows plus two spacers');
+    renderer.tableWrap.scrollTop = 450000;
+    renderer.tableWrap.trigger('scroll');
+    await new Promise(resolve => setImmediate(resolve));
+    const renderedIndexes = renderer.tableBody.children
+        .map(row => row.getAttribute('data-query-row-index'))
+        .filter(value => value !== undefined)
+        .map(Number);
+    assert.equal(renderedIndexes.some(index => index >= 99900), true,
+        'the scroll window reaches the end of the complete unlimited result');
+    assert.equal(renderer.tableBody.children.length <= 82, true);
+});
+
+test('records layout pages through every unlimited row with bounded DOM', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        requestedLimit: 0, maxDomRows: 10, rowStore: inMemoryRowStore()
+    });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] });
+    await renderer.accept({ type: 'rows', values: Array.from({ length: 25 }, (_, index) => [
+        { kind: 'literal', value: String(index) }, null, null, null, null, null, null
+    ]) });
+    await renderer.accept({ type: 'end', metadata: {
+        'total-result-count': 25,
+        'result-offset': 0,
+        'result-limit': 0
+    } });
+
+    renderer.layoutControl.value = 'records';
+    renderer.layoutControl.trigger('change');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(renderer.records.children.length, 10,
+        'records layout should keep only the configured number of rows in the DOM');
+    assert.equal(renderer.recordNextButton.hidden, false,
+        'unlimited results need local navigation through records beyond the first window');
+
+    renderer.recordNextButton.trigger('click');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(renderer.records.children.length, 10);
+    assert.match(renderer.records.children[0].children[0].textContent, /Record 11/);
+    renderer.recordNextButton.trigger('click');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(renderer.records.children.length, 5);
+    assert.match(renderer.records.children[0].children[0].textContent, /Record 21/);
+    assert.equal(renderer.recordNextButton.disabled, true);
+    renderer.recordPreviousButton.trigger('click');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(renderer.records.children[0].children[0].textContent, /Record 11/);
+});
+
+test('record titles restart at one for each server-paged result page', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        requestedOffset: 20, requestedLimit: 10, rowStore: inMemoryRowStore()
+    });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'page row' }]] });
+    await renderer.accept({ type: 'end', metadata: {
+        'total-result-count': 21,
+        'result-offset': 20,
+        'result-limit': 10
+    } });
+
+    renderer.layoutControl.value = 'records';
+    renderer.layoutControl.trigger('change');
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.match(renderer.records.children[0].children[0].textContent, /Record 1/,
+        'legacy XSL position() restarts on each server-paged response');
+});
+
+test('query page lifecycle hook is exported and owns one form submit listener', () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    assert.equal(typeof workbench.queryPage.renderInto, 'function');
+
+    const document = new FakeDocument();
+    const form = document.createElement('form');
+    form.setAttribute('id', 'query-form');
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    let submitCount = 0;
+    workbench.query = { doSubmit() { submitCount += 1; } };
+
+    const dispose = workbench.queryPage.renderInto(document.body, {}, {
+        executionFormId: 'query-form',
+        resultsMountId: 'query-results'
+    });
+    const event = form.trigger('submit');
+
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(submitCount, 1);
+    assert.equal(form.eventHandlers.get('submit').length, 1);
+    dispose();
+    assert.equal(form.eventHandlers.get('submit').length, 0);
+});
+
+test('query page keeps BFCache-owned results and releases rows on destructive pagehide', async () => {
+    async function mountedResultPage() {
+        const queryStream = loadQueryStreamApi();
+        const workbench = queryStream.__testWorkbench;
+        const window = queryStream.__testWindow;
+        const listeners = new Map();
+        window.addEventListener = (type, listener) => {
+            const handlers = listeners.get(type) || [];
+            handlers.push(listener);
+            listeners.set(type, handlers);
+        };
+        window.removeEventListener = (type, listener) => {
+            listeners.set(type, (listeners.get(type) || []).filter(handler => handler !== listener));
+        };
+        window.trigger = (type, event) => (listeners.get(type) || []).slice()
+            .forEach(listener => listener(Object.assign({ type }, event || {})));
+
+        const records = [
+            { type: 'head', version: 1 },
+            { type: 'view', id: 'tuple' },
+            { type: 'vars', values: ['item'] },
+            { type: 'rows', values: [[{ kind: 'literal', value: 'persisted row' }]] },
+            { type: 'end', metadata: { 'total-result-count': 1 } }
+        ].map(record => JSON.stringify(record) + '\n').join('');
+        const bytes = new TextEncoder().encode(records);
+        let delivered = false;
+        window.fetch = async () => ({
+            body: {
+                getReader: () => ({
+                    read: async () => {
+                        if (delivered) {
+                            return { done: true };
+                        }
+                        delivered = true;
+                        return { done: false, value: bytes };
+                    },
+                    cancel: async () => {}
+                })
+            }
+        });
+
+        const worker = new InMemoryWorker();
+        const document = new FakeDocument();
+        const form = document.createElement('form');
+        form.setAttribute('id', 'query-form');
+        form.setAttribute('action', 'query');
+        const query = document.createElement('textarea');
+        query.name = 'query';
+        query.value = 'SELECT ?item WHERE { VALUES ?item { "persisted row" } }';
+        form.appendChild(query);
+        const action = document.createElement('input');
+        action.name = 'action';
+        action.value = 'exec';
+        form.appendChild(action);
+        const limit = document.createElement('input');
+        limit.name = 'limit_query';
+        limit.value = '0';
+        form.appendChild(limit);
+        const target = document.createElement('section');
+        target.setAttribute('id', 'query-results');
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+
+        const dispose = workbench.queryPage.renderInto(document.body, {}, {
+            executionFormId: 'query-form',
+            resultsMountId: 'query-results',
+            rowStoreOptions: { workerFactory: () => worker }
+        });
+        form.trigger('submit');
+        for (let attempt = 0; attempt < 30
+                && (worker.rows.length !== 1 || !/1 result(?:s)?\./.test(target.textContent)); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        assert.equal(worker.rows.length, 1, 'the query should store its streamed row before pagehide');
+        assert.match(target.textContent, /1 result(?:s)?\./, 'the query should reach its terminal view before pagehide');
+        assert.equal(target.querySelectorAll('.query-result-layout').length, 1);
+        return { queryStream, window, worker, target, dispose };
+    }
+
+    const bfcachePage = await mountedResultPage();
+    bfcachePage.window.trigger('pagehide', { persisted: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(bfcachePage.queryStream.__testLocalValues.size, 0,
+        'a BFCache-owned result must not be marked for destructive cleanup');
+    assert.equal(bfcachePage.worker.terminated, false,
+        'a BFCache-owned view must keep its worker available for back navigation');
+    assert.equal(bfcachePage.worker.rows.length, 1);
+    assert.equal(bfcachePage.target.querySelectorAll('.query-result-layout').length, 1);
+    bfcachePage.dispose();
+    await new Promise(resolve => setImmediate(resolve));
+
+    const leavingPage = await mountedResultPage();
+    leavingPage.window.trigger('pagehide', { persisted: false });
+    await new Promise(resolve => setImmediate(resolve));
+    const pendingCleanup = [...leavingPage.queryStream.__testLocalValues.keys()];
+    assert.deepEqual(pendingCleanup, ['rdf4j.workbench.query-results.pending-disposal.v1:test-store'],
+        'destructive pagehide must synchronously preserve the exact store ID for next-document recovery');
+    assert.equal(leavingPage.worker.terminated, true,
+        'a page leaving the session must complete the row-store dispose request');
+    assert.deepEqual(leavingPage.worker.rows, []);
+    assert.equal(leavingPage.target.querySelectorAll('.query-result-layout').length, 0);
+});

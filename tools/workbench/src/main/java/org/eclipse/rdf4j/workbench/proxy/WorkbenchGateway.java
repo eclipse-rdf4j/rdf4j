@@ -13,21 +13,28 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet.SERVER_PARAM;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
+import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
+import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -47,8 +54,6 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String SERVER_COOKIE = "workbench-server";
 
-	protected static final String TRANSFORMATIONS = "transformations";
-
 	/**
 	 * Thread-safe map of server paths to their WorkbenchServlet instances.
 	 */
@@ -65,9 +70,6 @@ public class WorkbenchGateway extends AbstractServlet {
 		super.init(config);
 		if (getDefaultServerPath() == null) {
 			throw new MissingInitParameterException(DEFAULT_SERVER);
-		}
-		if (config.getInitParameter(TRANSFORMATIONS) == null) {
-			throw new MissingInitParameterException(TRANSFORMATIONS);
 		}
 		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
 		this.cookies = createCookieHandler(config);
@@ -108,6 +110,9 @@ public class WorkbenchGateway extends AbstractServlet {
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		if (WorkbenchPageProtocol.requestsHtmlNavigation(req) || WorkbenchPageProtocol.requestsPageData(req)) {
+			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
+		}
 		final String change = getChangeServerPath();
 		String pathInfo = req.getPathInfo();
 		if (change == null || !change.equals(pathInfo)) {
@@ -130,6 +135,13 @@ public class WorkbenchGateway extends AbstractServlet {
 			if (!policy.isRouteAllowed(change)) {
 				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
 				return;
+			}
+			if ("GET".equalsIgnoreCase(req.getMethod()) && WorkbenchPageProtocol.requestsHtmlNavigation(req)) {
+				String viewId = WorkbenchViewRegistry.navigableViewId(getClass()).orElse(null);
+				if (viewId != null) {
+					WorkbenchHtmlShell.write(req, resp, config, viewId);
+					return;
+				}
 			}
 			try {
 				changeServer(req, resp);
@@ -174,11 +186,6 @@ public class WorkbenchGateway extends AbstractServlet {
 			throws IOException, QueryResultHandlerException {
 		String server = req.getParameter(SERVER_COOKIE);
 		if (server == null) {
-			// Server parameter was not present, so present entry form.
-			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(getTransformationUrl(req), "server.xsl");
-			builder.start("server");
-
 			// see if server url was still present in cookie, if so use that
 			// value as prefilled value in the form
 			String currentServer = this.cookies.getCookie(req, resp, SERVER_COOKIE);
@@ -186,6 +193,13 @@ public class WorkbenchGateway extends AbstractServlet {
 				// otherwise use the default
 				currentServer = getDefaultServer(req);
 			}
+			if (isNativeHtmlPost(req)) {
+				writeServerPageModel(req, resp, new String[] { "server" }, new Object[] { currentServer });
+				return;
+			}
+			// Server parameter was not present, so present entry form.
+			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
+			builder.start("server");
 			builder.result(currentServer);
 			builder.end();
 			return;
@@ -196,8 +210,12 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (server == null) {
 			// Invalid server was submitted by form. Present entry form again
 			// with error message.
+			if (isNativeHtmlPost(req)) {
+				writeServerPageModel(req, resp, new String[] { "error-message", "server" },
+						new Object[] { "Invalid Server URL", submittedServer });
+				return;
+			}
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(getTransformationUrl(req), "server.xsl");
 			builder.start("error-message", "server");
 			builder.result("Invalid Server URL", submittedServer);
 			builder.end();
@@ -214,6 +232,20 @@ public class WorkbenchGateway extends AbstractServlet {
 		uri.setLength(uri.length() - req.getPathInfo().length());
 		resetCache();
 		resp.sendRedirect(uri.toString());
+	}
+
+	private boolean isNativeHtmlPost(HttpServletRequest request) {
+		return "POST".equalsIgnoreCase(request.getMethod()) && WorkbenchPageProtocol.requestsHtmlNavigation(request);
+	}
+
+	private void writeServerPageModel(HttpServletRequest request, HttpServletResponse response, String[] variables,
+			Object[] row) throws IOException, QueryResultHandlerException {
+		ByteArrayOutputStream pageData = new ByteArrayOutputStream();
+		WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(pageData);
+		pageWriter.view("server");
+		TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
+		builder.start(variables).link(List.of("info")).result(row).end();
+		WorkbenchHtmlShell.writeInitialPageModel(request, response, config, "server", pageData.toByteArray());
 	}
 
 	/**
@@ -290,7 +322,6 @@ public class WorkbenchGateway extends AbstractServlet {
 						final Map<String, String> params = new HashMap<>(3);
 						params.put(SERVER_PARAM, server);
 						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
-						params.put(TRANSFORMATIONS, this.config.getInitParameter(TRANSFORMATIONS));
 						final ServletConfig cfg = createWorkbenchServletConfig(server, params);
 						servlet = createWorkbenchServlet();
 						servlet.init(cfg);
@@ -429,11 +460,6 @@ public class WorkbenchGateway extends AbstractServlet {
 			path.append(req.getPathInfo());
 		}
 		return path;
-	}
-
-	private String getTransformationUrl(final HttpServletRequest req) {
-		final String contextPath = req.getContextPath();
-		return contextPath + config.getInitParameter(TRANSFORMATIONS);
 	}
 
 	protected CookieHandler createCookieHandler(final ServletConfig config) {

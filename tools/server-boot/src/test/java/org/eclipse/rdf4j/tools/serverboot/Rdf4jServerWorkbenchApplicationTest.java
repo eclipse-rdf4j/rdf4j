@@ -18,6 +18,8 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -81,18 +83,25 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.servlet.DispatcherServlet;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ContextConfiguration(initializers = Rdf4jServerWorkbenchApplicationTest.IsolatedAppDataInitializer.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
 class Rdf4jServerWorkbenchApplicationTest {
+
+	private static final ObjectMapper JSON_MAPPER = JsonMapper.builder().build();
 
 	@LocalServerPort
 	private int port;
@@ -262,24 +271,174 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
-	void workbenchStylesheetReferenceUsesWorkbenchContext() {
-		ResponseEntity<String> workbenchResponse = followRedirects(
-				URI.create("http://localhost:" + port + "/rdf4j-workbench/"));
+	void repositorySummaryNavigationReturnsHtmlShellWithoutStylesheet() throws Exception {
+		String repoId = registerRepository("summary-shell", new MemoryStoreConfig());
+		String route = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/summary";
+		HttpHeaders headers = new HttpHeaders();
+		headers.setAccept(List.of(MediaType.TEXT_HTML));
 
-		assertThat(workbenchResponse.getBody()).as("Workbench XML references stylesheet under /rdf4j-workbench")
-				.contains("href='/rdf4j-workbench/transformations/repositories.xsl'");
+		ResponseEntity<String> response = restTemplate.exchange(route, HttpMethod.GET, new HttpEntity<>(headers),
+				String.class);
 
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(mediaType -> assertThat(mediaType.toString()).contains("text/html"));
+		assertThat(response.getBody()).contains("id=\"workbench-app\"")
+				.contains("data-workbench-view=\"summary\"")
+				.contains("/rdf4j-workbench/scripts/workbenchApp.js")
+				.doesNotContain("<?xml", ".xsl");
+	}
+
+	@Test
+	void repositorySummaryStructuredRequestReturnsTypedNdjson() throws Exception {
+		String repoId = registerRepository("summary-data", new MemoryStoreConfig());
+		String route = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/summary";
+		HttpHeaders headers = new HttpHeaders();
+		headers.setAccept(List.of(MediaType.parseMediaType("application/vnd.rdf4j.workbench+ndjson")));
+
+		ResponseEntity<String> response = restTemplate.exchange(route, HttpMethod.GET, new HttpEntity<>(headers),
+				String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(mediaType -> assertThat(mediaType.toString())
+						.contains("application/vnd.rdf4j.workbench+ndjson"));
+		assertThat(response.getBody()).isNotNull();
+		List<JsonNode> records = response.getBody()
+				.lines()
+				.map(JSON_MAPPER::readTree)
+				.toList();
+		assertThat(records).isNotEmpty();
+		assertThat(records.get(0).get("type").asText()).isEqualTo("head");
+		assertThat(records.get(0).get("version").asInt()).isEqualTo(1);
+		assertThat(records.get(1).get("type").asText()).isEqualTo("view");
+		assertThat(records.get(1).get("id").asText()).isEqualTo("summary");
+		assertThat(records).anySatisfy(record -> {
+			assertThat(record.get("type").asText()).isEqualTo("vars");
+			assertThat(record.get("values")).extracting(JsonNode::asText)
+					.containsExactly("id", "description", "location", "server", "size", "contexts");
+		});
+		JsonNode row = records.stream()
+				.filter(record -> "rows".equals(record.path("type").asText()))
+				.flatMap(record -> {
+					List<JsonNode> values = new ArrayList<>();
+					record.path("values").forEach(batchRow -> values.add(batchRow));
+					return values.stream();
+				})
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("Summary NDJSON omitted its row"));
+		assertThat(row.get(0).get("kind").asText()).isEqualTo("literal");
+		assertThat(row.get(0).get("value").asText()).isEqualTo(repoId);
+		assertThat(row.get(3).get("kind").asText()).isEqualTo("literal");
+		assertThat(row.get(3).get("value").asText()).isNotBlank();
+		assertThat(records).anySatisfy(record -> {
+			assertThat(record.get("type").asText()).isEqualTo("metadata");
+			assertThat(record.path("values").path("config-model-turtle").asText()).contains("rdf4j");
+		});
+		List<JsonNode> terminals = records.stream()
+				.filter(record -> "end".equals(record.path("type").asText())
+						|| "error".equals(record.path("type").asText()))
+				.toList();
+		assertThat(terminals).hasSize(1);
+		assertThat(terminals.get(0).get("type").asText()).isEqualTo("end");
+		assertThat(records.get(records.size() - 1).get("type").asText()).isEqualTo("end");
+	}
+
+	@Test
+	void queryExecutionPostReturnsTypedStreamingRows() throws Exception {
+		String repoId = registerRepository("query-page-data", new MemoryStoreConfig());
+		String route = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/query";
+		HttpHeaders headers = new HttpHeaders();
+		headers.setAccept(List.of(MediaType.parseMediaType("application/vnd.rdf4j.workbench+ndjson")));
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+		body.add("action", "exec");
+		body.add("ref", "text");
+		body.add("query", "SELECT (1 AS ?value) WHERE {}");
+		body.add("limit_query", "0");
+
+		ResponseEntity<String> response = restTemplate.exchange(route, HttpMethod.POST,
+				new HttpEntity<>(body, headers), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(mediaType -> assertThat(mediaType.toString())
+						.contains("application/vnd.rdf4j.workbench+ndjson"));
+		List<JsonNode> records = response.getBody().lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records.get(0).path("type").asText()).isEqualTo("head");
+		assertThat(records.get(1).path("type").asText()).isEqualTo("view");
+		assertThat(records.get(1).path("id").asText()).isEqualTo("query-result-tuple");
+		JsonNode rows = records.stream()
+				.filter(record -> "rows".equals(record.path("type").asText()))
+				.findFirst()
+				.orElseThrow()
+				.path("values");
+		assertThat(rows).hasSize(1);
+		assertThat(rows.get(0).get(0).path("kind").asText()).isEqualTo("literal");
+		assertThat(rows.get(0).get(0).path("value").asText()).isEqualTo("1");
+		JsonNode end = records.get(records.size() - 1);
+		assertThat(end.path("type").asText()).isEqualTo("end");
+		assertThat(end.path("metadata").path("total-result-count").asLong()).isEqualTo(1);
+		assertThat(end.path("metadata").path("result-limit").asInt()).isZero();
+	}
+
+	@Test
+	void explicitTupleFormatsRemainRawForBrowserGetAndPost() throws Exception {
+		String repoId = registerRepository("raw-query-format", new MemoryStoreConfig());
+		String baseRoute = "http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/query";
+		String query = "SELECT (1 AS ?value) WHERE {}";
+		String format = "application/sparql-results+json";
+		String getUrl = baseRoute + "?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+				+ "&Accept=" + URLEncoder.encode(format, StandardCharsets.UTF_8);
+		HttpHeaders getHeaders = new HttpHeaders();
+		getHeaders.setAccept(List.of(MediaType.TEXT_HTML));
+
+		ResponseEntity<String> getResponse = restTemplate.exchange(
+				URI.create(getUrl),
+				HttpMethod.GET, new HttpEntity<>(getHeaders), String.class);
+
+		assertRawTupleResult(getResponse);
+
+		HttpHeaders postHeaders = new HttpHeaders();
+		postHeaders.setAccept(List.of(MediaType.TEXT_HTML));
+		postHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+		body.add("action", "exec");
+		body.add("ref", "text");
+		body.add("query", query);
+		body.add("Accept", format);
+		ResponseEntity<String> postResponse = restTemplate.exchange(baseRoute, HttpMethod.POST,
+				new HttpEntity<>(body, postHeaders), String.class);
+
+		assertRawTupleResult(postResponse);
+	}
+
+	private void assertRawTupleResult(ResponseEntity<String> response) {
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(mediaType -> assertThat(mediaType.toString()).contains("application/sparql-results+json"));
+		assertThat(response.getBody()).isNotNull().doesNotContain("id=\"workbench-app\"");
+		JsonNode result = JSON_MAPPER.readTree(response.getBody());
+		assertThat(result.path("head").path("vars").get(0).asText()).isEqualTo("value");
+		assertThat(result.path("results").path("bindings").get(0).path("value").path("value").asText())
+				.isEqualTo("1");
+	}
+
+	@Test
+	void workbenchStylesheetResourcesAreNotDeployed() {
 		ResponseEntity<String> stylesheet = restTemplate.getForEntity(
 				"http://localhost:" + port + "/rdf4j-workbench/transformations/repositories.xsl", String.class);
 
-		assertThat(stylesheet.getStatusCode()).as("HTTP status for repositories.xsl")
-				.isEqualTo(HttpStatus.OK);
-		assertThat(stylesheet.getHeaders().getContentType()).as("XSL content type")
-				.isNotNull()
-				.satisfies(mediaType -> assertThat(mediaType.toString())
-						.contains("application/xml"));
-		assertThat(stylesheet.getBody()).as("repositories.xsl body")
-				.contains("<xsl:stylesheet");
+		assertThat(stylesheet.getStatusCode()).as("legacy repositories.xsl endpoint")
+				.isEqualTo(HttpStatus.NOT_FOUND);
+		assertThat(stylesheet.getBody()).as("legacy stylesheet response")
+				.doesNotContain("<xsl:stylesheet", "<?xml-stylesheet");
+	}
+
+	@Test
+	void workbenchDoesNotConfigureLegacyTransformationPath() {
+		assertThat(rdf4jWorkbenchServlet.getInitParameters())
+				.doesNotContainKey("transformations");
 	}
 
 	@Test

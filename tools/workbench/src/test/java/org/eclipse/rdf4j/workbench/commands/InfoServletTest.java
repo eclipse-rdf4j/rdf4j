@@ -80,7 +80,7 @@ public class InfoServletTest {
 		when(req.getParameter(anyString())).thenReturn(RDF4J.NIL.toString());
 		HttpServletResponse resp = mock(HttpServletResponse.class);
 		when(resp.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 	}
 
 	@Test
@@ -89,7 +89,7 @@ public class InfoServletTest {
 		HttpServletResponse resp = mock(HttpServletResponse.class);
 		when(resp.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		assertThatCode(() -> servlet.service(req, resp, "")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.service(req, resp)).doesNotThrowAnyException();
 	}
 
 	@Test
@@ -100,7 +100,7 @@ public class InfoServletTest {
 		when(req.getParameter("Accept")).thenReturn("text/turtle");
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		String xml = output.content();
 		assertThat(xml)
@@ -121,7 +121,7 @@ public class InfoServletTest {
 		CapturingServletOutputStream output = new CapturingServletOutputStream();
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		assertThat(output.content())
 				.containsPattern("(?s)<binding name='default-workbench-theme'>\\s*<literal>dark</literal>");
@@ -139,7 +139,7 @@ public class InfoServletTest {
 		CapturingServletOutputStream output = new CapturingServletOutputStream();
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		assertThat(output.content())
 				.containsPattern(
@@ -159,7 +159,7 @@ public class InfoServletTest {
 		CapturingServletOutputStream output = new CapturingServletOutputStream();
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		assertThat(output.content())
 				.containsPattern(
@@ -193,7 +193,7 @@ public class InfoServletTest {
 		CapturingServletOutputStream output = new CapturingServletOutputStream();
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		assertThat(output.content())
 				.containsPattern("(?s)<binding name='menu-group-id'>\\s*<literal>explore</literal>")
@@ -222,7 +222,7 @@ public class InfoServletTest {
 		CapturingServletOutputStream output = new CapturingServletOutputStream();
 		when(resp.getOutputStream()).thenReturn(output);
 
-		servlet.service(req, resp, "");
+		servlet.service(req, resp);
 
 		assertThat(output.content()).containsPattern(
 				"(?s)<binding name='menu-item-href'>\\s*<literal>/rdf4j/workbench/NONE/repositories</literal>");
@@ -240,7 +240,7 @@ public class InfoServletTest {
 
 		assertThat(servlet.getCookieNames()).contains("limit", "queryLn", "infer", "query-timeout", "Accept",
 				"Content-Type");
-		assertThatCode(() -> servlet.service(req, resp, "")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.service(req, resp)).doesNotThrowAnyException();
 	}
 
 	@Test
@@ -252,7 +252,7 @@ public class InfoServletTest {
 		HttpServletResponse resp = mock(HttpServletResponse.class);
 		when(resp.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		org.assertj.core.api.Assertions.assertThatThrownBy(() -> servlet.service(req, resp, ""))
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> servlet.service(req, resp))
 				.isInstanceOf(RepositoryConfigException.class)
 				.hasMessageContaining("missing does not exist");
 	}

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 #*******************************************************************************
 # Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
 # All rights reserved. This program and the accompanying materials

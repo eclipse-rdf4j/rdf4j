@@ -333,6 +333,23 @@ test('selects adaptive hotspot metrics and accepts a shared maximum', () => {
     assert.equal(result.sharedMaximum, 20);
 });
 
+test('hotspot highlighting uses the blue palette at its minimum and maximum intensities', () => {
+    const { highlighter } = createHighlighterHarness();
+    const result = highlighter.render({
+        type: 'Join',
+        costEstimate: 0,
+        plans: [{ type: 'StatementPattern', costEstimate: 1 }]
+    }, {
+        level: 'Optimized',
+        mode: 'hotspot'
+    });
+    const hotspots = result.fragment.children.filter(element => element.tagName === 'SPAN'
+        && element.classList.contains('query-explanation-line--hotspot'));
+
+    assert.equal(hotspots[0].style.backgroundColor, 'rgb(222, 243, 251)');
+    assert.equal(hotspots[1].style.backgroundColor, 'rgb(115, 196, 226)');
+});
+
 test('keeps large actual-row values exact for hotspot maxima and shared scales', () => {
     const { highlighter } = createHighlighterHarness();
     const plan = {

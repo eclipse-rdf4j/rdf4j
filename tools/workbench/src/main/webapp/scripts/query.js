@@ -48,6 +48,9 @@ var workbench;
         var lastPresentedCompareMode = false;
         var lastPresentedDiffOpen = false;
         var compareSidebarOpen = false;
+        var compareNavigationDisclosureOpenBeforeCompare = null;
+        var compareNavigationNarrowModeBeforeCompare = null;
+        var compareSidebarPositionListenersInstalled = false;
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement = null;
@@ -1077,40 +1080,82 @@ var workbench;
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
             syncExplanationHighlightControls();
         }
+        function updateCompareSidebarNavigationPosition() {
+            var body = document.body;
+            var navigation = document.getElementById('navigation');
+            var toggle = document.getElementById('query-sidebar-toggle');
+            if (!body || !navigation || !toggle || !compareModeEnabled || !compareSidebarOpen) {
+                if (body) {
+                    body.style.removeProperty('--query-compare-nav-top');
+                    body.style.removeProperty('--query-compare-nav-left');
+                }
+                return;
+            }
+            var toggleBounds = toggle.getBoundingClientRect();
+            body.style.setProperty('--query-compare-nav-top', (toggleBounds.bottom + 8) + 'px');
+            body.style.setProperty('--query-compare-nav-left', toggleBounds.left + 'px');
+        }
         function syncCompareSidebarState() {
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
+            var navigationDisclosure = document.getElementById('workbench-navigation-disclosure');
+            if (compareModeEnabled) {
+                if (navigationDisclosure && compareNavigationDisclosureOpenBeforeCompare === null) {
+                    compareNavigationDisclosureOpenBeforeCompare = navigationDisclosure.open;
+                    compareNavigationNarrowModeBeforeCompare = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                }
+                if (navigationDisclosure && !navigationDisclosure.open) {
+                    workbench.setNativeDisclosureOpen(navigationDisclosure, true, false);
+                }
+            }
+            else if (compareNavigationDisclosureOpenBeforeCompare !== null) {
+                if (navigationDisclosure) {
+                    var narrowNavigationMode = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                    var restoreNavigationOpen = compareNavigationDisclosureOpenBeforeCompare;
+                    if (narrowNavigationMode !== compareNavigationNarrowModeBeforeCompare) {
+                        restoreNavigationOpen = !narrowNavigationMode;
+                    }
+                    workbench.setNativeDisclosureOpen(navigationDisclosure, restoreNavigationOpen, false);
+                }
+                compareNavigationDisclosureOpenBeforeCompare = null;
+                compareNavigationNarrowModeBeforeCompare = null;
+            }
             $('body').toggleClass('query-compare-nav-open', compareModeEnabled && compareSidebarOpen);
             var sidebarToggle = $('#query-sidebar-toggle');
             var navigationTransform = '';
-            var queryWorkspaceTransform = '';
-            var sidebarToggleTransform = '';
             if (!compareModeEnabled) {
                 $('#navigation').css('transform', navigationTransform);
-                $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-                sidebarToggle.css('transform', sidebarToggleTransform);
+                $('#title_heading, #noscript-message, .query-form').css('transform', '');
                 sidebarToggle
-                    .hide()
                     .removeClass('query-sidebar-toggle--nav-open')
                     .attr('aria-hidden', 'true')
+                    .attr('aria-expanded', 'false')
                     .attr('tabindex', '-1');
+                updateCompareSidebarNavigationPosition();
                 return;
             }
             navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
-            queryWorkspaceTransform = compareSidebarOpen ? 'translateX(184px)' : 'translateX(0)';
-            sidebarToggleTransform = compareSidebarOpen ? 'translateX(192px)' : 'translateX(0)';
             $('#navigation').css('transform', navigationTransform);
-            $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-            sidebarToggle.css('transform', sidebarToggleTransform);
+            $('#title_heading, #noscript-message, .query-form').css('transform', '');
             var label = compareSidebarOpen
                 ? sidebarToggle.attr('data-hide-label')
                 : sidebarToggle.attr('data-show-label');
             sidebarToggle
-                .show()
                 .toggleClass('query-sidebar-toggle--nav-open', compareSidebarOpen)
                 .attr('aria-hidden', 'false')
+                .attr('aria-expanded', compareSidebarOpen ? 'true' : 'false')
                 .attr('aria-label', label)
                 .attr('title', label)
                 .removeAttr('tabindex');
+            updateCompareSidebarNavigationPosition();
+            if (!compareSidebarPositionListenersInstalled) {
+                window.addEventListener('resize', syncCompareSidebarState);
+                window.addEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = true;
+            }
         }
         function lockExplanationDimensions(paneKey) {
             var paneState = getPaneState(paneKey);
@@ -2489,6 +2534,10 @@ var workbench;
                 { name: 'query-request-id', value: queryRequestId }
             ]));
         }
+        function cancelServerQuery(queryRequestId) {
+            postCancelQuery(queryRequestId);
+        }
+        query_1.cancelServerQuery = cancelServerQuery;
         function setQueryCancelVisible(visible) {
             $('#query-cancel')
                 .prop('disabled', !visible)
@@ -2711,6 +2760,10 @@ var workbench;
             }
             resultFullscreenPreviousFocus = null;
         }
+        function getResultPresentationState() {
+            return { layout: resultPresentationLayout, wrap: resultPresentationWrap };
+        }
+        query_1.getResultPresentationState = getResultPresentationState;
         function applyResultPresentationState(layout, wrap) {
             if (layout === 'table' || layout === 'records' || layout === 'auto') {
                 resultPresentationLayout = layout;
@@ -2718,6 +2771,7 @@ var workbench;
             resultPresentationWrap = wrap !== false;
             postResultPresentationToFrame();
         }
+        query_1.applyResultPresentationState = applyResultPresentationState;
         function stopResultFrame(frame) {
             try {
                 if (frame && frame.contentWindow && typeof frame.contentWindow.stop === 'function') {
@@ -3540,6 +3594,13 @@ var workbench;
                 ajaxSave(false);
                 return false;
             }
+            var streamedQueryPage = workbench.queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                && streamedQueryPage.ownsForm(queryForm)
+                && typeof streamedQueryPage.submitExecution === 'function') {
+                return streamedQueryPage.submitExecution();
+            }
             var queryElement = document.getElementById('query');
             if (!queryElement || !$.trim(queryElement.value)) {
                 var hadActiveQuery = !!activeQueryRequestId;
@@ -3626,6 +3687,16 @@ var workbench;
         }
         query_1.doSubmit = doSubmit;
         function cancelQuery() {
+            var streamedQueryPage = workbench.queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                && streamedQueryPage.ownsForm(queryForm)
+                && typeof streamedQueryPage.hasActiveRequest === 'function'
+                && streamedQueryPage.hasActiveRequest()
+                && typeof streamedQueryPage.cancelExecution === 'function') {
+                streamedQueryPage.cancelExecution();
+                return;
+            }
             var queryRequestId = activeQueryRequestId;
             if (!queryRequestId) {
                 return;

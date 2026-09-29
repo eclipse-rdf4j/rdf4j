@@ -137,8 +137,17 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     const form = harness.document.querySelectorAll('form[action="query"]')[0];
 
     form.formControls = [];
-    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'), /action=explain/);
-    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2'), /explain-format=json/);
+    const explainData = new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'));
+    assert.equal(explainData.get('action'), 'explain');
+    assert.equal(explainData.get('explain'), 'Optimized');
+    assert.equal(explainData.get('explain-format'), 'json');
+    assert.equal(explainData.get('infer'), 'false',
+        'Explain must preserve the explicit no-inference selection when unchecked controls are omitted');
+    assert.equal(explainData.get('query'), 'ASK {}');
+    assert.equal(explainData.get('explain-request-id'), 'server-1');
+    assert.equal(new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2')).get('explain-format'), 'json');
     assert.equal(testing.serializeCancelExplainFormData('server-1'), 'action=cancel-explain&explain-request-id=server-1');
 
     assert.equal(testing.getExplanationDownloadMimeType('dot'), 'text/vnd.graphviz');

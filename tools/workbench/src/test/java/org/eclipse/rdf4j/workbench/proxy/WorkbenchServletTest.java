@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Deque;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -44,9 +47,11 @@ import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -54,6 +59,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 class WorkbenchServletTest {
+	private static final String LEGACY_TRANSFORMATIONS = "transformations";
 
 	@Test
 	void initValidatesParametersAndManagerCreation(@TempDir File tempDir) throws Exception {
@@ -97,7 +103,7 @@ class WorkbenchServletTest {
 		servlet.init(TestServletConfig.withParams("workbench",
 				"default-path", "/repositories",
 				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
-				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+				LEGACY_TRANSFORMATIONS, "/transform"));
 
 		assertThat(servlet.createProxyRepositoryServlet()).isInstanceOf(ProxyRepositoryServlet.class);
 		assertThat(servlet.createCookieHandler()).isInstanceOf(CookieHandler.class);
@@ -178,7 +184,9 @@ class WorkbenchServletTest {
 		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
 		CapturedResponse unauthorizedResponse = new CapturedResponse();
 		unauthorizedServlet.service(request("/workbench/repo", "/repo"), unauthorizedResponse);
-		assertThat(unauthorizedResponse.getBody()).contains("failed to authenticate").contains("server.xsl");
+		assertThat(unauthorizedResponse.getBody())
+				.contains("failed to authenticate")
+				.doesNotContain("<?xml-stylesheet", ".xsl");
 
 		TestWorkbenchServlet wrappedUnauthorizedServlet = initServlet(manager);
 		RecordingProxyRepositoryServlet wrappedUnauthorizedProxy = new RecordingProxyRepositoryServlet();
@@ -205,6 +213,88 @@ class WorkbenchServletTest {
 				() -> failingServlet.service(request("/workbench/broken", "/broken"), new CapturedResponse()))
 						.isInstanceOf(ServletException.class)
 						.hasCauseInstanceOf(RepositoryException.class);
+	}
+
+	@Test
+	void browserFormUnauthorizedPostReturnsAnInlineCurrentRouteModelOnce() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.toThrow = new UnauthorizedException("nope");
+		servlet.createdServlets.add(proxy);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+
+		MockHttpServletRequest request = request("/workbench/repo/add", "/repo/add");
+		request.setMethod("POST");
+		request.addHeader("Accept", "text/html,application/xhtml+xml");
+		CapturedResponse response = new CapturedResponse();
+
+		servlet.service(request, response);
+
+		assertThat(proxy.serviceCount).isEqualTo(1);
+		assertThat(response.getRecordedContentType()).startsWith("text/html");
+		String html = response.getBody();
+		assertThat(html)
+				.contains("data-workbench-view=\"add\"", "data-workbench-initial-model=")
+				.doesNotContain("<?xml-stylesheet", ".xsl");
+		assertThat(initialPageModel(html))
+				.contains("\"id\":\"add\"", "\"type\":\"view\"", "failed to authenticate", "\"type\":\"end\"");
+	}
+
+	@Test
+	void unauthorizedBrowserGetReturnsInlineErrorModelForRequestedPage() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.toThrow = new UnauthorizedException("nope");
+		servlet.createdServlets.add(proxy);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+
+		MockHttpServletRequest request = request("/workbench/repo/query", "/repo/query");
+		request.addHeader("Accept", "text/html,application/xhtml+xml");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getContentType()).startsWith("text/html");
+		String html = response.getContentAsString();
+		assertThat(html).contains("data-workbench-view=\"query\"", "data-workbench-initial-model=")
+				.doesNotContain("<?xml-stylesheet", "application/sparql-results+xml");
+		assertThat(initialPageModel(html))
+				.contains("\"id\":\"query\"", "\"type\":\"view\"", "failed to authenticate", "\"type\":\"end\"");
+	}
+
+	@Test
+	void unauthorizedPageDataUsesTheRequestedPageView() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.toThrow = new UnauthorizedException("nope");
+		servlet.createdServlets.add(proxy);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+
+		MockHttpServletRequest request = request("/workbench/repo/query", "/repo/query");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getContentType()).startsWith(WorkbenchPageProtocol.ACCEPT);
+		String pageData = response.getContentAsString();
+		assertThat(pageData)
+				.contains("\"id\":\"query\"", "\"type\":\"view\"", "failed to authenticate", "\"type\":\"end\"")
+				.doesNotContain("\"id\":\"server\"");
+	}
+
+	private static String initialPageModel(String html) {
+		Matcher matcher = Pattern.compile("data-workbench-initial-model=\"([^\"]+)\"").matcher(html);
+		if (!matcher.find()) {
+			throw new AssertionError("HTML response is missing its inline Workbench page model");
+		}
+		return new String(Base64.getUrlDecoder().decode(matcher.group(1)), StandardCharsets.UTF_8);
 	}
 
 	@Test
@@ -260,7 +350,7 @@ class WorkbenchServletTest {
 		unauthorizedServlet.init(TestServletConfig.withParams("workbench",
 				"default-path", "/repositories",
 				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
-				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+				LEGACY_TRANSFORMATIONS, "/transform"));
 		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
 		proxy.toThrow = new UnauthorizedException("nope");
 		unauthorizedServlet.createdServlets.add(proxy);
@@ -284,11 +374,11 @@ class WorkbenchServletTest {
 				? TestServletConfig.withParams("workbench",
 						"default-path", "/repositories",
 						WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
-						WorkbenchGateway.TRANSFORMATIONS, "/transform")
+						LEGACY_TRANSFORMATIONS, "/transform")
 				: TestServletConfig.withParams("workbench",
 						"default-path", "/repositories",
 						WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
-						WorkbenchGateway.TRANSFORMATIONS, "/transform",
+						LEGACY_TRANSFORMATIONS, "/transform",
 						"no-repository-id", noRepositoryId);
 		servlet.init(config);
 		return servlet;
@@ -353,7 +443,7 @@ class WorkbenchServletTest {
 				java.io.OutputStream outputStream) {
 			TupleResultBuilder builder = mock(TupleResultBuilder.class);
 			try {
-				when(builder.transform(anyString(), anyString()))
+				when(builder.start(any(String[].class)))
 						.thenThrow(new org.eclipse.rdf4j.query.QueryResultHandlerException("boom"));
 			} catch (org.eclipse.rdf4j.query.QueryResultHandlerException e) {
 				throw new AssertionError(e);

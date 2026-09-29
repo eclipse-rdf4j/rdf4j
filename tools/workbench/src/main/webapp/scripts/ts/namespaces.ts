@@ -10,7 +10,7 @@ module workbench {
     export module namespaces {
 
         /**
-         * Invoked by #prefix-select element in namespaces.xsl.
+         * Invoked by the rendered #prefix-select element.
          */
         export function updatePrefix() {
             var select = $('#prefix-select');

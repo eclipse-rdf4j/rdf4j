@@ -152,7 +152,7 @@ class ExportServletCoverageTest {
 		when(request.getParameter("Accept")).thenReturn(RDFFormat.BINARY.getDefaultMIMEType());
 		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setContentType(RDFFormat.BINARY.getDefaultMIMEType());
 		verify(response).setHeader("Content-disposition", "attachment; filename=export."
@@ -191,7 +191,7 @@ class ExportServletCoverageTest {
 				return null;
 			}).when(connection).export(any(RDFHandler.class));
 
-			servlet.service(request, response, "/transform");
+			servlet.service(request, response);
 
 			byte[] rdf;
 			if ("gzip".equals(compression)) {
@@ -539,7 +539,7 @@ class ExportServletCoverageTest {
 		when(response.getOutputStream()).thenReturn(output);
 		ExportServlet servlet = new ExportServlet();
 		servlet.setRepository(repository);
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 	}
 
 	@Test
@@ -599,7 +599,7 @@ class ExportServletCoverageTest {
 			return null;
 		}).when(connection).export(any(RDFHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		assertThat(timeoutHandlerCount).hasValue(1);
 	}
@@ -629,7 +629,7 @@ class ExportServletCoverageTest {
 			return null;
 		}).when(connection).export(any(RDFHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		assertThat(timeoutHandlerCount).hasValue(1);
 	}
@@ -661,7 +661,7 @@ class ExportServletCoverageTest {
 			return null;
 		}).when(connection).export(any(RDFHandler.class));
 
-		assertThatThrownBy(() -> servlet.service(request, response, "/transform"))
+		assertThatThrownBy(() -> servlet.service(request, response))
 				.isInstanceOf(RDFHandlerException.class)
 				.hasMessage("RDFHandler took too long");
 		verify(connection).close();
@@ -689,7 +689,7 @@ class ExportServletCoverageTest {
 			return null;
 		}).when(connection).export(any(RDFHandler.class));
 
-		servlet.service(zeroTimeoutRequest, response, "/transform");
+		servlet.service(zeroTimeoutRequest, response);
 
 		WorkbenchRequest invalidRequest = mock(WorkbenchRequest.class);
 		when(invalidRequest.isParameterPresent("Accept")).thenReturn(true);
@@ -698,7 +698,7 @@ class ExportServletCoverageTest {
 		when(invalidRequest.getInt("timeout")).thenReturn(-1);
 		HttpServletResponse invalidResponse = mock(HttpServletResponse.class);
 
-		assertThatThrownBy(() -> servlet.service(invalidRequest, invalidResponse, "/transform"))
+		assertThatThrownBy(() -> servlet.service(invalidRequest, invalidResponse))
 				.isInstanceOf(BadRequestException.class);
 		verifyNoInteractions(invalidResponse);
 	}
@@ -738,7 +738,7 @@ class ExportServletCoverageTest {
 			return null;
 		}).when(connection).export(any(RDFHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(connection).export(any(RDFHandler.class));
 		try (InputStream compressed = new GZIPInputStream(new ByteArrayInputStream(output.bytes()))) {

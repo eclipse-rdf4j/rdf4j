@@ -73,7 +73,7 @@ public class CreateServlet extends TransformationServlet {
 	 * POST requests to this servlet come from the various specific create-* form submissions.
 	 */
 	@Override
-	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws ServletException {
 		try {
 			resp.sendRedirect("../" + createRepositoryConfig(req) + "/summary");
@@ -83,13 +83,13 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	/**
-	 * GET requests to this servlet come from the Workbench side bar or from create.xsl form submissions.
+	 * GET requests to this servlet come from the Workbench side bar or repository creation form submissions.
 	 *
 	 * @throws RepositoryException
 	 * @throws QueryResultHandlerException
 	 */
 	@Override
-	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	protected void service(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
@@ -98,11 +98,9 @@ public class CreateServlet extends TransformationServlet {
 			final String type = req.getTypeParameter();
 			federate = FEDERATE.equals(type);
 			typedTemplate = !federate;
-			builder.transform(xslPath, federate ? "create-federate.xsl" : "create-template.xsl");
 		} else {
 			federate = false;
 			typedTemplate = false;
-			builder.transform(xslPath, "create.xsl");
 		}
 		builder.start(federate ? FEDERATE_RESULT_VARS : typedTemplate ? TEMPLATE_RESULT_VARS : TYPE_PICKER_RESULT_VARS);
 		builder.link(List.of(INFO));
@@ -215,7 +213,7 @@ public class CreateServlet extends TransformationServlet {
 	private void writeTemplateField(TupleResultBuilder builder, CreateTemplateConfig template,
 			CreateTemplateConfig.Field field, String value, boolean selected) throws QueryResultHandlerException {
 		builder.result(template.getType(), template.getLabel(), field.getId(), field.getProperty(), field.getRole(),
-				field.getName(), field.getControl().getXslValue(), value, String.valueOf(selected),
+				field.getName(), field.getControl().getUiValue(), value, String.valueOf(selected),
 				String.valueOf(field.getSize()), String.valueOf(field.getRows()), String.valueOf(field.getCols()),
 				field.getPlaceholder());
 	}

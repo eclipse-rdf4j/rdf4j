@@ -39,7 +39,7 @@ public class ExploreServlet extends TupleServlet {
 	protected static final int LIMIT_DEFAULT = 100;
 
 	public ExploreServlet() {
-		super("explore.xsl", "subject", "predicate", "object", "context");
+		super("subject", "predicate", "object", "context");
 	}
 
 	@Override
@@ -48,14 +48,13 @@ public class ExploreServlet extends TupleServlet {
 	}
 
 	@Override
-	public void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+	public void service(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws Exception {
 		try {
-			super.service(req, resp, xslPath);
+			super.service(req, resp);
 		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(xslPath, "explore.xsl");
 			builder.start("error-message");
 			builder.link(List.of(INFO));
 			builder.result(exc.getMessage());

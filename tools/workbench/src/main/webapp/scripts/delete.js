@@ -4,7 +4,7 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 /**
- * Invoked by the "Delete" button on the form in delete.xsl. Checks with the
+ * Invoked by the "Delete" button on the rendered delete form. Checks with the
  * DeleteServlet whether the given ID has been proxied, giving a chance to back
  * out if it is.
  */

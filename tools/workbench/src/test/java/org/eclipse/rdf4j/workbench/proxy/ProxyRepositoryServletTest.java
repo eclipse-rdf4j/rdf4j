@@ -352,9 +352,9 @@ class ProxyRepositoryServletTest {
 		}
 
 		@Override
-		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+		protected void service(WorkbenchRequest req, HttpServletResponse resp)
 				throws IOException, RDF4JException, BadRequestException {
-			super.service(req, resp, xslPath);
+			super.service(req, resp);
 		}
 	}
 

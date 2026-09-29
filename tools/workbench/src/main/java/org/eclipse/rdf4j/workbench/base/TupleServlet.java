@@ -22,26 +22,20 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public abstract class TupleServlet extends TransformationServlet {
 
-	protected String xsl;
-
 	protected String[] variables;
 
-	public TupleServlet(String xsl, String... variables) {
+	public TupleServlet(String... variables) {
 		super();
-		this.xsl = xsl;
 		this.variables = variables;
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
 				builder.prefix(ns.getPrefix(), ns.getName());
-			}
-			if (xsl != null) {
-				builder.transform(xslPath, xsl);
 			}
 			builder.start(variables);
 			builder.link(List.of("info"));

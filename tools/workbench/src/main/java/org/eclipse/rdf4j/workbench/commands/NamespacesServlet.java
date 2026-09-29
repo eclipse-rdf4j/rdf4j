@@ -26,7 +26,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class NamespacesServlet extends TransformationServlet {
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		try (RepositoryConnection con = repository.getConnection()) {
 			String prefix = req.getParameter("prefix");
 			String namespace = req.getParameter("namespace");
@@ -36,14 +36,13 @@ public class NamespacesServlet extends TransformationServlet {
 				con.removeNamespace(prefix);
 			}
 		}
-		super.service(req, resp, xslPath);
+		super.service(req, resp);
 	}
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
 		// TupleResultBuilder builder = new TupleResultBuilder(out);
-		builder.transform(xslPath, "namespaces.xsl");
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 			builder.start("prefix", "namespace");

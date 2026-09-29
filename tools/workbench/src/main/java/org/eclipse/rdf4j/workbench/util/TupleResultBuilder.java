@@ -48,8 +48,10 @@ public class TupleResultBuilder {
 		out.handleNamespace(prefix, namespace);
 	}
 
-	public TupleResultBuilder transform(String path, String xsl) throws QueryResultHandlerException {
-		out.handleStylesheet(path + "/" + xsl);
+	public TupleResultBuilder view(String viewId) throws QueryResultHandlerException {
+		if (out instanceof WorkbenchPageResultWriter) {
+			((WorkbenchPageResultWriter) out).view(viewId);
+		}
 		return this;
 	}
 
@@ -100,6 +102,23 @@ public class TupleResultBuilder {
 	public TupleResultBuilder metadata(String name, Object value) {
 		if (out instanceof WorkbenchTupleResultWriter) {
 			((WorkbenchTupleResultWriter) out).addMetadata(name, value);
+		} else if (out instanceof WorkbenchPageResultWriter pageWriter) {
+			try {
+				pageWriter.metadata(name, value);
+			} catch (QueryResultHandlerException e) {
+				throw new IllegalStateException("Unable to write Workbench page metadata", e);
+			}
+		}
+		return this;
+	}
+
+	public TupleResultBuilder terminalMetadata(String name, Object value) {
+		if (out instanceof WorkbenchPageResultWriter pageWriter) {
+			try {
+				pageWriter.terminalMetadata(name, value);
+			} catch (QueryResultHandlerException e) {
+				throw new IllegalStateException("Unable to write terminal Workbench page metadata", e);
+			}
 		}
 		return this;
 	}

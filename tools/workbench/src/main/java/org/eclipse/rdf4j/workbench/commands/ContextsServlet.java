@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 public class ContextsServlet extends TupleServlet {
 
 	public ContextsServlet() {
-		super("contexts.xsl", "context");
+		super("context");
 	}
 
 	@Override

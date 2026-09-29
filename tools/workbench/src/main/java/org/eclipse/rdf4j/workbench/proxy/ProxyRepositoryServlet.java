@@ -17,6 +17,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
 import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
+import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -117,6 +119,11 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 			}
 		} else {
 			DynamicHttpRequest hreq = new DynamicHttpRequest(req);
+			WorkbenchViewRegistry.viewId(servlet.getClass())
+					.ifPresent(viewId -> hreq.setAttribute(WorkbenchPageProtocol.PAGE_VIEW_ID_ATTRIBUTE, viewId));
+			if (info != null && info.getId() != null) {
+				hreq.setAttribute(WorkbenchPageProtocol.REPOSITORY_ID_ATTRIBUTE, info.getId());
+			}
 			hreq.setServletPath(hreq.getServletPath() + hreq.getPathInfo());
 			hreq.setPathInfo(null);
 			servlet.service(hreq, resp);

@@ -39,6 +39,22 @@ function createTextNode(ownerDocument, text) {
     };
 }
 
+function createStyle(initialValues) {
+    const style = Object.assign({}, initialValues);
+    style.setProperty = function (name, value) {
+        this[name] = String(value);
+    };
+    style.getPropertyValue = function (name) {
+        return this[name] || '';
+    };
+    style.removeProperty = function (name) {
+        const previous = this[name] || '';
+        delete this[name];
+        return previous;
+    };
+    return style;
+}
+
 class FakeClassList {
     constructor(element) {
         this.element = element;
@@ -99,7 +115,7 @@ class FakeElement {
         this.attributes = new Map();
         this.classes = new Set();
         this.classList = new FakeClassList(this);
-        this.style = Object.assign({}, options.style);
+        this.style = createStyle(options.style);
         this.children = [];
         this.parentNode = null;
         this.eventHandlers = new Map();
@@ -300,8 +316,38 @@ class FakeElement {
         const normalizedChild = typeof child === 'string'
             ? createTextNode(this.ownerDocument, child)
             : child;
+        if (normalizedChild.parentNode) {
+            normalizedChild.parentNode.removeChild(normalizedChild);
+        }
         this.ownerDocument.track(normalizedChild);
         this.children.push(normalizedChild);
+        normalizedChild.parentNode = this;
+        if (this.tagName === 'FORM' && normalizedChild.nodeType !== 3
+            && normalizedChild.name && !this.formControls.includes(normalizedChild)) {
+            this.formControls.push(normalizedChild);
+        }
+        return normalizedChild;
+    }
+
+    insertBefore(child, referenceChild) {
+        const normalizedChild = typeof child === 'string'
+            ? createTextNode(this.ownerDocument, child)
+            : child;
+        if (normalizedChild === referenceChild) {
+            return normalizedChild;
+        }
+        if (referenceChild == null) {
+            return this.appendChild(normalizedChild);
+        }
+        if (!this.children.includes(referenceChild)) {
+            throw new Error('The reference child is not a child of this element');
+        }
+        if (normalizedChild.parentNode) {
+            normalizedChild.parentNode.removeChild(normalizedChild);
+        }
+        const index = this.children.indexOf(referenceChild);
+        this.ownerDocument.track(normalizedChild);
+        this.children.splice(index, 0, normalizedChild);
         normalizedChild.parentNode = this;
         if (this.tagName === 'FORM' && normalizedChild.nodeType !== 3
             && normalizedChild.name && !this.formControls.includes(normalizedChild)) {
@@ -543,6 +589,12 @@ class FakeDocument {
         if (String(tagName).toLowerCase() === 'iframe') {
             element.contentWindow = new FakeWindow('', 'about:blank');
         }
+        return this.track(element);
+    }
+
+    createElementNS(namespace, tagName) {
+        const element = new FakeElement(this, tagName);
+        element.namespaceURI = namespace;
         return this.track(element);
     }
 

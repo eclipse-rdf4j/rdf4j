@@ -1,9 +1,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 const { createScriptHarness } = require('./script-harness.js');
 const { FakeWindow } = require('./browser-fakes.js');
+
+function compileQuerySource() {
+    const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-source-contract-'));
+    const outputPath = path.join(outputDirectory, 'query.js');
+    const sourcePath = path.resolve(__dirname,
+        '../../tools/workbench/src/main/webapp/scripts/ts/query.ts');
+    const compilation = spawnSync('tsc', [
+        '--target', 'ES2017',
+        '--lib', 'ES2017,DOM',
+        '--skipLibCheck',
+        '--outFile', outputPath,
+        sourcePath
+    ], { encoding: 'utf8' });
+    assert.equal(compilation.status, 0,
+        `query.ts must compile for its in-repo lifecycle contract:\n${compilation.stdout}${compilation.stderr}`);
+    return outputPath;
+}
 
 function submitQuery(options = {}) {
     const requestId = (options.serverRequestIds || ['query-1'])[0];
@@ -11,7 +32,6 @@ function submitQuery(options = {}) {
         serverRequestIds: ['query-1'],
         query: 'SELECT * WHERE {?s ?p ?o}'
     }, options));
-    harness.runPageLoad();
     const previousFrame = harness.getResultFrame();
     harness.setValue('action', 'exec');
     const submittedByPost = harness.context.workbench.query.doSubmit();
@@ -34,6 +54,51 @@ test('short query GET targets a fresh embedded result frame without opening a po
     assert.equal(frameUrl.searchParams.get('action'), 'exec');
     assert.equal(frameUrl.searchParams.get('query-request-id'), 'query-1');
     assert.equal(frameUrl.searchParams.get('embedded'), 'true');
+});
+
+test('mounted query stream controller owns execution instead of replacing the result frame', () => {
+    let submitCalls = 0;
+    const harness = createQueryBrowserHarness({
+        query: 'SELECT * WHERE {?s ?p ?o}',
+        queryScriptPath: compileQuerySource(),
+        workbench: {
+            queryPage: {
+                ownsForm() { return true; },
+                submitExecution() {
+                    submitCalls += 1;
+                    return false;
+                }
+            }
+        }
+    });
+    const previousFrame = harness.getResultFrame();
+
+    const result = harness.context.workbench.query.doSubmit();
+
+    assert.equal(result, false);
+    assert.equal(submitCalls, 1);
+    assert.equal(harness.getResultFrame(), previousFrame);
+    assert.equal(previousFrame.src, undefined);
+});
+
+test('query cancellation delegates to the mounted streaming controller', () => {
+    let cancelCalls = 0;
+    const harness = createQueryBrowserHarness({
+        queryScriptPath: compileQuerySource(),
+        workbench: {
+            queryPage: {
+                ownsForm() { return true; },
+                hasActiveRequest() { return true; },
+                cancelExecution() {
+                    cancelCalls += 1;
+                    return true;
+                }
+            }
+        }
+    });
+    harness.context.workbench.query.cancelQuery();
+
+    assert.equal(cancelCalls, 1);
 });
 
 test('long query POST uses a temporary form targeted at the embedded result frame', () => {
