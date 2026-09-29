@@ -13,11 +13,15 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** Regression tests run the real model and chooser with scripted durations, never wall-time assertions. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeAdaptiveLaneTransitionTest {
 	private static final long PACKED_NANOS = 719_000L;
 	private static final long TAIL_NANOS = 13_690_000L;
@@ -152,32 +156,47 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 		String previous = System.getProperty("rdf4j.lmdb.costModel.persist.enabled");
 		System.setProperty("rdf4j.lmdb.costModel.persist.enabled", "true");
 		try {
+			check(LmdbNativeJaninoCodegen.awaitCompilationsForTests(30, TimeUnit.SECONDS),
+					"prior Janino compilations did not finish before creating the persisted regime");
 			AtomicLong wall = new AtomicLong(1_000_000L);
 			var context = new LmdbNativeCostModelContext(directory, new java.util.UUID(0L, 9L),
 					() -> 0L, () -> "DISABLED", () -> 0L, () -> 3L);
 			var original = new LmdbNativeStoreCostModel(context, LmdbNativePosteriorConfig.defaults(),
 					LmdbNativeProbeConfig.defaults(), wall::get, () -> 0L);
 			var arm = estimate("packedFtreeAggregate");
-			var direct = key(arm, LmdbNativeCostPosteriorStore.Lane.DIRECT);
+			var regime = original.regimeTracker().snapshot();
+			check(regime.regime().equals(LmdbNativeRegimeKey.STEADY),
+					"persisted-evidence fixture must use the warm stable regime: " + regime);
+			var direct = LmdbNativeCostPosteriorStore.ExactKey.of(regime.regime(),
+					LmdbNativeCostPosteriorStore.Lane.DIRECT, arm.variantKey());
 			for (int i = 0; i < 6; i++)
 				original.posteriors()
-						.updateCompleted(direct,
-								Math.log(PACKED_NANOS), 1.0, 0L, wall.get());
+						.updateCompleted(direct, Math.log(PACKED_NANOS), 1.0, regime.epoch(), wall.get());
 			original.persistence().persistIfDue(true);
 			check(java.nio.file.Files.isRegularFile(directory.resolve(LmdbNativeCostModelPersistence.FILE_NAME)),
 					"real posterior sidecar was not written");
 			var restored = new LmdbNativeStoreCostModel(context, LmdbNativePosteriorConfig.defaults(),
 					LmdbNativeProbeConfig.defaults(), wall::get, () -> 0L);
+			check(LmdbNativeJaninoCodegen.awaitCompilationsForTests(30, TimeUnit.SECONDS),
+					"prior Janino compilations did not finish before checking restored evidence");
+			var restoredRegime = restored.regimeTracker().snapshot();
+			check(regime.equals(restoredRegime),
+					"Janino readiness changed the regime during the persistence test: seeded=" + regime
+							+ ", restored=" + restoredRegime);
+			var restoredDirect = restored.posteriors().read(direct, restoredRegime.epoch(), wall.get());
+			check(restoredDirect.exactPresent() && restoredDirect.exact().completedCount == 6L,
+					"the persisted DIRECT posterior was not restored in its seeded regime: " + restoredDirect);
 			var machine = new LmdbNativeMachineCostModel();
 			for (int i = 0; i < 32; i++)
 				machine.update(arm.total(), PACKED_NANOS);
+			check(machine.predict(arm.total()).adaptiveReady(), "test machine did not cross the readiness threshold");
 			var model = new LmdbNativeAdaptiveCostModel(machine, restored,
 					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 			var prediction = model.predict(arm);
 			check(prediction.latestObservedNanos() == 0L, "full-run ledger must not be persisted");
 			check(prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 					&& prediction.exactCompletedCount() == 6L,
-					"a compatible persisted DIRECT arm became unmeasured on a warm machine");
+					"a compatible persisted DIRECT arm became unmeasured on a warm machine: " + prediction);
 		} finally {
 			if (previous == null)
 				System.clearProperty("rdf4j.lmdb.costModel.persist.enabled");

@@ -47,6 +47,8 @@ class LmdbKernelExistsIntersectTest {
 
 	private static final String NS = "http://example.com/analytics/";
 	private static final String SYNOPSIS_PROPERTY = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
+	private static final int ENTITY_COUNT = 65_536;
+	private static final int REFERENCED_ENTITY_COUNT = ENTITY_COUNT * 3 / 4;
 
 	private static final String QUERY = String.join("\n",
 			"SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {",
@@ -95,13 +97,14 @@ class LmdbKernelExistsIntersectTest {
 				IRI links = values.createIRI(NS, "linksTo");
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					connection.begin(IsolationLevels.NONE);
-					// A multi-word dense extent forces at least four non-overlapping intersection partitions.
-					// Entities 0..383 are additionally the OBJECT of a linksTo triple, so exactly 384
+					// A dense extent gives each intersection partition enough bitmap words to exercise actual worker
+					// overlap, rather than merely proving that the executor can submit several near-empty morsels.
+					// The first three quarters of entities are also the OBJECT of linksTo triples, so only those
 					// subjects survive the EXISTS.
-					for (int i = 0; i < 512; i++) {
+					for (int i = 0; i < ENTITY_COUNT; i++) {
 						IRI entity = values.createIRI(NS, "entity-" + i);
 						connection.add(entity, RDF.TYPE, type);
-						if (i < 384) {
+						if (i < REFERENCED_ENTITY_COUNT) {
 							connection.add(values.createIRI(NS, "referrer-" + i), links, entity);
 						}
 					}
@@ -121,14 +124,14 @@ class LmdbKernelExistsIntersectTest {
 					for (int partition = 0; partition < intersection.partitionCount(); partition++) {
 						intersectionCount += intersection.countPartition(partition);
 					}
-					Assertions.assertEquals(384L, intersectionCount);
+					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, intersectionCount);
 				}
-				// The referrers themselves are subjects too, and none of them is referenced: expected distinct
-				// nodes with at least one outgoing triple AND at least one incoming reference = entities 0..383.
+				// The referrers themselves are subjects too, and none of them is referenced: expected distinct nodes
+				// with at least one outgoing triple AND at least one incoming reference are the first three quarters.
 				try (SailRepositoryConnection connection = repository.getConnection();
 						TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
 					long count = ((org.eclipse.rdf4j.model.Literal) result.next().getValue("count")).longValue();
-					Assertions.assertEquals(384L, count,
+					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, count,
 							"distinct referenced subjects, janinoEnabled=" + janinoEnabled
 									+ ", interpreterEnabled=" + interpreterEnabled + ", parallelEnabled="
 									+ parallelEnabled);
