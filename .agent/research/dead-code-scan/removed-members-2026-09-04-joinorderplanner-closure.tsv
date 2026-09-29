@@ -1,0 +1,45 @@
+KIND	CLASS	MEMBER	FLAGS
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterSelectivityKeys	qualifyFilterKey(Ljava/lang/String;I)Ljava/lang/String;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterSelectivityKeys	patternLocalBaseForFilter(Lorg/eclipse/rdf4j/query/algebra/Filter;)Lorg/eclipse/rdf4j/query/algebra/StatementPattern;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZ)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZZ)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZZLjava/util/Map;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/List;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	of([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/function/LongFunction;JLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	hasCurrentlyBoundVarMask()Z	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	getVariableNames()[Ljava/lang/String;	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	getCurrentlyBoundVarMask()J	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$FactorCostEstimate	<init>(DDLjava/util/Map;Ljava/util/Map;ZZIIDLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostScope;Z)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFacts	bindingValueCount()I	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	<init>(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator;Lorg/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbEvaluationStatistics	<init>(Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/sketch/SketchBasedJoinEstimator;Lorg/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats;Lorg/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache;Lorg/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService;Lorg/eclipse/rdf4j/sail/lmdb/config/FrontierEstimatorMode;JIDDLjava/util/function/BooleanSupplier;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;ZJI)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	recordCall(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	recordResults(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;J)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	recordFilterOutcome(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;Ljava/lang/String;Ljava/lang/String;JJ)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	seedIfAbsent(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;DJ)V	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	hasStats(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;)Z	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	getTotalCalls()J	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	estimateFilterPassRatio(Lorg/eclipse/rdf4j/query/algebra/Filter;Lorg/eclipse/rdf4j/query/algebra/StatementPattern;)D	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	optimizerSamplingRowBudget(DDD)I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport	isFiniteNonNegative(D)Z	static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource	estimate(Lorg/eclipse/rdf4j/query/algebra/StatementPattern;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource	estimate(Lorg/eclipse/rdf4j/model/Resource;Lorg/eclipse/rdf4j/model/IRI;Lorg/eclipse/rdf4j/model/Value;Lorg/eclipse/rdf4j/model/Resource;)D	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource	estimateIds(JJJJ)D	
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$FilterCostEstimate	-	public final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZ)V	private
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZZLjava/util/Map;)V	private
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/function/LongFunction;JLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;)V	private
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;ZJIZ)V	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	estimateFilterPass(Lorg/eclipse/rdf4j/query/algebra/Filter;Lorg/eclipse/rdf4j/query/algebra/StatementPattern;)Lorg/eclipse/rdf4j/sail/lmdb/sketch/PatternFilterSampleEstimate;	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	getAverageResults(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKey;)D	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZZ)V	private
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/List;)V	private
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;ZJIZLjava/util/function/Supplier;)V	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	<init>([Ljava/lang/String;JDDZZLjava/util/Map;Ljava/util/List;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$EstimationTier;)V	private
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/TripleStore;Lorg/eclipse/rdf4j/sail/lmdb/ValueStore;ZJIZLjava/util/function/Supplier;I)V	
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinOrderPlanner	-	public abstract interface
+DEAD-CLASS	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinStatsProvider	-	public abstract interface (abstraction-only; sole implementor LmdbFilterSelectivityStats detached)
+MANUAL	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel$CostContext	variableNames/currentlyBoundVarMask fields + VariableMaskSet	mask-based path only reachable via removed String[] ctors

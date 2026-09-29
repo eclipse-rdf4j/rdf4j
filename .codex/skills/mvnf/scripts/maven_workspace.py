@@ -52,6 +52,7 @@ OWNED_PROPERTIES = frozenset(
         "rdf4j.test.outputDirectory",
         "rdf4j.test.tmpRoot",
         "rdf4j.test.tmpDirectory",
+        "rdf4j.test.tmpdirArgLine",
         "java.io.tmpdir",
         "formatter.skip",
     }

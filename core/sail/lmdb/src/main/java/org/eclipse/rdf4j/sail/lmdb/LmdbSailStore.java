@@ -424,6 +424,9 @@ class LmdbSailStore implements SailStore {
 			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
+			// before any estimator or statistics service opens: they must see the merged statements
+			LmdbLanguageTagVariantMerge.mergeIfRequired(valueStore, tripleStore,
+					new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath());
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			LeoRolloutProfile leoProfile = LeoRolloutProfile.fromSystemProperties();

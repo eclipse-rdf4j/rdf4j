@@ -139,6 +139,7 @@ class LmdbFilterSelectivityStats
 	private long backgroundSamplingSequence;
 	private long planningRevision;
 	private long runtimeTargetGeneration;
+	private volatile LearnedStateObserver learnedStateObserver;
 
 	static final class ResolvedFilterCells {
 		private final LearnedCounts exact;
@@ -225,8 +226,36 @@ class LmdbFilterSelectivityStats
 		loadColdSynopsisIfPresent();
 	}
 
+	/**
+	 * Observer of the store-level maintenance of the learned filter evidence: every committed store mutation as it
+	 * arrives, every reset and every persistence attempt. It lets tests verify the commit and close paths without
+	 * instrumenting this class; a Mockito mock or spy of this class retransforms its bytecode for the rest of the JVM,
+	 * after which every runtime feedback release on an ordinary instance allocates Mockito's is-this-a-mock lookup
+	 * keys. Only tests install it. An exception thrown by {@link #storeMutationRecorded} propagates out of
+	 * {@code recordStoreMutation} like any other failure of that post-commit hook.
+	 */
+	interface LearnedStateObserver {
+
+		default void storeMutationRecorded(long committedStatementMutationStamp) {
+		}
+
+		default void learnedStateReset() {
+		}
+
+		default void persistRequested() {
+		}
+	}
+
+	void setLearnedStateObserver(LearnedStateObserver observer) {
+		learnedStateObserver = observer;
+	}
+
 	@Override
 	public synchronized void reset() {
+		LearnedStateObserver observer = learnedStateObserver;
+		if (observer != null) {
+			observer.learnedStateReset();
+		}
 		runtimeTargetGeneration++;
 		// Exact probes are facts about committed data, not learned statistics, but a reset must leave no cached
 		// evidence behind either.
@@ -320,6 +349,10 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized void recordStoreMutation(long committedStatementMutationStamp) {
+		LearnedStateObserver observer = learnedStateObserver;
+		if (observer != null) {
+			observer.storeMutationRecorded(committedStatementMutationStamp);
+		}
 		advanceAppliedStatementMutationStamp(committedStatementMutationStamp);
 		reset();
 	}
@@ -959,6 +992,10 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized void persistIfDirty() {
+		LearnedStateObserver observer = learnedStateObserver;
+		if (observer != null) {
+			observer.persistRequested();
+		}
 		if (!dirty && !coldSynopsisDirty) {
 			return;
 		}

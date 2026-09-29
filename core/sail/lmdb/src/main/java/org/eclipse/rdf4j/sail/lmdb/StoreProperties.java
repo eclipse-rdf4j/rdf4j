@@ -57,7 +57,9 @@ class StoreProperties {
 	static final String LANGUAGE_TAG_KEY_CANONICAL = "canonical";
 	/**
 	 * Legacy policy: language tags are looked up byte-exactly. Only recorded for stores written before the canonical
-	 * key existed that already hold distinct ids for case variants of one term and therefore cannot be re-keyed.
+	 * key existed that hold distinct ids for case variants of one term and therefore cannot simply be re-keyed; the
+	 * LMDB store merges the variants when it opens such a store ({@link LmdbLanguageTagVariantMerge}) and then records
+	 * {@link #LANGUAGE_TAG_KEY_CANONICAL}.
 	 */
 	static final String LANGUAGE_TAG_KEY_BYTE_EXACT = "byte-exact";
 

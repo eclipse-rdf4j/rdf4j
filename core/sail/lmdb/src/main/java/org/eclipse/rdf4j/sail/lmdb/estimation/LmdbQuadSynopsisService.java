@@ -98,6 +98,17 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 		this.synopsis = new BoundedQuadSynopsis(publishedSnapshot, budget, this::requestRebuild);
 	}
 
+	/**
+	 * Marks the synopsis persisted in {@code directory} as stale, so the next {@link #configurePersistence} rebuilds it
+	 * from the store. Used when statements change without passing through the synopsis. Does nothing when no synopsis
+	 * was ever persisted there.
+	 */
+	public static void markRebuildRequired(Path directory) throws IOException {
+		if (Files.isDirectory(directory)) {
+			Files.write(directory.resolve(REBUILD_MARKER), new byte[] { 1 });
+		}
+	}
+
 	public void configurePersistence(Path directory, boolean snapshotExpected) {
 		Objects.requireNonNull(directory, "directory");
 		try {

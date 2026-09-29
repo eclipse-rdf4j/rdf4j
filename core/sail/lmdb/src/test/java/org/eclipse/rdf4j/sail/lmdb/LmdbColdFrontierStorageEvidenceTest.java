@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildPhase;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -92,14 +93,21 @@ class LmdbColdFrontierStorageEvidenceTest {
 	private ValueStore valueStore;
 	@Mock
 	private LmdbStatisticsService statistics;
-	@Mock
-	private LmdbFilterSelectivityStats filters;
+	@TempDir
+	Path filterStateDirectory;
+	// Hand-written stub, never a Mockito mock (see LmdbPublicationPathMockingArchitectureTest).
+	private StubFilterSelectivityStats filters;
 	@Mock
 	private TripleStore tripleStore;
 	@Mock
 	private TripleStore.IndexAccessPath accessPath;
 	@Mock
 	private PackedQueryView query;
+
+	@BeforeEach
+	void createFilterStats() {
+		filters = new StubFilterSelectivityStats(filterStateDirectory);
+	}
 
 	// ---------------------------------------------------------------- 3.6.6a SHADOW mode is observation-only
 
@@ -138,9 +146,8 @@ class LmdbColdFrontierStorageEvidenceTest {
 		lenient().when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		lenient().when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
 				.thenReturn(answered(4_000.0d));
-		lenient().when(filters.estimateSnapshotFilterPass(any(), any()))
-				.thenReturn(new EvaluationStatistics.FilterPassEstimate(0.25d,
-						EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L));
+		filters.snapshotFilterPass = new EvaluationStatistics.FilterPassEstimate(0.25d,
+				EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L);
 
 		LmdbStorageEstimatorEvidence off = new LmdbStorageEstimatorEvidence(valueStore, null, null, filters, null,
 				null, null, null, FrontierEstimatorMode.OFF);
@@ -361,9 +368,8 @@ class LmdbColdFrontierStorageEvidenceTest {
 		lenient().when(cardinalities.estimateForPlanning(any(StatementPattern.class))).thenReturn(STORAGE_ROWS);
 		lenient().when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
 				.thenReturn(answered(4_000.0d));
-		lenient().when(filters.estimateSnapshotFilterPass(any(), any()))
-				.thenReturn(new EvaluationStatistics.FilterPassEstimate(0.25d,
-						EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L));
+		filters.snapshotFilterPass = new EvaluationStatistics.FilterPassEstimate(0.25d,
+				EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L);
 
 		Optional<EvaluationStatistics.FilterPassEstimate> off = runtime(FrontierEstimatorMode.OFF, null)
 				.patternFilterPass(condition, pattern);

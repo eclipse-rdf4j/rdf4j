@@ -61,6 +61,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
@@ -83,6 +84,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.LongUnaryOperator;
 import java.util.function.Predicate;
 
 import org.eclipse.collections.api.iterator.LongIterator;
@@ -117,6 +119,7 @@ import org.slf4j.LoggerFactory;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
@@ -3575,6 +3578,151 @@ class TripleStore implements Closeable {
 						quad[CONTEXT_IDX]);
 				handler.accept(quad);
 			}
+		}
+	}
+
+	/** Notified after each durable batch of {@link #rewriteStatementIds}. */
+	@FunctionalInterface
+	interface StatementRewriteObserver {
+		void batchCommitted(long rewrittenStatements) throws IOException;
+	}
+
+	/**
+	 * Rewrites every statement - explicit and inferred, in every context - that mentions an id for which
+	 * {@code survivorOf} returns another id, to the statement with the returned ids, in batches of at most
+	 * {@code batchRows} statements per transaction. Rewritten statements go through {@link #storeTriple} and
+	 * {@link #removeTriples} with the same predicate-guarantee bookkeeping the sail performs, so context counts,
+	 * guarantees and the Frontier mutation journal stay consistent; duplicates collapse, and an inferred statement
+	 * whose rewrite exists as an explicit statement is dropped. Each batch inserts before it deletes: if the
+	 * transaction is split into two durable commits (record cache), a crash can leave both copies but never lose a
+	 * statement. Running it again after an interruption rewrites what is left. Guarantees marked for a rebuild by the
+	 * removals are rebuilt at the end when automatic rebuilds are enabled.
+	 *
+	 * @return the number of statements rewritten
+	 */
+	long rewriteStatementIds(LongUnaryOperator survivorOf, int batchRows, StatementRewriteObserver observer)
+			throws IOException {
+		if (batchRows <= 0) {
+			throw new IllegalArgumentException("batchRows must be positive: " + batchRows);
+		}
+		long rewritten = 0;
+		// explicit first: an explicit insert removes the inferred copy, the inferred plane is scanned afterwards
+		for (boolean explicit : new boolean[] { true, false }) {
+			long[] rows = statementsMentioningReplacedIds(survivorOf, explicit);
+			int count = rows.length / 4;
+			for (int start = 0; start < count; start += batchRows) {
+				int end = Math.min(count, start + batchRows);
+				rewriteStatementBatch(rows, start, end, explicit, survivorOf);
+				rewritten += end - start;
+				observer.batchCommitted(rewritten);
+			}
+		}
+		if (rewritten > 0 && predicateGuaranteeIndexEnabled && predicateGuaranteeIndexAutoRebuild
+				&& predicateGuaranteeIndexReadable) {
+			rebuildMarkedRdfTermDomains();
+		}
+		return rewritten;
+	}
+
+	private long[] statementsMentioningReplacedIds(LongUnaryOperator survivorOf, boolean explicit)
+			throws IOException {
+		LongArrayList rows = new LongArrayList();
+		try (Txn txn = txnManager.createReadTxn();
+				RecordIterator records = getTriples(txn, -1, -1, -1, -1, explicit)) {
+			long[] quad;
+			while ((quad = records.next()) != null) {
+				if (survivorOf.applyAsLong(quad[SUBJ_IDX]) != quad[SUBJ_IDX]
+						|| survivorOf.applyAsLong(quad[PRED_IDX]) != quad[PRED_IDX]
+						|| survivorOf.applyAsLong(quad[OBJ_IDX]) != quad[OBJ_IDX]
+						|| survivorOf.applyAsLong(quad[CONTEXT_IDX]) != quad[CONTEXT_IDX]) {
+					rows.add(quad[SUBJ_IDX]);
+					rows.add(quad[PRED_IDX]);
+					rows.add(quad[OBJ_IDX]);
+					rows.add(quad[CONTEXT_IDX]);
+				}
+			}
+		}
+		return rows.toLongArray();
+	}
+
+	private void rewriteStatementBatch(long[] rows, int start, int end, boolean explicit, LongUnaryOperator survivorOf)
+			throws IOException {
+		boolean committed = false;
+		startTransaction();
+		try {
+			for (int i = start; i < end; i++) {
+				long subj = survivorOf.applyAsLong(rows[4 * i + SUBJ_IDX]);
+				long pred = survivorOf.applyAsLong(rows[4 * i + PRED_IDX]);
+				long obj = survivorOf.applyAsLong(rows[4 * i + OBJ_IDX]);
+				long context = survivorOf.applyAsLong(rows[4 * i + CONTEXT_IDX]);
+				if (!explicit && containsStatement(subj, pred, obj, context, true)) {
+					// an explicit statement supersedes its inferred copy
+					continue;
+				}
+				if (storeTriple(subj, pred, obj, context, explicit) && valueStore != null) {
+					recordRdfTermDomain(pred, valueStore.getValue(obj));
+				}
+			}
+			try {
+				removeTriples(new StatementRowIterator(rows, start, end), explicit, removed -> {
+					if (valueStore != null) {
+						try {
+							recordPredicateObjectRemoval(removed[PRED_IDX], valueStore.getValue(removed[OBJ_IDX]));
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
+						}
+					}
+				});
+			} catch (UncheckedIOException e) {
+				throw e.getCause();
+			}
+			endTransaction(true);
+			committed = true;
+		} finally {
+			if (!committed) {
+				endTransaction(false);
+			}
+		}
+	}
+
+	private boolean containsStatement(long subj, long pred, long obj, long context, boolean explicit) {
+		TripleIndex mainIndex = indexes.getFirst();
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			mainIndex.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+			return mdb_get(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal) == MDB_SUCCESS;
+		}
+	}
+
+	/** Iterates the quads {@code [start, end)} of a flat {@code subject, predicate, object, context} array. */
+	private static final class StatementRowIterator implements RecordIterator {
+
+		private final long[] rows;
+		private final int end;
+		private int next;
+
+		StatementRowIterator(long[] rows, int start, int end) {
+			this.rows = rows;
+			this.next = start;
+			this.end = end;
+		}
+
+		@Override
+		public long[] next() {
+			if (next >= end) {
+				return null;
+			}
+			long[] quad = Arrays.copyOfRange(rows, 4 * next, 4 * next + 4);
+			next++;
+			return quad;
+		}
+
+		@Override
+		public void close() {
 		}
 	}
 

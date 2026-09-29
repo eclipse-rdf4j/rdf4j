@@ -14,10 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 
 import java.lang.reflect.Field;
 import java.nio.file.Path;
@@ -39,9 +35,11 @@ import org.junit.jupiter.api.io.TempDir;
  * those hooks must neither roll back nor fail the commit (the caller would retry and duplicate the write) and must not
  * stop the store. The failing service instead degrades toward "no evidence" (review finding 3.7.5 (b)).
  * <p>
- * The operator feedback failure is injected through {@link LmdbOperatorFeedbackStats#setLearnedStateObserver}, never
- * through a Mockito spy: spying the stats class retransforms it for the whole test JVM, after which every later runtime
- * feedback publication allocates (LmdbRuntimeFeedbackTargetTest asserts that publication allocates nothing).
+ * The failures are injected through {@link LmdbOperatorFeedbackStats#setLearnedStateObserver} and
+ * {@link LmdbFilterSelectivityStats#setLearnedStateObserver}, never through a Mockito spy: spying a stats class
+ * retransforms it for the whole test JVM, after which every later runtime feedback publication allocates
+ * (LmdbRuntimeFeedbackTargetTest asserts that publication allocates nothing; see
+ * LmdbPublicationPathMockingArchitectureTest).
  */
 class LmdbPostCommitLearnedStateFailureTest {
 
@@ -89,19 +87,26 @@ class LmdbPostCommitLearnedStateFailureTest {
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
-			LmdbFilterSelectivityStats real = field(backingStore, "filterSelectivityStats",
+			LmdbFilterSelectivityStats filterStats = field(backingStore, "filterSelectivityStats",
 					LmdbFilterSelectivityStats.class);
-			assertNotNull(real, "precondition: learned services are enabled for this store");
-			LmdbFilterSelectivityStats failing = spy(real);
-			doThrow(new IllegalStateException("injected post-commit learned-state failure"))
-					.when(failing)
-					.recordStoreMutation(anyLong());
-			setField(backingStore, "filterSelectivityStats", failing);
+			assertNotNull(filterStats, "precondition: learned services are enabled for this store");
+			AtomicInteger resets = new AtomicInteger();
+			filterStats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
+				@Override
+				public void storeMutationRecorded(long committedStatementMutationStamp) {
+					throw new IllegalStateException("injected post-commit learned-state failure");
+				}
+
+				@Override
+				public void learnedStateReset() {
+					resets.incrementAndGet();
+				}
+			});
 
 			assertDoesNotThrow(() -> addStatement(store, "first"),
 					"a failure in advisory post-commit learned-state maintenance must not fail the durable commit");
 			assertEquals(1L, size(store), "the committed statement must be visible to a new connection");
-			verify(failing).reset();
+			assertEquals(1, resets.get(), "the failing filter selectivity service must be reset to no evidence");
 
 			assertDoesNotThrow(() -> addStatement(store, "second"), "the store must stay writable afterwards");
 			assertEquals(2L, size(store), "later commits must land normally");
@@ -136,11 +141,5 @@ class LmdbPostCommitLearnedStateFailureTest {
 		Field field = target.getClass().getDeclaredField(name);
 		field.setAccessible(true);
 		return type.cast(field.get(target));
-	}
-
-	private static void setField(Object target, String name, Object value) throws Exception {
-		Field field = target.getClass().getDeclaredField(name);
-		field.setAccessible(true);
-		field.set(target, value);
 	}
 }

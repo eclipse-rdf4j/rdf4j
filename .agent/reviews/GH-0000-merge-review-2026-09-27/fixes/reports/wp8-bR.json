@@ -1,0 +1,110 @@
+{
+ "wp": "wp8-reader-pool-and-exactness",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp8",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp8.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp8/initial-evidence.wp8.txt",
+ "findings": [
+  {
+   "id": "3.10.1",
+   "status": "fixed",
+   "rootCause": "(b2) Planner-time storage reads took nested reader leases on the query thread, which already holds two dataset leases. develop's TxnManager admits 127 ordinary leases plus 1 reserved slot, with a 30 s admission timeout. Under pool pressure, planning stalled at each nested site and the estimate was silently lost.",
+   "change": "No production change in bR. Every critique item was checked against the code in the tree.\n- major#2 (read-lock discipline): raw-handle reads go only through planningRead/planningScan callbacks, which run under lockManager.readLock(). That covers sampleTriplesStratified, indexCostProfile, the page estimator, the legacy sampler and boundedExactCardinality. A bare planningReadTxn() is taken only on getTriples/LmdbRecordIterator paths.\n- major#3 (Mode.RESET reuse): Txn.isLive(leaseId) checks owned && !closed && !idle && same lease, under the Txn monitor. livePinnedPlanningTxn re-checks it on every use. The pin is structurally nested in the LmdbQueryOptimizerPipeline.optimize try-with-resources.\n- major#4 (untracked snapshots): pinPlanningTxn refuses untracked txns, so LmdbDetachedPlanRefresh stays unpinned.\n- major#5 (attribution): LmdbPlannerReaderLeaseTest runs in default and OFF mode and asserts the TxnManager admission counters.\n- minor (sail-base anchors): SailDatasetImpl.unwrap is documented as committed-base-only.\n- minor#9 (bypassing entry points): unpinned short reads fall back to doWithPriority and scans to one ordinary lease. Owner-thread telemetry is a follow-up.\n- missedFinding #2 (union double lease) and #3 (permit baseline): documented only.\nAll WP classes were re-run green on the final tree.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TxnManager.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlannerReaderLeaseTest.java"
+   ],
+   "testsAdded": [],
+   "preFixEvidence": "(b2) Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest.txt\nTests run: 12, Failures: 10, Errors: 0, Skipped: 0, Time elapsed: 85.26 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest\norg.opentest4j.AssertionFailedError: query did not finish within 8000 ms while only its 2 dataset slot(s) were free: a planner read took a nested reader lease ==> expected: <true> but was: <false>",
+   "postFixEvidence": "bR final-tree module suite, log .mvnf/workspaces/wp8/logs/20260928T073625.636332Z-53098-21778850/verify.log\n[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.714 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest\n[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 13.08 s -- in org.eclipse.rdf4j.sail.lmdb.TxnManagerTest\n[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.813 s -- in org.eclipse.rdf4j.sail.lmdb.CardinalityTest\n[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.660 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbCorrelatedFiniteSurfaceEstimatorTest\n[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.481 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbExactFilterProbeCacheTest\n[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.107 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbEstimatorStorageAccessV2Test\ncore/sail/base (log .mvnf/workspaces/wp8/logs/20260928T081520.281293Z-76844-789cc87d/verify.log): Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.034 s -- in org.eclipse.rdf4j.sail.base.SailDatasetUnwrapTest"
+  },
+  {
+   "id": "3.10.1b",
+   "status": "fixed",
+   "rootCause": "(b1) repeatedVariableCardinality and exactCardinality were unbounded planner-time scans. estimateExact could also publish a capped or extrapolated repeated-mask count as an exact fact.",
+   "change": "No production change in bR. Critique minor (estimateExact with a repeated mask): LmdbStatementPatternCardinalitySource.estimateExact returns -1 and skips SHARED_EXACT_CARDINALITY_CACHE when repeatedVariableCardinality is non-exact (capped). Asserted by LmdbPlanningCardinalityExactnessTest#exactCandidateIsUnavailableBeyondThePlanningScanCap. missedFinding#1 (filter-stats probes): the planning-lease/bound contract is in the javadoc and covered by LmdbFilterProbeScanCapTest (3 tests). Both are green on the final tree.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStatementPatternCardinalitySource.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningCardinalityExactnessTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterProbeScanCapTest.java"
+   ],
+   "testsAdded": [],
+   "preFixEvidence": "(b1) Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlanningCardinalityExactnessTest.txt\nTests run: 1, Failures: 1, Errors: 0, Skipped: 0 -- exactCandidateIsUnavailableBeyondThePlanningScanCap: an exact count over 10000 rows exceeds the planning scan cap and must be unavailable ==> expected: <-1.0> but was: <10000.0>",
+   "postFixEvidence": "bR final-tree module suite, log .mvnf/workspaces/wp8/logs/20260928T073625.636332Z-53098-21778850/verify.log\n[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.507 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanningCardinalityExactnessTest\n[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.095 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterProbeScanCapTest\n[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.057 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbStatementPatternCardinalitySourceTest"
+  },
+  {
+   "id": "3.10.2",
+   "status": "fixed",
+   "rootCause": "(b1) LmdbPackedCostModel stamped every finite_binding_probe row DATABASE_EXACT, but planningCardinality discarded the page estimator's exact and hard-bound fields. The consequence is S3 (critique major#1 accepted): a wrong plannedFrontierGuarantee=database_exact planned metric, which also makes LmdbOperatorFeedbackStats freeze row learning.\n(bR, critique minor) The probe counts the explicit and inferred planes together. The plan, however, is shared by explicit-only and inferred-including queries: the plan version mixes only the store-level mayHaveInferred flag, and the estimator carries no query-level includeInferred. So on a store with inferred rows, an exact both-plane count is only an upper bound for an explicit-only query, yet it was still labelled database_exact.",
+   "change": "b1 fix unchanged: the label follows the aggregated probe evidence (DATABASE_EXACT / CERTIFIED_BOUND_ONLY / SCALAR_FALLBACK), plus plannedFiniteProbeExact and the certified bounds.\n\nbR (TDD) closes the critique's includeInferred minor at the only layer where it can be done soundly. In LmdbPackedCostModel.finiteLookupEstimate, when rows > 0 and runtime.mayHaveInferred():\n- exact becomes false\n- the certified lower bound becomes 0\n- the upper bound becomes max(rows, upper)\nThe label is then CERTIFIED_BOUND_ONLY with plannedFrontierLowerRows=0 and plannedFrontierUpperRows=both-plane count. A zero over both planes stays DATABASE_EXACT, because it is exact for every plane subset.\n\nThis is consistent with the plan cache, whose version already mixes mayHaveInferred. It only weakens the label (so LEO learning is admitted); row estimates and costs are unchanged.\n\nCritique suggestion (2), that LEO admits corrections for a non-exact probe, is covered by the existing LmdbOperatorFeedbackStatsTest#frontierLearningUsesStableKeysAndIndependentDimensionPosteriors (wp6 territory).\n\nDeviation from the critique: it suggested using query-level includeInferred. That would also require includeInferred in the wp3 plan-cache key, otherwise a cached DATABASE_EXACT label could be served to an explicit-only query. So the store-level conservative rule was chosen.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedCostModel.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteProbeExactnessLabelTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFiniteProbeExactnessLabelTest#exactFiniteProbeOverBothPlanesIsOnlyACertifiedBound",
+    "LmdbFiniteProbeExactnessLabelTest#exactZeroFiniteProbeStaysDatabaseExactWithInferredRows"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest.txt\nTests run: 4, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 4.248 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest.exactFiniteProbeOverBothPlanesIsOnlyACertifiedBound(File) -- Time elapsed: 0.222 s <<< FAILURE!\norg.opentest4j.AssertionFailedError: an explicit-only query sees only 12 of the 13 counted rows, so the count is an upper bound. metrics={... plannedEstimateSource=lmdb-finite-binding-lookup, plannedFrontierGuarantee=database_exact, ... plannedEstimateFusion=finite_binding_probe, ...} ==> expected: <certified_bound_only> but was: <database_exact>\n\tat org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest.exactFiniteProbeOverBothPlanesIsOnlyACertifiedBound(LmdbFiniteProbeExactnessLabelTest.java:155)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest.txt (log .mvnf/workspaces/wp8/logs/20260928T073352.263006Z-48502-c29cbfee/verify.log)\n-------------------------------------------------------------------------------\nTest set: org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest\n-------------------------------------------------------------------------------\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.984 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest\n(module suite: [INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.892 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest)"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/sail/lmdb unit suite (final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2207, failures=0, errors=2, skipped=7 (log .mvnf/workspaces/wp8/logs/20260928T073625.636332Z-53098-21778850/verify.log)",
+   "reds": [
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: pre-existing/environmental. ENOSPC from mdb_env_open during repository.init while opening 200 stores; POSIX named-semaphore exhaustion (probe: 354 creatable before errno 28). Outside the WP diff; identical failure in b1 before any 3.10.1 change.",
+    "LmdbStoreConnectionTest#testPreparedTupleQueryUnicode[3]: flaky/environmental, rerun green. ENOSPC from repository init in setUp. The isolated rerun was 456/456 (log .mvnf/workspaces/wp8/logs/20260928T081111.672910Z-30726-8765df02/verify.log)."
+   ]
+  },
+  {
+   "selection": "LmdbStoreConnectionTest (isolated rerun)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 LmdbStoreConnectionTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=456, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/base unit suite (final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/base --retain-logs",
+   "result": "tests=24, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb integration tests (final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/lmdb --retain-logs -- -PskipUnitTests",
+   "result": "tests=144, failures=0, errors=1, skipped=98 (log .mvnf/workspaces/wp8/logs/20260928T081757.256713Z-81091-ee7f691d/verify.log)",
+   "reds": [
+    "LmdbSocialMediaOptimizedQueryRegressionIT#q10BindsEveryCycleEdgeFromFiniteDomainsBeforeProbing: flaky/environmental, rerun green. The 120 s timeout expired in setup: the ThemeDataSetGenerator data load got IOException 'No space left on device' before any planning, under load average ~90 on 16 CPUs. The isolated rerun was 3/3."
+   ]
+  },
+  {
+   "selection": "LmdbSocialMediaOptimizedQueryRegressionIT (isolated rerun)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 --it LmdbSocialMediaOptimizedQueryRegressionIT --module core/sail/lmdb --retain-logs",
+   "result": "tests=3, failures=0, errors=0, skipped=0",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "None added in bR. Earlier batches added package-private PLANNING_EXACT_SCAN_MAX_ROWS (4096), ZERO_ESCALATION_MAX_KEYS (8192) and TxnManager admission diagnostics, plus the public, compatible default method SailDataset.unwrap(Class)."
+ ],
+ "crossWpNotes": [
+  "Critique reconciliation:\n- major#1-#5: handled (see the findings).\n- minor 3.10.1b (estimateExact): handled.\n- minor includeInferred: handled conservatively at store level in bR (TDD).\n- minor sail-base anchors: handled.\n- minor#9: partially handled (develop-style fallbacks, no owner-thread telemetry).\n- missedFinding#1: handled.\n- missedFindings #2 (union double lease) and #3 (untracked/openPinnedTxn permit baseline): documented, not changed.",
+  "wp3: query-level includeInferred could restore DATABASE_EXACT for inferred-including queries on inferencing stores. That only works if includeInferred becomes part of the plan-cache key.",
+  "wp6: finite probes on stores with inferred rows now publish certified_bound_only, so LEO row learning is admitted for them.",
+  "Static review of the cumulative diff: no System.out, printStackTrace, TODO/FIXME, wildcard imports or commented-out code; no added line over 120 columns; tab indentation. All 7 new files carry the 2026 EDL header plus '// Some portions generated by Claude'.",
+  "The build's spotless:apply reformats sources during mvnf runs; the staged tree is the formatted one."
+ ],
+ "followUps": [
+  "Integrator: run the formatter.",
+  "Host: release the leaked POSIX named semaphores (about 350 of 10000 are left), then rerun LmdbStoreMultiRepoTest.",
+  "Optional: owner-thread tagging of ordinary TxnManager admissions (critique minor#9).",
+  "Optional (wp3 and wp8 together): plumb query-level includeInferred into the estimator and the plan-cache key.",
+  "Optional: share one read txn between the explicit and inferred LmdbSailDatasets of a union query, to halve lease pressure (missedFinding#2)."
+ ]
+}

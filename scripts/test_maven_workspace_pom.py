@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -15,6 +16,7 @@ WORKBENCH_POM = REPOSITORY_ROOT / "tools" / "workbench" / "pom.xml"
 SDK_DESCRIPTOR = REPOSITORY_ROOT / "assembly" / "src" / "main" / "assembly" / "sdk.xml"
 MAVEN_NAMESPACE = {"m": "http://maven.apache.org/POM/4.0.0"}
 PROPERTY_PATTERN = re.compile(r"\$\{([^}]+)}")
+TMPDIR_ARG_LINE_PROPERTY = "rdf4j.test.tmpdirArgLine"
 
 
 def _text(element: ET.Element, path: str) -> str | None:
@@ -300,6 +302,101 @@ class MavenWorkspacePomModelTest(unittest.TestCase):
                     "${rdf4j.test.tmpDirectory}",
                     "workspace test forks must use the run-local temporary directory",
                 )
+
+    def test_workspace_test_forks_start_with_redirected_java_io_tmpdir(self) -> None:
+        # JDK 17+ captures the default temporary directory when the JVM starts, so Files.createTempFile and
+        # Files.createTempDirectory ignore a java.io.tmpdir system property applied after the fork has started.
+        profile = self._workspace_profile()
+        plugins = {
+            _text(plugin, "m:artifactId"): plugin
+            for plugin in self.project.findall(
+                "m:build/m:pluginManagement/m:plugins/m:plugin", MAVEN_NAMESPACE
+            )
+        }
+        workspace_plugins = {
+            _text(plugin, "m:artifactId"): plugin
+            for plugin in profile.findall("m:build/m:plugins/m:plugin", MAVEN_NAMESPACE)
+        }
+        normal_fragment = self.project.find(f"m:properties/m:{TMPDIR_ARG_LINE_PROPERTY}", MAVEN_NAMESPACE)
+        workspace_fragment = _text(profile, f"m:properties/m:{TMPDIR_ARG_LINE_PROPERTY}")
+
+        self.assertIsNotNone(normal_fragment, "the base model must declare the tmpdir argLine fragment")
+        if normal_fragment is None:
+            return
+        self.assertFalse(
+            (normal_fragment.text or "").strip(),
+            "normal Maven test forks must not receive a java.io.tmpdir JVM argument",
+        )
+        self.assertEqual(workspace_fragment, "-Djava.io.tmpdir=${rdf4j.test.tmpDirectory}")
+        if workspace_fragment is None:
+            return
+
+        workspace_tmp = "/checkout/.mvnf/workspaces/model-test/tmp/run-123/org.eclipse.rdf4j/rdf4j-x/6.1.0-SNAPSHOT"
+        for artifact_id in ("maven-surefire-plugin", "maven-failsafe-plugin"):
+            with self.subTest(plugin=artifact_id):
+                template = _text(plugins[artifact_id], "m:configuration/m:argLine")
+                self.assertEqual(
+                    template,
+                    "@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true ${"
+                    + TMPDIR_ARG_LINE_PROPERTY
+                    + "}",
+                )
+                self.assertIsNone(
+                    _text(workspace_plugins[artifact_id], "m:configuration/m:argLine"),
+                    "the workspace profile fills the fragment instead of replacing the shared argLine",
+                )
+                if template is None:
+                    continue
+                normal = _expand(
+                    template,
+                    {"mockito.javaagent": "-javaagent:/agent.jar", TMPDIR_ARG_LINE_PROPERTY: ""},
+                )
+                workspace = _expand(
+                    template,
+                    {
+                        "mockito.javaagent": "-javaagent:/agent.jar",
+                        TMPDIR_ARG_LINE_PROPERTY: _expand(
+                            workspace_fragment, {"rdf4j.test.tmpDirectory": workspace_tmp}
+                        ),
+                    },
+                )
+                self.assertNotIn("java.io.tmpdir", normal)
+                self.assertEqual(
+                    normal.split(),
+                    ["@{argLine}", "-javaagent:/agent.jar", "-Xmx16G", "-Djava.awt.headless=true"],
+                )
+                self.assertEqual(
+                    workspace.split(),
+                    [
+                        "@{argLine}",
+                        "-javaagent:/agent.jar",
+                        "-Xmx16G",
+                        "-Djava.awt.headless=true",
+                        "-Djava.io.tmpdir=" + workspace_tmp,
+                    ],
+                )
+
+    def test_every_test_fork_arg_line_carries_the_tmpdir_fragment(self) -> None:
+        tracked_poms = subprocess.run(
+            ["git", "ls-files", "--", "pom.xml", "*/pom.xml"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        arg_lines: list[tuple[str, str]] = []
+        for relative_pom in tracked_poms:
+            for element in ET.parse(REPOSITORY_ROOT / relative_pom).getroot().iter(
+                f"{{{MAVEN_NAMESPACE['m']}}}argLine"
+            ):
+                if element.text and element.text.strip():
+                    arg_lines.append((relative_pom, element.text.strip()))
+
+        self.assertGreaterEqual(len(arg_lines), 3, "root Surefire, root Failsafe and the LMDB vector execution")
+        for relative_pom, arg_line in arg_lines:
+            with self.subTest(pom=relative_pom, argLine=arg_line):
+                self.assertTrue(arg_line.startswith("@{argLine} "), "keep JaCoCo's late-bound argLine first")
+                self.assertIn("${" + TMPDIR_ARG_LINE_PROPERTY + "}", arg_line.split())
 
     def test_unique_shade_state_is_ignored(self) -> None:
         ignore_lines = {

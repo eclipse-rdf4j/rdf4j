@@ -1,0 +1,312 @@
+{
+  "wp": "wp1-lmdb-logical-rewrites",
+  "summary": "All six 3.1 findings and the 3.5 guarantee-cache race are real; I confirmed each mechanism by code reading (the review's e2e repro confirmed 3.1.1-6; the workspace surefire XML for repro f1 is gone, so the implementer must re-run LmdbLogicalRewriteReviewReproTest to recover the exact red list before porting). Findings 3.1.1-3 share one root cause: every LMDB rewrite decides on the binding names of the Filter's own argument plus the root incoming BindingSet, while the visitors descend into EXISTS bodies and LATERAL right arguments where the outer row is substituted. The fix is one shared, correlation-aware scope analysis (roadmap 4.1) computed by walking a node's parent chain (robust to in-place rewrites): outer-visible possible names may only BLOCK a rewrite, outer assured names (EXISTS owner arg, LATERAL left arg, root incoming) may fold BOUND to true, and sub-SELECT boundaries drop assured but keep possible (conservative until 3.4.3 is fixed). Findings 3.1.4-5 are a second shared defect: the finite-anchor builder conflates term equality with value equality (SameTerm value-expanded; booleans expanded without a canonicity fact) -> make the anchor builder equality-kind aware and add Fact.CANONICAL_BOOLEAN with a rdf-term-domain version bump. Finding 3.1.6 is a storage bug in ValueStore (byte-exact on-disk key vs case-insensitive Literal.equals in valueIDCache) that also affects the standard pipeline and must be fixed at the ID-resolution layer with a canonical (lowercased) language-tag key. The 3.5 race is fixed by publishing weakened guarantees before mdb_txn_commit.",
+  "findings": [
+    {
+      "id": "3.1.1",
+      "title": "BOUND folding inside correlated scopes (EXISTS / NOT EXISTS / LATERAL)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results (BR)",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbBoundSimplifierOptimizer.java:53-59 captures only the root BindingSet names as `initialBindingNames`; meet(Filter) :62-80 builds assured/possible from `filter.getArg()` (:66,:68) plus that root set, then simplifyBound :104-110 folds BOUND(?x) to FALSE when ?x is not in the arg's possible names (:108-110) and the Filter is replaced by EmptySet (:75-76). The visitor is an AbstractQueryModelVisitor, whose meet(Exists) (core/queryalgebra/model/.../helpers/AbstractQueryModelVisitor.java:223-225 -> meetSubQueryValueOperator) and meet(Lateral) (:328-330) descend into the EXISTS subquery and the LATERAL right arg. Inside those, the outer row is substituted at evaluation time (SPARQL 18.6 EXISTS substitution; Lateral.getRightInputBindingNames, Lateral.java:50-52), so `?s :p ?x FILTER EXISTS { ?s :q ?o FILTER(BOUND(?x)) }` becomes Exists(EmptySet) -> [] (expected s1); `!BOUND` in NOT EXISTS inverts; LATERAL right arg identical. The repro's nested-OPTIONAL-group control (spec says false) passes today and must keep passing.",
+      "fix": "Introduce one shared correlation-aware scope analysis (roadmap 4.1) and consume it here. New helper (shared infrastructure, see sharedInfrastructure): `OuterScopeBindings.of(QueryModelNode node, Set<String> incomingNames)` -> record OuterScope(Set<String> possible, Set<String> assured). It walks node.getParentNode() upward remembering the child edge: (a) parent is a SubQueryValueOperator (Exists) whose subQuery is the child -> climb through ValueExpr parents to the owning TupleExpr O; contribute possible += O.getBindingNames() and assured += (O instanceof Filter ? O.getArg().getAssuredBindingNames() : O instanceof LeftJoin ? left.assured \u222a right.assured : \u2205), then continue from O; (b) parent is Lateral and child == rightArg -> possible += left.getBindingNames(), assured += left.getAssuredBindingNames(); (c) parent is any other BinaryTupleOperator (Join/LeftJoin/Difference/Union) and child == rightArg -> possible += left.getBindingNames() only (conservative: RDF4J's executor evaluates right args correlated; a possible name may only block); (d) parent is Projection/MultiProjection that isSubquery() or a scope change -> set assuredBlocked=true (frames further out contribute to possible only; conservative because the executor currently leaks outer bindings into sub-selects, finding 3.4.3); (e) root -> possible += incoming, assured += incoming unless assuredBlocked. In LmdbBoundSimplifierOptimizer.meet(Filter): `OuterScope scope = OuterScopeBindings.of(filter, initialBindingNames); assured = arg.assured \u222a scope.assured(); possible = arg.possible \u222a scope.possible()`. Effect on repro: EXISTS case -> ?x assured by outer arg -> BOUND(?x)=TRUE -> filter removed -> s1; NOT EXISTS -> !TRUE=FALSE -> body EmptySet -> NOT EXISTS true -> s1; LATERAL -> left assured -> TRUE -> row; nested OPTIONAL group -> LeftJoin right arg contributes possible only -> BOUND(?x) is no longer folded (left to the executor, which yields the spec answer as the oracle shows) -> still correct. Sound because substitution of an assured outer binding makes BOUND true, and never folding to false on an outer-visible name is exactly 'possible names may only block'.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/OuterScopeBindings.java",
+          "lines": "new file",
+          "change": "Shared parent-chain scope analysis (record OuterScope(possible, assured); static of(node, incomingNames)); public so wp9 (FilterOptimizer/SameTermFilterOptimizer) can reuse it. If cross-module placement is contested, land it first as package-private core/sail/lmdb/.../LmdbOuterScopeBindings.java and lift later."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbBoundSimplifierOptimizer.java",
+          "lines": "62-71",
+          "change": "Compute OuterScope for the Filter and union scope.possible()/scope.assured() into possibleBindingNames/assuredBindingNames instead of only initialBindingNames."
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Loses BOUND->false folding only when the name is bound somewhere on the path to the root (rare, spec-corner cases); folding to true inside EXISTS/LATERAL is new and strictly spec-correct. Existing LmdbBoundSimplifierOptimizerTest (4 tests) unaffected: all names are local to the filter arg.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 wrong results with 2-triple reproducers; fix is a small, precise scope guard and is the foundation for 3.1.2/3.1.3.",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c1_boundInsideExistsSeesOuterBinding -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/ (new LmdbCorrelatedScopeRewriteTest, dual-store oracle harness from the repro)",
+        "LmdbLogicalRewriteReviewReproTest#c1_notBoundInsideNotExistsSeesOuterBinding -> same class",
+        "LmdbLogicalRewriteReviewReproTest#c1_boundInsideLateralSeesLeftBinding -> same class",
+        "LmdbLogicalRewriteReviewReproTest#c1_boundInsideNestedOptionalGroupIsFalseBySpec -> same class (control; must stay green)"
+      ],
+      "additionalTests": [
+        "Algebra-level tests in LmdbBoundSimplifierOptimizerTest: Filter(Exists(Filter(sp, Bound(x))) with outer arg binding x -> inner filter removed (TRUE); Not(Exists(... Not(Bound(x)))) -> inner EmptySet; Lateral right-arg filter -> removed; Filter inside sub-SELECT referencing outer var -> left unchanged (possible only); BOUND of a name that is nowhere in the tree and not incoming -> still EmptySet.",
+        "OuterScopeBindingsTest (evaluation module): each frame kind (Exists owner Filter, Exists in LeftJoin condition, Exists in Extension, Lateral right, Join/LeftJoin/Difference right, subquery barrier, root incoming) with expected possible/assured sets.",
+        "End-to-end with incoming bindings (prepareTupleQuery().setBinding) so the root frame path is covered in both pipelines."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbBoundSimplifierOptimizerTest#preSketchSimplifiesBoundInsideOptionalRightSide: optName is assured by the right arg itself -> unchanged, verify green.",
+        "LmdbOptimizerPipelineTest: any assertion that a BOUND filter inside an EXISTS body folds to EmptySet would now see the filter removed/kept instead -> re-run; adjust only if the expectation was asserting the unsound fold."
+      ]
+    },
+    {
+      "id": "3.1.2",
+      "title": "makeOptionalBindingMandatory uses possible names and ignores correlation",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 spurious rows (BR)",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java:519-548. Line 525-527 accepts the rewrite when `leftJoin.getRightArg().getBindingNames().contains(bindingName)` (POSSIBLE names) and then builds `new Join(leftJoin.getLeftArg(), new Join(placementAnchor, leftJoin.getRightArg()))` (:544-546). When the right arg can leave ?w unbound (nested scope group `{ { ?s :a ?x OPTIONAL { ?x :b ?w } } }` or a sub-SELECT whose Projection.getAssuredBindingNames (Projection.java:72-76) excludes ?w), the VALUES{w=:c} anchor joins with rows where ?w is unbound and BINDS it to :c; the retained filter (?w=:c) then passes, producing the spurious `w=:c` row. The method is static and receives no incoming/outer names at all (called from makeUnboundRejectingOptionalsMandatory :498-517, itself from rewriteSmallLiteralFilterAnchors :348-349), so it is also unsound whenever ?w is outer-visible (c3_mandatoryOptionalAnchorInsideExistsWithCorrelatedWitness reaches this path because barrierFreeSubtree rejects the scope-changed group in LmdbNullRejectingOptionalSupport, so the null-rejecting rule declines and this rule fires).",
+      "fix": "Require the binding to be ASSURED by the right arg and not outer-visible: change :525-527 to `|| !leftJoin.getRightArg().getAssuredBindingNames().contains(bindingName) || outerVisible.contains(bindingName)`; thread a `Set<String> outerVisible` parameter through makeUnboundRejectingOptionalsMandatory(:498) and rewriteSmallLiteralFilterAnchors(:336) from FilterMerger.meet(Filter) using `OuterScopeBindings.of(filter, incomingBindingNames).possible()` (same analysis as 3.1.1/3.1.3). Soundness: with ?w assured by R and not bound outside, every LeftJoin(L,R) row either matched R (then ?w bound, filter keeps it iff ?w=c, identical to Join(L, Join(VALUES{w=c}, R))) or is unmatched (then ?w unbound, filter false/error -> dropped, and the inner join produces nothing for it). Keep the alias (directExtensionSourceAnchor) and scoped-fanout hoist logic unchanged; they already require assured seeds.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+          "lines": "519-548",
+          "change": "makeOptionalBindingMandatory: assured-only check + outerVisible guard; new parameter."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+          "lines": "336-349, 498-517, 185-204",
+          "change": "Thread outerVisible from FilterMerger.meet(Filter) (computed once per Filter via OuterScopeBindings) into rewriteSmallLiteralFilterAnchors and makeUnboundRejectingOptionalsMandatory."
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Only declines the rewrite for right args that may leave the binding unbound or when the name is correlated; all existing mandatory-optional tests use StatementPattern right args (assured).",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 spurious rows; two-line guard on an existing rule.",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c2_mandatoryOptionalAnchorWithSubselectRhs -> LmdbCorrelatedScopeRewriteTest (core/sail/lmdb test tree)",
+        "LmdbLogicalRewriteReviewReproTest#c2_mandatoryOptionalAnchorWithNestedGroupRhs -> same",
+        "LmdbLogicalRewriteReviewReproTest#c2_controlMandatoryOptionalAnchorMatchingRow -> same (control)",
+        "LmdbLogicalRewriteReviewReproTest#c3_mandatoryOptionalAnchorInsideExistsWithCorrelatedWitness -> same (exercises the outerVisible guard on this rule)"
+      ],
+      "additionalTests": [
+        "LmdbFilterSimplifierOptimizerTest: Filter(LeftJoin(sp, LeftJoin(sp2, sp3-binding-w)), compare(w,:c)) -> LeftJoin retained, no BindingSetAssignment; Filter(LeftJoin(sp, Projection-subquery-not-assuring-w), ...) -> retained; Filter(LeftJoin(sp, Union(sp-w, sp-w)), ...) -> rewritten (Union assured = intersection, both bind w); incoming binding on w -> retained.",
+        "Right arg Union where only one branch binds ?w -> retained."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbFilterSimplifierOptimizerTest#rewritesUnboundRejectingOptionalFilterToMandatoryLiteralAnchor (:866), #bindAliasOptionalFilterGainsRenamedSourceAnchorAndRetainsFilter (:882), #keepsMandatoryOptionalLiteralAnchorOnFormerOptionalSide (:902), #rewritesFiniteInputOptionalLiteralFilterToMandatoryAnchor (:922), #hoistsMandatoryOptionalLiteralAnchorAheadOfLeftUnionFanout (:994): right args are StatementPatterns (assured) -> expected unchanged; re-run as Hit Proof."
+      ]
+    },
+    {
+      "id": "3.1.3",
+      "title": "Null-rejecting OPTIONAL->INNER inside EXISTS / NOT EXISTS / LATERAL bodies with a correlated witness",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results (BR)",
+      "rootCause": "LmdbFilterSimplifierOptimizer.java:132-138 derives `incomingBindingNames` from the root BindingSet only; optimizeScope :148-164 recurses into every VariableScopeChange node (Lateral is one, Lateral.java:31,40) with that same set, and FilterMerger (AbstractSimpleQueryModelVisitor, which descends into Exists via meetSubQueryValueOperator :616-618) calls `LmdbNullRejectingOptionalSupport.rewrite(filter, incomingBindingNames)` at :191-192. In LmdbNullRejectingOptionalSupport.java the only correlation guard is selectUnboundWitness :215-222 (`!incomingBindings.contains(candidate)`), reached from comparisonWitness :195-213 / Bound :149-155 / listMemberWitness :170-193. For `?s :p ?w FILTER EXISTS { ?s :a ?x OPTIONAL { ?x :b ?w } FILTER(?w = :c) }` the inner filter's optionalOnly={w}, w is not in the root incoming set -> witness accepted -> LeftJoin replaced by Join (:86,:91-97) -> the EXISTS body now requires `?x :b ?w`, which does not exist -> EXISTS false -> [] (expected s1, because with w=:c substituted the OPTIONAL is simply unmatched and FILTER(:c=:c) is true). NOT EXISTS yields the spurious row; LATERAL right arg identical.",
+      "fix": "Pass the per-Filter outer-visible possible set instead of the root incoming set: in FilterMerger.meet(Filter) compute `Set<String> outer = OuterScopeBindings.of(filter, incomingBindingNames).possible()` and call `LmdbNullRejectingOptionalSupport.rewrite(filter, outer)`. selectUnboundWitness then rejects any witness that the enclosing EXISTS owner arg / LATERAL left arg / any ancestor's left side may bind, and returns null -> no rewrite. No change inside LmdbNullRejectingOptionalSupport is required beyond renaming the parameter to `outerVisibleBindings` and updating the javadoc. Optionally also compute the outer set once in rewrite() itself (defensive) so future callers cannot pass the wrong set.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+          "lines": "185-204",
+          "change": "FilterMerger.meet(Filter): compute OuterScope once and pass possible() to LmdbNullRejectingOptionalSupport.rewrite and to rewriteSmallLiteralFilterAnchors (3.1.2)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbNullRejectingOptionalSupport.java",
+          "lines": "61-89, 215-222",
+          "change": "Rename incomingBindings -> outerVisibleBindings; javadoc: witness must be unbound in the enclosing evaluation context, not only in the root request."
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Declines the rewrite only when the witness is bound anywhere on the ancestor path; top-level cases (all existing tests) unchanged.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1; same shared analysis as 3.1.1, one call-site change.",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c3_nullRejectingOptionalInsideExistsWithCorrelatedWitness -> LmdbCorrelatedScopeRewriteTest",
+        "LmdbLogicalRewriteReviewReproTest#c3_nullRejectingOptionalInsideNotExistsWithCorrelatedWitness -> same",
+        "LmdbLogicalRewriteReviewReproTest#c3_nullRejectingOptionalInsideLateralWithCorrelatedWitness -> same (the one failure whose text survives in initial-evidence.review-f1.txt)"
+      ],
+      "additionalTests": [
+        "LmdbFilterSimplifierOptimizerTest: Filter(sp(s,p,w), Exists(Filter(LeftJoin(sp(s,a,x), sp(x,b,w)), compare(w,:c)))) -> inner LeftJoin retained; same with Not(Exists); Lateral(sp(s,p,w), Filter(LeftJoin(...), ...)) -> retained; control: witness not bound outside -> rewritten as today.",
+        "Witness bound by an ancestor Join/LeftJoin left side (nested group) -> retained (conservative rule)."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbFilterSimplifierOptimizerTest#keepsOptionalWhenRightOnlyWitnessIsPreboundByIncomingBindings (:796) -> still green (root frame).",
+        "#rewritesNullRejectingOptionalConjunctWithNestedExistsToMandatoryJoin (:811) and #rewritesNullRejectingOptionalListMemberConjunctWithNestedExistsToMandatoryJoin (:830): the rewritten filter is the top-level one, nested EXISTS is inside its condition -> unchanged."
+      ]
+    },
+    {
+      "id": "3.1.4",
+      "title": "sameTerm anchors value-expanded and the filter dropped",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong rows (BR)",
+      "rootCause": "LmdbFilterSimplifierOptimizer.java:482-496 isSmallLiteralAnchorCandidate returns true for SameTerm (:483) and LmdbJoinPlanSupport.smallLiteralFilterAnchor :199-201 collects SameTerm constants (also inside Or via smallLiteralOrEqualityFilterAnchor :342-417) using the predicate isPotentialSmallLiteralAnchorValue (:1380-1385) that admits CANONICAL_INTEGER, boolean and calendar literals. materializedSmallLiteralFilterAnchor :1069-1092 -> canMaterializeSmallLiteralFilterAnchor :1170-1189 -> canMaterializeObjectFilterAnchor :1345-1365 only checks the predicate guarantee, never the condition operator; expandFiniteAnchor :1200-1233 then adds the whole value-equal family (:1213-1216 addCanonicalIntegerFamilyValues :1261-1278 across INTEGER_ANCHOR_DATATYPES; :1217-1218 addBooleanAnchorValues :1280-1291; :1221-1226 dateTime normalisation), and rewriteSmallLiteralFilterAnchors :414-417 drops the condition (remainingConditions empty). sameTerm(?o, 7) therefore matches the stored term \"7\"^^xsd:int, which is value-equal but not the same term. Reachable e2e for the OPTIONAL variants (SameTermFilterOptimizer :90-100 declines to inline because ?o is not assured under the LeftJoin, and LmdbNullRejectingOptionalSupport marks ?o as rewritten so isRewrittenOptionalBinding && allAnchorValuesAreSafeValues (:1178-1181) fails for numerics and falls through to the guarantee path); the review also reproduced the disjunction form even though DisjunctiveConstraintOptimizer+SameTermFilterOptimizer should have inlined it - the implementer should inspect that plan (a packed rule re-deriving a value anchor would be wp2's 3.2.4).",
+      "fix": "Make the anchor builder equality-kind aware. Add `private enum AnchorEquality { VALUE, TERM }` derived per condition: TERM if the condition tree contains any SameTerm (mixed Or of SameTerm and Compare.EQ counts as TERM, i.e. the strictest); VALUE for Compare.EQ / ListMemberOperator only. In materializedSmallLiteralFilterAnchor and exactStoredTermFilterAnchor: for TERM, (a) never call expandFiniteAnchor (return the exact constant terms), (b) guarantee-driven materialization (canMaterializeObjectFilterAnchor) is NOT applicable: if containsGuaranteeOnlyAnchorValue(anchor) is true, either return null (filter retained, no anchor) or - preferred once the implementer has verified ValueStore ID resolution is term-exact for inlined numerics via Values.packLiteral/unpackLiteral.equals - materialize the exact-term anchor and RETAIN the condition (mirror the exactStoredTermFilterAnchor pattern `remainingConditions.add(condition)` with an 'originalFilterRetained' proof). For safe values (IRI/plain string/lang string) behaviour stays as today (term join == sameTerm). Also record the equality kind in the LmdbRewriteProof facts so explain output shows 'termEquality'. Do not touch finiteFilterRelation (:865-1067): its `Value.equals` comparison is already guarded by isSafeValuesAnchorValue, for which term and value equality coincide.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+          "lines": "336-427, 1069-1092, 1170-1233",
+          "change": "Add AnchorEquality classification (helper `containsSameTerm(ValueExpr)`), branch in materializedSmallLiteralFilterAnchor/canMaterializeSmallLiteralFilterAnchor/expandFiniteAnchor: TERM -> no expansion, no guarantee-based filter drop for guarantee-only values; keep condition."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport.java",
+          "lines": "163-203",
+          "change": "Optional: expose `static boolean containsSameTerm(ValueExpr)` next to smallLiteralFilterAnchor so both the simplifier and (wp2) packed rules share the same classification."
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Only sameTerm with numeric/boolean/calendar constants changes (filter retained); existing sameTerm tests use plain strings (LmdbFilterSimplifierOptimizerTest :369-407) and stay term-exact anchors with dropped filters.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1; precise operator-aware guard; also the natural home for the shared 'term vs value equality' notion that wp2's 3.2.4 needs.",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c5_sameTermDisjunctionIsNotValueEquality -> new LmdbFiniteAnchorEqualityTest (core/sail/lmdb test tree, dual-store oracle)",
+        "LmdbLogicalRewriteReviewReproTest#c5_sameTermBooleanDisjunctionIsNotValueEquality -> same",
+        "LmdbLogicalRewriteReviewReproTest#c5_sameTermIntegerViaNullRejectedOptional -> same",
+        "LmdbLogicalRewriteReviewReproTest#c5_sameTermBooleanViaNullRejectedOptional -> same"
+      ],
+      "additionalTests": [
+        "sameTerm(?d, \"2020-01-01T01:00:00+01:00\"^^xsd:dateTime) over stored \"2020-01-01T00:00:00Z\" -> [] (current code normalises to the Z form and would return the row).",
+        "Control: sameTerm(?o, 7) over stored \"7\"^^xsd:integer -> row; sameTerm(?o, 7) || ?o = 8 (mixed) over {\"7\"^^int, \"8\"^^int} -> only the row value-equal to 8.",
+        "Algebra-level LmdbFilterSimplifierOptimizerTest: SameTerm with integer constant + CANONICAL_INTEGER guarantee -> filter retained and anchor (if any) contains only the exact constant; Compare.EQ same setup -> expanded as today (guard for regression).",
+        "Uncommitted-transaction variant (committedEvidenceUsable=false) unchanged."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbFilterSimplifierOptimizerTest#precomputesTupleDisjunctionAsFiniteAnchor (:369) and #precomputesIndependentValuesCorrelationAsFiniteAnchor (:389) use sameTerm on plain strings -> unchanged.",
+        "LmdbPredicateObjectDomainIndexTest integer/boolean tests use `=` -> unchanged."
+      ]
+    },
+    {
+      "id": "3.1.5",
+      "title": "Boolean lexical variants: filter dropped without a canonical-boolean fact",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 missing rows (BR)",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomain.java:36-52 defines canonicity facts CANONICAL_INTEGER/CANONICAL_DATETIME/CANONICAL_DATE but none for xsd:boolean; classifyMask :338-372 only sets the BOOLEAN datatype bit for booleans. LmdbFilterSimplifierOptimizer.canMaterializeObjectFilterAnchor :1357-1360 gates the boolean branch on `guarantee.hasDatatype(BOOLEAN) && allBooleanAnchorValuesAreValidBooleans` (anchor values only) and expandFiniteAnchor :1217-1218/addBooleanAnchorValues :1280-1291 materialises {\"true\",\"1\"} (or {\"false\",\"0\"}), after which the filter is dropped (:414-417). A stored \" true \"^^xsd:boolean (valid under whiteSpace=collapse; RDF4J `=` evaluates it as true, the oracle returns s1) is neither of those terms -> row lost; the same through the OPTIONAL->INNER path.",
+      "fix": "Add `Fact.CANONICAL_BOOLEAN` to RdfTermDomain (append after CANONICAL_DATE; include it in UNIVERSAL_FACT_MASK :63-64 so joinObserved ANDs it across observed values like the other canonicity facts; classifyMask: `if (xsdDatatype == BOOLEAN && (label.equals(\"true\")||label.equals(\"false\")||label.equals(\"1\")||label.equals(\"0\"))) mask |= CANONICAL_BOOLEAN`; isContradictory :536-545: CANONICAL_BOOLEAN with a datatype mask that lacks BOOLEAN is contradictory, mirroring the CANONICAL_DATETIME rule). Gate the boolean anchor: canMaterializeObjectFilterAnchor boolean branch -> `guarantee.hasDatatype(BOOLEAN) && guarantee.has(CANONICAL_BOOLEAN) && allBooleanAnchorValuesAreValidBooleans`. Because Fact ordinals feed the persisted mask layout (XSD_FACT_OFFSET = Fact.values().length, :54-56), bump TripleStore.PREDICATE_OBJECT_DOMAINS_VERSION (:157) from \"rdf-term-domain-v4\" to \"rdf-term-domain-v5\" so initializeRdfTermDomains (:402-427) rebuilds or clears persisted guarantees on upgrade (memory note: always bump when adding facts). Also export the fact to the packed range provider (LmdbPackedPredicateRangeProvider.java:71-78 maps CANONICAL_INTEGER/CANONICAL_DATETIME to PackedPredicateRange universal flags) if wp2 uses boolean expansion in packed anchors - coordinate.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomain.java",
+          "lines": "36-52, 63-64, 338-372, 536-545",
+          "change": "New Fact.CANONICAL_BOOLEAN, universal-mask membership, classification, contradiction rule."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+          "lines": "1357-1360",
+          "change": "Require guarantee.has(CANONICAL_BOOLEAN) before boolean anchor materialisation/filter drop."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+          "lines": "157",
+          "change": "PREDICATE_OBJECT_DOMAINS_VERSION -> rdf-term-domain-v5 (forces guarantee rebuild; also changes effectiveRdfTermDomainsVersion -> predicateRangeVersion so cached plans invalidate on upgrade)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPredicateRangeProvider.java",
+          "lines": "71-78",
+          "change": "(coordinate with wp2) map CANONICAL_BOOLEAN to a PackedPredicateRange universal flag if packed boolean anchors exist."
+        }
+      ],
+      "size": "medium",
+      "risk": "Medium-low: persisted guarantee format changes (rebuild on open, same mechanism as v3->v4); plan-explain strings for boolean predicates gain 'CANONICAL_BOOLEAN'.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 missing rows; the existing canonicity-fact mechanism is the designed fix shape (CANONICAL_DATETIME precedent).",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c5_booleanWhitespaceLexicalFormEqualsTrue -> LmdbFiniteAnchorEqualityTest",
+        "LmdbLogicalRewriteReviewReproTest#c5_booleanWhitespaceViaNullRejectedOptional -> same",
+        "LmdbLogicalRewriteReviewReproTest#c5_booleanOneEqualsTrue -> same (control, passes today)"
+      ],
+      "additionalTests": [
+        "RdfTermDomainClassificationTest: classify(\"true\"/\"1\"/\"false\"/\"0\") has CANONICAL_BOOLEAN; \" true \", \"TRUE\", \"01\" do not; observed join of canonical and \" true \" drops the fact; contradiction when CANONICAL_BOOLEAN without BOOLEAN datatype.",
+        "LmdbPredicateObjectDomainIndexTest: predicate with only canonical booleans -> anchor materialised (expanded {true,1}); after committing \" true \"^^boolean the guarantee loses CANONICAL_BOOLEAN and FILTER(?f=true) returns both rows (cold and warm; note the warm same-query-text case also depends on 3.3.2/wp3 - use a fresh query text or a fresh connection+store reopen to isolate this finding).",
+        "Upgrade test: store created with v4 metadata (downgradeGuaranteeMetadata helper exists in LmdbPredicateObjectDomainIndexTest :708) rebuilds and yields CANONICAL_BOOLEAN facts."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbPredicateObjectDomainIndexTest#booleanPredicateExpandsTrueFilterToBooleanLexicalEquivalents (:498-533): plan string assertion at :520-521 `RdfTermDomain[LITERAL, LITERAL_WITHOUT_LANGUAGE, BOOLEAN]` becomes `RdfTermDomain[LITERAL, LITERAL_WITHOUT_LANGUAGE, CANONICAL_BOOLEAN, BOOLEAN]` (toString iterates Fact ordinals then datatypes) -> update expectation; anchors still expand because all stored forms are canonical.",
+        "LmdbFilterSimplifierOptimizerTest#expandsBooleanFilterToValueEqualLexicalForms (:658): guarantee is classify(\"1\"^^boolean) which now carries CANONICAL_BOOLEAN -> still passes.",
+        "RdfTermDomainClassificationTest#classifiesEveryXsdDatatypeFact (:187): unaffected (datatype bits), but any test asserting raw mask values must be checked.",
+        "LmdbThemeQueryRegressionIT :1989 / :2111 assert date and integer guarantee strings -> unaffected."
+      ]
+    },
+    {
+      "id": "3.1.6",
+      "title": "Language-tag case: byte-exact on-disk term IDs vs case-insensitive value cache (results differ cold vs warm)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 missing rows, nondeterministic across restart (BR+PRE storage bug)",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java: literal2data :2813-2871 encodes the language tag bytes verbatim (:2830-2833) and findId :1384+ / BatchIdStorer.findId :1656 look the encoding up byte-exactly (short-key mdb_get or hash + bufferEquals). getId :1980-2070 first consults valueIDCache (:1996, ConcurrentCache<LmdbValue,Long>, :197) whose key equality is LmdbLiteral.equals -> AbstractLiteral.equals (core/model-api/.../base/AbstractLiteral.java:174-179 with language compared via equalsIgnoreCase :200-206; hashCode = label hash :182-184). So warm: \"abc\"@EN hits the cache entry created when \"abc\"@en was written and finds the ID; cold (after reopen, clearCaches :2633-2645): value2data(\"abc\"@EN) -> exact bytes -> not found -> UNKNOWN_ID -> no rows. Values.packLiteral (inlined/Values.java:70-101) never inlines language literals, so the cache is the only case-insensitive layer. Consequences: (1) FILTER(?o=\"abc\"@EN) works warm and returns [] cold in the LMDB pipeline (the VALUES anchor value is resolved via getId; LmdbJoinPlanSupport.isSafeValuesAnchorValue :473-492 treats lang literals as safe, which is correct only if ID resolution honours term equality); (2) the plain pattern `?s :label \"abc\"@EN` fails cold in BOTH pipelines (LmdbValueLookupOptimizer.lookup :140-150 -> getId -> UNKNOWN_ID); (3) create path is also cache-dependent: adding \"abc\"@EN after \"abc\"@en creates a second ID when the cache is cold and reuses the first when warm (getId(create=true) :1996 then :2044-2047). RDF 1.1 Concepts 3.3 puts language tags in lower case in the value space and RDF4J's Literal.equals is case-insensitive, so the store must map case variants to one ID.",
+      "fix": "Fix at the ID-resolution layer so every consumer (patterns, VALUES anchors, exact-term probes, both pipelines) is covered. Preferred (Option A, RDF 1.1 value-space canonical form): in literal2data (:2830-2833) encode `lang.get().toLowerCase(Locale.ROOT)` (do not use Literals.normalizeLanguageTag: BCP47 casing and it throws on ill-formed tags); this makes the on-disk key, findId, findIds/BatchIdStorer and the create path all consistent with Literal.equals, and data2literal (:2946-2996, :3012-3056) returns the lowercased tag (RDF 1.1 \u00a73.3: 'lexical representations of language tags MAY be converted to lower case'). Legacy stores: existing entries keyed by mixed-case bytes would become unreachable, so (i) write a StoreProperties flag (e.g. `language-tag-key=lowercase`) on store creation/first open after upgrade, and (ii) when the flag was absent at open (pre-fix store), enable a fallback in getId/storeValues: on a canonical miss and if the tag was not already lowercase, retry findId with the exact legacy bytes (and reuse that ID on create); document that a legacy store with UPPERCASE-tagged data queried with lowercase tags needs a re-import or a one-time re-key migration (scan LITERAL_VALUE entries with non-lowercase tags and re-key; same lifecycle slot as rebuildRdfTermDomains). Alternative (Option B, case-preserving): keep original bytes as the id->data payload but use the lowercased-tag encoding as the data->id key (short path: mdb_put(canonicalKey->id), mdb_put(id->originalData); hash path: hash(canonicalKey) and compare canonical forms), threading a canonical key alongside `data` through findId/findIds; preserves round-trip case (e.g. \"en-US\") at the cost of a larger change. Either way add `static byte[] canonicalLanguageKey(byte[] literalData)` that lowercases only the lang segment (layout [LITERAL_VALUE][varint dtId][dir|langLen or 0xC0|dir + varint len][lang][label]) so the encoding is touched in one place. Defence in depth for the planner (roadmap 4.6): none needed once resolution is term-correct; do NOT paper over it in isSafeValuesAnchorValue.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java",
+          "lines": "2813-2871 (literal2data), 1980-2070 (getId), 2075-2140 (storeValues), 1384-1460 and 1656+ (findId / BatchIdStorer.findId), 1531-1586 (findIds)",
+          "change": "Canonical (lowercase) language-tag encoding for the ID key; legacy-exact fallback lookup gated by a StoreProperties flag; optional case-preserving payload (Option B)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/StoreProperties.java",
+          "lines": "34-60, 85-140",
+          "change": "New persisted property recording the language-tag key policy (drives the legacy fallback / migration decision)."
+        },
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStore.java",
+          "lines": "init path where StoreProperties are read",
+          "change": "Set the flag on new stores; log a warning and enable fallback on pre-fix stores."
+        }
+      ],
+      "size": "medium",
+      "risk": "Medium: storage-format semantics change (one ID per term regardless of tag case); observable lowercasing of tags on round trip under Option A (LmdbColdFilterSelectivityStatsTest uses \"en-US\" but does not assert case; check testsuites for exact-case round-trip assertions before choosing A vs B); legacy stores need fallback/migration.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1, deterministic, affects both pipelines and even plain patterns; planner anchors are sound only on top of term-correct ID resolution, so no planner-side band-aid is acceptable.",
+      "reproTestMethods": [
+        "LmdbLogicalRewriteReviewReproTest#c5_languageTagCaseInsensitiveEqualityColdCache -> new LmdbLanguageTagTermIdentityTest (core/sail/lmdb test tree; uses the repro's checkCold reopen harness)",
+        "LmdbLogicalRewriteReviewReproTest#c5_languageTagCaseInsensitiveEqualityViaOptionalColdCache -> same",
+        "LmdbLogicalRewriteReviewReproTest#c5_languageTagCaseInsensitiveEquality -> same (warm control)",
+        "LmdbLogicalRewriteReviewReproTest#c5_languageTagCaseInsensitiveEqualityMultiPattern -> same (warm control)"
+      ],
+      "additionalTests": [
+        "ValueStoreTest: getId(\"abc\"@EN) after storing \"abc\"@en returns the same id before and after clearCaches()/restart; storing \"abc\"@EN then \"abc\"@en yields one id (cold and warm); \"en-US\" vs \"en-us\" vs \"EN-us\" one id; round-trip label/tag equality via Literal.equals.",
+        "Plain pattern `?s :label \"abc\"@EN` cold in the standard pipeline (DefaultEvaluationStrategyFactory) and the LMDB pipeline -> row.",
+        "Legacy fallback: build a store with the fix disabled/flag absent (or a fixture), reopen with the fix, query with the exact legacy casing -> row; document the lowercase-query limitation.",
+        "Frontier/estimation follow-up (cross-WP): FiniteDomainFact:155-159 / FiniteRelationEstimate:550-554 compare language tags case-sensitively (raw notes) - cost-only, but add a unit test once the storage invariant is fixed."
+      ],
+      "existingTestsAtRisk": [
+        "ValueStoreTest#testDirectedLanguageLiteralRoundTripsAfterRestart / LazyResolve / BatchResolve (:730-770): assert language/baseDirection round trip -> if they use lowercase tags they stay green under Option A; otherwise Option B or updated expectations.",
+        "Any testsuites/sail or compliance test asserting exact tag case after storing mixed-case tags (none found by grep for \"en-US\"/\"EN\" createLiteral in testsuites/sail, testsuites/repository, compliance/repository; re-verify with a full LMDB module + sail testsuite run)."
+      ]
+    },
+    {
+      "id": "3.5",
+      "title": "Predicate-guarantee cache published after mdb_txn_commit (planner can read a stronger guarantee than the snapshot it plans for)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 missing rows (race window), BR",
+      "rootCause": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java commitDurableStatementBatch :3288-3296: flushPendingRdfTermDomains() (persists weakened guarantees into the write txn) -> mdb_txn_commit(txn) (:3294, committed rows become visible to new read txns) -> applyPendingRdfTermDomainCacheUpdates() (:3295, swaps the volatile `predicateObjectDomainCache`, :234/:851-866); the second call at :3410 and txnManager.reset() :3413 / dataRevision++ :3415 also run after the commit. Readers open snapshots with no coordination against this ordering (LmdbSailStore.java:3291 txnManager.createReadTxn(); TripleStore.createReadTxn sites :1419,:1810) and the planner reads the cache through getKnownRdfTermDomain :711-718 (via LmdbEstimatorStorageAccess.rdfTermDomain :259-268 -> LmdbEvaluationStatistics.getRdfTermDomain :228). Window: a query that opens its dataset after the commit but plans before the cache swap sees the new row (e.g. \"05\"^^xsd:int) while still holding the pre-commit CANONICAL_INTEGER guarantee -> FILTER(?o=5) is replaced by canonical-form anchors -> the row is missing. Incremental guarantee updates only weaken (joinObserved :208-236 grows possible facts, ANDs universal facts, widens integer ranges), so the only unsafe direction is 'data newer than guarantee', which is exactly this window; the rebuild paths that can strengthen (rebuildRdfTermDomains :485-540, rebuildMarkedRdfTermDomains :542-560) run in initializeRdfTermDomains before readers exist.",
+      "fix": "Publish weakenings before the data becomes visible: in commitDurableStatementBatch move `applyPendingRdfTermDomainCacheUpdates()` ahead of `E(mdb_txn_commit(txn))` for the incremental case (pendingRdfTermDomainCacheClear == false); keep post-commit publication only for the clear/rebuild case (may strengthen) - split applyPendingRdfTermDomainCacheUpdates into publishWeakenings()/publishRebuilt() or guard with the clear flag. If the commit then fails, the in-memory cache is merely weaker than disk (sound; reloaded on next open). The redundant call at :3410 stays harmless (idempotent). Roadmap 4.2 layer (owned by wp3, note only): stamp the guarantee read with the dataset's snapshot identity (LmdbSailDataset.snapshotTxnVersion) as a rewrite certificate so a plan built on guarantee generation G cannot execute on a newer snapshot without revalidation; this also covers the tracked-txn renewal question below.",
+      "files": [
+        {
+          "path": "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+          "lines": "3288-3296 (commitDurableStatementBatch), 851-871 (applyPending/clearPending helpers)",
+          "change": "Publish weakened guarantee cache before mdb_txn_commit; strengthening (clear/rebuild) publication stays after commit."
+        }
+      ],
+      "size": "small",
+      "risk": "Low: a two-line reorder; weaker-early is sound by construction; only rebuild publication keeps the old ordering.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Silent missing rows under concurrency with a precise, cheap fix; also a prerequisite for making guarantee-driven filter drops certifiable (roadmap 4.2).",
+      "reproTestMethods": [
+        "(none in repro f1; race)"
+      ],
+      "additionalTests": [
+        "Deterministic unit test via a TripleStore test hook/latch between mdb_txn_commit and cache publication (or by asserting ordering with a spy on applyPendingRdfTermDomainCacheUpdates vs commit): open a read txn in the window and assert getKnownRdfTermDomain already reflects the weakened guarantee.",
+        "Concurrency IT (guard, not reproducer): writer commits non-canonical rows in a loop while readers plan+execute FILTER(?o=5); assert no missing rows over N iterations.",
+        "Rebuild path test: rebuildRdfTermDomains publication still happens after commit (strengthening never precedes data)."
+      ],
+      "existingTestsAtRisk": [
+        "LmdbPredicateObjectDomainIndexTest#predicateGuaranteesStayHeapResidentAndSynchronizedWithDisk (:128) compares heap vs disk after commit -> still equal post-commit; verify."
+      ]
+    }
+  ],
+  "implementationOrder": [
+    "3.1.1",
+    "3.1.3",
+    "3.1.2",
+    "3.1.4",
+    "3.1.5",
+    "3.5",
+    "3.1.6"
+  ],
+  "sharedInfrastructure": "OuterScopeBindings (roadmap 4.1): a parent-chain scope analysis `OuterScope of(QueryModelNode node, Set<String> incomingNames)` returning (possible, assured) outer-visible names for any node, robust to in-place tree rewrites because it walks getParentNode() at query time instead of caching a pre-pass map. Frames: EXISTS subquery -> owning Filter/LeftJoin/Extension arg names (assured from Filter arg / LeftJoin both args); LATERAL right arg -> left names (assured from left); other BinaryTupleOperator right args -> left possible only; sub-SELECT Projection -> blocks assured, keeps possible (conservative until 3.4.3 is fixed); root -> incoming bindings. Rule of use: possible names may only BLOCK a rewrite (BOUND->false folding, unbound-witness selection, mandatory-optional anchors); assured names may enable (BOUND->true). Consumers in this WP: LmdbBoundSimplifierOptimizer, LmdbFilterSimplifierOptimizer.FilterMerger (null-rejecting rewrite, makeOptionalBindingMandatory). Recommended location core/queryalgebra/evaluation/.../optimizer/OuterScopeBindings.java so wp9 can use it for SameTermFilterOptimizer's EXISTS blind spot (3.11.4/3.4.6) and FilterRelocator's possible-name pushes (3.2.5/3.11.2), and wp5 for LeftJoin/EXISTS scope decisions; if cross-module placement is contested, land as package-private core/sail/lmdb/LmdbOuterScopeBindings first. Second shared notion: AnchorEquality {VALUE, TERM} classification of filter conditions (containsSameTerm) for finite anchors; wp2's PackedLogicalRuleProgram expandAnchorValue/finiteDomainTermIdentitySafe (3.2.4) should adopt the same classification. Also recommended: port the repro's dual-store oracle harness (LMDB pipeline vs LmdbStore+DefaultEvaluationStrategyFactory vs hand-computed bag, with cold-reopen and later-commit variants) as a reusable test base class (roadmap 4.8 differential testing) for all new e2e tests in this WP.",
+  "crossWpTouchpoints": [
+    "wp9 (FilterOptimizer/FilterRelocator, SameTermFilterOptimizer): the OuterScopeBindings helper is the same analysis their EXISTS blind spot (SameTermFilterOptimizer:83-100 uses filterArg.getBindingNames only; repro oracle_sameTermInsideExistsSeesOuterBinding fails on the oracle too) and possible-name pushes need; agree on class name/location before both WPs land duplicates. Note the LMDB pipeline runs FilterOptimizer(null,false,false) and SameTermFilterOptimizer before the LMDB rewrites (LmdbQueryOptimizerPipeline.java:230-256).",
+    "wp2 (packed cascades rules): (a) new RdfTermDomain.Fact.CANONICAL_BOOLEAN must be exported in LmdbPackedPredicateRangeProvider.java:71-78 if packed anchor rules expand booleans; (b) PackedDomainFacts/PackedLogicalRuleProgram expandAnchorValue (3.2.4) has the same term-vs-value conflation as 3.1.4 - share AnchorEquality; (c) LmdbCascadesOptimizer.java:619 annotates guarantee strings in explain output, which change for boolean predicates; (d) the review's sameTerm-disjunction e2e failure may be re-derived by packed rules after DisjunctiveConstraintOptimizer/SameTermFilterOptimizer inline the constants - verify the plan.",
+    "wp3 (plan caches, 3.3.2): repro methods c5_booleanExactStoredTermAnchorAfterLaterCommit, c5_integerAnchorAfterLaterNonCanonicalCommit, c5_booleanExactStoredTermAnchorAfterLaterCommitFreshQueryText, c5_integerGuaranteeAnchorViaOptionalAfterLaterNonCanonicalCommit belong to wp3; bumping PREDICATE_OBJECT_DOMAINS_VERSION changes effectiveRdfTermDomainsVersion -> LmdbEstimatorStorageAccess.predicateRangeVersion (:246-256) so caches invalidate on upgrade but still not on data change (wp3 owns content hashing / certificates). Also: the 3.5 fix removes the commit-ordering window, but LmdbSailDataset tracked txns are renewed onto newer snapshots per commit (LmdbSailStore.java:3273-3277) - whether a plan's guarantee-based filter drop can execute on a renewed newer snapshot is a certificate question for wp3.",
+    "wp5 (execution operators): the conservative sub-SELECT rule in OuterScopeBindings (possible kept, assured dropped) exists because the executor leaks outer bindings into sub-selects (3.4.3); once wp5 fixes that, the helper can treat isSubquery projections as full barriers.",
+    "Storage layer (3.1.6): ValueStore.literal2data/findId/storeValues and StoreProperties change term-ID resolution for language literals; this also fixes the standard pipeline's cold plain-pattern failure and affects LmdbValueLookupOptimizer 'unknown constant' handling (LmdbValueVar knownValue==null) that packed rules/plan caches may turn into EmptySet proofs (3.3.3) - a cold-lookup miss for a case-variant tag currently becomes a cacheable EmptySet.",
+    "Estimation/frontier (wp6): FiniteDomainFact:155-159 and FiniteRelationEstimate:550-554 compare language tags case-sensitively (raw notes item 10, cost-only) - align with Literal.equals after 3.1.6.",
+    "LmdbFilterHoistOptimizer.bindsNewConditionVar (:140-152, refuted finding) and LmdbSetSemanticsOptimizer/LmdbOptionalNormalFormOptimizer are natural additional consumers of OuterScopeBindings; no behaviour change proposed here."
+  ],
+  "openQuestions": [
+    "The review-f1 workspace surefire XML no longer exists (.mvnf/workspaces/review-f1 is gone); initial-evidence.review-f1.txt records tests=37 failures=19 but names only c3_nullRejectingOptionalInsideLateralWithCorrelatedWitness. The implementer must re-run LmdbLogicalRewriteReviewReproTest (Routine A repro-first) to recover the per-method red list before porting; c5_integerFamilyNonCanonicalCommitted, c5_dateTimeTimezoneVariants, c5_integerAnchorWithUncommittedNonCanonicalRow and c5_booleanOneEqualsTrue are expected controls (green).",
+    "3.1.6 policy: Option A (store lowercased tags; RDF 1.1 value space; round-trip of \"en-US\" becomes \"en-us\") vs Option B (case-preserving payload, canonical key). Needs a product decision; grep of testsuites found no exact-case round-trip assertions but a full sail-testsuite run is required.",
+    "3.1.6 legacy stores: fallback-on-miss (cheap, partial: lowercase queries still miss UPPERCASE legacy data) vs one-time re-key migration on first open (complete, cost proportional to language literals).",
+    "3.1.4: retain the sameTerm filter for guarantee-only constants (conservative, recommended) or drop it after materialising the exact-term anchor (needs proof that Values.packLiteral/unpackLiteral.equals keeps int vs integer term-distinct for all inlined datatypes).",
+    "Why did the top-level sameTerm disjunction (c5_sameTermDisjunctionIsNotValueEquality) reach the LMDB anchor path although DisjunctiveConstraintOptimizer splits Or-with-sameTerm into a Union and SameTermFilterOptimizer inlines assured vars? Inspect the explain plan; if a packed rule re-derives the value anchor this is wp2's 3.2.4.",
+    "OuterScopeBindings placement: queryalgebra-evaluation (shared with wp9, additive public API) vs lmdb-private first.",
+    "Whether LmdbSailDataset tracked-txn renewal can expose post-plan commits to a running query (would make every plan-time data-dependent rewrite need execution-time revalidation; roadmap 4.2, wp3)."
+  ]
+}

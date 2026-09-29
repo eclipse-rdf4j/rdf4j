@@ -1,0 +1,78 @@
+{
+ "wp": "wp4-execution-operators",
+ "batch": "b3",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp4.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/initial-evidence.wp4.txt",
+ "findings": [
+  {
+   "id": "3.4.5b",
+   "status": "fixed",
+   "rootCause": "HashJoinIteration.setupHashTable/drain/drainSmallerInput read the whole build input into an in-memory collection with no limit. Only the LeftJoin OPTIONAL-over-UNION path (BoundedHashJoinIteration) had a bound, and it could fall back to the correlated LeftJoinIterator. The out-of-scope operands that force a hash join (sub-selects, MINUS, and since 3.4.1 every conditioned OPTIONAL over them) have no sound correlated fallback, so a large build side could exhaust the heap.",
+   "change": "Roadmap 4.7, following the design. (1) The MINUS RightSpill is extracted into a shared @InternalUseOnly iterator.BindingSetSpillFile: append once, then rescan with one reader at a time, close is concurrency-safe and deletes the file, error messages name the operator. MinusQueryEvaluationStep now uses it and its behaviour is unchanged. The file is created in the live java.io.tmpdir, which also turns the two pre-existing workspace-mode MINUS spill-file reds green. (2) HashJoinIteration keeps at most maxBuildRows build rows in memory. The limit comes from the new property org.eclipse.rdf4j.query.algebra.evaluation.hashjoin.maxBuildRows: default 1,000,000, a negative value means unbounded, same convention as the MINUS/LeftJoin properties, read per iteration. When the build input has more rows, the rest are spilled. drain covers pinned LEFT/RIGHT and left joins. In drainSmallerInput, when both inputs exceed the budget, the left input becomes the build side and the right prefix stays as the probe cache, so memory stays at most 2x the budget. (3) A spilled join runs as a block nested loop in the inner class SpilledBuildJoin. Each probe block holds max(4096, budget) rows. The block is first probed against the in-memory hash table (existing matchingHashRows/residualMatches). Then the spill is scanned once, and each spilled row is joined with the block through a key index of the block (probe rows missing a lookup attribute, and spilled rows that are partial or have an empty key, are checked against every row with compatible()). The same residual condition is applied. For a left join, the block rows that nothing matched, in memory or in the spill, are then emitted bare. This is correct for inner and left joins regardless of correlation semantics. Output rows of one probe row are no longer contiguous; the hash join never promised that, since the adaptive side choice already changes order. (4) New protected hook beforeBuildSpill(). BoundedHashJoinIteration overrides it and throws MaterializationLimitExceededException, so the UNION path keeps its cheaper streaming fallback rather than spilling. (5) Telemetry: actualCostPeakMemoryRows now reports the in-memory build rows (unchanged when nothing spills). actualCostHashBuildRows still counts every build row. New metrics actualCostHashSpilledBuildRows and actualCostHashSpillPasses let cost feedback see the switch. The Order-only spillCountActual/spillBytesActual were not reused because GenericPlanNode hides them on join nodes. handleClose closes the active reader and deletes the spill; a spill created concurrently with close is closed immediately; a failure during spilling deletes the file and rethrows.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/BindingSetSpillFile.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIterationBuildSpillTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/HashJoinBuildBudgetQueryTest.java"
+   ],
+   "testsAdded": [
+    "HashJoinIterationBuildSpillTest#innerJoinWithBuildOverBudgetMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#leftJoinWithBuildOverBudgetMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#leftJoinResidualOverBudgetKeepsBareRowsOnlyWhenNoCandidateAnywherePasses",
+    "HashJoinIterationBuildSpillTest#pinnedLeftBuildSideOverBudgetMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#adaptiveBuildSideWhenBothInputsExceedTheBudgetMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#adaptiveBuildSideWithOneSmallInputDoesNotSpill",
+    "HashJoinIterationBuildSpillTest#crossProductOverBudgetMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#leftJoinWithProbeSideLargerThanOneBlockMatchesNestedLoopReference",
+    "HashJoinIterationBuildSpillTest#buildWithinBudgetDoesNotSpill",
+    "HashJoinIterationBuildSpillTest#negativeBudgetKeepsTheWholeBuildSideInMemory",
+    "HashJoinIterationBuildSpillTest#spillFileIsRemovedWhenIterationIsExhausted",
+    "HashJoinIterationBuildSpillTest#closingDuringTheSpillScanClosesBothInputsAndRemovesTheSpillFile",
+    "HashJoinBuildBudgetQueryTest#optionalOverSubSelectWithSpilledBuildSide (3 params)",
+    "HashJoinBuildBudgetQueryTest#optionalConditionOverSubSelectWithSpilledBuildSide (2)",
+    "HashJoinBuildBudgetQueryTest#optionalConditionRejectingEverySpilledCandidateKeepsBareRows (2)",
+    "HashJoinBuildBudgetQueryTest#joinWithSubSelectWithSpilledBuildSide (2)",
+    "HashJoinBuildBudgetQueryTest#optionalOverUnionKeepsResultsUnderABuildBudget (2)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationBuildSpillTest.txt (log .mvnf/workspaces/wp4/logs/20260928T071321.234167Z-40400-7a2982c3/verify.log)\nTests run: 12, Failures: 9, Errors: 0, Skipped: 0, Time elapsed: 0.666 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationBuildSpillTest\ninnerJoinWithBuildOverBudgetMatchesNestedLoopReference: [no more build rows than the budget are held in memory] expected: 3L but was: 13L\npinnedLeftBuildSideOverBudgetMatchesNestedLoopReference: expected: 2L but was: 13L\ncrossProductOverBudgetMatchesNestedLoopReference: expected: 2L but was: 5L\nleftJoinResidualOverBudgetKeepsBareRowsOnlyWhenNoCandidateAnywherePasses: expected: 10L but was: -1L\nspillFileIsRemovedWhenIterationIsExhausted: [the build overflow is held in exactly one spill file] Expected size: 1 but was: 0\n(all result-bag assertions against the nested-loop reference passed; only the memory bound/spill assertions failed)",
+   "postFixEvidence": "Focused run (log .mvnf/workspaces/wp4/logs/20260928T072055.357504Z-43227-4134ee11/verify.log): Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.991 s -- in org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationBuildSpillTest\nFinal code, evaluation module suite (log .mvnf/workspaces/wp4/logs/20260928T072442.841228Z-44563-cff6310d/verify.log):\nTests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.370 s -- in ...iterator.HashJoinIterationBuildSpillTest\nTests run: 19, Failures: 0 -- HashJoinIterationTest; 5/0 HashJoinIterationLifecycleTest; 5/0 HashJoinIterationResidualConditionTest; 10/0 HashJoinUserVariableTest\nTests run: 36, Failures: 0, Errors: 0 -- MinusQueryEvaluationStepTest; 17/0 LeftJoinQueryEvaluationStepTest; 11/0 AdaptiveHashLeftJoinLifecycleTest; 8/0 LeftJoinResidualConditionScopeTest\nMemory (report .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.HashJoinBuildBudgetQueryTest.txt): Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.231 s"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation (module unit suite, log .mvnf/workspaces/wp4/logs/20260928T072442.841228Z-44563-cff6310d/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1821, failures=2, errors=1, skipped=0",
+   "reds": [
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs | pre-existing (NoSuchFile papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2 is untracked and only exists in the main checkout; same red in b1/b2)",
+    "PackedFrontierSubsetKernelContractTest#sparseLongBushyStateContinuesThroughLegalSingletonSuffix | flaky (30 s assertTimeoutPreemptively under host load average 112-128; method rerun, log 20260928T074229.124200Z-68490-f2355d46, passed)",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix | flaky/environmental (pure planner run under a 120 s wall-clock budget, no query evaluation; the packed planner only calls unchanged LeftJoinQueryEvaluationStep.maxMemoized*() getters from the files touched here. It took 104.3 s standalone in b1 and timed out standalone in b2 under load 30-53. Two reruns here under load 47-128 timed out at 120.0 s again, logs 20260928T073249.856866Z-47570-38ad1a1d and 20260928T074229.124200Z-68490-f2355d46. Needs a quiet host or a larger budget; not caused by this batch.)",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted / #spillFileIsRemovedWhenIterationIsClosedEarly | previously pre-existing workspace reds (java.io.tmpdir artifact), now GREEN (36/0) because BindingSetSpillFile resolves the live java.io.tmpdir property"
+   ]
+  },
+  {
+   "selection": "core/sail/memory (module unit suite, log .mvnf/workspaces/wp4/logs/20260928T073742.075445Z-62715-19f1d5b9/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/sail/memory --retain-logs",
+   "result": "tests=856, failures=0, errors=0, skipped=3",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "System property org.eclipse.rdf4j.query.algebra.evaluation.hashjoin.maxBuildRows (HashJoinIteration.MAX_BUILD_ROWS_PROPERTY): at most this many build rows are kept in memory (default 1,000,000; negative = unbounded, the previous behaviour); the rest spill to a temp file rdf4j-hashjoin-*.spill",
+  "Runtime metrics actualCostHashSpilledBuildRows and actualCostHashSpillPasses on hash-join nodes; actualCostPeakMemoryRows now reports only the in-memory build rows"
+ ],
+ "crossWpNotes": [
+  "wp2/wp6/wp7 (cost model, LEO): a spilled hash join now reports actualCostPeakMemoryRows <= budget plus actualCostHashSpilledBuildRows/actualCostHashSpillPasses. The planner cost of a hash join whose build side is above the budget should include spill rescans (passes = ceil(probeRows / max(4096, budget)) x spilled rows deserialized) instead of assuming an in-memory table.",
+  "MaterializedExistsFilterIteration and the memoized left join still materialize without a spill path; they are bounded differently or not at all (outside this batch)."
+ ],
+ "followUps": [
+  "Grace/partitioned hash join (partition both sides by lookup key into spill files) would avoid the per-block rescan for very large probe sides; the current block nested loop is O(probeBlocks x spilledRows) deserializations.",
+  "Roadmap 4.7 lazy opening of both HashJoinIteration inputs (from 3.4.5a) is still open.",
+  "Consider applying the same budget and spill to MaterializedExistsFilterIteration's materialized EXISTS body.",
+  "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix runs at 104+ s against a 120 s preemptive timeout and fails on a loaded host; this needs a planner-side speedup or a test budget review (wp7)."
+ ]
+}

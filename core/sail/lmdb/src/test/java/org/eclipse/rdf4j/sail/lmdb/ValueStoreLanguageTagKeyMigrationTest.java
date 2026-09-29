@@ -50,8 +50,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Lifecycle of the persisted language-tag key policy ({@link StoreProperties#LANGUAGE_TAG_KEY}): new stores use the
  * canonical (lower-cased) data-to-id key, stores written before the policy existed are re-keyed on first open, and a
- * legacy store that already holds two ids for case variants of one term is left byte-exact (with a warning) instead of
- * silently returning a subset of its triples.
+ * legacy store that already holds two ids for case variants of one term is left byte-exact by the value store instead
+ * of silently returning a subset of its triples (the LMDB store then merges the variants, see
+ * {@link LmdbLanguageTagVariantMergeTest}).
  */
 class ValueStoreLanguageTagKeyMigrationTest {
 
@@ -67,6 +68,7 @@ class ValueStoreLanguageTagKeyMigrationTest {
 
 	@AfterEach
 	void after() throws IOException {
+		LmdbLanguageTagVariantMerge.disabledForTesting = false;
 		if (valueStore != null) {
 			valueStore.close();
 			valueStore = null;
@@ -269,9 +271,12 @@ class ValueStoreLanguageTagKeyMigrationTest {
 	void legacyStoreWithoutCollidingVariantsIsMigratedOnLmdbStoreOpen() throws IOException {
 		File storeDir = new File(dataDir, "store");
 		writeLmdbStoreProperties(storeDir, StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
+		// write the legacy data with the legacy (byte-exact) behaviour: an LMDB store otherwise migrates on open
+		LmdbLanguageTagVariantMerge.disabledForTesting = true;
 		add(storeDir, List.of(st("s1", "label", VF.createLiteral("abc", "EN"))));
+		LmdbLanguageTagVariantMerge.disabledForTesting = false;
 		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT, languageTagKey(storeDir),
-				"a byte-exact legacy store keeps its mode while the property is present");
+				"fixture: the legacy store keeps its mode while it is written");
 
 		// simulate a store written before the language-tag key policy existed: the property is absent
 		writeLmdbStoreProperties(storeDir, null);

@@ -70,6 +70,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.IntPredicate;
 import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -98,6 +99,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -108,6 +110,9 @@ import org.slf4j.LoggerFactory;
 
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
@@ -312,6 +317,7 @@ class ValueStore extends AbstractValueFactory {
 		startTransaction(true);
 		initTermIndexes(config);
 		commit();
+		freeUnusedIdsOnOpen();
 
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
@@ -481,7 +487,17 @@ class ValueStore extends AbstractValueFactory {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, freeDbi, stat));
 			freeIdsAvailable = stat.ms_entries() > 0;
+			return null;
+		});
+	}
 
+	/**
+	 * Frees the ids a previous session marked unused but did not free before it closed. Needs the triple-term indexes:
+	 * freeing an unused triple term deletes its id-to-triple entry.
+	 */
+	private void freeUnusedIdsOnOpen() throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, unusedDbi, stat));
 			if (stat.ms_entries() > 0) {
 				// free unused IDs
@@ -2017,8 +2033,9 @@ class ValueStore extends AbstractValueFactory {
 		CANONICAL,
 		/**
 		 * Legacy policy: the encoding is looked up byte-exactly. Only used for stores written before the canonical key
-		 * existed that already hold distinct ids for case variants of one term and therefore cannot be re-keyed (see
-		 * {@link #migrateLanguageTagKeysIfNeeded()}).
+		 * existed that hold distinct ids for case variants of one term and therefore cannot simply be re-keyed (see
+		 * {@link #migrateLanguageTagKeysIfNeeded()}), until {@link LmdbLanguageTagVariantMerge} has merged the variants
+		 * when the LMDB store opens.
 		 */
 		BYTE_EXACT
 	}
@@ -2033,9 +2050,9 @@ class ValueStore extends AbstractValueFactory {
 			return LanguageTagKeyMode.CANONICAL;
 		}
 		if (StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT.equals(policy)) {
-			logger.warn("LMDB value store {} keys language literals byte-exactly: case variants of one language tag "
-					+ "(\"abc\"@en vs \"abc\"@EN) are separate values and lookups of such literals depend on the value "
-					+ "cache. Export and re-import the data into a new store to fix this.", dir);
+			logger.info("LMDB value store {} still keys language literals byte-exactly (case variants of one language "
+					+ "tag, \"abc\"@en vs \"abc\"@EN, may be separate values); the LMDB store merges the variants and "
+					+ "switches to canonical keys when it is opened", dir);
 			return LanguageTagKeyMode.BYTE_EXACT;
 		}
 		// no recorded policy: a store written before the policy existed, or a new (empty) store. Byte-exact until
@@ -2188,30 +2205,54 @@ class ValueStore extends AbstractValueFactory {
 	 * the canonical key. Language literals whose data-to-id key would collide (the legacy create path handed case
 	 * variants of one term distinct ids whenever the value-id cache was cold) cannot be merged by re-keying - that
 	 * would silently hide every triple of the losing id - so such a store is left {@link LanguageTagKeyMode#BYTE_EXACT}
-	 * and a warning names the remedy. The decision is persisted either way so the scan runs once. A new store takes the
-	 * same path: its scan is trivially empty.
+	 * until {@link LmdbLanguageTagVariantMerge} merges the variants, which needs the triple store as well. The decision
+	 * is persisted either way so the scan runs once. A new store takes the same path: its scan is trivially empty.
 	 */
 	private void migrateLanguageTagKeysIfNeeded() throws IOException {
 		if (properties.getLanguageTagKey() != null) {
 			return;
 		}
+		LanguageTagRekey rekey;
 		startTransaction(true);
 		try {
-			writeTransaction((stack, txn) -> {
-				migrateLanguageTagKeys(stack, txn);
-				return null;
-			});
+			rekey = writeTransaction(this::rekeyLanguageTagKeys);
 			commit();
 		} catch (IOException | RuntimeException e) {
 			rollback();
 			throw e;
 		}
+		if (rekey.collisions() > 0) {
+			logger.info("LMDB value store {} holds {} language literal(s) whose language tag differs only in case "
+					+ "from another stored literal ({} literals scanned). They received distinct ids before this "
+					+ "version; the LMDB store merges them into one value when it is opened.", dir,
+					rekey.collisions(), rekey.literals());
+			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
+			return;
+		}
+		if (rekey.rekeyed() > 0) {
+			logger.info("LMDB value store {} now keys language literals by their canonical (lower-cased) language "
+					+ "tag; {} of {} literals were re-keyed", dir, rekey.rekeyed(), rekey.literals());
+		}
+		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
 	}
 
 	private record LegacyLanguageTagEntry(long id, byte[] data, byte[] key) {
 	}
 
-	private void migrateLanguageTagKeys(MemoryStack stack, long txn) throws IOException {
+	/**
+	 * Outcome of {@link #rekeyLanguageTagKeys}: the number of language literals that collide with another stored
+	 * literal under the canonical key (nothing is re-keyed then), the number re-keyed, and the literals scanned.
+	 */
+	private record LanguageTagRekey(int collisions, int rekeyed, long literals) {
+	}
+
+	/**
+	 * Re-keys every language literal with an upper-case tag under its canonical key, unless two ids would share one
+	 * canonical key. Entries already found under their own canonical key (re-keyed by an earlier run whose outcome was
+	 * not yet recorded in store.properties) are left alone.
+	 */
+	private LanguageTagRekey rekeyLanguageTagKeys(MemoryStack stack, long txn) throws IOException {
 		List<LegacyLanguageTagEntry> entries = new ArrayList<>();
 		Set<ByteBuffer> canonicalKeys = new HashSet<>();
 		int collisions = 0;
@@ -2254,14 +2295,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		if (collisions > 0) {
-			logger.warn("LMDB value store {} holds {} language literal(s) whose language tag differs only in case "
-					+ "from another stored literal ({} literals scanned). They received distinct ids before this "
-					+ "version and cannot be merged in place, so the store keeps byte-exact language-tag keys: case "
-					+ "variants of one language tag stay separate values and lookups of such literals depend on the "
-					+ "value cache. Export and re-import the data into a new store to fix this.", dir, collisions,
-					literals);
-			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
-			return;
+			return new LanguageTagRekey(collisions, 0, literals);
 		}
 
 		if (!entries.isEmpty()) {
@@ -2289,12 +2323,401 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 		}
-		if (!entries.isEmpty()) {
+		return new LanguageTagRekey(0, entries.size(), literals);
+	}
+
+	/**
+	 * Plans the merge of the ids that denote one RDF term in a {@link LanguageTagKeyMode#BYTE_EXACT} store (see
+	 * {@link LmdbLanguageTagVariantMerge}): every group of case variants of one language literal, and every triple term
+	 * that becomes equal to another one once its components are replaced by their survivors. It only reads, and the
+	 * plan depends on nothing but the stored values, so a merge that was interrupted before
+	 * {@link #applyLanguageTagVariantMerge} committed plans the same merge again.
+	 */
+	LanguageTagVariantMergePlan planLanguageTagVariantMerge() throws IOException {
+		LanguageTagVariantMergePlan plan = new LanguageTagVariantMergePlan();
+		// a write transaction that is rolled back: the nested lookups (findId, findTripleTermId) then read the same
+		// snapshot as the scans
+		startTransaction(false);
+		try {
+			writeTransaction((stack, txn) -> {
+				planLanguageLiteralGroups(plan, stack, txn);
+				if (!plan.isEmpty()) {
+					planTripleTermMerges(plan, stack, txn);
+				}
+				return null;
+			});
+		} finally {
+			rollback();
+		}
+		return plan;
+	}
+
+	private void planLanguageLiteralGroups(LanguageTagVariantMergePlan plan, MemoryStack stack, long txn)
+			throws IOException {
+		Map<ByteBuffer, LongArrayList> variantsByKey = new LinkedHashMap<>();
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, dbi, pp));
+		long cursor = pp.get(0);
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			keyVal.mv_data(stack.bytes(new byte[] { ID_KEY }));
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			while (rc == MDB_SUCCESS && keyVal.mv_data().get(0) == ID_KEY) {
+				ByteBuffer payload = dataVal.mv_data();
+				if (payload.remaining() > 0 && payload.get(0) == LITERAL_VALUE && hasUpperCaseLanguageTag(payload)) {
+					plan.countUpperCaseLanguageLiteral();
+					byte[] data = new byte[payload.remaining()];
+					payload.get(data);
+					byte[] key = canonicalLanguageKey(data);
+					long id = data2id(keyVal.mv_data());
+					LongArrayList variants = variantsByKey.get(ByteBuffer.wrap(key));
+					if (variants == null) {
+						variants = new LongArrayList(2);
+						// the variant spelled in lower case is stored under exactly the canonical key
+						long lowerCaseId = findId(key, key, -1L, false);
+						if (lowerCaseId != LmdbValue.UNKNOWN_ID && lowerCaseId != id) {
+							variants.add(lowerCaseId);
+						}
+						variantsByKey.put(ByteBuffer.wrap(key), variants);
+					}
+					if (!variants.contains(id)) {
+						variants.add(id);
+					}
+				}
+				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+		for (LongArrayList variants : variantsByKey.values()) {
+			if (variants.size() > 1) {
+				plan.addLiteralGroup(variants);
+			}
+		}
+	}
+
+	private record TripleTermComponents(long subject, long predicate, long object) {
+	}
+
+	/**
+	 * Groups the triple terms whose components, resolved through the merges planned so far, are equal - including every
+	 * triple term already stored with exactly those components - and lets the smallest id survive. Triple terms stored
+	 * twice with identical components (left behind when a merge was interrupted after rewriting a survivor) are grouped
+	 * as well. Repeats until nothing changes, so a triple term nested in a merged triple term is merged too.
+	 */
+	private void planTripleTermMerges(LanguageTagVariantMergePlan plan, MemoryStack stack, long txn)
+			throws IOException {
+		boolean changed = true;
+		while (changed) {
+			Map<TripleTermComponents, LongArrayList> membersByComponents = new LinkedHashMap<>();
+			Long2ObjectLinkedOpenHashMap<long[]> storedById = new Long2ObjectLinkedOpenHashMap<>();
+			stack.push();
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+				long cursor = pp.get(0);
+				try {
+					MDBVal keyVal = MDBVal.calloc(stack);
+					MDBVal dataVal = MDBVal.calloc(stack);
+					long[] quad = new long[4];
+					long[] previous = null;
+					int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+					while (rc == MDB_SUCCESS) {
+						tripleTermSpocIndex.keyToQuad(keyVal.mv_data(), quad);
+						long id = quad[TripleIndex.CONTEXT_IDX];
+						TripleTermComponents resolved = new TripleTermComponents(
+								plan.resolve(quad[TripleIndex.SUBJ_IDX]), plan.resolve(quad[TripleIndex.PRED_IDX]),
+								plan.resolve(quad[TripleIndex.OBJ_IDX]));
+						if (resolved.subject() != quad[TripleIndex.SUBJ_IDX]
+								|| resolved.predicate() != quad[TripleIndex.PRED_IDX]
+								|| resolved.object() != quad[TripleIndex.OBJ_IDX]) {
+							storedById.put(id, new long[] { quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+									quad[TripleIndex.OBJ_IDX] });
+							addTripleTermMember(membersByComponents, resolved, id);
+						} else if (previous != null && previous[0] == quad[0] && previous[1] == quad[1]
+								&& previous[2] == quad[2]) {
+							// the index is sorted by components, so triple terms stored twice are adjacent
+							addTripleTermMember(membersByComponents, resolved, previous[3]);
+							addTripleTermMember(membersByComponents, resolved, id);
+						}
+						previous = quad.clone();
+						rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			} finally {
+				stack.pop();
+			}
+
+			Long2LongOpenHashMap survivorByLoser = new Long2LongOpenHashMap();
+			Long2ObjectLinkedOpenHashMap<long[]> losers = new Long2ObjectLinkedOpenHashMap<>();
+			Long2ObjectLinkedOpenHashMap<long[]> rewrites = new Long2ObjectLinkedOpenHashMap<>();
+			for (Map.Entry<TripleTermComponents, LongArrayList> group : membersByComponents.entrySet()) {
+				TripleTermComponents components = group.getKey();
+				LongArrayList members = group.getValue();
+				// triple terms stored with exactly the resolved components mention no losing id, so they were not
+				// collected above; they denote the same term and join the group
+				LongArrayList existing = tripleTermIds(stack, txn, components);
+				for (int i = 0; i < existing.size(); i++) {
+					if (!members.contains(existing.getLong(i))) {
+						members.add(existing.getLong(i));
+					}
+				}
+				long survivor = Long.MAX_VALUE;
+				for (int i = 0; i < members.size(); i++) {
+					survivor = Math.min(survivor, members.getLong(i));
+				}
+				long[] resolved = { components.subject(), components.predicate(), components.object() };
+				for (int i = 0; i < members.size(); i++) {
+					long member = members.getLong(i);
+					// members that were not collected as affected are stored with the resolved components
+					long[] stored = storedById.containsKey(member) ? storedById.get(member) : resolved;
+					if (member != survivor) {
+						survivorByLoser.put(member, survivor);
+						losers.put(member, stored);
+					} else if (storedById.containsKey(member)) {
+						rewrites.put(member, new long[] { stored[0], stored[1], stored[2], resolved[0], resolved[1],
+								resolved[2] });
+					}
+				}
+			}
+			changed = plan.replaceTripleTermMerges(survivorByLoser, losers, rewrites);
+		}
+	}
+
+	private static void addTripleTermMember(Map<TripleTermComponents, LongArrayList> membersByComponents,
+			TripleTermComponents components, long id) {
+		LongArrayList members = membersByComponents.computeIfAbsent(components, ignored -> new LongArrayList(2));
+		if (!members.contains(id)) {
+			members.add(id);
+		}
+	}
+
+	/** The ids of every triple term stored with exactly the given components. */
+	private LongArrayList tripleTermIds(MemoryStack stack, long txn, TripleTermComponents components)
+			throws IOException {
+		LongArrayList ids = new LongArrayList(1);
+		stack.push();
+		try {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+			long cursor = pp.get(0);
+			try {
+				MDBVal keyVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				tripleTermSpocIndex.getMinKey(keyBuf, components.subject(), components.predicate(),
+						components.object(), -1);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+				GroupMatcher matcher = tripleTermSpocIndex.createMatcher(components.subject(),
+						components.predicate(), components.object(), -1);
+				long[] quad = new long[4];
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && matcher.matches(keyVal.mv_data())) {
+					tripleTermSpocIndex.keyToQuad(keyVal.mv_data(), quad);
+					ids.add(quad[TripleIndex.CONTEXT_IDX]);
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} finally {
+			stack.pop();
+		}
+		return ids;
+	}
+
+	/**
+	 * Test seam: when it accepts the number of a completed step of {@link #applyLanguageTagVariantMerge} (1 surviving
+	 * triple terms rewritten, 2 losing triple terms retired, 3 losing literals retired), the work so far is committed -
+	 * as a map resize at that point would - and the merge fails as if the process had died.
+	 */
+	static volatile IntPredicate crashAfterLanguageTagMergeStepForTesting;
+
+	/**
+	 * Carries out a {@link LanguageTagVariantMergePlan} after every statement of the triple store has been rewritten to
+	 * the surviving ids, then keys every language literal canonically and switches this store to
+	 * {@link LanguageTagKeyMode#CANONICAL}. Runs in one write transaction; if the value map has to grow mid-way, the
+	 * work done so far is committed early, and every such prefix is a state from which
+	 * {@link #planLanguageTagVariantMerge} plans the rest of the merge: surviving triple terms are rewritten first
+	 * (they then have the resolved components and are no longer affected), each losing id is retired as a whole
+	 * (deleted, marked unused, hash cleared), losing triple terms before losing literals (so no triple term refers to a
+	 * deleted literal), and re-keying comes last and skips entries that are already keyed canonically.
+	 *
+	 * @throws IOException if a language literal still collides with another one after the merge (the transaction is
+	 *                     rolled back and the store stays byte-exact)
+	 */
+	void applyLanguageTagVariantMerge(LanguageTagVariantMergePlan plan) throws IOException {
+		LanguageTagRekey rekey;
+		startTransaction(true);
+		try {
+			rekey = writeTransaction((stack, txn) -> {
+				if (!plan.isEmpty()) {
+					resizeMap(txn, languageTagVariantMergeBytes(plan));
+					rewriteSurvivingTripleTerms(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(1);
+					retireLosingTripleTerms(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(2);
+					retireLosingLiterals(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(3);
+				}
+				LanguageTagRekey result = rekeyLanguageTagKeys(stack, currentWriteTxn(txn));
+				if (result.collisions() > 0) {
+					throw new IOException("LMDB value store " + dir + " still holds " + result.collisions()
+							+ " language literal(s) that collide with another stored literal after merging the case "
+							+ "variants of language tags");
+				}
+				return result;
+			});
+			if (!plan.isEmpty()) {
+				// values handed out before the merge may carry a losing id
+				invalidateRevisionOnCommit = true;
+			}
+			commit();
+		} catch (IOException | RuntimeException e) {
+			rollback();
+			throw e;
+		}
+		if (rekey.rekeyed() > 0) {
 			logger.info("LMDB value store {} now keys language literals by their canonical (lower-cased) language "
-					+ "tag; {} of {} literals were re-keyed", dir, entries.size(), literals);
+					+ "tag; {} of {} literals were re-keyed", dir, rekey.rekeyed(), rekey.literals());
 		}
 		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
 		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+	}
+
+	private void languageTagMergeStepDone(int step) throws IOException {
+		IntPredicate crash = crashAfterLanguageTagMergeStepForTesting;
+		if (crash != null && crash.test(step)) {
+			endTransaction(true, true);
+			throw new IOException("simulated crash after step " + step + " of the language-tag variant merge");
+		}
+	}
+
+	/** Upper bound of the map space the merge and the subsequent re-keying need. */
+	private long languageTagVariantMergeBytes(LanguageTagVariantMergePlan plan) {
+		long tripleTermKeys = (2L * plan.tripleTermRewrites().size() + plan.loserTripleTerms().size())
+				* tripleTermIndexes.size();
+		long entries = tripleTermKeys + 4L * plan.loserCount() + 4L * plan.upperCaseLanguageLiterals();
+		return 2L * entries * (TripleIndex.MAX_KEY_LENGTH + MAX_KEY_SIZE + 2L * Long.BYTES + 4L);
+	}
+
+	private void rewriteSurvivingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		for (Long2ObjectMap.Entry<long[]> rewrite : plan.tripleTermRewrites().long2ObjectEntrySet()) {
+			long id = rewrite.getLongKey();
+			long[] components = rewrite.getValue();
+			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
+			writeTripleTermKeys(stack, writeTxn, components[3], components[4], components[5], id, true);
+			for (int i = 0; i < 3; i++) {
+				if (components[i] != components[i + 3]) {
+					incrementRefCount(stack, writeTxn, components[i + 3]);
+					decrementRefCount(stack, writeTxn, components[i]);
+				}
+			}
+			clearStoredHash(id);
+		}
+	}
+
+	private void retireLosingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		for (Long2ObjectMap.Entry<long[]> loser : plan.loserTripleTerms().long2ObjectEntrySet()) {
+			long id = loser.getLongKey();
+			long[] components = loser.getValue();
+			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
+			for (int i = 0; i < 3; i++) {
+				decrementRefCount(stack, writeTxn, components[i]);
+			}
+			retireMergedId(stack, writeTxn, id);
+		}
+	}
+
+	/** Puts ({@code put}) or deletes the keys of one triple term in every triple-term index. */
+	private void writeTripleTermKeys(MemoryStack stack, long writeTxn, long subject, long predicate, long object,
+			long id, boolean put) throws IOException {
+		stack.push();
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			for (TripleIndex index : tripleTermIndexes) {
+				keyBuf.clear();
+				index.toKey(keyBuf, subject, predicate, object, id);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+				if (put) {
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				} else {
+					E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
+				}
+			}
+		} finally {
+			stack.pop();
+		}
+	}
+
+	/**
+	 * Deletes each losing language literal - its byte-exact data-to-id entry (short key or hash association), its
+	 * reference to the datatype and its id-to-data entry - and retires its id.
+	 */
+	private void retireLosingLiterals(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		LongArrayList losers = plan.loserLiterals();
+		for (int i = 0; i < losers.size(); i++) {
+			long id = losers.getLong(i);
+			stack.push();
+			try {
+				ByteBuffer idBb = id2data(idBuffer(stack), id).flip();
+				MDBVal idVal = MDBVal.calloc(stack);
+				idVal.mv_data(idBb);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				if (mdb_get(writeTxn, dbi, idVal, dataVal) != MDB_SUCCESS) {
+					continue;
+				}
+				byte[] data = new byte[dataVal.mv_data().remaining()];
+				dataVal.mv_data().get(data);
+				if (data.length <= MAX_KEY_SIZE) {
+					MDBVal keyVal = MDBVal.calloc(stack);
+					keyVal.mv_data(stack.bytes(data));
+					MDBVal mappedIdVal = MDBVal.calloc(stack);
+					if (mdb_get(writeTxn, dbi, keyVal, mappedIdVal) == MDB_SUCCESS
+							&& data2id(mappedIdVal.mv_data()) == id) {
+						E(mdb_del(writeTxn, dbi, keyVal, null));
+					}
+				} else {
+					removeHashAssociation(stack, writeTxn, hash(data), idBb.duplicate());
+				}
+				// the datatype of a language literal (rdf:langString / rdf:dirLangString) is seeded and never collected
+				decrementRefCount(stack, writeTxn, Varint.readUnsigned(data, 1));
+				E(mdb_del(writeTxn, dbi, idVal, null));
+				retireMergedId(stack, writeTxn, id);
+			} finally {
+				stack.pop();
+			}
+		}
+	}
+
+	/**
+	 * Drops the reference count of a losing id (nothing refers to it any more), clears its stored hash and marks it
+	 * unused under the current revision, so the normal two-phase garbage collection puts it on the free list (at the
+	 * latest when the store opens next).
+	 */
+	private void retireMergedId(MemoryStack stack, long writeTxn, long id) throws IOException {
+		stack.push();
+		try {
+			ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
+			Varint.writeUnsigned(revIdBb, revision.getRevisionId());
+			MDBVal revIdVal = MDBVal.calloc(stack);
+			revIdVal.mv_data(id2data(revIdBb, id).flip());
+			E(mdb_put(writeTxn, unusedDbi, revIdVal, MDBVal.calloc(stack), 0));
+		} finally {
+			stack.pop();
+		}
+		refCountsTxCache.put(id, 0L);
+		clearStoredHash(id);
 	}
 
 	/**

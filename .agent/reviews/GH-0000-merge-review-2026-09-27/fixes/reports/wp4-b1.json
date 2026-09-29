@@ -1,0 +1,177 @@
+{
+ "wp": "wp4-execution-operators",
+ "batch": "b1",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp4.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/initial-evidence.wp4.txt",
+ "findings": [
+  {
+   "id": "3.4.5a",
+   "status": "fixed",
+   "rootCause": "HashJoinIteration's contract-aware constructor opened both inputs unguarded (`this.leftIter = left.evaluate(bindings); this.rightIter = right.evaluate(bindings);`). A QueryEvaluationException from the second call propagates before the object exists, so handleClose() can never run and the left input (and its store cursor / LMDB reader slot) leaks. All production callers (JoinQueryEvaluationStep, LeftJoinQueryEvaluationStep sub-select hash path, BoundedHashJoinIteration, FedX) use this constructor.",
+   "change": "New private static openRightInput(leftIter, right, bindings): opens the right input inside try/catch(RuntimeException|Error); on failure closes the left input, attaches a close failure as suppressed (guarding against the same instance), and rethrows the original failure. Roadmap 4.7's fully lazy opening is left as a follow-up (it changes close-before-first-next semantics); this is the minimal root-cause fix the design prescribes.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIterationLifecycleTest.java"
+   ],
+   "testsAdded": [
+    "HashJoinIterationLifecycleTest#hashJoinClosesLeftWhenRightEvaluationFails",
+    "HashJoinIterationLifecycleTest#leftJoinConstructorClosesLeftWhenRightEvaluationFails",
+    "HashJoinIterationLifecycleTest#leftCloseFailureDuringCleanupIsAttachedAsSuppressed",
+    "HashJoinIterationLifecycleTest#leftOpenFailureDoesNotOpenRight",
+    "HashJoinIterationLifecycleTest#successfulConstructionKeepsBothInputsOpenUntilClose"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationLifecycleTest.txt\nTests run: 5, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 0.137 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationLifecycleTest\nhashJoinClosesLeftWhenRightEvaluationFails -- <<< FAILURE!\njava.lang.AssertionError: [left input must be closed when opening the right input fails] Expecting AtomicBoolean(false) to have value: true\nleftJoinConstructorClosesLeftWhenRightEvaluationFails -- <<< FAILURE!\nleftCloseFailureDuringCleanupIsAttachedAsSuppressed -- <<< FAILURE! Expected size: 1 but was: 0",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationLifecycleTest.txt (log .mvnf/workspaces/wp4/logs/20260927T203947.310028Z-8401-5b3fa3f8/verify.log; re-run 20260928T010002.047821Z-54874-20629e52)\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.160 s -- in org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIterationLifecycleTest"
+  },
+  {
+   "id": "3.4.2",
+   "status": "fixed",
+   "rootCause": "MinusQueryEvaluationStep passed the operator's full input BindingSet to the right operand (DelayedEvaluationIteration(rightQes, bindings) on the streaming path and rightQes.evaluate(parentBindings) in AdaptiveMinusIteration.initialize). For `?s :p ?z OPTIONAL { ?s :q ?y MINUS { ?y :r ?z } }` the correlated LeftJoinIterator hands {s,z} to the Difference; z is pre-bound in `?y :r ?z` although z is not in the MINUS comparison domain ({y}), so the RHS is a selection on a variable that is fresh under bottom-up semantics and nothing is removed. comparisonBindingNames (shared output names) was already correct; only the pushed input was wrong.",
+   "change": "MinusQueryEvaluationStep now derives `rightInputBindingNames` and evaluates the right operand with BindingScopeAnalysis.retain(bindings, rightInputBindingNames) on all three paths (SPARQLMinusIteration delayed right, AdaptiveMinusIteration materialized and spilled). The pushed set is (comparison names \u2229 rightArg.getAssuredBindingNames()) \u222a BindingScopeAnalysis.lateralSubstitutedNames(rightArg): pushing a shared name is only a selection when the operand binds it in every row (critique 3.4.2 minor; a non-assured name re-extended by BadlyDesignedLeftJoinIterator would let the operand's own !BOUND filter see a value bottom-up never produces). The restriction applies only where correlated rows can arrive: BindingScopeAnalysis.receivesCorrelatedInput(difference) is true iff the Difference is (inside) the right arg of a Join/LeftJoin/Lateral/Difference and not inside an EXISTS body (which substitutes the probe row). A top-level MINUS keeps receiving all external bindings, which RDF4J treats as constants in the whole query; the existing QueryJoinOptimizerAdversarialTest#directMinusPreservesIncomingBindingRequiredByRhsService pins that contract (SERVICE endpoint bound from outside) and went red under the unconditional restriction from the interrupted attempt, so this position check is the regression fix. Legacy constructors without a comparison domain keep full pushdown (self-consistent: they also compare on all names).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/JoinQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusRightOperandInputScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysisTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/MinusInsideCorrelatedOperatorScopeTest.java"
+   ],
+   "testsAdded": [
+    "MinusRightOperandInputScopeTest#rightOperandReceivesOnlyComparisonNames (3 params)",
+    "MinusRightOperandInputScopeTest#comparisonNameBindingIsStillPushedIntoRightOperand (3)",
+    "MinusRightOperandInputScopeTest#lateralSubstitutedNameIsPushedIntoRightOperand (3)",
+    "MinusRightOperandInputScopeTest#onlyAssuredComparisonNamesArePushedIntoRightOperand (3)",
+    "MinusRightOperandInputScopeTest#topLevelMinusPushesExternalBindingsIntoBothOperands (3)",
+    "MinusRightOperandInputScopeTest#minusInLeftArgOfJoinPushesExternalBindingsIntoBothOperands",
+    "MinusRightOperandInputScopeTest#legacyConstructorWithoutComparisonDomainKeepsFullPushdown",
+    "MinusInsideCorrelatedOperatorScopeTest#minusInsideOptionalIsEvaluatedIndependently (3 params)",
+    "MinusInsideCorrelatedOperatorScopeTest#minusInsideOptionalStillRemovesOnSharedNamesWhenOuterBindingMatches",
+    "MinusInsideCorrelatedOperatorScopeTest#minusInsideOptionalKeepsExtensionWhenRightOperandHasNoCompatibleRow",
+    "MinusInsideCorrelatedOperatorScopeTest#minusInsideJoinedGroupIsEvaluatedIndependentlyOfOuterBinding",
+    "MinusInsideCorrelatedOperatorScopeTest#minusUnderOptionalInsideNestedOptionalGroupIsEvaluatedIndependently",
+    "MinusInsideCorrelatedOperatorScopeTest#nonAssuredSharedNameIsNotPushedIntoMinusRightOperand",
+    "MinusInsideCorrelatedOperatorScopeTest#lateralSubstitutedInputIsPushedIntoMinusRightOperand",
+    "MinusInsideCorrelatedOperatorScopeTest#lateralSubstitutedInputMatchingMinusRightOperandRemovesRow",
+    "BindingScopeAnalysisTest#correlatedInputPositionsAreTheRightArgsOfCorrelatingOperators",
+    "BindingScopeAnalysisTest#existsBodySubstitutesTheProbeRowAndIsNotACorrelatedPosition",
+    "BindingScopeAnalysisTest#retainKeepsOnlyRequestedNamesAndReusesCompleteInputs"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.MinusInsideCorrelatedOperatorScopeTest.txt\nTests run: 9, Failures: 3, Errors: 0, Skipped: 0 <<< FAILURE! -- in org.eclipse.rdf4j.sail.memory.MinusInsideCorrelatedOperatorScopeTest\nminusInsideOptionalIsEvaluatedIndependently(String)[1] <<< FAILURE!\nExpecting actual: [\"{s=urn:ex:a, y=urn:ex:b, z=urn:ex:z1}\"] to contain exactly: [\"{s=urn:ex:a, z=urn:ex:z1}\"]\n--- resumed (assured-only), log 20260928T003049.102169Z-12491-e0bee4ec ---\nTests run: 10, Failures: 1 -- nonAssuredSharedNameIsNotPushedIntoMinusRightOperand: Expecting actual: [\"{s=urn:ex:a, t=urn:ex:t, y=urn:ex:y1}\"] to contain exactly: [\"{t=urn:ex:t, y=urn:ex:y1}\"]\n--- external-binding regression (module suite, log 20260928T010758.271824Z-59592-c3be14e9) ---\nQueryJoinOptimizerAdversarialTest.directMinusPreservesIncomingBindingRequiredByRhsService <<< ERROR! QueryEvaluationException: SERVICE variables must be bound at evaluation time. at MinusQueryEvaluationStep$AdaptiveMinusIteration.initialize(MinusQueryEvaluationStep.java:286)\nMinusRightOperandInputScopeTest (log 20260928T011713.378173Z-62827-9b01268e): Tests run: 17, Failures: 4 -- topLevelMinusPushesExternalBindingsIntoBothOperands[1..3], minusInLeftArgOfJoinPushesExternalBindingsIntoBothOperands: Expecting actual: [] to contain exactly in any order: [\"s\", \"z\"]",
+   "postFixEvidence": "MinusRightOperandInputScopeTest (log .mvnf/workspaces/wp4/logs/20260928T012252.752331Z-64410-07d90b02/verify.log): Tests run: 17, Failures: 0, Errors: 0, Skipped: 0\nQueryJoinOptimizerAdversarialTest (report .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryJoinOptimizerAdversarialTest.txt): Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.944 s\nMinusInsideCorrelatedOperatorScopeTest (memory, log .mvnf/workspaces/wp4/logs/20260928T012443.920809Z-64987-1df0c8c9/verify.log): Tests run: 10, Failures: 0, Errors: 0, Skipped: 0"
+  },
+  {
+   "id": "3.9-lateral",
+   "status": "fixed",
+   "rootCause": "Both failing compliance ids are the query `?s ex:predicate ?o LATERAL { OPTIONAL { SELECT * { ?s rdfs:label ?label } LIMIT 1 } }`. The LATERAL right arg is LeftJoin(SingletonSet, Slice(Projection)); LeftJoinQueryEvaluationStep.supply computed optionalVars = {s,label} (SingletonSet has no binding names to subtract) and the branch-added whenWellDesigned wrapper routed every input binding s to BadlyDesignedLeftJoinIterator, which evaluates the sub-select WITHOUT s, LIMIT 1 returns the store's first label, the row is rejected as incompatible for the other subjects and no bare row is emitted: 1 row instead of 3. Under LATERAL substitution semantics the substituted names are constants in the whole right-hand side and can never be badly-designed problem variables; the step had no way to know that, and LateralQueryEvaluationStep's runtime clone of the right arg had no parent chain at all. Two adjacent defects in the same step: the sub-select hash branch never published its algorithm name (explain showed null), and the OPTIONAL condition was scoped to leftJoin.getBindingNames() so `LATERAL { OPTIONAL { ?s :q ?y FILTER(?y = ?o) } }` never matched (critique 'missed finding' / 3.4.1 minor).",
+   "change": "BindingScopeAnalysis.lateralSubstitutedNames(node) walks the parent chain, collects Lateral.getRightInputBindingNames() whenever the node is inside a Lateral's right arg and filters them through intervening Projection/MultiProjection source names. LateralQueryEvaluationStep.prepareRight gives the renamed clone a synthetic `new Lateral(new SingletonSet(), scopedRight, rightInputBindingNames)` parent before precompiling it. LeftJoinQueryEvaluationStep.supply removes the substituted names from optionalVars (so isWellDesignedFor ignores them and the sub-select goes through the existing HashJoinIteration branch with s bound, the pattern case through LeftJoinIterator), the sub-select hash branch now sets leftJoin.setAlgorithm(HashJoinIteration), and the condition scope is leftJoin.getBindingNames() \u222a lateralSubstitutedNames (conditionScopeBindingNames). The static-vs-runtime divergence the critique notes (declared but unbound-in-this-row names) is documented in the Javadoc: intersecting with assured left names would wrongly drop optional-but-bound left names and break LATERAL semantics, and a per-row set would have to be threaded through every operator; the divergent case only arises when an operator enclosing the whole LATERAL correlates such a name, which is that operator's responsibility.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LateralQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LateralSubstitutedOptionalScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysisTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/LateralOptionalSubSelectTest.java"
+   ],
+   "testsAdded": [
+    "LateralSubstitutedOptionalScopeTest#lateralSubstitutedInputIsNotAProblemVariableForSubSelectOptional",
+    "LateralSubstitutedOptionalScopeTest#lateralSubstitutedInputIsNotAProblemVariableForPatternOptional",
+    "LateralSubstitutedOptionalScopeTest#lateralSubstitutedInputWithoutMatchKeepsBareRow",
+    "LateralSubstitutedOptionalScopeTest#inputBindingThatLateralDoesNotSubstituteStaysAProblemVariable",
+    "LateralSubstitutedOptionalScopeTest#optionalOutsideAnyLateralKeepsBadlyDesignedHandling",
+    "LateralSubstitutedOptionalScopeTest#lateralSubstitutedInputIsVisibleToTheOptionalCondition",
+    "LateralSubstitutedOptionalScopeTest#optionalConditionOutsideAnyLateralStaysScopedToTheLeftJoin",
+    "LateralOptionalSubSelectTest#lateralOptionalOverLimitedSubSelectKeepsEveryLeftRow",
+    "LateralOptionalSubSelectTest#lateralOptionalOverProjectedSubSelectKeepsEveryLeftRow",
+    "LateralOptionalSubSelectTest#lateralOptionalOverPatternKeepsEveryLeftRow",
+    "LateralOptionalSubSelectTest#lateralOptionalWithConditionOverSubSelectKeepsEveryLeftRow",
+    "LateralOptionalSubSelectTest#lateralOptionalConditionSeesTheSubstitutedInput",
+    "LateralOptionalSubSelectTest#optionalOverLimitedSubSelectOutsideLateralKeepsBottomUpSemantics",
+    "BindingScopeAnalysisTest#parentlessNodeHasNoSubstitutedNames",
+    "BindingScopeAnalysisTest#rightArgOfLateralSeesTheLateralInputNames",
+    "BindingScopeAnalysisTest#leftArgOfLateralSeesNothing",
+    "BindingScopeAnalysisTest#nestedOperatorInsideLateralRightArgSeesTheNames",
+    "BindingScopeAnalysisTest#subSelectHidesNamesItDoesNotProjectAsSourceNames",
+    "BindingScopeAnalysisTest#subSelectKeepsNamesItProjectsAsSourceNames",
+    "BindingScopeAnalysisTest#multiProjectionKeepsTheUnionOfSourceNames",
+    "BindingScopeAnalysisTest#nestedLateralsAccumulateAcrossScopes"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sparql-compliance/6.2.0-SNAPSHOT/failsafe-reports/org.eclipse.rdf4j.sail.memory.MemorySPARQLComplianceTest.txt (log 20260927T211655.007069Z-22033-ca44d489)\nTests run: 17, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE! -- in org.eclipse.rdf4j.sail.memory.MemorySPARQLComplianceTest\nlateral()[2] <<< FAILURE! org.opentest4j.AssertionFailedError: expected: <3> but was: <1> at LateralTest.testLateralWithOptional(LateralTest.java:125)\nLateralOptionalSubSelectTest (memory): Tests run: 5, Failures: 4 -- lateralOptionalOverProjectedSubSelectKeepsEveryLeftRow: Expecting actual: [\"{label=Label 1, o=...object1, s=...subject1}\"] to contain exactly 3 rows\nLateralSubstitutedOptionalScopeTest (unit, resumed, log 20260928T002847): Tests run: 7, Failures: 2 -- lateralSubstitutedInputIsNotAProblemVariableForSubSelectOptional: expected: \"HashJoinIteration\" but was: null; lateralSubstitutedInputIsVisibleToTheOptionalCondition: [the condition must see the substituted ?o] expected: urn:object2 but was: null\nLateralOptionalSubSelectTest (memory, log 20260928T003151.978487Z-13207-97e0ce53): Tests run: 6, Failures: 1 -- lateralOptionalConditionSeesTheSubstitutedInput: rows lack y",
+   "postFixEvidence": "LateralSubstitutedOptionalScopeTest (report ...surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralSubstitutedOptionalScopeTest.txt, log 20260928T003616.035319Z-30916-cc337596): Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.507 s\nLateralOptionalSubSelectTest (memory, log 20260928T004040.713768Z-32586-1f811dde): Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.457 s\nMemorySPARQLComplianceTest#lateral (log 20260928T004413.420115Z-33655-0c66e263): Tests run: 17, Failures: 0, Errors: 0, Skipped: 0\nMemorySPARQL12QueryComplianceTest#tests (log 20260928T004541.490029Z-34355-85441d2b): Tests run: 66, Failures: 0, Errors: 0, Skipped: 0\nLmbdSPARQL12QueryComplianceTest#tests (report ...failsafe-reports/org.eclipse.rdf4j.sail.lmdb.LmbdSPARQL12QueryComplianceTest.txt): Tests run: 66, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 18.73 s\nLmdbSPARQLComplianceTest#lateral (log 20260928T004732.114503Z-35052-165f3238): Tests run: 17, Failures: 0, Errors: 1 -- lateral()[2] passes; the one error is lateral()[13] LateralUnboundVariableWithCoalesce = pre-existing LMDB `VALUES ?alt { UNDEF }` NPE at LmdbPipelinePlanCache$2.meet:430 (REVIEW.md section 3.9 line 189, S1/BR, wp3 plan caching; no frame of any file touched here in the trace)"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation (module unit suite, final run; log .mvnf/workspaces/wp4/logs/20260928T012728.813126Z-65747-1cf5070b/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1771, failures=2, errors=1, skipped=0",
+   "reds": [
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted | pre-existing (evidence: workspace profile passes java.io.tmpdir as a Surefire systemPropertyVariable, set after JVM start; on JDK 25.0.2 Files.createTempFile uses the startup value, verified with a standalone program: property=<redirected>, createTempFile wrote to /var/folders/.../T, same directory=false; the test uses the legacy MinusQueryEvaluationStep(left,right,0,1) constructor whose pushed set is unchanged and RightSpill is untouched)",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly | pre-existing (same java.io.tmpdir / JDK 25 workspace artifact as above)",
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs | pre-existing (evidence: NoSuchFile papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2 has 0 tracked files and is an untracked directory present only in the main checkout, so it is absent from this worktree)",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix | flaky (first module run: execution timed out after 120000 ms under --threads 3 suite load; rerun standalone: Tests run: 1, Failures: 0, Errors: 0, Time elapsed: 104.3 s, log 20260928T012514.568431Z-65186-e48140fb; green in the final module run)",
+    "QueryJoinOptimizerAdversarialTest#directMinusPreservesIncomingBindingRequiredByRhsService | caused-by-my-change-and-fixed (red in the first module run: SERVICE variables must be bound at evaluation time, because the unconditional MINUS right-input restriction withheld the external endpoint binding; fixed by BindingScopeAnalysis.receivesCorrelatedInput so only MINUS in a correlated position restricts; green standalone (33/0) and in the final module run)"
+   ]
+  },
+  {
+   "selection": "core/sail/memory (module unit suite, final run; log .mvnf/workspaces/wp4/logs/20260928T013039.414100Z-66633-31b97ff0/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/sail/memory --retain-logs",
+   "result": "tests=814, failures=0, errors=0, skipped=3",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it MemorySPARQLComplianceTest#lateral",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it MemorySPARQLComplianceTest#lateral --module compliance/sparql --retain-logs",
+   "result": "tests=17, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it MemorySPARQL12QueryComplianceTest#tests",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it MemorySPARQL12QueryComplianceTest#tests --module compliance/sparql --retain-logs",
+   "result": "tests=66, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it LmbdSPARQL12QueryComplianceTest#tests",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it LmbdSPARQL12QueryComplianceTest#tests --module compliance/sparql --retain-logs",
+   "result": "tests=66, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it LmdbSPARQLComplianceTest#lateral",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it LmdbSPARQLComplianceTest#lateral --module compliance/sparql --retain-logs",
+   "result": "tests=17, failures=0, errors=1, skipped=0",
+   "reds": [
+    "LmdbSPARQLComplianceTest.lateral()[13] (LateralUnboundVariableWithCoalesce, `VALUES ?alt { UNDEF }`) | pre-existing (evidence: NPE at LmdbPipelinePlanCache$2.meet(LmdbPipelinePlanCache.java:430) via List.copyOf with UNDEF, documented in REVIEW.md section 3.9 line 189 as failing on both the pre-merge branch and the merge; no frame of any file touched in this batch; lateral()[2] itself now passes)"
+   ]
+  },
+  {
+   "selection": "compliance/sparql --it MemorySPARQLComplianceTest#minus / #minusScope / #optional / #lateralScope / #exists",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it MemorySPARQLComplianceTest#<method> --module compliance/sparql --retain-logs",
+   "result": "minus tests=1/0, minusScope tests=26/0, optional tests=5/0, lateralScope tests=1/0, exists tests=1/0 (all failures=0, errors=0)",
+   "reds": []
+  },
+  {
+   "selection": "related classes in core/queryalgebra/evaluation: LeftJoinQueryEvaluationStepTest, LateralQueryEvaluationStepTest, HashJoinIterationTest, BindingScopeAnalysisTest, HashJoinIterationLifecycleTest, AdaptiveHashLeftJoinLifecycleTest, MemoizedLeftJoinLifecycleTest, QueryJoinOptimizerAdversarialTest",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 <Class> --module core/queryalgebra/evaluation --retain-logs",
+   "result": "17/0, 2/0, 19/0, 13/0, 5/0, 11/0, 9/0, 33/0 (tests/failures; errors=0, skipped=0)",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp3 (plan caching): LmdbSPARQLComplianceTest.lateral()[13] (LateralUnboundVariableWithCoalesce, `VALUES ?alt { UNDEF }`) still errors with the pre-existing NPE at LmdbPipelinePlanCache$2.meet:430 (REVIEW 3.9); not touched here.",
+  "wp4 later batches (3.4.1 / 3.4.3): BindingScopeAnalysis now offers isOutOfScopeForCorrelation, containsDifferenceInCurrentScope, lateralSubstitutedNames, receivesCorrelatedInput and retain; JoinQueryEvaluationStep already delegates to it. 3.4.1 should reuse receivesCorrelatedInput/lateralSubstitutedNames for the residual-condition scope and route Difference right args to hash only where the MINUS restriction is not already sufficient; 3.4.3's nested-projection notion should be the same 'right arg of Join/LeftJoin/Lateral/Difference, stop at Exists' predicate.",
+  "wp1/wp2 (LMDB rewrites, packed hints): the notion 'LATERAL-substituted input names are constants in the whole right-hand side' is implemented once in BindingScopeAnalysis.lateralSubstitutedNames; the LMDB correlation-aware binding context (REVIEW 3.1.1/3.1.3) can reuse it instead of a second implementation.",
+  "Integrator: the two LmdbStoreConfig/LmdbStoreSchema japicmp edits present in the tree were left untouched and are part of the cumulative patch.",
+  "Workspace runner: under the workspace-build-root profile java.io.tmpdir is passed as a Surefire systemPropertyVariable (set after JVM start); JDK 25's Files.createTempFile uses the startup value (verified with a standalone program), so MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted/ClosedEarly cannot find the spill file in workspace mode. Environment artifact, not a code regression; consider moving java.io.tmpdir into argLine for workspace runs."
+ ],
+ "followUps": [
+  "3.4.5a roadmap 4.7: fully lazy opening of both HashJoinIteration inputs under a lifecycle lock (as AdaptiveHashLeftJoinIteration does) so close-before-first-next releases nothing that was never opened.",
+  "3.4.2 hardening (design open question): when a correlated MINUS right operand is not compatibility-selection-safe (e.g. contains a sub-select/aggregate that 3.4.3 will make a boundary), consider pushing nothing; not done here to keep correlated MINUS performance.",
+  "LATERAL static/runtime divergence: LateralQueryEvaluationStep could pass the actually-substituted names per left row (via the synthetic parent it already creates) if a case surfaces where an enclosing operator correlates a declared-but-unbound LATERAL input.",
+  "PreFilter path: canEvaluateConditionBasedOnLeftHandSide still uses leftJoin.getAssuredBindingNames() only; including LATERAL-substituted names there would allow pre-filtering (optimization only, semantics already correct through the post-filter scope).",
+  "Workspace tmpdir: make Surefire/Failsafe pass -Djava.io.tmpdir in argLine under the workspace-build-root profile so temp-file tests observe the redirected directory on JDK 25."
+ ]
+}

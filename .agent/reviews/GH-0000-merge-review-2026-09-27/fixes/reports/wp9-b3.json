@@ -1,0 +1,88 @@
+{
+  "wp": "wp9-standard-pipeline",
+  "batch": "b3",
+  "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9",
+  "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp9.patch",
+  "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/initial-evidence.wp9.txt",
+  "findings": [
+    {
+      "id": "3.9-custom-aggregate-distinct",
+      "status": "refuted",
+      "rootCause": "Not an engine bug; the four tests asserted an order that was never specified. The four failing methods are exactly the GROUP BY queries without ORDER BY: SumWithDistinct, VarianceWithDistinct, VarianceWithDistinct_WithStdv and MultipleSumWithDistinct. MultipleSumWithDistinctGroupBy has ORDER BY and stays green, which answers the critique's step 0. GroupIterator.getBindingSets() adds every group row to cf.createSetOfBindingSets(...) and returns that set's iterator, so GROUP BY output order is the set's iteration order. Branch commit af761ff23a changed DefaultCollectionFactory.createSetOfBindingSets from `new HashSet<>()` to BindingSetHashSet, a HashMap keyed by a mixed pair hash that avoids BindingSet's XOR-hash collision families. That changed the iteration order only. A Routine C scratch test proved it for all four queries. It re-inserted the branch's result rows in GroupIterator entry order and confirmed two things: the branch createSetOfBindingSets order equals the observed branch order, and java.util.HashSet order equals, element for element, the order the old tests asserted. Examples: VarianceWithDistinct branch=5,7,1,3,2,4,8,6 vs HashSet=8,1,5,4,6,7,3,2 = old expectation; SumWithDistinct branch=1,7,5,8,4,6,2,3 vs HashSet=1,3,8,5,7,6,2,4 = old expectation. The values are identical. The pre-change NPE in VarianceWithDistinct is just book5, whose aggregate is unbound (m = null), now coming first. SPARQL 1.1 leaves solution order undefined without ORDER BY, so the expectations were outdated.",
+      "change": "This was test-only, done in an earlier interrupted attempt of this batch and kept here. `order by ?s` was added to the four GROUP BY queries and the expectations were re-sorted by ?s. Every (s, m[, n | sa]) value assertion is kept, including the null m/n for book5 and hasNext()==false. No production change: the order change is a side effect of a deliberate collision-hardening change and is allowed by SPARQL. The Routine C scratch test (ScratchGroupOrderRootCauseTest) was taken out of the tree after the proof; its source is kept at scratchpad/wp9-b3-scratch-order-reports/ScratchGroupOrderRootCauseTest.java.txt. The critique major on this finding is addressed: the failing set was identified from the report before concluding order-only, and the claim that the collection code is unchanged is replaced by the actual cause (BindingSetHashSet).",
+      "files": [
+        "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/compliance/sparql/src/test/java/org/eclipse/rdf4j/query/parser/sparql/function/CustomAggregateFunctionEvaluationTest.java"
+      ],
+      "testsAdded": [],
+      "preFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-sparql-compliance/6.2.0-SNAPSHOT/failsafe-reports/org.eclipse.rdf4j.query.parser.sparql.function.CustomAggregateFunctionEvaluationTest.txt (log 20260928T055341.473920Z-54307-adc49101, unchanged test file)\nTests run: 21, Failures: 2, Errors: 2, Skipped: 0, Time elapsed: 0.560 s <<< FAILURE! -- in org.eclipse.rdf4j.query.parser.sparql.function.CustomAggregateFunctionEvaluationTest\n...testCustomFunction_VarianceWithDistinct <<< ERROR! java.lang.NullPointerException: Cannot invoke \"org.eclipse.rdf4j.model.Value.stringValue()\" because the return value of \"org.eclipse.rdf4j.query.BindingSet.getValue(String)\" is null\n...testCustomFunction_VarianceWithDistinct_WithStdv <<< ERROR! (same NPE)\n...testCustomFunction_MultipleSumWithDistinct <<< FAILURE! expected: \"12.5\" but was: \"6\"\n...testCustomFunction_SumWithDistinct <<< FAILURE! expected: \"12.5\" but was: \"60.543564\"\nRoot-cause proof (log 20260928T075142.001085Z-33001-e72d53ae, report ...failsafe-reports/org.eclipse.rdf4j.query.parser.sparql.function.ScratchGroupOrderRootCauseTest.txt):\nTests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.262 s -- in org.eclipse.rdf4j.query.parser.sparql.function.ScratchGroupOrderRootCauseTest\nSCRATCH VarianceWithDistinct observedOnBranch=5,7,1,3,2,4,8,6 createSetOfBindingSets=5,7,1,3,2,4,8,6 javaUtilHashSet=8,1,5,4,6,7,3,2 oldTestExpectation=8,1,5,4,6,7,3,2\nSCRATCH SumWithDistinct observedOnBranch=1,7,5,8,4,6,2,3 createSetOfBindingSets=1,7,5,8,4,6,2,3 javaUtilHashSet=1,3,8,5,7,6,2,4 oldTestExpectation=1,3,8,5,7,6,2,4",
+      "postFixEvidence": "Report: .mvnf/workspaces/wp9/build/org.eclipse.rdf4j/rdf4j-sparql-compliance/6.2.0-SNAPSHOT/failsafe-reports/org.eclipse.rdf4j.query.parser.sparql.function.CustomAggregateFunctionEvaluationTest.txt (final tree, log 20260928T075555.537931Z-77209-59d4083b; copy scratchpad/wp9-b3-reports/custom/)\nTests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.779 s -- in org.eclipse.rdf4j.query.parser.sparql.function.CustomAggregateFunctionEvaluationTest\n[mvnf] Summary: tests=21, failures=0, errors=0, skipped=0, time=0.779s"
+    },
+    {
+      "id": "3.11.6",
+      "status": "fixed",
+      "rootCause": "The review asked for a differential compliance run over the branch's executor rewrites, and the existing evidence only compared the branch with itself. I ran compliance/sparql in this worktree with all wp9 fixes (b1-b3) applied: 2648 tests, 8 failures, 41 errors, 3 skipped, so 49 failing ids. Every one of the 49 is in the review's 54-id list, and there are 0 new reds. Five review ids no longer fail: LMDB builtinFunction()[20] (b2 fix) and the four CustomAggregateFunctionEvaluationTest *WithDistinct methods (b3). The remaining 49 fall into five groups. (a) 32 NPEs in LmdbPipelinePlanCache$DatasetIdentity.immutable (LmdbPARQL11UpdateComplianceTest). (b) 8 NPEs in LmdbPipelinePlanCache$2.meet for VALUES UNDEF (values()[3], optional()[2], lateral()[13], aggregate()[7,20-23]). (c) 1 NPE in PatternKeys.predicateKey (propertyPath()[8]). (d) lateral()[2] on Memory/Native/LMDB. (e) SPARQL12 tests()[6] 'LATERAL join with OPTIONAL' on SPARQL12QueryTest, FedX, Lmbd, Memory and Native. Groups (a)-(c) are wp3 b1 findings 3.9.1, 3.9.2 and 3.9.3. Groups (d) and (e) are wp4 b1 finding 3.9-lateral. I confirmed wp4's cause independently by reading the code. On develop, LeftJoinQueryEvaluationStep.supply returns HashJoinIteration(left, right, bs) whenever the right side contains a sub-select, so the right side sees the LATERAL-substituted ?s. Branch commit 7f351d65c1 wraps that path in whenWellDesigned. The LATERAL right-hand LeftJoin has a SingletonSet left argument, so ?s counts as an optional variable. The row therefore goes to BadlyDesignedLeftJoinIterator, which strips ?s, runs the LIMIT 1 sub-select without correlation and filters out the incompatible rows: expected 3, got 1. Open question 5 in the design (does 3.11.4 flip the LATERAL ids?) is answered: no, they are an executor issue, not a SameTermFilterOptimizer scope issue.",
+      "change": "No production change; this finding was measurement and design only. Deliverable: .agent/research/GH-0000-wp9-differential-compliance-run-design.md (short design for a true differential run against develop 5eee576f5a). It has three layers. Layer 1: per-store failing-id parity between develop and branch worktrees in separate mvnf workspaces, with checks on dynamic-test indices and ids present on only one side. Layer 2: an operator-mode sweep using the existing hooks: the EXISTS filterAlgorithmHint stamped by a test-only optimizer, semiAntiMemoCapacity=1, and the leftjoin.* capacities set to 1. The seed set includes the critique's sameTerm(?o,?x) / sameTerm(?x,?o) EXISTS shapes, which covers the critique minor on 3.11.6. Layer 3: a seeded NoREC/TLP-style differential that compares the optimized pipeline on MemoryStore and LMDB against StrictEvaluationStrategy on the unoptimized algebra. This batch adds the LATERAL root-cause paragraph and the ownership mapping, which predicts 0 failing compliance ids on the integrated tree. I did not run develop itself. The only develop-side runners are a raw Maven install into the shared .m2_repo or a develop mvnf without workspace support, and the batch rules forbid both. The host disk is also 98% full, and ENOSPC has already hit LMDB suites.",
+      "files": [
+        "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp9/.agent/research/GH-0000-wp9-differential-compliance-run-design.md"
+      ],
+      "testsAdded": [],
+      "postFixEvidence": "Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 compliance/sparql --retain-logs\nLog: .mvnf/workspaces/wp9/logs/20260928T060314.918325Z-73824-67d0d38f/verify.log (run after the last production edit in the tree; reports copied to scratchpad/wp9-b3-compliance-reports/failsafe-reports, id list scratchpad/wp9-b3-compliance-failing-ids.txt)\n[mvnf] Summary: tests=2648, failures=8, errors=41, skipped=3, time=328.647s\n=== 32x NullPointerException @ org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCache$DatasetIdentity.immutable\n=== 8x NullPointerException @ org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCache$2.meet\n=== 5x AssertionError @ ...SPARQLQueryComplianceTest$DynamicSPARQLQueryComplianceTest (tests()[6] LATERAL join with OPTIONAL)\n=== 3x AssertionFailedError @ org.eclipse.rdf4j.testsuite.sparql.tests.LateralTest.testLateralWithOptional (expected: <3> but was: <1>)\n=== 1x NullPointerException @ org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys.predicateKey"
+    }
+  ],
+  "suiteRuns": [
+    {
+      "selection": "compliance/sparql CustomAggregateFunctionEvaluationTest (final tree)",
+      "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 --it CustomAggregateFunctionEvaluationTest --module compliance/sparql --retain-logs",
+      "result": "tests=21, failures=0, errors=0, skipped=0",
+      "reds": []
+    },
+    {
+      "selection": "compliance/sparql module (all wp9 fixes b1-b3; no production edit after this run)",
+      "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 compliance/sparql --retain-logs",
+      "result": "tests=2648, failures=8, errors=41, skipped=3",
+      "reds": [
+        "32x LmdbPARQL11UpdateComplianceTest NPE LmdbPipelinePlanCache$DatasetIdentity.immutable: pre-existing (in review list of 54); fixed by wp3 b1 3.9.1",
+        "8x LmdbSPARQLComplianceTest NPE LmdbPipelinePlanCache$2.meet (VALUES UNDEF): pre-existing (review list); fixed by wp3 b1 3.9.2",
+        "LmdbSPARQLComplianceTest#propertyPath()[8] NPE PatternKeys.predicateKey: pre-existing (review list); fixed by wp3 b1 3.9.3",
+        "lateral()[2] x3 (Memory/Native/LMDB) and SPARQL12 tests()[6] x5: pre-existing (review list); branch regression vs develop from commit 7f351d65c1 whenWellDesigned wrapper in LeftJoinQueryEvaluationStep (wp4-owned); fixed by wp4 b1 3.9-lateral"
+      ]
+    },
+    {
+      "selection": "core/queryalgebra/geosparql unit suite (final tree)",
+      "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/queryalgebra/geosparql --retain-logs",
+      "result": "tests=49, failures=0, errors=0, skipped=0",
+      "reds": []
+    },
+    {
+      "selection": "core/sail/memory unit suite (final tree)",
+      "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/sail/memory --retain-logs",
+      "result": "tests=821, failures=0, errors=0, skipped=3",
+      "reds": []
+    },
+    {
+      "selection": "core/queryalgebra/evaluation unit suite (final tree)",
+      "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp9 --threads 3 core/queryalgebra/evaluation --retain-logs",
+      "result": "tests=1762, failures=4, errors=1, skipped=0",
+      "reds": [
+        "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted / #spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing/environmental, workspace mode only. RightSpill calls Files.createTempFile, which since JDK 17 uses the java.io.tmpdir captured at VM start (StaticProperty). The root pom's rdf4j.build.root profile (pom.xml:136-150) redirects java.io.tmpdir only through surefire systemPropertyVariables, which are set with System.setProperty after VM start. The test's spillFiles() lists the redirected directory, so it sees nothing. Neither class is in the wp9 diff, and neither imports a wp9-changed class. The same red appears in the wp1-wp7 worktrees.",
+        "PackedFrontierSubsetKernelContractTest#sparseLongBushyStateContinuesThroughLegalSingletonSuffix / #arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky under load. These are JUnit preemptive timeouts (30 s / 120 s) in PackedWinnerTable.firstContinuation, with 13 concurrent mvnf jobs and load average 30-70. The planned trees are pure StatementPattern chains, so no wp9 hunk is reachable. Identical in the b1/b2 runs and in the wp2/wp4 worktrees, and green in wp7 on unchanged kernel code.",
+        "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: environmental. NoSuchFileException for papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2/ is untracked in the main checkout, so it is absent from every detached worktree."
+      ]
+    }
+  ],
+  "filesTouchedOutsideOwnership": [],
+  "newFlagsOrConfig": [],
+  "crossWpNotes": [
+    "wp4: I independently confirmed that lateral()[2] (Memory/Native/LMDB) and SPARQL12 tests()[6] (5 classes) come from branch commit 7f351d65c1's `standard.whenWellDesigned(optimized)` wrapper around the sub-select HashJoinIteration path in LeftJoinQueryEvaluationStep.supply. The LATERAL-substituted ?s makes the row badly designed, and BadlyDesignedLeftJoinIterator then evaluates the LIMIT 1 sub-select without correlation. Develop returns the HashJoinIteration with bs unconditionally. Your 3.9-lateral fix should turn all 8 ids green; please verify it with compliance/sparql on the integrated tree.",
+    "wp3: 41 of the 49 remaining compliance reds are your 3.9.1 / 3.9.2 / 3.9.3 NPEs. The integrated tree should show 0 failing compliance ids.",
+    "integrator: CustomAggregateFunctionEvaluationTest is changed test-only (ORDER BY ?s). The order change comes from DefaultCollectionFactory.createSetOfBindingSets -> BindingSetHashSet (branch commit af761ff23a), which is allowed by SPARQL. Other tests that assert GROUP BY or DISTINCT row order without ORDER BY may have the same latent dependency."
+  ],
+  "followUps": [
+    "Run compliance/sparql on the integrated tree (wp3 + wp4 + wp9). The expected result is 0 failing ids; anything still red is the real input to Layer 1 of the differential design.",
+    "Execute the differential design (.agent/research/GH-0000-wp9-differential-compliance-run-design.md) once the develop side can be built in an isolated workspace and the host has disk headroom (currently 98% full). Layers 2 and 3 can run on the branch alone.",
+    "Root pom rdf4j.build.root profile: pass java.io.tmpdir through argLine (-Djava.io.tmpdir=...) instead of systemPropertyVariables. On JDK 17+, Files.createTempFile ignores a tmpdir set after VM start. This causes the two MinusQueryEvaluationStepTest spill reds in every workspace run, and it may leave temp files outside the workspace tmp tree.",
+    "Confirm PackedFrontierSubsetKernelContractTest on a quiet host (load-induced timeouts).",
+    "core/spin: declare mustReturnDifferentResult() in Invoke, EvalFunction, SpinxFunction and CurrentTimeMillis (carried over from b2).",
+    "Formatter not run (the integrator runs it)."
+  ]
+}

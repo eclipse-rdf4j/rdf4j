@@ -566,6 +566,28 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testGcTripleTermsAfterRestart() throws Exception {
+		Value tripleTerm = Values.tripleTerm(Values.iri("other:iri"), RDF.TYPE, RDFS.CLASS);
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(tripleTerm);
+		valueStore.commit();
+
+		valueStore.startTransaction(true);
+		valueStore.gcIds(new HashSet<>(Set.of(id)), new HashSet<>());
+		valueStore.commit();
+
+		// the revision of the collected id is still referenced, so the id stays in the unused list until the next open
+		valueStore.close();
+		valueStore = createValueStore();
+
+		assertNull("the unused triple term is freed when the store opens", valueStore.getValue(id));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(tripleTerm));
+		valueStore.startTransaction(true);
+		assertEquals("the freed id is reused", id, valueStore.storeValue(tripleTerm));
+		valueStore.commit();
+	}
+
+	@Test
 	public void testGcDatatypes() throws Exception {
 		IRI[] types = new IRI[] { XSD.STRING, XSD.INTEGER, XSD.LONG, XSD.DECIMAL };
 		LmdbValue[] values = new LmdbValue[types.length];

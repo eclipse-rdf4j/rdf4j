@@ -104,6 +104,8 @@
 		<rdf4j.workbench.war>${maven.multiModuleProjectDirectory}/tools/workbench/target/rdf4j-workbench.war</rdf4j.workbench.war>
 		<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
 		<rdf4j.test.tmpDirectory>${project.build.directory}/tmp</rdf4j.test.tmpDirectory>
+		<!-- JVM argument fragment for forked tests; the workspace-build-root profile fills it -->
+		<rdf4j.test.tmpdirArgLine />
 		<skipTests>false</skipTests>
 		<argLine />
 	</properties>
@@ -121,6 +123,10 @@
 				<rdf4j.server.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-server/${project.version}/rdf4j-server.war</rdf4j.server.war>
 				<rdf4j.workbench.war>${rdf4j.build.root}/org.eclipse.rdf4j/rdf4j-http-workbench/${project.version}/rdf4j-workbench.war</rdf4j.workbench.war>
 				<rdf4j.test.tmpDirectory>${rdf4j.test.tmpRoot}/${project.groupId}/${project.artifactId}/${project.version}</rdf4j.test.tmpDirectory>
+				<!-- JDK 17+ captures the default temporary directory at JVM start, so Files.createTempFile ignores a
+					java.io.tmpdir set later through systemPropertyVariables; pass it on the fork's command line. The
+					workspace runners create this directory for every reactor project before Maven starts. -->
+				<rdf4j.test.tmpdirArgLine>-Djava.io.tmpdir=${rdf4j.test.tmpDirectory}</rdf4j.test.tmpdirArgLine>
 			</properties>
 			<build>
 				<directory>${rdf4j.build.root}/${project.groupId}/${project.artifactId}/${project.version}</directory>
@@ -1280,7 +1286,7 @@
 					<version>3.5.4</version>
 					<configuration>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true ${rdf4j.test.tmpdirArgLine}</argLine>
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>
@@ -1299,7 +1305,7 @@
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>
                         <!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
-						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true</argLine>
+						<argLine>@{argLine} ${mockito.javaagent} -Xmx16G -Djava.awt.headless=true ${rdf4j.test.tmpdirArgLine}</argLine>
 						<forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
 						<forkedProcessExitTimeoutInSeconds>120</forkedProcessExitTimeoutInSeconds>
 						<systemPropertyVariables>

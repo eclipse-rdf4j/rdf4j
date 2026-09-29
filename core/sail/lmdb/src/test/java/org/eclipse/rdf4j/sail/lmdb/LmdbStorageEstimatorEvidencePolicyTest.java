@@ -19,12 +19,12 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.same;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -46,8 +46,10 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -60,8 +62,10 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 	private static final IRI RIGHT_OBJECT = VF.createIRI("urn:test:right-object");
 	private static final QuadSnapshotIdentity IDENTITY = new QuadSnapshotIdentity(3L, 5L, 8L);
 
-	@Mock
-	private LmdbFilterSelectivityStats filters;
+	@TempDir
+	Path filterStateDirectory;
+	// Hand-written stub, never a Mockito mock (see LmdbPublicationPathMockingArchitectureTest).
+	private StubFilterSelectivityStats filters;
 	@Mock
 	private LmdbFiniteJoinSurfaceEstimator finiteSurfaces;
 	@Mock
@@ -70,6 +74,11 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 	private ValueStore valueStore;
 	@Mock
 	private LmdbStatisticsService statistics;
+
+	@BeforeEach
+	void createFilterStats() {
+		filters = new StubFilterSelectivityStats(filterStateDirectory);
+	}
 
 	@Test
 	void boundJoinEvidenceNeverEnumeratesLmdbDistinctPrefixes() {
@@ -164,16 +173,15 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 	@Test
 	void snapshotOnlyLeafFilterNeverRequestsCachedOrLiveEvidence() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
-		lenient().when(filters.estimateCachedFilterPass(any(), any())).thenReturn(unknownSample());
-		lenient().when(filters.estimateLiveFilterPass(any(), any()))
-				.thenReturn(new PatternFilterSampleEstimate(0.5d, 64L));
+		filters.snapshotFilterPass = unknown();
+		filters.cachedFilterPass = unknownSample();
+		filters.liveFilterPass = new PatternFilterSampleEstimate(0.5d, 64L);
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"), BagEstimate.heuristic(64.0d, "input"),
 				snapshotOnlyContext(pattern));
 
-		verify(filters, never()).estimateCachedFilterPass(any(), any());
-		verify(filters, never()).estimateLiveFilterPass(any(), any());
+		assertSnapshotConsulted();
+		assertNoCachedOrLiveEvidenceRequested();
 		assertTrue(result.isEmpty());
 	}
 
@@ -186,44 +194,43 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		var result = evidence().filterEvidence(input, equalsLiteral("value"), BagEstimate.heuristic(64.0d, "input"),
 				snapshotOnlyContext(input));
 
-		verify(filters, never()).estimateCachedFilterPass(any(), any());
-		verify(filters, never()).estimateLiveFilterPass(any(), any());
+		assertNoCachedOrLiveEvidenceRequested();
 		assertTrue(result.isEmpty());
 	}
 
 	@Test
 	void snapshotOnlyFilterStillUsesColdSnapshotEvidence() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(new EvaluationStatistics.FilterPassEstimate(
-				0.5d, EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L));
+		filters.snapshotFilterPass = new EvaluationStatistics.FilterPassEstimate(0.5d,
+				EvaluationStatistics.FilterPassEstimate.Source.EXACT, 64L);
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"), BagEstimate.heuristic(64.0d, "input"),
 				snapshotOnlyContext(pattern)).orElseThrow();
 
 		assertEquals(0.5d, result.passRatio(), 0.0d);
 		assertEquals("exact", result.source());
-		verify(filters, never()).estimateCachedFilterPass(any(), any());
-		verify(filters, never()).estimateLiveFilterPass(any(), any());
+		assertNoCachedOrLiveEvidenceRequested();
 	}
 
 	@Test
 	void exactOverBoundSurfaceDeclinesImpossibleBoundedZeroProbe() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+		filters.snapshotFilterPass = unknown();
 		EstimateContext context = decisionExactContext(pattern);
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
 				BagEstimate.exact(4_097.0d, "lmdb-exact"), context);
 
 		assertTrue(result.isEmpty());
-		verify(filters, never()).isExactBoundedFilterZero(any(), any(), anyInt());
+		assertSnapshotConsulted();
+		assertEquals(0, filters.exactBoundedFilterZeroCalls, "the bounded zero probe must not be opened");
 	}
 
 	@Test
 	void exactSurfaceAtProbeBoundStillPermitsZeroProof() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
-		when(filters.isExactBoundedFilterZero(any(), any(), anyInt())).thenReturn(true);
+		filters.snapshotFilterPass = unknown();
+		filters.exactBoundedFilterZero = true;
 		EstimateContext context = decisionExactContext(pattern);
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
@@ -231,26 +238,28 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 
 		assertEquals(0.0d, result.passRatio(), 0.0d);
 		assertTrue(result.complete());
-		verify(filters, times(1)).isExactBoundedFilterZero(any(), any(), anyInt());
+		assertSnapshotConsulted();
+		assertEquals(1, filters.exactBoundedFilterZeroCalls, "the bounded zero probe must be opened exactly once");
 	}
 
 	@Test
 	void standardFilterWithoutExactPermissionNeverOpensBoundedProbe() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
+		filters.snapshotFilterPass = unknown();
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
 				BagEstimate.heuristic(64.0d, "input"), snapshotOnlyContext(pattern));
 
 		assertTrue(result.isEmpty());
-		verify(filters, never()).isExactBoundedFilterZero(any(), any(), anyInt());
+		assertSnapshotConsulted();
+		assertEquals(0, filters.exactBoundedFilterZeroCalls, "the bounded zero probe must not be opened");
 	}
 
 	@Test
 	void decisionExactFilterWithPermissionUsesBoundedProbe() {
 		StatementPattern pattern = pattern("s", "value");
-		when(filters.estimateSnapshotFilterPass(any(), any())).thenReturn(unknown());
-		when(filters.isExactBoundedFilterZero(any(), any(), anyInt())).thenReturn(true);
+		filters.snapshotFilterPass = unknown();
+		filters.exactBoundedFilterZero = true;
 		EstimateContext context = decisionExactContext(pattern);
 
 		var result = evidence().filterEvidence(pattern, equalsLiteral("value"),
@@ -258,7 +267,8 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 
 		assertEquals(0.0d, result.passRatio(), 0.0d);
 		assertTrue(result.complete());
-		verify(filters, times(1)).isExactBoundedFilterZero(any(), any(), anyInt());
+		assertSnapshotConsulted();
+		assertEquals(1, filters.exactBoundedFilterZeroCalls, "the bounded zero probe must be opened exactly once");
 	}
 
 	@Test
@@ -271,6 +281,15 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 				.isEmpty());
 
 		verify(finiteSurfaces, times(1)).estimate(anyList(), same(pattern), anyMap());
+	}
+
+	private void assertSnapshotConsulted() {
+		assertTrue(filters.snapshotFilterPassCalls > 0, "the snapshot filter-pass evidence must be consulted");
+	}
+
+	private void assertNoCachedOrLiveEvidenceRequested() {
+		assertEquals(0, filters.cachedFilterPassCalls, "cached filter-pass evidence must not be requested");
+		assertEquals(0, filters.liveFilterPassCalls, "live filter-pass evidence must not be requested");
 	}
 
 	private LmdbStorageEstimatorEvidence evidence() {

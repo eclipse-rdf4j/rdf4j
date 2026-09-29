@@ -1,0 +1,215 @@
+{
+ "wp": "wp2-packed-rules",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp2.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2/initial-evidence.wp2.txt",
+ "findings": [
+  {
+   "id": "3.2.1-scope",
+   "status": "fixed",
+   "rootCause": "Found while re-reviewing the cumulative diff: the b1 substitution-equivalence guard (P1 assured shared + widened P2 + P4 + P5) still admitted MINUS bodies in which a shared name occurs in a position that does NOT bind it in the body's own (standalone) evaluation. FilterIterator's substituted probe replaces the name everywhere, so: `MINUS { BIND(?x AS ?y) ?x :q ?y }` (BIND reads ?x before the body binds it), `MINUS { { FILTER(!BOUND(?x)) } ?x :q ?m }`, `MINUS { BIND(EXISTS{?x :r ?k} AS ?z) ?x :q ?m FILTER(!?z) }`, `MINUS { ?m :k ?v OPTIONAL { ?x :r ?m } ?x :t ?v }` (shared name bound only on the optional side) and `MINUS { ?m :k ?v MINUS { ?x :r ?m } ?x :t ?v }` (shared name local to a nested MINUS right side) all produced wrong results once the anti-join was selected (evaluation differential, ANTI_JOIN_FORCING_COSTS). P4 also only scanned FILTER/LEFT_JOIN scalars for sub-selects although its javadoc promised 'anywhere in R' (a sub-select in a BIND's EXISTS slipped through).",
+   "change": "PackedLogicalRuleProgram.minusBodyStructurallySubstitutable gains a substitutedScope mode: for the MINUS body and every relational sub-expression of it, referenced(S) \u2229 shared must be assured by S (relationReferencedNames + relationAssuresAll). This is the classic 'certain variable' condition under which substitution equals selection; it subsumes the BIND/FILTER-before-binding, OPTIONAL-only and nested-MINUS-right-only cases and still admits the critique's nested MINUS whose left side assures the shared name (minusWithNestedMinusOnSharedVariableOnlyStaysRewritableAndCorrect stays green and still selects the anti-join). Inside nested EXISTS/IN/ANY/ALL bodies the check is off (the shared name is substituted from the enclosing row in both evaluations), so only P4/P5 apply there. P4/P5 now also scan EXTENSION/GROUP element scalars and ORDER keys. A pure decline guard: it can only remove alternatives. Also documented the hint invariant (planner half of 3.4.4) and the benign derived-EXISTS/user-NOT-EXISTS interning collision at the emission site, sorted the QueryEvaluationUtility import, and corrected the termIdentitySafe javadoc (Literal#equals ignores language-tag case; the value factories do not normalise tags).",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMinusReferencedVariablesTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbMinusReferencedVariablesTest.java"
+   ],
+   "testsAdded": [
+    "PackedMinusReferencedVariablesTest#minusRemovesRowsWhenBodyBindReadsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#minusRemovesRowsWhenBodyFilterTestsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenBodyBindExistsReadsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenSharedVariableIsOnlyOptionallyBoundInsideBody",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenSharedVariableIsLocalToNestedMinusRightSide",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenBodyBindReadsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenBodyFilterTestsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenBodyBindExistsReadsSharedVariableBeforeItIsBound",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenBindExistsContainsSubSelect",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenSharedVariableIsOnlyOptionallyBoundInsideBody",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenSharedVariableIsLocalToNestedMinusRightSide",
+    "PackedMinusReferencedVariablesTest#stillRewritesWhenBodyBindReadsSharedVariableAfterItIsBound",
+    "PackedMinusReferencedVariablesTest#stillRewritesWhenNestedExistsBodyFiltersSharedVariable",
+    "PackedMinusReferencedVariablesTest#stillRewritesWhenOptionalAlsoBindsTheSharedVariableOnItsLeft",
+    "LmdbMinusReferencedVariablesTest#minusSmallLeftLargeRightBindReadsSharedVariableBeforeItIsBound (guard; green pre-fix on LMDB)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest.txt (captured in initial-evidence.wp2.txt under '## bR 3.2.1-input-assurance pre-fix', both captures)\nTests run: 30, Failures: 11, Errors: 0, Skipped: 0, Time elapsed: 1.484 s <<< FAILURE!\nminusRemovesRowsWhenBodyBindReadsSharedVariableBeforeItIsBound: ==> expected: <[]> but was: <[n=\"1\"^^<...#int>|x=urn:t:a]>\nminusRemovesRowsWhenBodyFilterTestsSharedVariableBeforeItIsBound: ==> expected: <[]> but was: <[n=\"1\"^^<...#int>|x=urn:t:a]>\nminusKeepsRowsWhenBodyBindExistsReadsSharedVariableBeforeItIsBound: ==> expected: <[n=\"1\"^^<...#int>|x=urn:t:a]> but was: <[]>\nminusKeepsRowsWhenSharedVariableIsOnlyOptionallyBoundInsideBody: ==> expected: <[n=\"1\"^^<...#int>|x=urn:t:a]> but was: <[]>\nminusKeepsRowsWhenSharedVariableIsLocalToNestedMinusRightSide: ==> expected: <[n=\"1\"^^<...#int>|x=urn:t:a]> but was: <[]>\ndeclinesRewriteWhenBodyBindReadsSharedVariableBeforeItIsBound: the BIND input does not bind the shared ?x ... ==> expected: <false> but was: <true>\ndeclinesRewriteWhenBindExistsContainsSubSelect: ... (P4) ==> expected: <false> but was: <true>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusReferencedVariablesTest.txt: Tests run: 1, Failures: 0 (guard, LMDB pipeline does not select the substituted probe for this shape)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest.txt\nTests run: 30, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.244 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest\n(30/30 again in the evaluation suite run 20260928T065135; PackedCorrelatedMinusAlternativeTest 19/19, PackedSearchTest 93/93 in the same run)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusReferencedVariablesTest.txt\nTests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.189 s (LMDB suite run 20260928T065815)"
+  },
+  {
+   "id": "3.2.1",
+   "status": "fixed",
+   "rootCause": "(b1) addCorrelatedMinusAlternative guarded the MINUS -> correlated NOT EXISTS rewrite, the typed minus-assured-shared anti-joins and the semantic flag only on outputs(L) \u2229 outputs(R); names the body merely references were ignored while FilterIterator substitutes every bound name.",
+   "change": "Reconciled in bR: critique major P3 -> dropped (differential minusWithNestedMinusOnSharedVariableOnlyStaysRewritableAndCorrect green, PackedCorrelatedMinusAlternativeTest#typedSemiAntiAlternativesSupportComposedLocalRightHandSides green 19/19); critique major widen-P2 -> implemented via addNamesOutsideMinusBody + tests minusKeepsRowsWhenRightFilterReadsOuterScopeVariable / declinesRewriteWhenRightBodyReadsOuterScopeVariable / LMDB minusSmallLeftLargeRightFilterOnOuterScopeVariable; critique minor hint-invariant -> hint-scan test everyAssuredSharedMinusFilterReferencesOnlySharedOrLocalNames plus the invariant comment added in bR at the emission site (commuted FILTER_COMMUTATION copies included; PackedFilterRules helper logicals carry no flag and fall back to the ordinary NOT EXISTS kind); missedFindings 2 and 3 covered by the same. Residual soundness gap closed as finding 3.2.1-scope. Planner half of 3.4.4: minus-assured-shared is emitted only for MINUS bodies with non-empty assured shared = pv(L)\u2229pv(R), safeCorrelatedMinusProbe, referenced(R) \u2229 (pv(L) \u222a names outside R) \u2286 shared, every sub-expression referencing a shared name assures it, no sub-select anywhere in R (incl. nested scalar bodies), no BIND/aggregate target in shared; plus the FILTER_COMMUTATION copies of that FILTER.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMinusReferencedVariablesTest.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanDifferentialSupport.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbMinusReferencedVariablesTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedRuleDifferentialSupport.java"
+   ],
+   "testsAdded": [
+    "see b1 report (16 evaluation + 8 LMDB methods)"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest.txt\nTests run: 30, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.244 s"
+  },
+  {
+   "id": "3.2.2",
+   "status": "fixed",
+   "rootCause": "(b1) addScalarDependencies used outputs(subquery) instead of referenced names for EXISTS/IN/ANY/ALL; derived EXISTS recorded no referenced set.",
+   "change": "Reconciled in bR: critique minor (interning-key change / collision) -> the collision (user NOT EXISTS with the same body and referenced set in another group => internLogicalIfSameGroup refuses, MINUS keeps its original form) is now documented at the emission site; SUBQUERY_VALUE guard kept (addScalarDependencies fallback); wp3 cache-identity note carried in crossWpNotes. Semantic-regression risk 'PackedSearchTest#correlatedNotExists* may re-baseline' -> PackedSearchTest 93/93 green, no re-baseline needed.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFacts.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedExistsReferencedDependenciesTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbExistsReferencedBindingsTest.java"
+   ],
+   "testsAdded": [
+    "see b1 report"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedExistsReferencedDependenciesTest.txt\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s (evaluation suite run 20260928T065135)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbExistsReferencedBindingsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.661 s (LMDB suite run 20260928T065815)"
+  },
+  {
+   "id": "3.2.3",
+   "status": "fixed",
+   "rootCause": "(b2) PackedDomainFacts widen/intersect treated 0 kind/language bits as 'none' while 0 means 'unknown'; VALUES facts set kinds only; IS_NUMERIC verdict refuted on unknown kinds.",
+   "change": "Reconciled in bR: critique minor -> provider-side witness widen(LITERAL/WITHOUT, LITERAL/0) = language 0 is PackedDomainFactLatticeTest#widenKnownLanguageWithUnknownLanguageIsUnknown, provider-vs-provider e2e LmdbUnionLanguageFactsTest#unionOfTwoStoredPredicatesWithDifferentLanguageProofs and unit #unionOfLanguageFreeAndUnknownLanguageStoredRangesDoesNotProveWildcardLangMatchesFalse (missedFinding 1); datatypeOnlyProvider question resolved (sets LANGUAGE_WITHOUT; languageAbsent* green in PackedPredicateRangePlanningTest 42/42). Re-audited every datatypeBits consumer (datatypeVerdict, canonical-integer range selection needs UNIVERSAL_CANONICAL_INTEGER which VALUES never claims, boolean anchor expansion yields a superset, codec rangeAdmitsTerm is term-identity) - VALUES datatype bits cannot refute a value-equal row; semantic risk 'VALUES {1} vs xsd:int -> unknown, not EMPTY' holds (mergeDatatypesIntersect yields 0 = unknown).",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFacts.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFactLatticeTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbUnionLanguageFactsTest.java"
+   ],
+   "testsAdded": [
+    "see b2 report"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedDomainFactLatticeTest.txt\nTests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.040 s (evaluation suite run 20260928T065135)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbUnionLanguageFactsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.966 s (LMDB suite run 20260928T065815)"
+  },
+  {
+   "id": "3.2.4c",
+   "status": "fixed",
+   "rootCause": "(b2) deriveGroupFacts derived facts from every group member and PackedDomainFacts.put intersects, so an unsound alternative narrowed its siblings' and parents' facts.",
+   "change": "Reconciled in bR: critique minor -> seed-side PLRP.deriveFilterDomainFacts re-derives the sound finite narrowing for term-identity-exact constants (PackedSeedOnlyDomainFactsTest#termIdentitySafeFilterConstantsStillProveDisjointJoinEmpty); regression anchors PackedPredicateRangePlanningTest#disconnectedJoinCommutationRetainsEmptyProofInEveryEquivalentGroup and #lateAliasCommutationReactivatesRangeFactsBeforeHypergraphConstruction are green (42/42), so neither proof depended on an alternative-derived fact. Design's optional property-style test (facts identical with/without rules) not added: the codec derives no facts at all without the rule program (deriveFactsAndSaturateRules returns early), so the comparison has no baseline; the seed-only guard is covered by the three poisoning tests instead.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDomainFacts.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSeedOnlyDomainFactsTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorValueEqualityTest.java"
+   ],
+   "testsAdded": [
+    "see b2 report"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedSeedOnlyDomainFactsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.061 s (evaluation suite run 20260928T065135)"
+  },
+  {
+   "id": "3.2.4a",
+   "status": "fixed",
+   "rootCause": "(b2) expandAnchorValue's finite fallback anchored stored terms by RDF term identity (equals) instead of SPARQL value equality.",
+   "change": "Reconciled in bR: critique minor -> refuse branch kept and covered (durationConstantWhoseEqualityDependsOnComparisonModeIsNeitherAnchoredNorProvedEmpty, dateTimeConstantAgainstFiniteDateDomainPreservesResults); the stronger EmptySet proof is carried to wp3 in crossWpNotes. Correction to the b2 report: it lists PackedFiniteAnchorValueEqualityTest#languageTagCaseVariantsAreBothAnchored, which is not in the tree (the class has 10 methods): Literal#equals ignores language-tag case, so a finite range cannot hold both \"a\"@en and \"a\"@EN (the pre-fix error was 'duplicate element'); the case is storage-level (review 3.2 item 6 refutes it for packed facts; c4LanguageTagCaseFiniteFilter stays wp1's).",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedFiniteAnchorValueEqualityTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorValueEqualityTest.java"
+   ],
+   "testsAdded": [
+    "see b2 report (10 evaluation methods, not 11)"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedFiniteAnchorValueEqualityTest.txt\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.110 s (evaluation suite run 20260928T065135)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorValueEqualityTest.txt\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.001 s (LMDB suite run 20260928T065815)"
+  },
+  {
+   "id": "3.2.4b",
+   "status": "fixed",
+   "rootCause": "(b2) addFiniteCodeTypeAlternative joined code constants by term identity while the replaced FILTER compares by value equality; appendBranchCodeValue only checked instanceof Value.",
+   "change": "Reconciled in bR: critique minor -> guard lives in appendBranchCodeValue via the shared static termIdentitySafe, covering both branch offsets and the disjunction literal (verified in the diff).",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCodeTypeTermIdentityTest.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRewriteBindingSafetyTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbCodeTypeTermIdentityTest.java"
+   ],
+   "testsAdded": [
+    "see b2 report"
+   ],
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCodeTypeTermIdentityTest.txt\nTests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.023 s; PackedRewriteBindingSafetyTest 8/8 (evaluation suite run 20260928T065135)\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbCodeTypeTermIdentityTest.txt\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.334 s"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "PackedMinusReferencedVariablesTest (pre/post 3.2.1-scope)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 PackedMinusReferencedVariablesTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "pre: tests=30, failures=11; post: tests=30, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite, final tree (log .mvnf/workspaces/wp2/logs/20260928T065135.548185Z-9171-d4175b23/verify.log; summary scratchpad/wp2-bR-suite-evaluation-evidence.txt)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1818, failures=4, errors=1, skipped=0 (185.8 s); all 7 WP test classes green (PackedMinusReferencedVariablesTest 30, PackedExistsReferencedDependenciesTest 10, PackedDomainFactLatticeTest 24, PackedSeedOnlyDomainFactsTest 6, PackedFiniteAnchorValueEqualityTest 10, PackedCodeTypeTermIdentityTest 9, PackedRewriteBindingSafetyTest 8) plus PackedCorrelatedMinusAlternativeTest 19, PackedSearchTest 93, PackedPredicateRangePlanningTest 42, PackedGroupGraphSafetyTest 14, PackedQueryCodecTest 20, PackedPlanCacheTest 47",
+   "reds": [
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental - NoSuchFileException wt-wp2/papers2/papers/docs/sparql_query_rewrite_catalog.md (papers2 is untracked in the main checkout, absent from every worktree); same red in b1/b2 and other WPs.",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly / #spillFileIsRemovedWhenIterationIsExhausted: pre-existing/environmental - test counts spill files under java.io.tmpdir while the workspace runner redirects test temp data to .mvnf/workspaces/wp2/tmp/<run-id>; executor-only test, untouched by this planner diff; same red in b1/b2.",
+    "PackedFrontierSubsetKernelContractTest#sparseLongBushyStateContinuesThroughLegalSingletonSuffix (30 s preemptive timeout): flaky/load - green in the isolated class rerun (run 20260928 ~09:50, 39/40 green).",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix (120 s preemptive timeout): flaky/load - also timed out in the isolated rerun at load 49-97; the test plans a pure 66-way JOIN chain of statement patterns (no MINUS/FILTER/VALUES/EXISTS/UNION), so none of this WP's rules fire and the seed-only fact derivation only removes work; wp7 measured ~113 s on unchanged kernel code and wp1 got it green on an idle host. Same red in b1/b2."
+   ]
+  },
+  {
+   "selection": "PackedFrontierSubsetKernelContractTest isolated",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 PackedFrontierSubsetKernelContractTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=40, failures=1, errors=0, skipped=0 (156.1 s)",
+   "reds": [
+    "arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: timeout at 120 s under load - see triage above (flaky/load, not caused by this diff)"
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite, final tree (log .mvnf/workspaces/wp2/logs/20260928T065815.793216Z-20192-504a3581/verify.log; summary scratchpad/wp2-bR-suite-lmdb-evidence.txt)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2203, failures=0, errors=4, skipped=7 (2019.6 s); LmdbOptimizerPipelineTest 46/46 and all six WP LMDB classes green (LmdbMinusReferencedVariablesTest 9, LmdbExistsReferencedBindingsTest 6, LmdbUnionLanguageFactsTest 6, LmdbFiniteAnchorValueEqualityTest 8, LmdbCodeTypeTermIdentityTest 3)",
+   "reds": [
+    "LmdbAASQuery2CascadesHypergraphPlanningTest (3 errors): environmental - java.io.IOException: No space left on device thrown from AASGenerator.generateAndAdd / LmdbSailStore commit while loading data, before any query is planned (volume 98% full, other WP suites writing); class re-run alone green 3/3 (run 20260928T074256).",
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: pre-existing/environmental ENOSPC while opening 200 stores in parallel; identical in b2 and wp1/wp3/wp5/wp8; untouched by this diff."
+   ]
+  },
+  {
+   "selection": "LmdbAASQuery2CascadesHypergraphPlanningTest isolated",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 LmdbAASQuery2CascadesHypergraphPlanningTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=3, failures=0, errors=0, skipped=0 (56.2 s)",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql LmdbSPARQLComplianceTest (IT; covers minus, minusScope, exists, optional on LMDB end to end)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 --it LmdbSPARQLComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=169, failures=2, errors=9, skipped=0; every minus/minusScope/exists test green",
+   "reds": [
+    "propertyPath()[8]: pre-existing (REVIEW 3.9: PatternKeys.predicateKey NPE, wp1)",
+    "values()[3], optional()[2], lateral()[13], aggregate()[7], aggregate()[20..23]: pre-existing (REVIEW 3.9: LmdbPipelinePlanCache List.copyOf NPE for VALUES with UNDEF, wp3)",
+    "lateral()[2] (LateralTest.testLateralWithOptional, expected 3 was 1): pre-existing in all stores incl. memory/native (REVIEW section 1 baseline list, 'lateral()[2] expected 3 was 1'); the query has no MINUS/EXISTS/FILTER/VALUES",
+    "builtinFunction()[20]: pre-existing (REVIEW 3.9, NOW() identity)"
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb ITs asserting the minus-assured-shared / q9 anti-join shape",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 --it <LmdbMedicalQ9PlanStabilityIT | ThemeQueryBenchmarkSmokeIT | LmdbMedicalOptimizedQueryRegressionIT | LmdbThemeQueryRegressionIT> --module core/sail/lmdb --retain-logs",
+   "result": "LmdbMedicalQ9PlanStabilityIT tests=3/0/0; ThemeQueryBenchmarkSmokeIT tests=20, failures=0, errors=0, skipped=18 (opt-in); LmdbMedicalOptimizedQueryRegressionIT tests=8, failures=0, errors=1; LmdbThemeQueryRegressionIT tests=67 all skipped (opt-in)",
+   "reds": [
+    "LmdbMedicalOptimizedQueryRegressionIT#medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes: environmental/load - TimeoutException after 180 s inside state.setup() (ThemeQueryPlanRunBenchmark.BaseState.setup -> BenchmarkJoinEstimatorSupport.awaitEstimatorReady -> LmdbQuadSynopsisService.rebuild over the all-theme store, verify log .mvnf/workspaces/wp2/logs/20260928T080714.274110Z-4483-a39e8808/verify.log:1564-1577), i.e. before any query is planned; the other 7 medical tests and LmdbMedicalQ9PlanStabilityIT (q9 plan shape incl. minus-assured-shared) are green. Not re-run: a rerun needs another ~10 min of all-theme load at load average 50-100."
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp4 (executor hint trust): the planner now emits minus-assured-shared only when, in addition to b1's P1/P2/P4/P5, every sub-expression of the MINUS body that references a shared name also assures it (no BIND/FILTER reading it before it is bound, no OPTIONAL-only or nested-MINUS-right-only occurrence). Executor-side defense in depth must not widen this.",
+  "wp3 (PackedPlanCache / PackedQueryCacheIdentity): rule output changed again (fewer MINUS alternatives for bodies failing the new scope check); together with b1/b2's interning-key changes (derived EXISTS / IN / ANY / ALL referenced sets, SEMI_ANTI correlation names) and seed-only/VALUES facts, bump the rule-program version participating in the cache identity or invalidate persisted plan decisions. PREDICATE_RANGE_EMPTY can also arise from the finite fallback and the seed-side FILTER fact.",
+  "wp7 (cost model / LmdbMappedSemiAntiCosting): typed anti-join correlation names = outputs(L) \u2229 referenced(R); cost-only.",
+  "Integrator: the LmdbStoreConfig/LmdbStoreSchema japicmp-compat edits are in the tree untouched; formatter not run (import order in PLRP fixed by hand; several joined case lines exceed 120 cols and are left for the formatter)."
+ ],
+ "followUps": [
+  "Close the PackedFrontierSubsetKernelContractTest#arbitraryWidth... and LmdbMedicalOptimizedQueryRegressionIT#medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes load-induced timeouts with a green on an idle host (or raise their budgets; wp7 follow-up).",
+  "Full LMDB IT suite (20 classes, benchmark-style) not run: the only core/sail/lmdb main change is the integrator's config compat edit; the four ITs that assert MINUS/q9 plan shape or theme results were run instead.",
+  "P4 precise rule (admit sub-selects that pass every shared name through unaliased) once wp4 fixes substitution into nested projection scopes; the new scope check is conservative for UNION bodies where one branch does not bind the shared name (declined although substitution-equivalent).",
+  "Consider a scalar flag distinguishing planner-derived EXISTS from a user-written NOT EXISTS with the same body/referenced set (benign lost alternative today).",
+  "Confirm the environmental reds (papers2 docs, spill tmpdir, ENOSPC) are green on the main checkout."
+ ]
+}

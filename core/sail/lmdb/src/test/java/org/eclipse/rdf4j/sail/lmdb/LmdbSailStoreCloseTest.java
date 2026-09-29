@@ -16,8 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -44,13 +42,15 @@ class LmdbSailStoreCloseTest {
 		LmdbSailStore backingStore = store.getBackingStore();
 		LmdbFilterSelectivityStats filterStats = (LmdbFilterSelectivityStats) getField(backingStore,
 				"filterSelectivityStats");
-		LmdbFilterSelectivityStats filterStatsSpy = spy(filterStats);
 		CountDownLatch filterPersistStarted = new CountDownLatch(1);
-		doAnswer(invocation -> {
-			filterPersistStarted.countDown();
-			return invocation.callRealMethod();
-		}).when(filterStatsSpy).persistIfDirty();
-		setField(backingStore, "filterSelectivityStats", filterStatsSpy);
+		// Observed through the package-private hook, never a Mockito spy: spying the filter stats retransforms that
+		// class for the whole test JVM and makes runtime feedback release allocate in every later test.
+		filterStats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
+			@Override
+			public void persistRequested() {
+				filterPersistStarted.countDown();
+			}
+		});
 
 		ScheduledExecutorService executor = (ScheduledExecutorService) getField(backingStore, "estimatorPersistExec");
 		CountDownLatch taskStarted = new CountDownLatch(1);
