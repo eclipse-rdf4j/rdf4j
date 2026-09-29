@@ -85,11 +85,12 @@ public class LmdbPrefixRunQueryTest {
 		openRepository("spoc,posc,ospc");
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
+		long rowsScannedBefore = LmdbPrefixRunPlan.ROWS_SCANNED.get();
 		assertThat(countByPredicate("SELECT ?p (COUNT(DISTINCT ?o) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p"))
 				.isEqualTo(Map.of(EX + "knows", 2L, EX + "likes", 1L, EX + "tag", 1L));
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
-		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThanOrEqualTo(statementCount());
+		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get() - rowsScannedBefore).isLessThanOrEqualTo(statementCount());
 	}
 
 	@Test
@@ -200,11 +201,20 @@ public class LmdbPrefixRunQueryTest {
 		openRepository("spoc,posc,ospc");
 
 		long before = LmdbPrefixRunPlan.OPENED.get();
+		long rowsScannedBefore = LmdbPrefixRunPlan.ROWS_SCANNED.get();
 		assertThat(values("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p")).containsExactly(EX + "knows",
 				EX + "likes", EX + "tag");
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
-		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isLessThanOrEqualTo(statementCount());
+		assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get() - rowsScannedBefore)
+				.as("query prefix scan telemetry: scanned=%d, opened=%d, planned=%d, prefixes=%d, runRows=%d, "
+						+ "adjacencyOpened=%d, adjacencyPrefixes=%d, metadataCounts=%d",
+						LmdbPrefixRunPlan.ROWS_SCANNED.get() - rowsScannedBefore,
+						LmdbPrefixRunPlan.OPENED.get(), LmdbPrefixRunPlan.PLANNED.get(),
+						LmdbPrefixRunPlan.PREFIXES_EMITTED.get(), LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get(),
+						LmdbPrefixRunPlan.ADJACENCY_OPENED.get(), LmdbPrefixRunPlan.ADJACENCY_PREFIXES_EMITTED.get(),
+						LmdbPrefixRunPlan.METADATA_COUNTS.get())
+				.isLessThanOrEqualTo(statementCount());
 	}
 
 	@Test
@@ -463,7 +473,6 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	private void openRepository(String indexes) {
-		LmdbPrefixRunPlan.resetMetrics();
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig(indexes)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -481,6 +490,7 @@ public class LmdbPrefixRunQueryTest {
 			conn.add(vf.createIRI(EX, "s5"), likes, carol);
 			conn.add(vf.createIRI(EX, "s6"), tag, dave);
 		}
+		LmdbPrefixRunPlan.resetMetrics();
 	}
 
 	private List<String> values(String query, String bindingName) {

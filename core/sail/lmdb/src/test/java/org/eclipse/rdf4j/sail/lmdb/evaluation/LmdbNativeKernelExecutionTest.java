@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -30,10 +31,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
@@ -150,23 +154,19 @@ public class LmdbNativeKernelExecutionTest {
 		LmdbNativeJaninoCodegen.resetForTests();
 	}
 
-	private void warmUntilEngaged(String query) {
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0L; round++) {
-			rows(query);
-		}
-	}
-
 	@Test
 	public void valuesSeededChainEngagesKernelWithExactResults() {
 		List<String> expected = genericRows(VALUES_CHAIN_QUERY);
 		assertFalse(expected.isEmpty(), "fixture query must produce rows");
-		warmUntilEngaged(VALUES_CHAIN_QUERY);
+		assertEquals(expected, rows(VALUES_CHAIN_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL),
+				"forced IR kernel path must match the generic evaluator");
 		assertTrue(KernelExecutionTestAccess.opened() > 0L,
-				"IR kernel rung never engaged (planned=" + KernelExecutionTestAccess.planned() + ", declined="
+				() -> "forced IR kernel rung never engaged (planned=" + KernelExecutionTestAccess.planned()
+						+ ", declined="
 						+ KernelExecutionTestAccess.declined() + ", compilations="
 						+ LmdbNativeJaninoCodegen.COMPILATIONS.get() + ", compileFailures="
-						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")");
-		assertEquals(expected, rows(VALUES_CHAIN_QUERY), "kernel path must match the generic evaluator");
+						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + "), executed="
+						+ executedExplanation(VALUES_CHAIN_QUERY));
 		assertTrue(KernelExecutionTestAccess.kernelRows() > 0L, "kernel produced no rows");
 	}
 
@@ -174,9 +174,10 @@ public class LmdbNativeKernelExecutionTest {
 	public void hookTierFilterRunsInsideKernelWithExactResults() {
 		List<String> expected = genericRows(HOOK_FILTER_QUERY);
 		assertFalse(expected.isEmpty(), "fixture query must produce rows");
-		warmUntilEngaged(HOOK_FILTER_QUERY);
-		assertTrue(KernelExecutionTestAccess.opened() > 0L, "IR kernel rung never engaged");
-		assertEquals(expected, rows(HOOK_FILTER_QUERY), "kernel path must match the generic evaluator");
+		assertEquals(expected, rows(HOOK_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL),
+				"forced IR kernel path must match the generic evaluator");
+		assertTrue(KernelExecutionTestAccess.opened() > 0L,
+				() -> "forced IR kernel rung never engaged, executed=" + executedExplanation(HOOK_FILTER_QUERY));
 	}
 
 	@Test
@@ -198,7 +199,8 @@ public class LmdbNativeKernelExecutionTest {
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		try {
 			List<String> expected = genericRows(VALUES_CHAIN_QUERY);
-			assertEquals(expected, rows(VALUES_CHAIN_QUERY));
+			assertEquals(expected,
+					rows(VALUES_CHAIN_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED));
 			assertTrue(KernelExecutionTestAccess.planned() > 0L);
 			assertTrue(KernelExecutionTestAccess.opened() > 0L);
 			assertEquals(0L, LmdbNativeKernelExecution.COMPILED_BINDS.get());
@@ -212,28 +214,33 @@ public class LmdbNativeKernelExecutionTest {
 		KernelExecutionTestAccess.resetMetrics();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
-		assertEquals(expected, rows(query));
+		QueryEvaluationException decline = assertThrows(QueryEvaluationException.class,
+				() -> rows(query, LmdbNativeAttemptMetrics.PATH_IR_KERNEL));
+		assertTrue(decline.getMessage().contains("blocking-semantic-row"), decline.getMessage());
 		assertTrue(KernelExecutionTestAccess.planned() > 0L,
-				"the stateful shape must reach semantic kernel lowering");
+				"the forced IR candidate must reach semantic kernel lowering");
 		assertTrue(KernelExecutionTestAccess.declined() > 0L,
 				"the non-resumable specialized kernel must decline to semantic native rows");
 		assertEquals(0L, KernelExecutionTestAccess.opened());
 		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
 		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
+		assertEquals(expected, rows(query), "the ordinary semantic native fallback must match the generic evaluator");
 	}
 
 	private void assertResumableKernelMatchesGeneric(String query, List<String> expected) {
 		KernelExecutionTestAccess.resetMetrics();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
-		assertEquals(expected, rows(query));
+		assertEquals(expected, rows(query, LmdbNativeAttemptMetrics.PATH_IR_KERNEL),
+				"forced IR kernel path must match the generic evaluator");
 		assertTrue(KernelExecutionTestAccess.planned() > 0L, "the OPTIONAL shape must reach kernel lowering");
 		assertTrue(KernelExecutionTestAccess.opened() > 0L,
-				"the resumable OPTIONAL kernel must open (planned=" + KernelExecutionTestAccess.planned()
+				() -> "the resumable OPTIONAL kernel must open (planned=" + KernelExecutionTestAccess.planned()
 						+ ", declined=" + KernelExecutionTestAccess.declined()
 						+ ", compilations=" + LmdbNativeJaninoCodegen.COMPILATIONS.get()
 						+ ", pending=" + LmdbNativeJaninoCodegen.PENDING_COMPILES.get()
-						+ ", compileFailures=" + LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")");
+						+ ", compileFailures=" + LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + "), executed="
+						+ executedExplanation(query));
 		assertEquals(0L, KernelExecutionTestAccess.declined());
 		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
 		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
@@ -245,21 +252,37 @@ public class LmdbNativeKernelExecutionTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		List<String> result = new ArrayList<>();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult tupleResult = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			while (tupleResult.hasNext()) {
-				BindingSet row = tupleResult.next();
-				List<String> bindings = new ArrayList<>();
-				for (String name : row.getBindingNames()) {
-					bindings.add(name + "=" + row.getValue(name).stringValue());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			try (TupleQueryResult tupleResult = prepared.evaluate()) {
+				while (tupleResult.hasNext()) {
+					BindingSet row = tupleResult.next();
+					List<String> bindings = new ArrayList<>();
+					for (String name : row.getBindingNames()) {
+						bindings.add(name + "=" + row.getValue(name).stringValue());
+					}
+					Collections.sort(bindings);
+					result.add(String.join("|", bindings));
 				}
-				Collections.sort(bindings);
-				result.add(String.join("|", bindings));
 			}
 		}
 		Collections.sort(result);
 		return result;
+	}
+
+	private String executedExplanation(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			return String.valueOf(prepared.explain(Explanation.Level.Executed));
+		} catch (Exception failure) {
+			return "explanation failed: " + failure;
+		}
 	}
 
 	private List<String> genericRows(String query) {
