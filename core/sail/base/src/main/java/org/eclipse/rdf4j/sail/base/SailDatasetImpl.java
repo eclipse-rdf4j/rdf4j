@@ -84,6 +84,12 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		changes.removeRefback(this);
+		derivedFrom.abandonUnobserved();
+	}
+
+	@Override
 	public boolean isSnapshotCurrent() {
 		return derivedFrom.isSnapshotCurrent();
 	}

@@ -67,6 +67,15 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		try {
+			dataset1.abandonUnobserved();
+		} finally {
+			dataset2.abandonUnobserved();
+		}
+	}
+
+	@Override
 	public boolean isSnapshotCurrent() {
 		return dataset1.isSnapshotCurrent() && dataset2.isSnapshotCurrent();
 	}

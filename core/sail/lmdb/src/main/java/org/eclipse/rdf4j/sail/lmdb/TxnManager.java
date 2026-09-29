@@ -100,6 +100,7 @@ final class TxnManager {
 
 	private final long env;
 	private final Mode mode;
+	private final LmdbSailStore.MapResizeKind mapResizeKind;
 
 	/** All live read transactions owned by this manager (identity semantics: Txn does not override equals). */
 	private final Set<Txn> open = ConcurrentHashMap.newKeySet();
@@ -121,8 +122,13 @@ final class TxnManager {
 	private volatile boolean managerClosed;
 
 	TxnManager(long env, Mode mode) throws IOException {
+		this(env, mode, null);
+	}
+
+	TxnManager(long env, Mode mode, LmdbSailStore.MapResizeKind mapResizeKind) throws IOException {
 		this.env = env;
 		this.mode = mode;
+		this.mapResizeKind = mapResizeKind;
 		this.txnPool = mode == Mode.RESET ? new MpmcRingBuffer<>(POOL_SIZE) : null;
 		for (int i = 0; i < pools.length; i++) {
 			pools[i] = new Pool();
@@ -668,6 +674,8 @@ final class TxnManager {
 		private volatile long version;
 		private volatile long snapshotRevision = -1;
 		private volatile boolean snapshotInvalidated;
+		private volatile LmdbSailStore.MapResizeKind snapshotInvalidationKind;
+		private volatile boolean snapshotBound;
 		private volatile boolean active = true;
 		/** Permanently finished: aborted or handed back to LMDB. */
 		private volatile boolean closed;
@@ -700,16 +708,41 @@ final class TxnManager {
 				throw new IllegalStateException("Cannot pin a closed or idle read transaction");
 			}
 			snapshotRevision = revision;
+			snapshotBound = true;
 			snapshotInvalidated = false;
+			snapshotInvalidationKind = null;
+		}
+
+		synchronized void setSnapshotBound() {
+			if (closed || idle) {
+				throw new IllegalStateException("Cannot pin a closed or idle read transaction");
+			}
+			snapshotBound = true;
+		}
+
+		synchronized boolean isNativeActive() {
+			return active && !closed;
+		}
+
+		synchronized void invalidateAndReset(LmdbSailStore.MapResizeKind kind) {
+			snapshotBound = true;
+			snapshotInvalidated = true;
+			snapshotInvalidationKind = kind;
+			snapshotRevision = -1;
+			resetNative();
 		}
 
 		void ensureSnapshotValid() {
+			if (snapshotInvalidated) {
+				String message = "SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction";
+				if (snapshotInvalidationKind != null) {
+					throw new LmdbSailStore.MapResizeConflictException(snapshotInvalidationKind, message);
+				}
+				throw new SailConflictException(message);
+			}
 			if (closed || idle) {
 				throw new SailException("SNAPSHOT transaction is closed; retry the read operation");
-			}
-			if (snapshotInvalidated) {
-				throw new SailConflictException("SNAPSHOT transaction invalidated: the store's memory map was resized "
-						+ "during the transaction; retry the transaction");
 			}
 		}
 
@@ -776,16 +809,18 @@ final class TxnManager {
 			if (closed) {
 				return;
 			}
-			if (snapshotRevision >= 0) {
-				snapshotInvalidated = true;
-			}
 			if (active) {
-				if (!idle) {
+				if (!idle && !snapshotInvalidated) {
 					// idle readers stay reset; they are renewed lazily in reuse()
 					activate();
 				}
 				version++;
 			} else {
+				if (snapshotBound) {
+					snapshotInvalidated = true;
+					snapshotInvalidationKind = mapResizeKind;
+					snapshotRevision = -1;
+				}
 				deactivate();
 			}
 		}
@@ -801,7 +836,9 @@ final class TxnManager {
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
 			this.snapshotRevision = -1;
+			this.snapshotBound = false;
 			this.snapshotInvalidated = false;
+			this.snapshotInvalidationKind = null;
 			this.idle = false;
 			this.closed = false;
 			activate();

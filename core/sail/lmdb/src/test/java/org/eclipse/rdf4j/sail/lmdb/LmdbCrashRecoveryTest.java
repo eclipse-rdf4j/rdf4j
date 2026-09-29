@@ -78,6 +78,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -1435,6 +1436,17 @@ class LmdbCrashRecoveryTest {
 			this.tripleStoreDir = dir;
 			this.pausePoint = pausePoint;
 			this.pauseArmed = pauseArmed;
+		}
+
+		@Override
+		long estimateWriteBytes(SailSource.WritePreflight preflight) {
+			if (pausePoint == PausePoint.AFTER_MAP_GROWTH_REPLAY
+					|| pausePoint == PausePoint.AFTER_MIXED_MAP_GROWTH_REPLAY) {
+				// Keep these crash cuts on the native MAP_FULL fallback path; the normal test path exercises
+				// whole-write preflight before preparing the native mutation journal.
+				return 0L;
+			}
+			return super.estimateWriteBytes(preflight);
 		}
 
 		@Override

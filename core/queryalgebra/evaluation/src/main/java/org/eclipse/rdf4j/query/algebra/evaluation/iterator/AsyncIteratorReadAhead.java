@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -34,6 +35,7 @@ public class AsyncIteratorReadAhead extends LookAheadIteration<BindingSet> {
 	private final int READ_AHEAD_LIMIT = 1024 * 1024 * 16;
 
 	private final ExecutorService executorService;
+	private final AsyncIteratorWorker worker = new AsyncIteratorWorker();
 	private int readAhead = 4;
 
 	private final CloseableIteration<BindingSet> iteration;
@@ -107,13 +109,22 @@ public class AsyncIteratorReadAhead extends LookAheadIteration<BindingSet> {
 			buffer = new ArrayDeque<>();
 		}
 
-		future = executorService.submit(() -> {
-			int currentReadAhead = readAhead;
-
-			for (int i = 0; i < currentReadAhead && iteration.hasNext(); i++) {
+		int currentReadAhead = readAhead;
+		QueryExecutionContext.ReplayContext replayContext = QueryExecutionContext.captureReplayContext();
+		Runnable readAheadTask = () -> {
+			for (int i = 0; i < currentReadAhead && !worker.isCancelled(); i++) {
+				if (!iteration.hasNext() || worker.isCancelled()) {
+					break;
+				}
 				buffer.addLast(iteration.next());
 			}
-
+		};
+		future = worker.submit(executorService, () -> {
+			if (replayContext == null) {
+				readAheadTask.run();
+			} else {
+				replayContext.run(readAheadTask);
+			}
 			if (buffer.isEmpty()) {
 				return null;
 			}
@@ -134,9 +145,7 @@ public class AsyncIteratorReadAhead extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			if (future != null) {
-				future.cancel(true);
-			}
+			worker.cancelAndAwait();
 		} finally {
 			try {
 				executorService.shutdownNow();

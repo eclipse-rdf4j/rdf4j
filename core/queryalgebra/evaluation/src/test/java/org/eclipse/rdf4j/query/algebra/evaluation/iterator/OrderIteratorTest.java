@@ -13,11 +13,16 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,7 +32,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -39,8 +58,10 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * @author james
@@ -241,6 +262,152 @@ public class OrderIteratorTest {
 				breaker.complete(handle);
 			}
 		});
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	public void sortFailureWaitsForInFlightReplayAwareComparator() throws Exception {
+		int workerCount = Math.min(8, ForkJoinPool.getCommonPoolParallelism());
+		Assumptions.assumeTrue(workerCount >= 2, "parallel sort quiescence requires at least two common-pool workers");
+		CountDownLatch workersStarted = new CountDownLatch(workerCount);
+		CountDownLatch releaseWorkers = new CountDownLatch(1);
+		List<ForkJoinTask<?>> workers = new ArrayList<>(workerCount);
+		for (int i = 0; i < workerCount; i++) {
+			workers.add(ForkJoinPool.commonPool().submit(() -> {
+				workersStarted.countDown();
+				try {
+					releaseWorkers.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}));
+		}
+		assertTrue(workersStarted.await(10, TimeUnit.SECONDS));
+		releaseWorkers.countDown();
+		workers.forEach(ForkJoinTask::join);
+		CountDownLatch blockedComparatorStarted = new CountDownLatch(1);
+		CountDownLatch releaseBlockedComparator = new CountDownLatch(1);
+		CountDownLatch blockedComparatorFinished = new CountDownLatch(1);
+		CountDownLatch failingComparatorStarted = new CountDownLatch(1);
+		AtomicReference<Thread> sortThread = new AtomicReference<>();
+		AtomicReference<Thread> blockedWorker = new AtomicReference<>();
+		AtomicBoolean failed = new AtomicBoolean();
+		AtomicInteger activeComparators = new AtomicInteger();
+		List<BindingSet> input = new ArrayList<>(20_000);
+		for (int i = 0; i < 20_000; i++) {
+			input.add(new BindingSetSize(i));
+		}
+		Comparator<BindingSet> failingComparator = (left, right) -> {
+			activeComparators.incrementAndGet();
+			try {
+				Thread current = Thread.currentThread();
+				if (current != sortThread.get()) {
+					if (blockedWorker.compareAndSet(null, current)) {
+						blockedComparatorStarted.countDown();
+						try {
+							releaseBlockedComparator.await();
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError("Comparator callback was interrupted", e);
+						} finally {
+							blockedComparatorFinished.countDown();
+						}
+					} else if (blockedWorker.get() != current && failed.compareAndSet(false, true)) {
+						failingComparatorStarted.countDown();
+						throw new AssertionError("Comparator failure for quiescence test");
+					}
+				}
+				return Integer.compare(left.size(), right.size());
+			} finally {
+				activeComparators.decrementAndGet();
+			}
+		};
+		OrderIterator sorting = new OrderIterator(new IterationStub(input.iterator()), failingComparator);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+		})) {
+			QueryExecutionContext.ReplayContext replayContext = QueryExecutionContext.captureReplayContext();
+			assertNotNull(replayContext);
+			Future<Boolean> sort = executor.submit(() -> replayContext.get(() -> {
+				sortThread.set(Thread.currentThread());
+				return sorting.hasNext();
+			}));
+			assertTrue(blockedComparatorStarted.await(10, TimeUnit.SECONDS));
+			assertTrue(failingComparatorStarted.await(10, TimeUnit.SECONDS));
+			assertThrows(TimeoutException.class,
+					() -> sort.get(250, TimeUnit.MILLISECONDS),
+					"sort must wait for the already-admitted comparator after a sibling fails");
+			releaseBlockedComparator.countDown();
+			assertTrue(blockedComparatorFinished.await(10, TimeUnit.SECONDS));
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> sort.get(10, TimeUnit.SECONDS));
+			assertEquals(AssertionError.class, failure.getCause().getClass());
+			assertEquals("Comparator failure for quiescence test", failure.getCause().getMessage());
+			assertEquals(0, activeComparators.get(), "sort failure must not outlive any admitted comparator callback");
+		} finally {
+			releaseBlockedComparator.countDown();
+			executor.shutdown();
+		}
+	}
+
+	@Test
+	public void replayDuringSpillSortClosesQueueBeforeRegistration() throws Exception {
+		Path temporaryDirectory = Path.of(System.getProperty("java.io.tmpdir"));
+		Set<Path> filesBefore = orderSpillFiles(temporaryDirectory);
+		OrderIterator spilling = new OrderIterator(new IterationStub(List.of(b2, b1).iterator()), cmp,
+				Long.MAX_VALUE, false, 1);
+		AtomicLong checkpoints = new AtomicLong();
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			if (checkpoints.incrementAndGet() == 5) {
+				throw new IllegalStateException("replay while sorting a spill run");
+			}
+		})) {
+			assertThrows(QueryExecutionContext.ReplaySafepointException.class, spilling::hasNext);
+		} finally {
+			spilling.close();
+		}
+
+		Set<Path> leakedFiles = orderSpillFiles(temporaryDirectory);
+		leakedFiles.removeAll(filesBefore);
+		try {
+			assertTrue(leakedFiles.isEmpty(), "a queue abandoned before registration must be closed");
+		} finally {
+			for (Path leakedFile : leakedFiles) {
+				Files.deleteIfExists(leakedFile);
+			}
+		}
+	}
+
+	@Test
+	public void spillCleanupAttemptsEveryResourceAfterCloseFailure() throws Exception {
+		Path spill = Files.createTempFile("rdf4j-order-queue-cleanup", ".spill");
+		AtomicBoolean inputClosed = new AtomicBoolean();
+		IOException outputFailure = new IOException("output close failed");
+		IOException inputFailure = new IOException("input close failed");
+		try {
+			IOException failure = assertThrows(IOException.class, () -> OrderIterator.closeSpillResources(
+					() -> {
+						throw outputFailure;
+					},
+					() -> {
+						inputClosed.set(true);
+						throw inputFailure;
+					},
+					spill.toFile()));
+			assertEquals(outputFailure, failure);
+			assertEquals(1, failure.getSuppressed().length);
+			assertTrue(inputClosed.get(), "input close must run after output close fails");
+			assertFalse(Files.exists(spill), "spill file must be deleted after stream-close failures");
+		} finally {
+			Files.deleteIfExists(spill);
+		}
+	}
+
+	private Set<Path> orderSpillFiles(Path temporaryDirectory) throws IOException {
+		try (Stream<Path> files = Files.list(temporaryDirectory)) {
+			return files.filter(path -> path.getFileName().toString().startsWith("orderiter"))
+					.collect(Collectors.toSet());
+		}
 	}
 
 	@BeforeEach

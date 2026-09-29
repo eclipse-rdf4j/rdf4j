@@ -53,6 +53,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		delegate.abandonUnobserved();
+	}
+
+	@Override
 	public boolean isSnapshotCurrent() {
 		return delegate.isSnapshotCurrent();
 	}

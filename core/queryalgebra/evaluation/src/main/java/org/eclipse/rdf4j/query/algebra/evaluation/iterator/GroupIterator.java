@@ -305,10 +305,12 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			// Make an optimized hash function valid during this query evaluation step.
 			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
 			while (!isClosed()) {
+				QueryExecutionContext.checkpointReplaySafepoint();
 				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 				if (!iter.hasNext()) {
 					break;
 				}
+				QueryExecutionContext.checkpointReplaySafepoint();
 				BindingSet sol = iter.next();
 				inputRows++;
 				if ((inputRows & (BUILD_CHECKPOINT_INTERVAL - 1)) == 0) {

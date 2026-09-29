@@ -16,8 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +54,101 @@ import org.junit.jupiter.api.Test;
 class SailSourceBranchTest {
 
 	@Test
+	void writePreflightSeesWholeBufferedWriteBeforePublicationLocks() throws SailException {
+		List<String> events = new ArrayList<>();
+		List<Statement> preflightedStatements = new ArrayList<>();
+		TrackingBackingSource delegate = new TrackingBackingSource(
+				ignored -> new CloseCountingDataset(new AtomicInteger()));
+		SailSource intercepted = (SailSource) Proxy.newProxyInstance(SailSource.class.getClassLoader(),
+				new Class<?>[] { SailSource.class }, (proxy, method, args) -> {
+					if (method.getName().equals("beginWritePreflight")) {
+						events.add("preflight");
+						Object estimate = args[0];
+						if (estimate instanceof SailSource.WritePreflight writePreflight) {
+							preflightedStatements.addAll(writePreflight.statements());
+						} else {
+							@SuppressWarnings("unchecked")
+							List<Statement> statements = (List<Statement>) estimate;
+							preflightedStatements.addAll(statements);
+						}
+						return (SailClosable) () -> events.add("preflight-close");
+					}
+					if (method.getName().equals("beginPublication")) {
+						events.add("publication");
+						return (SailClosable) () -> events.add("publication-close");
+					}
+					if (method.getName().equals("beginPreparedWrite")) {
+						events.add("prepared-write");
+						return (SailClosable) () -> events.add("prepared-write-close");
+					}
+					try {
+						return method.invoke(delegate, args);
+					} catch (InvocationTargetException e) {
+						throw e.getCause();
+					}
+				});
+		SailSourceBranch branch = new SailSourceBranch(intercepted, new DynamicModelFactory(), false);
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:branch-preflight:p");
+		Statement first = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:branch-preflight:first"), predicate,
+						SimpleValueFactory.getInstance().createLiteral("first"));
+		Statement second = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:branch-preflight:second"), predicate,
+						SimpleValueFactory.getInstance().createLiteral("second"));
+
+		try (branch;
+				SailSink firstChange = branch.sink(IsolationLevels.NONE);
+				SailSink secondChange = branch.sink(IsolationLevels.NONE)) {
+			firstChange.approve(first.getSubject(), first.getPredicate(), first.getObject(), null);
+			firstChange.flush();
+			secondChange.approve(second.getSubject(), second.getPredicate(), second.getObject(), null);
+			secondChange.flush();
+
+			branch.prepare();
+
+			assertEquals(Set.of(first, second), Set.copyOf(preflightedStatements),
+					"preflight must estimate every approved statement buffered by the branch");
+			assertEquals("preflight", events.get(0),
+					"the write estimate and growth drain must happen before publication or prepared-write locks");
+		}
+	}
+
+	@Test
+	void forkedBranchesRemainPrivateWhenBackingBranchAutoFlushes() throws SailException {
+		assertForkRemainsPrivate(false);
+		assertForkRemainsPrivate(true);
+	}
+
+	private static void assertForkRemainsPrivate(boolean withWriteOwner) throws SailException {
+		PublicationCountingBackingSource backing = new PublicationCountingBackingSource();
+		SailSourceBranch autoFlushRoot = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		SailSourceBranch transactionBranch = (SailSourceBranch) (withWriteOwner
+				? autoFlushRoot.fork(new Object())
+				: autoFlushRoot.fork());
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:fork-auto-flush:s");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:fork-auto-flush:p");
+		IRI object = SimpleValueFactory.getInstance().createIRI("urn:fork-auto-flush:o");
+
+		try (autoFlushRoot; transactionBranch) {
+			try (SailSink sink = transactionBranch.sink(IsolationLevels.NONE)) {
+				sink.approve(subject, predicate, object, null);
+				sink.flush();
+			}
+
+			assertEquals(0, backing.approvals.get(),
+					"closing a private fork's changeset must not publish through an auto-flush backing branch");
+			assertEquals(0, backing.flushes.get(),
+					"a private fork must remain buffered until explicitly flushed through its parent");
+
+			transactionBranch.flush();
+			assertEquals(1, backing.approvals.get());
+			assertEquals(1, backing.flushes.get(), "an explicit fork flush publishes the merged statement");
+		}
+	}
+
+	@Test
 	void snapshotGenerationIsSharedAndClosedAfterLastObserver() throws SailException {
 		AtomicInteger closeCount = new AtomicInteger();
 		TrackingBackingSource backing = new TrackingBackingSource(
@@ -70,6 +169,143 @@ class SailSourceBranchTest {
 		second.close();
 		second.close();
 		assertEquals(1, closeCount.get(), "the snapshot closes once after the final observer closes");
+	}
+
+	@Test
+	void admittedSnapshotDoesNotOverlayChangesMergedBeforeBackingPublication() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:publication-snapshot:p");
+		Statement initial = valueFactory.createStatement(valueFactory.createIRI("urn:publication-snapshot:initial"),
+				predicate, valueFactory.createLiteral("initial"));
+		Statement pending = valueFactory.createStatement(valueFactory.createIRI("urn:publication-snapshot:pending"),
+				predicate, valueFactory.createLiteral("pending"));
+		PublicationBarrierBackingSource backing = new PublicationBarrierBackingSource(initial);
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
+
+		try (branch; ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			try (SailDataset initialView = branch.dataset(IsolationLevels.SNAPSHOT)) {
+				assertTrue(hasStatement(initialView, initial.getSubject(), predicate, initial.getObject()));
+			}
+
+			CountDownLatch readerAdmitted = new CountDownLatch(1);
+			CountDownLatch acquireDataset = new CountDownLatch(1);
+			Future<Boolean> reader = executor.submit(() -> {
+				try (SailClosable pinnedView = branch.beginDatasetAcquisition(IsolationLevels.SNAPSHOT)) {
+					readerAdmitted.countDown();
+					awaitLatch(acquireDataset, "reader dataset acquisition");
+					try (SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT)) {
+						assertTrue(hasStatement(dataset, initial.getSubject(), predicate, initial.getObject()));
+						return hasStatement(dataset, pending.getSubject(), predicate, pending.getObject());
+					}
+				}
+			});
+
+			assertTrue(readerAdmitted.await(5, TimeUnit.SECONDS),
+					"the reader must pin its original backing generation");
+			SailClosable publication = branch.beginPublication();
+			SailSink mergedChange = branch.sink(IsolationLevels.SNAPSHOT);
+			try {
+				mergedChange.approve(pending.getSubject(), pending.getPredicate(), pending.getObject(), null);
+				mergedChange.flush();
+				acquireDataset.countDown();
+				assertTrue(backing.readerAttemptedDuringPublication.await(5, TimeUnit.SECONDS),
+						"the reader must reach the read-side publication gate while the writer is publishing");
+
+				Future<Boolean> branchLockProbe = executor.submit(branch::isChanged);
+				assertTrue(branchLockProbe.get(1, TimeUnit.SECONDS),
+						"a reader waiting for publication must not retain the branch semaphore");
+				assertFalse(reader.isDone(), "the old view must not expose the merged but unpublished statement");
+
+				branch.flush();
+			} finally {
+				acquireDataset.countDown();
+				try {
+					mergedChange.close();
+				} finally {
+					publication.close();
+				}
+			}
+
+			assertFalse(reader.get(5, TimeUnit.SECONDS),
+					"a pre-publication SNAPSHOT admission must not combine its old backing view with new branch changes");
+		}
+	}
+
+	@Test
+	void drainRetiresIdleSnapshotAndKeepsBorrowedGenerationUntilRelease() throws Exception {
+		AtomicInteger closeCount = new AtomicInteger();
+		TrackingBackingSource backing = new TrackingBackingSource(
+				ignored -> new CloseCountingDataset(closeCount));
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
+
+		try {
+			SailDataset completed = branch.dataset(IsolationLevels.SNAPSHOT);
+			completed.close();
+			invokeRetireIdleSnapshot(branch);
+			assertEquals(1, closeCount.get(), "drain retirement must close a cached generation with no borrowers");
+
+			SailDataset borrowed = branch.dataset(IsolationLevels.SNAPSHOT);
+			invokeRetireIdleSnapshot(branch);
+			assertEquals(1, closeCount.get(), "retirement must leave an active borrower on its original dataset");
+
+			SailDataset replacement = branch.dataset(IsolationLevels.SNAPSHOT);
+			assertEquals(3, backing.datasetCount.get(),
+					"new readers must use a new generation after the borrowed cache is retired");
+
+			borrowed.close();
+			assertEquals(2, closeCount.get(), "the retired generation closes after its last borrower releases it");
+			replacement.close();
+		} finally {
+			branch.close();
+		}
+		assertEquals(3, closeCount.get(), "closing the branch releases the replacement generation");
+	}
+
+	@Test
+	void drainRetirementPreservesLiveSerializableObservationForPrepare() throws Exception {
+		PublicationCountingBackingSource backing = new PublicationCountingBackingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:drain-serializable:s");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:drain-serializable:p");
+
+		try {
+			SailDataset dataset = branch.dataset(IsolationLevels.SERIALIZABLE);
+			try (CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, predicate, null)) {
+				assertFalse(statements.hasNext());
+			}
+
+			invokeRetireIdleSnapshot(branch);
+			assertEquals(0, backing.datasetCloseCount.get(),
+					"a live SERIALIZABLE observer keeps the retired backing dataset borrowed");
+
+			dataset.close();
+			branch.prepare();
+			assertEquals(1, backing.observations.get(),
+					"drain retirement must preserve the observer sink for SERIALIZABLE validation");
+		} finally {
+			branch.close();
+		}
+	}
+
+	private static void invokeRetireIdleSnapshot(SailSource source) throws Exception {
+		Method retire;
+		try {
+			retire = SailSource.class.getMethod("retireIdleSnapshot");
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError("growth drain must expose root-cache retirement", e);
+		}
+		try {
+			retire.invoke(source);
+		} catch (InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			throw new AssertionError(cause);
+		}
 	}
 
 	@Test
@@ -157,28 +393,27 @@ class SailSourceBranchTest {
 	}
 
 	@Test
-	void readCommittedAdmissionRetriesWhenCommitOccursAfterInitialCurrentnessCheck() throws Exception {
-		PublicationEpochBackingSource backing = new PublicationEpochBackingSource();
+	void readCommittedAdmissionWaitsOutsideBranchLockForPublication() throws Exception {
+		PublicationLockBackingSource backing = new PublicationLockBackingSource();
 		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
 
-		try (branch; ExecutorService executor = Executors.newSingleThreadExecutor()) {
+		try (branch; ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			SailClosable publication = backing.beginPublication();
 			Future<SailDataset> read = executor.submit(() -> branch.dataset(IsolationLevels.READ_COMMITTED));
 			try {
-				assertTrue(backing.publicationAfterAdmission.await(5, TimeUnit.SECONDS),
-						"the candidate should be current before the publication scope is acquired");
+				assertTrue(backing.readerWaitingForPublication.await(5, TimeUnit.SECONDS),
+						"the reader must reach the publication gate before opening a branch dataset");
+				Future<Boolean> branchLockProbe = executor.submit(branch::isChanged);
+				assertFalse(branchLockProbe.get(1, TimeUnit.SECONDS),
+						"a reader waiting for publication must not retain the branch semaphore");
 				backing.publishExternalChange();
-				backing.allowPublication.countDown();
-
-				try (SailDataset observer = read.get(5, TimeUnit.SECONDS)) {
-					assertEquals(2, backing.datasetCount.get(),
-							"the pre-publication candidate must be retired after a competing commit");
-					assertTrue(observer.isSnapshotCurrent(), "the returned dataset must reflect the competing commit");
-					assertEquals(2, backing.currentnessChecksInPublication.get(),
-							"both stale and replacement views must be checked under the ordered scope");
-					assertEquals(0, backing.currentnessChecksOutsidePublication.get());
-				}
 			} finally {
-				backing.allowPublication.countDown();
+				publication.close();
+			}
+			try (SailDataset observer = read.get(5, TimeUnit.SECONDS)) {
+				assertEquals(1, backing.datasetCount.get(),
+						"the reader must open its dataset only after the competing publication completes");
+				assertTrue(observer.isSnapshotCurrent(), "the returned dataset must reflect the competing commit");
 			}
 		}
 	}
@@ -389,6 +624,84 @@ class SailSourceBranchTest {
 			} finally {
 				branch.close();
 			}
+		}
+	}
+
+	@Test
+	void abandoningUnobservedDatasetDoesNotPublishBufferedChangesOrSerializableObservations() throws Exception {
+		PublicationCountingBackingSource backing = new PublicationCountingBackingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		SailDataset dataset = branch.dataset(IsolationLevels.SERIALIZABLE);
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:abandon:s");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:abandon:p");
+		IRI object = SimpleValueFactory.getInstance().createIRI("urn:abandon:o");
+
+		try {
+			try (CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, predicate,
+					object)) {
+				assertFalse(statements.hasNext());
+			}
+			SailSink sink = branch.sink(IsolationLevels.NONE);
+			sink.approve(subject, predicate, object, null);
+			sink.flush();
+			sink.close();
+
+			invokeUnobservedAbandon(dataset);
+			invokeUnobservedAbandon(branch);
+
+			assertEquals(0, backing.approvals.get(),
+					"abandoning an unobserved attempt must not approve buffered statements downstream");
+			assertEquals(0, backing.observations.get(),
+					"abandoning an unobserved attempt must not publish SERIALIZABLE observations");
+			assertEquals(0, backing.flushes.get(),
+					"abandoning an unobserved attempt must not publish a backing sink");
+		} finally {
+			branch.close();
+		}
+	}
+
+	@Test
+	void ordinaryDatasetCloseStillAutoFlushesBufferedChanges() throws SailException {
+		PublicationCountingBackingSource backing = new PublicationCountingBackingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		SailDataset dataset = branch.dataset(IsolationLevels.READ_COMMITTED);
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:ordinary-close:s");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:ordinary-close:p");
+		IRI object = SimpleValueFactory.getInstance().createIRI("urn:ordinary-close:o");
+
+		try {
+			SailSink sink = branch.sink(IsolationLevels.NONE);
+			sink.approve(subject, predicate, object, null);
+			sink.flush();
+			sink.close();
+
+			dataset.close();
+
+			assertEquals(1, backing.approvals.get());
+			assertEquals(1, backing.flushes.get());
+		} finally {
+			branch.close();
+		}
+	}
+
+	private static void invokeUnobservedAbandon(SailClosable resource) throws Exception {
+		Method abandon;
+		try {
+			abandon = resource.getClass().getMethod("abandonUnobserved");
+		} catch (NoSuchMethodException e) {
+			throw new AssertionError("private replay cleanup requires an explicit unobserved-abandon lifecycle", e);
+		}
+		try {
+			abandon.invoke(resource);
+		} catch (InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			throw new AssertionError(cause);
 		}
 	}
 
@@ -758,6 +1071,40 @@ class SailSourceBranchTest {
 		}
 	}
 
+	private static final class PublicationCountingBackingSource extends BackingSailSource {
+		private final AtomicInteger approvals = new AtomicInteger();
+		private final AtomicInteger observations = new AtomicInteger();
+		private final AtomicInteger flushes = new AtomicInteger();
+		private final AtomicInteger datasetCount = new AtomicInteger();
+		private final AtomicInteger datasetCloseCount = new AtomicInteger();
+
+		@Override
+		public SailSink sink(IsolationLevel level) {
+			return new NoopSailSink() {
+				@Override
+				public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+					approvals.incrementAndGet();
+				}
+
+				@Override
+				public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
+					observations.incrementAndGet();
+				}
+
+				@Override
+				public void flush() {
+					flushes.incrementAndGet();
+				}
+			};
+		}
+
+		@Override
+		public SailDataset dataset(IsolationLevel level) {
+			datasetCount.incrementAndGet();
+			return new CloseCountingDataset(datasetCloseCount);
+		}
+	}
+
 	private static final class InterruptingRetryBackingSource extends BackingSailSource {
 		private final AtomicInteger datasetCount = new AtomicInteger();
 		private final AtomicInteger datasetCloseCount = new AtomicInteger();
@@ -792,16 +1139,12 @@ class SailSourceBranchTest {
 		}
 	}
 
-	private static final class PublicationEpochBackingSource extends BackingSailSource {
+	private static final class PublicationLockBackingSource extends BackingSailSource {
 		private final AtomicInteger datasetCount = new AtomicInteger();
-		private final AtomicInteger publicationScopes = new AtomicInteger();
-		private final AtomicInteger currentnessChecksInPublication = new AtomicInteger();
-		private final AtomicInteger currentnessChecksOutsidePublication = new AtomicInteger();
-		private final AtomicInteger datasetCloseCount = new AtomicInteger();
 		private final AtomicInteger committedGeneration = new AtomicInteger();
-		private final AtomicInteger publicationCount = new AtomicInteger();
-		private final CountDownLatch publicationAfterAdmission = new CountDownLatch(1);
-		private final CountDownLatch allowPublication = new CountDownLatch(1);
+		private final ReentrantLock publicationLock = new ReentrantLock(true);
+		private final AtomicReference<Thread> publicationOwner = new AtomicReference<>();
+		private final CountDownLatch readerWaitingForPublication = new CountDownLatch(1);
 
 		@Override
 		public SailSink sink(IsolationLevel level) {
@@ -812,32 +1155,28 @@ class SailSourceBranchTest {
 		public SailDataset dataset(IsolationLevel level) throws SailException {
 			int generation = committedGeneration.get();
 			datasetCount.incrementAndGet();
-			return new VersionedSnapshotDataset(datasetCloseCount, generation, committedGeneration);
+			return new VersionedSnapshotDataset(new AtomicInteger(), generation, committedGeneration);
 		}
 
 		@Override
 		public SailClosable beginPublication() throws SailException {
-			if (publicationCount.incrementAndGet() == 2) {
-				publicationAfterAdmission.countDown();
-				AdmissionCloseBackingSource.await(allowPublication, "publication scope after candidate admission");
+			if (publicationLock.isLocked() && publicationOwner.get() != Thread.currentThread()) {
+				readerWaitingForPublication.countDown();
 			}
-			publicationScopes.incrementAndGet();
+			boolean outermost = !publicationLock.isHeldByCurrentThread();
+			publicationLock.lock();
+			if (outermost) {
+				publicationOwner.set(Thread.currentThread());
+			}
 			AtomicBoolean closed = new AtomicBoolean();
 			return () -> {
 				if (closed.compareAndSet(false, true)) {
-					publicationScopes.decrementAndGet();
+					if (publicationLock.getHoldCount() == 1) {
+						publicationOwner.set(null);
+					}
+					publicationLock.unlock();
 				}
 			};
-		}
-
-		@Override
-		public boolean isSnapshotCurrent(SailDataset dataset) {
-			if (publicationScopes.get() == 0) {
-				currentnessChecksOutsidePublication.incrementAndGet();
-			} else {
-				currentnessChecksInPublication.incrementAndGet();
-			}
-			return ((VersionedSnapshotDataset) dataset).isCurrent();
 		}
 
 		private void publishExternalChange() {
@@ -1280,6 +1619,12 @@ class SailSourceBranchTest {
 		}
 	}
 
+	private static void awaitLatch(CountDownLatch latch, String action) throws Exception {
+		if (!latch.await(5, TimeUnit.SECONDS)) {
+			throw new AssertionError("Timed out waiting for " + action);
+		}
+	}
+
 	private static class CloseCountingDataset implements SailDataset {
 		private final AtomicInteger closeCount;
 		private final SailException closeFailure;
@@ -1334,6 +1679,106 @@ class SailSourceBranchTest {
 		@Override
 		public boolean isSnapshotCurrent() {
 			return current.getAsBoolean();
+		}
+	}
+
+	private static final class PublicationBarrierBackingSource extends BackingSailSource {
+		private final ReentrantLock publicationLock = new ReentrantLock(true);
+		private final ThreadLocal<PinnedRead> activeRead = new ThreadLocal<>();
+		private final CountDownLatch readerAttemptedDuringPublication = new CountDownLatch(1);
+		private final AtomicReference<Thread> publicationOwner = new AtomicReference<>();
+		private volatile List<Statement> committed;
+
+		private PublicationBarrierBackingSource(Statement initial) {
+			committed = List.of(initial);
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level) {
+			return new NoopSailSink() {
+				private final List<Statement> pending = new ArrayList<>();
+
+				@Override
+				public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+					pending.add(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx));
+				}
+
+				@Override
+				public void flush() {
+					List<Statement> next = new ArrayList<>(committed);
+					next.addAll(pending);
+					pending.clear();
+					committed = List.copyOf(next);
+				}
+			};
+		}
+
+		@Override
+		public SailDataset dataset(IsolationLevel level) {
+			PinnedRead read = activeRead.get();
+			List<Statement> pinned = read == null ? committed : read.statements;
+			return new CloseCountingDataset(new AtomicInteger()) {
+				@Override
+				public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+						Resource... contexts) {
+					List<Statement> matches = new ArrayList<>();
+					for (Statement statement : pinned) {
+						if ((subj == null || subj.equals(statement.getSubject()))
+								&& (pred == null || pred.equals(statement.getPredicate()))
+								&& (obj == null || obj.equals(statement.getObject()))) {
+							matches.add(statement);
+						}
+					}
+					return new CloseableIteratorIteration<>(matches.iterator());
+				}
+			};
+		}
+
+		@Override
+		public SailClosable beginDatasetAcquisition(IsolationLevel level) {
+			PinnedRead read = activeRead.get();
+			if (read == null) {
+				read = new PinnedRead(committed);
+				activeRead.set(read);
+			}
+			read.depth++;
+			PinnedRead acquired = read;
+			AtomicBoolean closed = new AtomicBoolean();
+			return () -> {
+				if (closed.compareAndSet(false, true) && --acquired.depth == 0) {
+					activeRead.remove();
+				}
+			};
+		}
+
+		@Override
+		public SailClosable beginPublication() {
+			if (publicationLock.isLocked() && publicationOwner.get() != Thread.currentThread()) {
+				readerAttemptedDuringPublication.countDown();
+			}
+			boolean outermost = !publicationLock.isHeldByCurrentThread();
+			publicationLock.lock();
+			if (outermost) {
+				publicationOwner.set(Thread.currentThread());
+			}
+			AtomicBoolean closed = new AtomicBoolean();
+			return () -> {
+				if (closed.compareAndSet(false, true)) {
+					if (publicationLock.getHoldCount() == 1) {
+						publicationOwner.set(null);
+					}
+					publicationLock.unlock();
+				}
+			};
+		}
+
+		private static final class PinnedRead {
+			private final List<Statement> statements;
+			private int depth;
+
+			private PinnedRead(List<Statement> statements) {
+				this.statements = statements;
+			}
 		}
 	}
 

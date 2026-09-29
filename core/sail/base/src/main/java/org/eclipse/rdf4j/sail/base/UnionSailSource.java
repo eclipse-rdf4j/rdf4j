@@ -70,12 +70,180 @@ class UnionSailSource implements SailSource {
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		Throwable failure = null;
+		try {
+			primary.abandonUnobserved();
+		} catch (RuntimeException | Error abandonFailure) {
+			failure = abandonFailure;
+		}
+		try {
+			additional.abandonUnobserved();
+		} catch (RuntimeException | Error abandonFailure) {
+			failure = addFailure(failure, abandonFailure);
+		}
+		failure = releasePreparedWrite(failure);
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	@Override
+	public void retireIdleSnapshot() throws SailException {
+		Throwable failure = null;
+		try {
+			primary.retireIdleSnapshot();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = retireFailure;
+		}
+		try {
+			additional.retireIdleSnapshot();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = addFailure(failure, retireFailure);
+		}
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	@Override
+	public void retireSnapshotsPreservingBorrowers() throws SailException {
+		Throwable failure = null;
+		try {
+			primary.retireSnapshotsPreservingBorrowers();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = retireFailure;
+		}
+		try {
+			additional.retireSnapshotsPreservingBorrowers();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = addFailure(failure, retireFailure);
+		}
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	@Override
 	public SailSource fork() {
 		return new UnionSailSource(primary.fork(), additional.fork());
 	}
 
 	@Override
+	public SailSource fork(Object writeOwner) {
+		return new UnionSailSource(primary.fork(writeOwner), additional.fork(writeOwner));
+	}
+
+	@Override
+	public SailSource.WritePreflight writePreflightEstimate() {
+		return primary.writePreflightEstimate().merge(additional.writePreflightEstimate());
+	}
+
+	@Override
+	public boolean shouldPreflightWrite(long approximateWriteBytes, boolean hasUnestimatedOperations) {
+		return primary.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations)
+				|| additional.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations);
+	}
+
+	@Override
+	public boolean tracksWriteIntent() {
+		return primary.tracksWriteIntent() || additional.tracksWriteIntent();
+	}
+
+	@Override
+	public SailClosable beginWriteWarning() throws SailException {
+		return beginWriteWarning(null);
+	}
+
+	@Override
+	public WriteWarning beginWriteWarning(Object writeOwner) throws SailException {
+		if (primary.writePreflightGroup() == additional.writePreflightGroup()) {
+			if (primary.tracksWriteIntent()) {
+				return primary.beginWriteWarning(writeOwner);
+			}
+			return additional.beginWriteWarning(writeOwner);
+		}
+		WriteWarning primaryWarning = primary.tracksWriteIntent()
+				? primary.beginWriteWarning(writeOwner)
+				: WriteWarning.inactive();
+		WriteWarning additionalWarning = null;
+		try {
+			additionalWarning = additional.tracksWriteIntent()
+					? additional.beginWriteWarning(writeOwner)
+					: WriteWarning.inactive();
+		} catch (RuntimeException | Error warningFailure) {
+			Throwable failure = closeResource(warningFailure, primaryWarning);
+			rethrow(failure);
+		}
+		WriteWarning toCloseAdditional = additionalWarning;
+		return new WriteWarning() {
+			@Override
+			public boolean isActive() {
+				return primaryWarning.isActive() || toCloseAdditional.isActive();
+			}
+
+			@Override
+			public void close() throws SailException {
+				Throwable failure = closeResource(null, toCloseAdditional);
+				failure = closeResource(failure, primaryWarning);
+				if (failure != null) {
+					rethrow(failure);
+				}
+			}
+		};
+	}
+
+	@Override
+	public SailClosable beginWritePreflight(WritePreflight estimate, Object writeOwner) throws SailException {
+		if (primary.writePreflightGroup() == additional.writePreflightGroup()) {
+			if (primary.tracksWriteIntent()) {
+				return primary.beginWritePreflight(estimate, writeOwner);
+			}
+			return additional.beginWritePreflight(estimate, writeOwner);
+		}
+		SailClosable primaryPreflight = primary.beginWritePreflight(estimate, writeOwner);
+		SailClosable additionalPreflight = null;
+		try {
+			additionalPreflight = additional.beginWritePreflight(estimate, writeOwner);
+		} catch (RuntimeException | Error preflightFailure) {
+			Throwable failure = closeResource(preflightFailure, primaryPreflight);
+			rethrow(failure);
+		}
+		SailClosable toCloseAdditional = additionalPreflight;
+		return () -> {
+			Throwable failure = closeResource(null, toCloseAdditional);
+			failure = closeResource(failure, primaryPreflight);
+			if (failure != null) {
+				rethrow(failure);
+			}
+		};
+	}
+
+	@Override
+	public Object writePreflightGroup() {
+		Object primaryGroup = primary.writePreflightGroup();
+		return primaryGroup == additional.writePreflightGroup() ? primaryGroup : this;
+	}
+
+	@Override
+	public void preflightWrite() throws SailException {
+		preflightWrite(writePreflightEstimate());
+	}
+
+	@Override
+	public void preflightWrite(SailSource.WritePreflight estimate) throws SailException {
+		if (primary.writePreflightGroup() == additional.writePreflightGroup()) {
+			primary.preflightWrite(estimate);
+			additional.preflightWrite(estimate);
+		} else {
+			primary.preflightWrite(primary.writePreflightEstimate());
+			additional.preflightWrite(additional.writePreflightEstimate());
+		}
+	}
+
+	@Override
 	public void prepare() throws SailException {
+		preflightWrite();
 		if (preparedWrite == null && hasPendingWriteChanges()) {
 			preparedWrite = beginPreparedWrite();
 		}
@@ -168,13 +336,28 @@ class UnionSailSource implements SailSource {
 	}
 
 	@Override
+	public SailClosable beginPublication(Object writeOwner) throws SailException {
+		return primary.beginPublication(writeOwner);
+	}
+
+	@Override
 	public SailClosable tryBeginPublication() throws SailException {
 		return primary.tryBeginPublication();
 	}
 
 	@Override
+	public SailClosable tryBeginPublication(Object writeOwner) throws SailException {
+		return primary.tryBeginPublication(writeOwner);
+	}
+
+	@Override
 	public SailClosable beginPreparedWrite() throws SailException {
 		return primary.beginPreparedWrite();
+	}
+
+	@Override
+	public SailClosable beginPreparedWrite(Object writeOwner) throws SailException {
+		return primary.beginPreparedWrite(writeOwner);
 	}
 
 	@Override

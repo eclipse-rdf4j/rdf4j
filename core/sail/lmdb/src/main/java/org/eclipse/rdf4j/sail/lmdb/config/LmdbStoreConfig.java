@@ -63,6 +63,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
+	public static final long MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = 30_000L;
+
+	public static final int READ_ONLY_REPLAY_MAX_RETRIES = 3;
+
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_MILLIS = 2L;
@@ -129,6 +133,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private boolean backgroundRawSamplingEnabled = true;
 
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
+
+	private long mapGrowthReadDrainTimeoutMillis = MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	private int readOnlyReplayMaxRetries = READ_ONLY_REPLAY_MAX_RETRIES;
 
 	/*--------------*
 	 * Constructors *
@@ -417,6 +425,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getMapGrowthReadDrainTimeoutMillis() {
+		return mapGrowthReadDrainTimeoutMillis;
+	}
+
+	public LmdbStoreConfig setMapGrowthReadDrainTimeoutMillis(long mapGrowthReadDrainTimeoutMillis) {
+		this.mapGrowthReadDrainTimeoutMillis = Math.max(0L, mapGrowthReadDrainTimeoutMillis);
+		return this;
+	}
+
+	public int getReadOnlyReplayMaxRetries() {
+		return readOnlyReplayMaxRetries;
+	}
+
+	public LmdbStoreConfig setReadOnlyReplayMaxRetries(int readOnlyReplayMaxRetries) {
+		this.readOnlyReplayMaxRetries = Math.max(0, readOnlyReplayMaxRetries);
+		return this;
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
@@ -518,6 +544,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (backgroundRawSamplingMaxMillisPerCycle != BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE) {
 			m.add(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE,
 					vf.createLiteral(backgroundRawSamplingMaxMillisPerCycle));
+		}
+		if (mapGrowthReadDrainTimeoutMillis != MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS,
+					vf.createLiteral(mapGrowthReadDrainTimeoutMillis));
+		}
+		if (readOnlyReplayMaxRetries != READ_ONLY_REPLAY_MAX_RETRIES) {
+			m.add(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES,
+					vf.createLiteral(readOnlyReplayMaxRetries));
 		}
 		return implNode;
 	}
@@ -763,6 +797,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					m.getStatements(implNode, LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE, null))
 					.ifPresent(lit -> setBackgroundRawSamplingMaxMillisPerCycle(parseLong(lit,
 							LmdbStoreSchema.BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS, null))
+					.ifPresent(lit -> setMapGrowthReadDrainTimeoutMillis(parseLong(lit,
+							LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES, null))
+					.ifPresent(lit -> setReadOnlyReplayMaxRetries(parseInt(lit,
+							LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES)));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}

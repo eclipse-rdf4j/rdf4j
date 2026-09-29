@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -88,6 +89,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -215,6 +217,7 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
+	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private volatile Runnable resizeCheckpointListener = () -> {
 	};
 	private boolean invalidateRevisionOnCommit = false;
@@ -478,7 +481,7 @@ class ValueStore extends AbstractValueFactory {
 		// open main database
 		dbi = openDatabase(env, null, MDB_CREATE);
 
-		txnManager = new TxnManager(env, Mode.RESET);
+		txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.VALUE_STORE);
 
 		// initialize page size and set map size for env
 		readTransaction(env, (stack, txn) -> {
@@ -1009,6 +1012,17 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void growMapAfterReindexMapFull(long requiredBytes) throws IOException {
+		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+		try (growthAttempt) {
+			if (growthAttempt != null) {
+				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+			}
+			growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt);
+		}
+	}
+
+	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
 		endTransaction(false, false);
 		if (!autoGrow) {
 			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
@@ -1038,6 +1052,9 @@ class ValueStore extends AbstractValueFactory {
 			try {
 				long newMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize,
 						Math.max(requiredBytes, LmdbUtil.MIN_FREE_SPACE));
+				if (growthAttempt != null) {
+					growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				}
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
 				startTransaction(false);
@@ -1394,57 +1411,203 @@ class ValueStore extends AbstractValueFactory {
 	private void resizeMap(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
-				// map is full, resize
-				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
-				boolean activeWriteTxn = writeTxn != 0;
-				if (activeWriteTxn) {
-					// LMDB requires the active writer transaction to be committed before changing the map size. Notify
-					// the
-					// owning SailStore before that checkpoint can publish dictionary state ahead of its TripleStore.
-					resizeCheckpointListener.run();
-				}
-
-				var lockManager = txnManager.lockManager();
-				boolean readLocked = hasReadLock.get() != null;
-				if (readLocked) {
-					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
-				}
-				long stamp;
-				try {
-					stamp = lockManager.writeLock();
-				} catch (InterruptedException e) {
-					throw new IOException(e);
-				}
-
-				try {
-					if (activeWriteTxn) {
-						endTransaction(true, true);
+				LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+				try (growthAttempt) {
+					if (growthAttempt != null) {
+						growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 					}
-					txnManager.deactivate();
-
-					long oldMapSize = mapSize;
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
-
-					logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
-
-					E(mdb_env_set_mapsize(env, mapSize));
+					// map is full, resize
+					requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+					boolean activeWriteTxn = writeTxn != 0;
 					if (activeWriteTxn) {
-						startTransaction(false);
+						// LMDB requires the active writer transaction to be committed before changing the map size.
+						// Notify
+						// the owning SailStore before that checkpoint can publish dictionary state ahead of its
+						// TripleStore.
+						resizeCheckpointListener.run();
 					}
 
-					txnManager.activate();
-				} finally {
-					lockManager.unlockWrite(stamp);
+					var lockManager = txnManager.lockManager();
+					boolean readLocked = hasReadLock.get() != null;
 					if (readLocked) {
-						try {
-							lockManager.readLock();
-						} catch (InterruptedException e) {
-							throw new IOException(e);
+						lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+					}
+					long stamp;
+					try {
+						stamp = lockManager.writeLock();
+					} catch (InterruptedException e) {
+						throw new IOException(e);
+					}
+
+					try {
+						if (activeWriteTxn) {
+							endTransaction(true, true);
+						}
+						txnManager.deactivate();
+
+						long oldMapSize = mapSize;
+						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
+
+						logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
+
+						if (growthAttempt != null) {
+							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+						}
+						E(mdb_env_set_mapsize(env, mapSize));
+						if (activeWriteTxn) {
+							startTransaction(false);
+						}
+
+						txnManager.activate();
+					} finally {
+						lockManager.unlockWrite(stamp);
+						if (readLocked) {
+							try {
+								lockManager.readLock();
+							} catch (InterruptedException e) {
+								throw new IOException(e);
+							}
 						}
 					}
 				}
 			}
 		}
+	}
+
+	long estimateWriteBytes(List<Statement> statements) {
+		Set<Value> seen = new HashSet<>();
+		long estimate = 128L;
+		for (Statement statement : statements) {
+			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getSubject(), seen));
+			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getPredicate(), seen));
+			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getObject(), seen));
+			if (statement.getContext() != null) {
+				estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getContext(), seen));
+			}
+		}
+		return estimate;
+	}
+
+	long estimateWriteBytes(SailSource.WritePreflight preflight) {
+		long estimate = estimateWriteBytes(preflight.statements());
+		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
+			long serializedBytes = (long) utf8Length(namespace.prefix()) + utf8Length(namespace.name()) + 32L;
+			estimate = saturatedEstimateAdd(estimate,
+					saturatedEstimateAdd(saturatedEstimateMultiply(serializedBytes, 4L), 256L));
+		}
+		if (preflight.statementCleared() || !preflight.clearedContexts().isEmpty()
+				|| preflight.namespaceCleared() || !preflight.removedNamespacePrefixes().isEmpty()) {
+			estimate = saturatedEstimateAdd(estimate, LmdbUtil.MIN_FREE_SPACE);
+		}
+		return estimate;
+	}
+
+	boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
+		if (!autoGrow || estimatedWriteBytes <= 0L) {
+			return false;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			return LmdbUtil.requiresResizeAtPage(mapSize, pageSize, nextPageNo, estimatedWriteBytes);
+		}
+	}
+
+	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+			throws IOException {
+		if (!autoGrow || estimatedWriteBytes <= 0L || writeTxn != 0) {
+			return false;
+		}
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while preparing the ValueStore map for a buffered write", e);
+		}
+		try {
+			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
+				return false;
+			}
+			txnManager.deactivate();
+			try {
+				long nextPageNo;
+				try (MemoryStack stack = stackPush()) {
+					MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+					E(mdb_env_info(env, info));
+					nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+				}
+				long currentFootprint = saturatedEstimateMultiply(nextPageNo, pageSize);
+				long projectedFootprint = saturatedEstimateAdd(currentFootprint, estimatedWriteBytes);
+				long resizedMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedFootprint);
+				if (growthAttempt != null) {
+					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				}
+				E(mdb_env_set_mapsize(env, resizedMapSize));
+				mapSize = resizedMapSize;
+				return true;
+			} finally {
+				txnManager.activate();
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+	}
+
+	private long estimateValueBytes(Value value, Set<Value> seen) {
+		if (value == null || !seen.add(value)) {
+			return 0L;
+		}
+		long serializedBytes;
+		if (value instanceof IRI iri) {
+			serializedBytes = utf8Length(iri.getNamespace()) + utf8Length(iri.getLocalName()) + 32L;
+		} else if (value instanceof BNode bNode) {
+			serializedBytes = utf8Length(bNode.getID()) + 16L;
+		} else if (value instanceof Literal literal) {
+			serializedBytes = utf8Length(literal.getLabel()) + 32L;
+			String language = literal.getLanguage().orElse(null);
+			if (language != null) {
+				serializedBytes = saturatedEstimateAdd(serializedBytes, utf8Length(language));
+			}
+			serializedBytes = saturatedEstimateAdd(serializedBytes,
+					estimateValueBytes(literal.getDatatype(), seen));
+		} else if (value instanceof TripleTerm tripleTerm) {
+			serializedBytes = 64L;
+			serializedBytes = saturatedEstimateAdd(serializedBytes,
+					estimateValueBytes(tripleTerm.getSubject(), seen));
+			serializedBytes = saturatedEstimateAdd(serializedBytes,
+					estimateValueBytes(tripleTerm.getPredicate(), seen));
+			serializedBytes = saturatedEstimateAdd(serializedBytes,
+					estimateValueBytes(tripleTerm.getObject(), seen));
+		} else {
+			// Unknown model Value implementations still receive a conservative bounded estimate.
+			serializedBytes = TripleIndex.MAX_KEY_LENGTH + 128L;
+		}
+		// The dictionary stores key/value and reverse-ID records, plus LMDB B-tree split and page overhead.
+		return saturatedEstimateAdd(saturatedEstimateMultiply(serializedBytes, 4L), 256L);
+	}
+
+	private static long utf8Length(String value) {
+		return value.getBytes(StandardCharsets.UTF_8).length;
+	}
+
+	private static long saturatedEstimateAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long saturatedEstimateMultiply(long left, long right) {
+		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
+	}
+
+	private LmdbSailStore.MapGrowthAttempt beginMapGrowthAttempt() throws IOException {
+		LmdbSailStore.MapGrowthAttemptSupplier supplier = mapGrowthAttemptSupplier;
+		return supplier == null ? null : supplier.begin();
+	}
+
+	void setMapGrowthAttemptSupplier(LmdbSailStore.MapGrowthAttemptSupplier supplier) {
+		mapGrowthAttemptSupplier = supplier;
 	}
 
 	void setResizeCheckpointListener(Runnable resizeCheckpointListener) {
@@ -2096,10 +2259,13 @@ class ValueStore extends AbstractValueFactory {
 		private final ValueStoreRevision.Snapshot revision;
 		private volatile boolean closed;
 		private volatile Thread closingThread;
+		private volatile boolean abandonUnobserved;
+		private volatile LmdbSailStore.MapResizeKind retiredKind;
 
 		private ReadSnapshot(Txn txn) {
 			this.txn = txn;
 			this.transactionVersion = txn.version();
+			txn.setSnapshotBound();
 			this.revision = new ValueStoreRevision.Snapshot(ValueStore.this, this);
 		}
 
@@ -2116,6 +2282,11 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		void ensureValid() throws IOException {
+			LmdbSailStore.MapResizeKind invalidated = retiredKind;
+			if (invalidated != null && closingThread != Thread.currentThread()) {
+				throw new LmdbSailStore.MapResizeConflictException(invalidated,
+						"ValueStore map changed while the read snapshot was pinned; retry the transaction");
+			}
 			if ((closed && closingThread != Thread.currentThread()) || txn.isClosed()) {
 				throw new IOException("ValueStore read snapshot is closed; retry the read operation");
 			}
@@ -2127,9 +2298,22 @@ class ValueStore extends AbstractValueFactory {
 				throw new IOException(e.getMessage(), e);
 			}
 			if (txn.version() != transactionVersion) {
-				throw new SailConflictException(
+				throw new LmdbSailStore.MapResizeConflictException(LmdbSailStore.MapResizeKind.VALUE_STORE,
 						"ValueStore map changed while the read snapshot was pinned; retry the transaction");
 			}
+		}
+
+		void abandonUnobserved() {
+			abandonUnobserved = true;
+		}
+
+		boolean hasNativeTxn() {
+			return txn.isNativeActive();
+		}
+
+		void retireForMapResize(LmdbSailStore.MapResizeKind kind) {
+			retiredKind = kind;
+			close();
 		}
 
 		Txn txnRef() {
@@ -2169,7 +2353,7 @@ class ValueStore extends AbstractValueFactory {
 					if (closed) {
 						return;
 					}
-					materialize = isCurrent();
+					materialize = !abandonUnobserved && isCurrent();
 					closingThread = Thread.currentThread();
 					closed = true;
 				}
@@ -2183,6 +2367,10 @@ class ValueStore extends AbstractValueFactory {
 				} finally {
 					synchronized (txn) {
 						closingThread = null;
+						LmdbSailStore.MapResizeKind invalidated = retiredKind;
+						if (invalidated != null) {
+							txn.invalidateAndReset(invalidated);
+						}
 						revision.release(this);
 						txn.close();
 					}

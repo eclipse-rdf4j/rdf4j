@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -42,6 +43,17 @@ public interface SailDataset extends SailClosable {
 	 */
 	@Override
 	void close() throws SailException;
+
+	/**
+	 * Releases a private dataset belonging to an unobserved operation that is being discarded for replay. Implementors
+	 * may skip work needed only to preserve values or observations that cannot escape the discarded operation. Callers
+	 * must ensure that no result or observation from the dataset has escaped. Ordinary completion must use
+	 * {@link #close()}.
+	 */
+	@InternalUseOnly
+	default void abandonUnobserved() throws SailException {
+		close();
+	}
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this object.

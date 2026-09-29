@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.sail.base.SailSource;
 
 /** In-memory namespace state backed by the authoritative named database in the TripleStore. */
 class NamespaceStore implements Iterable<SimpleNamespace> {
@@ -40,6 +41,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 
 	private final File legacyFile;
 	private final Map<String, SimpleNamespace> namespacesMap;
+	private long encodedSnapshotSize = Integer.BYTES;
 
 	/** Opens the authoritative namespace database, importing the legacy file only when its marker is absent. */
 	NamespaceStore(File dataDir, TripleStore tripleStore) throws IOException {
@@ -69,20 +71,49 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 
 	synchronized void restore(Map<String, String> snapshot) {
 		namespacesMap.clear();
-		snapshot.forEach((prefix, name) -> namespacesMap.put(prefix, new SimpleNamespace(prefix, name)));
+		encodedSnapshotSize = Integer.BYTES;
+		snapshot.forEach((prefix, name) -> {
+			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
+			encodedSnapshotSize = saturatedAdd(encodedSnapshotSize, namespaceEntrySize(prefix, name));
+		});
+	}
+
+	/**
+	 * Estimates the complete encoded namespace snapshot that a buffered write can produce. The current encoded size is
+	 * maintained as namespaces change, so estimating a transaction does not have to re-scan the whole namespace map.
+	 * Additions are counted conservatively on top of the current snapshot; replacements and removals can therefore only
+	 * make the actual result smaller than or equal to the estimate.
+	 */
+	synchronized long estimateEncodedSnapshotBytes(SailSource.WritePreflight preflight) {
+		if (preflight.addedNamespaces().isEmpty() && preflight.removedNamespacePrefixes().isEmpty()
+				&& !preflight.namespaceCleared()) {
+			return 0L;
+		}
+
+		long estimate = preflight.namespaceCleared() ? Integer.BYTES : encodedSnapshotSize;
+		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
+			estimate = saturatedAdd(estimate, namespaceEntrySize(namespace.prefix(), namespace.name()));
+		}
+		return estimate;
 	}
 
 	public synchronized void setNamespace(String prefix, String name) {
 		SimpleNamespace namespace = namespacesMap.get(prefix);
 		if (namespace == null) {
 			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
+			encodedSnapshotSize = saturatedAdd(encodedSnapshotSize, namespaceEntrySize(prefix, name));
 		} else if (!namespace.getName().equals(name)) {
+			encodedSnapshotSize -= namespaceEntrySize(prefix, namespace.getName());
 			namespace.setName(name);
+			encodedSnapshotSize = saturatedAdd(encodedSnapshotSize, namespaceEntrySize(prefix, name));
 		}
 	}
 
 	public synchronized void removeNamespace(String prefix) {
-		namespacesMap.remove(prefix);
+		SimpleNamespace removed = namespacesMap.remove(prefix);
+		if (removed != null) {
+			encodedSnapshotSize -= namespaceEntrySize(removed.getPrefix(), removed.getName());
+		}
 	}
 
 	@Override
@@ -92,6 +123,7 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 
 	public synchronized void clear() {
 		namespacesMap.clear();
+		encodedSnapshotSize = Integer.BYTES;
 	}
 
 	public void close() {
@@ -162,7 +194,22 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 	}
 
 	private void install(Map<String, String> namespaces) {
-		namespaces.forEach((prefix, name) -> namespacesMap.put(prefix, new SimpleNamespace(prefix, name)));
+		namespaces.forEach((prefix, name) -> {
+			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));
+			encodedSnapshotSize = saturatedAdd(encodedSnapshotSize, namespaceEntrySize(prefix, name));
+		});
+	}
+
+	private static long namespaceEntrySize(String prefix, String name) {
+		return 2L * Integer.BYTES + utf8Length(prefix) + utf8Length(name);
+	}
+
+	private static long utf8Length(String value) {
+		return value.getBytes(StandardCharsets.UTF_8).length;
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
 	}
 
 	private Map<String, String> readLegacyNamespaces() throws IOException {

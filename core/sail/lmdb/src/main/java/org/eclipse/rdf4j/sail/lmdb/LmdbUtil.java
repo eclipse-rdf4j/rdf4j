@@ -176,11 +176,20 @@ final class LmdbUtil {
 	 */
 	static boolean requiresResize(long mapSize, long pageSize, long txn, long requiredSize) {
 		long nextPageNo = mdbTxnMtNextPgno(txn);
-		double percentageUsed = (100.0 / mapSize) * (nextPageNo * pageSize);
+		return requiresResizeAtPage(mapSize, pageSize, nextPageNo, requiredSize);
+	}
+
+	static boolean requiresResizeAtPage(long mapSize, long pageSize, long nextPageNo, long requiredSize) {
+		if (mapSize <= 0 || pageSize <= 0) {
+			return true;
+		}
+		long usedBytes = saturatedMultiply(Math.max(0L, nextPageNo), pageSize);
+		double percentageUsed = (100.0 * usedBytes) / mapSize;
 		if (percentageUsed > PERCENTAGE_FULL_TRIGGERS_RESIZE) {
 			return true;
 		}
-		return mapSize - nextPageNo * pageSize < Math.max(requiredSize, MIN_FREE_SPACE);
+		long freeBytes = usedBytes >= mapSize ? 0L : mapSize - usedBytes;
+		return freeBytes < saturatedAdd(Math.max(0L, requiredSize), MIN_FREE_SPACE);
 	}
 
 	/**
@@ -192,14 +201,47 @@ final class LmdbUtil {
 	 * @return the new map size
 	 */
 	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize) {
-		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_FREE_SPACE));
-		// align map size to page size
-		return mapSize % pageSize == 0 ? mapSize : mapSize + (mapSize / pageSize + 1) * pageSize;
+		if (pageSize <= 0) {
+			throw new IllegalArgumentException("pageSize must be positive");
+		}
+		long doubled = saturatedMultiply(Math.max(0L, mapSize), 2L);
+		long requiredWithReserve = saturatedAdd(Math.max(0L, requiredSize), MIN_FREE_SPACE);
+		int targetUsagePercentage = Math.max(1, Math.min(PERCENTAGE_FULL_TRIGGERS_RESIZE, 100));
+		long requiredAtThreshold;
+		if (requiredWithReserve > Long.MAX_VALUE / 100L) {
+			requiredAtThreshold = Long.MAX_VALUE;
+		} else {
+			long scaledRequired = requiredWithReserve * 100L;
+			// Leave the estimate strictly below the trigger. When the requested size lands exactly on the percentage
+			// boundary, a ceil alone would still trigger another growth on the next write.
+			requiredAtThreshold = saturatedAdd(scaledRequired / targetUsagePercentage, 1L);
+		}
+		return alignUpToPage(Math.max(doubled, requiredAtThreshold), pageSize);
 	}
 
 	public static long getNewSize(int pageSize, long txn, long requiredSize) {
 		long nextPgno = mdbTxnMtNextPgno(txn);
-		return (nextPgno * pageSize) + requiredSize;
+		return saturatedAdd(saturatedMultiply(nextPgno, pageSize), requiredSize);
+	}
+
+	private static long alignUpToPage(long size, long pageSize) {
+		long remainder = size % pageSize;
+		if (remainder == 0) {
+			return size;
+		}
+		long increment = pageSize - remainder;
+		if (Long.MAX_VALUE - size < increment) {
+			return Long.MAX_VALUE - Long.MAX_VALUE % pageSize;
+		}
+		return size + increment;
+	}
+
+	static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long saturatedMultiply(long left, long right) {
+		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}
 
 	@FunctionalInterface

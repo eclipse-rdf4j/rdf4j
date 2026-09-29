@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -857,7 +858,8 @@ class LmdbStoreFlushReproductionTest {
 							"the paired read view must retain its ValueStore reader lease");
 					assertTrue(triples.hasNext(),
 							"the initial quoted term is present in the reader's dictionary snapshot");
-					assertEquals(original, triples.next());
+					TripleTerm escaped = triples.next();
+					assertEquals(original, escaped);
 
 					try (SailSink sink = store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 						sink.approve(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:outer:added"),
@@ -868,6 +870,8 @@ class LmdbStoreFlushReproductionTest {
 							"the committed quoted value must grow the native ValueStore map before invalidation is checked");
 					assertThrows(SailConflictException.class, triples::hasNext,
 							"map growth must invalidate rather than renew the iterator's pinned value snapshot");
+					assertEquals("before", ((Literal) escaped.getObject()).getLabel(),
+							"forced paired-view retirement must materialize values already returned to the caller");
 
 					try (SailDataset latest = store.getBackingStore()
 							.getExplicitSailSource()
@@ -878,10 +882,10 @@ class LmdbStoreFlushReproductionTest {
 						latestTriples.next();
 						assertTrue(latestTriples.hasNext(), "the direct sink commit must publish the new quoted term");
 					}
-					assertEquals(tripleReaderPermits - 1, availableReaderPermits(tripleStore.getTxnManager()),
-							"closing a newer dataset must leave the older TripleStore lease owned");
-					assertEquals(valueReaderPermits - 1, availableReaderPermits(valueStore.getTxnManager()),
-							"closing a newer dataset must leave the older ValueStore lease owned");
+					assertEquals(tripleReaderPermits, availableReaderPermits(tripleStore.getTxnManager()),
+							"typed invalidation must retire the old paired TripleStore pin even while its handle remains open");
+					assertEquals(valueReaderPermits, availableReaderPermits(valueStore.getTxnManager()),
+							"typed invalidation must retire the old paired ValueStore pin even while its handle remains open");
 				}
 				assertEquals(tripleReaderPermits, availableReaderPermits(tripleStore.getTxnManager()),
 						"closing an invalidated iterator and dataset must release the TripleStore reader lease");

@@ -159,9 +159,11 @@ class ValueStoreTermIndexRecoveryTest {
 
 	@Test
 	@Timeout(value = 240, unit = TimeUnit.SECONDS)
-	void termIndexRebuildGrowsMapAndReopensFromCommittedTerms(@TempDir Path storeDir) throws Exception {
+	void termIndexRebuildUsesPreReservedMapAndReopensFromCommittedTerms(@TempDir Path storeDir) throws Exception {
 		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE);
 		long initialMapSize = valueMapSize(storeDir.resolve("values"));
+		assertTrue(initialMapSize > smallMapConfig().getValueDBSize(),
+				"the buffered seed write must reserve map capacity before the native term-index rebuild");
 
 		Process child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
 				smallMapConfig().getValueDBSize());
@@ -171,9 +173,8 @@ class ValueStoreTermIndexRecoveryTest {
 				"the child must finish its complete native reindex: " + output);
 
 		long grownMapSize = valueMapSize(storeDir.resolve("values"));
-		assertTrue(grownMapSize > initialMapSize,
-				"the fixture must force a term-index map resize, initial=" + initialMapSize + ", grown="
-						+ grownMapSize);
+		assertEquals(initialMapSize, grownMapSize,
+				"the pre-reserved capacity must also hold the complete native term-index rebuild");
 
 		long[] exactOpscKey;
 		LmdbStore reopened = new LmdbStore(storeDir.toFile(), legacyConfig());

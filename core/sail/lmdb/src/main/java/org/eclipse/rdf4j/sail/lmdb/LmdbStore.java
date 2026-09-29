@@ -118,6 +118,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	private final LmdbStoreConfig config;
 
+	int getReadOnlyReplayMaxRetries() {
+		return config.getReadOnlyReplayMaxRetries();
+	}
+
 	private SailStore store;
 
 	private LmdbSailStore backingStore;
@@ -396,6 +400,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		} catch (Throwable e) {
 			// LmdbStore initialization failed, release any allocated files
 			dirLock.release();
+			logger.error("LmdbStore initialization failed for data directory: " + dataDir.getAbsolutePath(), e);
 
 			throw new SailException(e);
 		}

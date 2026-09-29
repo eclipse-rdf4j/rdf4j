@@ -88,8 +88,10 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -181,6 +183,7 @@ class TripleStore implements Closeable {
 	private final boolean pageWalkingEstimatorEnabled;
 	private long mapSize;
 	private final TxnManager txnManager;
+	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
@@ -282,7 +285,7 @@ class TripleStore implements Closeable {
 			contextsDbi = databaseHandles.contextsDbi();
 			namespacesDbi = databaseHandles.namespacesDbi();
 
-			txnManager = new TxnManager(env, Mode.RESET);
+			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
 					: null;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -403,7 +406,7 @@ class TripleStore implements Closeable {
 	void writeNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
 		byte[] encodedSnapshot = NamespaceStore.encodeSnapshot(namespaces);
 		if (autoGrow) {
-			prepareForMutation();
+			prepareForMutation(encodedSnapshot.length + 2L * TripleIndex.MAX_KEY_LENGTH + 64L);
 			long record = mutationJournal.mark();
 			try {
 				mutationJournal.appendNamespaceSnapshot(encodedSnapshot);
@@ -808,6 +811,16 @@ class TripleStore implements Closeable {
 	}
 
 	private void growMapForReindex() throws IOException {
+		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+		try (growthAttempt) {
+			if (growthAttempt != null) {
+				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			growMapForReindexAfterQuiescence(growthAttempt);
+		}
+	}
+
+	private void growMapForReindexAfterQuiescence(LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
 		StampedLongAdderLockManager lockManager = txnManager.lockManager();
 		long stamp;
 		try {
@@ -819,6 +832,9 @@ class TripleStore implements Closeable {
 		try {
 			txnManager.deactivate();
 			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+			if (growthAttempt != null) {
+				growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
 			E(setMapSize(mapSize));
 			logger.debug("resized map to {} for index rebuild", mapSize);
 		} finally {
@@ -1445,21 +1461,135 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean requiresResize() {
+		return requiresResize(0L);
+	}
+
+	private boolean requiresResize(long estimatedWriteBytes) {
 		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
+			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, estimatedWriteBytes);
 		} else {
 			return false;
 		}
 	}
 
+	long estimateWriteBytes(List<Statement> statements) {
+		long estimate = 0L;
+		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
+		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size(), perIndexBytes), 64L);
+		for (Statement ignored : statements) {
+			estimate = saturatedAdd(estimate, perStatementBytes);
+		}
+		return estimate;
+	}
+
+	long estimateWriteBytes(SailSource.WritePreflight preflight) {
+		long estimate = estimateWriteBytes(preflight.statements());
+		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
+			long keyAndValueBytes = (long) namespace.prefix().length() + namespace.name().length() + 96L;
+			estimate = saturatedAdd(estimate, keyAndValueBytes);
+		}
+		if (preflight.statementCleared() || !preflight.clearedContexts().isEmpty()
+				|| preflight.namespaceCleared() || !preflight.removedNamespacePrefixes().isEmpty()) {
+			estimate = saturatedAdd(estimate, LmdbUtil.MIN_FREE_SPACE);
+		}
+		return estimate;
+	}
+
+	boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
+		if (!autoGrow || estimatedWriteBytes <= 0L) {
+			return false;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			return LmdbUtil.requiresResizeAtPage(mapSize, pageSize, nextPageNo, estimatedWriteBytes);
+		}
+	}
+
+	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+			throws IOException {
+		if (!autoGrow || estimatedWriteBytes <= 0L || writeTxn != 0) {
+			return false;
+		}
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while preparing the TripleStore map for a buffered write", e);
+		}
+		try {
+			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
+				return false;
+			}
+			txnManager.deactivate();
+			try {
+				long nextPageNo;
+				try (MemoryStack stack = stackPush()) {
+					MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+					E(mdb_env_info(env, info));
+					nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+				}
+				long currentFootprint = saturatedMultiply(nextPageNo, pageSize);
+				long projectedFootprint = saturatedAdd(currentFootprint, estimatedWriteBytes);
+				long resizedMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedFootprint);
+				if (growthAttempt != null) {
+					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
+				E(setMapSize(resizedMapSize));
+				mapSize = resizedMapSize;
+				return true;
+			} finally {
+				txnManager.activate();
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+	}
+
 	private void prepareForMutation() throws IOException {
+		prepareForMutation(0L);
+	}
+
+	private void prepareForMutation(long estimatedWriteBytes) throws IOException {
 		if (writeTxn == 0) {
 			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
 		}
 		ensureMutationJournal();
-		if (requiresResize()) {
+		if (requiresResize(estimatedWriteBytes)) {
 			resizeAndReplay(-1, null);
 		}
+	}
+
+	private long estimateTripleMutationBytes(long subj, long pred, long obj, long context) {
+		// Estimate encoded index payload from IDs already available here; page splits still use the journal fallback.
+		long keyBytes = estimateKeyLength(subj, pred, obj, context);
+		return saturatedAdd(saturatedMultiply(indexes.size(), 2L * keyBytes + 64L), 64L);
+	}
+
+	private long estimateAlignedMutationBytes(long[] subj, long[] pred, long[] obj, long[] context, int count) {
+		long estimate = 64L;
+		for (int i = 0; i < count; i++) {
+			long keyBytes = estimateKeyLength(subj[i], pred[i], obj[i], context[i]);
+			estimate = saturatedAdd(estimate,
+					saturatedMultiply(indexes.size(), 2L * keyBytes + 64L));
+		}
+		return estimate;
+	}
+
+	private static long estimateKeyLength(long subj, long pred, long obj, long context) {
+		return 4L + (subj > 240 ? Long.BYTES : 0L) + (pred > 240 ? Long.BYTES : 0L)
+				+ (obj > 240 ? Long.BYTES : 0L) + (context > 240 ? Long.BYTES : 0L);
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long saturatedMultiply(long left, long right) {
+		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}
 
 	private void ensureMutationJournal() throws IOException {
@@ -1489,6 +1619,17 @@ class TripleStore implements Closeable {
 	 * the beginning after another growth.
 	 */
 	private void resizeAndReplay(long captureStart, boolean[] replayResults) throws IOException {
+		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+		try (growthAttempt) {
+			if (growthAttempt != null) {
+				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			resizeAndReplayAfterQuiescence(captureStart, replayResults, growthAttempt);
+		}
+	}
+
+	private void resizeAndReplayAfterQuiescence(long captureStart, boolean[] replayResults,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
 		if (!autoGrow) {
 			throw new IOException("LMDB map growth is disabled");
 		}
@@ -1511,6 +1652,9 @@ class TripleStore implements Closeable {
 			}
 			while (true) {
 				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+				if (growthAttempt != null) {
+					growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
 				E(setMapSize(mapSize));
 				beginNativeWriteTransaction();
 				try {
@@ -1577,6 +1721,15 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	private LmdbSailStore.MapGrowthAttempt beginMapGrowthAttempt() throws IOException {
+		LmdbSailStore.MapGrowthAttemptSupplier supplier = mapGrowthAttemptSupplier;
+		return supplier == null ? null : supplier.begin();
+	}
+
+	void setMapGrowthAttemptSupplier(LmdbSailStore.MapGrowthAttemptSupplier supplier) {
+		mapGrowthAttemptSupplier = supplier;
+	}
+
 	/** Test seam for observing a complete replay before its single authoritative commit. */
 	protected void afterMapGrowthReplay() throws IOException {
 		// No work by default.
@@ -1610,7 +1763,7 @@ class TripleStore implements Closeable {
 			}
 		}
 
-		prepareForMutation();
+		prepareForMutation(estimateTripleMutationBytes(subj, pred, obj, context));
 		long record = mutationJournal.mark();
 		try {
 			mutationJournal.appendStore(subj, pred, obj, context, explicit);
@@ -1715,7 +1868,7 @@ class TripleStore implements Closeable {
 
 	private void storeTriplesAlignedWithJournal(long[] subj, long[] pred, long[] obj, long[] context, int count,
 			boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
-		prepareForMutation();
+		prepareForMutation(estimateAlignedMutationBytes(subj, pred, obj, context, count));
 		long firstRecord = mutationJournal.mark();
 		try {
 			for (int i = 0; i < count; i++) {

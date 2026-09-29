@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -29,17 +30,50 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
 	private final InterruptTask<E> interruptTask;
+	private final QueryExecutionDeadline deadline;
+	private final boolean deferCloseDuringActiveCall;
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
+	private final Object lifecycleLock = new Object();
+	private QueryExecutionDeadline.Registration deadlineRegistration;
+	private int activeCalls;
+	private boolean closeRequested;
+	private boolean timeoutCloseRequested;
+	private boolean asyncCloseStarted;
+	private boolean delegateCloseStarted;
 
 	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit) {
 		super(iter);
 
 		assert timeLimit > 0 : "time limit must be a positive number, is: " + timeLimit;
 
+		deadline = null;
+		deferCloseDuringActiveCall = false;
 		interruptTask = new InterruptTask<>(this);
 
 		timer.schedule(interruptTask, timeLimit);
+	}
+
+	protected TimeLimitIteration(CloseableIteration<? extends E> iter, QueryExecutionDeadline deadline) {
+		super(iter);
+		this.deadline = Objects.requireNonNull(deadline, "deadline");
+		deferCloseDuringActiveCall = true;
+		interruptTask = null;
+	}
+
+	protected final void registerDeadline() {
+		synchronized (lifecycleLock) {
+			if (deadlineRegistration != null) {
+				return;
+			}
+		}
+		QueryExecutionDeadline.Registration registration = deadline.onExpiration(this::requestCloseOnTimeout);
+		synchronized (lifecycleLock) {
+			deadlineRegistration = registration;
+			if (closeRequested || isClosed()) {
+				registration.close();
+			}
+		}
 	}
 
 	@Override
@@ -49,9 +83,15 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			return false;
 		}
 		checkInterrupted();
+		if (!beginDelegateCall()) {
+			checkInterrupted();
+			return false;
+		}
 		boolean result;
 		try {
-			result = super.hasNext();
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				result = super.hasNext();
+			}
 		} catch (NoSuchElementException e) {
 			checkInterrupted(e);
 			close();
@@ -59,6 +99,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		} catch (RuntimeException e) {
 			checkInterrupted(e);
 			throw e;
+		} finally {
+			endDelegateCall();
 		}
 		checkInterrupted();
 		return result;
@@ -71,8 +113,15 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
 		checkInterrupted();
+		if (!beginDelegateCall()) {
+			checkInterrupted();
+			throw new NoSuchElementException("The iteration has been closed.");
+		}
+		E result;
 		try {
-			return super.next();
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				result = super.next();
+			}
 		} catch (NoSuchElementException e) {
 			checkInterrupted(e);
 			close();
@@ -80,7 +129,11 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		} catch (RuntimeException e) {
 			checkInterrupted(e);
 			throw e;
+		} finally {
+			endDelegateCall();
 		}
+		checkInterrupted();
+		return result;
 	}
 
 	@Override
@@ -90,8 +143,14 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
 		checkInterrupted();
+		if (!beginDelegateCall()) {
+			checkInterrupted();
+			throw new IllegalStateException("The iteration has been closed.");
+		}
 		try {
-			super.remove();
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				super.remove();
+			}
 		} catch (IllegalStateException e) {
 			checkInterrupted(e);
 			close();
@@ -99,37 +158,130 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		} catch (RuntimeException e) {
 			checkInterrupted(e);
 			throw e;
+		} finally {
+			endDelegateCall();
 		}
+		checkInterrupted();
 	}
 
 	@Override
 	protected void handleClose() {
-		try {
-			interruptTask.cancel();
-		} finally {
-			super.handleClose();
+		boolean closeDelegate;
+		QueryExecutionDeadline.Registration registration;
+		synchronized (lifecycleLock) {
+			closeRequested = true;
+			registration = deadlineRegistration;
+			closeDelegate = claimDelegateCloseIfIdle();
 		}
-	}
-
-	private void checkInterrupted() {
-		if (isInterrupted.get()) {
+		try {
+			if (interruptTask != null) {
+				interruptTask.cancel();
+			}
+		} finally {
 			try {
-				throwInterruptedException();
+				if (registration != null) {
+					registration.close();
+				}
 			} finally {
-				try {
-					close();
-				} catch (Exception e) {
-					if (e instanceof InterruptedException) {
-						Thread.currentThread().interrupt();
-					}
-					logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
+				if (closeDelegate) {
+					super.handleClose();
 				}
 			}
 		}
 	}
 
+	private boolean beginDelegateCall() {
+		synchronized (lifecycleLock) {
+			if (isClosed() || closeRequested || isInterrupted.get()) {
+				return false;
+			}
+			activeCalls++;
+			return true;
+		}
+	}
+
+	private void endDelegateCall() {
+		boolean closeDelegate;
+		boolean timedOut;
+		synchronized (lifecycleLock) {
+			activeCalls--;
+			closeDelegate = claimDelegateCloseIfIdle();
+			timedOut = timeoutCloseRequested;
+		}
+		if (closeDelegate) {
+			if (timedOut) {
+				closeDelegateSafelyAsync();
+			} else {
+				closeDelegateSafely();
+			}
+		}
+	}
+
+	private boolean claimDelegateCloseIfIdle() {
+		if (closeRequested && (activeCalls == 0 || !deferCloseDuringActiveCall) && !delegateCloseStarted) {
+			delegateCloseStarted = true;
+			return true;
+		}
+		return false;
+	}
+
+	private void requestCloseOnTimeout() {
+		isInterrupted.set(true);
+		boolean startCleanup;
+		synchronized (lifecycleLock) {
+			closeRequested = true;
+			timeoutCloseRequested = true;
+			startCleanup = !asyncCloseStarted && !isClosed();
+			if (startCleanup) {
+				asyncCloseStarted = true;
+			}
+		}
+		if (startCleanup) {
+			try {
+				Thread.startVirtualThread(this::closeSafely);
+			} catch (RuntimeException | Error failure) {
+				synchronized (lifecycleLock) {
+					asyncCloseStarted = false;
+				}
+				logger.warn("TimeLimitIteration timed out but could not schedule delegate cleanup", failure);
+			}
+		}
+	}
+
+	private void closeSafely() {
+		try {
+			close();
+		} catch (RuntimeException | Error failure) {
+			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", failure);
+		}
+	}
+
+	private void closeDelegateSafely() {
+		try {
+			super.handleClose();
+		} catch (RuntimeException | Error failure) {
+			logger.warn("TimeLimitIteration deferred delegate close failed", failure);
+		}
+	}
+
+	private void closeDelegateSafelyAsync() {
+		try {
+			Thread.startVirtualThread(this::closeDelegateSafely);
+		} catch (RuntimeException | Error failure) {
+			logger.warn("TimeLimitIteration could not schedule deferred delegate cleanup; closing inline", failure);
+			closeDelegateSafely();
+		}
+	}
+
+	private void checkInterrupted() {
+		if (isInterrupted.get() || (deadline != null && deadline.isExpired())) {
+			requestCloseOnTimeout();
+			throwInterruptedException();
+		}
+	}
+
 	private void checkInterrupted(RuntimeException operationFailure) {
-		if (isInterrupted.get()) {
+		if (isInterrupted.get() || (deadline != null && deadline.isExpired())) {
 			try {
 				checkInterrupted();
 			} catch (RuntimeException timeout) {
@@ -156,14 +308,6 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	 * were called on this thread.
 	 */
 	void interrupt() {
-		isInterrupted.set(true);
-		try {
-			close();
-		} catch (Exception e) {
-			if (e instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
-		}
+		requestCloseOnTimeout();
 	}
 }

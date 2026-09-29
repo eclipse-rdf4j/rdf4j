@@ -15,13 +15,16 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -71,6 +74,7 @@ class SailSourceBranch implements SailSource {
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
 	 */
 	private final SailSource backingSource;
+	private final Object writePreflightOwner;
 
 	/**
 	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
@@ -83,6 +87,11 @@ class SailSourceBranch implements SailSource {
 	 */
 	private final boolean autoFlush;
 	private volatile boolean closed;
+	private volatile boolean abandoned;
+	private final AtomicInteger abandoningDatasets = new AtomicInteger();
+	private final Object writePreflightLock = new Object();
+	private WritePreflightRegistration writePreflight;
+	private SailSource.WriteWarning writeWarning;
 
 	/**
 	 * Non-null when in {@link IsolationLevels#SNAPSHOT} (or higher) mode.
@@ -111,11 +120,15 @@ class SailSourceBranch implements SailSource {
 	 */
 	private SailSink prepared;
 
+	private record WritePreflightRegistration(SailSource.WritePreflight estimate, SailClosable scope) {
+	}
+
 	private static final class SnapshotLease {
 		private final SailDataset dataset;
 		private int borrowers;
 		private boolean retired;
 		private boolean closed;
+		private boolean abandoned;
 
 		private SnapshotLease(SailDataset dataset) {
 			this.dataset = dataset;
@@ -161,9 +174,15 @@ class SailSourceBranch implements SailSource {
 	 * @param autoFlush
 	 */
 	public SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush) {
+		this(backingSource, modelFactory, autoFlush, null);
+	}
+
+	private SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush,
+			Object writePreflightOwner) {
 		this.backingSource = backingSource;
 		this.modelFactory = modelFactory;
 		this.autoFlush = autoFlush;
+		this.writePreflightOwner = writePreflightOwner;
 	}
 
 	@Override
@@ -171,6 +190,7 @@ class SailSourceBranch implements SailSource {
 		Throwable failure = null;
 		SailSink toCloseSerializable;
 		SailSink toClosePrepared;
+		SailClosable toClosePreflight;
 		semaphore.lock();
 		try {
 			if (closed) {
@@ -178,7 +198,7 @@ class SailSourceBranch implements SailSource {
 			}
 			closed = true;
 			try {
-				retireSnapshot();
+				retireSnapshot(abandoned);
 			} catch (RuntimeException | Error retireFailure) {
 				failure = addFailure(failure, retireFailure);
 			}
@@ -186,6 +206,7 @@ class SailSourceBranch implements SailSource {
 			serializable = null;
 			toClosePrepared = prepared;
 			prepared = null;
+			toClosePreflight = detachWritePreflights();
 		} finally {
 			semaphore.unlock();
 		}
@@ -193,8 +214,117 @@ class SailSourceBranch implements SailSource {
 		if (toClosePrepared != toCloseSerializable) {
 			failure = closeResource(failure, toClosePrepared);
 		}
+		failure = closeResource(failure, toClosePreflight);
 		if (failure != null) {
 			rethrow(failure);
+		}
+	}
+
+	@Override
+	public void abandonUnobserved() throws SailException {
+		semaphore.lock();
+		try {
+			abandoned = true;
+			for (SnapshotLease lease : observerSnapshots.values()) {
+				lease.abandoned = true;
+			}
+		} finally {
+			semaphore.unlock();
+		}
+		close();
+	}
+
+	@Override
+	public void retireIdleSnapshot() throws SailException {
+		List<SnapshotLease> toClose = new ArrayList<>();
+		semaphore.lock();
+		try {
+			snapshotGeneration++;
+			if (snapshotAdmission != null) {
+				// Let the active admission finish outside the branch lock, but do not allow it to publish this
+				// generation.
+				snapshotAdmission.invalidated = true;
+			}
+			if (snapshot != null) {
+				SnapshotLease cached = snapshot;
+				snapshot = null;
+				retireSnapshotForGrowth(cached, toClose);
+			}
+			// A prior branch flush can leave borrowed generations in this map after the current cache has moved on.
+			// They
+			// are still native views owned by this branch and must become abandonable after their final observer
+			// releases.
+			for (SnapshotLease borrowed : observerSnapshots.values()) {
+				retireSnapshotForGrowth(borrowed, toClose);
+			}
+		} finally {
+			semaphore.unlock();
+		}
+
+		Throwable failure = null;
+		for (SnapshotLease lease : toClose) {
+			try {
+				closeSnapshotDataset(lease);
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+		}
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	@Override
+	public void retireSnapshotsPreservingBorrowers() throws SailException {
+		List<SnapshotLease> toClose = new ArrayList<>();
+		semaphore.lock();
+		try {
+			snapshotGeneration++;
+			if (snapshotAdmission != null) {
+				// Do not publish a candidate from the generation being retired.
+				snapshotAdmission.invalidated = true;
+			}
+			if (snapshot != null) {
+				SnapshotLease cached = snapshot;
+				snapshot = null;
+				retireSnapshotPreservingBorrowers(cached, toClose);
+			}
+			for (SnapshotLease borrowed : observerSnapshots.values()) {
+				retireSnapshotPreservingBorrowers(borrowed, toClose);
+			}
+		} finally {
+			semaphore.unlock();
+		}
+
+		Throwable failure = null;
+		for (SnapshotLease lease : toClose) {
+			try {
+				closeSnapshotDataset(lease);
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+		}
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	/** Marks one generation as retired and defers native dataset close until outside {@code semaphore}. */
+	private void retireSnapshotForGrowth(SnapshotLease lease, List<SnapshotLease> toClose) {
+		lease.retired = true;
+		lease.abandoned = true;
+		if (lease.borrowers == 0 && !lease.closed) {
+			lease.closed = true;
+			toClose.add(lease);
+		}
+	}
+
+	/** Retires a generation without changing how its current borrowers release it. */
+	private void retireSnapshotPreservingBorrowers(SnapshotLease lease, List<SnapshotLease> toClose) {
+		lease.retired = true;
+		if (lease.borrowers == 0 && !lease.closed) {
+			lease.closed = true;
+			toClose.add(lease);
 		}
 	}
 
@@ -206,9 +336,19 @@ class SailSourceBranch implements SailSource {
 			private SailClosable preparedWrite;
 
 			@Override
+			protected boolean tracksWriteIntent() {
+				return backingSource.tracksWriteIntent();
+			}
+
+			@Override
+			protected void writeIntentChanged() {
+				SailSourceBranch.this.preflightBufferedWriteIfNeeded();
+			}
+
+			@Override
 			public void prepare() throws SailException {
 				if (prepared) {
-					try (SailClosable publication = backingSource.beginPublication()) {
+					try (SailClosable publication = SailSourceBranch.this.beginPublication()) {
 						super.prepare();
 					}
 					return;
@@ -218,9 +358,13 @@ class SailSourceBranch implements SailSource {
 				boolean branchLockHeld = false;
 				try {
 					if (hasWriteChanges()) {
-						reservation = backingSource.beginPreparedWrite();
+						// Snapshot all pending and already-flushed branch intents before acquiring either
+						// prepared-write or
+						// publication reservations. Growth coordination may need the branch's complete write estimate.
+						SailSourceBranch.this.ensureWritePreflight();
+						reservation = SailSourceBranch.this.beginPreparedWrite();
 					}
-					try (SailClosable publication = backingSource.beginPublication()) {
+					try (SailClosable publication = SailSourceBranch.this.beginPublication()) {
 						preparedChangeset(this);
 						branchLockHeld = true;
 						super.prepare();
@@ -629,6 +773,11 @@ class SailSourceBranch implements SailSource {
 				public void close() {
 					// The shared snapshot is closed only after its final observer releases the lease.
 				}
+
+				@Override
+				public void abandonUnobserved() {
+					// The shared snapshot is abandoned only after its final observer releases the lease.
+				}
 			};
 		}
 		Iterator<Changeset> iter = changes.iterator();
@@ -644,49 +793,85 @@ class SailSourceBranch implements SailSource {
 
 			@Override
 			public void close() throws SailException {
+				release(false);
+			}
+
+			@Override
+			public void abandonUnobserved() throws SailException {
+				release(true);
+			}
+
+			private void release(boolean abandon) throws SailException {
 				if (!closed.compareAndSet(false, true)) {
 					return;
 				}
-
-				Throwable failure = null;
-				try {
-					super.close();
-				} catch (RuntimeException | Error closeFailure) {
-					failure = closeFailure;
+				if (abandon) {
+					abandoningDatasets.incrementAndGet();
 				}
 
 				try {
-					semaphore.lock();
+					Throwable failure = null;
+					SnapshotLease retiredSnapshot = null;
 					try {
-						observers.remove(this);
-						SnapshotLease borrowedSnapshot = observerSnapshots.remove(this);
-						if (borrowedSnapshot != null) {
-							try {
-								releaseSnapshot(borrowedSnapshot);
-							} catch (RuntimeException | Error cleanupFailure) {
-								failure = addFailure(failure, cleanupFailure);
-							}
+						if (abandon) {
+							super.abandonUnobserved();
+						} else {
+							super.close();
 						}
+					} catch (RuntimeException | Error closeFailure) {
+						failure = closeFailure;
+					}
+
+					try {
+						semaphore.lock();
 						try {
-							compressChanges();
+							observers.remove(this);
+							SnapshotLease borrowedSnapshot = observerSnapshots.remove(this);
+							if (borrowedSnapshot != null) {
+								try {
+									borrowedSnapshot.abandoned |= abandon;
+									retiredSnapshot = releaseSnapshot(borrowedSnapshot);
+								} catch (RuntimeException | Error cleanupFailure) {
+									failure = addFailure(failure, cleanupFailure);
+								}
+							}
+							if (!abandon) {
+								try {
+									compressChanges();
+								} catch (RuntimeException | Error cleanupFailure) {
+									failure = addFailure(failure, cleanupFailure);
+								}
+							}
+						} finally {
+							semaphore.unlock();
+						}
+					} catch (RuntimeException | Error cleanupFailure) {
+						failure = addFailure(failure, cleanupFailure);
+					}
+
+					if (retiredSnapshot != null) {
+						try {
+							closeSnapshotDataset(retiredSnapshot);
 						} catch (RuntimeException | Error cleanupFailure) {
 							failure = addFailure(failure, cleanupFailure);
 						}
-					} finally {
-						semaphore.unlock();
 					}
-				} catch (RuntimeException | Error cleanupFailure) {
-					failure = addFailure(failure, cleanupFailure);
-				}
 
-				try {
-					autoFlush();
-				} catch (RuntimeException | Error cleanupFailure) {
-					failure = addFailure(failure, cleanupFailure);
-				}
+					if (!abandon) {
+						try {
+							autoFlush();
+						} catch (RuntimeException | Error cleanupFailure) {
+							failure = addFailure(failure, cleanupFailure);
+						}
+					}
 
-				if (failure != null) {
-					rethrow(failure);
+					if (failure != null) {
+						rethrow(failure);
+					}
+				} finally {
+					if (abandon) {
+						abandoningDatasets.decrementAndGet();
+					}
 				}
 			}
 		};
@@ -769,18 +954,33 @@ class SailSourceBranch implements SailSource {
 	}
 
 	@Override
+	public SailSource fork(Object writeOwner) {
+		return new SailSourceBranch(this, modelFactory, false, writeOwner);
+	}
+
+	@Override
 	public SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
 		return backingSource.beginDatasetAcquisition(level);
 	}
 
 	@Override
 	public SailClosable beginPublication() throws SailException {
-		return backingSource.beginPublication();
+		return beginPublicationForOwner(writePreflightOwner);
+	}
+
+	@Override
+	public SailClosable beginPublication(Object writeOwner) throws SailException {
+		return beginPublicationForOwner(owner(writeOwner));
 	}
 
 	@Override
 	public SailClosable tryBeginPublication() throws SailException {
-		return backingSource.tryBeginPublication();
+		return tryBeginPublicationForOwner(writePreflightOwner);
+	}
+
+	@Override
+	public SailClosable tryBeginPublication(Object writeOwner) throws SailException {
+		return tryBeginPublicationForOwner(owner(writeOwner));
 	}
 
 	@Override
@@ -790,7 +990,27 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailClosable beginPreparedWrite() throws SailException {
-		return backingSource.beginPreparedWrite();
+		return beginPreparedWriteForOwner(writePreflightOwner);
+	}
+
+	@Override
+	public SailClosable beginPreparedWrite(Object writeOwner) throws SailException {
+		return beginPreparedWriteForOwner(owner(writeOwner));
+	}
+
+	private SailClosable beginPublicationForOwner(Object effectiveOwner) throws SailException {
+		return effectiveOwner == null ? backingSource.beginPublication()
+				: backingSource.beginPublication(effectiveOwner);
+	}
+
+	private SailClosable tryBeginPublicationForOwner(Object effectiveOwner) throws SailException {
+		return effectiveOwner == null ? backingSource.tryBeginPublication()
+				: backingSource.tryBeginPublication(effectiveOwner);
+	}
+
+	private SailClosable beginPreparedWriteForOwner(Object effectiveOwner) throws SailException {
+		return effectiveOwner == null ? backingSource.beginPreparedWrite()
+				: backingSource.beginPreparedWrite(effectiveOwner);
 	}
 
 	@Override
@@ -810,15 +1030,283 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void prepare() throws SailException {
-		try (SailClosable publication = backingSource.beginPublication()) {
-			semaphore.lock();
-			try {
-				if (!changes.isEmpty()) {
-					prepareLocked();
+		try {
+			ensureWritePreflight();
+			try (SailClosable publication = beginPublication()) {
+				semaphore.lock();
+				try {
+					if (!changes.isEmpty()) {
+						prepareLocked();
+					}
+				} finally {
+					semaphore.unlock();
 				}
-			} finally {
-				semaphore.unlock();
 			}
+		} catch (Throwable failure) {
+			rethrow(closeWritePreflight(failure));
+		}
+	}
+
+	@Override
+	public SailSource.WritePreflight writePreflightEstimate() {
+		ArrayList<Statement> statements = new ArrayList<>();
+		ArrayList<SailSource.NamespaceUpdate> addedNamespaces = new ArrayList<>();
+		Set<String> removedNamespacePrefixes = new HashSet<>();
+		Set<Resource> clearedContexts = new HashSet<>();
+		boolean[] clearIntents = new boolean[2];
+		boolean[] hasWriteChanges = new boolean[1];
+		semaphore.lock();
+		try {
+			for (Changeset change : changes) {
+				addWritePreflight(change, statements, addedNamespaces, removedNamespacePrefixes, clearedContexts,
+						clearIntents, hasWriteChanges);
+			}
+			synchronized (pending) {
+				for (Changeset change : pending) {
+					addWritePreflight(change, statements, addedNamespaces, removedNamespacePrefixes, clearedContexts,
+							clearIntents, hasWriteChanges);
+				}
+			}
+		} finally {
+			semaphore.unlock();
+		}
+		if (!hasWriteChanges[0]) {
+			return SailSource.WritePreflight.empty();
+		}
+		return new SailSource.WritePreflight(statements, addedNamespaces, removedNamespacePrefixes, clearedContexts,
+				clearIntents[0], clearIntents[1]);
+	}
+
+	private void preflightBufferedWriteIfNeeded() throws SailException {
+		if (!backingSource.tracksWriteIntent()) {
+			return;
+		}
+		long approximateWriteBytes = 0L;
+		boolean hasUnestimatedOperations = false;
+		semaphore.lock();
+		try {
+			for (Changeset change : changes) {
+				approximateWriteBytes = saturatedAdd(approximateWriteBytes, change.getApproximateWriteIntentBytes());
+				hasUnestimatedOperations |= change.hasUnestimatedWriteIntent();
+			}
+			synchronized (pending) {
+				for (Changeset change : pending) {
+					approximateWriteBytes = saturatedAdd(approximateWriteBytes,
+							change.getApproximateWriteIntentBytes());
+					hasUnestimatedOperations |= change.hasUnestimatedWriteIntent();
+				}
+			}
+		} finally {
+			semaphore.unlock();
+		}
+		if (backingSource.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations)) {
+			beginBufferedWriteWarning();
+		}
+	}
+
+	private void beginBufferedWriteWarning() throws SailException {
+		SailSource.WriteWarning previous;
+		synchronized (writePreflightLock) {
+			if (closed) {
+				return;
+			}
+			previous = writeWarning;
+		}
+		if (previous != null && previous.isActive()) {
+			return;
+		}
+		if (previous != null) {
+			synchronized (writePreflightLock) {
+				if (writeWarning == previous) {
+					writeWarning = null;
+				}
+			}
+			Throwable failure = closeResource(null, previous);
+			if (failure != null) {
+				rethrow(failure);
+			}
+		}
+		SailSource.WriteWarning warning = beginWriteWarning(writePreflightOwner);
+		if (warning == null) {
+			throw new IllegalStateException("SailSource.beginWriteWarning returned null");
+		}
+		synchronized (writePreflightLock) {
+			if (!closed && writeWarning == null) {
+				writeWarning = warning;
+				warning = null;
+			}
+		}
+		Throwable failure = closeResource(null, warning);
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	@Override
+	public Object writePreflightGroup() {
+		return backingSource.writePreflightGroup();
+	}
+
+	@Override
+	public boolean shouldPreflightWrite(long approximateWriteBytes, boolean hasUnestimatedOperations) {
+		return backingSource.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations);
+	}
+
+	@Override
+	public boolean tracksWriteIntent() {
+		return backingSource.tracksWriteIntent();
+	}
+
+	@Override
+	public SailClosable beginWriteWarning() throws SailException {
+		return backingSource.beginWriteWarning();
+	}
+
+	@Override
+	public SailSource.WriteWarning beginWriteWarning(Object writeOwner) throws SailException {
+		Object effectiveOwner = owner(writeOwner);
+		return effectiveOwner == null ? backingSource.beginWriteWarning((Object) null)
+				: backingSource.beginWriteWarning(effectiveOwner);
+	}
+
+	@Override
+	public void preflightWrite(SailSource.WritePreflight estimate) throws SailException {
+		ensureWritePreflight(estimate);
+	}
+
+	@Override
+	public SailClosable beginWritePreflight(SailSource.WritePreflight estimate) throws SailException {
+		return beginWritePreflightForOwner(estimate, writePreflightOwner);
+	}
+
+	@Override
+	public SailClosable beginWritePreflight(SailSource.WritePreflight estimate, Object writeOwner)
+			throws SailException {
+		return beginWritePreflightForOwner(estimate, owner(writeOwner));
+	}
+
+	private SailClosable beginWritePreflightForOwner(SailSource.WritePreflight estimate, Object effectiveOwner)
+			throws SailException {
+		return effectiveOwner == null ? backingSource.beginWritePreflight(estimate)
+				: backingSource.beginWritePreflight(estimate, effectiveOwner);
+	}
+
+	private Object owner(Object requestedOwner) {
+		return writePreflightOwner == null ? requestedOwner : writePreflightOwner;
+	}
+
+	/**
+	 * Estimates the complete buffered branch before publication or prepared-write locks are acquired. The temporary
+	 * semaphore hold is used only to snapshot the logical write intents; the source preflight runs after releasing it.
+	 */
+	private boolean ensureWritePreflight() throws SailException {
+		return ensureWritePreflight(writePreflightEstimate());
+	}
+
+	private boolean ensureWritePreflight(SailSource.WritePreflight estimate) throws SailException {
+		if (!estimate.hasChanges()) {
+			return false;
+		}
+		SailClosable warning = null;
+		synchronized (writePreflightLock) {
+			if (writePreflight != null && writePreflight.estimate().contains(estimate)) {
+				warning = writeWarning;
+				writeWarning = null;
+				if (warning == null) {
+					return false;
+				}
+			}
+		}
+		if (warning != null) {
+			Throwable failure = closeResource(null, warning);
+			if (failure != null) {
+				rethrow(failure);
+			}
+			return false;
+		}
+		SailClosable preflight = beginWritePreflightForOwner(estimate, writePreflightOwner);
+		if (preflight == null) {
+			throw new IllegalStateException("SailSource.beginWritePreflight returned null");
+		}
+		SailClosable previousPreflight;
+		SailClosable warningToClose = null;
+		boolean retained = false;
+		boolean alreadyCovered = false;
+		synchronized (writePreflightLock) {
+			if (!closed) {
+				if (writePreflight != null && writePreflight.estimate().contains(estimate)) {
+					previousPreflight = null;
+					warningToClose = writeWarning;
+					writeWarning = null;
+					alreadyCovered = true;
+				} else {
+					previousPreflight = writePreflight == null ? null : writePreflight.scope();
+					writePreflight = new WritePreflightRegistration(estimate, preflight);
+					warningToClose = writeWarning;
+					writeWarning = null;
+					retained = true;
+					preflight = null;
+				}
+			} else {
+				previousPreflight = null;
+			}
+		}
+		Throwable failure = closeResource(null, preflight);
+		failure = closeResource(failure, previousPreflight);
+		failure = closeResource(failure, warningToClose);
+		if (failure != null) {
+			rethrow(failure);
+		}
+		return retained && !alreadyCovered;
+	}
+
+	private static void addWritePreflight(Changeset change, List<Statement> statements,
+			List<SailSource.NamespaceUpdate> addedNamespaces, Set<String> removedNamespacePrefixes,
+			Set<Resource> clearedContexts, boolean[] clearIntents, boolean[] hasWriteChanges) {
+		Changeset.WritePreflightSnapshot snapshot = change.getWritePreflightSnapshot();
+		statements.addAll(snapshot.statements());
+		addedNamespaces.addAll(snapshot.addedNamespaces());
+		removedNamespacePrefixes.addAll(snapshot.removedNamespacePrefixes());
+		clearedContexts.addAll(snapshot.clearedContexts());
+		clearIntents[0] |= snapshot.statementCleared();
+		clearIntents[1] |= snapshot.namespaceCleared();
+		hasWriteChanges[0] |= snapshot.hasWrites();
+	}
+
+	private Throwable closeWritePreflight(Throwable failure) {
+		SailClosable preflight = detachWritePreflights();
+		return closeResource(failure, preflight);
+	}
+
+	private SailClosable detachWritePreflights() {
+		WritePreflightRegistration preflight;
+		SailClosable warning;
+		synchronized (writePreflightLock) {
+			if (writePreflight == null && writeWarning == null) {
+				return null;
+			}
+			preflight = writePreflight;
+			writePreflight = null;
+			warning = writeWarning;
+			writeWarning = null;
+		}
+		return () -> {
+			Throwable failure = closeResource(null, preflight == null ? null : preflight.scope());
+			failure = closeResource(failure, warning);
+			if (failure != null) {
+				rethrow(failure);
+			}
+		};
+	}
+
+	private void closeWritePreflight() throws SailException {
+		Throwable failure = closeWritePreflight(null);
+		if (failure != null) {
+			rethrow(failure);
 		}
 	}
 
@@ -844,16 +1332,24 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
-		try (SailClosable publication = backingSource.beginPublication()) {
-			semaphore.lock();
-			try {
-				flushLocked();
-			} catch (Throwable failure) {
-				SailSource.failPublication(publication);
-				rethrow(cleanupFailedFlush(failure));
-			} finally {
-				semaphore.unlock();
+		boolean startedPreflight = ensureWritePreflight();
+		try {
+			try (SailClosable publication = beginPublication()) {
+				semaphore.lock();
+				try {
+					flushLocked();
+				} catch (Throwable failure) {
+					SailSource.failPublication(publication);
+					rethrow(cleanupFailedFlush(failure));
+				} finally {
+					semaphore.unlock();
+				}
 			}
+		} catch (Throwable failure) {
+			if (startedPreflight) {
+				failure = closeWritePreflight(failure);
+			}
+			rethrow(failure);
 		}
 	}
 
@@ -872,6 +1368,7 @@ class SailSourceBranch implements SailSource {
 				prepared = null;
 			}
 			retireSnapshot();
+			closeWritePreflight();
 		}
 	}
 
@@ -887,6 +1384,7 @@ class SailSourceBranch implements SailSource {
 		} catch (Throwable retireFailure) {
 			failure = addFailure(failure, retireFailure);
 		}
+		failure = closeWritePreflight(failure);
 		return failure;
 	}
 
@@ -895,6 +1393,10 @@ class SailSourceBranch implements SailSource {
 	 * their datasets close; new readers will derive from the backing source again. Callers hold {@code semaphore}.
 	 */
 	private void retireSnapshot() throws SailException {
+		retireSnapshot(false);
+	}
+
+	private void retireSnapshot(boolean abandon) throws SailException {
 		snapshotGeneration++;
 		if (snapshotAdmission != null) {
 			// Keep the admission reserved until its backing call returns, so a second snapshot admission cannot block
@@ -905,25 +1407,36 @@ class SailSourceBranch implements SailSource {
 			SnapshotLease toRetire = snapshot;
 			snapshot = null;
 			toRetire.retired = true;
+			toRetire.abandoned |= abandon;
 			if (toRetire.borrowers == 0) {
 				closeSnapshot(toRetire);
 			}
 		}
 	}
 
-	private void releaseSnapshot(SnapshotLease lease) throws SailException {
+	private SnapshotLease releaseSnapshot(SnapshotLease lease) {
 		if (lease.borrowers <= 0) {
 			throw new IllegalStateException("Snapshot lease has no borrowers to release");
 		}
 		lease.borrowers--;
-		if (lease.retired && lease.borrowers == 0) {
-			closeSnapshot(lease);
+		if (lease.retired && lease.borrowers == 0 && !lease.closed) {
+			lease.closed = true;
+			return lease;
 		}
+		return null;
 	}
 
 	private void closeSnapshot(SnapshotLease lease) throws SailException {
 		if (!lease.closed) {
 			lease.closed = true;
+			closeSnapshotDataset(lease);
+		}
+	}
+
+	private void closeSnapshotDataset(SnapshotLease lease) throws SailException {
+		if (lease.abandoned) {
+			lease.dataset.abandonUnobserved();
+		} else {
 			lease.dataset.close();
 		}
 	}
@@ -1029,17 +1542,43 @@ class SailSourceBranch implements SailSource {
 	}
 
 	void autoFlush() throws SailException {
-		if (autoFlush) {
-			SailClosable publication = backingSource.tryBeginPublication();
-			if (publication == null) {
+		if (autoFlush && !abandoned && abandoningDatasets.get() == 0) {
+			boolean eligible = false;
+			if (semaphore.tryLock()) {
+				try {
+					eligible = observers.isEmpty() && !changes.isEmpty();
+				} finally {
+					semaphore.unlock();
+				}
+			}
+			if (!eligible) {
 				return;
 			}
+			boolean startedPreflight = ensureWritePreflight();
+			SailClosable publication;
+			try {
+				publication = tryBeginPublication();
+			} catch (Throwable failure) {
+				if (startedPreflight) {
+					failure = closeWritePreflight(failure);
+				}
+				rethrow(failure);
+				return;
+			}
+			if (publication == null) {
+				if (startedPreflight) {
+					closeWritePreflight();
+				}
+				return;
+			}
+			boolean flushed = false;
 			try (publication) {
 				if (semaphore.tryLock()) {
 					try {
 						if (observers.isEmpty()) {
 							try {
 								flushLocked();
+								flushed = true;
 							} catch (Throwable failure) {
 								SailSource.failPublication(publication);
 								rethrow(cleanupFailedFlush(failure));
@@ -1048,6 +1587,10 @@ class SailSourceBranch implements SailSource {
 					} finally {
 						semaphore.unlock();
 					}
+				}
+			} finally {
+				if (startedPreflight && !flushed) {
+					closeWritePreflight();
 				}
 			}
 		}

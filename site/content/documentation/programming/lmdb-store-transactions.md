@@ -11,21 +11,23 @@ in [Transaction Isolation Levels](/documentation/programming/repository/#transac
 
 Here, “this change” refers to the GH-6070 work in [PR #6073](https://github.com/eclipse-rdf4j/rdf4j/pull/6073),
 compared with its pre-port target at `978c9a64cf4e`. No advertised isolation level was removed or redefined. The
-commit-publication and whole-write recovery rows below describe repaired behavior; explicit invalidation on map growth
-is the availability cost applications need to handle.
+commit-publication and whole-write recovery rows below describe repaired behavior. A replayable read that has not
+exposed a result may be restarted when a map grows; other pinned reads still have an invalidation boundary to handle.
 
 ## Changes applications may notice
 
 | Operation | Behavior before this change | Behavior now and what to do |
 | --- | --- | --- |
-| A query or transaction remains open while a map grows | Publication of Sail-buffered commits to LMDB, and the associated map growth, could be postponed while observers remained open; after a reader reset, the record iterator could renew its native cursor and appear to continue. That renewal did not promise one pinned native generation across resize. | A pinned result is invalidated when either LMDB map is resized. Re-run the whole query to get a new `SNAPSHOT_READ` result; restart a `SNAPSHOT` or `SERIALIZABLE` transaction. The old result cannot continue on a new generation. |
+| A query or transaction remains open while a map grows | Publication of Sail-buffered commits to LMDB, and the associated map growth, could be postponed while observers remained open; after a reader reset, the record iterator could renew its native cursor and appear to continue. That renewal did not promise one pinned native generation across resize. | A replayable read-only attempt that has not exposed a result may be restarted automatically, up to `readOnlyReplayMaxRetries`. If the read has been observed, attempted a write, or cannot be replayed, its pinned view is invalidated: re-run the whole `SNAPSHOT_READ` query or restart the `SNAPSHOT`/`SERIALIZABLE` transaction. A replay reruns the query plan, including remote `SERVICE` calls, so external services may receive duplicate requests. |
 | A repository transaction commits while other reads stay open | Root changes could remain buffered until the final observer closed, making the commit path depend on reader cleanup. | `RepositoryConnection.commit()` flushes both roots at the commit boundary. Native commit work must complete before `commit()` returns; with `forceSync=true`, the required storage flush is also part of that path. |
 | A namespace-only update commits | Namespace data was persisted separately in `namespaces.dat`, outside the TripleStore transaction. | The namespace snapshot is written into the TripleStore environment with a native commit. A namespace-only change therefore performs a physical TripleStore commit, but does not commit the ValueStore or advance the RDF data revision. |
 | A large write reaches the TripleStore map limit | Map-full growth could commit a prefix while continuing the logical write. | The current path aborts the TripleStore attempt, grows the map, and replays the complete in-process statement and namespace mutation journal before publication. This avoids publishing a prefix, at the cost of replay work and temporary disk use for large writes. |
 
-The first row is the main new availability cost applications need to handle. The isolation-level contracts remain the
-same; the former cursor-renewal path did not make continuing the old result across resize a supported guarantee. The
-underlying exception currently says:
+Automatic replay is limited to read-only work that remains unobserved and has a replay factory. It is bounded by the
+configured retry count; repeated growth or ineligible work can still invalidate a pinned view. The isolation-level
+contracts remain the same; neither automatic replay nor the former cursor-renewal path allows an already exposed result
+to continue on a different native generation. A retried query may repeat work outside the store, including a remote
+`SERVICE` request, so such endpoints should tolerate repeat invocation. The underlying exception currently says:
 
 ```text
 SNAPSHOT transaction invalidated: the store's memory map was resized during the transaction; retry the transaction
@@ -40,17 +42,31 @@ resume from the last row: results already consumed came from the invalidated vie
 be safe to repeat. For a transaction-level `SNAPSHOT` or `SERIALIZABLE`, restart the transaction; retrying only the
 last statement would mix generations.
 
-This is an invalidation boundary, not a promise that every pre-change query always survived every resize. The earlier
-cursor-renewal path could make a read appear to continue after a reset; the current path fails rather than allowing an
-already-pinned result to proceed on a different native view.
+The earlier cursor-renewal path could make a read appear to continue after a reset. The current path preserves
+generation consistency: eligible unobserved work may be replayed, while an observed or otherwise ineligible result is
+invalidated rather than allowed to proceed on a different native view.
 
 ## Map sizing and reader lifetime
 
 `autoGrow` remains enabled by default. When growth is needed, LMDB must remap its environment while native readers are
-quiesced. Pinned read views are invalidated by that remap. Pre-size both the TripleStore and ValueStore maps when the
-workload is known, using `LmdbStoreConfig.setTripleDBSize(...)` and `setValueDBSize(...)`, to reduce how often this
-boundary is reached. Disabling `autoGrow` disables automatic growth; a write that reaches the configured map limit
+quiesced. The old physical read view is retired or invalidated by that remap; eligible unobserved reads may be replayed
+as described above. When the workload is known, pre-size both the TripleStore and ValueStore maps using
+`LmdbStoreConfig.setTripleDBSize(...)` and `setValueDBSize(...)` to reduce how often this boundary is reached.
+Disabling `autoGrow` disables automatic growth; a write that reaches the configured map limit
 then fails with a map-full error.
+
+Buffered write intent can open an advisory admission warning when its approximate size suggests that either map may
+need more space or a buffered operation has no exact estimate. The warning only closes admission; it does not snapshot
+the model, drain readers, or resize. At branch preflight, before publication, LMDB estimates the space needed for the
+buffered changes in each environment and grows any map predicted to need more space. This is not a capacity guarantee:
+native write costs may exceed the estimate or include work it cannot size exactly, so existing map-full recovery remains
+the fallback if later writes need more space. Configure the coordination window with
+`LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `30000` milliseconds) and eligible read retries with
+`LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`). The timeout covers the warning, preflight, and drain
+episode when a warning remains active through preflight; if the warning expires while the write is still being buffered,
+admission reopens until a later preflight starts a new episode if growth coordination is still needed. Setting the timeout
+to `0` disables the advisory warning and leaves no reader-drain grace at preflight. Setting the retry limit to `0`
+disables automatic replay.
 
 An admitted read view holds a native reader in each environment until its final owning lease is released. A
 `SNAPSHOT`/`SERIALIZABLE` connection can keep that transaction view after an individual result or dataset closes. The

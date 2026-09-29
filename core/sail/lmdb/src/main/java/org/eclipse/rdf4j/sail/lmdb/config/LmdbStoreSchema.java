@@ -129,6 +129,10 @@ public class LmdbStoreSchema {
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
 
+	public final static IRI MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	public final static IRI READ_ONLY_REPLAY_MAX_RETRIES;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
 	 */
@@ -166,6 +170,8 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
+		MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE, "mapGrowthReadDrainTimeoutMillis");
+		READ_ONLY_REPLAY_MAX_RETRIES = factory.createIRI(NAMESPACE, "readOnlyReplayMaxRetries");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

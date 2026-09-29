@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 @InternalUseOnly
 public abstract class Changeset implements SailSink, ModelFactory {
+	private static final long WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES = 256L * 1024L;
 
 	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
 	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
@@ -125,6 +126,78 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	private boolean closed;
 	private IsolationLevel sinkIsolationLevel = IsolationLevels.NONE;
+	private volatile long approximateWriteIntentBytes;
+	private volatile boolean hasUnestimatedWriteIntent;
+	private long nextWritePreflightSignalBytes = WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES;
+
+	/** Whether the backing source consumes incremental buffered-write estimates. */
+	protected boolean tracksWriteIntent() {
+		return false;
+	}
+
+	/**
+	 * Called after buffered write intent has crossed an approximate-size boundary or added an operation that cannot be
+	 * sized precisely. Implementations must treat the signal as advisory and take a complete snapshot before preflight.
+	 */
+	protected void writeIntentChanged() {
+	}
+
+	long getApproximateWriteIntentBytes() {
+		return approximateWriteIntentBytes;
+	}
+
+	boolean hasUnestimatedWriteIntent() {
+		return hasUnestimatedWriteIntent;
+	}
+
+	private boolean recordWriteIntent(long approximateBytes, boolean unestimatedOperation) {
+		if (!tracksWriteIntent()) {
+			return false;
+		}
+		boolean firstUnestimatedOperation = unestimatedOperation && !hasUnestimatedWriteIntent;
+		approximateWriteIntentBytes = saturatedAdd(approximateWriteIntentBytes, approximateBytes);
+		if (unestimatedOperation) {
+			hasUnestimatedWriteIntent = true;
+		}
+		boolean crossedSizeBoundary = nextWritePreflightSignalBytes != Long.MAX_VALUE
+				&& approximateWriteIntentBytes >= nextWritePreflightSignalBytes;
+		if (crossedSizeBoundary) {
+			long crossedIntervals = (approximateWriteIntentBytes - nextWritePreflightSignalBytes)
+					/ WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES + 1L;
+			nextWritePreflightSignalBytes = saturatedAdd(nextWritePreflightSignalBytes,
+					saturatedMultiply(crossedIntervals, WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES));
+		}
+		return firstUnestimatedOperation || crossedSizeBoundary;
+	}
+
+	private static long approximateStatementBytes(Statement statement) {
+		long estimate = 128L;
+		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getSubject()));
+		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getPredicate()));
+		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getObject()));
+		if (statement.getContext() != null) {
+			estimate = saturatedAdd(estimate, approximateValueBytes(statement.getContext()));
+		}
+		return estimate;
+	}
+
+	private static long approximateValueBytes(Value value) {
+		if (value instanceof TripleTerm tripleTerm) {
+			long estimate = 64L;
+			estimate = saturatedAdd(estimate, approximateValueBytes(tripleTerm.getSubject()));
+			estimate = saturatedAdd(estimate, approximateValueBytes(tripleTerm.getPredicate()));
+			return saturatedAdd(estimate, approximateValueBytes(tripleTerm.getObject()));
+		}
+		return saturatedAdd(32L, saturatedMultiply(value.stringValue().length(), 4L));
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long saturatedMultiply(long left, long right) {
+		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
+	}
 
 	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
 		Objects.requireNonNull(changeset1, "changeset1");
@@ -292,6 +365,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	public void setNamespace(String prefix, String name) {
 		assert !closed;
 
+		long approximateBytes = tracksWriteIntent()
+				? saturatedAdd(64L, saturatedMultiply((long) prefix.length() + name.length(), 4L))
+				: 0L;
+		boolean signalWritePreflight = false;
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (removedPrefixes == null) {
@@ -302,8 +379,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				addedNamespaces = new HashMap<>();
 			}
 			addedNamespaces.put(prefix, name);
+			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -311,6 +392,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void removeNamespace(String prefix) {
 		assert !closed;
+		boolean signalWritePreflight;
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (addedNamespaces != null) {
@@ -320,8 +402,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				removedPrefixes = new HashSet<>();
 			}
 			removedPrefixes.add(prefix);
+			signalWritePreflight = recordWriteIntent(
+					tracksWriteIntent() ? 64L + (long) prefix.length() * 4L : 0L, true);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -329,10 +416,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void clearNamespaces() {
 		assert !closed;
-		namespaceCleared = true;
+		boolean signalWritePreflight;
 
 		long writeLock = readWriteLock.writeLock();
 		try {
+			namespaceCleared = true;
 
 			if (removedPrefixes != null) {
 				removedPrefixes.clear();
@@ -340,8 +428,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (addedNamespaces != null) {
 				addedNamespaces.clear();
 			}
+			signalWritePreflight = recordWriteIntent(0L, true);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -406,6 +498,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clear(Resource... contexts) {
+		boolean signalWritePreflight;
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (contexts != null && contexts.length == 0) {
@@ -434,8 +527,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 			}
 			approvedEmpty = approved == null || approved.isEmpty();
+			signalWritePreflight = recordWriteIntent(0L, true);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -444,6 +541,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	public void approve(Statement statement) {
 
 		assert !closed;
+		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+		boolean signalWritePreflight = false;
 		long writeLock = readWriteLock.writeLock();
 		try {
 
@@ -462,8 +561,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 				approvedContexts.add(statement.getContext());
 			}
+			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -476,6 +579,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void deprecate(Statement statement) {
 		assert !closed;
+		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+		boolean signalWritePreflight = false;
 		long writeLock = readWriteLock.writeLock();
 		try {
 			if (approved != null) {
@@ -492,8 +597,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					&& !approved.contains(null, null, null, ctx)) {
 				approvedContexts.remove(ctx);
 			}
+			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 
 	}
@@ -554,6 +663,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.removedPrefixes = from.removedPrefixes;
 		this.namespaceCleared = from.namespaceCleared;
 		this.statementCleared = from.statementCleared;
+		this.approximateWriteIntentBytes = from.approximateWriteIntentBytes;
+		this.hasUnestimatedWriteIntent = from.hasUnestimatedWriteIntent;
+		this.nextWritePreflightSignalBytes = from.nextWritePreflightSignalBytes;
 	}
 
 	IsolationLevel getSinkIsolationLevel() {
@@ -716,6 +828,41 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	boolean hasWriteChanges() {
 		assert !closed;
 		return hasStatementChanges(this) || hasNamespaceChanges(this);
+	}
+
+	WritePreflightSnapshot getWritePreflightSnapshot() {
+		assert !closed;
+		boolean readLock = readWriteLock.readLock();
+		try {
+			ArrayList<Statement> statements = new ArrayList<>();
+			if (approved != null && !approvedEmpty) {
+				statements.addAll(approved);
+			}
+			if (deprecated != null && !deprecatedEmpty) {
+				statements.addAll(deprecated);
+			}
+			List<SailSource.NamespaceUpdate> namespaces = new ArrayList<>();
+			if (addedNamespaces != null) {
+				for (Map.Entry<String, String> namespace : addedNamespaces.entrySet()) {
+					namespaces.add(new SailSource.NamespaceUpdate(namespace.getKey(), namespace.getValue()));
+				}
+			}
+			Set<String> removedNamespacePrefixes = removedPrefixes == null ? Collections.emptySet()
+					: new HashSet<>(removedPrefixes);
+			Set<Resource> clearedContexts = deprecatedContexts == null ? Collections.emptySet()
+					: new HashSet<>(deprecatedContexts);
+			boolean hasWrites = statementCleared || namespaceCleared || !statements.isEmpty()
+					|| !namespaces.isEmpty() || !removedNamespacePrefixes.isEmpty() || !clearedContexts.isEmpty();
+			return new WritePreflightSnapshot(statements, namespaces, removedNamespacePrefixes, clearedContexts,
+					statementCleared, namespaceCleared, hasWrites);
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+	}
+
+	record WritePreflightSnapshot(List<Statement> statements, List<SailSource.NamespaceUpdate> addedNamespaces,
+			Set<String> removedNamespacePrefixes, Set<Resource> clearedContexts, boolean statementCleared,
+			boolean namespaceCleared, boolean hasWrites) {
 	}
 
 	List<Statement> getDeprecatedStatements() {
@@ -947,6 +1094,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approveAll(Set<Statement> approve, Set<Resource> approveContexts) {
+		long approximateBytes = 0L;
+		if (tracksWriteIntent()) {
+			for (Statement statement : approve) {
+				approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
+			}
+		}
+		boolean signalWritePreflight = false;
 		long writeLock = readWriteLock.writeLock();
 		try {
 
@@ -965,14 +1119,25 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 				approvedContexts.addAll(approveContexts);
 			}
+			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 	}
 
 	@Override
 	public void deprecateAll(Set<Statement> deprecate) {
+		long approximateBytes = 0L;
+		if (tracksWriteIntent()) {
+			for (Statement statement : deprecate) {
+				approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
+			}
+		}
+		boolean signalWritePreflight = false;
 		long writeLock = readWriteLock.writeLock();
 		try {
 
@@ -993,9 +1158,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					approvedContexts.remove(ctx);
 				}
 			}
+			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 
 		} finally {
 			readWriteLock.unlockWriter(writeLock);
+		}
+		if (signalWritePreflight) {
+			writeIntentChanged();
 		}
 	}
 

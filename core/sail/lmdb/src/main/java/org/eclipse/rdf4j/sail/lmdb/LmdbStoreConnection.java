@@ -12,14 +12,24 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -29,7 +39,13 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.UpdateContext;
@@ -62,6 +78,43 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	private volatile Lock txnLock;
 	private final Object readViewLock = new Object();
 	private LmdbSailStore.ReadView transactionReadView;
+	private final Object readAttemptLock = new Object();
+	private final Set<ReplayableIteration<?>> replayableIterations = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final Set<ReplayPlanIteration<?>> openReplayPlans = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final Set<ReadExposureScope> activeReadExposureScopes = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final Set<OperationReadAttempt> operationReadAttempts = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final Set<ReplayableIteration<?>> pendingResultReplays = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final Set<ReplayPlanIteration<?>> pendingPlanReplays = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final ThreadLocal<Integer> internalReadScopeDepth = ThreadLocal.withInitial(() -> 0);
+	private final ThreadLocal<ReadExposureScope> activeReadExposureScope = new ThreadLocal<>();
+	private final ThreadLocal<ReplayPlan<?>> pendingEvaluationReplayPlan = new ThreadLocal<>();
+	private final ThreadLocal<ExplainTupleExprCapture> explainTupleExprCapture = new ThreadLocal<>();
+	private final LmdbSailStore.MapGrowthObserver mapGrowthObserver = this::requestReplayForMapGrowth;
+	private int activeReadOperations;
+	private int activeReadCreations;
+	private int replayAttempts;
+	private boolean replayRequested;
+	private boolean replayInProgress;
+	private boolean replayCleanupScheduled;
+	private boolean replayTransactionStart;
+	private boolean transactionWriteAttempted;
+	private boolean transactionObserved;
+	private boolean transactionFinished;
+	private volatile LmdbSailStore.ReadAttemptLease readAttemptLease;
+	private final Set<LmdbSailStore.ReadViewLease> pendingGrowthViews = Collections
+			.newSetFromMap(new IdentityHashMap<>());
+	private final List<CloseableIteration<?>> pendingDelegateCloses = new ArrayList<>();
+	private LmdbSailStore.MapResizeKind pendingGrowthKind = LmdbSailStore.MapResizeKind.TRIPLE_STORE;
+	private LmdbSailStore.MapGrowthToken pendingGrowthToken;
+	private QueryExecutionDeadline pendingQueryDeadline;
+	private Throwable replayFailure;
+	private long readAttemptGeneration;
 
 	/*--------------*
 	 * Constructors *
@@ -78,9 +131,51 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 *---------*/
 
 	@Override
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		ExplainTupleExprCapture previous = explainTupleExprCapture.get();
+		ExplainTupleExprCapture capture = new ExplainTupleExprCapture();
+		explainTupleExprCapture.set(capture);
+		try {
+			return super.explain(level, tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+		} finally {
+			if (previous == null) {
+				explainTupleExprCapture.remove();
+			} else {
+				explainTupleExprCapture.set(previous);
+			}
+		}
+	}
+
+	@Override
+	protected TupleExpr getTupleExprForExplanation(TupleExpr tupleExpr) {
+		ExplainTupleExprCapture capture = explainTupleExprCapture.get();
+		return capture == null || capture.tupleExpr == null ? tupleExpr : capture.tupleExpr;
+	}
+
+	@Override
 	protected void startTransactionInternal() throws SailException {
+		boolean newAttempt = !replayTransactionStart;
+		if (newAttempt) {
+			synchronized (readAttemptLock) {
+				transactionWriteAttempted = false;
+				transactionObserved = false;
+				transactionFinished = false;
+				replayRequested = false;
+				replayInProgress = false;
+				replayAttempts = 0;
+				replayFailure = null;
+				readAttemptGeneration++;
+				for (OperationReadAttempt operationAttempt : operationReadAttempts) {
+					operationAttempt.sealed = true;
+				}
+			}
+		}
 		if (!lmdbStore.isWritable()) {
 			throw new SailReadOnlyException("Unable to start transaction: data file is locked or read-only");
+		}
+		if (newAttempt && isReplayIsolation(getTransactionIsolation())) {
+			readAttemptLease = lmdbStore.getBackingStore().registerReadAttempt(this, mapGrowthObserver);
 		}
 		boolean releaseLock = true;
 		try {
@@ -93,6 +188,11 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			}
 			super.startTransactionInternal();
 			transactionReadView = null;
+		} catch (RuntimeException | Error failure) {
+			if (newAttempt) {
+				closeReadAttemptLease();
+			}
+			throw failure;
 		} finally {
 			if (releaseLock && txnLock != null && txnLock.isActive()) {
 				txnLock.release();
@@ -102,6 +202,14 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void prepareInternal() throws SailException {
+		// Public transaction operations after prepare are restricted to commit, rollback, and close. Seal the retryable
+		// attempt after SHACL validation but before branch preparation can retain publication or cleanup locks. Closing
+		// the paired read snapshot materializes retained writer values, while branch changes and serializable
+		// observations remain intact for the normal prepare path.
+		finishReadAttempt();
+		releaseReadDatasetsBeforePrepare();
+		releaseTransactionReadView();
+		retireSharedSnapshotsPreservingBorrowers();
 		try (SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this)) {
 			super.prepareInternal();
 		}
@@ -110,6 +218,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	@Override
 	protected void commitInternal() throws SailException {
 		boolean committed = false;
+		finishReadAttempt();
 		try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
 			try {
 				super.commitInternal();
@@ -137,6 +246,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void rollbackInternal() throws SailException {
+		finishReadAttempt();
 		try (SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this)) {
 			lmdbStore.getBackingStore().rollback(this);
 			super.rollbackInternal();
@@ -162,29 +272,49 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	public void startUpdate(UpdateContext op) throws SailException {
+		if (op != null) {
+			markTransactionWriteAttempted();
+		}
+		super.startUpdate(op);
+	}
+
+	@Override
 	protected SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
-		// Serializable observation sinks are created while a read dataset is admitted. Associate those sinks with this
-		// connection now, without reserving the native writer until the connection actually applies changes.
+		// Associate any synchronously-created serializable observation sinks with this connection. The admission can
+		// live
+		// until a lazy result is closed on another worker, so the thread-local writer scope must not escape this call.
 		SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this);
 		try {
 			LmdbSailStore.ReadView readView = null;
-			if (isActive() && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
+			ReadExposureScope readScope = activeReadExposureScope.get();
+			if ((readScope == null || readScope.operationAttempt == null)
+					&& isActive() && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 				synchronized (readViewLock) {
 					if (transactionReadView == null) {
-						transactionReadView = lmdbStore.getBackingStore().createTransactionReadView();
+						transactionReadView = lmdbStore.getBackingStore()
+								.createTransactionReadView(mapGrowthObserver, readAttemptLease);
 					}
 					readView = transactionReadView;
 				}
 			}
-			SailClosable admission = lmdbStore.getBackingStore().beginDatasetAdmission(level, readView);
+			LmdbSailStore.ReadAttemptLease currentReadAttempt = readScope != null
+					&& readScope.operationAttempt != null
+							? readScope.operationAttempt.lease
+							: readAttemptLease;
+			LmdbSailStore.MapGrowthObserver currentReadObserver = readScope != null
+					&& readScope.operationAttempt != null
+							? readScope.operationAttempt.observer
+							: mapGrowthObserver;
+			LmdbSailStore.DatasetAdmission datasetAdmission = lmdbStore.getBackingStore()
+					.beginDatasetAdmission(level, readView, currentReadObserver, currentReadAttempt);
+			if (readScope != null) {
+				readScope.capture(datasetAdmission.readViewLease());
+			}
+			SailClosable admission = datasetAdmission;
 			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
-			return SailSource.DatasetAcquisition.wrap(() -> {
-				try {
-					admission.close();
-				} finally {
-					writerOwner.close();
-				}
-			}, outermost);
+			writerOwner.close();
+			return SailSource.DatasetAcquisition.wrap(admission::close, outermost);
 		} catch (RuntimeException | Error failure) {
 			writerOwner.close();
 			throw failure;
@@ -201,7 +331,94 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	@Override
+	protected <T> T executeReadOperation(ReadOperation<T> operation) throws SailException {
+		if (internalReadScopeDepth.get() > 0) {
+			throwIfReadScopeRequestedReplay();
+			return operation.execute();
+		}
+		return executeTrackedRead(operation);
+	}
+
+	@Override
+	protected <T, E extends Exception> CloseableIteration<T> registerIteration(CloseableIteration<T> iteration) {
+		ReplayFactory<T> replayFactory = null;
+		long generation = currentReadAttemptGeneration();
+		List<LmdbSailStore.ReadViewLease> readViews = List.of();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		OperationReadAttempt operationAttempt = null;
+		ReplayPlanIteration<?> sourcePlan = null;
+		if (iteration instanceof ReplayPlanIteration<?> replayPlan) {
+			sourcePlan = replayPlan;
+			replayFactory = (ReplayFactory<T>) replayPlan.factory;
+			generation = replayPlan.generation;
+			readViews = replayPlan.readViews;
+			deadline = replayPlan.deadline;
+			operationAttempt = replayPlan.transferOperationAttempt();
+		}
+		ReplayPlan<?> evaluationPlan = pendingEvaluationReplayPlan.get();
+		if (evaluationPlan != null) {
+			replayFactory = (ReplayFactory<T>) evaluationPlan.factory;
+			generation = evaluationPlan.generation;
+			readViews = evaluationPlan.readViews;
+			deadline = evaluationPlan.deadline;
+			operationAttempt = evaluationPlan.operationAttempt;
+			pendingEvaluationReplayPlan.remove();
+		}
+		ReplayableIteration<T> replayable = new ReplayableIteration<>(iteration, replayFactory, generation, readViews,
+				deadline, operationAttempt);
+		synchronized (readAttemptLock) {
+			if (sourcePlan != null) {
+				openReplayPlans.remove(sourcePlan);
+				pendingPlanReplays.remove(sourcePlan);
+				if (sourcePlan.growthToken != null) {
+					replayable.requestGrowth(sourcePlan.growthKind, sourcePlan.growthToken,
+							newIdentitySet(sourcePlan.readViews));
+					pendingResultReplays.add(replayable);
+				}
+			}
+			replayableIterations.add(replayable);
+		}
+		try {
+			retirePendingReplayIfIdle();
+			if (operationAttempt == null && generation != currentReadAttemptGeneration() && replayFactory != null) {
+				ReplayPlanIteration<T> replacement = openReplayPlan(replayFactory, deadline);
+				replayable.replaceDelegate(replacement, replacement.generation, replacement.readViews);
+				retirePendingReplayIfIdle();
+			}
+		} catch (SailException failure) {
+			replayable.close();
+			throw new QueryEvaluationException("Unable to restart an LMDB read attempt", failure);
+		} catch (RuntimeException | Error failure) {
+			replayable.close();
+			throw failure;
+		}
+		return super.registerIteration(replayable);
+	}
+
+	@Override
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
+		ReplayFactory<Resource> factory = this::openContextIDs;
+		return openReplayPlan(factory);
+	}
+
+	private CloseableIteration<? extends Resource> openContextIDs() throws SailException {
+		return new IterationWrapper<Resource>(super.getContextIDsInternal()) {
+			@Override
+			public Resource next() throws QueryEvaluationException {
+				Resource context = super.next();
+				initValue(context);
+				return context;
+			}
+		};
+	}
+
+	@Override
 	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
+		ReplayFactory<Namespace> factory = this::openNamespaces;
+		return openReplayPlan(factory);
+	}
+
+	private CloseableIteration<? extends Namespace> openNamespaces() throws SailException {
 		LmdbSailStore.CheckpointNamespaceSnapshot checkpointNamespaces = checkpointNamespaceSnapshot();
 		if (checkpointNamespaces != null && checkpointNamespaces.available()) {
 			List<Namespace> namespaces = new ArrayList<>(checkpointNamespaces.namespaces().size());
@@ -252,6 +469,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		markTransactionWriteAttempted();
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
@@ -262,14 +480,42 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
+		TupleExpr expression = (TupleExpr) tupleExpr.clone();
+		detachTupleValues(expression);
+		Dataset queryDataset = copyDataset(dataset);
+		BindingSet queryBindings = copyBindings(bindings);
+		boolean queryIncludeInferred = includeInferred;
+		ExplainTupleExprCapture explanationCapture = explainTupleExprCapture.get();
+		ReplayFactory<BindingSet> factory = () -> {
+			TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
+			CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
+					queryBindings, queryIncludeInferred);
+			if (explanationCapture != null) {
+				explanationCapture.tupleExpr = attemptExpression;
+			}
+			return evaluation;
+		};
+		ReplayPlanIteration<BindingSet> iteration = openReplayPlan(factory);
+		pendingEvaluationReplayPlan.set(new ReplayPlan<>(factory, iteration.generation, iteration.readViews,
+				iteration.deadline, iteration.operationAttempt));
+		return iteration;
+	}
+
+	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
+			BindingSet bindings, boolean includeInferred) throws SailException {
+		Dataset datasetCopy = copyDataset(dataset);
+		BindingSet bindingsCopy = copyBindings(bindings);
+		return initializeBindings(super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred));
+	}
+
+	private CloseableIteration<? extends BindingSet> initializeBindings(
+			CloseableIteration<? extends BindingSet> iteration) {
+		return new IterationWrapper<BindingSet>(iteration) {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
-				BindingSet bs = super.next();
-				bs.forEach(b -> initValue(b.getValue()));
-				return bs;
+				BindingSet bindingSet = super.next();
+				bindingSet.forEach(binding -> initValue(binding.getValue()));
+				return bindingSet;
 			}
 		};
 	}
@@ -278,17 +524,48 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
-		return new IterationWrapper<Statement>(
-				super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)) {
+		Resource statementSubject = detachValue(subj);
+		IRI statementPredicate = (IRI) detachValue(pred);
+		Value statementObject = detachValue(obj);
+		Resource[] statementContexts = detachContexts(contexts);
+		ReplayFactory<Statement> factory = () -> openStatements(null, statementSubject, statementPredicate,
+				statementObject, includeInferred, statementContexts);
+		return openReplayPlan(factory);
+	}
+
+	@Override
+	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
+			IRI pred, Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		Resource statementSubject = detachValue(subj);
+		IRI statementPredicate = (IRI) detachValue(pred);
+		Value statementObject = detachValue(obj);
+		Resource[] statementContexts = detachContexts(contexts);
+		ReplayFactory<Statement> factory = () -> openStatements(order, statementSubject, statementPredicate,
+				statementObject, includeInferred, statementContexts);
+		return openReplayPlan(factory);
+	}
+
+	private CloseableIteration<? extends Statement> openStatements(StatementOrder order, Resource subj, IRI pred,
+			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+		CloseableIteration<? extends Statement> source = order == null
+				? super.getStatementsInternal(subj, pred, obj, includeInferred, contexts)
+				: super.getStatementsInternal(order, subj, pred, obj, includeInferred, contexts);
+		return new IterationWrapper<Statement>(source) {
+			@Override
+			public boolean hasNext() {
+				throwIfReadScopeRequestedReplay();
+				return super.hasNext();
+			}
+
 			@Override
 			public Statement next() throws SailException {
-				// ensure that all elements of the statement are initialized (lazy values are resolved)
-				Statement stmt = super.next();
-				initValue(stmt.getSubject());
-				initValue(stmt.getPredicate());
-				initValue(stmt.getObject());
-				initValue(stmt.getContext());
-				return stmt;
+				throwIfReadScopeRequestedReplay();
+				Statement statement = super.next();
+				initValue(statement.getSubject());
+				initValue(statement.getPredicate());
+				initValue(statement.getObject());
+				initValue(statement.getContext());
+				return statement;
 			}
 		};
 	}
@@ -304,6 +581,1780 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		}
 	}
 
+	private Dataset copyDataset(Dataset dataset) {
+		if (dataset == null) {
+			return null;
+		}
+		SimpleDataset copy = new SimpleDataset();
+		for (IRI graph : dataset.getDefaultGraphs()) {
+			copy.addDefaultGraph((IRI) detachValue(graph));
+		}
+		for (IRI graph : dataset.getNamedGraphs()) {
+			copy.addNamedGraph((IRI) detachValue(graph));
+		}
+		for (IRI graph : dataset.getDefaultRemoveGraphs()) {
+			copy.addDefaultRemoveGraph((IRI) detachValue(graph));
+		}
+		if (dataset.getDefaultInsertGraph() != null) {
+			copy.setDefaultInsertGraph((IRI) detachValue(dataset.getDefaultInsertGraph()));
+		}
+		return copy;
+	}
+
+	private BindingSet copyBindings(BindingSet bindings) {
+		if (bindings == null) {
+			return null;
+		}
+		MapBindingSet copy = new MapBindingSet(bindings.size());
+		bindings.forEach(binding -> copy.addBinding(binding.getName(), detachValue(binding.getValue())));
+		return copy;
+	}
+
+	private void detachTupleValues(TupleExpr expression) {
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ValueConstant node) {
+				detachValue(node.getValue());
+			}
+		});
+	}
+
+	private <T extends Value> T detachValue(T value) {
+		if (value != null) {
+			initValue(value);
+		}
+		return value;
+	}
+
+	private Resource[] detachContexts(Resource[] contexts) {
+		if (contexts == null) {
+			return null;
+		}
+		Resource[] copy = contexts.clone();
+		for (int i = 0; i < copy.length; i++) {
+			copy[i] = detachValue(copy[i]);
+		}
+		return copy;
+	}
+
+	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory) throws SailException {
+		return openReplayPlan(factory, QueryExecutionDeadline.current());
+	}
+
+	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory,
+			QueryExecutionDeadline deadline) throws SailException {
+		return openReplayPlan(factory, deadline, null);
+	}
+
+	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory,
+			QueryExecutionDeadline deadline, OperationReadAttempt requestedAttempt) throws SailException {
+		OperationReadAttempt operationAttempt = requestedAttempt;
+		boolean ownsOperationAttempt = false;
+		if (operationAttempt == null) {
+			ReadExposureScope parent = activeReadExposureScope.get();
+			if (parent != null) {
+				operationAttempt = parent.operationAttempt;
+			} else if (!isActive()) {
+				operationAttempt = createOperationReadAttempt(lmdbStore.getDefaultIsolationLevel(), deadline);
+				ownsOperationAttempt = operationAttempt != null;
+			}
+		}
+		try {
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				int attempts = 0;
+				while (true) {
+					throwIfDeadlineExpired(deadline);
+					prepareForReadAttempt();
+					long generation = beginReadCreation();
+					if (generation < 0) {
+						continue;
+					}
+					ReadExposureScope exposure = beginReadExposureScope(null, deadline, operationAttempt);
+					CloseableIteration<? extends T> delegate = null;
+					Throwable failure = null;
+					try {
+						delegate = factory.open();
+					} catch (RuntimeException | Error openFailure) {
+						failure = openFailure;
+					}
+
+					if (failure == null) {
+						try {
+							exposure.ensureNativeSnapshotsValid();
+						} catch (SailException invalidated) {
+							failure = invalidated;
+						}
+					}
+
+					boolean retry = false;
+					boolean transactionReplay = false;
+					LmdbSailStore.MapGrowthToken growthToken;
+					LmdbSailStore.MapResizeKind growthKind;
+					List<LmdbSailStore.ReadViewLease> readViews = exposure.readViews();
+					synchronized (readAttemptLock) {
+						growthToken = exposure.growthToken();
+						growthKind = exposure.growthKind();
+						if (operationAttempt == null && isActive() && growthToken == null && pendingGrowthToken != null
+								&& readViews.stream().anyMatch(pendingGrowthViews::contains)) {
+							growthToken = pendingGrowthToken;
+							growthKind = pendingGrowthKind;
+						}
+						boolean snapshotTransaction = operationAttempt == null && isActive()
+								&& isTransactionSnapshot();
+						if (isMapResizeConflict(failure) && growthToken != null) {
+							if (snapshotTransaction && isReplayEligibleLocked()) {
+								replayRequested = true;
+								pendingGrowthViews.addAll(readViews);
+								pendingGrowthKind = resizeKind(failure);
+								pendingGrowthToken = growthToken;
+								pendingQueryDeadline = deadline;
+								growthKind = pendingGrowthKind;
+								transactionReplay = true;
+								retry = true;
+							} else if (!snapshotTransaction
+									&& (operationAttempt == null
+											? isResultReplayAvailableLocked()
+											: isOperationReplayAvailableLocked(operationAttempt))
+									&& attempts < lmdbStore.getReadOnlyReplayMaxRetries()) {
+								growthKind = resizeKind(failure);
+								if (operationAttempt == null) {
+									pendingGrowthToken = growthToken;
+									pendingGrowthKind = growthKind;
+									pendingQueryDeadline = deadline;
+								} else {
+									operationAttempt.growthToken = growthToken;
+									operationAttempt.growthKind = growthKind;
+								}
+								retry = true;
+							}
+						} else if (failure == null && operationAttempt == null && replayRequested
+								&& isReplayEligibleLocked()) {
+							growthToken = pendingGrowthToken;
+							growthKind = pendingGrowthKind;
+							transactionReplay = true;
+							retry = true;
+						} else if (failure == null && growthToken != null) {
+							if (snapshotTransaction && isReplayEligibleLocked()) {
+								pendingGrowthViews.addAll(readViews);
+								pendingGrowthToken = growthToken;
+								pendingGrowthKind = growthKind;
+								pendingQueryDeadline = deadline;
+								replayRequested = true;
+								transactionReplay = true;
+								retry = true;
+							} else if (!snapshotTransaction
+									&& (operationAttempt == null
+											? isResultReplayAvailableLocked()
+											: isOperationReplayAvailableLocked(operationAttempt))
+									&& attempts < lmdbStore.getReadOnlyReplayMaxRetries()) {
+								if (operationAttempt == null) {
+									pendingGrowthToken = growthToken;
+									pendingGrowthKind = growthKind;
+									pendingQueryDeadline = deadline;
+								} else {
+									operationAttempt.growthToken = growthToken;
+									operationAttempt.growthKind = growthKind;
+								}
+								retry = true;
+							} else {
+								failure = new LmdbSailStore.MapResizeConflictException(growthKind,
+										"LMDB read result cannot be replayed after its snapshot was invalidated");
+							}
+						}
+
+						if (!retry && failure == null) {
+							if (operationAttempt != null && operationAttempt.growthToken != null
+									&& !lmdbStore.getBackingStore().isGrowthActive(operationAttempt.growthToken)) {
+								operationAttempt.clearGrowth(operationAttempt.growthToken);
+							}
+							ReplayPlanIteration<T> plan = new ReplayPlanIteration<>(delegate, factory, generation,
+									readViews, deadline, operationAttempt, ownsOperationAttempt);
+							openReplayPlans.add(plan);
+							endReadExposureScope(exposure);
+							endReadCreation();
+							ownsOperationAttempt = false;
+							return plan;
+						}
+						endReadExposureScope(exposure);
+						endReadCreation();
+					}
+
+					if (delegate != null) {
+						delegate.close();
+					}
+					if (retry) {
+						if (internalReadScopeDepth.get() > 0) {
+							throw new LmdbSailStore.MapResizeConflictException(growthKind,
+									"LMDB map changed while opening a read result; retry its owning read operation");
+						}
+						for (LmdbSailStore.ReadViewLease readView : readViews) {
+							readView.abandonUnobserved();
+						}
+						if (transactionReplay) {
+							retirePendingReplayIfIdle();
+						} else {
+							retireSharedSnapshotsAfterReplay();
+							awaitGrowthEnd(growthToken, deadline);
+							clearCompletedGrowth(growthToken);
+							if (operationAttempt != null) {
+								operationAttempt.clearGrowth(growthToken);
+							}
+						}
+						if (++attempts > lmdbStore.getReadOnlyReplayMaxRetries()) {
+							throw new LmdbSailStore.MapResizeConflictException(growthKind,
+									"LMDB read result exceeded its map-growth replay limit");
+						}
+						continue;
+					}
+					if (failure instanceof SailException sailFailure) {
+						throw sailFailure;
+					}
+					if (failure instanceof RuntimeException runtimeFailure) {
+						throw runtimeFailure;
+					}
+					if (failure instanceof Error error) {
+						throw error;
+					}
+					throw new SailException("Unable to open an LMDB read result", failure);
+				}
+			}
+		} finally {
+			if (ownsOperationAttempt) {
+				closeOperationReadAttempt(operationAttempt);
+			}
+		}
+	}
+
+	private long currentReadAttemptGeneration() {
+		synchronized (readAttemptLock) {
+			return readAttemptGeneration;
+		}
+	}
+
+	private long beginReadCreation() throws SailException {
+		synchronized (readAttemptLock) {
+			if (transactionFinished && isActive()) {
+				throw new SailException("The LMDB connection is closed");
+			}
+			if (replayRequested || replayInProgress) {
+				return -1;
+			}
+			activeReadCreations++;
+			return readAttemptGeneration;
+		}
+	}
+
+	private void endReadCreation() {
+		synchronized (readAttemptLock) {
+			if (--activeReadCreations < 0) {
+				throw new IllegalStateException("LMDB read-creation scope released more than once");
+			}
+			readAttemptLock.notifyAll();
+		}
+	}
+
+	private void closeDelegateWhenIdle(CloseableIteration<?> delegate) {
+		if (delegate == null) {
+			return;
+		}
+		boolean closeNow;
+		synchronized (readAttemptLock) {
+			closeNow = activeReadOperations == 0;
+			if (!closeNow) {
+				pendingDelegateCloses.add(delegate);
+			}
+		}
+		if (closeNow) {
+			delegate.close();
+		}
+	}
+
+	private LmdbSailStore.MapResizeKind resizeKind(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (current instanceof LmdbSailStore.MapResizeConflictException conflict) {
+				return conflict.kind();
+			}
+		}
+		return pendingGrowthKind;
+	}
+
+	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner) {
+		return beginReadExposureScope(observationOwner, QueryExecutionDeadline.current());
+	}
+
+	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
+			QueryExecutionDeadline deadline) {
+		return beginReadExposureScope(observationOwner, deadline,
+				observationOwner == null ? null : observationOwner.operationAttempt);
+	}
+
+	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
+			QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt) {
+		ReadExposureScope parent = activeReadExposureScope.get();
+		if (operationAttempt == null && parent != null) {
+			operationAttempt = parent.operationAttempt;
+		}
+		ReadExposureScope scope = new ReadExposureScope(parent, observationOwner, deadline, operationAttempt);
+		activeReadExposureScope.set(scope);
+		synchronized (readAttemptLock) {
+			activeReadExposureScopes.add(scope);
+		}
+		if (observationOwner != null) {
+			scope.captureAll(observationOwner.readViews());
+		}
+		scope.replaySafepoint = QueryExecutionContext.activateReplaySafepoint(scope::throwIfGrowthRequested);
+		return scope;
+	}
+
+	private OperationReadAttempt createOperationReadAttempt(IsolationLevel isolationLevel,
+			QueryExecutionDeadline deadline) throws SailException {
+		if (isolationLevel == null) {
+			return null;
+		}
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel, deadline);
+			attempt.lease = lmdbStore.getBackingStore().registerReadAttempt(attempt, attempt.observer);
+			synchronized (readAttemptLock) {
+				operationReadAttempts.add(attempt);
+			}
+			return attempt;
+		}
+	}
+
+	private OperationReadAttempt currentOrNewOperationReadAttempt(QueryExecutionDeadline deadline)
+			throws SailException {
+		ReadExposureScope parent = activeReadExposureScope.get();
+		if (parent != null) {
+			return parent.operationAttempt;
+		}
+		if (isActive()) {
+			return null;
+		}
+		return createOperationReadAttempt(lmdbStore.getDefaultIsolationLevel(), deadline);
+	}
+
+	private void closeOperationReadAttempt(OperationReadAttempt attempt) {
+		if (attempt == null) {
+			return;
+		}
+		LmdbSailStore.ReadAttemptLease lease;
+		synchronized (readAttemptLock) {
+			if (attempt.closed) {
+				return;
+			}
+			attempt.closed = true;
+			operationReadAttempts.remove(attempt);
+			lease = attempt.lease;
+			readAttemptLock.notifyAll();
+		}
+		if (lease != null) {
+			lease.close();
+		}
+	}
+
+	private void endReadExposureScope(ReadExposureScope scope) {
+		if (activeReadExposureScope.get() != scope) {
+			throw new IllegalStateException("LMDB read-exposure scopes must close in nesting order");
+		}
+		synchronized (readAttemptLock) {
+			activeReadExposureScopes.remove(scope);
+		}
+		scope.replaySafepoint.close();
+		if (scope.parent == null) {
+			activeReadExposureScope.remove();
+		} else {
+			activeReadExposureScope.set(scope.parent);
+		}
+	}
+
+	private void prepareForReadAttempt() throws SailException {
+		prepareForReadAttempt(null);
+	}
+
+	private void prepareForReadAttempt(ReplayableIteration<?> existingResult) throws SailException {
+		if (isDetachedAttemptResult(existingResult)) {
+			return;
+		}
+		if (existingResult != null && existingResult.operationAttempt != null
+				&& existingResult.operationAttempt.sealed) {
+			return;
+		}
+		if (internalReadScopeDepth.get() > 0) {
+			return;
+		}
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		QueryExecutionDeadline.Registration registration = deadline == null ? null
+				: deadline.onExpiration(() -> {
+					synchronized (readAttemptLock) {
+						readAttemptLock.notifyAll();
+					}
+				});
+		try {
+			while (true) {
+				throwIfDeadlineExpired(deadline);
+				retirePendingReplayIfIdle();
+				throwReplayFailureIfPresent();
+				synchronized (readAttemptLock) {
+					if (transactionFinished && isActive()) {
+						if (isDetachedAttemptResultLocked(existingResult)) {
+							return;
+						}
+						throw new SailException("The LMDB connection is closed");
+					}
+					if (!replayRequested && !replayInProgress) {
+						return;
+					}
+					try {
+						if (deadline == null) {
+							readAttemptLock.wait();
+						} else {
+							long remaining = deadline.remainingNanos();
+							if (remaining <= 0L) {
+								throw new QueryInterruptedException("Query evaluation took too long");
+							}
+							TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new SailException("Interrupted while waiting to restart an LMDB read attempt", e);
+					}
+				}
+			}
+		} finally {
+			if (registration != null) {
+				registration.close();
+			}
+		}
+	}
+
+	private boolean requestReplayForOperation(OperationReadAttempt operationAttempt,
+			LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token, long deadlineNanos,
+			List<LmdbSailStore.ReadAttemptLease> attempts, List<LmdbSailStore.ReadViewLease> views) {
+		Set<LmdbSailStore.ReadViewLease> affectedViews = Collections.newSetFromMap(new IdentityHashMap<>());
+		views.stream()
+				.filter(view -> !view.isClosed() && view.belongsTo(operationAttempt.lease))
+				.forEach(affectedViews::add);
+		if (affectedViews.isEmpty()) {
+			return false;
+		}
+
+		boolean scheduleCleanup;
+		synchronized (readAttemptLock) {
+			if (!attempts.contains(operationAttempt.lease) || !isOperationReplayAvailableLocked(operationAttempt)) {
+				return false;
+			}
+			for (ReadExposureScope scope : activeReadExposureScopes) {
+				if (scope.operationAttempt == operationAttempt && !scope.exposed) {
+					// Admission may still be returning this view to beginDatasetAcquisition. Record it here so a
+					// growth callback racing that return can still make the active operation retry its attempt.
+					scope.readViews.addAll(affectedViews);
+				}
+			}
+			boolean relevant = activeReadExposureScopes.stream()
+					.anyMatch(scope -> scope.operationAttempt == operationAttempt && !scope.exposed
+							&& !intersecting(scope.readViews(), affectedViews).isEmpty())
+					|| openReplayPlans.stream()
+							.anyMatch(plan -> plan.operationAttempt == operationAttempt
+									&& !intersecting(plan.readViews, affectedViews).isEmpty())
+					|| replayableIterations.stream()
+							.anyMatch(
+									iteration -> iteration.operationAttempt == operationAttempt && !iteration.isClosed()
+											&& !iteration.attemptFinished && !iteration.observed
+											&& iteration.factory != null
+											&& iteration.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+											&& !intersecting(iteration.readViews(), affectedViews).isEmpty());
+			if (!relevant || !operationAttempt.acceptGrowth(kind, token)) {
+				return false;
+			}
+
+			for (ReadExposureScope scope : activeReadExposureScopes) {
+				if (scope.operationAttempt == operationAttempt && !scope.exposed
+						&& !intersecting(scope.readViews(), affectedViews).isEmpty()) {
+					scope.requestGrowth(kind, token);
+				}
+			}
+			for (ReplayPlanIteration<?> plan : openReplayPlans) {
+				if (plan.operationAttempt == operationAttempt
+						&& !intersecting(plan.readViews, affectedViews).isEmpty()) {
+					plan.requestGrowth(kind, token);
+					pendingPlanReplays.add(plan);
+				}
+			}
+			for (ReplayableIteration<?> iteration : replayableIterations) {
+				if (iteration.operationAttempt == operationAttempt && !iteration.isClosed()
+						&& !iteration.attemptFinished && !iteration.observed && iteration.factory != null
+						&& iteration.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()) {
+					Set<LmdbSailStore.ReadViewLease> intersecting = intersecting(iteration.readViews(), affectedViews);
+					if (!intersecting.isEmpty()) {
+						iteration.requestGrowth(kind, token, intersecting);
+						pendingResultReplays.add(iteration);
+					}
+				}
+			}
+			scheduleCleanup = !pendingResultReplays.isEmpty()
+					&& activeReadOperations == 0 && activeReadCreations == 0 && !replayInProgress
+					&& !replayCleanupScheduled;
+			if (scheduleCleanup) {
+				replayCleanupScheduled = true;
+			}
+			readAttemptLock.notifyAll();
+		}
+
+		return !scheduleCleanup || submitReplayCleanup();
+	}
+
+	private boolean requestReplayForMapGrowth(LmdbSailStore.MapResizeKind kind,
+			LmdbSailStore.MapGrowthToken token, long deadlineNanos,
+			List<LmdbSailStore.ReadAttemptLease> attempts, List<LmdbSailStore.ReadViewLease> views) {
+		LmdbSailStore.ReadAttemptLease attempt = readAttemptLease;
+		if (attempt == null) {
+			return false;
+		}
+		Set<LmdbSailStore.ReadViewLease> affectedViews = Collections.newSetFromMap(new IdentityHashMap<>());
+		views.stream().filter(view -> !view.isClosed() && view.belongsTo(attempt)).forEach(affectedViews::add);
+		if (affectedViews.isEmpty()) {
+			return false;
+		}
+
+		boolean scheduleCleanup;
+		synchronized (readAttemptLock) {
+			if (attempt == null || attempt != readAttemptLease || !attempts.contains(attempt)
+					|| !isResultReplayAvailableLocked()) {
+				return false;
+			}
+
+			boolean transactionSnapshot = isTransactionSnapshot();
+			boolean accepted = false;
+			if (transactionSnapshot && !isReplayEligibleLocked()) {
+				return false;
+			}
+			pendingGrowthToken = token;
+			pendingGrowthKind = kind;
+			pendingQueryDeadline = queryDeadlineForViews(affectedViews, attempt);
+			if (transactionSnapshot) {
+				pendingGrowthViews.addAll(affectedViews);
+				replayRequested = true;
+				for (ReadExposureScope exposure : activeReadExposureScopes) {
+					if (!exposure.exposed && exposure.intersects(affectedViews)) {
+						exposure.requestGrowth(kind, token);
+					}
+				}
+				accepted = true;
+			} else {
+				for (ReplayableIteration<?> iteration : replayableIterations) {
+					if (!iteration.isClosed() && !iteration.attemptFinished && !iteration.observed
+							&& iteration.factory != null
+							&& iteration.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()) {
+						Set<LmdbSailStore.ReadViewLease> intersecting = intersecting(iteration.readViews(),
+								affectedViews);
+						if (intersecting.isEmpty()) {
+							continue;
+						}
+						iteration.requestGrowth(kind, token, intersecting);
+						pendingResultReplays.add(iteration);
+						accepted = true;
+					}
+				}
+				for (ReplayPlanIteration<?> plan : openReplayPlans) {
+					if (!plan.isClosed() && plan.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+							&& !intersecting(plan.readViews, affectedViews).isEmpty()) {
+						plan.requestGrowth(kind, token);
+						pendingPlanReplays.add(plan);
+						accepted = true;
+					}
+				}
+				for (ReadExposureScope exposure : activeReadExposureScopes) {
+					if (!exposure.exposed && exposure.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+							&& (exposure.observationOwner == null
+									|| !exposure.observationOwner.attemptFinished
+											&& !exposure.observationOwner.observed)
+							&& (exposure.observationOwner == null
+									|| exposure.observationOwner.replayAttempts < lmdbStore
+											.getReadOnlyReplayMaxRetries())
+							&& !intersecting(exposure.readViews(), affectedViews).isEmpty()) {
+						exposure.requestGrowth(kind, token);
+						accepted = true;
+					}
+				}
+				if (!accepted) {
+					if (pendingGrowthToken == token) {
+						pendingGrowthToken = null;
+						pendingQueryDeadline = null;
+					}
+					return false;
+				}
+			}
+			scheduleCleanup = accepted && (replayRequested || !pendingResultReplays.isEmpty()
+					|| !pendingPlanReplays.isEmpty()) && activeReadOperations == 0
+					&& activeReadCreations == 0 && !replayInProgress && !replayCleanupScheduled;
+			if (scheduleCleanup) {
+				replayCleanupScheduled = true;
+			}
+			readAttemptLock.notifyAll();
+		}
+
+		if (scheduleCleanup && !submitReplayCleanup()) {
+			return false;
+		}
+		return true;
+	}
+
+	private boolean submitReplayCleanup() {
+		try {
+			lmdbStore.getBackingStore().submitReplayRetirement(() -> {
+				try {
+					retirePendingReplayIfIdle();
+				} catch (RuntimeException | Error failure) {
+					// The growth callback must never hold up map replacement on branch cleanup. Surface the failure to
+					// the
+					// next connection operation and let the store use its bounded invalidation fallback.
+					synchronized (readAttemptLock) {
+						replayFailure = failure;
+						replayRequested = false;
+						readAttemptLock.notifyAll();
+					}
+				} finally {
+					synchronized (readAttemptLock) {
+						replayCleanupScheduled = false;
+						readAttemptLock.notifyAll();
+					}
+				}
+			});
+			return true;
+		} catch (RejectedExecutionException rejected) {
+			synchronized (readAttemptLock) {
+				replayFailure = new SailException("LMDB store is closing; cannot retire a read attempt", rejected);
+				replayRequested = false;
+				replayCleanupScheduled = false;
+				readAttemptLock.notifyAll();
+			}
+			return false;
+		}
+	}
+
+	private QueryExecutionDeadline queryDeadlineForViews(Set<LmdbSailStore.ReadViewLease> affectedViews,
+			LmdbSailStore.ReadAttemptLease attempt) {
+		for (ReadExposureScope scope : activeReadExposureScopes) {
+			if (scope.deadline != null && !intersecting(scope.readViews(), affectedViews).isEmpty()) {
+				return scope.deadline;
+			}
+		}
+		for (ReplayableIteration<?> iteration : replayableIterations) {
+			if (iteration.deadline != null && !intersecting(iteration.readViews(), affectedViews).isEmpty()) {
+				return iteration.deadline;
+			}
+		}
+		for (ReplayPlanIteration<?> plan : openReplayPlans) {
+			if (plan.deadline != null && !intersecting(plan.readViews, affectedViews).isEmpty()) {
+				return plan.deadline;
+			}
+		}
+		return attempt.deadlineOwner();
+	}
+
+	private Set<LmdbSailStore.ReadViewLease> intersecting(List<LmdbSailStore.ReadViewLease> readViews,
+			Set<LmdbSailStore.ReadViewLease> affectedViews) {
+		Set<LmdbSailStore.ReadViewLease> result = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (LmdbSailStore.ReadViewLease readView : readViews) {
+			if (affectedViews.contains(readView)) {
+				result.add(readView);
+			}
+		}
+		return result;
+	}
+
+	private Set<LmdbSailStore.ReadViewLease> newIdentitySet(
+			Iterable<LmdbSailStore.ReadViewLease> readViews) {
+		Set<LmdbSailStore.ReadViewLease> result = Collections.newSetFromMap(new IdentityHashMap<>());
+		readViews.forEach(result::add);
+		return result;
+	}
+
+	private void awaitGrowthEnd(LmdbSailStore.MapGrowthToken token, QueryExecutionDeadline deadline)
+			throws SailException {
+		if (token == null) {
+			throw new SailException("A retried LMDB read has no map-growth generation to await");
+		}
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			lmdbStore.getBackingStore().awaitGrowthEnd(token, deadline);
+		}
+	}
+
+	private void clearCompletedGrowth(LmdbSailStore.MapGrowthToken token) {
+		synchronized (readAttemptLock) {
+			if (pendingGrowthToken == token) {
+				pendingGrowthToken = null;
+				pendingQueryDeadline = null;
+				pendingGrowthViews.clear();
+			}
+			readAttemptLock.notifyAll();
+		}
+	}
+
+	private void throwIfDeadlineExpired(QueryExecutionDeadline deadline) {
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+	}
+
+	private boolean isDetachedAttemptResult(ReplayableIteration<?> iteration) {
+		synchronized (readAttemptLock) {
+			return isDetachedAttemptResultLocked(iteration);
+		}
+	}
+
+	private boolean isDetachedAttemptResultLocked(ReplayableIteration<?> iteration) {
+		return iteration != null && iteration.hasFinishedAttemptDelegate();
+	}
+
+	private boolean isResultReplayAvailableLocked() {
+		return !transactionFinished && !transactionWriteAttempted && isActive() && readAttemptLease != null
+				&& !readAttemptLease.isClosed() && isReplayIsolation(getTransactionIsolation());
+	}
+
+	private boolean isOperationReplayAvailableLocked(OperationReadAttempt operationAttempt) {
+		return operationAttempt != null && !operationAttempt.closed && !operationAttempt.sealed
+				&& operationAttempt.lease != null && !operationAttempt.lease.isClosed()
+				&& operationAttempt.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+				&& isReplayIsolation(operationAttempt.isolationLevel);
+	}
+
+	private boolean isOperationReplayAvailableLocked(OperationReadAttempt operationAttempt,
+			LmdbSailStore.MapGrowthToken acceptedToken) {
+		return isOperationReplayAvailableLocked(operationAttempt)
+				|| operationAttempt != null && !operationAttempt.closed && !operationAttempt.sealed
+						&& operationAttempt.lease != null && !operationAttempt.lease.isClosed()
+						&& acceptedToken != null && operationAttempt.growthToken == acceptedToken
+						&& operationAttempt.lastGrowthToken == acceptedToken
+						&& isReplayIsolation(operationAttempt.isolationLevel);
+	}
+
+	private boolean isResultReplayAvailableLocked(ReplayableIteration<?> iteration) {
+		if (iteration != null && iteration.operationAttempt != null) {
+			return isOperationReplayAvailableLocked(iteration.operationAttempt);
+		}
+		return isResultReplayAvailableLocked();
+	}
+
+	private boolean isResultReplayAvailableLocked(ReplayableIteration<?> iteration,
+			LmdbSailStore.MapGrowthToken acceptedToken) {
+		if (iteration != null && iteration.operationAttempt != null) {
+			return isOperationReplayAvailableLocked(iteration.operationAttempt, acceptedToken);
+		}
+		return isResultReplayAvailableLocked();
+	}
+
+	private boolean isReplayEligibleLocked() {
+		boolean transactionSnapshot = isTransactionSnapshot();
+		if (!transactionSnapshot || transactionFinished || transactionWriteAttempted || transactionObserved
+				|| !isActive()
+				|| readAttemptLease == null || readAttemptLease.isClosed()
+				|| replayAttempts >= lmdbStore.getReadOnlyReplayMaxRetries()) {
+			return false;
+		}
+		if (!isReplayIsolation(getTransactionIsolation())) {
+			return false;
+		}
+		for (ReplayableIteration<?> iteration : replayableIterations) {
+			if (iteration.attemptFinished) {
+				continue;
+			}
+			if (!iteration.isClosed() && iteration.factory == null) {
+				return false;
+			}
+			if (!transactionSnapshot && !iteration.isClosed() && iteration.observed) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void retirePendingReplayIfIdle() throws SailException {
+		List<LmdbSailStore.ReadViewLease> growthViews = List.of();
+		List<ReplayableIteration<?>> openIterations = List.of();
+		List<ReplayableIteration<?>> resultReplays = List.of();
+		LmdbSailStore.MapGrowthToken growthToken = null;
+		QueryExecutionDeadline deadline = null;
+		boolean transactionReplay;
+		synchronized (readAttemptLock) {
+			while (replayInProgress) {
+				QueryExecutionDeadline waitDeadline = QueryExecutionDeadline.current();
+				if (waitDeadline == null) {
+					waitDeadline = pendingQueryDeadline;
+				}
+				throwIfDeadlineExpired(waitDeadline);
+				try {
+					if (waitDeadline == null) {
+						readAttemptLock.wait();
+					} else {
+						long remaining = waitDeadline.remainingNanos();
+						if (remaining <= 0L) {
+							throw new QueryInterruptedException("Query evaluation took too long");
+						}
+						TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException("Interrupted while restarting an LMDB read attempt", e);
+				}
+			}
+			if (replayFailure != null) {
+				throwReplayFailureIfPresent();
+			}
+			if (activeReadOperations != 0 || activeReadCreations != 0) {
+				return;
+			}
+			transactionReplay = replayRequested;
+			if (transactionReplay) {
+				if (!isReplayEligibleLocked()) {
+					replayRequested = false;
+					pendingGrowthViews.clear();
+					return;
+				}
+			} else {
+				resultReplays = pendingResultReplays.stream()
+						.filter(iteration -> !iteration.isClosed() && !iteration.attemptFinished
+								&& iteration.growthToken != null
+								&& !iteration.observed && !iteration.replayInProgress)
+						.toList();
+				if (resultReplays.isEmpty()) {
+					pendingResultReplays.clear();
+					return;
+				}
+				pendingResultReplays.removeAll(resultReplays);
+				for (ReplayableIteration<?> iteration : resultReplays) {
+					iteration.replayInProgress = true;
+				}
+				growthViews = List.of();
+				openIterations = List.of();
+			}
+			if (transactionReplay) {
+				replayInProgress = true;
+				replayAttempts++;
+				readAttemptGeneration++;
+				growthViews = List.copyOf(pendingGrowthViews);
+				openIterations = replayableIterations.stream()
+						.filter(iteration -> !iteration.isClosed() && !iteration.attemptFinished)
+						.toList();
+				growthToken = pendingGrowthToken;
+				deadline = pendingQueryDeadline;
+			}
+		}
+
+		if (!transactionReplay) {
+			retireResultReplays(resultReplays);
+			return;
+		}
+
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			Set<LmdbSailStore.ReadViewLease> attemptViews = newIdentitySet(growthViews);
+			for (ReplayableIteration<?> iteration : openIterations) {
+				attemptViews.addAll(iteration.readViews());
+			}
+			for (LmdbSailStore.ReadViewLease view : attemptViews) {
+				view.abandonUnobserved();
+			}
+			for (ReplayableIteration<?> iteration : openIterations) {
+				iteration.closeDelegateForReplay();
+			}
+			releaseTransactionReadView();
+			retireBranchesForReadReplay();
+			retireSharedSnapshotsAfterReplay();
+			awaitGrowthEnd(growthToken, deadline);
+			clearCompletedGrowth(growthToken);
+			replayTransactionStart = true;
+			try {
+				startBranchesForReadReplay();
+			} finally {
+				replayTransactionStart = false;
+			}
+		} catch (Throwable failure) {
+			for (ReplayableIteration<?> iteration : openIterations) {
+				iteration.closeDelegateForReplay();
+			}
+			releaseTransactionReadView();
+			synchronized (readAttemptLock) {
+				replayFailure = failure;
+			}
+			if (failure instanceof SailException sailFailure) {
+				throw sailFailure;
+			}
+			if (failure instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new SailException("Unable to recreate an LMDB read attempt", failure);
+		} finally {
+			synchronized (readAttemptLock) {
+				pendingGrowthViews.clear();
+				replayRequested = false;
+				replayInProgress = false;
+				readAttemptLock.notifyAll();
+			}
+		}
+	}
+
+	private void retireResultReplays(List<ReplayableIteration<?>> resultReplays) {
+		for (ReplayableIteration<?> iteration : resultReplays) {
+			LmdbSailStore.MapGrowthToken token = iteration.growthToken;
+			QueryExecutionDeadline deadline = iteration.deadline;
+			Set<LmdbSailStore.ReadViewLease> views = newIdentitySet(iteration.growthViews);
+			views.addAll(iteration.readViews());
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				for (LmdbSailStore.ReadViewLease view : views) {
+					view.abandonUnobserved();
+				}
+				iteration.closeDelegateForReplay();
+				retireSharedSnapshotsAfterReplay();
+				awaitGrowthEnd(token, deadline);
+				clearCompletedGrowth(token);
+			} catch (RuntimeException failure) {
+				iteration.replayFailure = failure;
+			} catch (Error failure) {
+				iteration.replayFailure = failure;
+				throw failure;
+			} finally {
+				synchronized (readAttemptLock) {
+					iteration.growthToken = null;
+					iteration.growthKind = null;
+					iteration.growthViews.clear();
+					iteration.replayInProgress = false;
+					readAttemptLock.notifyAll();
+				}
+			}
+		}
+	}
+
+	private void retireSharedSnapshotsAfterReplay() throws SailException {
+		Throwable failure = null;
+		try {
+			lmdbStore.getSailStore().getExplicitSailSource().retireIdleSnapshot();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = retireFailure;
+		}
+		try {
+			lmdbStore.getSailStore().getInferredSailSource().retireIdleSnapshot();
+		} catch (RuntimeException | Error retireFailure) {
+			if (failure == null) {
+				failure = retireFailure;
+			} else if (failure != retireFailure) {
+				failure.addSuppressed(retireFailure);
+			}
+		}
+		if (failure instanceof SailException sailFailure) {
+			throw sailFailure;
+		}
+		if (failure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private void retireSharedSnapshotsPreservingBorrowers() throws SailException {
+		Throwable failure = null;
+		try {
+			lmdbStore.getSailStore().getExplicitSailSource().retireSnapshotsPreservingBorrowers();
+		} catch (RuntimeException | Error retireFailure) {
+			failure = retireFailure;
+		}
+		try {
+			lmdbStore.getSailStore().getInferredSailSource().retireSnapshotsPreservingBorrowers();
+		} catch (RuntimeException | Error retireFailure) {
+			if (failure == null) {
+				failure = retireFailure;
+			} else if (failure != retireFailure) {
+				failure.addSuppressed(retireFailure);
+			}
+		}
+		if (failure instanceof SailException sailFailure) {
+			throw sailFailure;
+		}
+		if (failure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private void throwReplayFailureIfPresent() throws SailException {
+		Throwable failure = replayFailure;
+		if (failure == null) {
+			return;
+		}
+		if (failure instanceof SailException sailFailure) {
+			throw sailFailure;
+		}
+		throw new SailException("Unable to recreate an LMDB read attempt", failure);
+	}
+
+	private <T> T executeTrackedRead(ReadOperation<T> operation) throws SailException {
+		return executeTrackedRead(operation, null, QueryExecutionDeadline.current());
+	}
+
+	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner)
+			throws SailException {
+		QueryExecutionDeadline current = QueryExecutionDeadline.current();
+		return executeTrackedRead(operation, observationOwner,
+				current == null && observationOwner != null ? observationOwner.deadline : current);
+	}
+
+	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner,
+			QueryExecutionDeadline deadline) throws SailException {
+		if (internalReadScopeDepth.get() > 0) {
+			throwIfReadScopeRequestedReplay();
+			return operation.execute();
+		}
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			ReadExposureScope parent = activeReadExposureScope.get();
+			OperationReadAttempt operationAttempt = observationOwner == null
+					? currentOrNewOperationReadAttempt(deadline)
+					: observationOwner.operationAttempt;
+			boolean ownsOperationAttempt = observationOwner == null && parent == null && !isActive()
+					&& operationAttempt != null;
+			try {
+				int retries = 0;
+				while (true) {
+					throwIfDeadlineExpired(deadline);
+					boolean detachedResult = isDetachedAttemptResult(observationOwner);
+					prepareForReadAttempt(observationOwner);
+					if (!detachedResult) {
+						awaitResultReplayIfNeeded(observationOwner, deadline);
+					}
+					synchronized (readAttemptLock) {
+						detachedResult = isDetachedAttemptResultLocked(observationOwner);
+						if (transactionFinished && isActive() && !detachedResult
+								&& (operationAttempt == null || !operationAttempt.sealed)) {
+							throw new SailException("The LMDB connection is closed");
+						}
+						if (!detachedResult && (replayRequested || replayInProgress
+								|| observationOwner != null && observationOwner.replayInProgress)) {
+							continue;
+						}
+						activeReadOperations++;
+					}
+					ReadExposureScope exposure = beginReadExposureScope(observationOwner, deadline, operationAttempt);
+					int oldDepth = internalReadScopeDepth.get();
+					internalReadScopeDepth.set(oldDepth + 1);
+					T result = null;
+					Throwable failure = null;
+					try {
+						result = operation.execute();
+					} catch (RuntimeException | Error readFailure) {
+						failure = readFailure;
+					} finally {
+						if (oldDepth == 0) {
+							internalReadScopeDepth.remove();
+						} else {
+							internalReadScopeDepth.set(oldDepth);
+						}
+					}
+
+					if (failure == null) {
+						try {
+							exposure.ensureNativeSnapshotsValid();
+						} catch (SailException invalidated) {
+							failure = invalidated;
+						}
+					}
+
+					boolean retry = false;
+					boolean transactionReplay = false;
+					LmdbSailStore.MapGrowthToken growthToken;
+					LmdbSailStore.MapResizeKind growthKind;
+					List<LmdbSailStore.ReadViewLease> readViews = exposure.readViews();
+					List<CloseableIteration<?>> deferredCloses;
+					boolean retirePending;
+					synchronized (readAttemptLock) {
+						growthToken = exposure.growthToken();
+						growthKind = exposure.growthKind();
+						if (!detachedResult && growthToken == null && operationAttempt != null
+								&& operationAttempt.growthToken != null) {
+							growthToken = operationAttempt.growthToken;
+							growthKind = operationAttempt.growthKind;
+						}
+						if (!detachedResult && growthToken == null && operationAttempt == null && isActive()
+								&& isTransactionSnapshot()
+								&& pendingGrowthToken != null) {
+							growthToken = pendingGrowthToken;
+							growthKind = pendingGrowthKind;
+						}
+						boolean conflict = isMapResizeConflict(failure);
+						boolean retryableOutcome = failure == null || conflict;
+						if (!detachedResult && retryableOutcome && operationAttempt == null
+								&& (conflict || growthToken != null)
+								&& isActive() && isTransactionSnapshot()
+								&& isReplayEligibleLocked() && growthToken != null) {
+							replayRequested = true;
+							pendingGrowthViews.addAll(readViews);
+							pendingGrowthKind = growthKind;
+							pendingGrowthToken = growthToken;
+							pendingQueryDeadline = deadline;
+							retry = true;
+							transactionReplay = true;
+						} else if (!detachedResult && retryableOutcome && (conflict || growthToken != null)
+								&& observationOwner != null
+								&& !observationOwner.observed && observationOwner.factory != null
+								&& isResultReplayAvailableLocked(observationOwner, growthToken)
+								&& (observationOwner.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+										|| observationOwner.growthToken == growthToken)
+								&& growthToken != null) {
+							Set<LmdbSailStore.ReadViewLease> affected = intersecting(readViews,
+									newIdentitySet(observationOwner.readViews()));
+							if (affected.isEmpty()) {
+								affected = newIdentitySet(readViews);
+							}
+							observationOwner.requestGrowth(growthKind, growthToken, affected);
+							pendingResultReplays.add(observationOwner);
+							retry = true;
+						} else if (!detachedResult && retryableOutcome && (conflict || growthToken != null)
+								&& observationOwner == null
+								&& (operationAttempt != null
+										? isOperationReplayAvailableLocked(operationAttempt, growthToken)
+										: isResultReplayAvailableLocked())
+								&& (operationAttempt != null
+										|| exposure.replayAttempts < lmdbStore.getReadOnlyReplayMaxRetries()
+										|| exposure.growthToken() == growthToken)
+								&& growthToken != null) {
+							if (operationAttempt == null) {
+								pendingGrowthToken = growthToken;
+								pendingGrowthKind = growthKind;
+								pendingQueryDeadline = deadline;
+							}
+							retry = true;
+						} else if (!detachedResult && operationAttempt == null && failure == null && replayRequested
+								&& isReplayEligibleLocked()) {
+							retry = true;
+							transactionReplay = true;
+						} else if (failure == null) {
+							// This is the serialization point between native-generation retirement and exposing a
+							// scalar or
+							// iteration observation. Snapshot-dependent values were initialized by their result
+							// wrappers
+							// first.
+							exposure.markExposed();
+							if (observationOwner != null) {
+								observationOwner.addReadViews(readViews);
+							}
+							if (detachedResult) {
+								observationOwner.observed = true;
+							} else if (operationAttempt == null && isActive() && isTransactionSnapshot()) {
+								transactionObserved = true;
+							} else if (observationOwner != null) {
+								observationOwner.observed = true;
+								if (operationAttempt != null) {
+									operationAttempt.sealed = true;
+								}
+							} else if (operationAttempt != null) {
+								operationAttempt.sealed = true;
+							}
+						}
+						endReadExposureScope(exposure);
+						if (--activeReadOperations < 0) {
+							throw new IllegalStateException("LMDB read-operation scope released more than once");
+						}
+						deferredCloses = activeReadOperations == 0 && !pendingDelegateCloses.isEmpty()
+								? List.copyOf(pendingDelegateCloses)
+								: List.of();
+						if (!deferredCloses.isEmpty()) {
+							pendingDelegateCloses.clear();
+						}
+						retirePending = activeReadOperations == 0
+								&& (replayRequested || !pendingResultReplays.isEmpty());
+						readAttemptLock.notifyAll();
+					}
+					for (CloseableIteration<?> deferredClose : deferredCloses) {
+						deferredClose.close();
+					}
+					if (retry) {
+						if (transactionReplay || observationOwner != null) {
+							retirePendingReplayIfIdle();
+							if (observationOwner != null && !transactionReplay) {
+								awaitResultReplayIfNeeded(observationOwner, deadline);
+							}
+						} else {
+							for (LmdbSailStore.ReadViewLease readView : readViews) {
+								readView.abandonUnobserved();
+							}
+							retireSharedSnapshotsAfterReplay();
+							awaitGrowthEnd(growthToken, deadline);
+							clearCompletedGrowth(growthToken);
+							if (operationAttempt != null) {
+								operationAttempt.clearGrowth(growthToken);
+							}
+						}
+						if (++retries > lmdbStore.getReadOnlyReplayMaxRetries()) {
+							throw new LmdbSailStore.MapResizeConflictException(growthKind,
+									"LMDB read operation exceeded its map-growth replay limit");
+						}
+						continue;
+					}
+					if (retirePending) {
+						retirePendingReplayIfIdle();
+					}
+					if (failure != null) {
+						if (failure instanceof SailException sailFailure) {
+							throw sailFailure;
+						}
+						if (failure instanceof RuntimeException runtimeFailure) {
+							throw runtimeFailure;
+						}
+						if (failure instanceof Error error) {
+							throw error;
+						}
+						throw new SailException("LMDB read failed", failure);
+					}
+					return result;
+				}
+			} finally {
+				if (ownsOperationAttempt) {
+					closeOperationReadAttempt(operationAttempt);
+				}
+			}
+		}
+	}
+
+	private void awaitResultReplayIfNeeded(ReplayableIteration<?> iteration, QueryExecutionDeadline deadline)
+			throws SailException {
+		if (iteration == null || iteration.operationAttempt != null && iteration.operationAttempt.sealed) {
+			return;
+		}
+		QueryExecutionDeadline.Registration registration = deadline == null ? null
+				: deadline.onExpiration(() -> {
+					synchronized (readAttemptLock) {
+						readAttemptLock.notifyAll();
+					}
+				});
+		try {
+			synchronized (readAttemptLock) {
+				while (!isDetachedAttemptResultLocked(iteration)
+						&& (iteration.replayInProgress || iteration.growthToken != null)) {
+					throwIfDeadlineExpired(deadline);
+					try {
+						if (deadline == null) {
+							readAttemptLock.wait();
+						} else {
+							long remaining = deadline.remainingNanos();
+							if (remaining <= 0L) {
+								throw new QueryInterruptedException("Query evaluation took too long");
+							}
+							TimeUnit.NANOSECONDS.timedWait(readAttemptLock, remaining);
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new SailException("Interrupted while waiting for LMDB result replay", e);
+					}
+				}
+			}
+		} finally {
+			if (registration != null) {
+				registration.close();
+			}
+		}
+	}
+
+	private void throwIfReadScopeRequestedReplay() throws SailException {
+		QueryExecutionContext.checkpointReplaySafepoint();
+	}
+
+	static boolean isMapResizeConflict(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (current.getSuppressed().length > 0) {
+				// A retry must never hide an earlier resource-cleanup failure from an abandoned attempt.
+				return false;
+			}
+			if (current instanceof LmdbSailStore.MapResizeConflictException) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean isReplayIsolation(IsolationLevel isolationLevel) {
+		return IsolationLevels.READ_COMMITTED.equals(isolationLevel)
+				|| IsolationLevels.SNAPSHOT_READ.equals(isolationLevel)
+				|| IsolationLevels.SNAPSHOT.equals(isolationLevel)
+				|| IsolationLevels.SERIALIZABLE.equals(isolationLevel);
+	}
+
+	private boolean isTransactionSnapshot() {
+		IsolationLevel isolationLevel = getTransactionIsolation();
+		return isolationLevel != null && isolationLevel.isCompatibleWith(IsolationLevels.SNAPSHOT);
+	}
+
+	private void markTransactionWriteAttempted() {
+		synchronized (readAttemptLock) {
+			transactionWriteAttempted = true;
+		}
+	}
+
+	private void finishReadAttempt() throws SailException {
+		boolean interrupted = false;
+		synchronized (readAttemptLock) {
+			for (ReplayableIteration<?> iteration : replayableIterations) {
+				iteration.markAttemptFinished(readAttemptGeneration);
+			}
+			transactionFinished = true;
+			replayRequested = false;
+			pendingGrowthViews.clear();
+			readAttemptLock.notifyAll();
+			while (replayInProgress || replayCleanupScheduled || activeReadOperations > 0
+					|| activeReadCreations > 0) {
+				try {
+					readAttemptLock.wait();
+				} catch (InterruptedException e) {
+					// Native retirement must finish before the connection releases its final read view. Preserve the
+					// interrupt for the caller, but keep waiting until cleanup can no longer touch this connection.
+					interrupted = true;
+				}
+			}
+		}
+		closeReadAttemptLease();
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private void closeReadAttemptLease() {
+		LmdbSailStore.ReadAttemptLease lease = readAttemptLease;
+		readAttemptLease = null;
+		if (lease != null) {
+			lease.close();
+		}
+	}
+
+	private final class OperationReadAttempt {
+		private final IsolationLevel isolationLevel;
+		private final QueryExecutionDeadline deadline;
+		private final LmdbSailStore.MapGrowthObserver observer = this::requestReplay;
+		private LmdbSailStore.ReadAttemptLease lease;
+		private LmdbSailStore.MapGrowthToken growthToken;
+		private LmdbSailStore.MapGrowthToken lastGrowthToken;
+		private LmdbSailStore.MapResizeKind growthKind;
+		private int replayAttempts;
+		private volatile boolean sealed;
+		private volatile boolean closed;
+
+		private OperationReadAttempt(IsolationLevel isolationLevel, QueryExecutionDeadline deadline) {
+			this.isolationLevel = isolationLevel;
+			this.deadline = deadline;
+		}
+
+		private boolean requestReplay(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token,
+				long deadlineNanos, List<LmdbSailStore.ReadAttemptLease> attempts,
+				List<LmdbSailStore.ReadViewLease> views) {
+			return requestReplayForOperation(this, kind, token, deadlineNanos, attempts, views);
+		}
+
+		private boolean acceptGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token) {
+			if (closed || sealed) {
+				return false;
+			}
+			if (lastGrowthToken != token) {
+				if (replayAttempts >= lmdbStore.getReadOnlyReplayMaxRetries()) {
+					return false;
+				}
+				replayAttempts++;
+				lastGrowthToken = token;
+			}
+			growthToken = token;
+			growthKind = kind;
+			return true;
+		}
+
+		private void clearGrowth(LmdbSailStore.MapGrowthToken token) {
+			if (growthToken == token) {
+				growthToken = null;
+				growthKind = null;
+			}
+		}
+	}
+
+	private final class ReadExposureScope {
+		private final ReadExposureScope parent;
+		private final ReplayableIteration<?> observationOwner;
+		private final QueryExecutionDeadline deadline;
+		private final OperationReadAttempt operationAttempt;
+		private final Set<LmdbSailStore.ReadViewLease> readViews = Collections
+				.newSetFromMap(new IdentityHashMap<>());
+		private LmdbSailStore.MapGrowthToken growthToken;
+		private LmdbSailStore.MapResizeKind growthKind;
+		private QueryExecutionContext.Activation replaySafepoint;
+		private int replayAttempts;
+		private boolean exposed;
+
+		private ReadExposureScope(ReadExposureScope parent, ReplayableIteration<?> observationOwner,
+				QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt) {
+			this.parent = parent;
+			this.observationOwner = observationOwner;
+			this.deadline = deadline;
+			this.operationAttempt = operationAttempt;
+		}
+
+		private void capture(LmdbSailStore.ReadViewLease readView) {
+			if (readView == null) {
+				return;
+			}
+			synchronized (readAttemptLock) {
+				for (ReadExposureScope scope = this; scope != null; scope = scope.parent) {
+					scope.readViews.add(readView);
+					OperationReadAttempt attempt = scope.operationAttempt;
+					if (attempt != null && attempt.lease != null && readView.belongsTo(attempt.lease)
+							&& attempt.growthToken != null
+							&& lmdbStore.getBackingStore().isGrowthActive(attempt.growthToken)) {
+						scope.requestGrowth(attempt.growthKind, attempt.growthToken);
+					} else if (scope.observationOwner != null && !scope.observationOwner.observed
+							&& !scope.observationOwner.attemptFinished
+							&& scope.observationOwner.growthToken != null
+							&& scope.observationOwner.growthViews.contains(readView)
+							&& lmdbStore.getBackingStore()
+									.isGrowthActive(scope.observationOwner.growthToken)) {
+						scope.requestGrowth(scope.observationOwner.growthKind, scope.observationOwner.growthToken);
+					} else if (scope.parent != null && !scope.parent.exposed && scope.parent.growthToken != null
+							&& lmdbStore.getBackingStore().isGrowthActive(scope.parent.growthToken)) {
+						scope.requestGrowth(scope.parent.growthKind, scope.parent.growthToken);
+					} else if (scope.operationAttempt == null && scope.observationOwner == null && isActive()
+							&& isTransactionSnapshot() && replayRequested && pendingGrowthToken != null
+							&& pendingGrowthViews.contains(readView)
+							&& lmdbStore.getBackingStore().isGrowthActive(pendingGrowthToken)) {
+						scope.requestGrowth(pendingGrowthKind, pendingGrowthToken);
+					}
+				}
+			}
+		}
+
+		private void captureAll(Iterable<LmdbSailStore.ReadViewLease> capturedViews) {
+			for (LmdbSailStore.ReadViewLease readView : capturedViews) {
+				capture(readView);
+			}
+		}
+
+		private List<LmdbSailStore.ReadViewLease> readViews() {
+			synchronized (readAttemptLock) {
+				return List.copyOf(readViews);
+			}
+		}
+
+		private boolean intersects(Set<LmdbSailStore.ReadViewLease> views) {
+			synchronized (readAttemptLock) {
+				for (LmdbSailStore.ReadViewLease view : readViews) {
+					if (views.contains(view)) {
+						return true;
+					}
+				}
+				return false;
+			}
+		}
+
+		private void requestGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token) {
+			if (exposed) {
+				return;
+			}
+			if (growthToken != token) {
+				replayAttempts++;
+			}
+			growthKind = kind;
+			growthToken = token;
+		}
+
+		private LmdbSailStore.MapGrowthToken growthToken() {
+			synchronized (readAttemptLock) {
+				return growthToken;
+			}
+		}
+
+		private LmdbSailStore.MapResizeKind growthKind() {
+			synchronized (readAttemptLock) {
+				return growthKind;
+			}
+		}
+
+		private void markExposed() {
+			synchronized (readAttemptLock) {
+				exposed = true;
+			}
+		}
+
+		private void ensureNativeSnapshotsValid() throws SailException {
+			for (LmdbSailStore.ReadViewLease readView : readViews) {
+				readView.ensureNativeSnapshotsValid();
+			}
+		}
+
+		private void throwIfGrowthRequested() throws SailException {
+			synchronized (readAttemptLock) {
+				if (!exposed && growthToken != null) {
+					throw new LmdbSailStore.MapResizeConflictException(growthKind,
+							"LMDB growth requested a cooperative read-attempt replay");
+				}
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface ReplayFactory<T> {
+		CloseableIteration<? extends T> open() throws SailException;
+	}
+
+	private static final class ExplainTupleExprCapture {
+		private volatile TupleExpr tupleExpr;
+	}
+
+	private record ReplayPlan<T> (ReplayFactory<T> factory, long generation,
+			List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
+			OperationReadAttempt operationAttempt) {
+	}
+
+	private final class ReplayPlanIteration<T> extends IterationWrapper<T> {
+		private final ReplayFactory<T> factory;
+		private final long generation;
+		private final List<LmdbSailStore.ReadViewLease> readViews;
+		private final QueryExecutionDeadline deadline;
+		private final OperationReadAttempt operationAttempt;
+		private boolean ownsOperationAttempt;
+		private LmdbSailStore.MapGrowthToken growthToken;
+		private LmdbSailStore.MapResizeKind growthKind;
+		private int replayAttempts;
+
+		private ReplayPlanIteration(CloseableIteration<? extends T> delegate, ReplayFactory<T> factory,
+				long generation, List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
+				OperationReadAttempt operationAttempt, boolean ownsOperationAttempt) {
+			super(delegate);
+			this.factory = factory;
+			this.generation = generation;
+			this.readViews = List.copyOf(readViews);
+			this.deadline = deadline;
+			this.operationAttempt = operationAttempt;
+			this.ownsOperationAttempt = ownsOperationAttempt;
+		}
+
+		private OperationReadAttempt transferOperationAttempt() {
+			ownsOperationAttempt = false;
+			return operationAttempt;
+		}
+
+		private void requestGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token) {
+			if (growthToken != token) {
+				replayAttempts++;
+			}
+			growthKind = kind;
+			growthToken = token;
+		}
+
+		@Override
+		protected void handleClose() {
+			synchronized (readAttemptLock) {
+				openReplayPlans.remove(this);
+				pendingPlanReplays.remove(this);
+				readAttemptLock.notifyAll();
+			}
+			try {
+				super.handleClose();
+			} finally {
+				if (ownsOperationAttempt) {
+					closeOperationReadAttempt(operationAttempt);
+					ownsOperationAttempt = false;
+				}
+			}
+		}
+	}
+
+	private final class ReplayableIteration<T> extends AbstractCloseableIteration<T> {
+		private volatile CloseableIteration<? extends T> delegate;
+		private final ReplayFactory<T> factory;
+		private volatile long generation;
+		private long attemptGeneration;
+		private volatile boolean attemptFinished;
+		private volatile boolean observed;
+		private List<LmdbSailStore.ReadViewLease> readViews;
+		private final QueryExecutionDeadline deadline;
+		private final OperationReadAttempt operationAttempt;
+		private LmdbSailStore.MapGrowthToken growthToken;
+		private LmdbSailStore.MapResizeKind growthKind;
+		private Set<LmdbSailStore.ReadViewLease> growthViews = Collections
+				.newSetFromMap(new IdentityHashMap<>());
+		private int replayAttempts;
+		private boolean replayInProgress;
+		private volatile Throwable replayFailure;
+
+		private ReplayableIteration(CloseableIteration<? extends T> delegate, ReplayFactory<T> factory,
+				long generation, List<LmdbSailStore.ReadViewLease> readViews,
+				QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt) {
+			this.delegate = delegate;
+			this.factory = factory;
+			this.generation = generation;
+			this.attemptGeneration = generation;
+			this.readViews = List.copyOf(readViews);
+			this.deadline = deadline;
+			this.operationAttempt = operationAttempt;
+		}
+
+		private void requestGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token,
+				Set<LmdbSailStore.ReadViewLease> views) {
+			if (attemptFinished) {
+				return;
+			}
+			if (growthToken != token) {
+				replayAttempts++;
+			}
+			growthKind = kind;
+			growthToken = token;
+			growthViews.addAll(views);
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (isClosed()) {
+				return false;
+			}
+			try {
+				boolean hasNext = executeTrackedRead(() -> currentDelegate().hasNext(), this, deadline);
+				if (!hasNext) {
+					close();
+				}
+				return hasNext;
+			} catch (SailException failure) {
+				close();
+				throw new QueryEvaluationException("Unable to read from an LMDB iteration", failure);
+			}
+		}
+
+		@Override
+		public T next() {
+			if (isClosed()) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			try {
+				return executeTrackedRead(() -> currentDelegate().next(), this, deadline);
+			} catch (NoSuchElementException failure) {
+				close();
+				throw failure;
+			} catch (SailException failure) {
+				close();
+				throw new QueryEvaluationException("Unable to read from an LMDB iteration", failure);
+			}
+		}
+
+		@Override
+		public void remove() {
+			if (isClosed()) {
+				throw new IllegalStateException("The iteration has been closed.");
+			}
+			try {
+				executeTrackedRead(() -> {
+					currentDelegate().remove();
+					return null;
+				}, this, deadline);
+			} catch (SailException failure) {
+				close();
+				throw new QueryEvaluationException("Unable to update an LMDB iteration", failure);
+			}
+		}
+
+		private boolean hasFinishedAttemptDelegate() {
+			return attemptFinished && !isClosed() && delegate != null;
+		}
+
+		private void markAttemptFinished(long finishedGeneration) {
+			if (attemptGeneration == finishedGeneration) {
+				attemptFinished = true;
+			}
+		}
+
+		private CloseableIteration<? extends T> currentDelegate() throws SailException {
+			if (replayFailure != null) {
+				if (replayFailure instanceof SailException sailFailure) {
+					throw sailFailure;
+				}
+				throw new SailException("Unable to replay an LMDB read result", replayFailure);
+			}
+			long currentGeneration = operationAttempt == null ? currentReadAttemptGeneration() : generation;
+			CloseableIteration<? extends T> current = delegate;
+			if (attemptFinished) {
+				if (current == null) {
+					throw new SailException("The LMDB read result's transaction attempt is no longer available");
+				}
+				return current;
+			}
+			if (current == null || generation != currentGeneration) {
+				if (operationAttempt != null && operationAttempt.sealed) {
+					throw new LmdbSailStore.MapResizeConflictException(growthKind,
+							"The standalone LMDB read attempt cannot be replayed into a later transaction");
+				}
+				if (factory == null) {
+					throw new SailException("The LMDB read result cannot be replayed");
+				}
+				ReplayPlanIteration<T> replacement = openReplayPlan(factory, deadline, operationAttempt);
+				synchronized (readAttemptLock) {
+					openReplayPlans.remove(replacement);
+					pendingPlanReplays.remove(replacement);
+				}
+				if (isClosed()) {
+					replacement.close();
+					throw new SailException("The LMDB read result was closed while it was being replayed");
+				}
+				replaceDelegate(replacement, replacement.generation, replacement.readViews);
+				current = replacement;
+			}
+			return current;
+		}
+
+		private void closeDelegateForReplay() {
+			CloseableIteration<? extends T> current;
+			synchronized (readAttemptLock) {
+				current = delegate;
+				delegate = null;
+				readViews = List.of();
+			}
+			closeDelegateWhenIdle(current);
+		}
+
+		private void replaceDelegate(CloseableIteration<? extends T> replacement, long newGeneration,
+				List<LmdbSailStore.ReadViewLease> replacementViews) {
+			CloseableIteration<? extends T> previous;
+			synchronized (readAttemptLock) {
+				previous = delegate;
+				delegate = replacement;
+				generation = newGeneration;
+				attemptGeneration = newGeneration;
+				attemptFinished = false;
+				readViews = List.copyOf(replacementViews);
+			}
+			if (previous != replacement) {
+				closeDelegateWhenIdle(previous);
+			}
+		}
+
+		private List<LmdbSailStore.ReadViewLease> readViews() {
+			synchronized (readAttemptLock) {
+				return List.copyOf(readViews);
+			}
+		}
+
+		private void addReadViews(Iterable<LmdbSailStore.ReadViewLease> additionalViews) {
+			synchronized (readAttemptLock) {
+				Set<LmdbSailStore.ReadViewLease> combined = newIdentitySet(readViews);
+				additionalViews.forEach(combined::add);
+				readViews = List.copyOf(combined);
+			}
+		}
+
+		@Override
+		protected void handleClose() {
+			closeDelegateForReplay();
+			synchronized (readAttemptLock) {
+				replayableIterations.remove(this);
+				pendingResultReplays.remove(this);
+				readAttemptLock.notifyAll();
+			}
+			closeOperationReadAttempt(operationAttempt);
+		}
+	}
+
 	@Override
 	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
@@ -313,6 +2364,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
+		markTransactionWriteAttempted();
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
@@ -320,19 +2372,54 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
+		markTransactionWriteAttempted();
 		super.clearInternal(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
+		markTransactionWriteAttempted();
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
+	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws SailException {
+		markTransactionWriteAttempted();
+		super.addStatement(op, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws SailException {
+		markTransactionWriteAttempted();
+		super.removeStatement(op, subj, pred, obj, contexts);
+	}
+
+	@Override
+	protected void setNamespaceInternal(String prefix, String name) throws SailException {
+		markTransactionWriteAttempted();
+		super.setNamespaceInternal(prefix, name);
+	}
+
+	@Override
+	protected void removeNamespaceInternal(String prefix) throws SailException {
+		markTransactionWriteAttempted();
+		super.removeNamespaceInternal(prefix);
+	}
+
+	@Override
+	protected void clearNamespacesInternal() throws SailException {
+		markTransactionWriteAttempted();
+		super.clearNamespacesInternal();
+	}
+
+	@Override
 	protected void closeInternal() throws SailException {
 		try {
+			finishReadAttempt();
 			super.closeInternal();
 		} finally {
 			releaseTransactionReadView();

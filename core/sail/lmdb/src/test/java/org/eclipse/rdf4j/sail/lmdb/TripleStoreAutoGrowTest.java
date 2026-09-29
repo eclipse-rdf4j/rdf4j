@@ -64,6 +64,19 @@ public class TripleStoreAutoGrowTest {
 	}
 
 	@Test
+	public void testAutoGrowReservesSpaceAndAlignsToNativePages() {
+		long pageSize = 4096;
+		long requiredSize = 1024L * 1024L;
+
+		long grownSize = LmdbUtil.autoGrowMapSize(64L * 1024L, pageSize, requiredSize);
+
+		assertEquals(0L, grownSize % pageSize,
+				"the requested native map size must align to LMDB's page boundary");
+		assertTrue(grownSize >= requiredSize + LmdbUtil.MIN_FREE_SPACE,
+				"growth must leave the configured free-space reserve after the requested write");
+	}
+
+	@Test
 	public void testPageEstimatorAcrossAutoGrowth() throws Exception {
 		tripleStore.startTransaction();
 		tripleStore.storeTriple(1, 7, 11, 3, true);
