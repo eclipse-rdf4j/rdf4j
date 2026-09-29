@@ -2364,7 +2364,6 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Runnable> replayRetirementOwner = new ThreadLocal<>();
 
 	private final TripleStore tripleStore;
-	private final File dataDir;
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
@@ -2486,9 +2485,9 @@ class LmdbSailStore implements SailStore {
 	private volatile CommitListener commitListener;
 
 	interface CommitListener {
-		void onCommit(long transactionId, List<Statement> additions, List<Statement> removals);
+		void onCommit(long transactionId, List<LmdbBackupDeltaCodec.Record> records);
 
-		void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals, Throwable error);
+		void onCommitFailure(long transactionId, List<LmdbBackupDeltaCodec.Record> records, Throwable error);
 	}
 
 	/**
@@ -7042,8 +7041,7 @@ class LmdbSailStore implements SailStore {
 		private volatile boolean estimatorTouchedInTransaction;
 		private volatile boolean flushRequested;
 		private volatile boolean closed;
-		private final List<Statement> committedAdds = new ArrayList<>();
-		private final List<Statement> committedRemovals = new ArrayList<>();
+		private final List<LmdbBackupDeltaCodec.Record> committedRecords = new ArrayList<>();
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level, Object requestedWriterOwner) throws SailException {
 			this.explicit = explicit;
@@ -7201,16 +7199,30 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void queueBackupAdd(Statement st) {
-			committedAdds.add(st);
+			committedRecords.add(new LmdbBackupDeltaCodec.Record(true, explicit, st));
 		}
 
 		private void queueBackupRemove(Statement st) {
-			committedRemovals.add(st);
+			committedRecords.add(new LmdbBackupDeltaCodec.Record(false, explicit, st));
+		}
+
+		private void queueBackupNamespaceSet(String prefix, String name) {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, prefix, name));
+		}
+
+		private void queueBackupNamespaceRemove(String prefix) {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.REMOVE, prefix, null));
+		}
+
+		private void queueBackupNamespaceClear() {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.CLEAR, null, null));
 		}
 
 		private void clearCommittedDelta() {
-			committedAdds.clear();
-			committedRemovals.clear();
+			committedRecords.clear();
 		}
 
 		private void discardEstimatorUpdatesIfTouched() {
@@ -7432,19 +7444,18 @@ class LmdbSailStore implements SailStore {
 
 		private void publishCommittedDelta() {
 			CommitListener listener = commitListener;
-			if (listener == null || committedAdds.isEmpty() && committedRemovals.isEmpty()) {
+			if (listener == null || committedRecords.isEmpty()) {
 				clearCommittedDelta();
 				return;
 			}
-			List<Statement> additions = List.copyOf(committedAdds);
-			List<Statement> removals = List.copyOf(committedRemovals);
+			List<LmdbBackupDeltaCodec.Record> records = List.copyOf(committedRecords);
 			clearCommittedDelta();
 			long transactionId = tripleStore.getLastCommittedTxnId();
 			try {
-				listener.onCommit(transactionId, additions, removals);
+				listener.onCommit(transactionId, records);
 			} catch (RuntimeException e) {
 				logger.warn("Failed to publish LMDB commit delta for backup", e);
-				listener.onCommitFailure(transactionId, additions, removals, e);
+				listener.onCommitFailure(transactionId, records, e);
 			}
 		}
 
@@ -7473,6 +7484,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				markNamespaceMutation();
 				namespaceStore.setNamespace(prefix, name);
+				queueBackupNamespaceSet(prefix, name);
 			} catch (RuntimeException | Error failure) {
 				rollbackAfterMutationFailure(failure);
 				throw failure;
@@ -7488,6 +7500,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				markNamespaceMutation();
 				namespaceStore.removeNamespace(prefix);
+				queueBackupNamespaceRemove(prefix);
 			} catch (RuntimeException | Error failure) {
 				rollbackAfterMutationFailure(failure);
 				throw failure;
@@ -7503,6 +7516,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				markNamespaceMutation();
 				namespaceStore.clear();
+				queueBackupNamespaceClear();
 			} catch (RuntimeException | Error failure) {
 				rollbackAfterMutationFailure(failure);
 				throw failure;

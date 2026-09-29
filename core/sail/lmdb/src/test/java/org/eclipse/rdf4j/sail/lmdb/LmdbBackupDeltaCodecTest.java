@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -43,7 +44,10 @@ class LmdbBackupDeltaCodecTest {
 				vf.createLiteral("bonjour", "fr"), vf.createIRI("urn:ctx"));
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		LmdbBackupDeltaCodec.write(out, List.of(addition1, addition2), List.of(removal));
+		LmdbBackupDeltaCodec.write(out,
+				List.of(new LmdbBackupDeltaCodec.Record(true, true, addition1),
+						new LmdbBackupDeltaCodec.Record(true, false, addition2),
+						new LmdbBackupDeltaCodec.Record(false, true, removal)));
 
 		List<LmdbBackupDeltaCodec.Record> records = LmdbBackupDeltaCodec
 				.read(new ByteArrayInputStream(out.toByteArray()));
@@ -52,8 +56,44 @@ class LmdbBackupDeltaCodecTest {
 		assertTrue(records.get(0).isAddition());
 		assertTrue(records.get(1).isAddition());
 		assertFalse(records.get(2).isAddition());
+		assertTrue(records.get(0).isExplicit());
+		assertFalse(records.get(1).isExplicit());
+		assertTrue(records.get(2).isExplicit());
 		assertIterableEquals(List.of(addition1, addition2, removal),
 				records.stream().map(LmdbBackupDeltaCodec.Record::getStatement).toList());
+	}
+
+	@Test
+	void roundTripsLargeLiteralValues() throws IOException {
+		String label = "x".repeat(65_536);
+		Statement statement = vf.createStatement(vf.createIRI("urn:large:s"), vf.createIRI("urn:large:p"),
+				vf.createLiteral(label));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		LmdbBackupDeltaCodec.write(out, List.of(new LmdbBackupDeltaCodec.Record(true, true, statement)));
+
+		List<LmdbBackupDeltaCodec.Record> records = LmdbBackupDeltaCodec
+				.read(new ByteArrayInputStream(out.toByteArray()));
+
+		assertEquals(1, records.size());
+		assertEquals(label, records.get(0).getStatement().getObject().stringValue());
+	}
+
+	@Test
+	void roundTripsDirectionalLanguageLiteralsIncludingNestedTripleTerms() throws IOException {
+		Literal directional = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		TripleTerm nested = vf.createTripleTerm(vf.createIRI("urn:inner:s"), vf.createIRI("urn:inner:p"), directional);
+		Statement statement = vf.createStatement(vf.createIRI("urn:dir:s"), vf.createIRI("urn:dir:p"), nested);
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		LmdbBackupDeltaCodec.write(out, List.of(new LmdbBackupDeltaCodec.Record(true, true, statement)));
+
+		List<LmdbBackupDeltaCodec.Record> records = LmdbBackupDeltaCodec
+				.read(new ByteArrayInputStream(out.toByteArray()));
+
+		assertEquals(1, records.size());
+		assertEquals(Literal.BaseDirection.RTL,
+				((Literal) ((TripleTerm) records.get(0).getStatement().getObject()).getObject()).getBaseDirection());
 	}
 
 	@Test
