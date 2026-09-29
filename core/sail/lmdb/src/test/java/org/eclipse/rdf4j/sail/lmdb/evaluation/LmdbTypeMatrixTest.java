@@ -248,7 +248,8 @@ public class LmdbTypeMatrixTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		store = new LmdbStore(dataDir, config);
@@ -299,7 +300,8 @@ public class LmdbTypeMatrixTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		store = new LmdbStore(dataDir, config);
@@ -498,7 +500,8 @@ public class LmdbTypeMatrixTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		LmdbStoreConfig queryConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+		LmdbStoreConfig queryConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		store = new LmdbStore(dataDir, queryConfig);
@@ -544,7 +547,8 @@ public class LmdbTypeMatrixTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		LmdbStoreConfig queryConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+		LmdbStoreConfig queryConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(4L << 30);
 		store = new LmdbStore(dataDir, queryConfig);
@@ -746,7 +750,8 @@ public class LmdbTypeMatrixTest {
 	public void adjacencyMatricesPreserveTypeEdgeAndTargetContextMultiplicity() throws Exception {
 		System.setProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled", "true");
 		System.setProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY, "true");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -823,9 +828,11 @@ public class LmdbTypeMatrixTest {
 	}
 
 	private Expected openRepository(int extraRandomEdges, boolean preferAdjacency) {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(true);
 		if (preferAdjacency) {
-			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER).setDirectAdjacencyMaxBytes(1L << 30);
+			config.setDirectAdjacencyEnabled(true)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+					.setDirectAdjacencyMaxBytes(1L << 30);
 		}
 		LmdbStore store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);

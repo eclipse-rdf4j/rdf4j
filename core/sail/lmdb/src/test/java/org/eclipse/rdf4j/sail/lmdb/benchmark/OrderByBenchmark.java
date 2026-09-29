@@ -131,7 +131,8 @@ public class OrderByBenchmark {
 			captureProperties();
 			configure();
 			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 			loadData();
 			queries = new EnumMap<>(Workload.class);
 			for (Workload workload : Workload.values()) {

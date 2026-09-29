@@ -111,6 +111,8 @@ class LmdbNativePackedMorselsTest {
 		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);

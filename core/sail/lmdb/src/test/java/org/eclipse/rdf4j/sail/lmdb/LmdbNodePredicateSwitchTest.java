@@ -68,6 +68,7 @@ class LmdbNodePredicateSwitchTest {
 	private void open(File dataDir, Boolean construction, Boolean serving) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		UnaryOperator<String> properties = name -> construction != null
@@ -118,7 +119,9 @@ class LmdbNodePredicateSwitchTest {
 	 */
 	@Test
 	void constructionAndServingDefaultOn(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions defaults = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
 		assertThat(defaults.nodePredicateProjectionEnabled()).isTrue();
 		assertThat(defaults.nodePredicateProjectionIncomingEnabled()).isFalse();
@@ -182,7 +185,9 @@ class LmdbNodePredicateSwitchTest {
 	/** Incoming is a separate decision and is not implied by the outgoing switch. */
 	@Test
 	void incomingIsGatedSeparatelyAndImpliesOutgoing() {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions outgoingOnly = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
 				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "true" : null, 4);
 		assertThat(outgoingOnly.nodePredicateProjectionEnabled()).isTrue();
@@ -214,7 +219,9 @@ class LmdbNodePredicateSwitchTest {
 	 */
 	@Test
 	void amalformedSwitchValueIsRejected() {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		assertThatThrownBy(() -> LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
 				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "yes" : null, 4))
 						.isInstanceOf(IllegalArgumentException.class)

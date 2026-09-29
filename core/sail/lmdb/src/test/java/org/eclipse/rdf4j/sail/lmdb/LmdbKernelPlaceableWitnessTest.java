@@ -67,7 +67,9 @@ class LmdbKernelPlaceableWitnessTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		try {
 			LmdbStore store = new LmdbStore(dataDir.resolve("train").toFile(),
-					new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+					new LmdbStoreConfig("spoc,ospc,psoc,posc")
+							.setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true));
 			SailRepository repository = new SailRepository(store);
 			try {
 				ValueFactory values = SimpleValueFactory.getInstance();

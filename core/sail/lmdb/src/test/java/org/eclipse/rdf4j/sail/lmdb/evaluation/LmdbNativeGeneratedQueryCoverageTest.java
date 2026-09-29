@@ -289,7 +289,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, "true");
 		save("rdf4j.lmdb.adjacencySemijoin.trackProbes", "true"); // leak witness: capture creation stacks
 
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {

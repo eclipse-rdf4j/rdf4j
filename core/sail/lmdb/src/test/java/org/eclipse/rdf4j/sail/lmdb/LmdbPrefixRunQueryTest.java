@@ -107,7 +107,8 @@ public class LmdbPrefixRunQueryTest {
 	@Test
 	public void groupSlotFilterEvaluatesOncePerRun() {
 		LmdbPrefixRunPlan.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI ref = vf.createIRI(EX, "ref");
@@ -134,7 +135,8 @@ public class LmdbPrefixRunQueryTest {
 	@Test
 	public void countDistinctSubjectPerTypeWithBoundPredicateUsesPrefixRun() {
 		LmdbPrefixRunPlan.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI type = vf.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -221,6 +223,8 @@ public class LmdbPrefixRunQueryTest {
 	public void distinctPredicateUsesPrefixRunBeforeAdjacencyBuild() {
 		LmdbPrefixRunPlan.resetMetrics();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyBuildOnStart(false);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -256,6 +260,8 @@ public class LmdbPrefixRunQueryTest {
 	public void distinctPredicateKeepsPrefetchedSuccessorAfterDenseRun() {
 		LmdbPrefixRunPlan.resetMetrics();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyBuildOnStart(false);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -282,6 +288,8 @@ public class LmdbPrefixRunQueryTest {
 	public void distinctProjectionsUseAvailablePrefixRunsBeforeAdjacencyBuild() {
 		LmdbPrefixRunPlan.resetMetrics();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,opsc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyBuildOnStart(false);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -317,6 +325,8 @@ public class LmdbPrefixRunQueryTest {
 	public void countStarGroupedByPredicateMergesPrefixRunsBeforeAdjacencyBuild() {
 		LmdbPrefixRunPlan.resetMetrics();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyBuildOnStart(false);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -473,7 +483,8 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	private void openRepository(String indexes) {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig(indexes)));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI knows = vf.createIRI(EX, "knows");

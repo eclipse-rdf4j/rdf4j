@@ -126,23 +126,97 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void directAdjacencyDefaultsPreferWithBuildOnStart() {
+	void acceleratorOptionsDefaultDisabledEvenWhenLegacyAdjacencyModeIsPrefer() {
 		final LmdbStoreConfig config = new LmdbStoreConfig();
 
+		assertThat(config.getNativeEvaluationEnabled()).isFalse();
+		assertThat(config.getDirectAdjacencyEnabled()).isFalse();
+		assertThat(config.getValueOverlayEnabled()).isFalse();
 		assertThat(config.getDirectAdjacencyMode()).isEqualTo(DirectAdjacencyMode.PREFER);
 		assertThat(config.getDirectAdjacencyCoverage()).isEqualTo(DirectAdjacencyCoverage.FULL);
 		assertThat(config.getDirectAdjacencyPredicates()).isEmpty();
 		assertThat(config.getDirectAdjacencyMaxBytes()).isZero();
-		assertThat(config.getDirectAdjacencyBuildOnStart()).isTrue();
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isFalse();
 
 		final Model exportedModel = new LinkedHashModel();
 		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED,
+				Values.literal(false))).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED,
+				Values.literal(false))).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED,
+				Values.literal(false))).isTrue();
 		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, null)).isEmpty();
 		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_COVERAGE, null)).isEmpty();
 		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_PREDICATE, null)).isEmpty();
 		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, null)).isEmpty();
 		assertThat(exportedModel.filter(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, null))
 				.isEmpty();
+	}
+
+	@Test
+	void parsesAndExportsIndependentAcceleratorBooleans() {
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED, Values.literal(true))
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, Values.literal(false))
+				.add(implNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED, Values.literal(true))
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, Values.literal("PREFER"))
+				.build();
+
+		final LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+
+		assertThat(config.getNativeEvaluationEnabled()).isTrue();
+		assertThat(config.getDirectAdjacencyEnabled()).isFalse();
+		assertThat(config.getValueOverlayEnabled()).isTrue();
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isFalse();
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED,
+				Values.literal(true))).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED,
+				Values.literal(false))).isTrue();
+		assertThat(exportedModel.contains(exportImplNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED,
+				Values.literal(true))).isTrue();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	void rejectsMalformedAcceleratorBoolean(String property) {
+		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
+		BNode implNode = bnode();
+		Model model = new ModelBuilder().add(implNode, predicate, Values.literal("sometimes")).build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, implNode))
+				.isInstanceOf(SailConfigException.class)
+				.hasMessageContaining("Boolean value required");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	void rejectsNonLiteralAcceleratorBoolean(String property) {
+		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
+		BNode implNode = bnode();
+		Model model = new ModelBuilder().add(implNode, predicate, Values.iri("urn:not-a-boolean-literal")).build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, implNode))
+				.isInstanceOf(SailConfigException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	void rejectsConflictingAcceleratorBooleanValues(String property) {
+		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
+		BNode implNode = bnode();
+		Model model = new ModelBuilder()
+				.add(implNode, predicate, Values.literal(true))
+				.add(implNode, predicate, Values.literal(false))
+				.build();
+
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, implNode))
+				.isInstanceOf(SailConfigException.class);
 	}
 
 	@ParameterizedTest
@@ -197,6 +271,7 @@ class LmdbStoreConfigTest {
 	void parsesAndExportsDirectAdjacencyBuildOnStart(final boolean buildOnStart) {
 		final BNode implNode = bnode();
 		final Model configModel = new ModelBuilder()
+				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, Values.literal(true))
 				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MODE, Values.literal("PREFER"))
 				.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, Values.literal(buildOnStart))
 				.build();
@@ -300,12 +375,24 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void directAdjacencyBuildOnStartWithDisabledModeFailsValidation() {
+	void directAdjacencyEnabledWithDisabledModeFailsValidation() {
 		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)
-				.setDirectAdjacencyBuildOnStart(true);
+				.setDirectAdjacencyBuildOnStart(false);
 
 		assertThatThrownBy(config::validate).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void legacyBuildOnStartAndModeDoNotActivateDisabledAdjacency() {
+		final LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(true);
+
+		assertThat(config.getDirectAdjacencyEnabled()).isFalse();
+		assertThat(config.getDirectAdjacencyBuildOnStart()).isFalse();
+		config.validate();
 	}
 
 	@Test
@@ -321,6 +408,7 @@ class LmdbStoreConfigTest {
 	void directAdjacencyValidConfigurationsPassValidation() {
 		new LmdbStoreConfig().validate();
 		new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
 				.setDirectAdjacencyPredicates(Set.of(Values.iri("http://example.org/p")))

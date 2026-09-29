@@ -117,7 +117,8 @@ class LmdbNativeMedicalQ0SemanticTest {
 			System.setProperty(property, TEST_PROPERTIES.get(property));
 		}
 
-		lmdbRepository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		lmdbRepository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		memoryRepository = new SailRepository(new MemoryStore());
 		populate(lmdbRepository);
 		populate(memoryRepository);

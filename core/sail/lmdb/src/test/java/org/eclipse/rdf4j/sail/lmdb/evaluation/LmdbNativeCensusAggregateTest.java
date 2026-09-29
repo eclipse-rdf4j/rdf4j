@@ -90,7 +90,9 @@ class LmdbNativeCensusAggregateTest {
 		System.setProperty(THRESHOLD, "0");
 		System.setProperty(SYNCHRONOUS, "true");
 		System.setProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -261,7 +263,9 @@ class LmdbNativeCensusAggregateTest {
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
 		assertParity(CENSUS);
 		repository.shutDown();
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		repository.init();
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
@@ -353,7 +357,9 @@ class LmdbNativeCensusAggregateTest {
 	void incompleteAndDisabledAdjacencyDeclineWithoutPartialResults() {
 		for (DirectAdjacencyMode mode : List.of(DirectAdjacencyMode.PREFER, DirectAdjacencyMode.DISABLED)) {
 			repository.shutDown();
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyMode(mode);
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(mode != DirectAdjacencyMode.DISABLED)
+					.setDirectAdjacencyMode(mode);
 			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED);
 			config.setDirectAdjacencyPredicates(List.of(store.getValueFactory().createIRI(EX + "p1")));
 			store = new LmdbStore(dataDir, config);

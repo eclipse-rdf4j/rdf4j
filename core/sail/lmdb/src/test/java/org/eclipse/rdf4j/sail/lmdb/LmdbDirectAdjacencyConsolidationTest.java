@@ -61,6 +61,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 	void setUp(@TempDir File dataDir) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		// Consolidation must carry the node-predicate projection across a fold-down, so build it and serve from it.

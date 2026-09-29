@@ -124,7 +124,8 @@ class LmdbNativeCostModelPersistenceTest {
 	void storeShutdownFlushesItsCostModel() throws IOException {
 		Path storeDir = dataDir.resolve("shutdown-flush");
 		SailRepository repository = new SailRepository(
-				new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc,ospc")));
+				new LmdbStore(storeDir.toFile(),
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try {
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
 			IRI p = vf.createIRI("urn:test:p");

@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -60,7 +62,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
@@ -88,8 +92,41 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
+	void ordinaryStoreUsesDefaultEvaluationStrategyFactoryAndLmdbFallbackPipeline() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createEvaluationStrategy(factory);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(DefaultEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+		assertTrue(optimizers.stream().anyMatch(LmdbOrderByOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void defaultEvaluationStrategyFactoryUsesSketchPipelineWhenJoinEstimationIsReady() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
+		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+		};
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createEvaluationStrategy(factory, readyStatistics);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(DefaultEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+	}
+
+	@Test
 	void automaticLmdbStoreUsesNativeEvaluationWithStandardPipelineUntilSketchesAreReady() throws Exception {
-		LmdbStore store = new LmdbStore();
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
 
 		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
 		EvaluationStrategy strategy = createEvaluationStrategy(factory);
@@ -140,7 +177,9 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void explicitNoSketchAutomaticStoreUsesNativeEvaluationWithStandardPipeline(@TempDir File dataDir)
 			throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc").setSketchEstimatorEnabled(false));
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc")
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(false));
 		store.init();
 		try {
 			assertTrue(store.getBackingStore().getSketchBasedJoinEstimator() == null);
@@ -212,6 +251,42 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void defaultFactoryForwardsPipelineAndSettingsToLongLivedConnections(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		config.setIterationCacheSyncThreshold(4096);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		FederatedServiceResolver serviceResolver = serviceUrl -> null;
+		store.setFederatedServiceResolver(serviceResolver);
+		store.setTrackResultSize(true);
+		store.init();
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			EvaluationStrategyFactory connectionFactory = capturedEvaluationStrategyFactory(connection);
+			QueryOptimizerPipeline customPipeline = List::of;
+			connectionFactory.setOptimizerPipeline(customPipeline);
+
+			EvaluationStrategy strategy = createEvaluationStrategy(connectionFactory, store.getBackingStore()
+					.getEvaluationStatistics());
+			DefaultEvaluationStrategyFactory defaultFactory = (DefaultEvaluationStrategyFactory) store
+					.getEvaluationStrategyFactory();
+
+			assertInstanceOf(DefaultEvaluationStrategyFactory.class, defaultFactory);
+			assertSame(serviceResolver, defaultFactory.getFederatedServiceResolver());
+			assertSame(customPipeline, store.getEvaluationStrategyFactory().getOptimizerPipeline().orElse(null));
+			assertSame(customPipeline, connectionFactory.getOptimizerPipeline().orElse(null));
+			assertEquals(4096, connectionFactory.getQuerySolutionCacheThreshold());
+			assertTrue(connectionFactory.isTrackResultSize());
+			assertInstanceOf(DefaultEvaluationStrategy.class, strategy);
+			assertTrue(strategy.isTrackResultSize());
+			assertTrue(optimizers(strategy).isEmpty());
+			try (CollectionFactory collectionFactory = strategy.getCollectionFactory().get()) {
+				assertInstanceOf(MapDb3CollectionFactory.class, collectionFactory);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void configuredEvaluationStrategyFactoryIsHonored() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());
@@ -219,6 +294,42 @@ class LmdbOptimizerPipelineTest {
 
 		assertInstanceOf(StrictEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 		assertFalse(store.getEvaluationStrategyFactory() instanceof LmdbNativeEvaluationStrategyFactory);
+	}
+
+	@Test
+	void nativeFactoryRequiresExplicitConfigAndConfigIsCapturedAtConstruction() {
+		LmdbStoreConfig disabledConfig = new LmdbStoreConfig();
+		LmdbStore defaultStore = new LmdbStore(disabledConfig);
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, defaultStore.getEvaluationStrategyFactory());
+		disabledConfig.setNativeEvaluationEnabled(true);
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, defaultStore.getEvaluationStrategyFactory());
+
+		LmdbStoreConfig enabledConfig = new LmdbStoreConfig().setNativeEvaluationEnabled(true);
+		LmdbStore nativeStore = new LmdbStore(enabledConfig);
+		enabledConfig.setNativeEvaluationEnabled(false);
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, nativeStore.getEvaluationStrategyFactory());
+	}
+
+	@Test
+	void clearingExplicitFactoryRestoresConfiguredAutomaticFactory() {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+		StrictEvaluationStrategyFactory explicit = new StrictEvaluationStrategyFactory();
+		store.setEvaluationStrategyFactory(explicit);
+		assertSame(explicit, store.getEvaluationStrategyFactory());
+
+		store.setEvaluationStrategyFactory(null);
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+	}
+
+	@Test
+	void clearingExplicitFactoryRestoresDefaultAutomaticFactory() {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
+		StrictEvaluationStrategyFactory explicit = new StrictEvaluationStrategyFactory();
+		store.setEvaluationStrategyFactory(explicit);
+		assertSame(explicit, store.getEvaluationStrategyFactory());
+
+		store.setEvaluationStrategyFactory(null);
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 	}
 
 	@Test
@@ -692,7 +803,8 @@ class LmdbOptimizerPipelineTest {
 
 		public static void main(String[] args) throws Exception {
 			File dataDir = new File(args[0]);
-			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+			LmdbStore store = new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc").setNativeEvaluationEnabled(true));
 			store.init();
 			try {
 				ValueFactory vf = SimpleValueFactory.getInstance();
@@ -736,7 +848,9 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
+		return new LmdbStoreConfig(tripleIndexes)
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
 	}
 
 	private static final class ProcessResult {

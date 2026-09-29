@@ -58,7 +58,9 @@ public class LmdbAdjacencyDomainGroupTest {
 
 	@Test
 	public void highInDegreeFiltersAndCountsOscDomainRuns() throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		IRI high;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -87,7 +89,9 @@ public class LmdbAdjacencyDomainGroupTest {
 		// Reopen so the completed LMDB snapshot is rebuilt as an immutable direct-adjacency base. A single live
 		// transaction is represented by an exact overlay and must deliberately decline base-only synopses.
 		repository.shutDown();
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		repository.init();
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();

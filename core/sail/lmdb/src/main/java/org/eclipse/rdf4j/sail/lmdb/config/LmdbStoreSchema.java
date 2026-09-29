@@ -167,6 +167,15 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI DIRECT_ADJACENCY_BUILD_ON_START;
 
+	/** <tt>http://rdf4j.org/config/sail/lmdb#nativeEvaluationEnabled</tt> */
+	public final static IRI NATIVE_EVALUATION_ENABLED;
+
+	/** <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyEnabled</tt> */
+	public final static IRI DIRECT_ADJACENCY_ENABLED;
+
+	/** <tt>http://rdf4j.org/config/sail/lmdb#valueOverlayEnabled</tt> */
+	public final static IRI VALUE_OVERLAY_ENABLED;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -207,5 +216,8 @@ public class LmdbStoreSchema {
 		DIRECT_ADJACENCY_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyMaxBytes");
 		DIRECT_ADJACENCY_BACKLOG_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyBacklogMaxBytes");
 		DIRECT_ADJACENCY_BUILD_ON_START = factory.createIRI(NAMESPACE, "directAdjacencyBuildOnStart");
+		NATIVE_EVALUATION_ENABLED = factory.createIRI(NAMESPACE, "nativeEvaluationEnabled");
+		DIRECT_ADJACENCY_ENABLED = factory.createIRI(NAMESPACE, "directAdjacencyEnabled");
+		VALUE_OVERLAY_ENABLED = factory.createIRI(NAMESPACE, "valueOverlayEnabled");
 	}
 }

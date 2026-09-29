@@ -114,6 +114,8 @@ public class PropertyPathReachabilityBenchmark {
 		repository.shutDown();
 		LmdbStoreConfig benchmarkConfig = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMaxBytes(256L * 1024 * 1024);
+		benchmarkConfig.setNativeEvaluationEnabled(true);
+		benchmarkConfig.setDirectAdjacencyEnabled(true);
 		repository = new SailRepository(new LmdbStore(dataDir, benchmarkConfig));
 		repository.init();
 		if (!((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)) {

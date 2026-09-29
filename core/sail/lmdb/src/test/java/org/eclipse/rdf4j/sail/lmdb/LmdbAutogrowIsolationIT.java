@@ -72,7 +72,8 @@ import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Exercises reservation-driven LMDB map growth while repository readers keep transactions and partially consumed
- * iterators open. Read-committed readers renew to committed data, while pinned readers retain their initial view.
+ * iterators open. Read-committed readers renew to committed data, immutable adjacency can retain a query snapshot, and
+ * mapped pinned readers reject a snapshot invalidated by map growth.
  */
 @ResourceLock("lmdb-resize-loggers")
 class LmdbAutogrowIsolationIT {
@@ -183,7 +184,57 @@ class LmdbAutogrowIsolationIT {
 	@Timeout(60)
 	void snapshotReadQueryRetainsSnapshotAndFreshQuerySeesGrowth() throws Exception {
 		assertPinnedReaderAbortsAfterRealMapGrowth(IsolationLevels.SNAPSHOT_READ, "snapshot-read-subject:",
-				"snapshot-read-value:");
+				"snapshot-read-value:", autoGrowConfigWithPreferredAdjacency(), true);
+	}
+
+	@Test
+	@Timeout(60)
+	void snapshotReadWithoutAdjacencyRetriesAfterRealMapGrowth() throws Exception {
+		LmdbStoreConfig config = autoGrowConfig();
+		assertThat(config.getDirectAdjacencyEnabled()).as("ordinary LMDB config keeps adjacency disabled").isFalse();
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			int initialRows = seed(repository, INITIAL_READER_ROWS);
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
+					SailRepositoryConnection reader = repository.getConnection();
+					SailRepositoryConnection writer = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT_READ);
+				try (RepositoryResult<Statement> openResult = reader.getStatements(null, PREDICATE, null, false)) {
+					assertThat(openResult.hasNext()).as("SNAPSHOT_READ query must have rows before growth").isTrue();
+					openResult.next();
+					reserveTripleAndValueMapsForRealGrowth(store.getBackingStore());
+					for (int round = 0; round < LIVE_TRIPLE_GROWTH_ROUNDS; round++) {
+						writer.begin(IsolationLevels.READ_COMMITTED);
+						addRows(writer, "snapshot-read-fallback-subject:", "snapshot-read-fallback-value:",
+								round * ROWS_PER_COMMIT, ROWS_PER_COMMIT);
+						writer.commit();
+					}
+
+					assertThat(resizeLogs.tripleResizeMessages())
+							.as("triple map must resize during the pinned query")
+							.isNotEmpty();
+					assertThat(resizeLogs.valueResizeMessages())
+							.as("value map must resize during the pinned query")
+							.isNotEmpty();
+					assertThatThrownBy(openResult::hasNext)
+							.as("mapping-backed SNAPSHOT_READ must reject a remapped snapshot for retry")
+							.isInstanceOf(RepositoryException.class)
+							.hasMessageContaining("SNAPSHOT")
+							.hasMessageContaining("retry the transaction");
+				}
+
+				reader.rollback();
+				reader.begin(IsolationLevels.READ_COMMITTED);
+				assertThat(countRows(reader)).as("a fresh transaction sees committed rows after retry")
+						.isEqualTo(initialRows + LIVE_TRIPLE_GROWTH_ROWS);
+				reader.commit();
+			}
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -285,12 +336,23 @@ class LmdbAutogrowIsolationIT {
 
 	private void assertPinnedReaderAbortsAfterRealMapGrowth(IsolationLevel readerIsolation, String subjectPrefix,
 			String valuePrefix) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfig());
+		assertPinnedReaderAbortsAfterRealMapGrowth(readerIsolation, subjectPrefix, valuePrefix, autoGrowConfig(),
+				false);
+	}
+
+	private void assertPinnedReaderAbortsAfterRealMapGrowth(IsolationLevel readerIsolation, String subjectPrefix,
+			String valuePrefix, LmdbStoreConfig config, boolean buildAdjacency) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
 			int initialRows = seed(repository, INITIAL_READER_ROWS);
+			if (buildAdjacency) {
+				assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+						.as("the immutable adjacency view must be ready before the query starts")
+						.isTrue();
+			}
 			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
 					SailRepositoryConnection reader = repository.getConnection();
 					SailRepositoryConnection writer = repository.getConnection()) {
@@ -634,6 +696,7 @@ class LmdbAutogrowIsolationIT {
 					CloseableIteration<? extends Statement> statements = dataset.getStatements(null, PREDICATE, null)) {
 				assertThat(statements.hasNext()).isTrue();
 				statements.next();
+				assertThat(statements.hasNext()).as("the iterator must be exhausted before map growth").isFalse();
 				addCommittedBatches(writer, "exhausted-subject:", "exhausted-value:");
 
 				assertThat(statements.hasNext()).as("an exhausted iterator cannot observe snapshot invalidation")
@@ -772,7 +835,13 @@ class LmdbAutogrowIsolationIT {
 	}
 
 	private static LmdbStoreConfig autoGrowConfigWithShadowAdjacency() {
-		return autoGrowConfig().setDirectAdjacencyMode(DirectAdjacencyMode.SHADOW);
+		return autoGrowConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyMode(DirectAdjacencyMode.SHADOW);
+	}
+
+	private static LmdbStoreConfig autoGrowConfigWithPreferredAdjacency() {
+		return autoGrowConfig().setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(false);
 	}
 
 	private static void addRows(SailRepositoryConnection connection, String subjectPrefix, String valuePrefix,

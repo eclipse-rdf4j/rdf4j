@@ -80,7 +80,9 @@ public class LmdbNativeJaninoAggregateTest {
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 
 		dataDir = Files.createTempDirectory("rdf4j-janino-aggregate").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true);
 		config.setForceSync(false);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		repository.init();

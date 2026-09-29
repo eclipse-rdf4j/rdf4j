@@ -592,7 +592,8 @@ public final class IndependentSparqlOracle implements AutoCloseable {
 		}
 
 		private static ArmRuntime buildLmdbAutomatic(Path dataDirectory, boolean nativeEnabled) {
-			LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig());
+			LmdbStore store = new LmdbStore(dataDirectory.toFile(),
+					new LmdbStoreConfig().setNativeEvaluationEnabled(true));
 			return new ArmRuntime(new SailRepository(store), factoryType(store.getEvaluationStrategyFactory()),
 					nativeEnabled);
 		}

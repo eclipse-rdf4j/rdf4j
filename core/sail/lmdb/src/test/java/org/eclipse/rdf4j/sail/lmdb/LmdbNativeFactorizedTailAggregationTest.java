@@ -66,7 +66,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		previousJaninoEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		previousKernelInterpreterEnabled = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		previousPackedFtreeEnabled = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");

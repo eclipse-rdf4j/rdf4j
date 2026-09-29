@@ -179,6 +179,7 @@ public class LmdbNativeParallelKernelParityLedgerTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		repository = new SailRepository(new LmdbStore(dataDir, config));

@@ -103,6 +103,8 @@ public class UncorrelatedOptionalBenchmark {
 			applyStrategy();
 			dataDir = Files.createTempDirectory("rdf4j-lmdb-uncorrelated-optional").toFile();
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(true)
 					.setForceSync(false)
 					.setValueDBSize(1_073_741_824L)
 					.setTripleDBSize(1_073_741_824L)

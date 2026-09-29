@@ -70,7 +70,9 @@ class LmdbNativeIrAggregateCompletenessTest {
 		set("rdf4j.lmdb.parallel.enabled", "false");
 		set("rdf4j.lmdb.irAggregateParallel.enabled", "false");
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyBuildOnStart(false)));
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
 			connection.add(new StringReader("""

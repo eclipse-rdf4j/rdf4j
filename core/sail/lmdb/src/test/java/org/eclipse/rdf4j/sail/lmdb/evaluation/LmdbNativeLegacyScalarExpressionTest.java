@@ -63,7 +63,8 @@ class LmdbNativeLegacyScalarExpressionTest {
 
 	@BeforeEach
 	void setUp() {
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();

@@ -150,6 +150,8 @@ public class LmdbNativeDifferentialFuzzTest {
 	@BeforeAll
 	public void setUp() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false);
 		store = new LmdbStore(dataDir, config);
 		lmdb = new SailRepository(store);

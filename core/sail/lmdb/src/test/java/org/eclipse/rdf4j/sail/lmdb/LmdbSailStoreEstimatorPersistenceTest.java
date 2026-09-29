@@ -808,7 +808,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
+		return new LmdbStoreConfig(tripleIndexes)
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
 	}
 
 	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)

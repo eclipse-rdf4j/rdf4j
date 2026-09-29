@@ -67,7 +67,9 @@ public class LmdbNativeKernelPrefixRunGuardTest {
 		System.setProperty(JANINO_CODEGEN_PROPERTY, "true");
 		System.setProperty(AdjacencyEngagementTestAccess.SCAN_AGGREGATES_PROPERTY, "false");
 		LmdbNativeKernelExecution.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI person = vf.createIRI(EX, "Person");

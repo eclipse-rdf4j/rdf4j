@@ -155,7 +155,8 @@ public class SailSourceModelTest extends ModelTest {
 			File dataDir = Files.createTempDirectory("SailSourceModelTest-").toFile();
 			LmdbSailStore store = new LmdbSailStore(dataDir,
 					new StoreProperties(),
-					new LmdbStoreConfig("spoc").setDirectAdjacencyMode(adjacencyMode));
+					new LmdbStoreConfig("spoc").setDirectAdjacencyEnabled(adjacencyMode != DirectAdjacencyMode.DISABLED)
+							.setDirectAdjacencyMode(adjacencyMode));
 			stores.add(store);
 			storeDirs.add(dataDir);
 			return new SailSourceModel(store);

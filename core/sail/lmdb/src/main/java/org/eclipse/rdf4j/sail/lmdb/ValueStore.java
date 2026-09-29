@@ -123,6 +123,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordLayout;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor;
@@ -794,7 +795,7 @@ public class ValueStore extends AbstractValueFactory {
 	private static final String VALUE_OVERLAY_WARMUP_THREAD_NAME = "rdf4j-value-overlay-warmup";
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
-	private volatile ValueOverlayRegistry compressedValues = ValueOverlayRegistry.configured();
+	private volatile ValueOverlayRegistry compressedValues;
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private volatile ExecutorService valueOverlayWarmupExecutor;
 	private volatile CompletableFuture<Void> valueOverlayWarmupFuture;
@@ -854,6 +855,7 @@ public class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 	private final boolean orderedNumericIds;
+	private final boolean valueOverlayEnabled;
 	private final boolean canonicalLanguageTags;
 	private final boolean coreDatatypeLiteralReferences;
 
@@ -890,6 +892,8 @@ public class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
+		this.valueOverlayEnabled = config.getValueOverlayEnabled();
+		this.compressedValues = valueOverlayEnabled ? ValueOverlayRegistry.configured() : null;
 		// the persisted store property is the single writer gate: absent (all pre-ordered-encoding stores) means
 		// legacy ZigZag ids; LmdbStore records ordered-v1 at store creation when the config enables it
 		this.orderedNumericIds = properties.usesOrderedNumericIds();
@@ -2562,14 +2566,15 @@ public class ValueStore extends AbstractValueFactory {
 
 	private ValueOverlayRegistry.SnapshotLease borrowValueOverlay(long txn) {
 		// Avoid the native transaction-ID call entirely when the optional overlay is absent.
-		if (!compressedValues.isPopulated()) {
+		ValueOverlayRegistry registry = compressedValues;
+		if (!valueOverlayEnabled || registry == null || !registry.isPopulated()) {
 			return null;
 		}
 		// A writer must see its own uncommitted changes through LMDB. Other readers may keep using the exact old view.
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread() && txn == writeTxn) {
 			return null;
 		}
-		return compressedValues.acquireSnapshot(mdb_txn_id(txn));
+		return registry.acquireSnapshot(mdb_txn_id(txn));
 	}
 
 	/**
@@ -2585,6 +2590,9 @@ public class ValueStore extends AbstractValueFactory {
 	@InternalUseOnly
 	public CompressedValueOverlay.Stats warmCompressedValueOverlay(CompressedValueOverlay.Options options,
 			BooleanSupplier cancelled) throws IOException {
+		if (!valueOverlayEnabled) {
+			throw new IllegalStateException("Compressed value overlay is disabled for this ValueStore");
+		}
 		Objects.requireNonNull(options);
 		Objects.requireNonNull(cancelled);
 		return readTransaction(env, (stack, txn) -> {
@@ -2664,15 +2672,24 @@ public class ValueStore extends AbstractValueFactory {
 	 * (successfully, refused for capacity, or cancelled by a concurrent close/write).
 	 */
 	private void warmConfiguredValueOverlay() {
-		String budgetText = System.getProperty("rdf4j.lmdb.valueOverlay.maxBytes", "0");
+		if (!valueOverlayEnabled) {
+			return;
+		}
+		String budgetText = System.getProperty("rdf4j.lmdb.valueOverlay.maxBytes");
 		long budget;
 		try {
-			budget = Long.parseLong(budgetText);
+			budget = budgetText == null
+					? OverlayMemoryBudget.configuredShared().stats().limit()
+					: Long.parseLong(budgetText);
 		} catch (NumberFormatException e) {
 			logger.warn("Ignoring invalid rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText, e);
 			return;
 		}
 		if (budget == 0) {
+			return;
+		}
+		if (budget < 0) {
+			logger.warn("Ignoring negative rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText);
 			return;
 		}
 		int reverseSlots = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.reverseSlots", "1048576"));
@@ -2718,15 +2735,18 @@ public class ValueStore extends AbstractValueFactory {
 		}
 		CompletableFuture<Void> future = valueOverlayWarmupFuture;
 		if (future == null) {
-			return compressedValues.isPopulated();
+			ValueOverlayRegistry registry = compressedValues;
+			return valueOverlayEnabled && registry != null && registry.isPopulated();
 		}
 		try {
 			future.get(timeout, unit);
 		} catch (TimeoutException | ExecutionException | CancellationException e) {
 			// ExecutionException/CancellationException are defensive only: the task above never rethrows.
-			return compressedValues.isPopulated();
+			ValueOverlayRegistry registry = compressedValues;
+			return valueOverlayEnabled && registry != null && registry.isPopulated();
 		}
-		return compressedValues.isPopulated();
+		ValueOverlayRegistry registry = compressedValues;
+		return valueOverlayEnabled && registry != null && registry.isPopulated();
 	}
 
 	/** Test/diagnostic-only: true while the automatic warm-up executor exists and its task has not finished. */
@@ -2742,6 +2762,9 @@ public class ValueStore extends AbstractValueFactory {
 	 * returns almost immediately; the bounded wait and shutdownNow() fallback only guard against a stuck native call.
 	 */
 	private void awaitAndStopValueOverlayWarmup() {
+		if (!valueOverlayEnabled) {
+			return;
+		}
 		ExecutorService executor = valueOverlayWarmupExecutor;
 		valueOverlayWarmupExecutor = null;
 		valueOverlayWarmupFuture = null;
@@ -2772,12 +2795,16 @@ public class ValueStore extends AbstractValueFactory {
 
 	@InternalUseOnly
 	public CompressedValueOverlay.Stats compressedValueOverlayStats() {
-		return compressedValues.stats();
+		ValueOverlayRegistry registry = compressedValues;
+		return registry == null ? null : registry.stats();
 	}
 
 	@InternalUseOnly
 	public void clearCompressedValueOverlay() {
-		compressedValues.invalidate();
+		ValueOverlayRegistry registry = compressedValues;
+		if (registry != null) {
+			registry.invalidate();
+		}
 	}
 
 	/**
@@ -4466,34 +4493,48 @@ public class ValueStore extends AbstractValueFactory {
 	/** Current-view delta accounting; use retained stats for base/history/compaction reservations. */
 	@InternalUseOnly
 	public ValueOverlayRegistry.ViewStats compressedValueOverlayViewStats() {
-		return compressedValues.viewStats();
+		ValueOverlayRegistry registry = compressedValues;
+		return registry == null
+				? new ValueOverlayRegistry.ViewStats(-1L, -1L, 0, 0L, 0L, 0, 0L, 0L, 0L, null)
+				: registry.viewStats();
 	}
 
 	/** Shared across configured stores, including physical memory pinned by retired snapshots. */
 	@InternalUseOnly
 	public org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget.Stats compressedValueOverlayRetainedMemoryStats() {
-		return compressedValues.retainedMemoryStats();
+		ValueOverlayRegistry registry = compressedValues;
+		return registry == null
+				? new OverlayMemoryBudget.Stats(0L, 0L, 0L, 0L, 0L, 0L, 0L)
+				: registry.retainedMemoryStats();
 	}
 
 	/** Bounded maintenance scheduling and refusal diagnostics; ordinary reads do not update these counters. */
 	@InternalUseOnly
 	public ValueOverlayRegistry.MaintenanceStats compressedValueOverlayMaintenanceStats() {
-		return compressedValues.maintenanceStats();
+		ValueOverlayRegistry registry = compressedValues;
+		return registry == null
+				? new ValueOverlayRegistry.MaintenanceStats(false, false, 0L, 0L, null)
+				: registry.maintenanceStats();
 	}
 
 	/** Explicit caller-scheduled maintenance; do not invoke from a dictionary write transaction. */
 	@InternalUseOnly
 	public int compactCompressedValueOverlay() {
+		ValueOverlayRegistry registry = compressedValues;
+		if (!valueOverlayEnabled || registry == null) {
+			return 0;
+		}
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			throw new IllegalStateException("Overlay compaction must run outside the dictionary writer");
 		}
-		return compressedValues.compact();
+		return registry.compact();
 	}
 
 	private void beginCompressedValueMutation(long txn) {
 		discardCompressedValueMutation();
-		if (compressedValues.isPopulated()) {
-			compressedValueMutation = compressedValues.begin(mdb_txn_id(txn));
+		ValueOverlayRegistry registry = compressedValues;
+		if (valueOverlayEnabled && registry != null && registry.isPopulated()) {
+			compressedValueMutation = registry.begin(mdb_txn_id(txn));
 		}
 	}
 
@@ -4512,7 +4553,7 @@ public class ValueStore extends AbstractValueFactory {
 	/** Seal FINAL write-transaction state, never transient bytes from an MDB_RESERVE buffer. */
 	private ValueOverlayRegistry.Prepared prepareCompressedValueMutation(long txn) {
 		ValueOverlayRegistry.Mutation mutation = compressedValueMutation;
-		if (mutation == null)
+		if (!valueOverlayEnabled || mutation == null)
 			return null;
 		try {
 			if (mutation.transactionId() != mdb_txn_id(txn)) {
@@ -6282,7 +6323,7 @@ public class ValueStore extends AbstractValueFactory {
 		clearCaches();
 		// clear() reopens the native environment. The closed registry/worker must not be reused;
 		// old leased publications remain charged to the same process-wide budget until released.
-		compressedValues = ValueOverlayRegistry.configured();
+		compressedValues = valueOverlayEnabled ? ValueOverlayRegistry.configured() : null;
 		tripleTermIndexes.clear();
 		tripleTermSpocIndex = null;
 		tripleTermCspoIndex = null;
@@ -6363,7 +6404,10 @@ public class ValueStore extends AbstractValueFactory {
 				flushPendingHashUpdates();
 				writeCleanRefCountMarker();
 			}
-			compressedValues.close();
+			ValueOverlayRegistry registry = compressedValues;
+			if (registry != null) {
+				registry.close();
+			}
 			txnManager.close();
 			endTransaction(false, false);
 			mdb_env_close(env);

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -22,8 +23,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -84,6 +87,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private String tripleIndexes;
 
 	private String tripleTermIndexes;
+
+	private boolean nativeEvaluationEnabled;
+
+	private boolean directAdjacencyEnabled;
+
+	private boolean valueOverlayEnabled;
 
 	private long tripleDBSize = -1;
 
@@ -196,6 +205,36 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setTripleTermIndexes(String tripleTermIndexes) {
 		this.tripleTermIndexes = tripleTermIndexes;
+		return this;
+	}
+
+	/** Returns whether this store should select the native LMDB evaluation strategy at construction time. */
+	public boolean getNativeEvaluationEnabled() {
+		return nativeEvaluationEnabled;
+	}
+
+	public LmdbStoreConfig setNativeEvaluationEnabled(boolean nativeEvaluationEnabled) {
+		this.nativeEvaluationEnabled = nativeEvaluationEnabled;
+		return this;
+	}
+
+	/** Returns whether this store should allocate and maintain the direct-adjacency index. */
+	public boolean getDirectAdjacencyEnabled() {
+		return directAdjacencyEnabled;
+	}
+
+	public LmdbStoreConfig setDirectAdjacencyEnabled(boolean directAdjacencyEnabled) {
+		this.directAdjacencyEnabled = directAdjacencyEnabled;
+		return this;
+	}
+
+	/** Returns whether this store should initialize the compressed value overlay lifecycle. */
+	public boolean getValueOverlayEnabled() {
+		return valueOverlayEnabled;
+	}
+
+	public LmdbStoreConfig setValueOverlayEnabled(boolean valueOverlayEnabled) {
+		this.valueOverlayEnabled = valueOverlayEnabled;
 		return this;
 	}
 
@@ -550,12 +589,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
-	 * @return the explicit value when set; otherwise defaults to {@code true} exactly when the resolved mode is not
-	 *         {@link DirectAdjacencyMode#DISABLED}
+	 * @return false while direct adjacency is disabled; otherwise, the explicit value when set or {@code true} exactly
+	 *         when the resolved mode is not {@link DirectAdjacencyMode#DISABLED}
 	 */
 	public boolean getDirectAdjacencyBuildOnStart() {
-		return directAdjacencyBuildOnStart != null ? directAdjacencyBuildOnStart
-				: getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED;
+		return directAdjacencyEnabled && (directAdjacencyBuildOnStart != null ? directAdjacencyBuildOnStart
+				: getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED);
 	}
 
 	public LmdbStoreConfig setDirectAdjacencyBuildOnStart(boolean directAdjacencyBuildOnStart) {
@@ -574,9 +613,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			throw new SailConfigException(
 					"directAdjacencyCoverage SELECTED requires at least one directAdjacencyPredicate");
 		}
-		if (Boolean.TRUE.equals(directAdjacencyBuildOnStart)
-				&& getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
-			throw new SailConfigException("directAdjacencyBuildOnStart requires a non-DISABLED directAdjacencyMode");
+		if (directAdjacencyEnabled && getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
+			throw new SailConfigException("directAdjacencyEnabled requires a non-DISABLED directAdjacencyMode");
 		}
 	}
 
@@ -586,6 +624,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		m.setNamespace("ns", LmdbStoreSchema.NAMESPACE);
+		m.add(implNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED, vf.createLiteral(nativeEvaluationEnabled));
+		m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, vf.createLiteral(directAdjacencyEnabled));
+		m.add(implNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED, vf.createLiteral(valueOverlayEnabled));
 		if (tripleIndexes != null) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}
@@ -718,6 +759,27 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		super.parse(m, implNode);
 
 		try {
+			Literal nativeEvaluationEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.NATIVE_EVALUATION_ENABLED);
+			if (nativeEvaluationEnabledLiteral != null) {
+				setNativeEvaluationEnabled(parseBoolean(nativeEvaluationEnabledLiteral,
+						LmdbStoreSchema.NATIVE_EVALUATION_ENABLED));
+			}
+
+			Literal directAdjacencyEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED);
+			if (directAdjacencyEnabledLiteral != null) {
+				setDirectAdjacencyEnabled(parseBoolean(directAdjacencyEnabledLiteral,
+						LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED));
+			}
+
+			Literal valueOverlayEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.VALUE_OVERLAY_ENABLED);
+			if (valueOverlayEnabledLiteral != null) {
+				setValueOverlayEnabled(parseBoolean(valueOverlayEnabledLiteral,
+						LmdbStoreSchema.VALUE_OVERLAY_ENABLED));
+			}
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))
 					.ifPresent(lit -> setTripleIndexes(lit.getLabel()));
 
@@ -1052,6 +1114,31 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Integer value required for " + property + " property, found " + lit);
 		}
+	}
+
+	private static boolean parseBoolean(Literal lit, IRI property) {
+		try {
+			return lit.booleanValue();
+		} catch (IllegalArgumentException e) {
+			throw new SailConfigException("Boolean value required for " + property + " property, found " + lit, e);
+		}
+	}
+
+	private static Literal singleBooleanLiteral(Model model, Resource implNode, IRI property) {
+		Iterator<Statement> statements = model.getStatements(implNode, property, null).iterator();
+		if (!statements.hasNext()) {
+			return null;
+		}
+		Statement statement = statements.next();
+		if (statements.hasNext()) {
+			throw new SailConfigException("Single boolean value required for " + property + " property");
+		}
+
+		Value object = statement.getObject();
+		if (object instanceof Literal literal) {
+			return literal;
+		}
+		throw new SailConfigException("Boolean value required for " + property + " property, found " + object);
 	}
 
 	private static long parseLong(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {

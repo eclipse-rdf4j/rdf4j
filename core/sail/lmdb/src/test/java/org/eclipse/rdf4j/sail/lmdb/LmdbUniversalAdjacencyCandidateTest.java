@@ -49,6 +49,7 @@ class LmdbUniversalAdjacencyCandidateTest {
 		LmdbStoreConfig storeConfig = new LmdbStoreConfig("spoc,posc");
 		tripleStore = new TripleStore(dataDir, storeConfig, null);
 		LmdbStoreConfig adjacencyConfig = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
 				.setDirectAdjacencyMaxBytes(1L << 30);

@@ -978,6 +978,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		store = new LmdbStore(dataDir, config);

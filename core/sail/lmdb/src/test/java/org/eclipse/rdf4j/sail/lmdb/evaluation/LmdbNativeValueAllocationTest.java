@@ -35,21 +35,43 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import com.sun.management.ThreadMXBean;
 
 @Isolated("Measures warmed thread allocation without other test instrumentation")
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeValueAllocationTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String BUDGET_PROPERTY = "rdf4j.lmdb.valueOverlay.maxBytes";
 	private static volatile LmdbNativeValueCodec.DecodedValue consumed;
 
 	@TempDir
 	File directory;
+	private String previousBudget;
+
+	@BeforeEach
+	void disableAutomaticWarmupForManualOverlayTests() {
+		previousBudget = System.getProperty(BUDGET_PROPERTY);
+		System.setProperty(BUDGET_PROPERTY, "0");
+	}
+
+	@AfterEach
+	void restoreAutomaticWarmupBudget() {
+		if (previousBudget == null) {
+			System.clearProperty(BUDGET_PROPERTY);
+		} else {
+			System.setProperty(BUDGET_PROPERTY, previousBudget);
+		}
+	}
 
 	@Test
 	void uncachedDecodingDoesNotAllocateASecondLexicalSizedArray() throws Exception {
@@ -168,7 +190,8 @@ class LmdbNativeValueAllocationTest {
 		// cannot create malformed UTF-8. The real typed visitor and native codec perform all decoding.
 		byte[][] labels = { { (byte) 0xc0, (byte) 0xaf }, { (byte) 0xe2, (byte) 0x82 },
 				{ (byte) 0xf0, (byte) 0x9f, (byte) 0x98 }, { 'a', (byte) 0xff, 'b' }, { 0, 'x' } };
-		ValueStore store = new ValueStore(new File(directory, "malformed"), new LmdbStoreConfig()) {
+		ValueStore store = new ValueStore(new File(directory, "malformed"),
+				new LmdbStoreConfig().setValueOverlayEnabled(true)) {
 			@Override
 			public <T> T withData(long id, ValueDataReader<T> reader,
 					Function<ValueStoreRecordVisitor.Record, T> overlayReader) {
@@ -199,7 +222,8 @@ class LmdbNativeValueAllocationTest {
 	}
 
 	private ValueStore openStore(String name) throws Exception {
-		return new ValueStore(new File(directory, name), new LmdbStoreConfig().setInlineLiterals(false));
+		return new ValueStore(new File(directory, name),
+				new LmdbStoreConfig().setInlineLiterals(false).setValueOverlayEnabled(true));
 	}
 
 	private static long[] storeValues(ValueStore store, List<Value> values) throws Exception {

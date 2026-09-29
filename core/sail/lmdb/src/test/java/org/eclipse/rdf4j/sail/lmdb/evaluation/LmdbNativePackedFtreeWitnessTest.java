@@ -85,7 +85,9 @@ public class LmdbNativePackedFtreeWitnessTest {
 	@BeforeEach
 	public void setUp() {
 		previousPacked = System.getProperty(PACKED_PROPERTY);
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI patientType = vf.createIRI(EX, "Patient");

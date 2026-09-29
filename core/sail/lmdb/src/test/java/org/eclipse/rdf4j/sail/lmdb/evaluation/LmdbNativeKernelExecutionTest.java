@@ -104,7 +104,9 @@ public class LmdbNativeKernelExecutionTest {
 		save(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
 
 		dataDir = Files.createTempDirectory("rdf4j-ir-kernel").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true);
 		config.setForceSync(false);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);

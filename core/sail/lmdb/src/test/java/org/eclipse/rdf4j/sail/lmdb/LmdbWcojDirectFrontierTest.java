@@ -90,7 +90,7 @@ public class LmdbWcojDirectFrontierTest {
 		// Precondition: the direct adjacency view must be exact, or the fast path can never engage.
 		LmdbSailStore backing = store.getBackingStore();
 		LmdbDirectAdjacencyStore adjacency = backing.directAdjacencyStore();
-		assertThat(adjacency).as("direct adjacency store must be enabled by default").isNotNull();
+		assertThat(adjacency).as("direct adjacency store must be enabled in this fixture").isNotNull();
 		assertThat(adjacency.buildNowForTest()).as("direct adjacency build must complete for this store").isTrue();
 
 		System.setProperty(NATIVE_FLAG, "true");
@@ -339,7 +339,10 @@ public class LmdbWcojDirectFrontierTest {
 
 	private void openRepositoryWithTriangles() {
 		JoinDispatchTestAccess.resetMetrics();
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,ospc,psoc,posc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();

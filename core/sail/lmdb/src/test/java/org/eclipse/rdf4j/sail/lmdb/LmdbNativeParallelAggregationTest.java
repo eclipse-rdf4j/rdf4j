@@ -94,6 +94,7 @@ public class LmdbNativeParallelAggregationTest {
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection conn = repository.getConnection()) {

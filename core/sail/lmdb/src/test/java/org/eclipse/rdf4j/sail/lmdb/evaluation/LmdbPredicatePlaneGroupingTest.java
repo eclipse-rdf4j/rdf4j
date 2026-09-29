@@ -132,7 +132,9 @@ public class LmdbPredicatePlaneGroupingTest {
 	}
 
 	private LmdbStore openRepository() {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();

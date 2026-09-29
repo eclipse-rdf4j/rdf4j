@@ -74,7 +74,8 @@ public class MembershipBuildBenchmark {
 		System.setProperty(MEMBERSHIP_IMPL, mode);
 		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
 		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		loadData();
 		query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s <" + EX + "type> <" + EX
 				+ "Item> . FILTER EXISTS { ?s <" + EX + "member> <" + EX + "yes> } }";

@@ -122,7 +122,8 @@ public class RangeFilterBenchmark {
 			System.setProperty(NATIVE_ENABLED, "true");
 
 			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)));
 			loadData();
 			warmOrderedIntegerAdjacency();
 

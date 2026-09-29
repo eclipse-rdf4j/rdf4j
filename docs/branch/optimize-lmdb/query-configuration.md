@@ -2,6 +2,22 @@
 
 This page describes query controls in the pinned LMDB source. A property is a gate at a particular compile, planning, proposal, bind/open, or memory-admission point; it is not a promise that the named route can serve every shape. Use [routing and hosts](query-routing-and-hosts.md), [strategy families](query-strategy-families.md), [physical access](query-physical-access.md), [joins and factors](query-joins-and-factors.md), [paths](query-paths-and-special-operators.md), [code generation](query-ir-and-codegen.md), and [cost adaptation](query-cost-learning-and-adaptation.md) to understand the surrounding exact fallback. The branch delta catalogued as Q14 exposes query controls and records their consumers; the registry and per-feature property reads are not a promise that every setting is new, dynamically sampled, or consistent across all call sites.
 
+## Per-store accelerator selection
+
+These persisted `LmdbStoreConfig` settings are captured when a store is constructed; restart the repository after changing any of them. All three default to `false`, and JVM runtime properties or legacy tuning values do not enable them:
+
+| Setting | Default | Effect when enabled |
+|---|---:|---|
+| `nativeEvaluationEnabled` | `false` | Selects `LmdbNativeEvaluationStrategyFactory`. The runtime property `rdf4j.lmdb.nativeQueryEngine.enabled` still controls routing inside that factory, but setting the property alone does not select it. |
+| `directAdjacencyEnabled` | `false` | Creates the in-memory adjacency index and enables its startup/commit maintenance. `directAdjacencyMode` and related tuning are dormant while false. |
+| `valueOverlayEnabled` | `false` | Creates the compressed value overlay registry and enables its warm-up, mutation, and compaction lifecycle. `rdf4j.lmdb.valueOverlay.*` values tune this feature but do not activate it. |
+
+Set each option explicitly for repositories that should use it, for example `config.setNativeEvaluationEnabled(true)`, `config.setDirectAdjacencyEnabled(true)`, and `config.setValueOverlayEnabled(true)`. This separation allows a deployment to enable each accelerator independently while preserving the ordinary strict/standard query evaluation mode.
+
+### Snapshot reads during LMDB map growth
+
+The current resize behavior depends on the read path. A map-backed reader whose LMDB snapshot is invalidated by environment growth fails safely with a `SNAPSHOT transaction invalidated` error that asks the caller to retry the transaction after the resize. Repository APIs may wrap that `SailException` in a `RepositoryException`. A query that can be served by a built immutable adjacency view can continue against its original `SNAPSHOT_READ` revision while a fresh query sees committed growth. Adjacency may decline a shape and fall back to mapped reads, so enabling it does not guarantee that every query avoids resize invalidation; callers should keep handling the retryable failure.
+
 ## Runtime-property registry
 
 [LmdbRuntimeProperties](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbRuntimeProperties.java) is an allowlist of boolean query controls that the runtime UI/API considers safe to switch between queries. list() returns the current effective snapshot; set(name, enabled) accepts only listed keys, writes canonical true or false into the JVM system properties, and returns the new registry state. Unknown names throw IllegalArgumentException. The registry's defaultEnabled is metadata from the registry entry; it does not make all direct property consumers share one parser or sampling time.

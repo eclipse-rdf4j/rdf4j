@@ -94,7 +94,8 @@ class LmdbNativeServiceQueryCompletenessTest {
 			return service;
 		};
 		LmdbStore remoteStore = new LmdbStore(new File(directory, "remote"),
-				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyBuildOnStart(false));
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false));
 		remoteStore.setFederatedServiceResolver(resolver);
 		remoteStore.setEvaluationStrategyFactory(new StrictEvaluationStrategyFactory(resolver));
 		remote = new SailRepository(remoteStore);
@@ -127,7 +128,8 @@ class LmdbNativeServiceQueryCompletenessTest {
 		services.add(brokenService);
 		endpoints.put("urn:query-boundary:broken", brokenService);
 		LmdbStore localStore = new LmdbStore(new File(directory, "local"),
-				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyBuildOnStart(false));
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false));
 		localStore.setFederatedServiceResolver(resolver);
 		localStore.setEvaluationStrategyFactory(new LmdbNativeEvaluationStrategyFactory(resolver));
 		local = new SailRepository(localStore);

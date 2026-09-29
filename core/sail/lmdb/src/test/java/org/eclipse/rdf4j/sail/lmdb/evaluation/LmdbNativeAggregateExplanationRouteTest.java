@@ -92,7 +92,8 @@ class LmdbNativeAggregateExplanationRouteTest {
 		set("rdf4j.lmdb.nativeBatch.enabled", "false");
 		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
 		set(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "false");
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);

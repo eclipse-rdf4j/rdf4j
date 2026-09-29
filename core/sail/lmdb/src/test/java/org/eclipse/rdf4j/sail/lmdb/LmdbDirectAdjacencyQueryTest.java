@@ -179,6 +179,8 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(mode != DirectAdjacencyMode.DISABLED)
 				.setDirectAdjacencyMode(mode)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		if (coverage != null) {
@@ -2159,6 +2161,7 @@ class LmdbDirectAdjacencyQueryTest {
 	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		sail = new LmdbStore(dataDir, config);

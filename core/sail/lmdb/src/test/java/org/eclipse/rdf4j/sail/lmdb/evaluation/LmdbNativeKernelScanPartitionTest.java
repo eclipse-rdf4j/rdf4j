@@ -118,7 +118,8 @@ public class LmdbNativeKernelScanPartitionTest {
 		System.setProperty("rdf4j.lmdb.nativeHashJoin.enabled", "false");
 		System.setProperty("rdf4j.lmdb.mergeJoin.enabled", "false");
 		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");

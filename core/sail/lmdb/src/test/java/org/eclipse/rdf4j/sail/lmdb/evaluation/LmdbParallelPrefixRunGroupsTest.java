@@ -241,7 +241,8 @@ public class LmdbParallelPrefixRunGroupsTest {
 	}
 
 	private static LmdbStoreConfig storeConfig() {
-		return new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		return new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 	}
 
 	private Map<String, Long> countByBinding(String query, String keyBinding) {

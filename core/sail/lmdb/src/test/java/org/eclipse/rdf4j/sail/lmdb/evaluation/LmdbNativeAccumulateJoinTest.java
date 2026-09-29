@@ -103,7 +103,8 @@ class LmdbNativeAccumulateJoinTest {
 
 	@BeforeEach
 	void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI seed = vf.createIRI(EX, "seed");

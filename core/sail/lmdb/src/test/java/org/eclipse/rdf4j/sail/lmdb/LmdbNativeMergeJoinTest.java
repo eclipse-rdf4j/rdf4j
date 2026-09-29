@@ -84,6 +84,7 @@ class LmdbNativeMergeJoinTest {
 		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
 		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection connection = repository.getConnection()) {

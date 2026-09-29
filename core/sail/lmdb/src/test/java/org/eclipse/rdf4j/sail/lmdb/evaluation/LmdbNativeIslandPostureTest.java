@@ -77,7 +77,7 @@ public class LmdbNativeIslandPostureTest {
 
 	@BeforeEach
 	public void setUp() {
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();

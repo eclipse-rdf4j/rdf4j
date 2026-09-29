@@ -71,7 +71,8 @@ public class LmdbNativeRowSideCalibrationTest {
 		}
 		System.setProperty(MIN_ROWS, "0");
 		LmdbNativeCostCalibration.reset();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI value = vf.createIRI(EX, "value");

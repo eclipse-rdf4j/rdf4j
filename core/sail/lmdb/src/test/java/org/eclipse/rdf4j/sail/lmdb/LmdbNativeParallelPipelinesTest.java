@@ -117,7 +117,8 @@ public class LmdbNativeParallelPipelinesTest {
 			// deliberately small fixture.
 			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000_000D, 1_000L);
 		}
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");

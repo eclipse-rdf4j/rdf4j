@@ -51,7 +51,10 @@ public class LmdbNativeLazyProjectedResultTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI predicate = vf.createIRI(EX, "value");

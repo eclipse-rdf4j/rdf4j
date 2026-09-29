@@ -106,7 +106,8 @@ public class LmdbNativePrimitiveGroupingTest {
 		disable("rdf4j.lmdb.kernelInterpreter.enabled");
 		disable("rdf4j.lmdb.packedFtree.enabled");
 		disable("rdf4j.lmdb.factorizedTail.enabled");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			connection.begin();
@@ -228,7 +229,8 @@ public class LmdbNativePrimitiveGroupingTest {
 	@Test
 	public void unsafeContextFirstOrderKeepsPrimitiveTwoKeyGroupMapWhenBoundedCountsAreDisabled() {
 		SailRepository contextRepository = new SailRepository(
-				new LmdbStore(new File(dataDir, "context-first"), new LmdbStoreConfig("cspo")));
+				new LmdbStore(new File(dataDir, "context-first"),
+						new LmdbStoreConfig("cspo").setNativeEvaluationEnabled(true)));
 		String previousBounded = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
 		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "false");
 		try {
@@ -321,7 +323,8 @@ public class LmdbNativePrimitiveGroupingTest {
 		// specialist from claiming that same shape so this test exercises the ordered representation it names.
 		System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
 		SailRepository floatingRepository = new SailRepository(
-				new LmdbStore(new File(dataDir, "ordered-floating"), new LmdbStoreConfig("spoc,posc,ospc")));
+				new LmdbStore(new File(dataDir, "ordered-floating"),
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try {
 			try (SailRepositoryConnection connection = floatingRepository.getConnection()) {
 				ValueFactory vf = connection.getValueFactory();

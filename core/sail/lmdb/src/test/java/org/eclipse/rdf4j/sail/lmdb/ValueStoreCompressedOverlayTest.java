@@ -25,13 +25,40 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** Real native/RDF4J integration acceptance; requires the full module dependencies and native library. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class ValueStoreCompressedOverlayTest {
+	private static final String BUDGET_PROPERTY = "rdf4j.lmdb.valueOverlay.maxBytes";
+
 	@TempDir
 	File directory;
+	private String previousBudget;
+
+	@BeforeEach
+	void disableAutomaticWarmupForManualOverlayTests() {
+		previousBudget = System.getProperty(BUDGET_PROPERTY);
+		System.setProperty(BUDGET_PROPERTY, "0");
+	}
+
+	@AfterEach
+	void restoreAutomaticWarmupBudget() {
+		if (previousBudget == null) {
+			System.clearProperty(BUDGET_PROPERTY);
+		} else {
+			System.setProperty(BUDGET_PROPERTY, previousBudget);
+		}
+	}
+
+	private LmdbStoreConfig config() {
+		return new LmdbStoreConfig().setValueOverlayEnabled(true);
+	}
 
 	private CompressedValueOverlay.Options options() {
 		return new CompressedValueOverlay.Options(32L << 20, 8192, 16, 64 << 10, 1 << 20, true, true);
@@ -40,7 +67,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void exactPersistentBytesAndLexicalFormsSurviveWarmAndEviction() throws Exception {
 		var factory = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "values"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "values"), config().setInlineLiterals(false));
 		try {
 			List<Value> values = new ArrayList<>();
 			for (int i = 0; i < 256; i++) {
@@ -78,7 +105,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void rollbackRetainsBaseAndClearRetiresIt() throws Exception {
 		var factory = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "mutable"), new LmdbStoreConfig());
+		var store = new ValueStore(new File(directory, "mutable"), config());
 		try {
 			store.startTransaction(true);
 			long id = store.storeValue(factory.createBNode("kept"));
@@ -103,7 +130,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void refusalDoesNotReplaceExistingPublishedOverlay() throws Exception {
 		var factory = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "capacity"), new LmdbStoreConfig());
+		var store = new ValueStore(new File(directory, "capacity"), config());
 		try {
 			store.startTransaction(true);
 			long id = store.storeValue(factory.createBNode("stable"));
@@ -121,7 +148,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void explicitCommitsReuseTheBaseIncludingBatchedInsertions() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "commits"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "commits"), config().setInlineLiterals(false));
 		try {
 			store.startTransaction(true);
 			long old = store.storeValue(vf.createLiteral("old"));
@@ -154,7 +181,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void implicitLargeRecordUsesItsWriteTransactionAndPublishesDelta() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "implicit"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "implicit"), config().setInlineLiterals(false));
 		try {
 			store.storeValue(vf.createLiteral("seed"));
 			var base = store.warmCompressedValueOverlay(options());
@@ -175,7 +202,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void reverseRetirementDoesNotResurrectAnIdFromTheCompressedBase() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "retire"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "retire"), config().setInlineLiterals(false));
 		try {
 			store.startTransaction(true);
 			var value = vf.createBNode("retired");
@@ -197,7 +224,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void selectiveMetadataAndLexicalVisitorMatchTheNativeRecord() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "selective"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "selective"), config().setInlineLiterals(false));
 		try {
 			var value = vf.createLiteral("é/e\u0301/漢字/" + "compressed label ".repeat(400), "nB");
 			store.startTransaction(true);
@@ -228,7 +255,7 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void maintenanceCannotBeRequestedFromTheNativeWriter() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "worker"), new LmdbStoreConfig().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "worker"), config().setInlineLiterals(false));
 		try {
 			store.storeValue(vf.createLiteral("base"));
 			store.warmCompressedValueOverlay(options());
@@ -252,7 +279,7 @@ public class ValueStoreCompressedOverlayTest {
 	void sharedPrefixPagesPreserveNativeRecordsAndLazyMaterializationAcrossCommit() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
 		var store = new ValueStore(new File(directory, "shared-prefix"),
-				new LmdbStoreConfig().setInlineLiterals(false));
+				config().setInlineLiterals(false));
 		try {
 			List<Value> values = new ArrayList<>();
 			long[] ids = new long[256];

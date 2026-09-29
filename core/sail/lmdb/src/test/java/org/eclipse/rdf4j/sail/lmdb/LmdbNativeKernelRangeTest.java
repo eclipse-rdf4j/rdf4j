@@ -86,6 +86,8 @@ class LmdbNativeKernelRangeTest {
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		repository = new SailRepository(new LmdbStore(dataDir, config));

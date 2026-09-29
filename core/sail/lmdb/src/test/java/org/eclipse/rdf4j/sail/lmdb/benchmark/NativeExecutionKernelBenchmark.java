@@ -73,7 +73,8 @@ public class NativeExecutionKernelBenchmark {
 	@Setup(Level.Trial)
 	public void setUp() {
 		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI type = vf.createIRI(EX, "type");

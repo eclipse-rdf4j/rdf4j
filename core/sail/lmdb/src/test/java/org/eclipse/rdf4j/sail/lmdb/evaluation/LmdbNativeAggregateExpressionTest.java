@@ -48,7 +48,8 @@ public class LmdbNativeAggregateExpressionTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		repository.init();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			conn.begin();

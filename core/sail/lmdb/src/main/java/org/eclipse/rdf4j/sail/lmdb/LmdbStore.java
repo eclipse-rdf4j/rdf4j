@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
@@ -144,9 +145,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private LmdbNativeEvaluationStrategyFactory nativeEvalStratFactory;
 
+	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
+
 	private EvaluationStrategyFactory connectionEvalStratFactory;
 
 	private QueryOptimizerPipeline automaticOptimizerPipeline;
+
+	private final boolean nativeEvaluationEnabled;
 
 	/**
 	 * independent life cycle
@@ -192,6 +197,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public LmdbStore(LmdbStoreConfig config) {
 		super();
 		this.config = config;
+		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		allowIncompleteBulkLoad = false;
 		validationOnlyOpen = false;
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
@@ -225,6 +231,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	LmdbStore(File dataDir, LmdbStoreConfig config, boolean allowIncompleteBulkLoad) {
 		super();
 		this.config = config;
+		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		this.allowIncompleteBulkLoad = allowIncompleteBulkLoad;
 		validationOnlyOpen = true;
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
@@ -262,7 +269,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
 		} else {
-			factory = getAutomaticNativeEvaluationStrategyFactory();
+			factory = getAutomaticEvaluationStrategyFactory();
 		}
 		configureEvaluationStrategyFactory(factory);
 		return factory;
@@ -325,6 +332,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		}
 		if (resolver != null && nativeEvalStratFactory != null) {
 			nativeEvalStratFactory.setFederatedServiceResolver(resolver);
+		}
+		if (resolver != null && defaultEvalStratFactory instanceof FederatedServiceResolverClient resolverClient) {
+			resolverClient.setFederatedServiceResolver(resolver);
 		}
 	}
 
@@ -760,23 +770,35 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return backingStore == null ? null : backingStore.getSketchBasedJoinEstimator();
 	}
 
-	private LmdbNativeEvaluationStrategyFactory getAutomaticNativeEvaluationStrategyFactory() {
+	private EvaluationStrategyFactory getAutomaticEvaluationStrategyFactory() {
 		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
-		if (nativeEvalStratFactory == null) {
-			nativeEvalStratFactory = new LmdbNativeEvaluationStrategyFactory(getFederatedServiceResolver());
+		EvaluationStrategyFactory factory;
+		if (nativeEvaluationEnabled) {
+			if (nativeEvalStratFactory == null) {
+				nativeEvalStratFactory = new LmdbNativeEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
+			factory = nativeEvalStratFactory;
+		} else {
+			if (defaultEvalStratFactory == null) {
+				defaultEvalStratFactory = new LmdbDefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
+			factory = defaultEvalStratFactory;
 		}
 		if (optimizerPipeline != null) {
-			nativeEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
+			factory.setOptimizerPipeline(optimizerPipeline);
 		}
-		return nativeEvalStratFactory;
+		return factory;
 	}
 
 	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {
 		if (automaticOptimizerPipeline != null) {
 			return automaticOptimizerPipeline;
 		}
-		if (nativeEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = nativeEvalStratFactory.getOptimizerPipeline();
+		EvaluationStrategyFactory automaticFactory = nativeEvaluationEnabled
+				? nativeEvalStratFactory
+				: defaultEvalStratFactory;
+		if (automaticFactory != null) {
+			Optional<QueryOptimizerPipeline> optimizerPipeline = automaticFactory.getOptimizerPipeline();
 			if (optimizerPipeline.isPresent()) {
 				automaticOptimizerPipeline = optimizerPipeline.get();
 				return automaticOptimizerPipeline;
@@ -815,6 +837,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 			if (nativeEvalStratFactory != null) {
 				nativeEvalStratFactory.setOptimizerPipeline(pipeline);
+			}
+			if (defaultEvalStratFactory != null) {
+				defaultEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
 		}
 

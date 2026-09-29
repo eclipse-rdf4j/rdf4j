@@ -232,13 +232,16 @@ public class LmdbWcojStreamingFrontierTest {
 	private void prepareAdjacency() {
 		LmdbSailStore backing = store.getBackingStore();
 		LmdbDirectAdjacencyStore adjacency = backing.directAdjacencyStore();
-		assertThat(adjacency).as("direct adjacency store must be enabled by default").isNotNull();
+		assertThat(adjacency).as("direct adjacency store must be enabled in this fixture").isNotNull();
 		assertThat(adjacency.buildNowForTest()).as("direct adjacency build must complete for this store").isTrue();
 	}
 
 	private void openRepositoryWithTriangles() {
 		JoinDispatchTestAccess.resetMetrics();
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,ospc,psoc,posc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();

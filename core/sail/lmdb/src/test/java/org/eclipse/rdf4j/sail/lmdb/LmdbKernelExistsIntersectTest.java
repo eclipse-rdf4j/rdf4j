@@ -88,6 +88,8 @@ class LmdbKernelExistsIntersectTest {
 		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 		try {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(true)
 					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 					.setDirectAdjacencyMaxBytes(1L << 30);
 			LmdbStore store = new LmdbStore(dataDir.resolve("analytics").toFile(), config);

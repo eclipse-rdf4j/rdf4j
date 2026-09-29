@@ -735,6 +735,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -768,6 +769,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void samplesPatternLocalFilterAcrossAnOrderIndependentOfTheFilteredVariable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-ordered-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(5_000L)
 				.setOptimizerSamplingMaxRows(16);
@@ -807,6 +809,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -843,6 +846,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizerSamplingCanBeDisabledForUnlearnedFilters() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
@@ -871,6 +875,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -913,6 +918,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -1003,6 +1009,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingEnabled(false)
@@ -1036,6 +1043,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-cycle").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -1075,6 +1083,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
@@ -1248,7 +1257,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig() {
-		return new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+		return new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
 	}
 
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)

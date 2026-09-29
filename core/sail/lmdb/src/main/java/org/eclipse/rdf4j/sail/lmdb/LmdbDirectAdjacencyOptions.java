@@ -116,6 +116,10 @@ final class LmdbDirectAdjacencyOptions {
 	}
 
 	static LmdbDirectAdjacencyOptions resolve(LmdbStoreConfig config) {
+		Objects.requireNonNull(config, "config");
+		if (!config.getDirectAdjacencyEnabled()) {
+			return disabled(config, 0L);
+		}
 		return resolve(config, resolveMemoryLimitBytes(ManagementFactory.getOperatingSystemMXBean()),
 				System::getProperty,
 				Runtime.getRuntime().availableProcessors());
@@ -129,6 +133,14 @@ final class LmdbDirectAdjacencyOptions {
 			UnaryOperator<String> properties, int availableProcessors) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(properties, "properties");
+		DirectAdjacencyMode configuredMode = config.getDirectAdjacencyMode();
+		if (config.getDirectAdjacencyEnabled() && configuredMode == DirectAdjacencyMode.DISABLED) {
+			throw new IllegalArgumentException("directAdjacencyEnabled requires a non-DISABLED directAdjacencyMode");
+		}
+		if (!config.getDirectAdjacencyEnabled()) {
+			return disabled(config, memoryLimitBytes);
+		}
+		DirectAdjacencyMode effectiveMode = configuredMode;
 
 		long requestedMaxBytes = config.getDirectAdjacencyMaxBytes();
 		long effectiveMaxBytes = resolveEffectiveMaxBytes(requestedMaxBytes, memoryLimitBytes);
@@ -154,7 +166,7 @@ final class LmdbDirectAdjacencyOptions {
 		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, true);
 		boolean failOnMaintenanceError = booleanProperty(properties, FAIL_ON_MAINTENANCE_ERROR_PROPERTY, false);
 
-		return new LmdbDirectAdjacencyOptions(config.getDirectAdjacencyMode(), config.getDirectAdjacencyCoverage(),
+		return new LmdbDirectAdjacencyOptions(effectiveMode, config.getDirectAdjacencyCoverage(),
 				config.getDirectAdjacencyPredicates(), config.getDirectAdjacencyBuildOnStart(), requestedMaxBytes,
 				memoryLimitBytes, effectiveMaxBytes, commitMaxBytes, backlogMaxBytes, sealWarnMillis,
 				maxDeltaGenerations,
@@ -162,6 +174,13 @@ final class LmdbDirectAdjacencyOptions {
 				supernodeChunkEdges, supernodeTargetBytes, buildThreads, buildTargetMillis, buildRetryMillis,
 				shadowSampleEvery, nodePredicateProjection, nodePredicateProjectionIncoming, synchronousMaintenance,
 				failOnMaintenanceError);
+	}
+
+	private static LmdbDirectAdjacencyOptions disabled(LmdbStoreConfig config, long memoryLimitBytes) {
+		return new LmdbDirectAdjacencyOptions(DirectAdjacencyMode.DISABLED, config.getDirectAdjacencyCoverage(),
+				config.getDirectAdjacencyPredicates(), false, config.getDirectAdjacencyMaxBytes(), memoryLimitBytes,
+				0L, 0L, 0L, 1_000L, 8, 4_096L, 4_096L, 65_536L, 1, 43_200_000L, 60_000L, 10_000L,
+				true, false, true, false);
 	}
 
 	/**

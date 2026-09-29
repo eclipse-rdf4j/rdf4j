@@ -302,7 +302,10 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void orderedNativeSourceSeparatesPlannerWitnessFromSelectedIndex() throws Exception {
+		useNativeEvaluationForThisTest(true);
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		assertTrue("the configured adjacency index must be ready for native index arbitration",
+				AdjacencyEngagementTestAccess.buildNow(sail));
 		LmdbSailStore backingStore = sail.getBackingStore();
 		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
 			NativeLmdbQuerySource nativeSource = (NativeLmdbQuerySource) dataset;
@@ -446,7 +449,8 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexUsesPsocNaturalOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
+				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -499,7 +503,8 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexUsesPoscNaturalOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
+				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -539,7 +544,8 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexPreservesJoinOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, new LmdbStoreConfig("psoc,posc")));
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
+				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -603,6 +609,7 @@ public class LmdbSailStoreTest {
 	 */
 	@Test
 	public void testOrderByLmdbIndexDegradesToValueSortInDirtyTransaction() {
+		useNativeEvaluationForThisTest();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.begin(IsolationLevels.SNAPSHOT_READ);
 			conn.add(F.createIRI("urn:dirty"), RDFS.LABEL, F.createLiteral("dirty"));
@@ -628,6 +635,7 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexAcrossDatasetGraphsDoesNotLeakOtherContexts() {
+		useNativeEvaluationForThisTest();
 		IRI s3 = F.createIRI("urn:s3");
 		IRI s1 = F.createIRI("urn:s1");
 		IRI s2 = F.createIRI("urn:s2");
@@ -681,6 +689,7 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexIncludesInferredStatements() {
+		useNativeEvaluationForThisTest();
 		IRI inferredSubject = F.createIRI("urn:inferred");
 
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
@@ -706,6 +715,20 @@ public class LmdbSailStoreTest {
 					List.of("http://example.org/0", "http://example.org/1", "http://example.org/2", "urn:inferred"),
 					subjects);
 		}
+	}
+
+	private void useNativeEvaluationForThisTest() {
+		useNativeEvaluationForThisTest(false);
+	}
+
+	private void useNativeEvaluationForThisTest(boolean directAdjacencyEnabled) {
+		repo.shutDown();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true);
+		if (directAdjacencyEnabled) {
+			config.setDirectAdjacencyEnabled(true);
+		}
+		repo = new SailRepository(new LmdbStore(dataDir, config));
+		repo.init();
 	}
 
 	@Test

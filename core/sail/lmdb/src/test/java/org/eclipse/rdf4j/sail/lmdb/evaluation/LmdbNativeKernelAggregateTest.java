@@ -263,7 +263,9 @@ public class LmdbNativeKernelAggregateTest {
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 
 		dataDir = Files.createTempDirectory("rdf4j-ir-aggregate").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true);
 		config.setForceSync(false);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		repository.init();

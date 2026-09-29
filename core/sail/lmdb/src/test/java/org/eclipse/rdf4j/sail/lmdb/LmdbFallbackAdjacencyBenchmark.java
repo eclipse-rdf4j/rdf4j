@@ -71,6 +71,8 @@ public class LmdbFallbackAdjacencyBenchmark {
 		set(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY,
 				Boolean.toString(indexes.equals("nodePredicates")));
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(!indexes.equals("lmdb"))
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
 				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMode(

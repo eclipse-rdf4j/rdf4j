@@ -55,6 +55,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 	void setUp(@TempDir File dataDir) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
@@ -291,6 +292,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 	private void recreateStoreForPendingWindow() {
 		store.close();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,

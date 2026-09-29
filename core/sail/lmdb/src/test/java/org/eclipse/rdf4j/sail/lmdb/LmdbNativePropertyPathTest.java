@@ -104,7 +104,9 @@ public class LmdbNativePropertyPathTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
@@ -794,6 +796,7 @@ public class LmdbNativePropertyPathTest {
 	@Test
 	public void unavailableBackwardAdjacencyExplainsAtomicForwardFallback() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		SailRepository source = new SailRepository(new LmdbStore(new File(dataDir, "without-adjacency"), config));
 		try {
@@ -1407,7 +1410,8 @@ public class LmdbNativePropertyPathTest {
 	@Test
 	public void rdfListPathAfterFivePatternsBuildsTargetsOnceWithoutAdjacency() {
 		SailRepository isolated = new SailRepository(new LmdbStore(new File(dataDir, "rdf-list-no-adjacency"),
-				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)));
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)));
 		try {
 			try (SailRepositoryConnection conn = isolated.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();

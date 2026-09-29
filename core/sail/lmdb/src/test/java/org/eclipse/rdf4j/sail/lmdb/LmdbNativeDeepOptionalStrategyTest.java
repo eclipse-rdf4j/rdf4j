@@ -82,6 +82,8 @@ public class LmdbNativeDeepOptionalStrategyTest {
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);

@@ -882,6 +882,9 @@ public class ThemeQueryBenchmark {
 			config.setForceSync(false);
 			config.setValueDBSize(1_073_741_824L); // 1 GiB
 			config.setTripleDBSize(config.getValueDBSize());
+			config.setNativeEvaluationEnabled(true);
+			config.setDirectAdjacencyEnabled(true);
+			config.setValueOverlayEnabled(true);
 			return config;
 		}
 	}

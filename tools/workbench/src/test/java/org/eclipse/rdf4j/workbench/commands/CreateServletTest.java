@@ -215,10 +215,16 @@ public class CreateServletTest {
 				Map.entry("Value eviction interval", "1000"),
 				Map.entry("Force sync", "false"),
 				Map.entry("No readahead", "true"),
-				Map.entry("Query Evaluation Mode", "STRICT")));
+				Map.entry("Query Evaluation Mode", "STRICT"),
+				Map.entry("Native query evaluation enabled", "true"),
+				Map.entry("Direct adjacency index enabled", "true"),
+				Map.entry("Compressed value overlay enabled", "true")));
 
 		assertThat(rendered)
 				.contains("lmdb:bulkOperationSize 0")
+				.contains("lmdb:nativeEvaluationEnabled true")
+				.contains("lmdb:directAdjacencyEnabled true")
+				.contains("lmdb:valueOverlayEnabled true")
 				.contains("20971520")
 				.doesNotContain("Triple DB size[len=16]");
 	}
@@ -482,7 +488,10 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Value eviction interval"))
 				.doesNotContain("Append mode (experimental)")
 				.contains(templateDefault(template, "No readahead"))
-				.contains(templateDefault(template, "Query Evaluation Mode"));
+				.contains(templateDefault(template, "Query Evaluation Mode"))
+				.contains(templateDefault(template, "Native query evaluation enabled"))
+				.contains(templateDefault(template, "Direct adjacency index enabled"))
+				.contains(templateDefault(template, "Compressed value overlay enabled"));
 	}
 
 	@Test

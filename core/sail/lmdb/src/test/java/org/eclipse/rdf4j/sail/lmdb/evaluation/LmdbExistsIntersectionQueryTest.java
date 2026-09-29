@@ -376,7 +376,8 @@ public class LmdbExistsIntersectionQueryTest {
 
 	private void openEmptyRepository(String indexes) {
 		LmdbNativeExistsIntersection.resetMetrics();
-		store = new LmdbStore(dataDir, new LmdbStoreConfig(indexes));
+		store = new LmdbStore(dataDir, new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 	}
 

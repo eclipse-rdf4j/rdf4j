@@ -120,7 +120,7 @@ public class LmdbNativeChunkPipelineTest {
 	}
 
 	private static LmdbStoreConfig chunkPipelineConfig() {
-		return new LmdbStoreConfig("spoc,posc,ospc")
+		return new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 	}
 
@@ -597,7 +597,8 @@ public class LmdbNativeChunkPipelineTest {
 			// Every covered probe remains adjacency-first; this isolates cross-source SIP without overriding
 			// arbitration.
 			LmdbStore store = new LmdbStore(maskDir,
-					new LmdbStoreConfig("spoc,posc,ospc")
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true)
 							.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 							.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
 							.setDirectAdjacencyPredicates(Set.of(

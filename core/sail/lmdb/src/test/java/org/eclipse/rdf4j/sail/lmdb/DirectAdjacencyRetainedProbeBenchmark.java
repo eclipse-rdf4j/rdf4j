@@ -63,6 +63,7 @@ public class DirectAdjacencyRetainedProbeBenchmark {
 	public void setUp() throws IOException {
 		dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbStore sail = new LmdbStore(dataDir, config);

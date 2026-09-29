@@ -44,26 +44,42 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** Verifies exact native expression decoding and its dictionary-read cost against real compressed store records. */
 @Isolated("Observes the native codec's process-wide dictionary-read counter")
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeValueOverlayTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final String BUDGET_PROPERTY = "rdf4j.lmdb.valueOverlay.maxBytes";
 
 	@TempDir
 	File directory;
 
 	private ValueStore store;
+	private String previousBudget;
 
 	@BeforeEach
 	void openStore() throws Exception {
-		store = new ValueStore(new File(directory, "values"), new LmdbStoreConfig().setInlineLiterals(false));
+		previousBudget = System.getProperty(BUDGET_PROPERTY);
+		System.setProperty(BUDGET_PROPERTY, "0");
+		store = new ValueStore(new File(directory, "values"),
+				new LmdbStoreConfig().setInlineLiterals(false).setValueOverlayEnabled(true));
 	}
 
 	@AfterEach
 	void closeStore() throws Exception {
-		store.close();
+		try {
+			store.close();
+		} finally {
+			if (previousBudget == null) {
+				System.clearProperty(BUDGET_PROPERTY);
+			} else {
+				System.setProperty(BUDGET_PROPERTY, previousBudget);
+			}
+		}
 	}
 
 	@Test
@@ -236,7 +252,7 @@ class LmdbNativeValueOverlayTest {
 	@Test
 	void inlineValuesBypassDictionaryWithAndWithoutOverlay() throws Exception {
 		ValueStore inlineStore = new ValueStore(new File(directory, "inline"),
-				new LmdbStoreConfig().setInlineLiterals(true));
+				new LmdbStoreConfig().setInlineLiterals(true).setValueOverlayEnabled(true));
 		try {
 			List<Value> values = List.of(VF.createLiteral("alpha"), VF.createLiteral(true), VF.createLiteral(42));
 			long[] ids = new long[values.size()];

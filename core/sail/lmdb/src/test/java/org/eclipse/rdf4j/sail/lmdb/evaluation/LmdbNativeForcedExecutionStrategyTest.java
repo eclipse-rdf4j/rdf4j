@@ -58,7 +58,10 @@ class LmdbNativeForcedExecutionStrategyTest {
 
 	@BeforeEach
 	void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI alice = vf.createIRI(EX, "alice");

@@ -48,6 +48,7 @@ public final class LmdbAsyncStartupProfile {
 			seed.shutDown();
 		}
 		LmdbStore sail = new LmdbStore(directory.toFile(), configuration(preallocated)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMaxBytes(512L << 20));
 		SailRepository repository = new SailRepository(sail);
 		long start = System.nanoTime();

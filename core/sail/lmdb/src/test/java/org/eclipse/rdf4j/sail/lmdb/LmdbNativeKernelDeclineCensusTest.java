@@ -112,6 +112,8 @@ public class LmdbNativeKernelDeclineCensusTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false);
 		store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);

@@ -238,7 +238,9 @@ public class LmdbDatatypeHistogramTest {
 
 	/** Loads mixed-datatype data plus non-literal objects and returns the expected per-datatype statement counts. */
 	private Map<String, Long> openMixedRepository(int extraRandomStatements) {
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		Map<String, Long> expected = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -292,7 +294,9 @@ public class LmdbDatatypeHistogramTest {
 			properties.store(output, "legacy test store");
 		}
 		store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false));
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setInlineLiterals(false)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		Map<String, Long> expected = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {

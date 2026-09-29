@@ -90,6 +90,8 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
 		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		sail = new LmdbStore(dataDir, config);

@@ -122,7 +122,8 @@ public class HashJoinBenchmark {
 			captureProperties();
 			configure(inputRows);
 			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 			loadData();
 			expectedDigests = expectedDigests(inputRows);
 			executionPaths = new EnumMap<>(Workload.class);

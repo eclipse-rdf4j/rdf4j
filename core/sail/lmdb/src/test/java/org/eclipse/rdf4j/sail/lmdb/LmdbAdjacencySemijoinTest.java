@@ -68,6 +68,8 @@ public class LmdbAdjacencySemijoinTest {
 		previousJanino = System.setProperty(JANINO_FLAG, "false");
 		previousKernelInterpreter = System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		sail = new LmdbStore(dataDir, config);

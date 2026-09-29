@@ -88,7 +88,8 @@ public class LmdbNativeStrategyPriorityTest {
 	public void setUp() {
 		previousParallel = System.getProperty(PARALLEL_FLAG);
 		System.setProperty(PARALLEL_FLAG, "false");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");

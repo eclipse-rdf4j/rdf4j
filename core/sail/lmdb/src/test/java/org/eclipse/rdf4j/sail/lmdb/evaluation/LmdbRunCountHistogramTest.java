@@ -136,7 +136,9 @@ public class LmdbRunCountHistogramTest {
 	@Test
 	public void histogramMatchesOnLargerRandomDatasetInParallel() throws InterruptedException {
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		Map<String, Integer> degrees = new HashMap<>();
 		Random random = new Random(13);
@@ -286,7 +288,9 @@ public class LmdbRunCountHistogramTest {
 	}
 
 	private void openRepository() {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();

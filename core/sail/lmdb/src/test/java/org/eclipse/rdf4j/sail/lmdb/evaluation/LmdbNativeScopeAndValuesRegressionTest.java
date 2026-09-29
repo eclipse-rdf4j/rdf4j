@@ -55,7 +55,8 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 
 	@BeforeEach
 	public void setUp() {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(false);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(false);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();

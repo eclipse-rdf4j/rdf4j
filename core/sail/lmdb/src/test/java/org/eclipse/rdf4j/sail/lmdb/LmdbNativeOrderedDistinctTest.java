@@ -421,7 +421,7 @@ class LmdbNativeOrderedDistinctTest {
 
 	private SailRepository repository(String name, String indexes) {
 		SailRepository repository = new SailRepository(
-				new LmdbStore(new File(dataDir, name), new LmdbStoreConfig(indexes)));
+				new LmdbStore(new File(dataDir, name), new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(true)));
 		repository.init();
 		return repository;
 	}

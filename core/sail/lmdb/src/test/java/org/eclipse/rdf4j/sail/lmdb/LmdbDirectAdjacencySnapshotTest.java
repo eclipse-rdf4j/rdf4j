@@ -74,6 +74,7 @@ class LmdbDirectAdjacencySnapshotTest {
 
 	private void openStore(DirectAdjacencyCoverage coverage, List<IRI> selected) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		if (coverage != null) {

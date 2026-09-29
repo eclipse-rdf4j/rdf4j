@@ -61,11 +61,12 @@ Each committed state is an immutable base plus newest-first delta runs. Snapshot
 
 ## Configuration and memory
 
-These are source defaults, not an estimate of memory needed for a particular repository. The system properties are read at store/registry or builder initialization; changing them after construction does not resize an existing base or registry.
+These are source defaults, not an estimate of memory needed for a particular repository. The persisted `LmdbStoreConfig.valueOverlayEnabled` startup setting defaults to `false`; value-overlay tuning properties never enable it by themselves. When enabled with no `rdf4j.lmdb.valueOverlay.maxBytes` property, startup warming uses the configured shared retained-memory limit as its base-build cap (2 GiB by default). An explicit positive `maxBytes` replaces that cap, and an explicit zero retains its meaning of disabling automatic warm-up. Changing startup settings after construction does not reconfigure an existing registry.
 
 | Property or API default | Default | Scope and meaning |
 | --- | ---: | --- |
-| `rdf4j.lmdb.valueOverlay.maxBytes` | `0` | Startup base warm-up; zero disables automatic base construction. Positive value is the base's native-byte budget. Read by `ValueStore` while opening. |
+| `LmdbStoreConfig.valueOverlayEnabled` | `false` | Store startup gate; when false, no registry, warm-up, mutation, compaction, or shutdown work is performed. |
+| `rdf4j.lmdb.valueOverlay.maxBytes` | absent | When enabled, absence uses the shared retained-memory limit as the base-build cap; explicit zero disables automatic warm-up, and a positive value overrides the cap with the base's native-byte budget. Read by `ValueStore` while opening. |
 | `rdf4j.lmdb.valueOverlay.reverseSlots` | `1,048,576` | Base reverse-index slots when warm-up is enabled. Each slot reserves 8 native bytes; zero can disable reverse slots. Read with the warm-up options. |
 | `rdf4j.lmdb.valueOverlay.retained.maxBytes` | `2,147,483,648` bytes (2 GiB) | Shared configured retained-memory budget for base/delta native storage, estimated retained heap, and workspace reservations. Initialized lazily when the configured singleton is first requested. |
 | `rdf4j.lmdb.valueOverlay.delta.maxBytes` | `67,108,864` bytes (64 MiB) | Per-registry native bytes retained by current delta runs. |
@@ -81,9 +82,11 @@ These are source defaults, not an estimate of memory needed for a particular rep
 
 Budget and option sources: [`OverlayMemoryBudget`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/valueoverlay/OverlayMemoryBudget.java#L17), [`CompressedValueOverlay.Options`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/valueoverlay/CompressedValueOverlay.java#L27), and configured warm-up in [`ValueStore`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/ValueStore.java#L2660).
 
+For repository configuration, set `lmdb:valueOverlayEnabled true` to opt in. Calling `ValueStore.warmCompressedValueOverlay(...)` directly while the feature is disabled throws `IllegalStateException`; setting `maxBytes` alone does not activate it.
+
 ## Failure modes and operational interpretation
 
-* **No base present:** base warming may be disabled by default, still running, cancelled by a concurrent writer/close, refused for memory, or failed. Treat this as ordinary LMDB mode.
+* **No base present:** the feature may be disabled (the default), auto-warming may be explicitly suppressed with `maxBytes=0`, may still be running, may be cancelled by a concurrent writer/close, may be refused for memory, or may have failed. Treat this as ordinary LMDB mode.
 * **Unknown ID or value lookup:** query the same authoritative LMDB snapshot. A reverse-index miss does not prove that a value is missing.
 * **Overlay capacity exception:** do not fail the store commit solely because an optional overlay reservation failed. The normal reader can bypass it.
 * **Record omitted as large:** perform exact lookup/materialization from ValueStore. The overlay's record-size cap is an accelerator boundary, not a persistent value-size limit.

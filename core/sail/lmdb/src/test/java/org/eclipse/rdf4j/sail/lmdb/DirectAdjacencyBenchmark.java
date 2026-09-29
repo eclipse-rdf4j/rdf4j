@@ -103,6 +103,7 @@ public class DirectAdjacencyBenchmark {
 		LmdbStoreConfig tripleConfig = new LmdbStoreConfig("spoc,posc");
 		tripleStore = new TripleStore(dataDir, tripleConfig, null);
 		LmdbStoreConfig directConfig = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(directConfig, 8L << 30, name -> null,

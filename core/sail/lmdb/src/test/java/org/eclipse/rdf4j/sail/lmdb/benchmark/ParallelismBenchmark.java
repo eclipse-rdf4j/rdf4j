@@ -157,7 +157,8 @@ public class ParallelismBenchmark {
 			configure(selected, workersPerQuery, inputRows);
 
 			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 			loadData();
 			if (selected.queryCount > 1) {
 				queryExecutor = Executors.newFixedThreadPool(selected.queryCount);

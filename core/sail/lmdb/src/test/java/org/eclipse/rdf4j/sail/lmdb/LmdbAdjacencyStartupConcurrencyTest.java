@@ -59,7 +59,8 @@ class LmdbAdjacencyStartupConcurrencyTest {
 		String property = LmdbDirectAdjacencyOptions.BUILD_RETRY_MILLIS_PROPERTY;
 		String previous = System.setProperty(property, "1");
 		SailRepository repository = new SailRepository(
-				new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false)));
+				new LmdbStore(dataDir,
+						new LmdbStoreConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyBuildOnStart(false)));
 		try {
 			repository.init();
 			LmdbStore sail = (LmdbStore) repository.getSail();
@@ -92,7 +93,8 @@ class LmdbAdjacencyStartupConcurrencyTest {
 	@Timeout(10)
 	void shutdownCancelsDelayedBuildRetry(@TempDir File dataDir) throws Exception {
 		SailRepository repository = new SailRepository(
-				new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false)));
+				new LmdbStore(dataDir,
+						new LmdbStoreConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyBuildOnStart(false)));
 		repository.init();
 		LmdbDirectAdjacencyStore adjacency = ((LmdbStore) repository.getSail()).getBackingStore()
 				.directAdjacencyStore();
@@ -112,7 +114,8 @@ class LmdbAdjacencyStartupConcurrencyTest {
 	void asynchronousConnectionCommitRetainsUntouchedRowCoverage(@TempDir File dataDir) throws Exception {
 		String property = LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY;
 		String previous = System.setProperty(property, "false");
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		SailRepository repository = new SailRepository(
+				new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyEnabled(true)));
 		CountDownLatch pendingPublished = new CountDownLatch(1);
 		CountDownLatch releaseHandoff = new CountDownLatch(1);
 		try {
@@ -152,7 +155,8 @@ class LmdbAdjacencyStartupConcurrencyTest {
 	@Test
 	@Timeout(60)
 	void emptyRepositoryCommitPublishesBothBackingBranchesBeforeReturning(@TempDir File dataDir) throws Exception {
-		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false));
+		LmdbStore sail = new LmdbStore(dataDir,
+				new LmdbStoreConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyBuildOnStart(false));
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
@@ -212,6 +216,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			seed.shutDown();
 		}
 		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyBacklogMaxBytes(1));
 		SailRepository repository = new SailRepository(sail);
@@ -289,9 +294,10 @@ class LmdbAdjacencyStartupConcurrencyTest {
 		CountDownLatch releaseScan = new CountDownLatch(1);
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			manager.addRepositoryConfig(new RepositoryConfig("first", new SailRepositoryConfig(
-					new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false))));
+					new LmdbStoreConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyBuildOnStart(false))));
 			manager.addRepositoryConfig(
-					new RepositoryConfig("second", new SailRepositoryConfig(new LmdbStoreConfig())));
+					new RepositoryConfig("second",
+							new SailRepositoryConfig(new LmdbStoreConfig().setDirectAdjacencyEnabled(true))));
 			SailRepository first = (SailRepository) manager.getRepository("first");
 			try (var connection = first.getConnection()) {
 				connection.add(Values.iri("urn:seed"), Values.iri("urn:p"), Values.iri("urn:o"));
@@ -366,6 +372,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 		try {
 			System.setProperty(property, "false");
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+					.setDirectAdjacencyEnabled(true)
 					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 					.setDirectAdjacencyBuildOnStart(false)
 					// These LMDB maps are separate from the direct-adjacency byte limit; preallocate them so this

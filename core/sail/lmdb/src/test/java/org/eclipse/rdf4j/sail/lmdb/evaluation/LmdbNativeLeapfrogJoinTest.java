@@ -369,7 +369,8 @@ public class LmdbNativeLeapfrogJoinTest {
 	private void openRepositoryWithDuplicateEdges() {
 		LmdbNativeLeapfrogJoin.resetMetrics();
 		repository = new SailRepository(
-				new LmdbStore(new File(dataDir, "duplicate-edges"), new LmdbStoreConfig("spoc,ospc,psoc,posc")));
+				new LmdbStore(new File(dataDir, "duplicate-edges"),
+						new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI knows = vf.createIRI(EX, "knows");
@@ -385,7 +386,8 @@ public class LmdbNativeLeapfrogJoinTest {
 
 	private void openRepository() {
 		LmdbNativeLeapfrogJoin.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI knows = vf.createIRI(EX, "knows");

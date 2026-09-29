@@ -283,7 +283,8 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		previousSynchronous = System.getProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, "true");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
@@ -295,7 +296,8 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		}
 
 		smallPathRepository = new SailRepository(
-				new LmdbStore(new File(dataDir, "small-path"), new LmdbStoreConfig("spoc,posc,ospc")));
+				new LmdbStore(new File(dataDir, "small-path"),
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = smallPathRepository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			ValueFactory valueFactory = connection.getValueFactory();

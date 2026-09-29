@@ -482,16 +482,19 @@ public class AdjacencyQueryShapeBenchmark {
 		LmdbStoreConfig config = FoafCliqueQueryBenchmark.createBenchmarkConfig();
 		switch (sourceMode) {
 		case SOURCE_ARBITER:
+			config.setDirectAdjacencyEnabled(true);
 			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL);
 			break;
 		case SOURCE_SELECTED_HYBRID:
+			config.setDirectAdjacencyEnabled(true);
 			config.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 			config.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED);
 			config.setDirectAdjacencyPredicates(Set.of(Values.iri(SHAPE_NAMESPACE, "selective"),
 					Values.iri(SHAPE_NAMESPACE, "dense")));
 			break;
 		case SOURCE_LMDB:
+			config.setDirectAdjacencyEnabled(false);
 			config.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 			break;
 		default:

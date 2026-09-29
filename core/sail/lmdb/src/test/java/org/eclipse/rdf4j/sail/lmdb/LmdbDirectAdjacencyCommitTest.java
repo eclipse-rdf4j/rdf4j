@@ -379,6 +379,7 @@ class LmdbDirectAdjacencyCommitTest {
 		previousNodePredicateServe = System.getProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		// This class asserts bound-node/unbound-predicate serving across commits, which needs both node-predicate
@@ -474,6 +475,7 @@ class LmdbDirectAdjacencyCommitTest {
 			store.close();
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
@@ -1322,6 +1324,7 @@ class LmdbDirectAdjacencyCommitTest {
 	void strictValidationKeepsMemoryRefusalAsASupportedFallback() {
 		store.close();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		Map<String, String> properties = Map.of(
 				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
@@ -1346,6 +1349,7 @@ class LmdbDirectAdjacencyCommitTest {
 		tripleStore = null;
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		Map<String, String> properties = Map.of(

@@ -63,7 +63,8 @@ public class LmdbNativeKernelWcojGuardTest {
 		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		LmdbNativeKernelExecution.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI edge = vf.createIRI(EX, "connectsTo");

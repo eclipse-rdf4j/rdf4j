@@ -126,7 +126,9 @@ public class DistinctRootCountBenchmark {
 			if (!new File(directory, "triples").isDirectory()) {
 				throw new IllegalStateException("theme fixture missing: " + directory);
 			}
-			LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,ospc,psoc,posc"));
+			LmdbStore store = new LmdbStore(directory,
+					new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true));
 			repository = new SailRepository(store);
 			repository.init();
 			JaninoCeilingKernels.buildDirectAdjacency(store);

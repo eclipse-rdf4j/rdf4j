@@ -85,7 +85,7 @@ public class GeneratedValueKeysIntegrationTest {
 		set("rdf4j.lmdb.valueOverlay.maxBytes", "0");
 		set("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
 		config.setForceSync(false);
 		repository = new SailRepository(new LmdbStore(directory, config));
 		try (var connection = repository.getConnection()) {

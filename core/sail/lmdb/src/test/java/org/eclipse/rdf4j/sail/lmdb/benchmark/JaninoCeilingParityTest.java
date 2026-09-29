@@ -103,6 +103,8 @@ public class JaninoCeilingParityTest {
 		dataDir = Files.createTempDirectory("rdf4j-janino-ceiling-parity").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		config.setForceSync(false);
+		config.setNativeEvaluationEnabled(true);
+		config.setDirectAdjacencyEnabled(true);
 		repository = new SailRepository(new LmdbStore(dataDir, config));
 		repository.init();
 		try (SailRepositoryConnection connection = repository.getConnection()) {

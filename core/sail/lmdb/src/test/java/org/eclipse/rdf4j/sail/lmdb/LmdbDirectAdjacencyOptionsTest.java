@@ -37,7 +37,9 @@ class LmdbDirectAdjacencyOptionsTest {
 		OperatingSystemMXBean operatingSystem = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
 		long totalMemoryBytes = operatingSystem.getTotalMemorySize();
 
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(new LmdbStoreConfig());
+		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER));
 
 		assertThat(totalMemoryBytes).isPositive();
 		assertThat(options.memoryLimitBytes()).isEqualTo(totalMemoryBytes);
@@ -53,7 +55,9 @@ class LmdbDirectAdjacencyOptionsTest {
 							throw new AssertionError("standard MXBean methods must not be queried");
 						});
 		long unavailableLimit = LmdbDirectAdjacencyOptions.resolveMemoryLimitBytes(standardOnly);
-		LmdbStoreConfig auto = new LmdbStoreConfig().setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
+		LmdbStoreConfig auto = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions refused = LmdbDirectAdjacencyOptions.resolve(auto, unavailableLimit, NO_PROPERTIES,
 				8);
 
@@ -62,6 +66,7 @@ class LmdbDirectAdjacencyOptionsTest {
 		assertThat(refused.memoryRefused()).isTrue();
 
 		LmdbStoreConfig explicit = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
 		LmdbDirectAdjacencyOptions accepted = LmdbDirectAdjacencyOptions.resolve(explicit, unavailableLimit,
@@ -102,7 +107,9 @@ class LmdbDirectAdjacencyOptionsTest {
 
 	@Test
 	void autoBelowMinimumMarksMemoryRefusedForNonDisabledMode() {
-		LmdbStoreConfig config = new LmdbStoreConfig().setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 128 * 1024 * 1024,
 				NO_PROPERTIES, 8);
 
@@ -117,6 +124,26 @@ class LmdbDirectAdjacencyOptionsTest {
 				NO_PROPERTIES, 8);
 
 		assertThat(options.memoryRefused()).isFalse();
+	}
+
+	@Test
+	void legacyPreferModeDoesNotEnableAdjacency() {
+		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(
+				new LmdbStoreConfig().setDirectAdjacencyMode(DirectAdjacencyMode.PREFER), 8 * GIB, NO_PROPERTIES, 8);
+
+		assertThat(options.mode()).isEqualTo(DirectAdjacencyMode.DISABLED);
+		assertThat(options.buildOnStart()).isFalse();
+		assertThat(options.memoryRefused()).isFalse();
+	}
+
+	@Test
+	void enablingAdjacencyWithExplicitDisabledModeIsRejectedDuringResolution() {
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 8));
 	}
 
 	@Test
@@ -185,6 +212,7 @@ class LmdbDirectAdjacencyOptionsTest {
 				LmdbDirectAdjacencyOptions.MAX_DELTA_GENERATIONS_PROPERTY, "4",
 				LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "2");
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(256 * GIB);
 
@@ -218,6 +246,7 @@ class LmdbDirectAdjacencyOptionsTest {
 				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
 				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(GIB);
 
@@ -228,10 +257,10 @@ class LmdbDirectAdjacencyOptionsTest {
 	}
 
 	@Test
-	void strictMaintenanceCanBeEnabledWhileSynchronousMaintenanceUsesItsDefault() {
-		Map<String, String> strictOnly = Map.of(
-				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true");
+	void disabledAdjacencyIgnoresLegacyTuningProperties() {
+		Map<String, String> strictOnly = Map.of(LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true");
 		LmdbStoreConfig enabled = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(GIB);
 		LmdbDirectAdjacencyOptions enabledOptions = LmdbDirectAdjacencyOptions.resolve(enabled, 8 * GIB,
@@ -239,15 +268,24 @@ class LmdbDirectAdjacencyOptionsTest {
 		assertThat(enabledOptions.synchronousMaintenance()).isTrue();
 		assertThat(enabledOptions.failOnMaintenanceError()).isTrue();
 
-		LmdbStoreConfig disabled = new LmdbStoreConfig().setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
-		LmdbDirectAdjacencyOptions ignored = LmdbDirectAdjacencyOptions.resolve(disabled, 8 * GIB, strictOnly::get, 8);
-		assertThat(ignored.synchronousMaintenance()).isTrue();
-		assertThat(ignored.failOnMaintenanceError()).isTrue();
+		Map<String, String> invalidLegacyTuning = Map.of(
+				LmdbDirectAdjacencyOptions.BUILD_THREADS_PROPERTY, "not-a-number",
+				LmdbDirectAdjacencyOptions.COMMIT_MAX_BYTES_PROPERTY, "not-a-number");
+		LmdbStoreConfig disabled = new LmdbStoreConfig()
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyBuildOnStart(true);
+		LmdbDirectAdjacencyOptions ignored = LmdbDirectAdjacencyOptions.resolve(disabled, 8 * GIB,
+				invalidLegacyTuning::get, 8);
+		assertThat(ignored.mode()).isEqualTo(DirectAdjacencyMode.DISABLED);
+		assertThat(ignored.buildOnStart()).isFalse();
+		assertThat(ignored.commitMaxBytes()).isZero();
 	}
 
 	@Test
 	void buildThreadsLeaveOneForegroundProcessorAndAllowAllVisibleProcessorsExplicitly() {
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
 
 		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 16).buildThreads()).isEqualTo(15);
 		assertThat(LmdbDirectAdjacencyOptions.resolve(config, 8 * GIB, NO_PROPERTIES, 2).buildThreads()).isEqualTo(1);

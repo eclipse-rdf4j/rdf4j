@@ -763,7 +763,8 @@ public class LmdbNativeSubstrateBenchmark {
 
 		void openRepository() {
 			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		}
 
 		void setProperty(String property, String value) {

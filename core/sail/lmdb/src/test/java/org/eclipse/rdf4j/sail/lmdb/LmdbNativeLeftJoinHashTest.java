@@ -84,7 +84,8 @@ public class LmdbNativeLeftJoinHashTest {
 		previousPackedAlgebra = System.setProperty(PACKED_ALGEBRA_FLAG, "false");
 		previousJanino = System.setProperty(JANINO_FLAG, "false");
 		previousKernelInterpreter = System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI type = vf.createIRI(EX, "type");

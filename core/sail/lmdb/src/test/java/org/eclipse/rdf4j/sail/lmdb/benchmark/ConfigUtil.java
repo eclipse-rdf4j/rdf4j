@@ -59,6 +59,9 @@ final class ConfigUtil {
 			config.setDirectAdjacencyMode(
 					DirectAdjacencyMode.valueOf(directAdjacencyMode.trim().toUpperCase(Locale.ROOT)));
 		}
+		config.setNativeEvaluationEnabled(true);
+		config.setDirectAdjacencyEnabled(config.getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED);
+		config.setValueOverlayEnabled(true);
 		return config;
 	}
 }

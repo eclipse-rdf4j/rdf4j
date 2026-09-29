@@ -240,6 +240,7 @@ class LmdbSailStorePostCommitFailureTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setBulkOperationSize(0)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMaxBytes(1L << 30);

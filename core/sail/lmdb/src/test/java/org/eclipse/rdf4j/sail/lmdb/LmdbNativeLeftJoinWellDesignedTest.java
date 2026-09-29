@@ -55,7 +55,10 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
@@ -139,7 +142,9 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 	@Test
 	public void realEstateNativeCoverageDoesNotShrink(@TempDir File realEstateDir) {
 		SailRepository realEstate = new SailRepository(new LmdbStore(realEstateDir,
-				new LmdbStoreConfig("spoc,posc,ospc")));
+				new LmdbStoreConfig("spoc,posc,ospc")
+						.setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)));
 		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
 		LmdbNativeCostCalibration.reset();
 		try {

@@ -136,6 +136,8 @@ class LmdbNativeVariablePredicateKernelTest {
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30)
 				.setDirectAdjacencyCoverage(coverage);

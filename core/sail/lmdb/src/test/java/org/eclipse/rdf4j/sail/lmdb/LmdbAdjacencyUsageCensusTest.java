@@ -133,6 +133,8 @@ class LmdbAdjacencyUsageCensusTest {
 	@BeforeAll
 	void setUp() {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbStore sail = new LmdbStore(dataDir, config);

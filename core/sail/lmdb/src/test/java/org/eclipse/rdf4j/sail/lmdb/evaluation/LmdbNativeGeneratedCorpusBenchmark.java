@@ -104,7 +104,8 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 
 		dataDir = Files.newTemporaryFolder();
 		LmdbStore store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc").setDirectAdjacencyBuildOnStart(false));
+				new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false));
 		repository = new SailRepository(store);
 		loadFixture();
 		JaninoCeilingKernels.buildDirectAdjacency(store);

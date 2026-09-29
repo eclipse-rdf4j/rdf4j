@@ -103,6 +103,8 @@ public class LmdbNativeQueryExplanationTest {
 	public void setUp() {
 		KernelExecutionTestAccess.resetCostCalibration();
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {

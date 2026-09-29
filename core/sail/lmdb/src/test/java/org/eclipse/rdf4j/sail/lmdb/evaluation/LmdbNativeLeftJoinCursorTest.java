@@ -66,7 +66,8 @@ public class LmdbNativeLeftJoinCursorTest {
 		remember(KERNEL_INTERPRETER_FLAG);
 		remember(EXACT_EMPTY_PRUNING_FLAG);
 		System.clearProperty(EXACT_EMPTY_PRUNING_FLAG);
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
 				.setDirectAdjacencyMaxBytes(1L << 30));

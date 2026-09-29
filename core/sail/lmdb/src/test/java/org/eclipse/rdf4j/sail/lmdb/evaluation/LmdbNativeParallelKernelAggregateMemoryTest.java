@@ -117,7 +117,8 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		// These tests exercise byte admission, so they must not depend on machine-learning state left by prior tests.
 		set(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
 		set(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "false");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		repository = new SailRepository(new LmdbStore(dataDir, config));

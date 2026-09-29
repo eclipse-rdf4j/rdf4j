@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -33,6 +34,17 @@ class ConfigUtilTest {
 	void directAdjacencyModeCanBeDisabledForAControlledBenchmark() {
 		System.setProperty(DIRECT_ADJACENCY_MODE_PROPERTY, "DISABLED");
 
-		assertThat(ConfigUtil.createConfig().getDirectAdjacencyMode()).isEqualTo(DirectAdjacencyMode.DISABLED);
+		LmdbStoreConfig config = ConfigUtil.createConfig();
+		assertThat(config.getDirectAdjacencyMode()).isEqualTo(DirectAdjacencyMode.DISABLED);
+		assertThat(config.getDirectAdjacencyEnabled()).isFalse();
+	}
+
+	@Test
+	void benchmarkConfigurationsExplicitlyEnableAcceleratorsByDefault() {
+		LmdbStoreConfig config = ConfigUtil.createConfig();
+
+		assertThat(config.getNativeEvaluationEnabled()).isTrue();
+		assertThat(config.getDirectAdjacencyEnabled()).isTrue();
+		assertThat(config.getValueOverlayEnabled()).isTrue();
 	}
 }

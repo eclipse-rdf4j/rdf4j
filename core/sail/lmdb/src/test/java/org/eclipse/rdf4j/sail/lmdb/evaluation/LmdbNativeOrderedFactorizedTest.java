@@ -55,7 +55,8 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
@@ -562,7 +563,8 @@ public class LmdbNativeOrderedFactorizedTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		SailRepository churn = new SailRepository(
-				new LmdbStore(churnDir, new LmdbStoreConfig("spoc,posc,ospc")));
+				new LmdbStore(churnDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try {
 			try (SailRepositoryConnection conn = churn.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();

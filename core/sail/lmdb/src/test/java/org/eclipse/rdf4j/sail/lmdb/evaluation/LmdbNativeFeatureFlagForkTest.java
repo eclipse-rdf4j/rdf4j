@@ -144,7 +144,7 @@ class LmdbNativeFeatureFlagForkTest {
 		public static void main(String[] args) {
 			Scenario scenario = Scenario.valueOf(args[0]);
 			configure(scenario);
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
 			config.setSketchEstimatorEnabled(false);
 			SailRepository repository = new SailRepository(new LmdbStore(Path.of(args[1]).toFile(), config));
 			try {

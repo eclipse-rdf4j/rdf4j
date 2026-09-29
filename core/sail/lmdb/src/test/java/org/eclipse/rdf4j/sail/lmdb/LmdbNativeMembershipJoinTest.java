@@ -60,7 +60,8 @@ public class LmdbNativeMembershipJoinTest {
 	@BeforeEach
 	public void setUp() {
 		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI type = vf.createIRI(EX, "type");
