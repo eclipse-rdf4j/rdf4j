@@ -672,17 +672,22 @@ final class BulkTaskScheduler implements AutoCloseable {
 		int next = 0;
 		int batchLimit = workerLimit + queuedTaskLimit;
 		while (next < orderedWork.size()) {
-			List<Future<T>> batch = new ArrayList<>(Math.min(batchLimit, orderedWork.size() - next));
+			List<TrackedTask<T>> batch = new ArrayList<>(Math.min(batchLimit, orderedWork.size() - next));
 			int first = next;
 			try {
 				while (next < orderedWork.size() && batch.size() < batchLimit) {
 					Work<T> item = orderedWork.get(next);
 					ResourceLease lease = reserveForWork(item);
-					batch.add(submit(lease, item.operation()));
+					batch.add(schedule(lease, item.operation()));
 					next++;
 				}
 				for (int i = 0; i < batch.size(); i++) {
 					results[first + i] = batch.get(i).get();
+				}
+				// FutureTask publishes the result before TrackedTask finishes releasing its lease.
+				// runOrdered is synchronous, so wait for task cleanup before returning the batch results.
+				for (TrackedTask<T> task : batch) {
+					task.awaitCleanup();
 				}
 			} catch (InterruptedException e) {
 				cancelBatch(batch);
