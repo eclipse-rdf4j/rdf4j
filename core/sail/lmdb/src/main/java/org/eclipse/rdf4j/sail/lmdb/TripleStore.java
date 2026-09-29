@@ -181,7 +181,11 @@ class TripleStore implements Closeable {
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageWalkingEstimatorEnabled;
-	private long mapSize;
+	private volatile long mapSize;
+	private volatile long committedHighWaterBytes;
+	private TxnReplayPolicy replayPolicy;
+	private long valueEnvironmentGeneration;
+	private TxnReplayPolicy.Decision replayDecision;
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
@@ -335,6 +339,9 @@ class TripleStore implements Closeable {
 				}
 				pageEstimator.configureIndexes(fieldSequences);
 			}
+			refreshCommittedHighWater();
+			replayPolicy = new TxnReplayPolicy();
+			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
 		} catch (IOException e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
@@ -380,7 +387,9 @@ class TripleStore implements Closeable {
 
 	/** Installs a legacy or empty namespace snapshot only if the authoritative marker is still absent. */
 	Map<String, String> initializeNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
-		startTransaction();
+		TxnReplayPolicy.Decision decision = prepareReplayDecision();
+		startTransaction(new TxnReplayPolicy.Decision(replayPolicy, true, false, decision.tripleHighWater,
+				decision.valueHighWater, decision.valueMutationGeneration));
 		try {
 			Map<String, String> persisted = readNamespaceSnapshot(writeTxn);
 			if (persisted != null) {
@@ -404,12 +413,15 @@ class TripleStore implements Closeable {
 
 	/** Writes the immutable namespace snapshot into the currently open RDF writer transaction. */
 	void writeNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
+		checkReplayFailure();
 		byte[] encodedSnapshot = NamespaceStore.encodeSnapshot(namespaces);
 		if (autoGrow) {
 			prepareForMutation(encodedSnapshot.length + 2L * TripleIndex.MAX_KEY_LENGTH + 64L);
-			long record = mutationJournal.mark();
+			long record = usesReplayJournal() ? mutationJournal.mark() : -1L;
 			try {
-				mutationJournal.appendNamespaceSnapshot(encodedSnapshot);
+				if (usesReplayJournal()) {
+					mutationJournal.appendNamespaceSnapshot(encodedSnapshot);
+				}
 				writeNamespaceSnapshotBytes(encodedSnapshot);
 			} catch (MapFullException mapFull) {
 				resizeAndReplay(record, null);
@@ -425,7 +437,6 @@ class TripleStore implements Closeable {
 				throw failure;
 			}
 		}
-		nativeMutation = true;
 	}
 
 	/** Writes an already encoded snapshot into the currently open RDF writer transaction. */
@@ -434,6 +445,15 @@ class TripleStore implements Closeable {
 			throw new IllegalStateException("Namespace snapshot requires an active TripleStore writer transaction");
 		}
 		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.bytes(NAMESPACE_SNAPSHOT_KEY));
+			MDBVal previous = MDBVal.malloc(stack);
+			int result = mdb_get(writeTxn, namespacesDbi, key, previous);
+			E(result);
+			if (result == MDB_SUCCESS && previous.mv_data().equals(ByteBuffer.wrap(encodedSnapshot))
+					&& readNamespaceDatabaseVersion(stack, writeTxn) == NAMESPACE_DATABASE_VERSION) {
+				return;
+			}
 			writeNamespaceDatabaseValue(stack, writeTxn, NAMESPACE_SNAPSHOT_KEY, encodedSnapshot);
 			writeNamespaceDatabaseValue(stack, writeTxn, NAMESPACE_FORMAT_KEY,
 					ByteBuffer.allocate(Integer.BYTES).putInt(NAMESPACE_DATABASE_VERSION).array());
@@ -443,12 +463,16 @@ class TripleStore implements Closeable {
 
 	/** Commits only namespace metadata without advancing the triple data revision. */
 	void commitNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
+		commitNamespaceSnapshot(namespaces, prepareReplayDecision());
+	}
+
+	void commitNamespaceSnapshot(Map<String, String> namespaces, TxnReplayPolicy.Decision decision) throws IOException {
 		if (writeTxn != 0) {
 			throw new IllegalStateException(
 					"Namespace-only commit cannot run inside an active TripleStore transaction");
 		}
 		try {
-			startTransaction();
+			startTransaction(decision);
 			writeNamespaceSnapshot(namespaces);
 			commit(false);
 		} catch (IOException | RuntimeException | Error failure) {
@@ -1554,12 +1578,19 @@ class TripleStore implements Closeable {
 	}
 
 	private void prepareForMutation(long estimatedWriteBytes) throws IOException {
+		checkReplayFailure();
 		if (writeTxn == 0) {
 			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
 		}
-		ensureMutationJournal();
+		if (usesReplayJournal()) {
+			ensureMutationJournal();
+		}
 		if (requiresResize(estimatedWriteBytes)) {
-			resizeAndReplay(-1, null);
+			if (!usesReplayJournal()) {
+				growForTransactionRetry(estimatedWriteBytes, null);
+			} else {
+				resizeAndReplay(-1, null);
+			}
 		}
 	}
 
@@ -1598,6 +1629,62 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	private boolean usesReplayJournal() {
+		return autoGrow && (replayDecision == null || replayDecision.track);
+	}
+
+	private void checkReplayFailure() throws IOException {
+		if (replayDecision != null) {
+			replayDecision.check();
+		}
+		if (mutationFailure != null) {
+			throw new IOException("Cannot mutate a TripleStore transaction after a failed mutation", mutationFailure);
+		}
+	}
+
+	/** Grows capacity for a complete caller retry; a missing prefix can never be replayed. */
+	private void growForTransactionRetry(long requiredBytes, Throwable cause) throws IOException {
+		LmdbTransactionRetryException retry = replayDecision.capacityFailure("TripleStore", cause);
+		markMutationFailure(retry);
+		long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
+				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredBytes);
+		try {
+			closeAlignedWriteCursors();
+			if (writeTxn != 0) {
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+			}
+			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
+				if (growthAttempt != null) {
+					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
+				var lockManager = txnManager.lockManager();
+				long stamp = lockManager.writeLock();
+				try {
+					txnManager.deactivate();
+					try {
+						long grownSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedBytes);
+						if (growthAttempt != null) {
+							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+						}
+						E(setMapSize(grownSize));
+						mapSize = grownSize;
+					} finally {
+						txnManager.activate();
+					}
+				} finally {
+					lockManager.unlockWrite(stamp);
+				}
+			}
+		} catch (IOException | RuntimeException | InterruptedException growthFailure) {
+			if (growthFailure instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			retry.addSuppressed(growthFailure);
+		}
+		throw retry;
+	}
+
 	private void markMutationFailure(Throwable failure) {
 		if (mutationFailure == null) {
 			mutationFailure = failure;
@@ -1619,6 +1706,9 @@ class TripleStore implements Closeable {
 	 * the beginning after another growth.
 	 */
 	private void resizeAndReplay(long captureStart, boolean[] replayResults) throws IOException {
+		if (!usesReplayJournal()) {
+			growForTransactionRetry(0L, new MapFullException());
+		}
 		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
 		try (growthAttempt) {
 			if (growthAttempt != null) {
@@ -1748,7 +1838,14 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		if (!autoGrow) {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		if (!usesReplayJournal()) {
+			if (autoGrow) {
+				prepareForMutation(estimateTripleMutationBytes(subj, pred, obj, context));
+			}
 			try {
 				boolean added = storeTripleDirect(subj, pred, obj, context, explicit);
 				if (added) {
@@ -1757,6 +1854,11 @@ class TripleStore implements Closeable {
 				}
 				logAddedStatements(added ? 1 : 0);
 				return added;
+			} catch (MapFullException mapFull) {
+				if (autoGrow) {
+					growForTransactionRetry(0L, mapFull);
+				}
+				throw mapFull;
 			} catch (IOException | RuntimeException | Error failure) {
 				markMutationFailure(failure);
 				throw failure;
@@ -1854,12 +1956,25 @@ class TripleStore implements Closeable {
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
 			IntConsumer addedIndexConsumer)
 			throws IOException {
-		if (autoGrow && count > 1 && count == subj.length) {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		if (usesReplayJournal() && count > 1 && count == subj.length) {
 			storeTriplesAlignedWithJournal(subj, pred, obj, context, count, explicit, addedIndexConsumer);
 			return;
 		}
+		if (autoGrow && !usesReplayJournal()) {
+			prepareForMutation(estimateAlignedMutationBytes(subj, pred, obj, context, count));
+		}
 		try {
 			storeTriplesAlignedDirect(subj, pred, obj, context, count, explicit, addedIndexConsumer, null);
+		} catch (MapFullException mapFull) {
+			if (autoGrow && !usesReplayJournal()) {
+				growForTransactionRetry(0L, mapFull);
+			}
+			markMutationFailure(mapFull);
+			throw mapFull;
 		} catch (IOException | RuntimeException | Error failure) {
 			markMutationFailure(failure);
 			throw failure;
@@ -2218,6 +2333,10 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
 		while (true) {
 			if (autoGrow) {
 				prepareForMutation();
@@ -2229,7 +2348,7 @@ class TripleStore implements Closeable {
 			try (iterator) {
 				long[] quad;
 				while ((quad = iterator.next()) != null) {
-					if (autoGrow) {
+					if (usesReplayJournal()) {
 						mapFullRecord = mutationJournal.mark();
 						try {
 							mutationJournal.appendRemove(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
@@ -2295,6 +2414,32 @@ class TripleStore implements Closeable {
 	}
 
 	public void startTransaction() throws IOException {
+		startTransaction(prepareReplayDecision());
+	}
+
+	TxnReplayPolicy.Decision prepareReplayDecision() {
+		if (replayPolicy != null && valueStore != null
+				&& valueEnvironmentGeneration != valueStore.environmentGeneration()) {
+			valueEnvironmentGeneration = valueStore.environmentGeneration();
+			replayPolicy.capacityFailure();
+		}
+		long valueMap = valueStore == null ? 0L : valueStore.replayMapSize();
+		long valueHighWater = valueStore == null ? 0L : valueStore.committedHighWaterBytes();
+		long valueGeneration = valueStore == null ? 0L : valueStore.mutationGeneration();
+		boolean knownHighWater = committedHighWaterBytes != Long.MAX_VALUE && valueHighWater != Long.MAX_VALUE;
+		if (!knownHighWater && replayPolicy != null) {
+			replayPolicy.capacityFailure();
+		}
+		boolean track = autoGrow && (replayPolicy == null
+				|| replayPolicy.shouldTrack(mapSize, committedHighWaterBytes, valueMap, valueHighWater));
+		return new TxnReplayPolicy.Decision(replayPolicy, track,
+				replayPolicy != null && valueStore != null && knownHighWater,
+				committedHighWaterBytes, valueHighWater, valueGeneration);
+	}
+
+	void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+		checkReplayFailure();
+		decision.check();
 		closeAlignedWriteCursors();
 		if (writeTxn != 0) {
 			throw new IllegalStateException("A TripleStore writer transaction is already active");
@@ -2307,7 +2452,21 @@ class TripleStore implements Closeable {
 		nativeMutation = false;
 		tripleMutation = false;
 		mutationJournal = null;
+		replayDecision = decision;
+		if (valueStore != null) {
+			valueStore.setReplayDecision(decision);
+		}
 		beginNativeWriteTransaction();
+	}
+
+	private void refreshCommittedHighWater() throws IOException {
+		committedHighWaterBytes = Long.MAX_VALUE;
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPage = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			committedHighWaterBytes = saturatedMultiply(nextPage, pageSize);
+		}
 	}
 
 	/**
@@ -2318,10 +2477,13 @@ class TripleStore implements Closeable {
 	}
 
 	private void endTransaction(boolean commit, boolean advanceDataRevision) throws IOException {
-		if (writeTxn != 0 || mutationJournal != null || mutationFailure != null) {
+		if (writeTxn != 0 || mutationJournal != null || mutationFailure != null || replayDecision != null) {
 			Throwable failure = null;
 			boolean committed = false;
 			try {
+				if (commit && replayDecision != null) {
+					replayDecision.check();
+				}
 				if (writeTxn != 0) {
 					closeAlignedWriteCursors();
 					if (commit && mutationFailure != null) {
@@ -2346,14 +2508,31 @@ class TripleStore implements Closeable {
 								closeAlignedWriteCursors();
 								long transaction = writeTxn;
 								writeTxn = 0;
-								result = mdb_txn_commit(transaction);
+								result = commitWriteTransaction(transaction);
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
 									committed = true;
 									if (advanceDataRevision && tripleMutation) {
 										dataRevision.incrementAndGet();
 									}
-									txnManager.reset();
+									try {
+										// Native commit can allocate named-DB/freelist pages after its last mutation.
+										refreshCommittedHighWater();
+										if (replayDecision != null && replayDecision.observe) {
+											replayPolicy.committed(
+													Math.max(0L,
+															committedHighWaterBytes - replayDecision.tripleHighWater),
+													nativeMutation,
+													Math.max(0L,
+															valueStore.committedHighWaterBytes()
+																	- replayDecision.valueHighWater),
+													valueStore
+															.mutationGeneration() != replayDecision.valueMutationGeneration,
+													replayDecision.track);
+										}
+									} finally {
+										txnManager.reset();
+									}
 								}
 							} finally {
 								lockManager.unlockWrite(stamp);
@@ -2383,6 +2562,12 @@ class TripleStore implements Closeable {
 				mutationFailure = null;
 				nativeMutation = false;
 				tripleMutation = false;
+				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
+					if (valueStore != null) {
+						valueStore.clearReplayDecision(replayDecision);
+					}
+					replayDecision = null;
+				}
 				if (journal != null) {
 					try {
 						journal.close();
@@ -2409,6 +2594,10 @@ class TripleStore implements Closeable {
 
 	public void commit() throws IOException {
 		endTransaction(true);
+	}
+
+	int commitWriteTransaction(long transaction) {
+		return mdb_txn_commit(transaction);
 	}
 
 	private void commit(boolean advanceDataRevision) throws IOException {

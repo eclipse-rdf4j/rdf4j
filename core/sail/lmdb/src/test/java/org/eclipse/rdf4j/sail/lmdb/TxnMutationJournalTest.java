@@ -14,7 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,8 +28,212 @@ import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.InOrder;
 
 class TxnMutationJournalTest {
+	@Test
+	void emptyJournalSupportsRepeatedReplayAndClose(@TempDir Path directory) throws Exception {
+		TxnMutationJournal.ReplayAction action = mock(TxnMutationJournal.ReplayAction.class);
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory)) {
+			assertEquals(0, journal.recordCount());
+			assertEquals(0, journal.mark());
+			journal.replay(action);
+			journal.replay(action);
+			verifyNoInteractions(action);
+			journal.close();
+			journal.close();
+		}
+		try (var files = Files.list(directory)) {
+			assertEquals(0, files.count());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void inMemoryQuadMutationsReplayInOrder(boolean storeFirst, @TempDir Path directory) throws Exception {
+		byte[] snapshot = { 0, 1, -1 };
+		TxnMutationJournal.ReplayAction action = mock(TxnMutationJournal.ReplayAction.class);
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory)) {
+			if (storeFirst) {
+				journal.appendStore(10, 11, 12, 13, true);
+				assertEquals(1, journal.mark());
+				journal.appendRemove(20, 21, 22, 23, false);
+			} else {
+				journal.appendRemove(20, 21, 22, 23, false);
+				assertEquals(1, journal.mark());
+				journal.appendStore(10, 11, 12, 13, true);
+			}
+			journal.appendNamespaceSnapshot(snapshot);
+			assertEquals(3, journal.recordCount());
+			assertEquals(3, journal.mark());
+			try (var files = Files.list(directory)) {
+				assertEquals(0, files.count());
+			}
+			journal.replay(action);
+		}
+		InOrder ordered = inOrder(action);
+		if (storeFirst) {
+			ordered.verify(action).store(10, 11, 12, 13, true, 0);
+			ordered.verify(action).remove(20, 21, 22, 23, false);
+		} else {
+			ordered.verify(action).remove(20, 21, 22, 23, false);
+			ordered.verify(action).store(10, 11, 12, 13, true, 1);
+		}
+		ordered.verify(action).writeNamespaceSnapshot(snapshot);
+		ordered.verifyNoMoreInteractions();
+	}
+
+	@Test
+	void mixedRecordsReplayInOrderAcrossInMemoryGrowths(@TempDir Path directory) throws Exception {
+		byte[] firstSnapshot = patternedSnapshot(29, 17);
+		byte[] secondSnapshot = patternedSnapshot(89, 37);
+		byte[] thirdSnapshot = patternedSnapshot(101, 53);
+		int[] namespaceSnapshots = { 0 };
+		String[] replayedOperations = new String[6];
+		int[] replayedOperationCount = { 0 };
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory)) {
+			journal.appendStore(10, 11, 12, 13, true);
+			journal.appendNamespaceSnapshot(firstSnapshot);
+			journal.appendRemove(20, 21, 22, 23, false);
+			journal.appendNamespaceSnapshot(secondSnapshot);
+			journal.appendStore(30, 31, 32, 33, false);
+			journal.appendNamespaceSnapshot(thirdSnapshot);
+			assertEquals(6, journal.recordCount());
+			try (var files = Files.list(directory)) {
+				assertEquals(0, files.count(), "Small records should remain in memory while the buffer grows");
+			}
+
+			journal.replay(new TxnMutationJournal.ReplayAction() {
+				@Override
+				public boolean store(long subj, long pred, long obj, long context, boolean explicit, long record) {
+					if (record == 0) {
+						assertEquals(10, subj);
+						assertEquals(11, pred);
+						assertEquals(12, obj);
+						assertEquals(13, context);
+						assertTrue(explicit);
+						replayedOperations[replayedOperationCount[0]++] = "store:10";
+					} else {
+						assertEquals(4, record);
+						assertEquals(30, subj);
+						assertEquals(31, pred);
+						assertEquals(32, obj);
+						assertEquals(33, context);
+						assertFalse(explicit);
+						replayedOperations[replayedOperationCount[0]++] = "store:30";
+					}
+					return true;
+				}
+
+				@Override
+				public void remove(long subj, long pred, long obj, long context, boolean explicit) {
+					assertEquals(20, subj);
+					assertEquals(21, pred);
+					assertEquals(22, obj);
+					assertEquals(23, context);
+					assertFalse(explicit);
+					replayedOperations[replayedOperationCount[0]++] = "remove:20";
+				}
+
+				@Override
+				public void writeNamespaceSnapshot(byte[] snapshot) {
+					switch (namespaceSnapshots[0]++) {
+					case 0 -> assertArrayEquals(firstSnapshot, snapshot);
+					case 1 -> assertArrayEquals(secondSnapshot, snapshot);
+					case 2 -> assertArrayEquals(thirdSnapshot, snapshot);
+					default -> throw new AssertionError("Unexpected namespace snapshot record");
+					}
+					replayedOperations[replayedOperationCount[0]++] = "namespace:" + snapshot.length;
+				}
+			});
+		}
+		assertEquals(3, namespaceSnapshots[0]);
+		assertArrayEquals(new String[] { "store:10", "namespace:29", "remove:20", "namespace:89", "store:30",
+				"namespace:101" }, replayedOperations);
+	}
+
+	private static byte[] patternedSnapshot(int length, int seed) {
+		byte[] snapshot = new byte[length];
+		for (int i = 0; i < snapshot.length; i++) {
+			snapshot[i] = (byte) (seed + 31 * i);
+		}
+		return snapshot;
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 64 * 1024 - Integer.BYTES - 1, 64 * 1024 - Integer.BYTES, 96 * 1024 })
+	void initialNamespaceSnapshotReplaysAcrossSpillBoundary(int snapshotLength, @TempDir Path directory)
+			throws Exception {
+		byte[] snapshot = new byte[snapshotLength];
+		for (int i = 0; i < snapshot.length; i++) {
+			snapshot[i] = (byte) (i * 31);
+		}
+		TxnMutationJournal.ReplayAction initialReplay = mock(TxnMutationJournal.ReplayAction.class);
+		TxnMutationJournal.ReplayAction fullReplay = mock(TxnMutationJournal.ReplayAction.class);
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory)) {
+			journal.appendNamespaceSnapshot(snapshot);
+			assertEquals(1, journal.recordCount());
+			try (var files = Files.list(directory)) {
+				assertEquals(snapshotLength + Integer.BYTES + 1 > 64 * 1024 ? 1 : 0, files.count());
+			}
+			journal.replay(initialReplay);
+			verify(initialReplay).writeNamespaceSnapshot(snapshot);
+			verifyNoMoreInteractions(initialReplay);
+			journal.appendStore(Long.MAX_VALUE, 11, 12, 13, false);
+			journal.appendRemove(Long.MIN_VALUE, 21, 22, 23, true);
+			assertEquals(3, journal.recordCount());
+			journal.replay(fullReplay);
+		}
+		InOrder ordered = inOrder(fullReplay);
+		ordered.verify(fullReplay).writeNamespaceSnapshot(snapshot);
+		ordered.verify(fullReplay).store(Long.MAX_VALUE, 11, 12, 13, false, 1);
+		ordered.verify(fullReplay).remove(Long.MIN_VALUE, 21, 22, 23, true);
+		ordered.verifyNoMoreInteractions();
+		try (var files = Files.list(directory)) {
+			assertEquals(0, files.count());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "empty", "memory", "spill" })
+	void closedJournalRejectsFurtherOperations(String state, @TempDir Path directory) throws Exception {
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory)) {
+			switch (state) {
+			case "memory" -> journal.appendStore(10, 11, 12, 13, true);
+			case "spill" -> journal.appendNamespaceSnapshot(new byte[96 * 1024]);
+			}
+			journal.close();
+			journal.close();
+			IOException failure = assertThrows(IOException.class, () -> journal.appendStore(10, 11, 12, 13, true));
+			assertEquals("Transaction mutation journal is closed", failure.getMessage());
+			assertThrows(IOException.class, () -> journal.appendRemove(10, 11, 12, 13, false));
+			assertThrows(IOException.class, () -> journal.appendNamespaceSnapshot(new byte[0]));
+			assertThrows(IOException.class, () -> journal.replay(mock(TxnMutationJournal.ReplayAction.class)));
+		}
+		try (var files = Files.list(directory)) {
+			assertEquals(0, files.count());
+		}
+	}
+
+	@Test
+	void failedInitialSpillAllowsInMemoryMutations(@TempDir Path directory) throws Exception {
+		TxnMutationJournal.ReplayAction emptyReplay = mock(TxnMutationJournal.ReplayAction.class);
+		TxnMutationJournal.ReplayAction replay = mock(TxnMutationJournal.ReplayAction.class);
+		try (TxnMutationJournal journal = new TxnMutationJournal(directory.resolve("missing"))) {
+			assertThrows(IOException.class, () -> journal.appendNamespaceSnapshot(new byte[96 * 1024]));
+			assertEquals(0, journal.recordCount());
+			journal.replay(emptyReplay);
+			verifyNoInteractions(emptyReplay);
+			journal.appendRemove(10, 11, 12, 13, false);
+			assertEquals(1, journal.recordCount());
+			journal.replay(replay);
+			verify(replay).remove(10, 11, 12, 13, false);
+			verifyNoMoreInteractions(replay);
+		}
+	}
+
 	@Test
 	void spillsPrimitiveRecordsAndReplaysThemInOrder(@TempDir Path directory) throws Exception {
 		byte[] namespaceSnapshot = new byte[96 * 1024];

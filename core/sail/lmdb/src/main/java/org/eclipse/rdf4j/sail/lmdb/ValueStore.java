@@ -201,7 +201,13 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private long env;
 	private int pageSize;
-	private long mapSize;
+	private volatile long mapSize;
+	private volatile long committedHighWaterBytes;
+	private volatile long mutationGeneration;
+	private long nativeCommitGeneration;
+	private volatile long environmentGeneration;
+	private boolean nativeMutation;
+	private volatile TxnReplayPolicy.Decision replayDecision;
 	// main database
 	private int dbi;
 	private int termIndexManifestDbi;
@@ -453,6 +459,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void open() throws IOException {
+		replayDecision = null;
+		environmentGeneration++;
+		committedHighWaterBytes = 0L;
 		// create directory if it not exists
 		dir.mkdirs();
 		openHashFileQuietly();
@@ -539,6 +548,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
+		refreshCommittedHighWater();
 	}
 
 	private int openTermIndexManifestDatabase() throws IOException {
@@ -1023,6 +1033,11 @@ class ValueStore extends AbstractValueFactory {
 
 	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
 			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		growMapAfterReindexMapFullAfterQuiescence(requiredBytes, growthAttempt, true);
+	}
+
+	private void growMapAfterReindexMapFullAfterQuiescence(long requiredBytes,
+			LmdbSailStore.MapGrowthAttempt growthAttempt, boolean restartWriter) throws IOException {
 		endTransaction(false, false);
 		if (!autoGrow) {
 			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
@@ -1057,7 +1072,9 @@ class ValueStore extends AbstractValueFactory {
 				}
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
-				startTransaction(false);
+				if (restartWriter) {
+					startTransaction(false);
+				}
 			} finally {
 				txnManager.activate();
 			}
@@ -1411,6 +1428,9 @@ class ValueStore extends AbstractValueFactory {
 	private void resizeMap(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
+				if (replayDecision != null && !replayDecision.track) {
+					growForTransactionRetry(requiredSize, null);
+				}
 				LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
 				try (growthAttempt) {
 					if (growthAttempt != null) {
@@ -1471,6 +1491,65 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 			}
+		}
+	}
+
+	private void growForTransactionRetry(long requiredSize, Throwable cause) throws IOException {
+		LmdbTransactionRetryException retry = replayDecision.capacityFailure("ValueStore", cause);
+		long projectedBytes = writeTxn == 0 ? saturatedEstimateAdd(committedHighWaterBytes, requiredSize)
+				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize);
+		// No dictionary checkpoint may publish this transaction's prefix when its replay was omitted.
+		try {
+			endTransaction(false, false);
+		} catch (IOException | RuntimeException cleanupFailure) {
+			if (cleanupFailure != retry) {
+				retry.addSuppressed(cleanupFailure);
+			}
+		}
+		try {
+			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
+				if (growthAttempt != null) {
+					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				}
+				growMapAfterReindexMapFullAfterQuiescence(projectedBytes, growthAttempt, false);
+			}
+		} catch (IOException | RuntimeException growthFailure) {
+			if (growthFailure != retry) {
+				retry.addSuppressed(growthFailure);
+			}
+		}
+		throw retry;
+	}
+
+	long replayMapSize() {
+		return autoGrow ? mapSize : 0L;
+	}
+
+	long committedHighWaterBytes() {
+		return committedHighWaterBytes;
+	}
+
+	long mutationGeneration() {
+		return mutationGeneration;
+	}
+
+	long environmentGeneration() {
+		return environmentGeneration;
+	}
+
+	void setReplayDecision(TxnReplayPolicy.Decision decision) {
+		replayDecision = decision;
+	}
+
+	void clearReplayDecision(TxnReplayPolicy.Decision decision) {
+		if (replayDecision == decision && (decision == null || !decision.failed())) {
+			replayDecision = null;
+		}
+	}
+
+	private void checkReplayFailure() throws IOException {
+		if (replayDecision != null) {
+			replayDecision.check();
 		}
 	}
 
@@ -2588,9 +2667,17 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	<T> T writeTransaction(Transaction<T> transaction) throws IOException {
+		checkReplayFailure();
 		if (writeTxn != 0) {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
-				return transaction.exec(stack, writeTxn);
+				T result = transaction.exec(stack, writeTxn);
+				nativeMutation = true;
+				return result;
+			} catch (LmdbUtil.MapFullException mapFull) {
+				if (autoGrow && replayDecision != null && !replayDecision.track) {
+					growForTransactionRetry(0L, mapFull);
+				}
+				throw mapFull;
 			}
 		} else {
 			boolean committed = false;
@@ -2601,6 +2688,8 @@ class ValueStore extends AbstractValueFactory {
 			} finally {
 				if (committed) {
 					retiredIdStore.transactionCommitted();
+					refreshCommittedHighWater();
+					mutationGeneration++;
 				} else {
 					retiredIdStore.transactionRolledBack();
 				}
@@ -2658,6 +2747,9 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long getId(Value value, boolean create) throws IOException {
+		if (create) {
+			checkReplayFailure();
+		}
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 		if (isOwnValue) {
@@ -3040,6 +3132,8 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
+		checkReplayFailure();
+		nativeMutation = false;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -3060,12 +3154,18 @@ class ValueStore extends AbstractValueFactory {
 						}
 
 						freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
+						nativeMutation = true;
 						unusedRevisionIds.clear();
 						clearCaches();
 					}
 				}
 				nextValueEvictionTime = -1;
 			}
+		} catch (LmdbUtil.MapFullException mapFull) {
+			if (autoGrow && replayDecision != null && !replayDecision.track) {
+				growForTransactionRetry(0L, mapFull);
+			}
+			throw mapFull;
 		}
 	}
 
@@ -3073,6 +3173,9 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+		if (commit) {
+			checkReplayFailure();
+		}
 		if (writeTxn != 0) {
 			if (commit) {
 				if (!autoGrow) {
@@ -3086,8 +3189,7 @@ class ValueStore extends AbstractValueFactory {
 					try {
 						int rc = commitAndReleaseWriteTransaction();
 						if (rc != MDB_SUCCESS) {
-							cleanupAfterFailedCommit();
-							E(rc);
+							cleanupAfterFailedCommit(rc);
 						}
 						retiredIdStore.transactionCommitted();
 						flushPendingHashUpdates();
@@ -3108,8 +3210,7 @@ class ValueStore extends AbstractValueFactory {
 				} else {
 					int rc = commitAndReleaseWriteTransaction();
 					if (rc != MDB_SUCCESS) {
-						cleanupAfterFailedCommit();
-						E(rc);
+						cleanupAfterFailedCommit(rc);
 					}
 					retiredIdStore.transactionCommitted();
 					flushPendingHashUpdates();
@@ -3192,12 +3293,22 @@ class ValueStore extends AbstractValueFactory {
 		writeTxn = 0;
 		writeTxnOwner = null;
 		invalidateRevisionOnCommit = false;
+		nativeMutation = false;
 	}
 
-	private int commitAndReleaseWriteTransaction() {
+	private int commitAndReleaseWriteTransaction() throws IOException {
 		long transaction = writeTxn;
+		boolean mutated = nativeMutation;
 		try {
-			return commitWriteTransaction(transaction);
+			int result = commitWriteTransaction(transaction);
+			if (result == MDB_SUCCESS) {
+				nativeCommitGeneration++;
+				if (mutated) {
+					mutationGeneration++;
+				}
+				refreshCommittedHighWater();
+			}
+			return result;
 		} finally {
 			// LMDB consumes the transaction on every commit result. Do not let later close/rollback paths abort this
 			// pointer.
@@ -3206,12 +3317,36 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void cleanupAfterFailedCommit() throws IOException {
+	private void cleanupAfterFailedCommit(int result) throws IOException {
+		IOException nativeFailure;
+		try {
+			E(result);
+			nativeFailure = new IOException("LMDB commit returned unexpected result " + result);
+		} catch (IOException failure) {
+			nativeFailure = failure;
+		}
 		refCountsTxCache.clear();
-		retiredIdStore.transactionRolledBack();
-		clearPendingHashUpdates();
-		setNewRevision();
-		clearCaches();
+		try {
+			rollbackRetiredIds();
+		} catch (RuntimeException cleanupFailure) {
+			nativeFailure.addSuppressed(cleanupFailure);
+		}
+		try {
+			clearPendingHashUpdates();
+		} catch (RuntimeException cleanupFailure) {
+			nativeFailure.addSuppressed(cleanupFailure);
+		}
+		try {
+			setNewRevision();
+		} catch (RuntimeException cleanupFailure) {
+			nativeFailure.addSuppressed(cleanupFailure);
+		}
+		try {
+			clearCaches();
+		} catch (RuntimeException cleanupFailure) {
+			nativeFailure.addSuppressed(cleanupFailure);
+		}
+		throw nativeFailure;
 	}
 
 	int commitWriteTransaction(long transaction) {
@@ -3223,7 +3358,28 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void commit() throws IOException {
-		endTransaction(true, false);
+		long generationBefore = nativeCommitGeneration;
+		try {
+			endTransaction(true, false);
+		} catch (LmdbUtil.MapFullException mapFull) {
+			if (autoGrow && replayDecision != null && !replayDecision.track) {
+				growForTransactionRetry(0L, mapFull);
+			}
+			throw mapFull;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (nativeCommitGeneration != generationBefore) {
+				try {
+					resetReadTransactionsAfterCommit();
+				} catch (IOException | RuntimeException cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+			throw failure;
+		}
+		resetReadTransactionsAfterCommit();
+	}
+
+	private void resetReadTransactionsAfterCommit() throws IOException {
 		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
@@ -3239,7 +3395,21 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void rollback() throws IOException {
-		endTransaction(false, false);
+		try {
+			endTransaction(false, false);
+		} finally {
+			replayDecision = null;
+		}
+	}
+
+	private void refreshCommittedHighWater() throws IOException {
+		committedHighWaterBytes = Long.MAX_VALUE;
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPage = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			committedHighWaterBytes = nextPage > Long.MAX_VALUE / pageSize ? Long.MAX_VALUE : nextPage * pageSize;
+		}
 	}
 
 	/**

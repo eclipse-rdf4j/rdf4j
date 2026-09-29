@@ -26,6 +26,7 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -42,17 +43,32 @@ final class TxnMutationJournal implements Closeable {
 	private static final byte REMOVE = 2;
 	private static final byte NAMESPACE_SNAPSHOT = 3;
 
+	private static final class MemoryBuffer extends ByteArrayOutputStream {
+		private MemoryBuffer(int initialCapacity) {
+			super(initialCapacity);
+		}
+
+		private void reserve(int requiredCapacity) {
+			if (requiredCapacity > buf.length) {
+				int capacity = 1;
+				while (capacity < requiredCapacity) {
+					capacity <<= 1;
+				}
+				buf = Arrays.copyOf(buf, capacity);
+			}
+		}
+	}
+
 	private final Path directory;
-	private ByteArrayOutputStream memory;
+	private MemoryBuffer memory;
 	private DataOutputStream memoryOutput;
 	private Path path;
 	private DataOutputStream fileOutput;
 	private long recordCount;
+	private boolean closed;
 
 	TxnMutationJournal(Path directory) throws IOException {
 		this.directory = directory;
-		memory = new ByteArrayOutputStream(MEMORY_LIMIT);
-		memoryOutput = new DataOutputStream(memory);
 	}
 
 	void appendStore(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
@@ -89,7 +105,7 @@ final class TxnMutationJournal implements Closeable {
 	}
 
 	private void checkOpen() throws IOException {
-		if (memoryOutput == null && fileOutput == null) {
+		if (closed) {
 			throw new IOException("Transaction mutation journal is closed");
 		}
 		if (recordCount == Long.MAX_VALUE) {
@@ -98,9 +114,25 @@ final class TxnMutationJournal implements Closeable {
 	}
 
 	private void ensureCapacity(long nextRecordBytes) throws IOException {
-		if (fileOutput == null && memory.size() > MEMORY_LIMIT - nextRecordBytes) {
-			spill();
+		if (fileOutput == null) {
+			long memorySize = memory == null ? 0 : memory.size();
+			if (memorySize > MEMORY_LIMIT - nextRecordBytes) {
+				spill();
+			} else if (memory == null) {
+				memory = new MemoryBuffer(bufferCapacity((int) nextRecordBytes));
+				memoryOutput = new DataOutputStream(memory);
+			} else {
+				memory.reserve((int) (memorySize + nextRecordBytes));
+			}
 		}
+	}
+
+	private static int bufferCapacity(int requiredCapacity) {
+		int capacity = 1;
+		while (capacity < requiredCapacity) {
+			capacity <<= 1;
+		}
+		return capacity;
 	}
 
 	private DataOutputStream currentOutput() {
@@ -108,7 +140,9 @@ final class TxnMutationJournal implements Closeable {
 	}
 
 	private void spill() throws IOException {
-		memoryOutput.flush();
+		if (memoryOutput != null) {
+			memoryOutput.flush();
+		}
 		try {
 			while (fileOutput == null) {
 				path = directory.resolve("txn-replay-" + UUID.randomUUID() + ".bin");
@@ -119,7 +153,9 @@ final class TxnMutationJournal implements Closeable {
 					path = null;
 				}
 			}
-			memory.writeTo(fileOutput);
+			if (memory != null) {
+				memory.writeTo(fileOutput);
+			}
 			memory = null;
 			memoryOutput = null;
 		} catch (IOException | RuntimeException | Error e) {
@@ -152,6 +188,9 @@ final class TxnMutationJournal implements Closeable {
 
 	void replay(ReplayAction action) throws IOException {
 		checkOpen();
+		if (memory == null && fileOutput == null) {
+			return;
+		}
 		InputStream source;
 		if (fileOutput == null) {
 			source = new ByteArrayInputStream(memory.toByteArray());
@@ -244,6 +283,7 @@ final class TxnMutationJournal implements Closeable {
 		}
 		memory = null;
 		memoryOutput = null;
+		closed = true;
 		if (failure != null) {
 			throw failure;
 		}

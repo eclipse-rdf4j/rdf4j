@@ -202,6 +202,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void prepareInternal() throws SailException {
+		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		// Public transaction operations after prepare are restricted to commit, rollback, and close. Seal the retryable
 		// attempt after SHACL validation but before branch preparation can retain publication or cleanup locks. Closing
 		// the paired read snapshot materializes retained writer values, while branch changes and serializable
@@ -217,6 +218,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 	@Override
 	protected void commitInternal() throws SailException {
+		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		boolean committed = false;
 		finishReadAttempt();
 		try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
@@ -251,6 +253,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			lmdbStore.getBackingStore().rollback(this);
 			super.rollbackInternal();
 		} finally {
+			lmdbStore.getBackingStore().completeWriterRollback(this);
 			releaseTransactionReadView();
 			if (txnLock != null && txnLock.isActive()) {
 				txnLock.release();
@@ -1887,6 +1890,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	}
 
 	private void markTransactionWriteAttempted() {
+		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		synchronized (readAttemptLock) {
 			transactionWriteAttempted = true;
 		}
@@ -2422,6 +2426,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			finishReadAttempt();
 			super.closeInternal();
 		} finally {
+			lmdbStore.getBackingStore().completeWriterRollback(this);
 			releaseTransactionReadView();
 		}
 	}

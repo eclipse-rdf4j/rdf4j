@@ -21,7 +21,7 @@ exposed a result may be restarted when a map grows; other pinned reads still hav
 | A query or transaction remains open while a map grows | Publication of Sail-buffered commits to LMDB, and the associated map growth, could be postponed while observers remained open; after a reader reset, the record iterator could renew its native cursor and appear to continue. That renewal did not promise one pinned native generation across resize. | A replayable read-only attempt that has not exposed a result may be restarted automatically, up to `readOnlyReplayMaxRetries`. If the read has been observed, attempted a write, or cannot be replayed, its pinned view is invalidated: re-run the whole `SNAPSHOT_READ` query or restart the `SNAPSHOT`/`SERIALIZABLE` transaction. A replay reruns the query plan, including remote `SERVICE` calls, so external services may receive duplicate requests. |
 | A repository transaction commits while other reads stay open | Root changes could remain buffered until the final observer closed, making the commit path depend on reader cleanup. | `RepositoryConnection.commit()` flushes both roots at the commit boundary. Native commit work must complete before `commit()` returns; with `forceSync=true`, the required storage flush is also part of that path. |
 | A namespace-only update commits | Namespace data was persisted separately in `namespaces.dat`, outside the TripleStore transaction. | The namespace snapshot is written into the TripleStore environment with a native commit. A namespace-only change therefore performs a physical TripleStore commit, but does not commit the ValueStore or advance the RDF data revision. |
-| A large write reaches the TripleStore map limit | Map-full growth could commit a prefix while continuing the logical write. | The current path aborts the TripleStore attempt, grows the map, and replays the complete in-process statement and namespace mutation journal before publication. This avoids publishing a prefix, at the cost of replay work and temporary disk use for large writes. |
+| A write reaches a native map limit | Map-full growth could commit a prefix while continuing the logical write. | Tracked TripleStore writes can abort, grow, and replay their complete statement and namespace journal before publication. Dictionary growth is proactive; unexpected native ValueStore map-full errors can still fail a tracked write. Eligible writes may omit the journal; exhaustion then requires rollback and retry of the entire transaction. Failed writes publish no partial RDF or namespace transaction. |
 
 Automatic replay is limited to read-only work that remains unobserved and has a replay factory. It is bounded by the
 configured retry count; repeated growth or ineligible work can still invalidate a pinned view. The isolation-level
@@ -55,12 +55,35 @@ as described above. When the workload is known, pre-size both the TripleStore an
 Disabling `autoGrow` disables automatic growth; a write that reaches the configured map limit
 then fails with a map-full error.
 
+Replay tracking is chosen before the first mutation and stays fixed for the whole transaction. Small maps, unknown
+growth history, high occupancy, or rapid page allocation retain complete tracking. Tracking may be omitted only when
+both maps are at least 64MiB, both have at least 32 successful mutation observations, and their occupancy and headroom
+allow a conservative forecast using recent peak growth and a minimum 512KiB reserve per transaction. Allocation rate
+here means native high-water bytes per successful transaction, not bytes per second. Deleted data and free pages do
+not establish reusable headroom while older readers may still pin them. Reopening or replacing a dictionary environment
+requires new history.
+
+If capacity is unexpectedly exhausted while tracking was omitted, the store attempts capacity growth for the next
+attempt and recovery retains tracking. Growth or cleanup failures are retained as suppressed exceptions. The cause
+chain includes `LmdbTransactionRetryException`, for example:
+
+```text
+LMDB TripleStore capacity exhausted while replay tracking was omitted; roll back and retry the entire transaction
+```
+
+The same message identifies `ValueStore` when the dictionary exhausted its capacity. Call `rollback()` and resubmit
+all statements and namespace changes in a fresh transaction. Further writes or commit attempts in the failed logical
+transaction retain that retry error until rollback; retrying only its last operation would discard earlier intent.
+
 Buffered write intent can open an advisory admission warning when its approximate size suggests that either map may
 need more space or a buffered operation has no exact estimate. The warning only closes admission; it does not snapshot
 the model, drain readers, or resize. At branch preflight, before publication, LMDB estimates the space needed for the
 buffered changes in each environment and grows any map predicted to need more space. This is not a capacity guarantee:
-native write costs may exceed the estimate or include work it cannot size exactly, so existing map-full recovery remains
-the fallback if later writes need more space. Configure the coordination window with
+native write costs may exceed the estimate or include work it cannot size exactly. Later exhaustion therefore uses
+complete TripleStore replay or proactive dictionary growth when tracked; an unexpected native dictionary map-full
+error can still fail that tracked transaction. When tracking was omitted, the whole-transaction retry above applies.
+Configure the
+coordination window with
 `LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `30000` milliseconds) and eligible read retries with
 `LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`). The timeout covers the warning, preflight, and drain
 episode when a warning remains active through preflight; if the warning expires while the write is still being buffered,

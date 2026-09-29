@@ -61,7 +61,8 @@ final class LmdbUtil {
 
 	static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
-			IOException ioException = new IOException(mdb_strerror(rc));
+			IOException ioException = rc == MDB_MAP_FULL ? new MapFullException(mdb_strerror(rc))
+					: new IOException(mdb_strerror(rc));
 			logger.info("Possible LMDB error: {}", mdb_strerror(rc), ioException);
 			throw ioException;
 		}
@@ -143,6 +144,10 @@ final class LmdbUtil {
 
 		private MapFullException() {
 			super("LMDB map is full");
+		}
+
+		private MapFullException(String message) {
+			super(message);
 		}
 	}
 

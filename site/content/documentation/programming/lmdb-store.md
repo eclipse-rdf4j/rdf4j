@@ -212,8 +212,10 @@ RDF4J implements an **autogrow** feature to simplify the management of memory ma
 
 If it is enabled (which is the default), RDF4J monitors used pages and increases the map size when required. Resizing
 requires coordinating native readers while LMDB remaps the environment. A pinned query result or an established
-`SNAPSHOT`/`SERIALIZABLE` transaction can be invalidated by that resize and must be retried. For large writes, map-full
-handling aborts and replays the complete TripleStore mutation journal; replay may use temporary disk space and extend
-the write. See
+`SNAPSHOT`/`SERIALIZABLE` transaction can be invalidated by that resize and must be retried. Writes normally retain a
+complete TripleStore replay journal, which may use temporary disk space. Large, lightly filled paired maps with
+conservative successful allocation history may omit tracking; unexpected exhaustion then attempts capacity growth and reports
+`LmdbTransactionRetryException` through the cause chain. Roll back and retry the entire transaction in that case;
+recovery retains tracking. See
 [LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/) for retry guidance,
 reader lifetime, and persistence details.

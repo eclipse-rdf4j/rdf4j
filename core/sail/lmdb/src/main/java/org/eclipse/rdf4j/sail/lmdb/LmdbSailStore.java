@@ -1168,6 +1168,9 @@ class LmdbSailStore implements SailStore {
 	private volatile boolean asyncTransactionFinished;
 	private volatile boolean asyncOperationsDrained;
 	private volatile boolean nextTransactionAsync;
+	private volatile TxnReplayPolicy.Decision storeReplayDecision;
+	private final IdentityHashMap<Object, LmdbTransactionRetryException> failedWriterTransactions = new IdentityHashMap<>();
+	private volatile boolean hasFailedWriterTransactions;
 	private volatile boolean mayHaveInferred;
 
 	boolean enableMultiThreading = true;
@@ -1447,17 +1450,19 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			closed = true;
+			boolean retiredOwner = false;
 			try {
 				if (context != null) {
-					preparedWriteContexts.compute(reservationThread, (thread, current) -> {
-						if (current != context || current.references <= 0) {
-							throw new IllegalStateException("Prepared LMDB writer context released by a non-owner");
-						}
-						return --current.references == 0 ? null : current;
-					});
+					retiredOwner = releasePreparedWriteContext(reservationThread, context);
 				}
 			} finally {
-				writerLease.close();
+				try {
+					writerLease.close();
+				} finally {
+					if (retiredOwner) {
+						completeWriterRollback(context.owner);
+					}
+				}
 			}
 		}
 	}
@@ -1514,15 +1519,17 @@ class LmdbSailStore implements SailStore {
 	private final class PublicationContext {
 		private final Object owner;
 		private final WriterLease writerLease;
+		private final boolean ownsOwner;
 		private final List<MapGrowthAttempt> deferredGrowthAttempts = new ArrayList<>();
 		private int depth = 1;
 		private boolean changed;
 		private boolean commitRequested;
 		private boolean failed;
 
-		private PublicationContext(Object owner, WriterLease writerLease) {
+		private PublicationContext(Object owner, WriterLease writerLease, boolean ownsOwner) {
 			this.owner = owner;
 			this.writerLease = writerLease;
+			this.ownsOwner = ownsOwner;
 		}
 	}
 
@@ -1625,6 +1632,10 @@ class LmdbSailStore implements SailStore {
 						failure = closeFailure;
 					} else if (failure != closeFailure) {
 						failure.addSuppressed(closeFailure);
+					}
+				} finally {
+					if (context.ownsOwner) {
+						completeWriterRollback(context.owner);
 					}
 				}
 			}
@@ -1957,7 +1968,45 @@ class LmdbSailStore implements SailStore {
 
 	SailClosable beginPublication(Object owner) throws SailException {
 		ensureNamespacePersistenceCertain();
+		checkWriterTransaction(owner);
 		return beginPublicationScope(owner);
+	}
+
+	void checkWriterTransaction(Object owner) throws SailException {
+		if (!hasFailedWriterTransactions) {
+			return;
+		}
+		LmdbTransactionRetryException failure;
+		synchronized (failedWriterTransactions) {
+			failure = failedWriterTransactions.get(owner);
+		}
+		if (failure != null) {
+			throw new SailException(failure.getMessage(), failure);
+		}
+	}
+
+	void completeWriterRollback(Object owner) {
+		synchronized (failedWriterTransactions) {
+			failedWriterTransactions.remove(owner);
+			hasFailedWriterTransactions = !failedWriterTransactions.isEmpty();
+		}
+	}
+
+	private void recordWriterCapacityFailure(Object owner, Throwable failure) {
+		if (owner == null) {
+			// Startup cleanup can retire the backing owner before a delayed worker observes its shared failure.
+			// The caller retains that failure against the actual logical owner; there is no ownerless transaction.
+			return;
+		}
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof LmdbTransactionRetryException retry) {
+				synchronized (failedWriterTransactions) {
+					failedWriterTransactions.putIfAbsent(owner, retry);
+					hasFailedWriterTransactions = true;
+				}
+				return;
+			}
+		}
 	}
 
 	private SailClosable beginPreparedWrite(Object requestedOwner) throws SailException {
@@ -1984,17 +2033,22 @@ class LmdbSailStore implements SailStore {
 			lease = acquireWriterLease(owner);
 		} catch (RuntimeException | Error failure) {
 			if (context != null) {
-				PreparedWriteContext acquiredContext = context;
-				preparedWriteContexts.compute(reservationThread, (thread, current) -> {
-					if (current != acquiredContext || current.references <= 0) {
-						throw new IllegalStateException("Prepared LMDB writer context released by a non-owner");
-					}
-					return --current.references == 0 ? null : current;
-				});
+				if (releasePreparedWriteContext(reservationThread, context)) {
+					completeWriterRollback(context.owner);
+				}
 			}
 			throw failure;
 		}
 		return new PreparedWriteScope(lease, reservationThread, context);
+	}
+
+	private boolean releasePreparedWriteContext(Thread reservationThread, PreparedWriteContext context) {
+		return preparedWriteContexts.compute(reservationThread, (thread, current) -> {
+			if (current != context || current.references <= 0) {
+				throw new IllegalStateException("Prepared LMDB writer context released by a non-owner");
+			}
+			return --current.references == 0 ? null : current;
+		}) == null;
 	}
 
 	private SailClosable beginPublicationScope(Object requestedOwner) throws SailException {
@@ -2009,15 +2063,17 @@ class LmdbSailStore implements SailStore {
 		}
 
 		Object owner = requestedOwner;
+		boolean ownsOwner = false;
 		if (owner == null) {
 			owner = activeWriterOwner.get();
 		}
 		if (owner == null) {
 			PreparedWriteContext context = preparedWriteContexts.get(Thread.currentThread());
+			ownsOwner = context == null;
 			owner = context == null ? new Object() : context.owner;
 		}
 		WriterLease writerLease = acquireWriterLease(owner);
-		PublicationContext context = new PublicationContext(owner, writerLease);
+		PublicationContext context = new PublicationContext(owner, writerLease, ownsOwner);
 		publicationGate.lock();
 		try {
 			while (publicationFinalizing) {
@@ -2055,18 +2111,20 @@ class LmdbSailStore implements SailStore {
 		}
 
 		Object owner = requestedOwner;
+		boolean ownsOwner = false;
 		if (owner == null) {
 			owner = activeWriterOwner.get();
 		}
 		if (owner == null) {
 			PreparedWriteContext context = preparedWriteContexts.get(Thread.currentThread());
+			ownsOwner = context == null;
 			owner = context == null ? new Object() : context.owner;
 		}
 		WriterLease writerLease = tryAcquireWriterLease(owner);
 		if (writerLease == null) {
 			return null;
 		}
-		PublicationContext context = new PublicationContext(owner, writerLease);
+		PublicationContext context = new PublicationContext(owner, writerLease, ownsOwner);
 		boolean registered = false;
 		if (!publicationGate.tryLock()) {
 			writerLease.close();
@@ -2540,9 +2598,13 @@ class LmdbSailStore implements SailStore {
 	void rollback() throws SailException {
 		sinkStoreAccessLock.lock();
 		try {
+			Throwable failure = null;
 			try {
 				valueStore.rollback();
-			} finally {
+			} catch (Throwable cleanupFailure) {
+				failure = cleanupFailure;
+			}
+			try {
 				if (multiThreadingActive) {
 					while (!asyncTransactionFinished) {
 						if (tripleStoreException == null && opQueue.add(ROLLBACK_TRANSACTION)) {
@@ -2565,11 +2627,21 @@ class LmdbSailStore implements SailStore {
 				} else {
 					tripleStore.rollback();
 				}
+			} catch (Throwable cleanupFailure) {
+				failure = retainRollbackFailure(failure, cleanupFailure);
 			}
-			restorePublishedNamespaces();
-		} catch (Exception e) {
-			logger.warn("Failed to rollback LMDB transaction", e);
-			throw e instanceof SailException ? (SailException) e : new SailException(e);
+			try {
+				restorePublishedNamespaces();
+			} catch (Throwable cleanupFailure) {
+				failure = retainRollbackFailure(failure, cleanupFailure);
+			}
+			if (failure != null) {
+				logger.warn("Failed to rollback LMDB transaction", failure);
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				throw failure instanceof SailException sailException ? sailException : new SailException(failure);
+			}
 		} finally {
 			tripleStoreException = null;
 			asyncRollbackException = null;
@@ -2577,11 +2649,22 @@ class LmdbSailStore implements SailStore {
 			storeTxnStarted.set(false);
 			storeTransactionOwner = null;
 			namespaceTransactionOwner = null;
+			storeReplayDecision = null;
 			multiThreadingActive = false;
 			long rolledBackGeneration = storeTxnGeneration;
 			sinkStoreAccessLock.unlock();
 			clearDictionaryCheckpointPending(rolledBackGeneration);
 		}
+	}
+
+	private static Throwable retainRollbackFailure(Throwable primary, Throwable additional) {
+		if (primary == null) {
+			return additional;
+		}
+		if (primary != additional) {
+			primary.addSuppressed(additional);
+		}
+		return primary;
 	}
 
 	void rollback(Object owner) throws SailException {
@@ -2671,7 +2754,8 @@ class LmdbSailStore implements SailStore {
 				} else if (namespacesChanged) {
 					// This transaction changes no RDF or dictionary state. Commit the namespace DB in the TripleStore
 					// environment, but do not advance its data revision: retirement horizons are about RDF contents.
-					tripleStore.commitNamespaceSnapshot(currentNamespaces);
+					tripleStore.commitNamespaceSnapshot(currentNamespaces,
+							storeReplayDecision == null ? tripleStore.prepareReplayDecision() : storeReplayDecision);
 					nativeCommitted = true;
 				}
 
@@ -2696,7 +2780,9 @@ class LmdbSailStore implements SailStore {
 					multiThreadingActive = false;
 				}
 				clearDictionaryCheckpointPending(transactionGeneration);
+				storeReplayDecision = null;
 			} catch (IOException | RuntimeException | Error e) {
+				recordWriterCapacityFailure(owner, e);
 				boolean committed = nativeCommitted
 						|| tripleStore.getNativeCommitGeneration() > nativeCommitGenerationBefore;
 				boolean stateUnknown = false;
@@ -2718,6 +2804,7 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				if (committed) {
+					storeReplayDecision = null;
 					// Once the TripleStore commit returns, its namespace snapshot is authoritative. Preserve that state
 					// even
 					// if a later in-memory publication or maintenance step fails.
@@ -3685,6 +3772,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void rollbackAfterMutationFailure(Throwable failure) {
+			recordWriterCapacityFailure(writerOwner(), failure);
 			try {
 				long generation = backingTransactionGeneration;
 				if (generation != 0L) {
@@ -3711,7 +3799,15 @@ class LmdbSailStore implements SailStore {
 					rollbackBackingTransaction();
 				}
 			} finally {
-				releaseMutationLease();
+				try {
+					releaseMutationLease();
+				} finally {
+					synchronized (this) {
+						if (directWriterOwner != null) {
+							completeWriterRollback(directWriterOwner);
+						}
+					}
+				}
 			}
 		}
 
@@ -3745,6 +3841,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			Object owner = writerOwner();
+			checkWriterTransaction(owner);
 			try (SailClosable publication = beginPublicationScope(owner)) {
 				sinkStoreAccessLock.lock();
 				try {
@@ -3771,6 +3868,7 @@ class LmdbSailStore implements SailStore {
 
 		private void markNamespaceMutation() throws SailException {
 			ensureNamespacePersistenceCertain();
+			prepareReplayDecision();
 			Object owner = writerOwner();
 			if (namespaceTransactionOwner != null && namespaceTransactionOwner != owner) {
 				throw new SailException("LMDB namespaces are being changed by another sink");
@@ -4051,6 +4149,7 @@ class LmdbSailStore implements SailStore {
 		 */
 		private void startTransaction(boolean preferThreading) throws SailException {
 			ensureNamespacePersistenceCertain();
+			prepareReplayDecision();
 			Object owner = writerOwner();
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
@@ -4078,7 +4177,7 @@ class LmdbSailStore implements SailStore {
 								tripleStoreExecutor.submit(() -> {
 									try {
 										while (running.get()) {
-											tripleStore.startTransaction();
+											tripleStore.startTransaction(storeReplayDecision);
 											while (true) {
 												Operation op = opQueue.remove();
 												if (op != null) {
@@ -4135,6 +4234,7 @@ class LmdbSailStore implements SailStore {
 											}
 										}
 									} catch (Throwable e) {
+										recordWriterCapacityFailure(storeTransactionOwner, e);
 										tripleStoreException = e;
 										try {
 											tripleStore.rollback();
@@ -4153,7 +4253,7 @@ class LmdbSailStore implements SailStore {
 								});
 							}
 						} else {
-							tripleStore.startTransaction();
+							tripleStore.startTransaction(storeReplayDecision);
 						}
 						valueStore.startTransaction(true);
 					} catch (Exception e) {
@@ -4164,6 +4264,19 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				backingTransactionGeneration = storeTxnGeneration;
+			}
+		}
+
+		private void prepareReplayDecision() throws SailException {
+			checkWriterTransaction(writerOwner());
+			if (storeReplayDecision == null) {
+				storeReplayDecision = tripleStore.prepareReplayDecision();
+				valueStore.setReplayDecision(storeReplayDecision);
+			}
+			try {
+				storeReplayDecision.check();
+			} catch (IOException failure) {
+				throw new SailException(failure.getMessage(), failure);
 			}
 		}
 
