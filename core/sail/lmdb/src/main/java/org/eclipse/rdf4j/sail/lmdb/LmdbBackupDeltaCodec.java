@@ -15,6 +15,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +37,9 @@ final class LmdbBackupDeltaCodec {
 
 	private static final byte OP_ADD = 1;
 	private static final byte OP_REMOVE = 2;
+	private static final byte OP_SET_NAMESPACE = 3;
+	private static final byte OP_REMOVE_NAMESPACE = 4;
+	private static final byte OP_CLEAR_NAMESPACES = 5;
 
 	private static final byte VALUE_IRI = 1;
 	private static final byte VALUE_BNODE = 2;
@@ -44,20 +49,30 @@ final class LmdbBackupDeltaCodec {
 	private LmdbBackupDeltaCodec() {
 	}
 
-	static void write(OutputStream outputStream, List<Statement> additions, List<Statement> removals)
-			throws IOException {
+	static void write(OutputStream outputStream, List<Record> records) throws IOException {
 		try (DataOutputStream out = new DataOutputStream(outputStream)) {
 			out.writeInt(MAGIC.length);
 			out.write(MAGIC);
-			out.writeInt(additions.size());
-			for (Statement statement : additions) {
-				out.writeByte(OP_ADD);
-				writeStatement(out, statement);
-			}
-			out.writeInt(removals.size());
-			for (Statement statement : removals) {
-				out.writeByte(OP_REMOVE);
-				writeStatement(out, statement);
+			out.writeInt(records.size());
+			for (Record record : records) {
+				if (record.isStatementOperation()) {
+					out.writeByte(record.isAddition() ? OP_ADD : OP_REMOVE);
+					out.writeBoolean(record.isExplicit());
+					writeStatement(out, record.getStatement());
+				} else {
+					switch (record.getNamespaceOperation()) {
+					case SET -> {
+						out.writeByte(OP_SET_NAMESPACE);
+						writeString(out, record.getNamespacePrefix());
+						writeString(out, record.getNamespaceName());
+					}
+					case REMOVE -> {
+						out.writeByte(OP_REMOVE_NAMESPACE);
+						writeString(out, record.getNamespacePrefix());
+					}
+					case CLEAR -> out.writeByte(OP_CLEAR_NAMESPACES);
+					}
+				}
 			}
 		}
 	}
@@ -70,20 +85,31 @@ final class LmdbBackupDeltaCodec {
 			if (!java.util.Arrays.equals(MAGIC, magic)) {
 				throw new IOException("Unexpected LMDB delta log header");
 			}
-			int additions = in.readInt();
-			List<Record> records = new ArrayList<>(additions);
-			for (int i = 0; i < additions; i++) {
-				if (in.readByte() != OP_ADD) {
-					throw new IOException("Unexpected operation marker in additions segment");
+			int recordCount = in.readInt();
+			List<Record> records = new ArrayList<>(recordCount);
+			for (int i = 0; i < recordCount; i++) {
+				byte operation = in.readByte();
+				switch (operation) {
+				case OP_ADD -> {
+					boolean explicit = in.readBoolean();
+					records.add(new Record(true, explicit, readStatement(in, vf)));
 				}
-				records.add(new Record(true, readStatement(in, vf)));
-			}
-			int removals = in.readInt();
-			for (int i = 0; i < removals; i++) {
-				if (in.readByte() != OP_REMOVE) {
-					throw new IOException("Unexpected operation marker in removals segment");
+				case OP_REMOVE -> {
+					boolean explicit = in.readBoolean();
+					records.add(new Record(false, explicit, readStatement(in, vf)));
 				}
-				records.add(new Record(false, readStatement(in, vf)));
+				case OP_SET_NAMESPACE -> {
+					String prefix = readString(in);
+					String name = readString(in);
+					records.add(new Record(NamespaceOperation.SET, prefix, name));
+				}
+				case OP_REMOVE_NAMESPACE -> {
+					String prefix = readString(in);
+					records.add(new Record(NamespaceOperation.REMOVE, prefix, null));
+				}
+				case OP_CLEAR_NAMESPACES -> records.add(new Record(NamespaceOperation.CLEAR, null, null));
+				default -> throw new IOException("Unexpected operation marker in backup delta: " + operation);
+				}
 			}
 			return records;
 		}
@@ -113,20 +139,21 @@ final class LmdbBackupDeltaCodec {
 	private static void writeValue(DataOutputStream out, Value value) throws IOException {
 		if (value instanceof IRI iri) {
 			out.writeByte(VALUE_IRI);
-			out.writeUTF(iri.stringValue());
+			writeString(out, iri.stringValue());
 			return;
 		}
 		if (value instanceof BNode bNode) {
 			out.writeByte(VALUE_BNODE);
-			out.writeUTF(bNode.getID());
+			writeString(out, bNode.getID());
 			return;
 		}
 		if (value instanceof Literal literal) {
 			out.writeByte(VALUE_LITERAL);
-			out.writeUTF(literal.getLabel());
-			out.writeUTF(literal.getDatatype().stringValue());
+			writeString(out, literal.getLabel());
+			writeString(out, literal.getDatatype().stringValue());
 			String language = literal.getLanguage().orElse("");
-			out.writeUTF(language);
+			writeString(out, language);
+			writeString(out, literal.getBaseDirection().toString());
 			return;
 		}
 		if (value instanceof TripleTerm triple) {
@@ -142,21 +169,41 @@ final class LmdbBackupDeltaCodec {
 	private static Value readValue(DataInputStream in, ValueFactory vf) throws IOException {
 		byte kind = in.readByte();
 		return switch (kind) {
-		case VALUE_IRI -> vf.createIRI(in.readUTF());
-		case VALUE_BNODE -> vf.createBNode(in.readUTF());
+		case VALUE_IRI -> vf.createIRI(readString(in));
+		case VALUE_BNODE -> vf.createBNode(readString(in));
 		case VALUE_LITERAL -> {
-			String label = in.readUTF();
-			String datatype = in.readUTF();
-			String language = in.readUTF();
+			String label = readString(in);
+			String datatype = readString(in);
+			String language = readString(in);
+			Literal.BaseDirection direction = Literal.BaseDirection.fromString(readString(in));
 			if (language.isEmpty()) {
 				yield vf.createLiteral(label, vf.createIRI(datatype));
 			}
-			yield vf.createLiteral(label, language);
+			if (direction == Literal.BaseDirection.NONE) {
+				yield vf.createLiteral(label, language);
+			}
+			yield vf.createLiteral(label, language, direction);
 		}
 		case VALUE_TRIPLE -> vf.createTripleTerm(toResource(readValue(in, vf)), toIRI(readValue(in, vf)),
 				readValue(in, vf));
 		default -> throw new IOException("Unsupported value marker in backup delta: " + kind);
 		};
+	}
+
+	private static void writeString(DataOutputStream out, String value) throws IOException {
+		ByteBuffer encoded = StandardCharsets.UTF_8.encode(CharBuffer.wrap(value));
+		out.writeInt(encoded.remaining());
+		out.write(encoded.array(), 0, encoded.remaining());
+	}
+
+	private static String readString(DataInputStream in) throws IOException {
+		int length = in.readInt();
+		if (length < 0) {
+			throw new IOException("Negative string length in backup delta: " + length);
+		}
+		byte[] bytes = new byte[length];
+		in.readFully(bytes);
+		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	private static Resource toResource(Value value) throws IOException {
@@ -173,21 +220,68 @@ final class LmdbBackupDeltaCodec {
 		throw new IOException("Expected IRI value but found: " + value.getClass().getName());
 	}
 
+	enum NamespaceOperation {
+		SET,
+		REMOVE,
+		CLEAR
+	}
+
 	static final class Record {
 		private final boolean addition;
+		private final boolean explicit;
 		private final Statement statement;
+		private final NamespaceOperation namespaceOperation;
+		private final String namespacePrefix;
+		private final String namespaceName;
 
-		Record(boolean addition, Statement statement) {
+		Record(boolean addition, boolean explicit, Statement statement) {
 			this.addition = addition;
+			this.explicit = explicit;
 			this.statement = statement;
+			this.namespaceOperation = null;
+			this.namespacePrefix = null;
+			this.namespaceName = null;
+		}
+
+		Record(NamespaceOperation namespaceOperation, String namespacePrefix, String namespaceName) {
+			this.addition = false;
+			this.explicit = false;
+			this.statement = null;
+			this.namespaceOperation = namespaceOperation;
+			this.namespacePrefix = namespacePrefix;
+			this.namespaceName = namespaceName;
+		}
+
+		boolean isStatementOperation() {
+			return statement != null;
 		}
 
 		boolean isAddition() {
 			return addition;
 		}
 
+		boolean isExplicit() {
+			return explicit;
+		}
+
 		Statement getStatement() {
 			return statement;
+		}
+
+		boolean isNamespaceOperation() {
+			return namespaceOperation != null;
+		}
+
+		NamespaceOperation getNamespaceOperation() {
+			return namespaceOperation;
+		}
+
+		String getNamespacePrefix() {
+			return namespacePrefix;
+		}
+
+		String getNamespaceName() {
+			return namespaceName;
 		}
 	}
 }
