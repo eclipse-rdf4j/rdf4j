@@ -1,8 +1,117 @@
 // WARNING: Do not edit the *.js version of this file. Instead, always edit the
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
+var __makeTemplateObject = (this && this.__makeTemplateObject) || function (cooked, raw) {
+    if (Object.defineProperty) { Object.defineProperty(cooked, "raw", { value: raw }); } else { cooked.raw = raw; }
+    return cooked;
+};
 var workbench;
 (function (workbench) {
+    /** Shared settings/action disclosure markup and controller entry point. */
+    var detailDisclosure;
+    (function (detailDisclosure) {
+        var chevronPath = 'm6 9 6 6 6-6';
+        function classes(base, extra) {
+            return extra ? base + ' ' + extra : base;
+        }
+        function render(html, options, content) {
+            var expanded = !!options.expanded;
+            return html(__makeTemplateObject(["<div id=", "\n                    class=", "\n                    data-workbench-detail-disclosure=\"true\" ?hidden=", ">\n                <button id=", " type=\"button\"\n                    class=", "\n                    aria-controls=", " aria-expanded=", "\n                    aria-label=", " ?hidden=", ">\n                    <span class=\"workbench-disclosure__toggle-label\">", "</span>\n                    <svg class=\"workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron\"\n                        data-workbench-icon=\"chevron\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\"\n                        focusable=\"false\" aria-hidden=\"true\"><path d=", "></path></svg>\n                </button>\n                <div id=", "\n                    class=", "\n                    role=", " aria-labelledby=", "\n                    ?hidden=", ">\n                    <div class=", ">", "</div>\n                </div>\n            </div>"], ["<div id=", "\n                    class=", "\n                    data-workbench-detail-disclosure=\"true\" ?hidden=", ">\n                <button id=", " type=\"button\"\n                    class=", "\n                    aria-controls=", " aria-expanded=", "\n                    aria-label=", " ?hidden=", ">\n                    <span class=\"workbench-disclosure__toggle-label\">", "</span>\n                    <svg class=\"workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron\"\n                        data-workbench-icon=\"chevron\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\"\n                        focusable=\"false\" aria-hidden=\"true\"><path d=", "></path></svg>\n                </button>\n                <div id=", "\n                    class=", "\n                    role=", " aria-labelledby=", "\n                    ?hidden=", ">\n                    <div class=", ">", "</div>\n                </div>\n            </div>"]), options.id || '', classes('workbench-disclosure', options.ownerClass || ''), !!options.hidden, options.toggleId, classes('workbench-disclosure__toggle', options.toggleClass || ''), options.panelId, expanded ? 'true' : 'false', options.accessibleName || options.label, !!options.toggleHidden, options.label, chevronPath, options.panelId, classes('workbench-disclosure__panel', options.panelClass || ''), options.panelRole || 'region', options.toggleId, !expanded, classes('workbench-disclosure__content', options.contentClass || ''), content);
+        }
+        detailDisclosure.render = render;
+        function create(doc, options) {
+            var owner = doc.createElement('div');
+            owner.className = classes('workbench-disclosure', options.ownerClass || '');
+            owner.setAttribute('data-workbench-detail-disclosure', 'true');
+            owner.hidden = !!options.hidden;
+            if (options.id) {
+                owner.id = options.id;
+            }
+            var toggle = doc.createElement('button');
+            toggle.type = 'button';
+            toggle.id = options.toggleId;
+            toggle.className = classes('workbench-disclosure__toggle', options.toggleClass || '');
+            toggle.hidden = !!options.toggleHidden;
+            toggle.setAttribute('aria-controls', options.panelId);
+            toggle.setAttribute('aria-expanded', options.expanded ? 'true' : 'false');
+            toggle.setAttribute('aria-label', options.accessibleName || options.label);
+            var label = doc.createElement('span');
+            label.className = 'workbench-disclosure__toggle-label';
+            label.textContent = options.label;
+            toggle.appendChild(label);
+            var namespace = 'http://www.w3.org/2000/svg';
+            var chevron = doc.createElementNS(namespace, 'svg');
+            chevron.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
+            chevron.setAttribute('data-workbench-icon', 'chevron');
+            chevron.setAttribute('viewBox', '0 0 24 24');
+            chevron.setAttribute('width', '16');
+            chevron.setAttribute('height', '16');
+            chevron.setAttribute('focusable', 'false');
+            chevron.setAttribute('aria-hidden', 'true');
+            var path = doc.createElementNS(namespace, 'path');
+            path.setAttribute('d', chevronPath);
+            chevron.appendChild(path);
+            toggle.appendChild(chevron);
+            owner.appendChild(toggle);
+            var panel = doc.createElement('div');
+            panel.id = options.panelId;
+            panel.className = classes('workbench-disclosure__panel', options.panelClass || '');
+            panel.setAttribute('role', options.panelRole || 'region');
+            panel.setAttribute('aria-labelledby', options.toggleId);
+            panel.hidden = !options.expanded;
+            owner.appendChild(panel);
+            var panelContent = doc.createElement('div');
+            panelContent.className = classes('workbench-disclosure__content', options.contentClass || '');
+            panel.appendChild(panelContent);
+            return { owner: owner, toggle: toggle, panel: panel, content: panelContent };
+        }
+        detailDisclosure.create = create;
+        function bind(toggle, panel, owner) {
+            if (!toggle || !panel || toggle.getAttribute('data-workbench-bound') === 'true') {
+                return function () { };
+            }
+            toggle.setAttribute('data-workbench-bound', 'true');
+            var disclosureOwner = owner || toggle.parentElement;
+            var initiallyExpanded = toggle.getAttribute('aria-expanded') === 'true';
+            workbench.setDisclosureExpanded(toggle, panel, disclosureOwner, initiallyExpanded, false);
+            var onClick = function () {
+                workbench.setDisclosureExpanded(toggle, panel, disclosureOwner, toggle.getAttribute('aria-expanded') !== 'true', true);
+            };
+            toggle.addEventListener('click', onClick, false);
+            var disposed = false;
+            return function () {
+                if (disposed) {
+                    return;
+                }
+                disposed = true;
+                toggle.removeEventListener('click', onClick, false);
+                toggle.removeAttribute('data-workbench-bound');
+                workbench.releaseDisclosure(toggle, panel, disclosureOwner);
+            };
+        }
+        detailDisclosure.bind = bind;
+        function bindOwner(owner) {
+            if (!owner) {
+                return;
+            }
+            var toggle = owner.querySelector('.workbench-disclosure__toggle');
+            var panelId = toggle ? toggle.getAttribute('aria-controls') : null;
+            var panel = panelId && owner.ownerDocument ? owner.ownerDocument.getElementById(panelId) : null;
+            bind(toggle, panel, owner);
+        }
+        detailDisclosure.bindOwner = bindOwner;
+        function bindAll(root) {
+            var scope = root || document;
+            if (!scope || !scope.querySelectorAll) {
+                return;
+            }
+            var owners = scope.querySelectorAll('[data-workbench-detail-disclosure="true"]');
+            for (var i = 0; i < owners.length; i++) {
+                bindOwner(owners[i]);
+            }
+        }
+        detailDisclosure.bindAll = bindAll;
+    })(detailDisclosure = workbench.detailDisclosure || (workbench.detailDisclosure = {}));
     var requestIdCounter = 0;
     var motionDisclosureDuration = 180;
     var motionLayoutDuration = 220;
@@ -367,21 +476,24 @@ var workbench;
                 return panelDisclosureStates[i];
             }
         }
+        var initialAriaHidden = panel.getAttribute('aria-hidden');
         var state = {
             button: button,
             panel: panel,
             owner: owner,
             inert: !!panel.inert,
-            ariaHidden: panel.getAttribute('aria-hidden'),
+            ariaHidden: typeof initialAriaHidden === 'undefined' ? null : initialAriaHidden,
             expanded: button.getAttribute('aria-expanded') === 'true'
         };
         panelDisclosureStates.push(state);
         return state;
     }
     function disclosureAnchorTrack(panel) {
-        return panel && panel.closest
-            ? panel.closest('.query-actions-toolbar, .query-result-disclosure-panels')
-            : null;
+        if (!panel || !panel.closest) {
+            return null;
+        }
+        return panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-disclosure-panels')
+            || panel.closest('.workbench-disclosure');
     }
     function refreshDisclosureAnchor(button, panel, track) {
         if (!button || !panel || !track || panel.hidden || button.hidden || button.disabled
@@ -454,6 +566,58 @@ var workbench;
         }
         refreshDisclosureAnchor(button, panel, track);
     }
+    function releaseDisclosure(button, panel, owner) {
+        if (!panel) {
+            return;
+        }
+        var motion = cancelOwnedMotion(panel);
+        if (motion) {
+            restoreMotionStyles(panel, motion.styles);
+        }
+        for (var stateIndex = panelDisclosureStates.length - 1; stateIndex >= 0; stateIndex--) {
+            if (panelDisclosureStates[stateIndex].panel === panel) {
+                panelDisclosureStates.splice(stateIndex, 1);
+            }
+        }
+        var releasedTrack = null;
+        for (var anchorIndex = disclosureAnchors.length - 1; anchorIndex >= 0; anchorIndex--) {
+            var anchor = disclosureAnchors[anchorIndex];
+            if (anchor.panel === panel || button && anchor.button === button) {
+                releasedTrack = anchor.track;
+                if (disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
+                    disclosureAnchorObserver.unobserve(anchor.button);
+                    disclosureAnchorObserver.unobserve(anchor.panel);
+                }
+                disclosureAnchors.splice(anchorIndex, 1);
+            }
+        }
+        var trackStillObserved = false;
+        if (releasedTrack) {
+            for (var remainingIndex = 0; remainingIndex < disclosureAnchors.length; remainingIndex++) {
+                if (disclosureAnchors[remainingIndex].track === releasedTrack) {
+                    trackStillObserved = true;
+                    break;
+                }
+            }
+        }
+        if (!trackStillObserved && releasedTrack && disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
+            disclosureAnchorObserver.unobserve(releasedTrack);
+        }
+        if (disclosureAnchors.length === 0) {
+            if (disclosureAnchorResizeListenerInstalled) {
+                window.removeEventListener('resize', scheduleDisclosureAnchorRefresh);
+                disclosureAnchorResizeListenerInstalled = false;
+            }
+            if (disclosureAnchorObserver) {
+                disclosureAnchorObserver.disconnect();
+                disclosureAnchorObserver = null;
+            }
+        }
+        if (owner) {
+            owner.classList.remove('is-open');
+        }
+    }
+    workbench.releaseDisclosure = releaseDisclosure;
     function setDisclosureExpanded(button, panel, owner, expanded, animate) {
         if (!button || !panel) {
             return;
@@ -556,6 +720,44 @@ var workbench;
         });
     }
     workbench.setDisclosureExpanded = setDisclosureExpanded;
+    function setElementExpanded(element, expanded, animate) {
+        if (!element || element.hidden) {
+            return;
+        }
+        var existingMotion = motionFor(element);
+        var wasExpanded = window.getComputedStyle(element).display !== 'none';
+        if (wasExpanded === expanded && !existingMotion) {
+            element.inert = !expanded;
+            element.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+            return;
+        }
+        var startHeight = existingMotion ? elementHeight(element) : (wasExpanded ? elementHeight(element) : 0);
+        var computedStartStyle = window.getComputedStyle(element);
+        var startStyle = snapshotDisclosureBoxStyle(computedStartStyle);
+        var startOpacity = existingMotion ? computedStartStyle.opacity : '0';
+        var motion = cancelOwnedMotion(element);
+        var styles = motion ? motion.styles : captureMotionStyles(element);
+        element.style.display = '';
+        element.inert = !expanded;
+        element.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        var endHeight = expanded ? elementHeight(element) : 0;
+        var endStyle = snapshotDisclosureBoxStyle(window.getComputedStyle(element));
+        if (animate === false || !expanded) {
+            element.style.display = expanded ? '' : 'none';
+            restoreMotionStyles(element, styles);
+            return;
+        }
+        element.style.overflow = 'hidden';
+        var startBox = existingMotion
+            ? disclosureBoxKeyframe(element, startHeight, startStyle) : collapsedDisclosureKeyframe();
+        startBox.opacity = startOpacity;
+        var endBox = disclosureBoxKeyframe(element, endHeight, endStyle);
+        endBox.opacity = window.getComputedStyle(element).opacity;
+        startOwnedMotion(element, [startBox, endBox], motionDisclosureDuration, styles, function () {
+            element.style.display = '';
+        });
+    }
+    workbench.setElementExpanded = setElementExpanded;
     function animateElementOpacity(element, visible, complete) {
         if (!element) {
             if (complete) {
@@ -781,23 +983,7 @@ workbench.addLoad(function installWorkbenchNavigation() {
  * interaction for both the query page and embedded result documents.
  */
 workbench.addLoad(function installDisclosureToggles() {
-    var toggles = document.querySelectorAll('.query-disclosure__toggle');
-    for (var i = 0; i < toggles.length; i++) {
-        var toggle = toggles[i];
-        var panelId = toggle.getAttribute('aria-controls');
-        var panel = panelId ? document.getElementById(panelId) : null;
-        if (!panel) {
-            continue;
-        }
-        var container = toggle.parentElement;
-        var initiallyExpanded = toggle.getAttribute('aria-expanded') === 'true';
-        workbench.setDisclosureExpanded(toggle, panel, container, initiallyExpanded, false);
-        toggle.addEventListener('click', (function (button, target, owner) {
-            return function () {
-                workbench.setDisclosureExpanded(button, target, owner, button.getAttribute('aria-expanded') !== 'true', true);
-            };
-        })(toggle, panel, container), false);
-    }
+    workbench.detailDisclosure.bindAll(document);
 });
 /**
  * Keep native select controls keyboard and screen-reader accessible while

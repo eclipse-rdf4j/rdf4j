@@ -190,6 +190,10 @@ body.workbench-body.query-compare-mode #navigation.workbench-nav {
     padding: 0;
 }
 
+body.workbench-body .workbench-page-surface .query-compare-pane__close {
+    margin: 0;
+}
+
 .query-compare-toolbar {
     display: flex;
     flex-wrap: wrap;

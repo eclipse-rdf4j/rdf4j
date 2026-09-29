@@ -4,6 +4,159 @@
 
 module workbench {
 
+    export interface DetailDisclosureOptions {
+        id?: string;
+        toggleId: string;
+        panelId: string;
+        label: string;
+        accessibleName?: string;
+        ownerClass?: string;
+        toggleClass?: string;
+        panelClass?: string;
+        contentClass?: string;
+        panelRole?: string;
+        expanded?: boolean;
+        toggleHidden?: boolean;
+        hidden?: boolean;
+    }
+
+    export interface DetailDisclosureElements {
+        owner: HTMLElement;
+        toggle: HTMLButtonElement;
+        panel: HTMLElement;
+        content: HTMLElement;
+    }
+
+    /** Shared settings/action disclosure markup and controller entry point. */
+    export module detailDisclosure {
+        var chevronPath = 'm6 9 6 6 6-6';
+
+        function classes(base: string, extra: string): string {
+            return extra ? base + ' ' + extra : base;
+        }
+
+        export function render(html: any, options: DetailDisclosureOptions, content: any): any {
+            var expanded = !!options.expanded;
+            return html`<div id=${options.id || ''}
+                    class=${classes('workbench-disclosure', options.ownerClass || '')}
+                    data-workbench-detail-disclosure="true" ?hidden=${!!options.hidden}>
+                <button id=${options.toggleId} type="button"
+                    class=${classes('workbench-disclosure__toggle', options.toggleClass || '')}
+                    aria-controls=${options.panelId} aria-expanded=${expanded ? 'true' : 'false'}
+                    aria-label=${options.accessibleName || options.label} ?hidden=${!!options.toggleHidden}>
+                    <span class="workbench-disclosure__toggle-label">${options.label}</span>
+                    <svg class="workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron"
+                        data-workbench-icon="chevron" viewBox="0 0 24 24" width="16" height="16"
+                        focusable="false" aria-hidden="true"><path d=${chevronPath}></path></svg>
+                </button>
+                <div id=${options.panelId}
+                    class=${classes('workbench-disclosure__panel', options.panelClass || '')}
+                    role=${options.panelRole || 'region'} aria-labelledby=${options.toggleId}
+                    ?hidden=${!expanded}>
+                    <div class=${classes('workbench-disclosure__content', options.contentClass || '')}>${content}</div>
+                </div>
+            </div>`;
+        }
+
+        export function create(doc: any, options: DetailDisclosureOptions): DetailDisclosureElements {
+            var owner: HTMLElement = doc.createElement('div');
+            owner.className = classes('workbench-disclosure', options.ownerClass || '');
+            owner.setAttribute('data-workbench-detail-disclosure', 'true');
+            owner.hidden = !!options.hidden;
+            if (options.id) {
+                owner.id = options.id;
+            }
+
+            var toggle: HTMLButtonElement = doc.createElement('button');
+            toggle.type = 'button';
+            toggle.id = options.toggleId;
+            toggle.className = classes('workbench-disclosure__toggle', options.toggleClass || '');
+            toggle.hidden = !!options.toggleHidden;
+            toggle.setAttribute('aria-controls', options.panelId);
+            toggle.setAttribute('aria-expanded', options.expanded ? 'true' : 'false');
+            toggle.setAttribute('aria-label', options.accessibleName || options.label);
+            var label: HTMLElement = doc.createElement('span');
+            label.className = 'workbench-disclosure__toggle-label';
+            label.textContent = options.label;
+            toggle.appendChild(label);
+
+            var namespace = 'http://www.w3.org/2000/svg';
+            var chevron = doc.createElementNS(namespace, 'svg');
+            chevron.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
+            chevron.setAttribute('data-workbench-icon', 'chevron');
+            chevron.setAttribute('viewBox', '0 0 24 24');
+            chevron.setAttribute('width', '16');
+            chevron.setAttribute('height', '16');
+            chevron.setAttribute('focusable', 'false');
+            chevron.setAttribute('aria-hidden', 'true');
+            var path = doc.createElementNS(namespace, 'path');
+            path.setAttribute('d', chevronPath);
+            chevron.appendChild(path);
+            toggle.appendChild(chevron);
+            owner.appendChild(toggle);
+
+            var panel: HTMLElement = doc.createElement('div');
+            panel.id = options.panelId;
+            panel.className = classes('workbench-disclosure__panel', options.panelClass || '');
+            panel.setAttribute('role', options.panelRole || 'region');
+            panel.setAttribute('aria-labelledby', options.toggleId);
+            panel.hidden = !options.expanded;
+            owner.appendChild(panel);
+
+            var panelContent: HTMLElement = doc.createElement('div');
+            panelContent.className = classes('workbench-disclosure__content', options.contentClass || '');
+            panel.appendChild(panelContent);
+            return { owner: owner, toggle: toggle, panel: panel, content: panelContent };
+        }
+
+        export function bind(toggle: HTMLButtonElement, panel: HTMLElement,
+                            owner?: HTMLElement): () => void {
+            if (!toggle || !panel || toggle.getAttribute('data-workbench-bound') === 'true') {
+                return function() {};
+            }
+            toggle.setAttribute('data-workbench-bound', 'true');
+            var disclosureOwner = owner || toggle.parentElement;
+            var initiallyExpanded = toggle.getAttribute('aria-expanded') === 'true';
+            workbench.setDisclosureExpanded(toggle, panel, disclosureOwner, initiallyExpanded, false);
+            var onClick = function() {
+                workbench.setDisclosureExpanded(toggle, panel, disclosureOwner,
+                    toggle.getAttribute('aria-expanded') !== 'true', true);
+            };
+            toggle.addEventListener('click', onClick, false);
+            var disposed = false;
+            return function() {
+                if (disposed) {
+                    return;
+                }
+                disposed = true;
+                toggle.removeEventListener('click', onClick, false);
+                toggle.removeAttribute('data-workbench-bound');
+                workbench.releaseDisclosure(toggle, panel, disclosureOwner);
+            };
+        }
+
+        export function bindOwner(owner: HTMLElement): void {
+            if (!owner) {
+                return;
+            }
+            var toggle = <HTMLButtonElement>owner.querySelector('.workbench-disclosure__toggle');
+            var panelId = toggle ? toggle.getAttribute('aria-controls') : null;
+            var panel = panelId && owner.ownerDocument ? owner.ownerDocument.getElementById(panelId) : null;
+            bind(toggle, panel, owner);
+        }
+
+        export function bindAll(root?: any): void {
+            var scope = root || document;
+            if (!scope || !scope.querySelectorAll) {
+                return;
+            }
+            var owners = scope.querySelectorAll('[data-workbench-detail-disclosure="true"]');
+            for (var i = 0; i < owners.length; i++) {
+                bindOwner(<HTMLElement>owners[i]);
+            }
+        }
+    }
+
     var requestIdCounter = 0;
 
     var motionDisclosureDuration = 180;
@@ -441,12 +594,13 @@ module workbench {
                 return panelDisclosureStates[i];
             }
         }
+        var initialAriaHidden = panel.getAttribute('aria-hidden');
         var state: PanelDisclosureState = {
             button: button,
             panel: panel,
             owner: owner,
             inert: !!(<any>panel).inert,
-            ariaHidden: panel.getAttribute('aria-hidden'),
+            ariaHidden: typeof initialAriaHidden === 'undefined' ? null : initialAriaHidden,
             expanded: button.getAttribute('aria-expanded') === 'true'
         };
         panelDisclosureStates.push(state);
@@ -454,9 +608,11 @@ module workbench {
     }
 
     function disclosureAnchorTrack(panel: HTMLElement): HTMLElement {
-        return panel && panel.closest
-            ? <HTMLElement>panel.closest('.query-actions-toolbar, .query-result-disclosure-panels')
-            : null;
+        if (!panel || !panel.closest) {
+            return null;
+        }
+        return <HTMLElement>panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-disclosure-panels')
+            || <HTMLElement>panel.closest('.workbench-disclosure');
     }
 
     function refreshDisclosureAnchor(button: HTMLButtonElement, panel: HTMLElement,
@@ -535,6 +691,60 @@ module workbench {
             disclosureAnchorObserver.observe(track);
         }
         refreshDisclosureAnchor(button, panel, track);
+    }
+
+    export function releaseDisclosure(button: HTMLButtonElement, panel: HTMLElement,
+                                      owner?: HTMLElement): void {
+        if (!panel) {
+            return;
+        }
+        var motion = cancelOwnedMotion(panel);
+        if (motion) {
+            restoreMotionStyles(panel, motion.styles);
+        }
+        for (var stateIndex = panelDisclosureStates.length - 1; stateIndex >= 0; stateIndex--) {
+            if (panelDisclosureStates[stateIndex].panel === panel) {
+                panelDisclosureStates.splice(stateIndex, 1);
+            }
+        }
+
+        var releasedTrack: HTMLElement = null;
+        for (var anchorIndex = disclosureAnchors.length - 1; anchorIndex >= 0; anchorIndex--) {
+            var anchor = disclosureAnchors[anchorIndex];
+            if (anchor.panel === panel || button && anchor.button === button) {
+                releasedTrack = anchor.track;
+                if (disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
+                    disclosureAnchorObserver.unobserve(anchor.button);
+                    disclosureAnchorObserver.unobserve(anchor.panel);
+                }
+                disclosureAnchors.splice(anchorIndex, 1);
+            }
+        }
+        var trackStillObserved = false;
+        if (releasedTrack) {
+            for (var remainingIndex = 0; remainingIndex < disclosureAnchors.length; remainingIndex++) {
+                if (disclosureAnchors[remainingIndex].track === releasedTrack) {
+                    trackStillObserved = true;
+                    break;
+                }
+            }
+        }
+        if (!trackStillObserved && releasedTrack && disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
+            disclosureAnchorObserver.unobserve(releasedTrack);
+        }
+        if (disclosureAnchors.length === 0) {
+            if (disclosureAnchorResizeListenerInstalled) {
+                window.removeEventListener('resize', scheduleDisclosureAnchorRefresh);
+                disclosureAnchorResizeListenerInstalled = false;
+            }
+            if (disclosureAnchorObserver) {
+                disclosureAnchorObserver.disconnect();
+                disclosureAnchorObserver = null;
+            }
+        }
+        if (owner) {
+            owner.classList.remove('is-open');
+        }
     }
 
     export function setDisclosureExpanded(button: HTMLButtonElement, panel: HTMLElement, owner: HTMLElement,
@@ -636,6 +846,46 @@ module workbench {
             } else {
                 panel.setAttribute('aria-hidden', expanded ? state.ariaHidden : 'true');
             }
+        });
+    }
+
+    export function setElementExpanded(element: HTMLElement, expanded: boolean, animate?: boolean): void {
+        if (!element || element.hidden) {
+            return;
+        }
+        var existingMotion = motionFor(element);
+        var wasExpanded = window.getComputedStyle(element).display !== 'none';
+        if (wasExpanded === expanded && !existingMotion) {
+            (<any>element).inert = !expanded;
+            element.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+            return;
+        }
+
+        var startHeight = existingMotion ? elementHeight(element) : (wasExpanded ? elementHeight(element) : 0);
+        var computedStartStyle = window.getComputedStyle(element);
+        var startStyle = snapshotDisclosureBoxStyle(computedStartStyle);
+        var startOpacity = existingMotion ? computedStartStyle.opacity : '0';
+        var motion = cancelOwnedMotion(element);
+        var styles = motion ? motion.styles : captureMotionStyles(element);
+        element.style.display = '';
+        (<any>element).inert = !expanded;
+        element.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        var endHeight = expanded ? elementHeight(element) : 0;
+        var endStyle = snapshotDisclosureBoxStyle(window.getComputedStyle(element));
+
+        if (animate === false || !expanded) {
+            element.style.display = expanded ? '' : 'none';
+            restoreMotionStyles(element, styles);
+            return;
+        }
+        element.style.overflow = 'hidden';
+        var startBox = existingMotion
+            ? disclosureBoxKeyframe(element, startHeight, startStyle) : collapsedDisclosureKeyframe();
+        startBox.opacity = startOpacity;
+        var endBox = disclosureBoxKeyframe(element, endHeight, endStyle);
+        endBox.opacity = window.getComputedStyle(element).opacity;
+        startOwnedMotion(element, [startBox, endBox], motionDisclosureDuration, styles, function() {
+            element.style.display = '';
         });
     }
 
@@ -876,29 +1126,7 @@ workbench.addLoad(function installWorkbenchNavigation() {
  * interaction for both the query page and embedded result documents.
  */
 workbench.addLoad(function installDisclosureToggles() {
-    var toggles = document.querySelectorAll('.query-disclosure__toggle');
-    for (var i = 0; i < toggles.length; i++) {
-        var toggle = <HTMLButtonElement>toggles[i];
-        var panelId = toggle.getAttribute('aria-controls');
-        var panel = panelId ? document.getElementById(panelId) : null;
-        if (!panel) {
-            continue;
-        }
-        var container = toggle.parentElement;
-        var initiallyExpanded = toggle.getAttribute('aria-expanded') === 'true';
-        workbench.setDisclosureExpanded(toggle, panel, container, initiallyExpanded, false);
-        toggle.addEventListener('click', (function(button: HTMLButtonElement, target: HTMLElement, owner: HTMLElement) {
-            return function() {
-                workbench.setDisclosureExpanded(
-                    button,
-                    target,
-                    owner,
-                    button.getAttribute('aria-expanded') !== 'true',
-                    true
-                );
-            };
-        })(toggle, panel, container), false);
-    }
+    workbench.detailDisclosure.bindAll(document);
 });
 
 /**

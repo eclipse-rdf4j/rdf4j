@@ -98,7 +98,7 @@ test('Explore summaries and result counts stay complete across first, middle, an
     window.scrollY = 0;
     window.addEventListener = (name, listener) => { listeners[name] = listener; };
     window.removeEventListener = () => {};
-    workbench.queryStream = {
+    workbench.queryStream = Object.assign(workbench.queryStream, {
         MeasuredRowHeights: class {
             constructor(count, estimate) { this.count = count; this.estimate = estimate; }
             resize(count) { this.count = count; }
@@ -121,7 +121,7 @@ test('Explore summaries and result counts stay complete across first, middle, an
                 };
             }
         }
-    };
+    });
 
     const table = {
         getAttribute(name) { return name === 'data-workbench-row-table' ? 'true' : ''; },

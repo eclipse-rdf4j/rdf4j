@@ -16,18 +16,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
+const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
 function loadWorkbench() {
+    const workbench = {};
+    installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
         URL,
         URLSearchParams,
         Promise,
         console,
         window: {},
-        workbench: {},
+        workbench,
         setTimeout
     });
     for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
@@ -138,6 +141,118 @@ test('shared chevron adapter creates one decorative, accessible 16px SVG', () =>
     workbench.icons.decorateButton(button, 'chevron', 'Result options');
     icons = button.querySelectorAll('svg[data-workbench-icon]');
     assert.equal(icons.length, 1, 'rebinding must not duplicate the shared icon');
+});
+
+test('shared disclosure adapter places the rotating chevron after its label', () => {
+    const workbench = loadWorkbench();
+    const document = new FakeDocument();
+    const button = document.createElement('button');
+    const label = document.createElement('span');
+    label.textContent = 'Save query';
+    button.appendChild(label);
+    button.firstChild = label;
+    button.setAttribute('aria-expanded', 'false');
+    document.body.appendChild(button);
+
+    workbench.icons.decorateDisclosureButton(button, 'Save query');
+    let icons = button.querySelectorAll('svg[data-workbench-icon]');
+    assert.equal(icons.length, 1);
+    assert.equal(button.children[0], label, 'the text label should precede the chevron');
+    assert.equal(button.children[1], icons[0], 'the chevron should be the final button child');
+    assert.ok(icons[0].classList.contains('workbench-disclosure-chevron'),
+        'the shared disclosure class should enable expanded-state rotation');
+    assert.equal(icons[0].getAttribute('data-workbench-icon'), 'chevron');
+    assert.equal(icons[0].getAttribute('aria-hidden'), 'true');
+    assert.equal(button.getAttribute('aria-label'), 'Save query');
+    assert.equal(button.getAttribute('aria-expanded'), 'false', 'decoration must preserve disclosure state');
+
+    workbench.icons.decorateDisclosureButton(button, 'Save query');
+    icons = button.querySelectorAll('svg[data-workbench-icon]');
+    assert.equal(icons.length, 1, 'rebinding must not duplicate the chevron');
+    assert.equal(button.children[1], icons[0], 'rebinding should preserve the trailing position');
+});
+
+test('shared detail disclosure restores keyboard access and releases dynamic observers', () => {
+	const document = new FakeDocument();
+	const observers = [];
+	const resizeListeners = new Set();
+	const window = {
+		ResizeObserver: class {
+			constructor(callback) {
+				this.callback = callback;
+				this.observed = new Set();
+				this.unobserved = [];
+				this.disconnected = false;
+				observers.push(this);
+			}
+			observe(element) { this.observed.add(element); }
+			unobserve(element) { this.observed.delete(element); this.unobserved.push(element); }
+			disconnect() { this.disconnected = true; this.observed.clear(); }
+		},
+		addEventListener(type, listener) {
+			if (type === 'resize') resizeListeners.add(listener);
+		},
+		removeEventListener(type, listener) {
+			if (type === 'resize') resizeListeners.delete(listener);
+		},
+		getComputedStyle(element) {
+			return Object.assign({
+				boxSizing: 'border-box', paddingTop: '12px', paddingBottom: '12px',
+				borderTopWidth: '1px', borderBottomWidth: '1px',
+				marginBlockStart: '8px', marginBlockEnd: '0px', direction: 'ltr'
+			}, element.style);
+		},
+		matchMedia() { return { matches: true }; },
+		dispatchEvent() { return true; },
+		requestAnimationFrame(callback) { callback(); }
+	};
+	const context = vm.createContext({
+		URL,
+		URLSearchParams,
+		Promise,
+		console,
+		document,
+		window,
+		Event: class { constructor(type) { this.type = type; } },
+		workbench: {}
+	});
+	vm.runInContext(fs.readFileSync(path.join(scripts, 'template.js'), 'utf8'), context, {
+		filename: 'template.js'
+	});
+	const api = context.workbench.detailDisclosure;
+	const track = document.createElement('div');
+	track.className = 'workbench-disclosure-track';
+	document.body.appendChild(track);
+	const disclosures = ['Download', 'Options'].map((label, index) => {
+		const disclosure = api.create(document, {
+			id: `dynamic-${index}`, toggleId: `dynamic-toggle-${index}`,
+			panelId: `dynamic-panel-${index}`, label
+		});
+		disclosure.toggle.getClientRects = () => [{ width: 40, height: 36 }];
+		disclosure.panel.contains = () => false;
+		document.body.appendChild(disclosure.owner);
+		track.appendChild(disclosure.panel);
+		const dispose = api.bind(disclosure.toggle, disclosure.panel, disclosure.owner);
+		return { ...disclosure, dispose };
+	});
+
+	assert.equal(disclosures[0].panel.inert, true, 'collapsed panels should be inert');
+	disclosures[0].toggle.click();
+	assert.equal(disclosures[0].panel.getAttribute('aria-hidden'), 'false',
+		'opening a panel should remove its collapsed accessibility state');
+	assert.equal(disclosures[0].panel.inert, false,
+		'opening a panel should restore keyboard access to its controls');
+	disclosures[0].toggle.click();
+	assert.equal(disclosures[0].panel.getAttribute('aria-hidden'), 'true');
+	assert.equal(disclosures[0].panel.inert, true);
+
+	disclosures.forEach(disclosure => disclosure.dispose());
+	assert.deepEqual(Array.from(resizeListeners), [], 'the shared resize listener should be removed after the last panel');
+	assert.equal(observers.length, 1, 'panels in one result should share one resize observer');
+	assert.equal(observers[0].disconnected, true, 'disposing the result should release its resize observer');
+	assert.ok(observers[0].unobserved.includes(track), 'the shared result panel track should be unobserved');
+	assert.equal(disclosures[0].toggle.eventHandlers.get('click').length, 0,
+		'disposing the result should detach the toggle callback');
 });
 
 test('Information renders every live value inside one shared surface', () => {

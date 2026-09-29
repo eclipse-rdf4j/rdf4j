@@ -6,7 +6,7 @@ const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL ||
     WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server')).replace(/\/+$/, '');
 
-test('Workbench follows system theme and remembers an explicit override', async ({ page }) => {
+test('Workbench follows system theme and remembers an explicit preference without a selector', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.addInitScript(() => {
         if (!sessionStorage.getItem('rdf4j-workbench-theme-test-initialized')) {
@@ -17,20 +17,19 @@ test('Workbench follows system theme and remembers an explicit override', async 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories`);
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    const themeControl = page.getByRole('combobox', { name: 'Workbench theme' });
-    await expect(themeControl).toBeVisible();
-    await themeControl.selectOption('light');
+    await expect(page.locator('#workbench-theme, .workbench-theme-control')).toHaveCount(0);
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('light'));
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect.poll(() => page.evaluate(() => localStorage.getItem('rdf4j-workbench-theme')))
         .toBe('light');
 
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await themeControl.selectOption('system');
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('system'));
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await themeControl.selectOption('dark');
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

@@ -387,12 +387,16 @@ test('Config uses radio controls and closes its panel on an outside click', () =
     assert.equal(heatmapRadio.checked, false);
     assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
     assert.equal(panel.hidden, true);
-    assert.equal(harness.document.getElementById('explanation-highlight-mode').parentNode, panel);
-    assert.equal(harness.document.getElementById('explanation-property-config').parentNode, panel);
+    assert.equal(panel.getAttribute('aria-hidden'), 'true');
+    assert.equal(panel.inert, true);
+    assert.equal(harness.document.getElementById('explanation-highlight-mode').parentNode, panel.children[0]);
+    assert.equal(harness.document.getElementById('explanation-property-config').parentNode, panel.children[0]);
 
     harness.click('explanation-settings-toggle');
     assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
     assert.equal(panel.hidden, false);
+    assert.equal(panel.getAttribute('aria-hidden'), 'false');
+    assert.equal(panel.inert, false);
 
     harness.click('explanation-highlight-hotspot');
     assert.equal(syntaxRadio.checked, false);

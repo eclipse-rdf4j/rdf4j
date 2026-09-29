@@ -66,7 +66,7 @@ test('native Add validation renders its inline page model once', async ({ page }
 	await page.goto(addUrl, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'add');
 	await expect(page.locator('#add-source-tabs')).toBeVisible();
-	await page.locator('#add-import-settings > summary').click();
+	await page.locator('#add-import-settings-toggle').click();
 	const isolation = page.locator('select[name="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel"]');
 	const isolationOptions = await isolation.locator('option').evaluateAll(options => options.map(option => ({
 		value: option.value,

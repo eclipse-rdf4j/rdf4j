@@ -18,7 +18,9 @@ const path = require('path');
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
 const RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
-const ARTIFACT_ROOT = path.join('/Users/havardottestad/.codex/visualizations/2026/09/27/01a0e2fb-705d-7ee2-9a69-d25d3da4d594/workbench-refinement/final/live-route-parity', RUN_ID);
+const ARTIFACT_ROOT = process.env.WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT
+	? path.join(process.env.WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT, RUN_ID)
+	: path.join('/Users/havardottestad/.codex/visualizations/2026/09/27/01a0e2fb-705d-7ee2-9a69-d25d3da4d594/workbench-refinement/final/live-route-parity', RUN_ID);
 const REPOSITORY_ID = `route-parity-${RUN_ID}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const COVERAGE_PATH = path.join(__dirname, '..', `workbench-live-route-parity-${RUN_ID}.json`);
@@ -267,10 +269,10 @@ async function inspectRoute(page, route, options = {}, diagnostics = { pageError
 		snapshot = { view: null, pageSurface: false, pageText: '', bodyText: '', errorText: String(error), createTypes: [] };
 	}
 	if (options.openAdvanced) {
-		const advanced = page.locator('form[action="create"] details.workbench-advanced');
+		const advanced = page.locator('form[action="create"] .workbench-advanced[data-workbench-detail-disclosure="true"]');
 		if (await advanced.count()) {
 			try {
-				await advanced.locator('summary').click();
+				await advanced.locator(':scope > .workbench-disclosure__toggle').click();
 			} catch (error) {
 				options.advancedError = error instanceof Error ? error.message : String(error);
 			}
@@ -307,7 +309,9 @@ async function inspectRoute(page, route, options = {}, diagnostics = { pageError
 		navigation: snapshot ? snapshot.navigation : null,
 		createTypes: snapshot ? snapshot.createTypes : [],
 		createVariant: options.createVariant || null,
-		advancedOpen: options.openAdvanced ? await page.locator('form[action="create"] details.workbench-advanced').evaluateAll(nodes => nodes.some(node => node.open)).catch(() => false) : null,
+		advancedOpen: options.openAdvanced ? await page.locator('form[action="create"] .workbench-advanced[data-workbench-detail-disclosure="true"]')
+			.evaluateAll(nodes => nodes.some(node => node.querySelector(':scope > .workbench-disclosure__toggle')
+				?.getAttribute('aria-expanded') === 'true')).catch(() => false) : null,
 		advancedError: options.advancedError || null,
 		errorText: snapshot ? snapshot.errorText : null,
 		navigationError,
@@ -364,15 +368,15 @@ async function exerciseExportPreview(page, evidence) {
 	await page.goto(exportUrl, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#export-form')).toBeVisible();
 	const exportControls = await page.evaluate(() => {
-		const summary = document.querySelector('#export-result-options > summary');
-		const icon = summary && summary.querySelector('svg');
+		const toggle = document.querySelector('#export-result-options-toggle');
+		const icon = toggle && toggle.querySelector('svg');
 		const path = icon && icon.querySelector('path');
 		return {
 			defaultFormat: document.querySelector('#Accept')?.value || null,
 			previewLimit: document.querySelector('#limit_export')?.value || null,
 			compression: document.querySelector('#compression')?.value || null,
 			timeout: document.querySelector('#timeout')?.value || null,
-			resultOptionsText: summary ? summary.innerText.trim() : null,
+			resultOptionsText: toggle ? toggle.innerText.trim() : null,
 			resultOptionsIcon: icon ? icon.getAttribute('data-workbench-icon') : null,
 			resultOptionsPath: path ? path.getAttribute('d') : null,
 			downloadButtonText: document.querySelector('#export-form button[name="action"][value="download"]')?.innerText.trim() || null,

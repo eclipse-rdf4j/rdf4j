@@ -102,23 +102,21 @@ test('disclosure panels finish closing without a final panel or enclosing-layout
 		await openPage(page, `repositories/${REPOSITORY_ID}/add`);
 		await assertCollapseContinuity(page, {
 			name: `Add Advanced ${width}px`,
-			trigger: '#add-import-settings > summary',
-			animated: '#add-import-settings',
+			trigger: '#add-import-settings-toggle',
+			animated: '#add-import-settings-panel',
 			container: '#workbench-page-surface',
 			containerEdge: 'bottom',
-			closed: '#add-import-settings:not([open])',
-			native: true
+			closed: '#add-import-settings-panel[hidden]'
 		});
 
 		await openPage(page, 'repositories/NONE/create?type=memory-customrule');
 		await assertCollapseContinuity(page, {
 			name: `Create Advanced ${width}px`,
-			trigger: 'details.workbench-advanced > summary',
-			animated: 'details.workbench-advanced',
+			trigger: '#create-advanced-toggle',
+			animated: '#create-advanced-panel',
 			container: 'form[action="create"]',
 			containerEdge: 'bottom',
-			closed: 'details.workbench-advanced:not([open])',
-			native: true
+			closed: '#create-advanced-panel[hidden]'
 		});
 	}
 });
@@ -213,30 +211,31 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 1000 });
 		await openPage(page, 'repositories/NONE/create?type=memory-customrule');
-		const details = page.locator('details.workbench-advanced');
-		const summary = details.locator(':scope > summary');
-		await summary.press('Enter');
-		await expect(details).toHaveAttribute('open', '');
+		const toggle = page.locator('#create-advanced-toggle');
+		const panel = page.locator('#create-advanced-panel');
+		await toggle.press('Enter');
+		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+		await expect(panel).toBeVisible();
 		await page.evaluate(() => {
 			const trace = { samples: [], complete: false };
 			const anyWindow = /** @type {any} */ (window);
-			anyWindow.nativeDisclosureTrace = trace;
-			const details = document.querySelector('details.workbench-advanced');
+			anyWindow.sharedDisclosureTrace = trace;
+			const panel = document.getElementById('create-advanced-panel');
 			const form = document.querySelector('form[action="create"]');
 			const sample = () => {
-				const box = details.getBoundingClientRect();
+				const box = panel.getBoundingClientRect();
 				trace.samples.push({
-					open: details.open,
+					hidden: panel.hidden,
 					height: box.height,
 					formBottom: form.getBoundingClientRect().bottom
 				});
-				if (details.open) {
+				if (!panel.hidden) {
 					requestAnimationFrame(sample);
 				} else {
 					requestAnimationFrame(() => {
-						const settledBox = details.getBoundingClientRect();
+						const settledBox = panel.getBoundingClientRect();
 						trace.samples.push({
-							open: details.open,
+							hidden: panel.hidden,
 							height: settledBox.height,
 							formBottom: form.getBoundingClientRect().bottom
 						});
@@ -246,17 +245,17 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 			};
 			requestAnimationFrame(sample);
 		});
-		await summary.press('Enter');
-		await expect(details).not.toHaveAttribute('open', '');
-		await page.waitForFunction(() => (/** @type {any} */ (window)).nativeDisclosureTrace.complete);
-		const trace = await page.evaluate(() => (/** @type {any} */ (window)).nativeDisclosureTrace.samples);
-		const closedIndex = trace.findIndex(sample => !sample.open);
+		await toggle.press('Enter');
+		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+		await page.waitForFunction(() => (/** @type {any} */ (window)).sharedDisclosureTrace.complete);
+		const trace = await page.evaluate(() => (/** @type {any} */ (window)).sharedDisclosureTrace.samples);
+		const closedIndex = trace.findIndex(sample => sample.hidden);
 		const previous = trace[closedIndex - 1];
 		const firstClosed = trace[closedIndex];
 		const settled = trace[trace.length - 1];
 		const finalPanelStep = Math.abs(previous.height - firstClosed.height);
 		const finalFormStep = Math.abs(previous.formBottom - firstClosed.formBottom);
-		console.log(`NATIVE_DISCLOSURE_FINAL_FRAME ${JSON.stringify({
+		console.log(`SHARED_DISCLOSURE_FINAL_FRAME ${JSON.stringify({
 			width,
 			previous,
 			firstClosed,

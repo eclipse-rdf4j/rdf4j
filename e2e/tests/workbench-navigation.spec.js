@@ -42,7 +42,7 @@ test('navigation opens the active group and keeps other groups collapsed', async
 	).evaluate(element => element.open)).toBe(false);
 });
 
-test('mobile header places brand and theme together before server context', async ({ page }) => {
+test('mobile header omits the theme selector and keeps server context reachable', async ({ page }) => {
 	for (const width of [390, 320]) {
 		const routePage = await page.context().newPage();
 		await routePage.setViewportSize({ width, height: 844 });
@@ -59,14 +59,13 @@ test('mobile header places brand and theme together before server context', asyn
 				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
 				header: bounds('#header'),
 				brand: bounds('#logo'),
-				theme: bounds('.workbench-theme-control'),
+				hasThemeControl: document.querySelector('#workbench-theme, .workbench-theme-control') !== null,
 				context: bounds('#contentheader')
 			};
 		});
 
-		await expect(routePage.locator('#workbench-theme')).toHaveAccessibleName('Workbench theme');
+		expect(geometry.hasThemeControl).toBe(false);
 		expect(geometry.overflow).toBeLessThanOrEqual(1);
-		expect(Math.abs(geometry.brand.top - geometry.theme.top)).toBeLessThan(12);
 		expect(geometry.context.top).toBeGreaterThanOrEqual(geometry.brand.bottom - 1);
 		expect(geometry.header.height).toBeLessThan(190);
 		await routePage.close();

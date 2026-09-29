@@ -385,9 +385,9 @@ test('preset repository IDs remain accessible and readable at desktop and narrow
 		expect.soft(visibleText.withinViewport).toBe(true);
 		expect.soft(accessibleMatches).toBe(1);
 		expect.soft(visibleText.textWidth).toBeLessThanOrEqual(visibleText.availableWidth);
-		const advanced = page.locator('details.workbench-advanced');
-		const summary = advanced.locator(':scope > summary');
-		const disclosureChevron = summary.locator(':scope > .workbench-disclosure-chevron');
+		const advanced = page.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
+		const toggle = advanced.locator(':scope > .workbench-disclosure__toggle');
+		const disclosureChevron = toggle.locator(':scope > .workbench-disclosure-chevron');
 		const chevronCount = await disclosureChevron.count();
 		const chevron = chevronCount ? await disclosureChevron.evaluate(element => ({
 			width: element.getBoundingClientRect().width,
@@ -401,9 +401,8 @@ test('preset repository IDs remain accessible and readable at desktop and narrow
 			expect.soft(chevron.width).toBe(16);
 			expect.soft(chevron.height).toBe(16);
 		}
-		await summary.press('Enter');
-		await expect(advanced).toHaveAttribute('open', '');
-		await expect(summary).toHaveAttribute('aria-expanded', 'true');
+		await toggle.press('Enter');
+		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 		if (chevronCount) {
 			await expect.poll(() => disclosureChevron.evaluate(element => getComputedStyle(element).transform))
 				.toBe('matrix(-1, 0, 0, -1, 0, 0)');
@@ -508,7 +507,7 @@ async function exportContentGap(page) {
 
 async function setTheme(page, theme) {
 	await openPage(page, 'repositories/NONE/repositories');
-	await page.locator('#workbench-theme').selectOption(theme);
+	await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 	await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 

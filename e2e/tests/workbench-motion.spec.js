@@ -91,6 +91,187 @@ async function runPrimaryQuery(page) {
 	await expect(page.locator('#compare-toggle')).toBeVisible();
 }
 
+test('query explanation grows into view when Explain opens it', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	const explanationRow = page.locator('#query-explanation-row');
+	await expect(explanationRow).toBeHidden();
+
+	const opening = await explanationRow.evaluate(element => {
+		document.getElementById('explain-trigger').click();
+		const animation = element.getAnimations({ subtree: false })
+			.find(candidate => candidate.playState === 'running');
+		return {
+			visible: getComputedStyle(element).display !== 'none',
+			keyframes: animation ? animation.effect.getKeyframes() : []
+		};
+	});
+	expect(opening.visible).toBe(true);
+	expect(opening.keyframes.length).toBeGreaterThan(1);
+	expect(parseFloat(opening.keyframes[0].height)).toBe(0);
+	await expect.poll(() => hasVisibleIntermediateMotion(explanationRow)).toBe(true);
+	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+	await waitForOwnedAnimations(explanationRow);
+	await expect(explanationRow).toBeVisible();
+	expect(await retainedForwardFillCount(explanationRow)).toBe(0);
+});
+
+test('comparison explanation reverses cleanly and respects reduced motion', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	await page.locator('#explain-trigger').click();
+	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+	await expect(page.locator('#compare-toggle')).toBeVisible();
+
+	const compareRow = page.locator('#query-explanation-row-compare');
+	await expect(compareRow).toBeHidden();
+	const opening = await compareRow.evaluate(element => {
+		document.getElementById('compare-toggle').click();
+		const animation = element.getAnimations({ subtree: false })
+			.find(candidate => candidate.playState === 'running');
+		return animation ? animation.effect.getKeyframes() : [];
+	});
+	expect(opening.length).toBeGreaterThan(1);
+	expect(parseFloat(opening[0].height)).toBe(0);
+	expect(parseFloat(opening[0].opacity)).toBe(0);
+	await expect(compareRow).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => hasIntermediateOpacityMotion(compareRow)).toBe(true);
+
+	await page.locator('#compare-toggle').evaluate(element => element.click());
+	await expect(compareRow).toBeHidden();
+	await expect(compareRow).toHaveAttribute('aria-hidden', 'true');
+	expect(await activeMotionCount(compareRow)).toBe(0);
+	expect(await retainedForwardFillCount(compareRow)).toBe(0);
+
+	await page.locator('#compare-toggle').evaluate(element => element.click());
+	expect(await activeMotionCount(compareRow)).toBeGreaterThan(0);
+	await waitForOwnedAnimations(compareRow);
+	await expect(compareRow).toBeVisible();
+	expect(await retainedForwardFillCount(compareRow)).toBe(0);
+
+	await page.locator('#compare-toggle').evaluate(element => element.click());
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.locator('#compare-toggle').evaluate(element => element.click());
+	await expect(compareRow).toBeVisible();
+	expect(await activeMotionCount(compareRow)).toBe(0);
+	await expect.poll(() => compareRow.evaluate(element => element.inert)).toBe(false);
+});
+
+test('an initial explanation error settles in the animated row', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.route(`**/repositories/${REPOSITORY_ID}/query**`, async route => {
+		if (route.request().method() === 'POST'
+				&& new URLSearchParams(route.request().postData() || '').get('action') === 'explain') {
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ error: 'Explanation unavailable' })
+			});
+		} else {
+			await route.continue();
+		}
+	});
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	const explanationRow = page.locator('#query-explanation-row');
+	const opening = await explanationRow.evaluate(element => {
+		document.getElementById('explain-trigger').click();
+		return element.getAnimations({ subtree: false })
+			.some(animation => animation.playState === 'running');
+	});
+	expect(opening).toBe(true);
+	await expect(page.locator('#query-explanation')).toContainText('Explanation unavailable');
+	await waitForOwnedAnimations(explanationRow);
+	await expect(explanationRow).toBeVisible();
+	await expect(explanationRow).toHaveAttribute('aria-hidden', 'false');
+	expect(await retainedForwardFillCount(explanationRow)).toBe(0);
+});
+
+test('reduced motion reveals the initial explanation without animation', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	const state = await page.locator('#query-explanation-row').evaluate(element => {
+		document.getElementById('explain-trigger').click();
+		return {
+			visible: getComputedStyle(element).display !== 'none',
+			ariaHidden: element.getAttribute('aria-hidden'),
+			inert: element.inert,
+			animations: element.getAnimations({ subtree: false }).length
+		};
+	});
+	expect(state).toEqual({ visible: true, ariaHidden: 'false', inert: false, animations: 0 });
+	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+});
+
+test('refreshing an open explanation does not restart its entrance motion', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	await page.locator('#explain-trigger').click();
+	const explanationRow = page.locator('#query-explanation-row');
+	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+	await waitForOwnedAnimations(explanationRow);
+	await expect(page.locator('#rerun-explanation')).toBeEnabled();
+	const previousText = await page.locator('#query-explanation').textContent();
+
+	let releaseRefresh;
+	const refreshGate = new Promise(resolve => { releaseRefresh = resolve; });
+	await page.route(`**/repositories/${REPOSITORY_ID}/query**`, async route => {
+		if (route.request().method() === 'POST'
+				&& new URLSearchParams(route.request().postData() || '').get('action') === 'explain') {
+			await refreshGate;
+		}
+		await route.continue();
+	});
+	try {
+		const duringRefresh = await explanationRow.evaluate(element => {
+			document.getElementById('rerun-explanation').click();
+			return {
+				visible: getComputedStyle(element).display !== 'none',
+				opacity: Number(getComputedStyle(element).opacity),
+				height: element.getBoundingClientRect().height,
+				animations: element.getAnimations({ subtree: false }).length
+			};
+		});
+		expect(duringRefresh.visible).toBe(true);
+		expect(duringRefresh.opacity).toBe(1);
+		expect(duringRefresh.height).toBeGreaterThan(0);
+		expect(duringRefresh.animations).toBe(0);
+		await expect(page.locator('#query-explanation')).toHaveText(previousText);
+		await expect(page.locator('#query-explanation-overlay')).toContainText('Refreshing explanation...');
+	} finally {
+		releaseRefresh();
+	}
+	await expect(page.locator('#query-explanation-overlay')).toBeHidden();
+	await expect(page.locator('#query-explanation')).toHaveText(previousText);
+	expect(await activeMotionCount(explanationRow)).toBe(0);
+});
+
+test('closing a focused comparison explanation returns focus to Compare', async ({ page }) => {
+	await page.goto(QUERY_URL);
+	await page.locator('.CodeMirror').first().evaluate(element =>
+		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
+	await page.locator('#explain-trigger').click();
+	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+	await page.locator('#compare-toggle').click();
+	await expect(page.locator('#query-explanation-compare')).toContainText(/\S/);
+	const compareCopy = page.locator('#copy-explanation-compare');
+	await compareCopy.focus();
+	await expect(compareCopy).toBeFocused();
+	await page.evaluate(() => workbench.query.toggleCompareMode());
+	await expect(page.locator('#query-explanation-row-compare')).toBeHidden();
+	await expect(page.locator('#compare-toggle')).toBeFocused();
+});
+
 test('query options animate reversibly while semantic state and focus update immediately', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -233,19 +414,20 @@ test('completed disclosures release their fill effects and follow natural sizing
 
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
-	const advanced = page.locator('details.workbench-advanced');
-	await advanced.locator(':scope > summary').click();
-	await waitForOwnedAnimations(advanced);
-	expect.soft(await retainedForwardFillCount(advanced)).toBe(0);
-	const advancedHeight = await advanced.evaluate(element => element.getBoundingClientRect().height);
-	await advanced.evaluate(element => {
+	const advancedToggle = page.locator('#create-advanced-toggle');
+	const advancedPanel = page.locator('#create-advanced-panel');
+	await advancedToggle.click();
+	await waitForOwnedAnimations(advancedPanel);
+	expect.soft(await retainedForwardFillCount(advancedPanel)).toBe(0);
+	const advancedHeight = await advancedPanel.evaluate(element => element.getBoundingClientRect().height);
+	await advancedPanel.evaluate(element => {
 		const probe = document.createElement('div');
 		probe.setAttribute('data-motion-growth-probe', '');
 		probe.style.cssText = 'display:block;height:72px;box-sizing:border-box';
 		element.appendChild(probe);
 	});
 	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
-	const grownHeight = await advanced.evaluate(element => element.getBoundingClientRect().height);
+	const grownHeight = await advancedPanel.evaluate(element => element.getBoundingClientRect().height);
 	expect.soft(grownHeight - advancedHeight).toBeGreaterThanOrEqual(70);
 });
 
@@ -370,7 +552,7 @@ test('primary query and form actions show compact keyboard press feedback in bot
 
 	for (const theme of ['light', 'dark']) {
 		await page.goto(QUERY_URL);
-		await page.locator('#workbench-theme').selectOption(theme);
+		await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 		await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 		await page.evaluate(() => {
 			document.addEventListener('click', event => {
@@ -383,7 +565,7 @@ test('primary query and form actions show compact keyboard press feedback in bot
 		await verifyPressedAction('#exec', '.query-action--primary', theme);
 
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
-		await page.locator('#workbench-theme').selectOption(theme);
+		await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 		await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 		await page.evaluate(() => {
 			document.addEventListener('click', event => {
@@ -397,31 +579,35 @@ test('primary query and form actions show compact keyboard press feedback in bot
 	}
 });
 
-test('native form and mobile navigation disclosures reverse within narrow layouts', async ({ page }) => {
+test('shared form and mobile navigation disclosures reverse within narrow layouts', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
 
-	const advanced = page.locator('details.workbench-advanced');
-	await expect(advanced).toHaveCount(1);
-	const advancedSummary = advanced.locator(':scope > summary');
-	const advancedContent = advanced.locator(':scope > table.workbench-advanced-fields');
-	await expect(advanced).not.toHaveAttribute('open', '');
-	await advancedSummary.focus();
+	const advancedToggle = page.locator('#create-advanced-toggle');
+	const advancedPanel = page.locator('#create-advanced-panel');
+	await expect(advancedToggle).toBeVisible();
+	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(advancedPanel).toBeHidden();
+	await advancedToggle.focus();
 	await page.keyboard.press('Enter');
-	expect(await activeMotionCount(advanced)).toBeGreaterThan(0);
-	await expect(advancedSummary).toHaveAttribute('aria-expanded', 'true');
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(advanced)).toBe(true);
-	await waitForOwnedAnimations(advanced);
-	await advancedSummary.evaluate(element => element.click());
-	await expect(advancedSummary).toHaveAttribute('aria-expanded', 'false');
-	await expect(advanced).toHaveAttribute('open', '');
-	await expect.poll(() => advancedContent.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => advancedContent.getAttribute('aria-hidden')).toBe('true');
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(advanced)).toBe(true);
-	const advancedReverse = await advanced.evaluate(element => {
+	expect(await activeMotionCount(advancedPanel)).toBeGreaterThan(0);
+	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(false);
+	await expect.poll(() => hasVisibleIntermediateMotion(advancedPanel)).toBe(true);
+	await waitForOwnedAnimations(advancedPanel);
+	const firstControl = advancedPanel.locator('input:not([type="hidden"]), select, textarea').first();
+	await firstControl.focus();
+	await advancedToggle.click();
+	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(advancedToggle).toBeFocused();
+	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'true');
+	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(true);
+	await expect.poll(() => hasVisibleIntermediateMotion(advancedPanel)).toBe(true);
+	const advancedReverse = await advancedPanel.evaluate(element => {
 		const before = element.getBoundingClientRect().height;
-		element.querySelector(':scope > summary').click();
+		document.getElementById('create-advanced-toggle').click();
 		const animation = element.getAnimations({ subtree: false })
 			.find(candidate => candidate.playState === 'running');
 		const frames = animation.effect.getKeyframes();
@@ -433,39 +619,42 @@ test('native form and mobile navigation disclosures reverse within narrow layout
 			before,
 			firstKeyframeHeight,
 			firstKeyframeBorderBoxHeight: style.boxSizing === 'border-box'
-				? firstKeyframeHeight
-				: firstKeyframeHeight + borderBoxInsets,
+					? firstKeyframeHeight
+					: firstKeyframeHeight + borderBoxInsets,
 			boxSizing: style.boxSizing,
 			borderBoxInsets,
 			currentHeight: element.getBoundingClientRect().height
 		};
 	});
-	await expect(advancedSummary).toHaveAttribute('aria-expanded', 'true');
-	await expect.poll(() => advancedContent.evaluate(element => element.inert)).toBe(false);
-	console.log(`NATIVE_DISCLOSURE_REVERSE_BOX_MODEL ${JSON.stringify(advancedReverse)}`);
+	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(false);
+	console.log(`SHARED_DISCLOSURE_REVERSE_BOX_MODEL ${JSON.stringify(advancedReverse)}`);
 	expect(Math.abs(advancedReverse.firstKeyframeBorderBoxHeight - advancedReverse.before)).toBeLessThanOrEqual(0.001);
 	expect(advancedReverse.currentHeight).toBeGreaterThan(0);
-	await waitForOwnedAnimations(advanced);
-	await advancedSummary.evaluate(element => element.click());
-	await waitForOwnedAnimations(advanced);
-	await expect(advanced).not.toHaveAttribute('open', '');
+	await waitForOwnedAnimations(advancedPanel);
+	await advancedToggle.click();
+	await waitForOwnedAnimations(advancedPanel);
+	await expect(advancedPanel).toBeHidden();
 
 	await page.setViewportSize({ width: 320, height: 844 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`);
-	const importOptions = page.locator('#add-import-settings');
-	const importOptionsSummary = importOptions.locator(':scope > summary');
-	const importOptionsBody = importOptions.locator(':scope > .workbench-options__body');
-	await expect(importOptions).not.toHaveAttribute('open', '');
-	await importOptionsSummary.click();
-	await expect(importOptionsSummary).toHaveAttribute('aria-expanded', 'true');
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(importOptions)).toBe(true);
-	await waitForOwnedAnimations(importOptions);
-	await importOptionsSummary.click();
-	await expect(importOptionsSummary).toHaveAttribute('aria-expanded', 'false');
-	await expect.poll(() => importOptionsBody.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(importOptions)).toBe(true);
-	await waitForOwnedAnimations(importOptions);
-	await expect(importOptions).not.toHaveAttribute('open', '');
+	const importToggle = page.locator('#add-import-settings-toggle');
+	const importPanel = page.locator('#add-import-settings-panel');
+	await expect(importPanel).toBeHidden();
+	await importToggle.click();
+	await expect(importToggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(importPanel).toHaveAttribute('aria-hidden', 'false');
+	await expect.poll(() => importPanel.evaluate(element => element.inert)).toBe(false);
+	await expect.poll(() => hasVisibleIntermediateMotion(importPanel)).toBe(true);
+	await waitForOwnedAnimations(importPanel);
+	await importToggle.click();
+	await expect(importToggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(importPanel).toHaveAttribute('aria-hidden', 'true');
+	await expect.poll(() => importPanel.evaluate(element => element.inert)).toBe(true);
+	await expect.poll(() => hasVisibleIntermediateMotion(importPanel)).toBe(true);
+	await waitForOwnedAnimations(importPanel);
+	await expect(importPanel).toBeHidden();
 
 	const navigation = page.locator('#workbench-navigation-disclosure');
 	const navigationSummary = page.locator('#workbench-navigation-summary');

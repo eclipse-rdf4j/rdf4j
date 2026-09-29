@@ -368,6 +368,10 @@ class FakeElement {
         return { top: 0, left: 0, width: 0, height: 0 };
     }
 
+    getClientRects() {
+        return this.hidden ? [] : [this.getBoundingClientRect()];
+    }
+
     getElementsByTagName(tagName) {
         const normalized = String(tagName).toUpperCase();
         const result = [];
@@ -394,6 +398,18 @@ class FakeElement {
 
     querySelector(selector) {
         return this.querySelectorAll(selector)[0] || null;
+    }
+
+    closest(selector) {
+        const selectors = String(selector || '').split(',').map(value => value.trim());
+        let current = this;
+        while (current) {
+            if (selectors.some(value => matchesSelectorToken(current, value))) {
+                return current;
+            }
+            current = current.parentNode;
+        }
+        return null;
     }
 
     serializeArray() {

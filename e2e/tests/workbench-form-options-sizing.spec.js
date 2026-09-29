@@ -56,6 +56,11 @@ function repositoryConfig(repositoryId) {
 async function openWorkbenchPage(page, route) {
 	await page.goto(`${WORKBENCH_BASE_URL}/${route}`, { waitUntil: 'load' });
 	await page.locator('#workbench-page-surface').waitFor({ state: 'attached' });
+	if (/\/query(?:$|[?#])/.test(route)) {
+		// The query shell is visible before its page model has been loaded and
+		// the CodeMirror form, disclosure listeners, and result controller mount.
+		await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
+	}
 }
 
 async function openWorkbenchPageInNewPage(context, route, viewport = { width: 1440, height: 1000 }) {
@@ -63,6 +68,19 @@ async function openWorkbenchPageInNewPage(context, route, viewport = { width: 14
 	await routePage.setViewportSize(viewport);
 	await openWorkbenchPage(routePage, route);
 	return routePage;
+}
+
+function queryResultRoot(page) {
+	return page.locator('#query-results [data-query-stream-root]');
+}
+
+function queryResultPanels(result) {
+	return result.locator('.query-result-disclosure-panels > .workbench-disclosure__panel');
+}
+
+async function waitForSettledDisclosure(panel) {
+	await expect.poll(() => panel.evaluate(element => element.getAnimations({ subtree: false })
+		.filter(animation => animation.playState === 'running').length)).toBe(0);
 }
 
 async function captureGeometryScreenshot(page, name, width) {
@@ -168,10 +186,10 @@ test.describe('Workbench configuration and option sizing', () => {
 				await openWorkbenchPage(page, `repositories/NONE/create?type=${type}`);
 				const form = page.locator('form[action="create"]');
 				await expect(form).toBeVisible();
-				const advanced = form.locator('details.workbench-advanced');
+				const advanced = form.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
 				const advancedPresent = await advanced.count() === 1;
 				if (advancedPresent) {
-					await advanced.locator('summary').press('Enter');
+					await advanced.locator(':scope > .workbench-disclosure__toggle').press('Enter');
 				}
 				const fields = await form.evaluate(element => {
 					const rect = selector => {
@@ -182,15 +200,18 @@ test.describe('Workbench configuration and option sizing', () => {
 						const bounds = control.getBoundingClientRect();
 						return { width: Math.round(bounds.width), height: Math.round(bounds.height) };
 					};
-					const details = element.querySelector('details.workbench-advanced');
-					const advancedTable = details && details.querySelector('table.workbench-advanced-fields');
-					const visibleFieldRows = Array.from(element.querySelectorAll('table.dataentry tr'))
-						.filter(row => row.querySelector('th') && row.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea'));
-					const rowOverlaps = visibleFieldRows.flatMap(row => {
-						const label = row.querySelector('th').getBoundingClientRect();
-						const control = row.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea').getBoundingClientRect();
-						return label.left < control.right - 1 && label.right > control.left + 1 &&
-							label.top < control.bottom - 1 && label.bottom > control.top + 1 ? [row.innerText.trim()] : [];
+					const advanced = element.querySelector('.workbench-advanced[data-workbench-detail-disclosure="true"]');
+					const panel = advanced && advanced.querySelector(':scope > .workbench-disclosure__panel');
+					const advancedFields = panel && panel.querySelector('.workbench-advanced-fields');
+					const visibleFieldRows = Array.from(element.querySelectorAll('.workbench-advanced__field'))
+						.filter(field => field.querySelector('.workbench-advanced__control input:not([type="hidden"]):not([type="submit"]):not([type="button"]), .workbench-advanced__control select, .workbench-advanced__control textarea'));
+					const rowOverlaps = visibleFieldRows.flatMap(field => {
+						const label = field.querySelector(':scope > label, :scope > span');
+						const control = field.querySelector('.workbench-advanced__control').getBoundingClientRect();
+						if (!label) return [];
+						const labelBounds = label.getBoundingClientRect();
+						return labelBounds.left < control.right - 1 && labelBounds.right > control.left + 1 &&
+							labelBounds.top < control.bottom - 1 && labelBounds.bottom > control.top + 1 ? [field.innerText.trim()] : [];
 					});
 					const controlsOutsideForm = Array.from(element.querySelectorAll('input:not([type="hidden"]), select, textarea, button'))
 						.filter(control => getComputedStyle(control).display !== 'none' && control.getBoundingClientRect().width > 0)
@@ -208,14 +229,14 @@ test.describe('Workbench configuration and option sizing', () => {
 							overflow: target.scrollWidth - target.clientWidth
 						};
 					};
-					const advancedSummary = details && details.querySelector('summary');
-					const firstAdvancedLabel = advancedTable && advancedTable.querySelector('th');
-					const detailsBounds = details && details.getBoundingClientRect();
+					const advancedSummary = advanced && advanced.querySelector(':scope > .workbench-disclosure__toggle');
+					const firstAdvancedLabel = advancedFields && advancedFields.querySelector('.workbench-advanced__field > label, .workbench-advanced__field > span');
+					const detailsBounds = panel && panel.getBoundingClientRect();
 					const advancedSummaryBottom = advancedSummary && advancedSummary.getBoundingClientRect().bottom;
 					const firstAdvancedLabelTop = firstAdvancedLabel && firstAdvancedLabel.getBoundingClientRect().top;
 					const fieldGap = parseFloat(getComputedStyle(element).getPropertyValue('--workbench-field-gap')) || 0;
-					const advancedContentOutsidePanel = details && Array.from(details.querySelectorAll(
-						'th, label, input:not([type="hidden"]), select, textarea'
+					const advancedContentOutsidePanel = advanced && Array.from(advanced.querySelectorAll(
+						'label, input:not([type="hidden"]), select, textarea'
 					)).filter(control => getComputedStyle(control).display !== 'none' && control.getBoundingClientRect().width > 0)
 						.filter(control => control.getBoundingClientRect().left < detailsBounds.left - 1 ||
 							control.getBoundingClientRect().right > detailsBounds.right + 1)
@@ -244,16 +265,16 @@ test.describe('Workbench configuration and option sizing', () => {
 						title: rect('input[name="Repository title"]'),
 						delay: rect('input[name="Sync delay"]'),
 						url: rect('input[name="URL"]') || rect('input[type="url"]'),
-						advancedPresent: Boolean(details),
-						advancedOpen: details ? details.open : null,
+						advancedPresent: Boolean(advanced),
+						advancedOpen: advancedSummary ? advancedSummary.getAttribute('aria-expanded') === 'true' : null,
 						formOverflow: element.scrollWidth - element.clientWidth,
-						advancedOverflow: advancedTable && advancedTable.scrollWidth - advancedTable.clientWidth,
+						advancedOverflow: advancedFields && advancedFields.scrollWidth - advancedFields.clientWidth,
 						boxes: {
 							form: box(element),
 							mainTable: box(element.querySelector(':scope > table.dataentry')),
-							advanced: box(details),
-							advancedTable: box(advancedTable),
-							advancedBody: box(advancedTable && advancedTable.tBodies[0]),
+							advanced: box(panel),
+							advancedTable: box(advancedFields),
+							advancedBody: box(advancedFields && advancedFields.parentElement),
 							advancedSummaryBottom: advancedSummaryBottom && Math.round(advancedSummaryBottom),
 							firstAdvancedLabelTop: firstAdvancedLabelTop && Math.round(firstAdvancedLabelTop),
 							advancedFirstFieldGap: advancedSummaryBottom !== null && firstAdvancedLabelTop !== null
@@ -262,11 +283,11 @@ test.describe('Workbench configuration and option sizing', () => {
 						},
 						advancedContentOutsidePanel,
 						pageOverflow: element.ownerDocument.documentElement.scrollWidth - element.ownerDocument.documentElement.clientWidth,
-						advancedTextareas: Array.from(details ? details.querySelectorAll('textarea') : []).map(textarea => ({
+						advancedTextareas: Array.from(advanced ? advanced.querySelectorAll('textarea') : []).map(textarea => ({
 							id: textarea.id,
 							...box(textarea),
-							td: box(textarea.closest('td')),
-							row: box(textarea.closest('tr'))
+							control: box(textarea.closest('.workbench-advanced__control')),
+							field: box(textarea.closest('.workbench-advanced__field'))
 						})),
 						rowOverlaps,
 						controlsOutsideForm,
@@ -307,8 +328,8 @@ test.describe('Workbench configuration and option sizing', () => {
 		const violations = [];
 		let routePage = await openWorkbenchPageInNewPage(context, 'repositories/NONE/server');
 		const serverAuth = routePage.locator('#server-auth');
-		if (!(await serverAuth.evaluate(element => element.open))) {
-			await serverAuth.locator('summary').click();
+		if (!(await serverAuth.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
+			await serverAuth.locator(':scope > .workbench-disclosure__toggle').click();
 		}
 		geometry.server = await routePage.locator('#server-user').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		geometry.password = await routePage.locator('#server-password').evaluate(element => Math.round(element.getBoundingClientRect().width));
@@ -317,8 +338,8 @@ test.describe('Workbench configuration and option sizing', () => {
 		await routePage.locator('label[for="source-url"]').click();
 		geometry.url = await routePage.locator('#url').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		const importSettings = routePage.locator('#add-import-settings');
-		if (!(await importSettings.evaluate(element => element.open))) {
-			await importSettings.locator('summary').click();
+		if (!(await importSettings.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
+			await importSettings.locator(':scope > .workbench-disclosure__toggle').click();
 		}
 		geometry.baseUri = await routePage.locator('#baseURI').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		geometry.context = await routePage.locator('#context').evaluate(element => Math.round(element.getBoundingClientRect().width));
@@ -329,10 +350,13 @@ test.describe('Workbench configuration and option sizing', () => {
 		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`);
 		const exportOptions = routePage.locator('#export-result-options');
-		if (!(await exportOptions.evaluate(element => element.open))) {
-			await exportOptions.locator('summary').click();
+		if (!(await exportOptions.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
+			await exportOptions.locator(':scope > .workbench-disclosure__toggle').click();
 		}
-		geometry.exportLimit = await routePage.locator('#limit_explore').evaluate(element => Math.round(element.getBoundingClientRect().width));
+		const exportResultOptionsPanel = exportOptions.locator(':scope > .workbench-disclosure__panel');
+		await expect(exportResultOptionsPanel).toBeVisible();
+		await waitForSettledDisclosure(exportResultOptionsPanel);
+		geometry.exportLimit = await routePage.locator('#limit_export').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/query`);
 		await routePage.locator('#query-options-toggle').click();
@@ -367,17 +391,17 @@ test.describe('Workbench configuration and option sizing', () => {
 			for (const [name, route] of routes) {
 				const routePage = await openWorkbenchPageInNewPage(context, route, { width, height: 1000 });
 				if (name === 'Server') {
-					await routePage.locator('#server-auth summary').click();
+					await routePage.locator('#server-auth-toggle').click();
 				}
 				if (name === 'Add') {
 					await routePage.locator('label[for="source-text"]').click();
-					await routePage.locator('#add-import-settings summary').click();
+					await routePage.locator('#add-import-settings-toggle').click();
 				}
 				if (name === 'Export') {
-					await routePage.locator('#export-result-options summary').click();
+					await routePage.locator('#export-result-options-toggle').click();
 				}
 				if (name === 'Explore') {
-					await routePage.locator('#explore-result-options summary').click();
+					await routePage.locator('#explore-result-options-toggle').click();
 				}
 				if (name === 'Query') {
 					await routePage.locator('#query-options-toggle').click();
@@ -442,39 +466,49 @@ test.describe('Workbench configuration and option sizing', () => {
 		await expect(infer).toHaveJSProperty('checked', initialInferred);
 	});
 
-	test('sizes query save and option disclosures to their field content', async ({ page }) => {
+		test('sizes query save and option disclosures to their field content', async ({ page }) => {
 		for (const width of [1440, 768, 320]) {
 			const routePage = await openWorkbenchPageInNewPage(page.context(), `repositories/${REPOSITORY_ID}/query`, {
 				width,
 				height: 1000
 			});
 			await routePage.locator('#save-query-toggle').click();
+			await expect(routePage.locator('#save-query-panel')).toBeVisible();
+			const saveGeometry = await routePage.evaluate(() => {
+				const width = selector => Math.round(document.querySelector(selector).getBoundingClientRect().width);
+				return {
+					viewport: document.documentElement.clientWidth,
+					pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+					panel: width('#save-query-panel'),
+					queryName: width('#query-name')
+				};
+			});
 			await routePage.locator('#query-options-toggle').click();
+			await expect(routePage.locator('#query-options-panel')).toBeVisible();
 			const geometry = await routePage.evaluate(() => {
 				const width = selector => Math.round(document.querySelector(selector).getBoundingClientRect().width);
 				return {
 					viewport: document.documentElement.clientWidth,
 					pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-					savePanel: width('#save-query-panel'),
-					queryName: width('#query-name'),
 					optionsPanel: width('#query-options-panel'),
-					settings: width('#query-options-panel .query-settings')
+					settings: width('#query-options-panel .workbench-disclosure__fields')
 				};
 			});
-			console.log(`QUERY_DISCLOSURE_SIZING ${JSON.stringify({ width, ...geometry })}`);
+			console.log(`QUERY_DISCLOSURE_SIZING ${JSON.stringify({ width, save: saveGeometry, options: geometry })}`);
 			const desktop = width > 900;
-			expect(geometry.savePanel, 'save controls should follow their field widths').toBeLessThan(desktop ? 840 : width);
-			expect(geometry.queryName, 'query name should honor its 32-character size').toBeLessThan(desktop ? 420 : width);
+			expect(saveGeometry.panel, 'save controls should follow their field widths').toBeLessThan(desktop ? 840 : width);
+			expect(saveGeometry.queryName, 'query name should honor its 32-character size').toBeLessThan(desktop ? 420 : width);
 			expect(geometry.optionsPanel, 'query options should not fill the editor width').toBeLessThan(desktop ? 920 : width);
 			expect(geometry.settings, 'query settings row should fit its controls').toBeLessThan(desktop ? 900 : width);
-			expect(geometry.pageOverflow, `query disclosures should not overflow at ${width}px`).toBeLessThanOrEqual(1);
+			expect(saveGeometry.pageOverflow, `Save should not overflow at ${width}px`).toBeLessThanOrEqual(1);
+			expect(geometry.pageOverflow, `Options should not overflow at ${width}px`).toBeLessThanOrEqual(1);
 			await routePage.close();
 		}
 	});
 
 	test('Add preserves uploaded graph contexts by default and only overrides them when asked', async ({ page, request }) => {
 		await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
-		await page.locator('#add-import-settings summary').click();
+		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
 		await page.locator('#baseURI').fill('https://example.org/base/');
@@ -501,7 +535,7 @@ test.describe('Workbench configuration and option sizing', () => {
 		expect(nquads).not.toContain('<https://example.org/base/default> <http://example.org/p> "default" <https://example.org/base/> .');
 
 		await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
-		await page.locator('#add-import-settings summary').click();
+		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
 		await page.locator('#baseURI').fill('https://example.org/other/');
@@ -534,21 +568,28 @@ test.describe('Workbench configuration and option sizing', () => {
 		await page.locator('.CodeMirror').first().evaluate(element =>
 			element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { ?s ?p ?o }'));
 		await page.locator('#exec').click();
-		const frame = page.frameLocator('#query-results-frame');
-		await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-		await frame.locator('#query-result-options-toggle').click();
-		const options = await frame.locator('#query-result-options-panel').evaluate(element => {
+		const result = queryResultRoot(page);
+		await expect(result).toBeVisible();
+		await result.locator('.query-result-options-toggle').click();
+		const optionsPanel = queryResultPanels(result).nth(1);
+		await expect(optionsPanel).toBeVisible();
+		await waitForSettledDisclosure(optionsPanel);
+		const options = await optionsPanel.evaluate(element => {
 			const size = selector => Math.round(element.querySelector(selector).getBoundingClientRect().width);
-			return { layout: size('#result-layout'), limit: size('#limit_query') };
+			return { layout: size('[id^="result-layout-"]'), limit: size('[id^="stream-result-limit-"]') };
 		});
 		console.log(`EMBEDDED_RESULT_OPTIONS ${JSON.stringify(options)}`);
 		expect(options.layout, 'result layout selector should not fill its grid track').toBeLessThan(260);
 		expect(options.limit, 'result limit should fit its short options').toBeLessThan(180);
-		await frame.locator('#query-result-download-toggle').click();
-		const download = await frame.locator('#query-result-download-panel #Accept')
+		await result.locator('.query-result-download-toggle').click();
+		const downloadPanel = queryResultPanels(result).nth(0);
+		await expect(downloadPanel).toBeVisible();
+		await waitForSettledDisclosure(downloadPanel);
+		const download = await downloadPanel.locator('[id^="Accept-"]')
 			.evaluate(element => Math.round(element.getBoundingClientRect().width));
 		console.log(`EMBEDDED_DOWNLOAD_FORMAT ${download}`);
 		expect(download, 'download format selector should fit its option labels').toBeLessThan(520);
+		await expect(page.locator('.CodeMirror').first()).toBeVisible();
 	});
 
 	test('normalizes single-row select geometry across standalone and embedded result controls', async ({ page }) => {
@@ -564,10 +605,10 @@ test.describe('Workbench configuration and option sizing', () => {
 			]) {
 				const routePage = await openWorkbenchPageInNewPage(context, route, { width, height: 1000 });
 				if (name === 'Add') {
-					await routePage.locator('#add-import-settings summary').click();
+					await routePage.locator('#add-import-settings-toggle').click();
 				}
 				if (name === 'Export') {
-					await routePage.locator('#export-result-options summary').click();
+					await routePage.locator('#export-result-options-toggle').click();
 				}
 				const controls = await routePage.locator('#workbench-page-surface select:not([multiple])').evaluateAll(elements =>
 				elements.filter(element => element.getBoundingClientRect().width > 0).map(element => ({
@@ -606,8 +647,8 @@ test.describe('Workbench configuration and option sizing', () => {
 			await queryPage.locator('.CodeMirror').first().evaluate(element =>
 				element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { ?s ?p ?o }'));
 			await queryPage.locator('#exec').click();
-			const frame = queryPage.frameLocator('#query-results-frame');
-			await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
+			const result = queryResultRoot(queryPage);
+			await expect(result).toBeVisible();
 			const mainListboxHeight = await queryPage.evaluate(() => {
 				const listbox = document.createElement('select');
 				listbox.id = 'geometry-main-listbox';
@@ -616,7 +657,7 @@ test.describe('Workbench configuration and option sizing', () => {
 				document.querySelector('#workbench-page-surface').appendChild(listbox);
 				return Math.round(listbox.getBoundingClientRect().height);
 			});
-			const embeddedListboxHeight = await frame.locator('#query-result-embedded').evaluate(element => {
+			const embeddedListboxHeight = await result.evaluate(element => {
 				const listbox = document.createElement('select');
 				listbox.id = 'geometry-embedded-listbox';
 				listbox.size = 4;
@@ -628,22 +669,28 @@ test.describe('Workbench configuration and option sizing', () => {
 			if (mainListboxHeight < 60 || embeddedListboxHeight < 60) {
 				violations.push(`A four-row single-selection listbox collapsed at ${width}px: main ${mainListboxHeight}px, embedded ${embeddedListboxHeight}px`);
 			}
-			await frame.locator('#query-result-options-toggle').click();
-			const resultControls = await frame.locator('#query-result-options-panel').evaluate(element => {
+			await result.locator('.query-result-options-toggle').click();
+			const optionsPanel = queryResultPanels(result).nth(1);
+			await expect(optionsPanel).toBeVisible();
+			await waitForSettledDisclosure(optionsPanel);
+			const resultControls = await optionsPanel.evaluate(element => {
 				const bounds = selector => {
 					const rect = element.querySelector(selector).getBoundingClientRect();
 					return { height: Math.round(rect.height), centerY: Math.round(rect.top + rect.height / 2) };
 				};
 				return {
-					layout: bounds('#result-layout'),
-					limit: bounds('#limit_query'),
-					labelTops: Array.from(element.querySelectorAll('.query-result-field > label'))
+					layout: bounds('[id^="result-layout-"]'),
+					limit: bounds('[id^="stream-result-limit-"]'),
+					labelTops: Array.from(element.querySelectorAll('.query-result-field > span'))
 						.slice(0, 2).map(label => Math.round(label.getBoundingClientRect().top))
 				};
 			});
-			await frame.locator('#query-result-download-toggle').click();
-			const downloadControls = await frame.locator('#query-result-download-panel').evaluate(element => {
-				const select = element.querySelector('#Accept').getBoundingClientRect();
+			await result.locator('.query-result-download-toggle').click();
+			const downloadPanel = queryResultPanels(result).nth(0);
+			await expect(downloadPanel).toBeVisible();
+			await waitForSettledDisclosure(downloadPanel);
+			const downloadControls = await downloadPanel.evaluate(element => {
+				const select = element.querySelector('[id^="Accept-"]').getBoundingClientRect();
 				const button = element.querySelector('.query-result-download-action').getBoundingClientRect();
 				return {
 					selectHeight: Math.round(select.height),
@@ -694,10 +741,10 @@ test.describe('Workbench configuration and option sizing', () => {
 		for (const width of [1440, 320]) {
 			const addPage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/add`, { width, height: 1000 });
 			await addPage.locator('label[for="source-text"]').click();
-			await addPage.locator('#add-import-settings summary').click();
+			await addPage.locator('#add-import-settings-toggle').click();
 			const addGeometry = await addPage.locator('#add-import-settings').evaluate(element => {
-				const panel = element.getBoundingClientRect();
-				const body = element.querySelector('.workbench-options__body').getBoundingClientRect();
+				const panel = element.querySelector('.workbench-disclosure__panel').getBoundingClientRect();
+				const body = element.querySelector('.workbench-disclosure__content').getBoundingClientRect();
 				const control = element.querySelector('#baseURI').getBoundingClientRect();
 				return {
 					panel: { left: Math.round(panel.left), right: Math.round(panel.right), width: Math.round(panel.width) },
@@ -712,11 +759,14 @@ test.describe('Workbench configuration and option sizing', () => {
 			await addPage.close();
 
 			const exportPage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`, { width, height: 1000 });
-			await exportPage.locator('#export-result-options summary').click();
+			await exportPage.locator('#export-result-options-toggle').click();
+			const exportResultPanel = exportPage.locator('#export-result-options-panel');
+			await expect(exportResultPanel).toBeVisible();
+			await waitForSettledDisclosure(exportResultPanel);
 			const exportGeometry = await exportPage.locator('#export-result-options').evaluate(element => {
-				const panel = element.getBoundingClientRect();
-				const summary = element.querySelector('summary').getBoundingClientRect();
-				const control = element.querySelector('#limit_explore').getBoundingClientRect();
+				const panel = element.querySelector('.workbench-disclosure__panel').getBoundingClientRect();
+				const summary = element.querySelector('.workbench-disclosure__toggle').getBoundingClientRect();
+				const control = element.querySelector('#limit_export').getBoundingClientRect();
 				const field = element.querySelector('.workbench-field').getBoundingClientRect();
 				return {
 					panelWidth: Math.round(panel.width),
@@ -766,17 +816,17 @@ test.describe('Workbench configuration and option sizing', () => {
 		const context = page.context();
 		const violations = [];
 		const createPage = await openWorkbenchPageInNewPage(context, 'repositories/NONE/create?type=memory-rdfs-dt');
-		await createPage.locator('details.workbench-advanced summary').click();
+		await createPage.locator('#create-advanced-toggle').click();
 		const creationGeometry = await createPage.locator(
-			'details.workbench-advanced table.workbench-advanced-fields tbody > tr:last-child'
+			'.workbench-advanced__field:last-child'
 		).evaluate(row => {
-			const label = row.querySelector('th').getBoundingClientRect();
-			const control = row.querySelector('input:not([type="hidden"]), select, textarea').getBoundingClientRect();
+			const label = row.querySelector(':scope > label, :scope > span').getBoundingClientRect();
+			const control = row.querySelector('.workbench-advanced__control').getBoundingClientRect();
 			return {
 				rowDisplay: getComputedStyle(row).display,
 				labelBottom: Math.round(label.bottom),
 				controlTop: Math.round(control.top),
-				rowCount: row.parentElement.rows.length
+				fieldCount: row.parentElement.children.length
 			};
 		});
 		console.log(`CREATE_ADVANCED_FIELD_RHYTHM ${JSON.stringify(creationGeometry)}`);
@@ -910,23 +960,28 @@ test.describe('Workbench configuration and option sizing', () => {
 			await graphPage.locator('.CodeMirror').first().evaluate(element =>
 				element.CodeMirror.setValue('CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }'));
 			await graphPage.locator('#exec').click();
-			const frame = graphPage.frameLocator('#query-results-frame');
-			await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-			await frame.locator('#query-result-layout').waitFor({ state: 'attached' });
-			await frame.locator('#query-result-options-toggle').click();
-			await frame.locator('#query-result-download-toggle').click();
-			const options = await measureContainedRegion(frame.locator('#query-result-options-panel'));
-			const download = await measureContainedRegion(frame.locator('#query-result-download-panel'));
-			const frameDocument = await frame.locator('html').evaluate(element => ({
-				viewport: element.ownerDocument.documentElement.clientWidth,
-				pageOverflow: element.ownerDocument.documentElement.scrollWidth - element.ownerDocument.documentElement.clientWidth
+			const result = queryResultRoot(graphPage);
+			await expect(result).toBeVisible();
+			await result.locator('.query-result-options-toggle').click();
+			const optionsPanel = queryResultPanels(result).nth(1);
+			await expect(optionsPanel).toBeVisible();
+			await waitForSettledDisclosure(optionsPanel);
+			const options = await measureContainedRegion(optionsPanel);
+			await result.locator('.query-result-download-toggle').click();
+			const downloadPanel = queryResultPanels(result).nth(0);
+			await expect(downloadPanel).toBeVisible();
+			await waitForSettledDisclosure(downloadPanel);
+			const download = await measureContainedRegion(downloadPanel);
+			const resultDocument = await graphPage.evaluate(() => ({
+				viewport: document.documentElement.clientWidth,
+				pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
 			}));
-			console.log(`GRAPH_RESULT_FORM_GEOMETRY ${JSON.stringify({ width, options, download, ...frameDocument })}`);
+			console.log(`GRAPH_RESULT_FORM_GEOMETRY ${JSON.stringify({ width, options, download, ...resultDocument })}`);
 			if (options.rootOverflow > 1 || download.rootOverflow > 1 ||
 				options.controlsOutsideRoot.length || download.controlsOutsideRoot.length ||
 				options.labelsOutsideRoot.length || download.labelsOutsideRoot.length ||
 				options.labelControlOverlaps.length || download.labelControlOverlaps.length ||
-				options.overflowingChildren.length || download.overflowingChildren.length || frameDocument.pageOverflow > 1) {
+				options.overflowingChildren.length || download.overflowingChildren.length || resultDocument.pageOverflow > 1) {
 				violations.push(`Graph result settings or download controls overflow at ${width}px`);
 			}
 			await captureGeometryScreenshot(graphPage, 'graph-result-options', width);

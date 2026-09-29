@@ -12,9 +12,12 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -28,11 +31,19 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * @author dale
  */
 public class TestValueDecoder {
+
+	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
 	private ValueDecoder decoder;
 
@@ -74,6 +85,47 @@ public class TestValueDecoder {
 		Value value = decoder.decodeValue("\"plain string\"");
 		assertThat(value).isInstanceOf(Literal.class);
 		assertThat((Literal) value).isEqualTo(factory.createLiteral("plain string"));
+	}
+
+	@Test
+	public final void testPlainLiteralWithEscapedLineBreak() throws BadRequestException {
+		Value value = decoder.decodeValue("\"line\\nbreak\"");
+
+		assertThat(value).isEqualTo(factory.createLiteral("line\nbreak"));
+	}
+
+	@ParameterizedTest
+	@MethodSource("escapedLiteralCases")
+	void testEscapedLiteralLabelsRoundTrip(String encoded, Literal expected) throws BadRequestException {
+		assertThat(decoder.decodeValue(encoded)).isEqualTo(expected);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "\"value\\q\"", "\"value\\u12\"", "\"value\\uZZZZ\"" })
+	void testMalformedLiteralEscapeIsReportedAsBadRequest(String encoded) {
+		assertThatThrownBy(() -> decoder.decodeValue(encoded))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Malformed value: " + encoded);
+	}
+
+	@Test
+	void testUnicodeLiteralEscapes() throws BadRequestException {
+		assertThat(decoder.decodeValue("\"\\u0041\\u00E9\\U0001F642\""))
+				.isEqualTo(factory.createLiteral("Aé🙂"));
+	}
+
+	private static Stream<Arguments> escapedLiteralCases() {
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		return Stream.of("quote \" here", "backslash \\ here", "line\nbreak", "tab\tvalue", "carriage\rreturn",
+				"controls\b\f", "literal \\n sequence", "\"", "\\", "snowman ☃ and emoji 🙂")
+				.flatMap(label -> {
+					String encoded = JSON_MAPPER.writeValueAsString(label);
+					return Stream.of(
+							Arguments.of(encoded, factory.createLiteral(label)),
+							Arguments.of(encoded + "@en-US", factory.createLiteral(label, "en-US")),
+							Arguments.of(encoded + "^^xsd:token", factory.createLiteral(label, XSD.TOKEN)),
+							Arguments.of(encoded + "^^<" + XSD.TOKEN + ">", factory.createLiteral(label, XSD.TOKEN)));
+				});
 	}
 
 	@Test

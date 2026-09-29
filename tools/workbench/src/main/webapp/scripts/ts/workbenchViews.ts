@@ -1,4 +1,6 @@
 /// <reference path="template.ts" />
+/// <reference path="queryStream.ts" />
+/// <reference lib="es2015.collection" />
 
 // WARNING: Do not edit the generated workbenchViews.js file. Edit this source
 // and run the Workbench TypeScript compiler instead.
@@ -80,6 +82,19 @@ module workbench {
             button.setAttribute('data-workbench-icon', knownName);
             button.setAttribute('aria-label', accessibleName);
         }
+
+        export function decorateDisclosureButton(button: any, accessibleName: string): void {
+            if (!button || !button.ownerDocument || typeof button.appendChild !== 'function') {
+                return;
+            }
+            decorateButton(button, 'chevron', accessibleName);
+            const svg = button.querySelector ? button.querySelector('svg[data-workbench-icon]') : null;
+            if (!svg) {
+                return;
+            }
+            svg.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
+            button.appendChild(svg);
+        }
     }
 
     export module views {
@@ -92,7 +107,22 @@ module workbench {
             runtime?: LitRuntime;
             executionFormId?: string;
             resultsMountId?: string;
+            rowRegions?: RowRegions;
         }
+
+        // The outer template owns each region's Node; a separate Lit root owns its contents.
+        interface RowRegions {
+            model: PageModel;
+            document: Document;
+            tableBody?: HTMLElement;
+            renderTableRows?: () => void;
+            savedList?: HTMLElement;
+            savedCards: { [key: string]: HTMLElement };
+            renderSavedRows?: () => void;
+            groups: { [key: string]: { node: HTMLElement; render: () => void } };
+        }
+
+        const rowRegionsByMount = new WeakMap<Element, RowRegions>();
 
         const titles: { [key: string]: string } = {
             summary: 'Summary',
@@ -236,6 +266,10 @@ module workbench {
                     data-workbench-icon=${name} viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
                 <path d=${iconPath(name)}></path>
             </svg>`;
+        }
+
+        function disclosureChevron(runtime: LitRuntime): any {
+            return icon(runtime, 'chevron', 'workbench-disclosure-chevron');
         }
 
         function statusIcon(runtime: LitRuntime, status: string, label: string): any {
@@ -498,12 +532,6 @@ module workbench {
                     <img src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
                     <img class="product" src=${context.basePath + '/images/product.png'} alt="workbench" />
                 </div>
-                <div class="workbench-theme-control">
-                    <label for="workbench-theme">Theme</label>
-                    <select id="workbench-theme" name="workbench-theme">
-                        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-                    </select>
-                </div>
             </div>
             <details id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" open>
                 <summary id="workbench-navigation-summary">
@@ -537,9 +565,16 @@ module workbench {
             const allRows = records(model);
             const total = rowCount(model);
             const emptyText = options && options.emptyText ? options.emptyText : 'No results to display.';
+            const regions = context.rowRegions;
+            if (regions) {
+                if (!regions.tableBody) { regions.tableBody = regions.document.createElement('tbody'); }
+                regions.renderTableRows = () => runtime.render(tableRows(runtime, model, context, options,
+                    records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody);
+            }
             return h`<table class="data" data-workbench-row-table=${model.rowStore && total ? 'true' : runtime.nothing}>
                 ${columns.length ? h`<thead><tr>${columns.map((name: string) => h`<th scope="col">${name}</th>`)}</tr></thead>` : ''}
-                <tbody>${tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)}</tbody>
+                ${regions ? regions.tableBody
+                    : h`<tbody>${tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)}</tbody>`}
             </table>`;
         }
 
@@ -588,13 +623,7 @@ module workbench {
             }
             const display = termText(value);
             if (link && (value.kind === 'iri' || value.kind === 'literal' || value.kind === 'bnode')) {
-                let resource = value.value || '';
-                if (value.kind === 'bnode') {
-                    resource = String(resource).indexOf('_:') === 0 ? resource : '_:' + resource;
-                } else if (value.kind === 'literal') {
-                    resource = '"' + String(resource).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
-                        + (value.language ? '@' + value.language : value.datatype ? '^^<' + value.datatype + '>' : '');
-                }
+                const resource = workbench.queryStream.exploreResource(value);
                 return h`<a href=${'explore?resource=' + encodeURIComponent(resource)}>${display}</a>`;
             }
             if (value.kind === 'literal' && value.language) {
@@ -692,7 +721,7 @@ module workbench {
                     <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type"><option value="federate">Federation Store</option></select></td><td></td></tr>
                     <tr><th><label for="id">Repository ID</label></th><td><input id="id" name="Local repository ID" type="text" value="fed" data-field-role="repository-id" /></td><td><span id="recurse-message" class="error" hidden>Federation ID may not match an existing ID.</span></td></tr>
                     <tr><th><label for="title">Repository title</label></th><td><input id="title" name="Repository title" type="text" value="Federation" data-field-role="repository-title" /></td><td></td></tr>
-                    <tr><th>Federation members</th><td><div class="workbench-choice-list">
+                    <tr data-field-role="federation-member"><th>Federation members</th><td><div class="workbench-choice-list">
                         ${rows.filter((row: any) => text(row.id) !== 'SYSTEM').map((row: any) => h`<label class="workbench-choice">
                             <input type="checkbox" class="memberID" name="memberID" value=${text(row.id)} data-field-role="federation-member" />
                             <span>${text(row.id)}${text(row.description) ? ' — ' + text(row.description) : ''}</span>
@@ -862,7 +891,7 @@ module workbench {
             </form>`;
         }
 
-        function namespacesPage(runtime: LitRuntime, model: PageModel): any {
+        function namespacesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const entries = recordsFromRows(model, model.pickerRows || []);
             const selectedNamespace = text(model.metadata.selectedNamespaceValue || pageValue(model, 'namespace'));
@@ -907,15 +936,15 @@ module workbench {
                     </div>
                 </form>
                 <section id="namespaces-results" class="workbench-island workbench-responsive-records">
-                    ${table(runtime, model, { basePath: '', repositoryId: '', workbench: {} }, { emptyText: 'No results to display.' })}
+                    ${table(runtime, model, context, { emptyText: 'No results to display.' })}
                 </section>`;
         }
 
-        function recordBrowsePage(runtime: LitRuntime, model: PageModel): any {
+        function recordBrowsePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const route = model.viewId;
             return h`<section id=${route + '-results'} class="workbench-island workbench-responsive-records">
-                ${table(runtime, model, { basePath: '', repositoryId: '', workbench: {} },
+                ${table(runtime, model, context,
                     { emptyText: 'No results to display.', linkTerms: true })}
             </section>`;
         }
@@ -1074,7 +1103,7 @@ module workbench {
             return finishExploreSummary(model, accumulator);
         }
 
-        function prepareExploreSummary(model: PageModel): Promise<void> {
+        function prepareExploreSummary(model: PageModel): Promise<any> {
             if (model.viewId !== 'explore' || !model.rowStore) {
                 return Promise.resolve();
             }
@@ -1082,7 +1111,6 @@ module workbench {
             const chunkSize = 256;
             const scan = (start: number): Promise<void> => {
                 if (start >= model.rowCount) {
-                    (model as any).exploreSummary = finishExploreSummary(model, accumulator);
                     return Promise.resolve();
                 }
                 const count = Math.min(chunkSize, model.rowCount - start);
@@ -1091,19 +1119,38 @@ module workbench {
                     return rows.length ? scan(start + rows.length) : Promise.resolve();
                 });
             };
-            return scan(0).then(() => {
-                if (!(model as any).exploreSummary) {
-                    (model as any).exploreSummary = finishExploreSummary(model, accumulator);
-                }
-            });
+            return scan(0).then(() => finishExploreSummary(model, accumulator));
         }
 
         function exploreGroupList(runtime: LitRuntime, model: PageModel, context: ViewContext,
                                   definition: any, page: any): any {
             const h = runtime.html;
             if (!page || !page.count) { return ''; }
+            const regions = context.rowRegions;
+            if (regions) {
+                if (!regions.groups[definition.key]) {
+                    const node = regions.document.createElement('section');
+                    node.setAttribute('data-workbench-explore-group', definition.key);
+                    regions.groups[definition.key] = {
+                        node,
+                        render: () => {
+                            const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
+                            runtime.render(exploreGroupContent(runtime, model, context, definition,
+                                summary.groups[definition.key]), node);
+                        }
+                    };
+                }
+                return regions.groups[definition.key].node;
+            }
             return h`<section data-workbench-explore-group=${definition.key}>
-                <h3>${definition.title}</h3>
+                ${exploreGroupContent(runtime, model, context, definition, page)}
+            </section>`;
+        }
+
+        function exploreGroupContent(runtime: LitRuntime, model: PageModel, context: ViewContext,
+                                     definition: any, page: any): any {
+            const h = runtime.html;
+            return h`<h3>${definition.title}</h3>
                 <ul>${page.items.map((value: any) => h`<li>${renderTerm(runtime, value, context, true)}</li>`)}</ul>
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
@@ -1112,14 +1159,12 @@ module workbench {
                         data-workbench-explore-action="previous" ?disabled=${!page.hasPrevious}>Previous</button>
                     <button type="button" data-workbench-explore-group=${definition.key}
                         data-workbench-explore-action="next" ?disabled=${!page.hasNext}>Next</button>
-                </div>` : ''}
-            </section>`;
+                </div>` : ''}`;
         }
 
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const resource = text(pageValue(model, 'resource'));
-            const rows = records(model);
             const total = rowCount(model);
             const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
             const info = workbenchData(context);
@@ -1152,21 +1197,24 @@ module workbench {
                     <span id="explore-resource-value">${resource}</span><span id="explore-result-count">${total}</span>
                 </p>
                 <form id="explore-form" class="workbench-island" action="explore">
+                    <input id="workbench-total-result-count" type="hidden"
+                        value=${text(pageValue(model, 'total-result-count'))} />
                     <div id="explore-controls"><div id="explore-resource-field" class="workbench-field">
                         <label for="resource">Resource</label><input id="resource" name="resource" size="48" type="text" value=${resource} />
                     </div>
-                    <details id="explore-result-options" class="workbench-options">
-                        <summary>Result options${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
-                        <div class="workbench-options__body"><div class="workbench-field"><label for="limit_explore">Result limit</label>
+                    ${workbench.detailDisclosure.render(h, {
+                        id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
+                        panelId: 'explore-result-options-panel', label: 'Result options',
+                        ownerClass: 'workbench-options'
+                    }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
                             ${limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')}
                         </div><label class="workbench-check" for="explore-show-datatypes">
                             <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked />
-                            <span>Show datatypes</span></label></div>
-                    </details></div>
+                            <span>Show datatypes</span></label>`)}
+                    </div>
                 </form>
                 <section id="explore-results" class="workbench-island workbench-responsive-records">
-                    ${total ? rows.length ? h`${groupedResults}${table(runtime, model, context, { linkTerms: true })}`
-                        : h`<p class="workbench-pending-row" role="status">Loading rows...</p>`
+                    ${total ? h`${groupedResults}${table(runtime, model, context, { linkTerms: true })}`
                         : h`<p class="workbench-empty" role="status">No results to display.</p>`}
                     <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
                         <button id="previousX" type="button" value=${'Previous ' + total}
@@ -1196,7 +1244,6 @@ module workbench {
 
         function savedQueriesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const rows = records(model);
             if (!rowCount(model)) {
                 const queryAvailable = menuEntries(context).some((group: any) => (group.items || []).some((item: any) =>
                     text(item.id || item['menu-item-id']) === 'query' && !isDisabled(item, workbenchData(context))));
@@ -1205,19 +1252,66 @@ module workbench {
                         ${queryAvailable ? h`<a href=${urlFor(context, 'query')}>Open Query</a>` : ''}</div>
                 </div>`;
             }
+            const regions = context.rowRegions;
+            if (regions) {
+                if (!regions.savedList) {
+                    regions.savedList = regions.document.createElement('div');
+                    regions.savedList.id = 'saved-queries';
+                    regions.savedList.className = 'workbench-page-layout';
+                    regions.savedList.setAttribute('data-workbench-row-list', 'true');
+                }
+                regions.renderSavedRows = () => {
+                    const cards: { [key: string]: HTMLElement } = {};
+                    const rows = records(model).map((row: any, relativeIndex: number) => {
+                        const index = rowStart(model) + relativeIndex;
+                        const urn = text(row.query);
+                        const key = index + ':' + urn;
+                        let card = regions.savedCards[key];
+                        if (!card) {
+                            card = regions.document.createElement('article');
+                            card.id = urn + '-div';
+                            card.className = 'saved-query-row workbench-island';
+                            card.setAttribute('data-workbench-row-index', String(index));
+                            runtime.render(savedQueryContent(runtime, row, index), card);
+                        }
+                        cards[key] = card;
+                        return card;
+                    });
+                    runtime.render(savedQueryListContent(runtime, model, rows), regions.savedList);
+                    regions.savedCards = cards;
+                };
+                return regions.savedList;
+            }
             return h`<div id="saved-queries" class="workbench-page-layout" data-workbench-row-list="true">
-                <div class="workbench-virtual-spacer" style=${model.rowTopSpacer
-                    ? 'height:' + model.rowTopSpacer + 'px' : 'display:none'} aria-hidden="true"></div>
-                ${rows.map((row: any, relativeIndex: number) => {
+                ${savedQueryListContent(runtime, model, records(model).map((row: any, relativeIndex: number) => {
                     const index = rowStart(model) + relativeIndex;
                     const urn = text(row.query);
-                    const queryName = text(row.queryName);
-                    const owner = text(row.user);
-                    const query = text(row.queryText || row.query);
-                    const queryTimeout = text(row.queryTimeout).trim() || '0';
-                    const formId = 'saved-query-exec-' + index;
                     return h`<article id=${urn + '-div'} class="saved-query-row workbench-island"
                             data-workbench-row-index=${index}>
+                        ${savedQueryContent(runtime, row, index)}
+                    </article>`;
+                }))}
+            </div>`;
+        }
+
+        function savedQueryListContent(runtime: LitRuntime, model: PageModel, rows: any[]): any {
+            const h = runtime.html;
+            return h`<div class="workbench-virtual-spacer" style=${model.rowTopSpacer
+                    ? 'height:' + model.rowTopSpacer + 'px' : 'display:none'} aria-hidden="true"></div>
+                ${rows}
+                <div class="workbench-virtual-spacer" style=${model.rowBottomSpacer
+                    ? 'height:' + model.rowBottomSpacer + 'px' : 'display:none'} aria-hidden="true"></div>`;
+        }
+
+        function savedQueryContent(runtime: LitRuntime, row: any, index: number): any {
+            const h = runtime.html;
+            const urn = text(row.query);
+            const queryName = text(row.queryName);
+            const owner = text(row.user);
+            const query = text(row.queryText || row.query);
+            const queryTimeout = text(row.queryTimeout).trim() || '0';
+            const formId = 'saved-query-exec-' + index;
+            return h`
                         <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${owner}</span></div>
                         <div class="saved-query-actions">
                             <form method="post" action="query" id=${formId}
@@ -1254,12 +1348,7 @@ module workbench {
                             <th>Rows Per Page</th><td>${text(row.rowsPerPage)}</td><th>Shared</th><td>${text(row.shared)}</td>
                         </tr></tbody></table>
                         <textarea id=${urn + '-text'} style="display: none">${query}</textarea>
-                    </article>`;
-                })}
-                <div class="workbench-virtual-spacer" style=${model.rowBottomSpacer
-                    ? 'height:' + model.rowBottomSpacer + 'px' : 'display:none'}
-                    aria-hidden="true"></div>
-            </div>`;
+                    `;
         }
 
         function exportPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -1294,15 +1383,16 @@ module workbench {
                         <span class="hint">Maximum time allowed for the export operation. Use 0 for no timeout.</span>
                     </div>
                 </div>
-                <details id="export-result-options" class="workbench-options">
-                    <summary>Result options${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
-                    <div class="workbench-options__body"><div class="workbench-field"><label for="limit_export">Preview limit</label>
+                ${workbench.detailDisclosure.render(h, {
+                    id: 'export-result-options', toggleId: 'export-result-options-toggle',
+                    panelId: 'export-result-options-panel', label: 'Result options',
+                    ownerClass: 'workbench-options'
+                }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_export">Preview limit</label>
                         ${limitSelect(runtime, 'limit_export', context, previewLimit)}
                         <span id="result-limited">${requested && previewLimit !== '0' && rowCount(model) >= Number(previewLimit)
                             ? 'The preview is limited to the selected number of statements.' : ''}</span>
                         <span class="hint">Limit only applies to the preview, not to downloads.</span>
-                    </div></div>
-                </details>
+                    </div>`)}
                 <div class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
                     <span class="workbench-action-hit-area"><span class="workbench-action-label">
                         <button type="submit" name="action" value="download" aria-label="Download">
@@ -1401,21 +1491,23 @@ module workbench {
                             </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                         </div>
                     </div>
-                    <details id="add-import-settings" class="workbench-options">
-                        <summary>Advanced settings${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
-                        <div class="workbench-options__body">
-                            <div class="workbench-field"><label for="baseURI">Base URI</label>
+                    ${workbench.detailDisclosure.render(h, {
+                        id: 'add-import-settings', toggleId: 'add-import-settings-toggle',
+                        panelId: 'add-import-settings-panel', label: 'Advanced settings',
+                        ownerClass: 'workbench-options'
+                    }, h`<div class="workbench-form-grid">
+                            <div class="workbench-field workbench-disclosure__field"><label for="baseURI">Base URI</label>
                                 <input id="baseURI" name="baseURI" type="text" size="48" value=${text(pageValue(model, 'baseURI'))} />
                                 <label class="workbench-check" for="overrideContext"><input type="checkbox" id="overrideContext" name="overrideContext"
                                     ?checked=${!!text(pageValue(model, 'context'))} @change=${() => invoke('workbench.add.handleContextOverride')} />
                                     <span>Override parsed contexts with this context</span></label>
                             </div>
-                            <div class="workbench-field"><label for="context">Context</label>
+                            <div class="workbench-field workbench-disclosure__field"><label for="context">Context</label>
                                 <input id="context" name="context" type="text" size="48" aria-describedby="context-help"
                                     value=${text(pageValue(model, 'context'))} ?disabled=${!text(pageValue(model, 'context'))} />
                                 <p id="context-help" class="workbench-help">RDF context may be an IRI, blank node, or the default graph. With override off, embedded contexts are preserved; contextless data uses the default graph. Base URI resolves relative RDF identifiers; it does not choose a graph context.</p>
                             </div>
-                            <div class="workbench-field"><label for="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">Isolation level</label>
+                            <div class="workbench-field workbench-disclosure__field"><label for="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">Isolation level</label>
                                 <select id="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel"
                                     name="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">
                                     <option value="" ?selected=${!selectedIsolation}>Default</option>
@@ -1425,8 +1517,7 @@ module workbench {
                                 </select>
                                 <div class="hint">Choose the transaction isolation level used for this import.</div>
                             </div>
-                        </div>
-                    </details>
+                        </div>`)}
                     <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
                         <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload" /></span></label>
                     </span></div>
@@ -1515,13 +1606,14 @@ module workbench {
                     <label for="workbench-server">Server</label><input id="workbench-server" name="workbench-server" type="text" size="40" value=${server} />
                     <div class="hint">Enter the URL of an RDF4J Server.</div><span class="error" role="alert">${text(field(row, 'error-message'))}</span>
                 </div></div>
-                <details id="server-auth" class="workbench-options"><summary>Advanced settings${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
-                    <div class="workbench-options__body"><div class="workbench-form-grid">
-                        <div class="workbench-field"><label for="server-user">User</label><input id="server-user" name="server-user"
+                ${workbench.detailDisclosure.render(h, {
+                    id: 'server-auth', toggleId: 'server-auth-toggle', panelId: 'server-auth-panel',
+                    label: 'Advanced settings', ownerClass: 'workbench-options'
+                }, h`<div class="workbench-form-grid">
+                        <div class="workbench-field workbench-disclosure__field"><label for="server-user">User</label><input id="server-user" name="server-user"
                             type="text" size="32" value=${text(field(row, 'server-user'))} /></div>
-                        <div class="workbench-field"><label for="server-password">Password</label><input id="server-password" name="server-password" type="password" size="32" value="" /></div>
-                    </div></div>
-                </details>
+                        <div class="workbench-field workbench-disclosure__field"><label for="server-password">Password</label><input id="server-password" name="server-password" type="password" size="32" value="" /></div>
+                    </div>`)}
                 <div id="server-change-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
                     <label class="workbench-action-hit-area">${icon(runtime, 'update')}<span class="workbench-action-label"><input type="submit" value="Change" /></span></label>
                 </span></div>
@@ -1650,11 +1742,11 @@ module workbench {
             return h`<section id=${paneId} class=${compare
                     ? 'query-compare-pane query-compare-pane--secondary'
                     : 'query-compare-pane query-compare-pane--primary'}>
-                ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close" type="button"
-                    aria-label="Close comparison" title="Close comparison"
-                    @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}
                 <div class="query-form__row query-form__row--stacked">
-                    <div class="query-editor-header"><label class="query-form__label" for=${queryId}>${compare ? 'Compare query' : 'Query'}</label></div>
+                    <div class="query-editor-header"><label class="query-form__label" for=${queryId}>${compare ? 'Compare query' : 'Query'}</label>
+                        ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close" type="button"
+                            aria-label="Close comparison" title="Close comparison"
+                            @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}</div>
                     <div class="query-form__field">${compare
                         ? h`<textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>`
                         : h`<textarea id="query" name="query" rows="16" cols="80" wrap="soft">${text(options.query)}</textarea>`}</div>
@@ -1678,12 +1770,13 @@ module workbench {
                             </select><select id="explain-level" ?hidden=${allExplainLevelsDisabled}>
                                 ${explainLevels.map(levelOption)}
                             </select>
-                            <span id="explanation-settings" class="query-explanation-settings"
-                                ?hidden=${!queryExplainSettingsEnabled(context)}>
-                                <button id="explanation-settings-toggle" class="query-explanation-settings__toggle" type="button"
-                                    aria-controls="explanation-settings-panel" aria-expanded="false">Config</button>
-                                <div id="explanation-settings-panel" class="query-explanation-settings__panel" role="group"
-                                    aria-label="Explanation display settings" hidden>
+                            ${workbench.detailDisclosure.render(h, {
+                                id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
+                                panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
+                                ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle',
+                                panelClass: 'query-explanation-settings__panel',
+                                panelRole: 'group'
+                            }, h`
                                     <div class="query-explanation-settings__section"><strong>Highlighting</strong>
                                         <span id="explanation-highlight-mode" role="radiogroup" aria-label="Text explanation highlighting"
                                             ?hidden=${allHighlightingDisabled}>
@@ -1703,8 +1796,8 @@ module workbench {
                                         <div id="explanation-property-options" role="group" aria-label="Visible query plan properties"></div>
                                         <p>Plan structure always remains visible.</p>
                                     </div>
-                                </div>
-                            </span>`}
+                            `)}
+                            `}
                         </div>
                         <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
                             class="query-explanation-overlay" aria-hidden="true"></div>
@@ -1837,53 +1930,58 @@ module workbench {
                                     ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
                                     @click=${() => invoke('workbench.query.cancelExplain')} /></span>
                         </div>
-                        <div id="save-query-disclosure" class="query-disclosure query-save-disclosure">
-                            <button id="save-query-toggle" class="query-disclosure__toggle" type="button"
-                                aria-controls="save-query-panel" aria-expanded="false"
-                                ?hidden=${!queryFeatureEnabled(context, 'query-save')}>${icon(runtime, 'saved')}<span>Save</span></button>
-                            <div id="save-query-panel" class="query-disclosure__body query-disclosure__panel query-save-disclosure__body"
-                                role="region" aria-labelledby="save-query-toggle" hidden>
+                        ${workbench.detailDisclosure.render(h, {
+                            id: 'save-query-disclosure', toggleId: 'save-query-toggle', panelId: 'save-query-panel',
+                            label: 'Save query', ownerClass: 'query-disclosure query-save-disclosure',
+                            toggleClass: 'query-disclosure__toggle',
+                            panelClass: 'query-disclosure__body query-disclosure__panel query-save-disclosure__body',
+                            contentClass: 'workbench-disclosure__fields',
+                            toggleHidden: !queryFeatureEnabled(context, 'query-save')
+                        }, h`<div class="workbench-disclosure__field query-save-disclosure__name-field">
                                 <label class="query-form__label" for="query-name">Query name</label>
                                 <input id="query-name" name="query-name" type="text" size="32" maxlength="32" value="" />
-                                <label class="query-option" ?hidden=${!queryFeatureEnabled(context, 'query-private-save')}>
-                                    <input id="save-private" name="save-private" type="checkbox" value="true"
-                                        ?hidden=${!queryFeatureEnabled(context, 'query-private-save')} />Private</label>
+                            </div>
+                            <label class="query-option query-save-disclosure__private"
+                                ?hidden=${!queryFeatureEnabled(context, 'query-private-save')}>
+                                <input id="save-private" name="save-private" type="checkbox" value="true"
+                                    ?hidden=${!queryFeatureEnabled(context, 'query-private-save')} />Private</label>
+                            <div class="workbench-disclosure__actions query-disclosure__actions">
                                 <input id="save" type="submit" value="Save" disabled
                                     ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
-                            </div>
-                        </div>
-                        <div id="query-options-disclosure" class="query-disclosure query-options-disclosure">
-                            <button id="query-options-toggle" class="query-disclosure__toggle" type="button"
-                                aria-controls="query-options-panel" aria-expanded="false"
-                                ?hidden=${!queryFeatureEnabled(context, 'query-options')}>${icon(runtime, 'modify')}<span>Options</span></button>
-                            <div id="query-options-panel" class="query-disclosure__body query-disclosure__panel"
-                                role="region" aria-labelledby="query-options-toggle" hidden>
-                                <div class="query-settings">
-                                    <div class="query-form__row" ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
-                                        <label class="query-form__label" for="limit_query">Result limit</label>
-                                        <div class="query-form__field"><select id="limit_query" name="limit_query"
-                                            ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
-                                            ${queryLimits.map((limit: string) => h`<option value=${limit} ?selected=${limit === defaultLimit}>
-                                                ${limit === '0' ? 'All' : limit}</option>`)}
-                                        </select></div>
-                                    </div>
-                                    <div class="query-form__row"><label class="query-form__label" for="query-timeout">Query timeout</label>
-                                        <div class="query-form__field"><input id="query-timeout" name="query-timeout" type="number"
-                                            min="0" step="1" value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} /></div>
-                                    </div>
-                                    <div class="query-form__row"><div class="query-form__field query-form__field--options">
-                                        <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
-                                            ?checked=${text(defaults['default-infer']) === 'true'}
-                                            ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
-                                            <span>Include inferred statements</span></label>
-                                    </div></div>
+                            </div>`)}
+                        ${workbench.detailDisclosure.render(h, {
+                            id: 'query-options-disclosure', toggleId: 'query-options-toggle',
+                            panelId: 'query-options-panel', label: 'Options',
+                            ownerClass: 'query-disclosure query-options-disclosure',
+                            toggleClass: 'query-disclosure__toggle',
+                            panelClass: 'query-disclosure__body query-disclosure__panel',
+                            contentClass: 'workbench-disclosure__fields',
+                            toggleHidden: !queryFeatureEnabled(context, 'query-options')
+                        }, h`<div class="workbench-disclosure__field"
+                                    ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
+                                    <label for="limit_query">Result limit</label>
+                                    <select id="limit_query" name="limit_query"
+                                        ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
+                                        ${queryLimits.map((limit: string) => h`<option value=${limit} ?selected=${limit === defaultLimit}>
+                                            ${limit === '0' ? 'All' : limit}</option>`)}
+                                    </select>
                                 </div>
-                                <div class="query-disclosure__actions"><input id="query-reset-namespaces" type="button" value="Clear"
-                                    data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
-                                    ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
-                                    @click=${() => invoke('workbench.query.resetNamespaces')} /></div>
-                            </div>
-                        </div></div>
+                                <div class="workbench-disclosure__field">
+                                    <label for="query-timeout">Query timeout</label>
+                                    <input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
+                                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} />
+                                </div>
+                                <div class="workbench-disclosure__field">
+                                    <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
+                                        ?checked=${text(defaults['default-infer']) === 'true'}
+                                        ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
+                                        <span>Include inferred statements</span></label>
+                                </div>
+                            <div class="workbench-disclosure__actions query-disclosure__actions"><input id="query-reset-namespaces" type="button" value="Clear"
+                                data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
+                                ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
+                                @click=${() => invoke('workbench.query.resetNamespaces')} /></div>`)}
+                    </div>
                     </div>
                 </form>
                 <section id="query-results" class="query-results" aria-busy="false" hidden aria-labelledby="query-results-heading">
@@ -1923,9 +2021,9 @@ module workbench {
                 case 'repositories': return repositoriesPage(runtime, model, context);
                 case 'create': return createPage(runtime, model, context);
                 case 'delete': return deletePage(runtime, model);
-                case 'namespaces': return namespacesPage(runtime, model);
+                case 'namespaces': return namespacesPage(runtime, model, context);
                 case 'contexts':
-                case 'types': return recordBrowsePage(runtime, model);
+                case 'types': return recordBrowsePage(runtime, model, context);
                 case 'explore': return explorePage(runtime, model, context);
                 case 'query': return runtime.html`<div id="query-page-content">${queryPage(runtime, model, context)}</div>`;
                 case 'saved-queries': return savedQueriesPage(runtime, model, context);
@@ -1947,7 +2045,23 @@ module workbench {
         /** Render a complete route into the Workbench mount. */
         export function render(mount: Element, model: PageModel, context: ViewContext,
                                runtime: LitRuntime): Element {
-            runtime.render(pageTemplate(model, context, runtime), mount);
+            let regions = rowRegionsByMount.get(mount);
+            if (model.rowStore && mount.ownerDocument && mount.ownerDocument.createElement) {
+                if (!regions || regions.model !== model) {
+                    regions = { model, document: mount.ownerDocument, savedCards: {}, groups: {} };
+                    rowRegionsByMount.set(mount, regions);
+                }
+            } else {
+                rowRegionsByMount.delete(mount);
+                regions = null;
+            }
+            const renderedContext = regions ? { ...context, rowRegions: regions } : context;
+            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
+            if (regions) {
+                if (regions.renderTableRows) { regions.renderTableRows(); }
+                if (regions.renderSavedRows) { regions.renderSavedRows(); }
+                Object.keys(regions.groups).forEach((key) => regions.groups[key].render());
+            }
             return mount;
         }
 
@@ -1972,6 +2086,7 @@ module workbench {
 
             let disposed = false;
             let generation = 0;
+            let groupGeneration = 0;
             let heights: any = hasRows
                 ? new HeightIndex(model.rowCount, model.viewId === 'saved-queries' ? 240 : 44) : null;
             let executionDisposers: Array<() => void> = [];
@@ -1995,6 +2110,7 @@ module workbench {
                     return;
                 }
                 const bound = stream.bindExecutionForms(mount, { workbench: context.workbench });
+                executionDisposers = [];
                 if (typeof bound === 'function') {
                     executionDisposers.push(bound);
                 } else if (Array.isArray(bound)) {
@@ -2028,9 +2144,15 @@ module workbench {
                             state.cursor = page.nextCursor;
                             state.start += page.items.length;
                         }
-                        const activeGeneration = ++generation;
-                        prepareExploreSummary(model).then(() => {
-                            if (!disposed && activeGeneration === generation) { renderCurrent(); }
+                        const activeGeneration = ++groupGeneration;
+                        prepareExploreSummary(model).then((summary) => {
+                            if (disposed || activeGeneration !== groupGeneration) { return; }
+                            (model as any).exploreSummary = summary;
+                            const regions = rowRegionsByMount.get(mount);
+                            if (regions) {
+                                Object.keys(regions.groups).forEach((key) => regions.groups[key].render());
+                            }
+                            bindExploreControls();
                         });
                     });
                     button.__rdf4jWorkbenchExploreBound = true;
@@ -2038,11 +2160,19 @@ module workbench {
             }
 
             const renderCurrent = () => {
-                disposeExecutionForms();
-                runtime.render(pageTemplate(model, context, runtime), mount);
+                render(mount, model, context, runtime);
                 bindExecutionForms();
                 bindPickerControls();
                 bindExploreControls();
+            };
+
+            const renderCurrentRows = () => {
+                const regions = rowRegionsByMount.get(mount);
+                if (regions) {
+                    if (regions.renderTableRows) { regions.renderTableRows(); }
+                    if (regions.renderSavedRows) { regions.renderSavedRows(); }
+                }
+                bindExecutionForms();
             };
 
             const bindPickerControls = () => {
@@ -2078,7 +2208,7 @@ module workbench {
                 });
             };
 
-            const refreshRows = (): Promise<void> => {
+            const refreshRows = (paint: boolean = true): Promise<void> => {
                 if (!hasRows || disposed) { return Promise.resolve(); }
                 const activeGeneration = ++generation;
                 heights.resize(model.rowCount);
@@ -2095,7 +2225,7 @@ module workbench {
                     model.rowStart = range.start;
                     model.rowTopSpacer = range.topSpacer;
                     model.rowBottomSpacer = range.bottomSpacer;
-                    renderCurrent();
+                    if (paint) { renderCurrentRows(); }
                     measureRows(range.start, range.end);
                     const measuredRange = heights.range(scrollTop, viewportHeight, 4, 80);
                     const topSpacer = heights.offsetOf(measuredRange.start);
@@ -2104,12 +2234,12 @@ module workbench {
                     const spacerChanged = Math.abs(topSpacer - model.rowTopSpacer) > 0.5
                         || Math.abs(bottomSpacer - model.rowBottomSpacer) > 0.5;
                     if (moved) {
-                        return refreshRows();
+                        return refreshRows(paint);
                     }
                     if (spacerChanged && !disposed) {
                         model.rowTopSpacer = topSpacer;
                         model.rowBottomSpacer = bottomSpacer;
-                        renderCurrent();
+                        if (paint) { renderCurrentRows(); }
                     }
                 });
             };
@@ -2121,27 +2251,34 @@ module workbench {
 
             const onScroll = () => refresh();
             const onResize = () => refresh();
-            if (hasRows && targetWindow.addEventListener) {
-                targetWindow.addEventListener('scroll', onScroll, { passive: true });
-                targetWindow.addEventListener('resize', onResize);
-            }
-
             const initialPicker = hasPicker && model.rowCount > 0
                 ? model.rowStore.read(0, windowSize).then((rows: any[][]) => {
                     if (!disposed) {
                         model.pickerRows = rows;
                         model.pickerStart = 0;
-                        renderCurrent();
                     }
                 })
                 : Promise.resolve();
-            return initialPicker.then(() => prepareExploreSummary(model)).then(() => refreshRows()).then(() => {
+            return initialPicker.then(() => prepareExploreSummary(model)).then((summary: any) => {
+                if (summary) { (model as any).exploreSummary = summary; }
+                return refreshRows(false);
+            }).then(() => {
+                renderCurrent();
+                return refreshRows();
+            }).then(() => {
                 bindPickerControls();
                 bindExploreControls();
+                if (hasRows && targetWindow.addEventListener) {
+                    targetWindow.addEventListener('scroll', onScroll, { passive: true });
+                    targetWindow.addEventListener('resize', onResize);
+                }
                 return () => {
                     disposed = true;
                     generation++;
+                    groupGeneration++;
                     disposeExecutionForms();
+                    const regions = rowRegionsByMount.get(mount);
+                    if (regions && regions.model === model) { rowRegionsByMount.delete(mount); }
                     if (hasRows && targetWindow.removeEventListener) {
                         targetWindow.removeEventListener('scroll', onScroll);
                         targetWindow.removeEventListener('resize', onResize);

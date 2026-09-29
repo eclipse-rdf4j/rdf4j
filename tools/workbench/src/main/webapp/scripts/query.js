@@ -1899,10 +1899,6 @@ var workbench;
                 hiddenProperties: explanationHiddenProperties,
                 namespaces: sparqlNamespaces
             });
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             $('#' + paneState.explanationId)
                 .empty()
                 .addClass('query-explanation--highlighted')
@@ -1921,10 +1917,6 @@ var workbench;
         function renderExplanation(paneKey, explanationText, format) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
                 $('#' + paneState.explanationId)
                     .removeClass('query-explanation--highlighted')
@@ -1983,7 +1975,6 @@ var workbench;
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
                 + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
                 + '||' + JSON.stringify(explanationHiddenProperties);
-            $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
                 paneStatus
@@ -2045,6 +2036,30 @@ var workbench;
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
                 renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
+        }
+        function restoreFocusFromClosingExplanation(paneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            if (!visible && row.contains && row.contains(document.activeElement)) {
+                var returnButtonId = paneKey === 'compare' ? 'compare-toggle' : 'explain-trigger';
+                var returnButton = document.getElementById(returnButtonId);
+                if (returnButton) {
+                    returnButton.focus();
+                }
+            }
+        }
+        function syncPaneExplanationVisibility(paneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            workbench.setElementExpanded(row, visible, true);
         }
         function syncDiffModalPresentation(open) {
             if (open === diffModalBackgroundLocked) {
@@ -2127,6 +2142,8 @@ var workbench;
                 return;
             }
             syncLegacyMachineFlags();
+            restoreFocusFromClosingExplanation('primary');
+            restoreFocusFromClosingExplanation('compare');
             var compareLayout = document.getElementById('query-compare-layout');
             var comparePane = document.getElementById('query-compare-pane');
             var compareStateChanged = compareModeEnabled !== lastPresentedCompareMode;
@@ -2183,6 +2200,8 @@ var workbench;
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
             updateCompareActionState();
+            syncPaneExplanationVisibility('primary');
+            syncPaneExplanationVisibility('compare');
             if (queryPageState.diffModal.kind === 'open') {
                 renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
                 if (queryPageState.diffModal.explanation === 'ready'
@@ -4448,9 +4467,6 @@ workbench.addLoad(function queryPageLoaded() {
     });
     $('#explanation-highlight-hotspot').click(function () {
         workbench.query.setExplanationHighlightMode('hotspot');
-    });
-    $('#explanation-settings-toggle').click(function () {
-        workbench.query.toggleExplanationSettings();
     });
     $(document).click(function (event) {
         if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'

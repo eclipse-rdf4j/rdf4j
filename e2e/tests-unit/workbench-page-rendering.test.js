@@ -3,18 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
 function loadWorkbench() {
     const window = {};
+    const workbench = {};
+    installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
         console,
         URL,
         Promise,
         window,
-        workbench: {},
+        workbench,
         setTimeout
     });
     for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
@@ -709,6 +712,54 @@ test('Summary template renders the effective config model in a closed disclosure
         'the effective Turtle model should remain available as rendered text');
 });
 
+test('settings and action dropdowns share one component while information stays native', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const routes = [
+        ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']] },
+            [['explore-result-options', 'explore-result-options-toggle', 'explore-result-options-panel']]],
+        ['export', { vars: [], rows: [] },
+            [['export-result-options', 'export-result-options-toggle', 'export-result-options-panel']]],
+        ['add', { vars: [], rows: [] },
+            [['add-import-settings', 'add-import-settings-toggle', 'add-import-settings-panel']]],
+        ['server', { vars: ['server'], rows: [['http://example.test']] },
+            [['server-auth', 'server-auth-toggle', 'server-auth-panel']]],
+        ['query', { vars: [], rows: [] }, [
+            ['explanation-settings', 'explanation-settings-toggle', 'explanation-settings-panel'],
+            ['save-query-disclosure', 'save-query-toggle', 'save-query-panel'],
+            ['query-options-disclosure', 'query-options-toggle', 'query-options-panel']
+        ]]
+    ];
+
+    for (const [viewId, model, disclosures] of routes) {
+        const output = flattenTemplateMarkup(workbench.views.pageTemplate({
+            viewId, metadata: {}, ...model
+        }, context, runtime));
+        for (const [owner, toggle, panel] of disclosures) {
+            assert.ok(output.includes(`data-workbench-detail-disclosure="true"`),
+                `${viewId} should use the shared detail component`);
+            assert.ok(output.includes(`id="${owner}"`), `${viewId} should retain ${owner}`);
+            assert.ok(output.includes(`id="${toggle}"`)
+                && output.includes('class="workbench-disclosure__toggle'), `${viewId} should use the shared trigger`);
+            assert.ok(output.includes(`id="${panel}"`)
+                && output.includes('class="workbench-disclosure__panel'), `${viewId} should use the shared panel`);
+        }
+    }
+
+    const summary = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'summary', vars: ['id'], rows: [['repo-1']],
+        metadata: { 'config-model-turtle': '@prefix config: <tag:rdf4j.org,2023:config/> .' }
+    }, context, runtime));
+    const remove = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'remove', vars: [], rows: [], metadata: {}
+    }, context, runtime));
+    assert.ok(summary.includes('<details id="summary-config-model"'),
+        'Summary Config Model remains an information-only native disclosure');
+    assert.ok(remove.includes('<details id="remove-examples"'),
+        'Remove Examples remains an information-only native disclosure');
+});
+
 test('every navigable built-in route has a registered ordinary-DOM template', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
@@ -758,6 +809,16 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
         }
         assert.ok(!output.includes('Unsupported Workbench view'), `${viewId} must resolve in the route renderer`);
     }
+});
+
+test('shared page shell does not render a visible theme selector', () => {
+    const workbench = loadWorkbench();
+    const output = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'repositories', vars: [], rows: [], metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+
+    assert.ok(!output.includes('workbench-theme-control'), 'the shared header should not render the theme selector');
+    assert.ok(!output.includes('id="workbench-theme"'), 'the theme selector should not appear in the page markup');
 });
 
 test('Server form restores the username while keeping the password blank', () => {
@@ -898,8 +959,9 @@ test('modification and browse views preserve their action form identifiers', () 
         const model = { viewId, vars: [], rows: [], metadata: {} };
         const template = workbench.views.pageTemplate(model, context, runtime);
         const output = collectTemplateText(template).join(' ');
+        const markup = flattenTemplateMarkup(template);
         for (const text of expected) {
-            assert.ok(output.includes(text), `${viewId} route should include ${text}`);
+            assert.ok(output.includes(text) || markup.includes(text), `${viewId} route should include ${text}`);
         }
     }
 });
@@ -937,6 +999,7 @@ test('query route renders the existing streaming form and result targets', () =>
         viewId: 'query', vars: [], rows: [], metadata: {}
     }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: { defaults: { 'default-limit': '0' } } }, runtime);
     const output = collectTemplateText(template).join(' ');
+    const markup = flattenTemplateMarkup(template);
 
     for (const expected of [
         'id="query-page"',
@@ -965,10 +1028,29 @@ test('query route renders the existing streaming form and result targets', () =>
         'id="query-results-status"',
         'id="query-results-fullscreen"'
     ]) {
-        assert.ok(output.includes(expected), `query route should include ${expected}`);
+        assert.ok(output.includes(expected) || markup.includes(expected), `query route should include ${expected}`);
     }
     assert.ok(!output.includes('onsubmit='), 'query streaming controller must own form submission');
     assert.ok(output.includes('All'), 'a zero result limit remains available as unlimited');
+
+    const disclosureToggle = (id) => {
+        const marker = markup.indexOf(`id="${id}"`);
+        const start = markup.lastIndexOf('<button', marker);
+        const end = markup.indexOf('</button>', start) + '</button>'.length;
+        assert.ok(marker >= 0 && start >= 0 && end >= '</button>'.length,
+            `${id} should have a complete disclosure button`);
+        return markup.substring(start, end);
+    };
+    for (const [id, label] of [['save-query-toggle', 'Save query'], ['query-options-toggle', 'Options']]) {
+        const button = disclosureToggle(id);
+        const labelPosition = button.indexOf(
+            `class="workbench-disclosure__toggle-label">${label}</span>`);
+        const chevronPosition = button.indexOf('workbench-disclosure-chevron');
+        assert.ok(labelPosition >= 0, `${id} should show ${label}`);
+        assert.ok(button.includes('workbench-action-icon--chevron'), `${id} should use the shared chevron`);
+        assert.ok(chevronPosition > labelPosition, `${id} should place the chevron after its label`);
+		assert.match(button, /aria-expanded=(?:"false"|false)/, `${id} should expose its collapsed state`);
+    }
 });
 
 test('query page renderer receives the Lit runtime through its shell context', async () => {

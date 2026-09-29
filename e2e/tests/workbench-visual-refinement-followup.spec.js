@@ -77,18 +77,18 @@ test('query, form, theme, and embedded selects use one native shared-chevron tre
 	expect(embeddedViolations).toEqual([]);
 
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`, { waitUntil: 'load' });
-	await page.locator('#add-import-settings > summary').press('Enter');
+	await page.locator('#add-import-settings-toggle').press('Enter');
 	const addViolations = await selectViolations(page);
 	console.log(`ADD_SELECT_VIOLATIONS ${JSON.stringify(addViolations)}`);
 	expect(addViolations).toEqual([]);
 
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-customrule`, { waitUntil: 'load' });
-	await page.locator('details.workbench-advanced > summary').press('Enter');
+	await page.locator('#create-advanced-toggle').press('Enter');
 	const createViolations = await selectViolations(page);
 	console.log(`CREATE_SELECT_VIOLATIONS ${JSON.stringify(createViolations)}`);
 	expect(createViolations).toEqual([]);
 
-	await page.locator('#workbench-theme').selectOption('dark');
+	await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
 	const darkThemeViolations = await selectViolations(page);
 	console.log(`DARK_THEME_SELECT_VIOLATIONS ${JSON.stringify(darkThemeViolations)}`);
 	expect(darkThemeViolations).toEqual([]);
@@ -161,7 +161,7 @@ test('expanded result disclosures leave space before table and record results at
 test('mobile result pagination remains reachable inside the embedded result frame', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 900 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('#workbench-theme').selectOption('dark');
+	await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
 	const values = Array.from({ length: 125 }, (_, index) => `(<urn:page:${index}> "${index}")`).join(' ');
 	const query = `SELECT ?s ?label WHERE { VALUES (?s ?label) { ${values} } }`;
 	await page.locator('.CodeMirror').first().evaluate((editor, queryText) => editor.CodeMirror.setValue(queryText), query);
@@ -209,6 +209,128 @@ test('mobile result pagination remains reachable inside the embedded result fram
 		await page.screenshot({ path: path.join(directory,
 			'query-result-pagination-reachable-390-dark.png'), fullPage: false });
 	}
+});
+
+test('query result table headers stay visible while scrolling rows on desktop and mobile', async ({ page }) => {
+	const pageErrors = [];
+	page.on('pageerror', error => pageErrors.push(error.message));
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
+	const wideValues = Array.from({ length: 5 }, (_, index) =>
+		`"wide-value-${index}-${'abcdefghij'.repeat(6)}"`).join(' ');
+	const query = `SELECT ?subject ?predicate ?object WHERE { VALUES ?subject { ${wideValues} } `
+		+ 'VALUES ?predicate { 1 2 3 4 5 } VALUES ?object { 1 2 3 4 5 } }';
+	await page.locator('.CodeMirror').first().evaluate((editor, queryText) => editor.CodeMirror.setValue(queryText), query);
+	await page.locator('#exec').click();
+	const results = page.locator('#query-results');
+	await expect(results.locator('.query-result-table-wrap')).toBeVisible();
+	await expect(results.locator('.query-result-table-wrap table.data tbody tr').first()).toBeVisible();
+	const pagePaging = results.locator('nav[aria-label="Query result paging"]');
+	await expect(pagePaging.locator('.query-result-navigation__label')).toHaveText('Page 1 of 2');
+	const optionsToggle = results.locator('.query-result-options-toggle');
+	const optionsPanel = results.locator('.query-result-disclosure-panels .query-disclosure__panel').nth(1);
+	await optionsToggle.click();
+	await expect(optionsPanel).toBeVisible();
+	await results.locator('select[name="result-layout"]').selectOption('table');
+	await expect(results.locator('.query-result-layout')).toHaveAttribute('data-effective-layout', 'table');
+	await optionsToggle.click();
+
+	const screenshotPrefix = process.env.WORKBENCH_STICKY_HEADER_SCREENSHOT_PREFIX
+		|| '/private/tmp/workbench-query-sticky-header';
+	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+		await page.setViewportSize(viewport);
+		await expect(pagePaging).toBeVisible();
+		if (viewport.width < 480) {
+			await optionsToggle.click();
+			await results.locator('input[name="result-wrap-values"]').setChecked(false);
+			await optionsToggle.click();
+		}
+		const tableWrap = results.locator('.query-result-table-wrap');
+		const before = await tableWrap.evaluate(element => {
+			const navigation = element.ownerDocument.querySelector('nav[aria-label="Query result paging"]');
+			const navigationBounds = navigation.getBoundingClientRect();
+			const bounds = element.getBoundingClientRect();
+			return {
+				wrapTop: bounds.top,
+				navigationTop: navigationBounds.top,
+				navigationBottom: navigationBounds.bottom,
+				clientHeight: element.clientHeight,
+				scrollHeight: element.scrollHeight
+			};
+		});
+		expect(before.scrollHeight, `table must scroll vertically at ${viewport.width}px`).toBeGreaterThan(before.clientHeight);
+		await tableWrap.evaluate(element => {
+			element.scrollTop = Math.min(160, element.scrollHeight);
+		});
+		await expect.poll(() => tableWrap.evaluate(element => element.scrollTop),
+			{ message: `table scrolls vertically at ${viewport.width}px` }).toBeGreaterThan(0);
+		const after = await tableWrap.evaluate(element => {
+			const document = element.ownerDocument;
+			const navigation = document.querySelector('nav[aria-label="Query result paging"]');
+			const navigationBounds = navigation.getBoundingClientRect();
+			const bounds = element.getBoundingClientRect();
+			const header = element.querySelector('thead th');
+			const bodyRow = Array.from(element.querySelectorAll('tbody tr'))
+				.find(row => row.cells.length === element.querySelectorAll('thead th').length);
+			const headerBounds = header.getBoundingClientRect();
+			const headerStyle = getComputedStyle(header);
+			return {
+				wrapTop: bounds.top,
+				headerTop: headerBounds.top,
+				headerBackground: headerStyle.backgroundColor,
+				headerZIndex: headerStyle.zIndex,
+				navigationTop: navigationBounds.top,
+				navigationBottom: navigationBounds.bottom,
+				scrollTop: element.scrollTop,
+				scrollWidth: element.scrollWidth,
+				clientWidth: element.clientWidth,
+				headerCellLeft: headerBounds.left,
+				bodyCellLeft: bodyRow ? bodyRow.cells[0].getBoundingClientRect().left : null
+			};
+		});
+		console.log(`QUERY_RESULT_STICKY_HEADER ${JSON.stringify({ viewport, before, after })}`);
+		await results.scrollIntoViewIfNeeded();
+		await page.screenshot({ path: `${screenshotPrefix}-${viewport.width}px.png`, fullPage: false });
+		expect(Math.abs(after.headerTop - after.wrapTop),
+			`table column header stays at the scroller top at ${viewport.width}px`)
+			.toBeLessThanOrEqual(1);
+		expect(after.headerBackground, `table column header remains opaque at ${viewport.width}px`)
+			.not.toBe('rgba(0, 0, 0, 0)');
+		expect(Number(after.headerZIndex), `table column header stacks above body rows at ${viewport.width}px`)
+			.toBeGreaterThan(0);
+		expect(after.headerTop, `sticky column header stays below the page controls at ${viewport.width}px`)
+			.toBeGreaterThanOrEqual(after.navigationBottom - 1);
+		expect(after.navigationTop, `page controls remain visible at ${viewport.width}px`)
+			.toBeGreaterThanOrEqual(0);
+		expect(after.navigationBottom, `page controls remain in the viewport at ${viewport.width}px`)
+			.toBeLessThanOrEqual(viewport.height);
+		expect(after.navigationTop, `page controls remain in place while table rows scroll at ${viewport.width}px`)
+			.toBeCloseTo(before.navigationTop, 1);
+		if (viewport.width < 480) {
+			await tableWrap.evaluate(element => {
+				element.scrollLeft = 120;
+			});
+			const horizontal = await tableWrap.evaluate(element => {
+				const headerCell = element.querySelector('thead th');
+				const headerCount = element.querySelectorAll('thead th').length;
+				const bodyRow = Array.from(element.querySelectorAll('tbody tr'))
+					.find(row => row.cells.length === headerCount);
+				return {
+					scrollLeft: element.scrollLeft,
+					scrollWidth: element.scrollWidth,
+					clientWidth: element.clientWidth,
+					headerCellLeft: headerCell.getBoundingClientRect().left,
+					bodyCellLeft: bodyRow ? bodyRow.cells[0].getBoundingClientRect().left : null
+				};
+			});
+			console.log(`QUERY_RESULT_STICKY_HEADER_HORIZONTAL ${JSON.stringify(horizontal)}`);
+			expect(horizontal.scrollWidth).toBeGreaterThan(horizontal.clientWidth);
+			expect(horizontal.scrollLeft).toBeGreaterThan(0);
+			expect(Math.abs(horizontal.headerCellLeft - horizontal.bodyCellLeft))
+				.toBeLessThanOrEqual(1);
+		}
+	}
+	expect(pageErrors).toEqual([]);
 });
 
 test('compare mode collapses and restores navigation without reserving an empty sidebar', async ({ page }) => {
@@ -339,7 +461,7 @@ test('dark compare keeps a collapsed navigation disclosure out of both panes', a
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 1000 });
 		await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-		await page.locator('#workbench-theme').selectOption('dark');
+		await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
 		await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
 			'SELECT ?s WHERE { ?s ?p ?o }');
 		await enterCompareMode(page);
@@ -668,36 +790,45 @@ test('advanced creation forms separate their contents and provide labeled choice
 	const violations = [];
 	for (const type of CREATION_TYPES) {
 		await openPage(page, `repositories/NONE/create?type=${type}`);
-		const details = page.locator('details.workbench-advanced');
+		const details = page.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
 		if (await details.count()) {
-			const summary = details.locator('summary');
-			await summary.press('Enter');
+			const toggle = details.locator(':scope > .workbench-disclosure__toggle');
+			await toggle.press('Enter');
 			const state = await details.evaluate(element => {
-				const summaryElement = element.querySelector(':scope > summary');
-				const advancedTable = element.querySelector(':scope > table.workbench-advanced-fields');
-				const firstRow = advancedTable && advancedTable.querySelector('tbody > tr');
+				const toggleElement = element.querySelector(':scope > .workbench-disclosure__toggle');
+				const panel = element.querySelector(':scope > .workbench-disclosure__panel');
+				const advancedFields = panel && panel.querySelector('.workbench-advanced-fields');
+				const firstField = advancedFields && advancedFields.querySelector('.workbench-advanced__field');
+				const label = firstField && firstField.querySelector(':scope > label, :scope > span');
+				const control = firstField && firstField.querySelector('.workbench-advanced__control');
 				const radios = Array.from(element.querySelectorAll('input[type="radio"]'));
-				const summaryStyle = getComputedStyle(summaryElement);
-				const summaryBox = summaryElement.getBoundingClientRect();
-				const rowBox = firstRow && firstRow.getBoundingClientRect();
+				const toggleStyle = getComputedStyle(toggleElement);
+				const toggleBox = toggleElement.getBoundingClientRect();
+				const fieldBox = firstField && firstField.getBoundingClientRect();
+				const labelBox = label && label.getBoundingClientRect();
+				const controlBox = control && control.getBoundingClientRect();
 				return {
-					summaryBottom: summaryBox.bottom,
-					firstRowTop: rowBox ? rowBox.top : 0,
-					contentGap: rowBox ? rowBox.top - summaryBox.bottom : 0,
-					focusVisible: summaryElement.matches(':focus-visible'),
-					focusOutlineWidth: summaryStyle.outlineWidth,
-					summaryRadius: summaryStyle.borderRadius,
+					toggleBottom: toggleBox.bottom,
+					firstFieldTop: fieldBox ? fieldBox.top : 0,
+					contentGap: fieldBox ? fieldBox.top - toggleBox.bottom : 0,
+					labelBottom: labelBox ? labelBox.bottom : 0,
+					controlTop: controlBox ? controlBox.top : 0,
+					focusVisible: toggleElement.matches(':focus-visible'),
+					focusOutlineWidth: toggleStyle.outlineWidth,
+					toggleRadius: toggleStyle.borderRadius,
 					radioLabels: radios.map(input => ({ value: input.value, count: input.labels.length }))
 				};
 			});
-			if (state.contentGap < 8 || state.summaryRadius === '0px'
+			if (state.contentGap < 8 || state.toggleRadius === '0px'
+					|| state.labelBottom > state.controlTop + 1
 					|| state.radioLabels.some(choice => choice.count !== 1)) {
 				violations.push({ type, ...state });
 			}
 			if (type === 'memory-customrule') {
 				console.log(`ADVANCED_CHOICE_GEOMETRY ${JSON.stringify({ type, ...state })}`);
 				expect(state.contentGap).toBeGreaterThanOrEqual(8);
-				expect(state.summaryRadius).not.toBe('0px');
+				expect(state.toggleRadius).not.toBe('0px');
+				expect(state.labelBottom).toBeLessThanOrEqual(state.controlTop + 1);
 				expect(state.radioLabels.length).toBeGreaterThan(0);
 				expect(state.radioLabels.every(choice => choice.count === 1)).toBe(true);
 				expect(state.focusVisible).toBe(true);

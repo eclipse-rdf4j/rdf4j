@@ -1116,6 +1116,7 @@ var workbench;
             return JSON.stringify(term.value || '') + (term.language ? '@' + term.language
                 : term.datatype ? '^^<' + term.datatype + '>' : '');
         }
+        queryStream.exploreResource = exploreResource;
         function abbreviatedIri(value, namespaces) {
             var best = null;
             (namespaces || []).forEach(function (namespace) {
@@ -1282,42 +1283,46 @@ var workbench;
                 this.fullscreenButton.hidden = true;
                 toolbar.appendChild(header);
                 var disclosures = createElement(this.document, 'div', 'query-result-toolbar__disclosures');
-                var downloadDisclosure = createElement(this.document, 'div', 'query-result-disclosure');
                 var downloadPanelId = this.elementId('query-result-download-panel');
-                this.downloadToggle = this.createDisclosureToggle('Download', downloadPanelId, 'query-result-download-toggle');
-                downloadDisclosure.appendChild(this.downloadToggle);
-                disclosures.appendChild(downloadDisclosure);
-                var optionsDisclosure = createElement(this.document, 'div', 'query-result-disclosure');
+                var downloadDisclosure = workbench.detailDisclosure.create(this.document, {
+                    id: this.elementId('query-result-download-disclosure'),
+                    toggleId: this.elementId('query-result-download-toggle'), panelId: downloadPanelId,
+                    label: 'Download', ownerClass: 'query-result-disclosure',
+                    toggleClass: 'query-disclosure__toggle query-result-download-toggle',
+                    panelClass: 'query-disclosure__panel'
+                });
+                this.downloadToggle = downloadDisclosure.toggle;
+                disclosures.appendChild(downloadDisclosure.owner);
                 var optionsPanelId = this.elementId('query-result-options-panel');
-                this.optionsToggle = this.createDisclosureToggle('Options', optionsPanelId, 'query-result-options-toggle');
-                decorateWithWorkbenchIcon(this.optionsToggle, 'chevron', 'Result options');
-                optionsDisclosure.appendChild(this.optionsToggle);
-                disclosures.appendChild(optionsDisclosure);
+                var optionsDisclosure = workbench.detailDisclosure.create(this.document, {
+                    id: this.elementId('query-result-options-disclosure'),
+                    toggleId: this.elementId('query-result-options-toggle'), panelId: optionsPanelId,
+                    label: 'Options', accessibleName: 'Result options', ownerClass: 'query-result-disclosure',
+                    toggleClass: 'query-disclosure__toggle query-result-options-toggle',
+                    panelClass: 'query-disclosure__panel'
+                });
+                this.optionsToggle = optionsDisclosure.toggle;
+                disclosures.appendChild(optionsDisclosure.owner);
                 toolbar.appendChild(disclosures);
                 this.root.appendChild(toolbar);
-                var panels = createElement(this.document, 'div', 'query-result-disclosure-panels');
-                var downloadPanel = createElement(this.document, 'div', 'query-disclosure__panel');
-                downloadPanel.setAttribute('id', downloadPanelId);
-                downloadPanel.setAttribute('role', 'region');
-                downloadPanel.hidden = true;
+                var panels = createElement(this.document, 'div', 'query-result-disclosure-panels workbench-disclosure-track');
+                var downloadPanel = downloadDisclosure.panel;
+                var optionsPanel = optionsDisclosure.panel;
+                panels.appendChild(downloadPanel);
+                panels.appendChild(optionsPanel);
                 this.downloadFormatControl = this.createSelect('Accept', 'Download format', this.options.downloadFormats || []);
                 this.downloadLimitControl = this.createSelect('download_limit', 'Download limit', this.downloadLimitChoices());
                 this.downloadLimitControl.value = valueFromChoices(this.downloadLimitChoices(), this.defaultDownloadLimit());
-                var downloadFields = createElement(this.document, 'div', 'query-result-fields query-result-download-fields');
+                var downloadFields = createElement(this.document, 'div', 'workbench-disclosure__fields query-result-fields query-result-download-fields');
                 downloadFields.appendChild(this.createLabeledControl('Format', this.downloadFormatControl));
                 downloadFields.appendChild(this.createLabeledControl('Limit', this.downloadLimitControl));
-                var downloadAction = createElement(this.document, 'div', 'query-result-download-action');
+                var downloadAction = createElement(this.document, 'div', 'workbench-disclosure__actions query-result-download-action');
                 var downloadButton = this.createButton('Download', function () { return _this.submitNativeDownload(); });
                 downloadButton.className = 'query-result-download-button';
                 decorateWithWorkbenchIcon(downloadButton, 'download', 'Download');
                 downloadAction.appendChild(downloadButton);
                 downloadFields.appendChild(downloadAction);
-                downloadPanel.appendChild(downloadFields);
-                panels.appendChild(downloadPanel);
-                var optionsPanel = createElement(this.document, 'div', 'query-disclosure__panel');
-                optionsPanel.setAttribute('id', optionsPanelId);
-                optionsPanel.setAttribute('role', 'region');
-                optionsPanel.hidden = true;
+                downloadDisclosure.content.appendChild(downloadFields);
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
                     { value: 'auto', label: 'Auto' }, { value: 'table', label: 'Table' },
                     { value: 'records', label: 'Records' }
@@ -1345,12 +1350,14 @@ var workbench;
                     this.pageLimitControl.appendChild(requestedOption);
                 }
                 this.pageLimitControl.value = String(this.requestedLimit);
-                var optionFields = createElement(this.document, 'div', 'query-result-fields query-result-option-fields');
+                var optionFields = createElement(this.document, 'div', 'workbench-disclosure__fields query-result-fields query-result-option-fields');
                 optionFields.appendChild(this.createLabeledControl('Layout', this.layoutControl));
                 optionFields.appendChild(this.createLabeledControl('Page size', this.pageLimitControl));
                 optionFields.appendChild(wrap.label);
                 optionFields.appendChild(this.createCheckboxLabel(this.datatypeControl, 'Show datatypes'));
-                optionsPanel.appendChild(optionFields);
+                optionsDisclosure.content.appendChild(optionFields);
+                this.disposers.push(workbench.detailDisclosure.bind(this.downloadToggle, downloadPanel, downloadDisclosure.owner));
+                this.disposers.push(workbench.detailDisclosure.bind(this.optionsToggle, optionsPanel, optionsDisclosure.owner));
                 panels.appendChild(optionsPanel);
                 this.root.appendChild(panels);
                 this.status = createElement(this.document, 'div', 'query-result-status');
@@ -1431,10 +1438,6 @@ var workbench;
                         _this.options.onPageLimit(limit);
                     }
                 }, false);
-                this.downloadToggle.addEventListener('click', function () { return _this.togglePanel(_this.downloadToggle, downloadPanel); }, false);
-                this.optionsToggle.addEventListener('click', function () { return _this.togglePanel(_this.optionsToggle, optionsPanel); }, false);
-                this.installDisclosureAnchorObserver(this.downloadToggle, downloadPanel);
-                this.installDisclosureAnchorObserver(this.optionsToggle, optionsPanel);
                 this.onScroll = function () { return _this.renderRows().catch(function (error) { return _this.fail(error.message); }); };
                 this.tableWrap.addEventListener('scroll', this.onScroll, false);
                 this.installAutoLayoutObserver();
@@ -1587,108 +1590,6 @@ var workbench;
                 button.addEventListener('click', callback, false);
                 return button;
             };
-            QueryResultRenderer.prototype.createDisclosureToggle = function (label, panelId, semanticClass) {
-                var button = this.createButton(label, function () { });
-                button.className = 'query-disclosure__toggle ' + semanticClass;
-                button.setAttribute('aria-controls', panelId);
-                button.setAttribute('aria-expanded', 'false');
-                return button;
-            };
-            QueryResultRenderer.prototype.togglePanel = function (button, panel) {
-                panel.hidden = !panel.hidden;
-                button.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
-                if (button.parentNode && button.parentNode.classList) {
-                    button.parentNode.classList.toggle('is-open', !panel.hidden);
-                }
-                if (!panel.hidden) {
-                    this.positionDisclosurePanel(button, panel);
-                    this.scheduleDisclosurePanelPosition(button, panel);
-                }
-            };
-            QueryResultRenderer.prototype.scheduleDisclosurePanelPosition = function (button, panel) {
-                var _this = this;
-                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
-                if (!view || typeof view.requestAnimationFrame !== 'function') {
-                    return;
-                }
-                view.requestAnimationFrame(function () {
-                    if (!_this.disposed && !panel.hidden) {
-                        _this.positionDisclosurePanel(button, panel);
-                    }
-                });
-            };
-            QueryResultRenderer.prototype.installDisclosureAnchorObserver = function (button, panel) {
-                var _this = this;
-                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
-                if (!view) {
-                    return;
-                }
-                var reposition = function () {
-                    if (!_this.disposed && !panel.hidden) {
-                        _this.positionDisclosurePanel(button, panel);
-                    }
-                };
-                var ResizeObserverConstructor = view.ResizeObserver;
-                if (ResizeObserverConstructor) {
-                    var observer = new ResizeObserverConstructor(reposition);
-                    observer.observe(button);
-                    observer.observe(panel);
-                    if (panel.parentNode) {
-                        observer.observe(panel.parentNode);
-                    }
-                    this.disposers.push(function () { return observer.disconnect(); });
-                }
-                if (view.addEventListener && view.removeEventListener) {
-                    view.addEventListener('resize', reposition, false);
-                    this.disposers.push(function () { return view.removeEventListener('resize', reposition, false); });
-                }
-            };
-            QueryResultRenderer.prototype.positionDisclosurePanel = function (button, panel) {
-                var layer = panel && panel.parentNode;
-                if (!layer || typeof layer.getBoundingClientRect !== 'function'
-                    || typeof button.getBoundingClientRect !== 'function'
-                    || typeof panel.getBoundingClientRect !== 'function'
-                    || !panel.style || typeof panel.style.setProperty !== 'function') {
-                    return;
-                }
-                var layerRect = layer.getBoundingClientRect();
-                var triggerRect = button.getBoundingClientRect();
-                var panelRect = panel.getBoundingClientRect();
-                var layerLeft = typeof layerRect.left === 'number' ? layerRect.left : 0;
-                var layerWidth = typeof layerRect.width === 'number' && layerRect.width > 0
-                    ? layerRect.width : Number(layer.clientWidth) || 0;
-                var panelWidth = typeof panelRect.width === 'number' && panelRect.width > 0
-                    ? panelRect.width : Number(panel.offsetWidth) || 0;
-                if (!(layerWidth > 0) || !(panelWidth > 0)) {
-                    return;
-                }
-                panelWidth = Math.min(panelWidth, layerWidth);
-                var layerRight = layerLeft + layerWidth;
-                var triggerLeft = typeof triggerRect.left === 'number' ? triggerRect.left : layerLeft;
-                var triggerWidth = typeof triggerRect.width === 'number' ? triggerRect.width : 0;
-                var panelLeft = Math.max(layerLeft, Math.min(triggerLeft, layerRight - panelWidth));
-                var direction = 'ltr';
-                if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
-                    direction = window.getComputedStyle(layer).direction || direction;
-                }
-                else if (this.document.documentElement && this.document.documentElement.dir) {
-                    direction = this.document.documentElement.dir;
-                }
-                var inlineStart = direction === 'rtl'
-                    ? layerRight - panelLeft - panelWidth : panelLeft - layerLeft;
-                var triggerCenter = triggerLeft + triggerWidth / 2;
-                var anchorX = Math.max(0, Math.min(panelWidth, triggerCenter - panelLeft));
-                panel.style.setProperty('--workbench-disclosure-panel-start', inlineStart + 'px');
-                panel.style.setProperty('--workbench-disclosure-anchor-x', anchorX + 'px');
-                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
-                var viewportHeight = view && typeof view.innerHeight === 'number' ? view.innerHeight
-                    : this.document.documentElement && Number(this.document.documentElement.clientHeight) || 0;
-                var positionedPanelRect = panel.getBoundingClientRect();
-                if (viewportHeight > 0 && typeof panel.scrollIntoView === 'function'
-                    && (positionedPanelRect.top < 0 || positionedPanelRect.bottom > viewportHeight)) {
-                    panel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                }
-            };
             QueryResultRenderer.prototype.createSelect = function (id, label, choices) {
                 var _this = this;
                 var select = createElement(this.document, 'select');
@@ -1725,7 +1626,7 @@ var workbench;
                 return wrapper;
             };
             QueryResultRenderer.prototype.createLabeledControl = function (label, control) {
-                var wrapper = createElement(this.document, 'label', 'query-result-field');
+                var wrapper = createElement(this.document, 'label', 'workbench-disclosure__field query-result-field');
                 var text = createElement(this.document, 'span');
                 text.textContent = label;
                 wrapper.appendChild(text);

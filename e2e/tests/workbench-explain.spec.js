@@ -479,7 +479,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
         };
     });
 
-    await page.locator('#workbench-theme').selectOption('light');
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('light'));
     await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('light');
     await page.locator('#explain-trigger').click();
     await page.locator('#query-explanation .query-explanation-token--node-type').first().waitFor();
@@ -499,7 +499,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
     await page.locator('#query-explanation-json-view .query-json-tree').waitFor();
     const lightJsonExplanation = await structuredExplanationColors();
 
-    await page.locator('#workbench-theme').selectOption('dark');
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
     await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('dark');
     const darkEditor = await editorColors();
     const darkJsonExplanation = await structuredExplanationColors();
@@ -517,7 +517,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
     await page.locator('#query-explanation .query-explanation-token--node-type').first().waitFor();
     expect((await darkTextExplainResponse).ok()).toBe(true);
     const darkTextExplanation = await explanationColors();
-    await page.locator('#workbench-theme').selectOption('light');
+    await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('light'));
     await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('light');
     const switchedBackEditor = await editorColors();
 

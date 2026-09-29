@@ -3,15 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
 function loadViews() {
+    const workbench = {};
+    installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
         URLSearchParams,
         window: { location: { search: '' } },
-        workbench: {}
+        workbench
     });
     const source = fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8');
     vm.runInContext(source, context, { filename: 'workbenchViews.js' });
@@ -162,11 +165,9 @@ test('query-page feature policy hides only configured controls and keeps format 
         ['id="query-reset-namespaces"', 'namespace reset']
     ];
     hiddenBindings.forEach(([selector, description]) => {
-        const template = page.templates.find(candidate => candidate.strings.join('').includes(selector)
-            && candidate.strings.join('').includes('?hidden='));
-        assert.ok(template, `query page should include a hidden binding for ${description}`);
-        const hiddenIndex = template.strings.findIndex(value => value.includes('?hidden='));
-        assert.equal(template.values[hiddenIndex], true,
+        const hiddenValue = dynamicAttributeValue(page, selector, '\\?hidden');
+        assert.notEqual(hiddenValue, undefined, `query page should include a hidden binding for ${description}`);
+        assert.equal(hiddenValue, true,
             `${description} should follow the disabled feature policy`);
     });
 
@@ -223,15 +224,13 @@ test('linked Info feature rows feed the query page visibility policy', () => {
         'query-explain': false,
         'query-options': false
     });
-    for (const selector of [
-        'id="query-language-row"', 'id="exec"', 'id="explain-trigger"', 'id="query-options-toggle"'
-    ]) {
-        const template = page.templates.find(candidate => candidate.strings.join('').includes(selector)
-            && candidate.strings.join('').includes('?hidden='));
-        assert.ok(template, `the ${selector} route control should expose a policy binding`);
-        const hiddenIndex = template.strings.findIndex(value => value.includes('?hidden='));
-        assert.equal(template.values[hiddenIndex], true);
-    }
+	for (const selector of [
+		'id="query-language-row"', 'id="exec"', 'id="explain-trigger"', 'id="query-options-toggle"'
+	]) {
+		const hidden = dynamicAttributeValue(page, selector, '\\?hidden');
+		assert.notEqual(hidden, undefined, `the ${selector} route control should expose a policy binding`);
+		assert.equal(hidden, true);
+	}
 });
 
 test('query Explain is hidden when every explain level and format is disabled', () => {

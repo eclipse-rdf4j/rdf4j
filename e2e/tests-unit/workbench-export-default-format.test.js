@@ -3,20 +3,23 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
 	|| path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
 function loadExportMarkup({ search = '', cookie = '', configuredFormat = 'application/n-quads' } = {}) {
 	const window = { location: { search } };
+	const workbench = {
+		getCookie(name) {
+			return name === 'Accept' ? cookie : '';
+		}
+	};
+	installDetailDisclosureTemplateRuntime(workbench);
 	const context = vm.createContext({
 		URLSearchParams,
 		window,
-		workbench: {
-			getCookie(name) {
-				return name === 'Accept' ? cookie : '';
-			}
-		}
+		workbench
 	});
 	const source = fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8');
 	vm.runInContext(source, context, { filename: 'workbenchViews.js' });

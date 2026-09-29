@@ -172,11 +172,12 @@ test('captures every repository creation form and its expanded advanced state', 
 			await setTheme(page, 'light');
 			await page.setViewportSize({ width, height: width > 900 ? 1000 : 900 });
 			await navigate(page, `repositories/NONE/create?type=${type}`);
-			const advanced = page.locator('details.workbench-advanced');
+			const advanced = page.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
 			const hasAdvanced = await advanced.count() > 0;
 			if (hasAdvanced) {
-				await advanced.locator('summary').press('Enter');
-				await expect(advanced).toHaveAttribute('open', '');
+				const toggle = advanced.locator(':scope > .workbench-disclosure__toggle');
+				await toggle.press('Enter');
+				await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 			}
 			await captureCurrentPage(page, `create:${type}`, `repositories/NONE/create?type=${type}`, 'light', width,
 				hasAdvanced ? 'advanced-open' : 'advanced-not-configurable');
@@ -189,7 +190,7 @@ test('captures every repository creation form and its expanded advanced state', 
 async function setTheme(page, theme) {
 	await page.emulateMedia({ colorScheme: theme });
 	await navigate(page, 'repositories/NONE/repositories');
-	await page.locator('#workbench-theme').selectOption(theme);
+	await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 	await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 

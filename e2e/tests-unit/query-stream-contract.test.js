@@ -7,6 +7,8 @@ const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const { FakeDocument } = require('./browser-fakes.js');
 
+const disclosureSource = path.resolve(__dirname,
+	'../../tools/workbench/src/main/webapp/scripts/ts/template.ts');
 const streamSource = path.resolve(__dirname,
     '../../tools/workbench/src/main/webapp/scripts/ts/queryStream.ts');
 
@@ -69,11 +71,14 @@ function inMemoryRowStore() {
 function loadQueryStreamApi() {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-stream-contract-'));
     const outputPath = path.join(outputDirectory, 'queryStream.js');
+    const loadCallbacks = [];
+    const document = new FakeDocument();
     const compilation = spawnSync('tsc', [
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',
         '--outFile', outputPath,
+        disclosureSource,
         streamSource
     ], { encoding: 'utf8' });
 
@@ -82,7 +87,25 @@ function loadQueryStreamApi() {
 
     const sessionValues = new Map();
     const localValues = new Map();
+    const resizeListeners = new Set();
     const testWindow = {
+        addEventListener(type, listener) {
+            if (type === 'resize') resizeListeners.add(listener);
+        },
+        removeEventListener(type, listener) {
+            if (type === 'resize') resizeListeners.delete(listener);
+        },
+        dispatchEvent() { return true; },
+        requestAnimationFrame(callback) { callback(); },
+        getComputedStyle(element) {
+            return Object.assign({
+                boxSizing: 'border-box', lineHeight: '1px', fontSize: '1px',
+                paddingTop: '0px', paddingBottom: '0px',
+                borderTopWidth: '0px', borderBottomWidth: '0px',
+                marginBlockStart: '8px', marginBlockEnd: '0px', direction: 'ltr', opacity: '1'
+            }, element && element.style || {});
+        },
+        matchMedia() { return { matches: true }; },
         sessionStorage: {
             getItem(key) { return sessionValues.has(key) ? sessionValues.get(key) : null; },
             setItem(key, value) { sessionValues.set(key, String(value)); },
@@ -96,9 +119,12 @@ function loadQueryStreamApi() {
             removeItem(key) { localValues.delete(key); }
         }
     };
+    const workbench = { addLoad(callback) { loadCallbacks.push(callback); } };
     const context = vm.createContext({
-        workbench: {},
+        workbench,
         window: testWindow,
+        document,
+        Event: class { constructor(type) { this.type = type; } },
         TextDecoder: require('node:util').TextDecoder,
         URLSearchParams
     });
@@ -108,6 +134,8 @@ function loadQueryStreamApi() {
     api.__testWindow = testWindow;
     api.__testSessionValues = sessionValues;
     api.__testLocalValues = localValues;
+    api.__testResizeListeners = resizeListeners;
+    api.__testLoadCallbacks = loadCallbacks;
     return api;
 }
 

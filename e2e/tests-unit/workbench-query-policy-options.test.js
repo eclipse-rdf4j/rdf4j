@@ -3,15 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
 function queryTemplates(metadata, queryFeatures) {
+    const workbench = {};
+    installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
         URLSearchParams,
         window: { location: { search: '' } },
-        workbench: {}
+        workbench
     });
     const source = fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8');
     vm.runInContext(source, context, { filename: 'workbenchViews.js' });

@@ -277,7 +277,7 @@ test('keeps navigation state and option controls coherent on a narrow query page
     expect(metrics.privateLabelFor).toBe('save-private');
 });
 
-test('aligns query option controls on desktop and keeps them inside a narrow viewport', async ({ page }) => {
+test('stacks query option labels and contains controls on desktop and mobile', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload();
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
@@ -290,27 +290,40 @@ test('aligns query option controls on desktop and keeps them inside a narrow vie
             bounds('#limit_query'),
             bounds('#query-timeout'),
             document.querySelector('#infer').parentElement.getBoundingClientRect(),
-            bounds('.query-settings > .query-disclosure__actions input[type="button"]')
+            bounds('#query-options-panel .workbench-disclosure__actions input[type="button"]')
         ];
-        const centers = controls.map(control => (control.top + control.bottom) / 2);
         const controlHeights = {
             resultsPerPage: bounds('#limit_query').height,
             timeout: bounds('#query-timeout').height,
-            clear: bounds('.query-settings > .query-disclosure__actions input[type="button"]').height
+            clear: bounds('#query-options-panel .workbench-disclosure__actions input[type="button"]').height
         };
+        const stackedLabels = [
+            ['label[for="limit_query"]', '#limit_query'],
+            ['label[for="query-timeout"]', '#query-timeout']
+        ].map(([labelSelector, controlSelector]) => ({
+            labelBottom: bounds(labelSelector).bottom,
+            controlTop: bounds(controlSelector).top
+        }));
         return {
-            centerSpread: Math.max(...centers) - Math.min(...centers),
+            panel: bounds('#query-options-panel'),
+            controls,
+            stackedLabels,
             controlHeights,
             controlHeightSpread: Math.max(...Object.values(controlHeights)) - Math.min(...Object.values(controlHeights)),
-            limitLabelFor: document.querySelector('.query-settings label[for="limit_query"]')?.htmlFor ?? null,
-            timeoutLabelFor: document.querySelector('.query-settings label[for="query-timeout"]')?.htmlFor ?? null,
-            inferredLabelFor: document.querySelector('.query-settings label[for="infer"]')?.htmlFor ?? null
+            limitLabelFor: document.querySelector('#query-options-panel label[for="limit_query"]')?.htmlFor ?? null,
+            timeoutLabelFor: document.querySelector('#query-options-panel label[for="query-timeout"]')?.htmlFor ?? null,
+            inferredLabelFor: document.querySelector('#query-options-panel label[for="infer"]')?.htmlFor ?? null
         };
     });
 
     console.log('Desktop query options geometry:', desktop);
-    expect(desktop.centerSpread).toBeLessThanOrEqual(1);
-    expect(desktop.controlHeightSpread).toBeLessThanOrEqual(1);
+    for (const field of desktop.stackedLabels) {
+        expect(field.labelBottom).toBeLessThanOrEqual(field.controlTop + 1);
+    }
+    for (const control of desktop.controls) {
+        expect(control.left).toBeGreaterThanOrEqual(desktop.panel.left + 8);
+        expect(control.right).toBeLessThanOrEqual(desktop.panel.right - 8);
+    }
     expect(desktop.limitLabelFor).toBe('limit_query');
     expect(desktop.timeoutLabelFor).toBe('query-timeout');
     expect(desktop.inferredLabelFor).toBe('infer');
@@ -337,7 +350,7 @@ test('aligns query option controls on desktop and keeps them inside a narrow vie
             resolve();
         });
     });
-    await page.locator('.query-settings > .query-disclosure__actions input[type="button"]').click();
+    await page.locator('#query-options-panel .workbench-disclosure__actions input[type="button"]').click();
     await clearPrompt;
     await expect(limit).toHaveValue('50');
     await expect(timeout).toHaveValue('23');
@@ -351,13 +364,13 @@ test('aligns query option controls on desktop and keeps them inside a narrow vie
         await expect(page.locator('#query-options-panel')).toBeVisible();
         const narrow = await page.evaluate(() => {
             const panel = document.querySelector('#query-options-panel').getBoundingClientRect();
-            const settingsElement = document.querySelector('.query-settings');
+            const settingsElement = document.querySelector('#query-options-panel .workbench-disclosure__fields');
             const settings = settingsElement.getBoundingClientRect();
             const childRects = [
                 'label[for="limit_query"]', '#limit_query',
                 'label[for="query-timeout"]', '#query-timeout',
                 '.query-option', '#infer',
-                '.query-disclosure__actions input[type="button"]'
+                '.workbench-disclosure__actions input[type="button"]'
             ].map(selector => document.querySelector(selector).getBoundingClientRect());
             return {
                 clientWidth: document.documentElement.clientWidth,
@@ -530,10 +543,10 @@ test('uses shared chevrons for explanation, native details, and mobile navigatio
     for (const [width, height, name] of [[1440, 1000, 'desktop'], [390, 1000, 'mobile'], [320, 900, 'narrow']]) {
         await page.setViewportSize({ width, height });
         await page.goto(addUrl);
-        const details = page.locator('#add-import-settings');
-        const summary = details.locator('summary');
-        await expect(details).not.toHaveAttribute('open', '');
-        expectChevron(await summary.evaluate(readChevron));
+        const panel = page.locator('#add-import-settings-panel');
+        const toggle = page.locator('#add-import-settings-toggle');
+        await expect(panel).toBeHidden();
+        expectChevron(await toggle.evaluate(readChevron));
         if (width === 1440 || width === 390) {
             await page.screenshot({
                 path: path.join(CHEVRON_DIR, `add-details-${name}-closed.png`),
@@ -541,10 +554,11 @@ test('uses shared chevrons for explanation, native details, and mobile navigatio
                 animations: 'disabled'
             });
         }
-        await summary.press('Enter');
-        await expect(details).toHaveAttribute('open', '');
-        await expectChevronState(summary, 16, 180);
-        await summary.evaluate(element => element.blur());
+        await toggle.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(panel).toBeVisible();
+        await expectChevronState(toggle, 16, 180);
+        await toggle.evaluate(element => element.blur());
         if (width === 1440 || width === 390) {
             await page.screenshot({
                 path: path.join(CHEVRON_DIR, `add-details-${name}-open.png`),

@@ -132,12 +132,12 @@ test('captures actual query explanation, comparison, result disclosure, and form
 	await captureState(page, 'query-result-options-open-1440-light.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/add`);
-	await page.locator('#add-import-settings > summary').press('Enter');
-	await expect(page.locator('#add-import-settings')).toHaveAttribute('open', '');
+	await page.locator('#add-import-settings-toggle').press('Enter');
+	await expect(page.locator('#add-import-settings-panel')).toBeVisible();
 	await captureState(page, 'add-advanced-open-1440-light.png');
 	await openPage(page, `repositories/${REPOSITORY_ID}/export`);
-	await page.locator('#export-result-options > summary').press('Enter');
-	await expect(page.locator('#export-result-options')).toHaveAttribute('open', '');
+	await page.locator('#export-result-options-toggle').press('Enter');
+	await expect(page.locator('#export-result-options-panel')).toBeVisible();
 	await captureState(page, 'export-options-open-1440-light.png');
 
 	expect(browserErrors).toEqual([]);
@@ -145,7 +145,7 @@ test('captures actual query explanation, comparison, result disclosure, and form
 
 async function setTheme(page, theme) {
 	await openPage(page, 'repositories/NONE/repositories');
-	await page.locator('#workbench-theme').selectOption(theme);
+	await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 	await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 

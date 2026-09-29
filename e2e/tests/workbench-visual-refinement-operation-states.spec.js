@@ -57,7 +57,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	page.on('pageerror', error => errors.push(error.message));
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, 'repositories/NONE/repositories');
-	await page.locator('#workbench-theme').selectOption('light');
+	await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('light'));
 	await openPage(page, `repositories/${REPOSITORY_ID}/add`);
 	await expect(page.locator('#source-file')).toBeChecked();
 	await expect(page.locator('#file')).toBeEnabled();

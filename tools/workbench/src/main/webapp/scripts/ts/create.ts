@@ -53,14 +53,14 @@ function checkOverwrite() {
 
 workbench.addLoad(function createPageLoaded() {
 	/**
-	 * Keep required identity and endpoint fields visible while moving the
-	 * lower-frequency repository tuning fields into one native disclosure. The
+	 * Keep required identity, endpoint, and rule query fields visible while moving the
+	 * lower-frequency repository tuning fields into one shared disclosure. The
 	 * rows are moved rather than cloned so every existing input name, value and
 	 * form submission remains unchanged.
 	 */
 	function installAdvancedFields() {
 		var table = <HTMLTableElement>document.querySelector("form[action='create'] table.dataentry");
-		if (!table || document.querySelector('details.workbench-advanced')) {
+		if (!table || document.querySelector('[data-workbench-detail-disclosure="true"].workbench-advanced')) {
 			return;
 		}
 		var body = table.tBodies.length ? table.tBodies[0] : null;
@@ -72,16 +72,17 @@ workbench.addLoad(function createPageLoaded() {
 		for (var i = 1; i < body.rows.length - 1; i++) {
 			var row = body.rows[i];
 			var roleControl = <HTMLElement>row.querySelector('[data-field-role], [data-config-property]');
-			var role = roleControl ? roleControl.getAttribute('data-field-role') || '' : '';
+			var role = (roleControl && roleControl.getAttribute('data-field-role'))
+				|| row.getAttribute('data-field-role') || '';
+			var fieldId = roleControl ? roleControl.id || '' : '';
 			var property = roleControl ? roleControl.getAttribute('data-config-property') || '' : '';
-			var fieldId = roleControl ? roleControl.id : '';
-			var required = role === 'repository-id' || role === 'repository-title'
+			var required = fieldId === 'sp_text'
+				|| role === 'repository-id' || role === 'repository-title'
 				|| role === 'federation-member'
 				|| property === 'config:http.url'
 				|| property === 'config:sparql.queryEndpoint'
 				|| property === 'config:sparql.updateEndpoint'
-				|| property === 'config:cgqi.queryLanguage'
-				|| fieldId === 'sp_text';
+				|| property === 'config:cgqi.queryLanguage';
 			if (!required) {
 				rowsToMove.push(row);
 			}
@@ -90,42 +91,58 @@ workbench.addLoad(function createPageLoaded() {
 			return;
 		}
 
-		var details = document.createElement('details');
-		details.className = 'workbench-advanced';
-		var summary = document.createElement('summary');
-		summary.textContent = table.getAttribute('data-advanced-label') || 'Advanced settings';
-		var iconNamespace = 'http://www.w3.org/2000/svg';
-		var chevron = document.createElementNS(iconNamespace, 'svg');
-		chevron.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
-		chevron.setAttribute('viewBox', '0 0 24 24');
-		chevron.setAttribute('width', '16');
-		chevron.setAttribute('height', '16');
-		chevron.setAttribute('focusable', 'false');
-		chevron.setAttribute('aria-hidden', 'true');
-		var chevronPath = document.createElementNS(iconNamespace, 'path');
-		chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
-		chevron.appendChild(chevronPath);
-		summary.appendChild(chevron);
-		details.appendChild(summary);
-		var advancedTable = document.createElement('table');
-		advancedTable.className = 'dataentry workbench-advanced-fields';
-		var advancedBody = document.createElement('tbody');
-		advancedTable.appendChild(advancedBody);
-		details.appendChild(advancedTable);
+		var disclosure = workbench.detailDisclosure.create(document, {
+			id: 'create-advanced-disclosure', toggleId: 'create-advanced-toggle',
+			panelId: 'create-advanced-panel',
+			label: table.getAttribute('data-advanced-label') || 'Advanced settings',
+			ownerClass: 'workbench-advanced'
+		});
+		var advancedFields = document.createElement('div');
+		advancedFields.className = 'workbench-disclosure__fields workbench-advanced-fields';
+		disclosure.content.appendChild(advancedFields);
 
 		for (var j = 0; j < rowsToMove.length; j++) {
-			advancedBody.appendChild(rowsToMove[j]);
+			var row = rowsToMove[j];
+			var field = document.createElement('div');
+			field.className = 'workbench-disclosure__field workbench-advanced__field';
+			var heading = row.querySelector('th');
+			if (heading) {
+				var label = heading.querySelector('label');
+				if (label) {
+					field.appendChild(label);
+				} else if (heading.textContent && heading.textContent.trim()) {
+					var labelText = document.createElement('span');
+					labelText.textContent = heading.textContent.trim();
+					field.appendChild(labelText);
+				}
+			}
+
+			var controls = document.createElement('div');
+			controls.className = 'workbench-advanced__control';
+			var cells = row.querySelectorAll('td');
+			for (var cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+				while (cells[cellIndex].firstChild) {
+					controls.appendChild(cells[cellIndex].firstChild);
+				}
+			}
+			if (controls.childNodes.length) {
+				field.appendChild(controls);
+			}
+			advancedFields.appendChild(field);
+			if (row.parentNode) {
+				row.parentNode.removeChild(row);
+			}
 		}
 
 		var actionRow = body.rows[body.rows.length - 1];
 		body.removeChild(actionRow);
-		table.parentNode.insertBefore(details, table.nextSibling);
+		table.parentNode.insertBefore(disclosure.owner, table.nextSibling);
 		var actionTable = <HTMLTableElement>table.cloneNode(false);
 		var actionBody = document.createElement('tbody');
 		actionBody.appendChild(actionRow);
 		actionTable.appendChild(actionBody);
-		details.parentNode.insertBefore(actionTable, details.nextSibling);
-		workbench.installNativeDisclosure(details);
+		disclosure.owner.parentNode.insertBefore(actionTable, disclosure.owner.nextSibling);
+		workbench.detailDisclosure.bind(disclosure.toggle, disclosure.panel, disclosure.owner);
 	}
 
 	// The script is loaded after the form markup, so this runs before the

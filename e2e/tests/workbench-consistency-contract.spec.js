@@ -546,12 +546,12 @@ test('query and result utility disclosures share action typography and control g
 		});
 	}
 	await openWorkbenchPage(page, 'repositories/NONE/create?type=memory-rdfs-dt');
-	const sectionSummary = page.locator('#workbench-page-surface details.workbench-advanced > summary').first();
-	await expect(sectionSummary).toBeVisible();
-	const sectionStyle = await sectionSummary.evaluate(element => ({
+	const sectionToggle = page.locator('#create-advanced-toggle');
+	await expect(sectionToggle).toBeVisible();
+	const sectionStyle = await sectionToggle.evaluate(element => ({
 		fontSize: getComputedStyle(element).fontSize,
 		fontWeight: getComputedStyle(element).fontWeight,
-		containerRadius: getComputedStyle(element.parentElement).borderRadius
+		containerRadius: getComputedStyle(document.getElementById('create-advanced-panel')).borderRadius
 	}));
 	expect(sectionStyle).toMatchObject({ fontSize: '13px', fontWeight: '600', containerRadius: '10px' });
 });

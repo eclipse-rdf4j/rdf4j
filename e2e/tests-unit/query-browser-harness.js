@@ -339,18 +339,30 @@ function createQueryBrowserHarness(options = {}) {
     const queryErrorsCompare = registerElement('div', { id: 'queryString.errors-compare' });
     const downloadExplanation = registerElement('button', { id: 'download-explanation' });
     const primaryExplainSettings = registerElement('div', { id: 'primary-explain-settings' });
-    const explanationSettings = registerElement('span', { id: 'explanation-settings' });
+    const explanationSettings = registerElement('div', {
+        id: 'explanation-settings',
+        className: 'workbench-disclosure query-explanation-settings',
+        attributes: { 'data-workbench-detail-disclosure': 'true' }
+    });
     const explanationSettingsToggle = registerElement('button', {
         id: 'explanation-settings-toggle',
         type: 'button',
+        className: 'workbench-disclosure__toggle query-explanation-settings__toggle',
         textContent: 'Config',
         attributes: {
             'aria-controls': 'explanation-settings-panel',
-            'aria-expanded': 'false'
+            'aria-expanded': 'false',
+            'aria-label': 'Configure query explanation'
         }
     });
-    const explanationSettingsPanel = registerElement('div', { id: 'explanation-settings-panel' });
+    const explanationSettingsPanel = registerElement('div', {
+        id: 'explanation-settings-panel',
+        className: 'workbench-disclosure__panel query-explanation-settings__panel',
+        attributes: { role: 'group', 'aria-labelledby': 'explanation-settings-toggle' }
+    });
     explanationSettingsPanel.hidden = true;
+    const explanationSettingsContent = registerElement('div', { className: 'workbench-disclosure__content' });
+    explanationSettingsPanel.appendChild(explanationSettingsContent);
     const explanationHighlightMode = registerElement('span', {
         id: 'explanation-highlight-mode',
         attributes: { 'aria-label': 'Text explanation highlighting' }
@@ -393,9 +405,9 @@ function createQueryBrowserHarness(options = {}) {
     explanationPropertyPanel.appendChild(explanationPropertyOptions);
     explanationPropertyConfig.appendChild(explanationPropertySummary);
     explanationPropertyConfig.appendChild(explanationPropertyPanel);
-    explanationSettingsPanel.appendChild(explanationHighlightMode);
-    explanationSettingsPanel.appendChild(explanationHotspotLegend);
-    explanationSettingsPanel.appendChild(explanationPropertyConfig);
+    explanationSettingsContent.appendChild(explanationHighlightMode);
+    explanationSettingsContent.appendChild(explanationHotspotLegend);
+    explanationSettingsContent.appendChild(explanationPropertyConfig);
     explanationSettings.appendChild(explanationSettingsToggle);
     explanationSettings.appendChild(explanationSettingsPanel);
     primaryExplainSettings.appendChild(explanationSettings);

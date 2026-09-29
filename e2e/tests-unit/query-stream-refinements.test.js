@@ -9,6 +9,8 @@ const { FakeDocument } = require('./browser-fakes.js');
 
 const streamSource = path.resolve(__dirname,
     '../../tools/workbench/src/main/webapp/scripts/ts/queryStream.ts');
+const disclosureSource = path.resolve(__dirname,
+    '../../tools/workbench/src/main/webapp/scripts/ts/template.ts');
 
 function loadQueryStreamApi(workbench = {}) {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-stream-refinements-'));
@@ -18,6 +20,7 @@ function loadQueryStreamApi(workbench = {}) {
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',
         '--outFile', outputPath,
+        disclosureSource,
         streamSource
     ], { encoding: 'utf8' });
 
@@ -26,7 +29,36 @@ function loadQueryStreamApi(workbench = {}) {
 
     const sessionValues = new Map();
     const localValues = new Map();
+    const resizeListeners = new Set();
+    const disclosureObservers = [];
     const testWindow = {
+        addEventListener(type, listener) {
+            if (type === 'resize') resizeListeners.add(listener);
+        },
+        removeEventListener(type, listener) {
+            if (type === 'resize') resizeListeners.delete(listener);
+        },
+        dispatchEvent() { return true; },
+        requestAnimationFrame(callback) { callback(); },
+        getComputedStyle(element) {
+            return Object.assign({
+                boxSizing: 'border-box', paddingTop: '12px', paddingBottom: '12px',
+                borderTopWidth: '1px', borderBottomWidth: '1px',
+                marginBlockStart: '8px', marginBlockEnd: '0px', direction: 'ltr'
+            }, element && element.style || {});
+        },
+        matchMedia() { return { matches: true }; },
+        ResizeObserver: class {
+            constructor(callback) {
+                this.callback = callback;
+                this.observed = new Set();
+                this.disconnected = false;
+                disclosureObservers.push(this);
+            }
+            observe(element) { this.observed.add(element); }
+            unobserve(element) { this.observed.delete(element); }
+            disconnect() { this.disconnected = true; this.observed.clear(); }
+        },
         sessionStorage: {
             getItem(key) { return sessionValues.has(key) ? sessionValues.get(key) : null; },
             setItem(key, value) { sessionValues.set(key, String(value)); },
@@ -43,6 +75,8 @@ function loadQueryStreamApi(workbench = {}) {
     const context = vm.createContext({
         workbench,
         window: testWindow,
+        document: { activeElement: null, cookie: '' },
+        Event: class { constructor(type) { this.type = type; } },
         TextDecoder: require('node:util').TextDecoder,
         URLSearchParams
     });
@@ -50,6 +84,8 @@ function loadQueryStreamApi(workbench = {}) {
     context.workbench.queryStream.__testWindow = testWindow;
     context.workbench.queryStream.__testSessionValues = sessionValues;
     context.workbench.queryStream.__testLocalValues = localValues;
+    context.workbench.queryStream.__testResizeListeners = resizeListeners;
+    context.workbench.queryStream.__testDisclosureObservers = disclosureObservers;
     return context.workbench.queryStream;
 }
 
@@ -708,11 +744,13 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     assert.equal(fullscreen.hidden, false, 'the result view enables the shared shell fullscreen control');
     assert.equal(renderer.downloadFormatControl.value, 'text/csv');
     assert.equal(renderer.downloadLimitControl.value, '17');
-    renderer.downloadToggle.trigger('click');
-    renderer.optionsToggle.trigger('click');
-    assert.equal(renderer.downloadToggle.getAttribute('aria-expanded'), 'true');
-    assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
-    target.querySelector('.query-result-download-button').click();
+	renderer.downloadToggle.trigger('click');
+	renderer.optionsToggle.trigger('click');
+	assert.equal(renderer.downloadToggle.getAttribute('aria-expanded'), 'false',
+		'opening a sibling result panel should close the previously open panel');
+	assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
+	renderer.downloadToggle.trigger('click');
+	target.querySelector('.query-result-download-button').click();
 
     const download = document.lastSubmittedForm;
     const parameters = new Map(download.formControls.map(input => [input.name, input.value]));
@@ -728,14 +766,25 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     renderer.dispose();
 });
 
-test('result disclosure panels measure their trigger and stay inside the result mount', () => {
+test('result disclosure panels measure their trigger and stay inside the result mount', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
-    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
-    const panel = document.getElementById(renderer.optionsToggle.getAttribute('aria-controls'));
-    const rect = (left, top, width, height) => ({
+	const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+	await renderer.accept({ type: 'view', id: 'tuple' });
+	await renderer.accept({ type: 'vars', values: ['value'] });
+	await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'visible' }]] });
+	await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
+	const panel = document.getElementById(renderer.optionsToggle.getAttribute('aria-controls'));
+	const panelTrack = panel.parentNode;
+	const observer = queryStream.__testDisclosureObservers[0];
+	assert.equal(panelTrack.classList.contains('workbench-disclosure-track'), true);
+	assert.equal(observer.observed.has(panelTrack), true,
+		'the shared anchor observer should watch the final result panel track');
+	assert.equal(observer.observed.has(renderer.optionsToggle.parentNode), false,
+		'the observer should not retain the detached trigger owner as the options panel track');
+	const rect = (left, top, width, height) => ({
         left, top, width, height, right: left + width, bottom: top + height
     });
     panel.parentNode.getBoundingClientRect = () => rect(100, 10, 800, 600);
@@ -746,10 +795,15 @@ test('result disclosure panels measure their trigger and stay inside the result 
 
     assert.equal(panel.style.getPropertyValue('--workbench-disclosure-panel-start'), '480px',
         'the panel should shift left when its trigger is near the result mount edge');
-    assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '300px',
-        'the panel arrow should remain centered under its trigger after clamping');
-    assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
-    renderer.dispose();
+	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '300px',
+		'the panel arrow should remain centered under its trigger after clamping');
+	assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
+	renderer.optionsToggle.getBoundingClientRect = () => rect(400, 10, 80, 36);
+	observer.callback();
+	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-panel-start'), '60px',
+		'resizing should refresh the panel position against its final shared track');
+	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '280px');
+	renderer.dispose();
 });
 
 test('query result toolbar toggles expose stable semantic classes', () => {
@@ -1233,26 +1287,67 @@ test('download disclosure remains available for format or limit controls when do
     renderer.dispose();
 });
 
+test('repeated result mount and dispose releases shared disclosure listeners and observers', async () => {
+	const queryStream = loadQueryStreamApi();
+	const document = new FakeDocument();
+	const target = document.createElement('section');
+	document.body.appendChild(target);
+
+	for (let index = 0; index < 3; index++) {
+		const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+		await renderer.accept({ type: 'view', id: 'tuple' });
+		await renderer.accept({ type: 'vars', values: ['value'] });
+		await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'visible' }]] });
+		await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
+		const observers = queryStream.__testDisclosureObservers;
+		const observer = observers[observers.length - 1];
+		const panel = document.getElementById(renderer.downloadToggle.getAttribute('aria-controls'));
+		assert.equal(queryStream.__testResizeListeners.size, 1,
+			'the shared controller should install one resize listener for the mounted result');
+		assert.equal(observer.disconnected, false);
+		assert.equal(renderer.downloadToggle.getAttribute('aria-expanded'), 'false');
+
+		renderer.downloadToggle.click();
+		assert.equal(panel.getAttribute('aria-hidden'), 'false');
+		assert.equal(panel.inert, false,
+			'opening dynamic controls should restore keyboard access');
+
+		renderer.dispose();
+		assert.equal(queryStream.__testResizeListeners.size, 0,
+			'disposing the result should release the shared resize listener');
+		assert.equal(observer.disconnected, true,
+			'disposing the result should release the shared resize observer');
+		assert.equal(target.querySelectorAll('[data-query-stream-root]').length, 0);
+	}
+});
+
 test('query result download and options controls use the shared icon adapter', () => {
-    const calls = [];
+	const disclosureCalls = [];
+	const actionCalls = [];
     const queryStream = loadQueryStreamApi({
         icons: {
             decorateButton(button, name, accessibleName) {
-                calls.push({ text: button.textContent, name, accessibleName });
+                actionCalls.push({ text: button.textContent, name, accessibleName });
+            },
+            decorateDisclosureButton(button, accessibleName) {
+                disclosureCalls.push({ text: button.textContent, accessibleName });
             }
         }
     });
     const document = new FakeDocument();
-    const target = document.createElement('section');
-    document.body.appendChild(target);
-    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+	const target = document.createElement('section');
+	document.body.appendChild(target);
+	const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
 
-    assert.deepEqual(Object.fromEntries(calls.map(call => [call.name, {
-        text: call.text,
-        accessibleName: call.accessibleName
-    }])), {
-        chevron: { text: 'Options', accessibleName: 'Result options' },
-        download: { text: 'Download', accessibleName: 'Download' }
-    });
+	assert.deepEqual(disclosureCalls, [], 'the reusable panel component should own disclosure chevrons');
+	for (const button of [renderer.downloadToggle, renderer.optionsToggle]) {
+		const chevron = button.querySelector('svg[data-workbench-icon="chevron"]');
+		assert.ok(chevron.classList.contains('workbench-disclosure-chevron'),
+			'the reusable panel component should provide the rotating chevron');
+		assert.equal(chevron.getAttribute('aria-hidden'), 'true');
+	}
+	assert.deepEqual(actionCalls, [
+		{ text: 'Download', name: 'download', accessibleName: 'Download' }
+	], 'the Download action should keep its download icon');
     renderer.dispose();
 });
