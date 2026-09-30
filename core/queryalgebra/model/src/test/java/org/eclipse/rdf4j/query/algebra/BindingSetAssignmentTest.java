@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
@@ -19,6 +20,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,13 +35,130 @@ import org.junit.jupiter.api.Test;
 class BindingSetAssignmentTest {
 
 	@Test
+	void overriddenUnknownSourcesAreClassifiedWithoutInspection() {
+		BindingSet actual = new ListBindingSet(List.of("actual"), SimpleValueFactory.getInstance().createLiteral(1));
+		Iterator<BindingSet> iterator = List.of(actual).iterator();
+		AtomicInteger calls = new AtomicInteger();
+		Iterable<BindingSet> rows = () -> {
+			calls.incrementAndGet();
+			return iterator;
+		};
+		BindingSetAssignment assignment = new BindingSetAssignment() {
+			@Override
+			public Iterable<BindingSet> getBindingSets() {
+				return rows;
+			}
+		};
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("stored"),
+				SimpleValueFactory.getInstance().createLiteral(2))));
+		assertThat(assignment.hasRepeatableBindingSets()).isFalse();
+		assertThat(assignment.getBindingNames()).isEmpty();
+		assertThat(assignment.getPossibleBindingNames()).isEmpty();
+		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+		assignment.getSignature();
+		assertThat(calls).hasValue(0);
+		assertThat(rows).containsExactly(actual);
+	}
+
+	@Test
+	void overriddenKnownSourcesDefineMetadataAndDiagnostics() {
+		BindingSet actual = new ListBindingSet(List.of("actual"), SimpleValueFactory.getInstance().createLiteral(1));
+		BindingSetAssignment assignment = new BindingSetAssignment() {
+			@Override
+			public Iterable<BindingSet> getBindingSets() {
+				return List.of(actual);
+			}
+		};
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("stored"),
+				SimpleValueFactory.getInstance().createLiteral(2))));
+		assertThat(assignment.hasRepeatableBindingSets()).isTrue();
+		assertThat(assignment.getBindingNames()).containsExactly("actual");
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("actual");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("actual");
+		assertThat(assignment.getSignature()).contains("actual=").doesNotContain("stored=");
+	}
+
+	@Test
+	void assignmentsSerializedBeforeSourceAnalysisRemainReadable() {
+		// This empty assignment was serialized at PR head 731adcdcdd643e68752c2be3c9dd6998ef34e2ab.
+		assertThatCode(() -> {
+			try (ObjectInputStream stream = new ObjectInputStream(getClass()
+					.getResourceAsStream("/binding-set-assignment-pr6067-head.bin"))) {
+				BindingSetAssignment restored = (BindingSetAssignment) stream.readObject();
+				assertThat(restored.getBindingSets()).isEmpty();
+				assertThat(restored.getBindingNames()).isEmpty();
+			}
+		}).doesNotThrowAnyException();
+	}
+
+	@Test
+	void diagnosticsDoNotInvokeUnknownSourceCallbacks() {
+		BindingSet row = new ListBindingSet(List.of("x"), SimpleValueFactory.getInstance().createLiteral(1));
+		Iterator<BindingSet> iterator = List.of(row).iterator();
+		AtomicInteger calls = new AtomicInteger();
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(new Iterable<>() {
+			@Override
+			public Iterator<BindingSet> iterator() {
+				calls.incrementAndGet();
+				return iterator;
+			}
+
+			@Override
+			public String toString() {
+				StringBuilder description = new StringBuilder();
+				for (BindingSet bindingSet : this) {
+					description.append(bindingSet);
+				}
+				return description.toString();
+			}
+		});
+		assertThatCode(assignment::getSignature).doesNotThrowAnyException();
+		assertThat(calls).hasValue(0);
+		assertThat(assignment.getBindingSets()).containsExactly(row);
+		BindingSetAssignment repeatable = new BindingSetAssignment();
+		repeatable.setBindingSets(List.of(row));
+		assertThat(repeatable.getSignature()).contains("x=");
+	}
+
+	@Test
+	void diagnosticsCanDescribeAnAssignmentBeforeRowsAreSupplied() {
+		assertThatCode(new BindingSetAssignment()::getSignature).doesNotThrowAnyException();
+	}
+
+	@Test
+	void metadataDoesNotConsumeOneShotRowsWithOrWithoutAHeader() {
+		for (boolean header : List.of(false, true)) {
+			BindingSet row = new ListBindingSet(List.of("x"), SimpleValueFactory.getInstance().createLiteral(1));
+			Iterator<BindingSet> iterator = List.of(row).iterator();
+			AtomicInteger calls = new AtomicInteger();
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			if (header) {
+				assignment.setDeclaredBindingNames(Set.of("x"));
+			}
+			assignment.setBindingSets(() -> {
+				calls.incrementAndGet();
+				return iterator;
+			});
+			assertThat(assignment.getBindingNames()).containsExactlyElementsOf(header ? Set.of("x") : Set.of());
+			assertThat(assignment.getDeclaredBindingNames()).containsExactlyElementsOf(header ? Set.of("x") : Set.of());
+			assertThat(assignment.getPossibleBindingNames()).containsExactlyElementsOf(header ? Set.of("x") : Set.of());
+			assertThat(assignment.getAssuredBindingNames()).isEmpty();
+			assertThat(calls).hasValue(0);
+			assertThat(assignment.getBindingSets()).containsExactly(row);
+		}
+	}
+
+	@Test
 	void bindingNamesIncludeOptionalRowsButAssuredNamesRequireEveryRow() {
 		MapBindingSet bound = new MapBindingSet();
 		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
 		MapBindingSet different = new MapBindingSet();
 		different.addBinding("y", SimpleValueFactory.getInstance().createIRI("urn:y"));
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(() -> List.<BindingSet>of(bound, different).iterator());
+		assignment.setBindingSets(
+				(BindingSetAssignment.RepeatableBindingSetSource) () -> List.<BindingSet>of(bound, different)
+						.iterator());
 
 		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
 		assertThat(assignment.getAssuredBindingNames()).isEmpty();

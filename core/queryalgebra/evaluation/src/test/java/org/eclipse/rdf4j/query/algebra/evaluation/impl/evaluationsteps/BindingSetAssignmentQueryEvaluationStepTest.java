@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +32,24 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class BindingSetAssignmentQueryEvaluationStepTest {
+
+	@Test
+	void repeatableRowsCheckOverlapsOutsideTheDeclaredHeader() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("declared"));
+		assignment.setBindingSets(List.of(
+				new ListBindingSet(List.of("declared", "extra"),
+						SimpleValueFactory.getInstance().createLiteral("one"),
+						SimpleValueFactory.getInstance().createLiteral("parent")),
+				new ListBindingSet(List.of("declared", "extra"),
+						SimpleValueFactory.getInstance().createLiteral("two"),
+						SimpleValueFactory.getInstance().createLiteral("conflict"))));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(assertDoesNotThrow(() -> results(step.evaluate(binding("extra", "parent"))))).singleElement()
+				.satisfies(row -> assertThat(row.getValue("declared"))
+						.isEqualTo(SimpleValueFactory.getInstance().createLiteral("one")));
+	}
 
 	@Test
 	void skipsBindingsProvidedMetricWhenRuntimeTelemetryDisabled() {

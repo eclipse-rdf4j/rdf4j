@@ -915,7 +915,7 @@ final class LmdbDeferredFilterPlacer {
 		List<BindingSetAssignment> assignments = new ArrayList<>(roots.size());
 		LinkedHashSet<String> bindingNames = new LinkedHashSet<>();
 		for (TupleExpr root : roots) {
-			if (!(root instanceof BindingSetAssignment assignment)) {
+			if (!(root instanceof BindingSetAssignment assignment) || !assignment.hasRepeatableBindingSets()) {
 				return Optional.empty();
 			}
 			assignments.add(assignment);

@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -41,7 +43,9 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node, QueryEvaluationContext context) {
 		this.node = node;
 		bsMaker = context::createBindingSet;
-		bindingNames = node.getBindingNames()
+		Set<String> names = new HashSet<>(node.getBindingNames());
+		names.addAll(node.getPossibleBindingNames());
+		bindingNames = names
 				.stream()
 				.map(bindingName -> new BindingNameAccess(bindingName, context))
 				.toArray(BindingNameAccess[]::new);
@@ -207,6 +211,10 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	}
 
 	private boolean hasParentOverlap(BindingSet bindings) {
+		if (!node.hasRepeatableBindingSets()) {
+			// An uninspected source may contain names outside its declared header.
+			return true;
+		}
 		for (BindingNameAccess bindingName : bindingNames) {
 			if (bindingName.hasBinding.test(bindings)) {
 				return true;

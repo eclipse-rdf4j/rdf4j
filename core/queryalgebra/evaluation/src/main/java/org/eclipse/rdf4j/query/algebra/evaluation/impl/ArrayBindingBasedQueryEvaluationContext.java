@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -74,6 +75,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final Function<BindingSet, Binding>[] getBinding;
 	private final Function<BindingSet, Value>[] getValue;
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
+	private final Consumer<MutableBindingSet>[] removeBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
 	private final Comparator<Value> comparator;
 	private final ArrayBindingSet.SortedBindingNamesCache sortedBindingNamesCache;
@@ -95,6 +97,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		getBinding = new Function[allVariables.length];
 		getValue = new Function[allVariables.length];
 		setBinding = new BiConsumer[allVariables.length];
+		removeBinding = new Consumer[allVariables.length];
 		addBinding = new BiConsumer[allVariables.length];
 
 		for (int i = 0; i < allVariables.length; i++) {
@@ -102,6 +105,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			getBinding[i] = getBinding(allVariables[i]);
 			getValue[i] = getValue(allVariables[i]);
 			setBinding[i] = setBinding(allVariables[i]);
+			removeBinding[i] = removeBinding(allVariables[i]);
 			addBinding[i] = addBinding(allVariables[i]);
 		}
 
@@ -309,6 +313,39 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		} else {
 			return SET_BINDING_NO_OP;
 		}
+	}
+
+	@Override
+	public Consumer<MutableBindingSet> removeBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return removeBinding[i];
+				}
+			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return removeBinding[i];
+				}
+			}
+
+			return bindings -> bindings.removeBinding(variableName);
+		}
+
+		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
+				.getDirectSetBinding(variableName);
+		if (directAccessForVariable != null) {
+			return bindings -> {
+				if (bindings instanceof ArrayBindingSet arrayBindingSet) {
+					directAccessForVariable.accept(null, arrayBindingSet);
+				} else {
+					bindings.removeBinding(variableName);
+				}
+			};
+		}
+
+		return bindings -> bindings.removeBinding(variableName);
 	}
 
 	@Override

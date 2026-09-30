@@ -164,6 +164,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	private static BindingSetAssignment findExistingValuesAnchor(TupleExpr tupleExpr, String bindingName) {
 		if (tupleExpr instanceof BindingSetAssignment assignment
+				&& assignment.hasRepeatableBindingSets()
 				&& Set.of(bindingName).equals(assignment.getBindingNames())) {
 			return assignment;
 		}

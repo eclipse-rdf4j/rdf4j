@@ -174,6 +174,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
@@ -447,12 +448,24 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryEvaluationStep precompile(TupleExpr expr) {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
 				tripleSource.getComparator());
-		if (expr instanceof QueryRoot) {
+		if (expr instanceof QueryRoot && !hasUnknownBindingSetColumns(expr)) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
 			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 		}
 		return precompile(expr, context);
+	}
+
+	private static boolean hasUnknownBindingSetColumns(TupleExpr expression) {
+		boolean[] unknown = { false };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				unknown[0] |= !assignment.hasRepeatableBindingSets();
+			}
+		});
+		// A fixed array layout cannot represent columns discovered only while a streaming source is evaluated.
+		return unknown[0];
 	}
 
 	@Override

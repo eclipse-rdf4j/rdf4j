@@ -98,6 +98,14 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 					if (varsBefore.contains(name)) {
 						UnaryTupleOperator proj = (UnaryTupleOperator) projElems.getParentNode();
+						// Folding can remove the final reference to a query-local assignment. Recovery is only for
+						// an input name that the projection argument cannot itself produce or declare.
+						QueryAlgebraBindingAnalysis.OutputFacts facts = bindingAnalysis.outputFacts(proj.getArg(),
+								bindingAnalysis.contextAt(proj.getArg()));
+						if (!facts.possibleOutputsKnown() || facts.possibleOutputs().contains(name)
+								|| proj.getArg().getBindingNames().contains(name)) {
+							continue;
+						}
 						Extension ext = new Extension(proj.getArg());
 						proj.setArg(ext);
 
@@ -111,6 +119,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 						}
 
 						ext.addElement(new ExtensionElem(lostVar, name));
+						bindingAnalysis.invalidate();
 					}
 
 				}

@@ -56,7 +56,9 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			if (!(expr instanceof AggregateOperator)) {
 				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
-				consumer = andThen(consumer, targetBindings -> setValue(setBinding, prepared, targetBindings));
+				Consumer<MutableBindingSet> removeBinding = context.removeBinding(extElem.getName());
+				consumer = andThen(consumer,
+						targetBindings -> setValue(setBinding, removeBinding, prepared, targetBindings));
 			}
 		}
 		if (consumer == null) {
@@ -76,7 +78,8 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		return buildLambdaToEvaluateTheExpressions(extension, strategy, context);
 	}
 
-	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding, QueryValueEvaluationStep prepared,
+	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding,
+			Consumer<MutableBindingSet> removeBinding, QueryValueEvaluationStep prepared,
 			MutableBindingSet targetBindings) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
@@ -87,10 +90,12 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			if (targetValue != null) {
 				// Potentially overwrites bindings from super
 				setBinding.accept(targetValue, targetBindings);
+			} else {
+				removeBinding.accept(targetBindings);
 			}
 		} catch (ValueExprEvaluationException e) {
-			// SPARQL Extend returns the input mapping unchanged when its expression errors, leaving the target variable
-			// absent so a later compatible join can bind it.
+			// The failed expression produced no value, so the target must be unbound even if it was in the input.
+			removeBinding.accept(targetBindings);
 		}
 	}
 

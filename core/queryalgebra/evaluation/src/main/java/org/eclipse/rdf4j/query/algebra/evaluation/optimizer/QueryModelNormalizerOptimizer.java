@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
@@ -483,17 +484,27 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		return checkAgainstParent(leftJoin, problemVars);
 	}
 
-	private void invalidateAnalysis() {
+	private static void invalidateAnalysis() {
 		QueryAlgebraBindingAnalysis analysis = CURRENT_ANALYSIS.get();
 		if (analysis != null) {
 			analysis.invalidate();
 		}
 	}
 
-	private void replacePreservingScope(QueryModelNode source, QueryModelNode replacement) {
-		if (source instanceof VariableScopeChange sourceScope && sourceScope.isVariableScopeChange()
-				&& replacement instanceof VariableScopeChange replacementScope) {
+	static void replacePreservingScope(QueryModelNode source, QueryModelNode replacement) {
+		boolean sourceChangesScope = source instanceof VariableScopeChange scope && scope.isVariableScopeChange();
+		boolean replacementChangesScope = replacement instanceof VariableScopeChange scope
+				&& scope.isVariableScopeChange();
+		if (sourceChangesScope && replacement instanceof VariableScopeChange replacementScope) {
 			replacementScope.setVariableScopeChange(true);
+		} else if (sourceChangesScope != replacementChangesScope
+				&& replacement instanceof TupleExpr tupleExpr && !(tupleExpr instanceof EmptySet)) {
+			// Retain a boundary on a leaf, or the unscoped layer above an already scoped child. Promoting that
+			// child's flag to the removed operator's parent would change which incoming bindings it receives.
+			// EmptySet cannot observe or expose incoming bindings, so it needs no wrapper.
+			Extension boundary = new Extension(tupleExpr);
+			boundary.setVariableScopeChange(sourceChangesScope);
+			replacement = boundary;
 		}
 		source.replaceWith(replacement);
 		invalidateAnalysis();

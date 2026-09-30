@@ -47,7 +47,7 @@ public class TupleExprs {
 	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true
 	 * (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's
-	 * arguments will not be taken into account.
+	 * arguments will not be taken into account. Remote SERVICE bodies are evaluated separately and are not inspected.
 	 *
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a subquery projection (outside of a Join), <code>false</code>
@@ -61,7 +61,7 @@ public class TupleExprs {
 		do {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
-			} else if (!(n instanceof Join)) {
+			} else if (!(n instanceof Join) && !(n instanceof Service)) {
 				// projections already inside a Join need not be
 				// taken into account
 				List<TupleExpr> children = getChildren(n);
@@ -88,7 +88,8 @@ public class TupleExprs {
 	 * <p>
 	 * The expression is analyzed with the supplied analysis's root input, excluding bindings from its containing join
 	 * sibling while retaining scopes and correlations inside the expression. Legacy {@link TupleExpr#getBindingNames()}
-	 * summaries do not prove that a name is bound in every solution and are deliberately not used here.
+	 * summaries do not prove that a name is bound in every solution and are deliberately not used here. Modifiers
+	 * inside a remote SERVICE body do not constrain local sibling input and are not inspected.
 	 *
 	 * @param tupleExpr the expression to inspect
 	 * @param analysis  invocation-local binding analysis rooted at its containing query expression
@@ -114,6 +115,10 @@ public class TupleExprs {
 		queue.add(tupleExpr);
 		while (!queue.isEmpty()) {
 			TupleExpr current = queue.removeFirst();
+			if (current instanceof Service) {
+				// SERVICE evaluates its body at the remote endpoint. Its modifiers do not constrain local input.
+				continue;
+			}
 			if (current instanceof Slice) {
 				return true;
 			}

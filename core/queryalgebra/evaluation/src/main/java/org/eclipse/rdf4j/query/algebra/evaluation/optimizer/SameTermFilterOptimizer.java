@@ -95,7 +95,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (isProvenUnbound(leftArg, argumentFacts, context) || isProvenUnbound(rightArg, argumentFacts, context)) {
 				// One or both var(s) are unbound, this expression will never
 				// return any results
-				filter.replaceWith(new EmptySet());
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, new EmptySet());
 				bindingAnalysis.invalidate();
 				return;
 			}
@@ -110,9 +110,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			Value rightKnown = getKnownValue(rightArg, context);
 			if (leftKnown != null && rightKnown != null) {
 				if (leftKnown.equals(rightKnown)) {
-					filter.replaceWith(filterArg);
+					QueryModelNormalizerOptimizer.replacePreservingScope(filter, filterArg);
 				} else {
-					filter.replaceWith(new EmptySet());
+					QueryModelNormalizerOptimizer.replacePreservingScope(filter, new EmptySet());
 				}
 				bindingAnalysis.invalidate();
 				return;
@@ -224,7 +224,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			// might still be relevant to nodes higher in the tree
 			Extension extension = new Extension(filter.getArg());
 			extension.addElement(new ExtensionElem(Var.of(newVar.getName()), oldVar.getName()));
-			filter.replaceWith(extension);
+			QueryModelNormalizerOptimizer.replacePreservingScope(filter, extension);
 			bindingAnalysis.invalidate();
 		}
 

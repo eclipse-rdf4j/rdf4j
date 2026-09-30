@@ -14,21 +14,34 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.isFilterExistsFunction;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprsTest {
@@ -89,6 +102,55 @@ public class TupleExprsTest {
 	public void containsSubqueryContinuesPastJoinForRemainingSiblings() {
 		assertThat(TupleExprs.containsSubquery(new Union(join(), subquery()))).isTrue();
 		assertThat(TupleExprs.containsSubquery(new Union(subquery(), join()))).isTrue();
+	}
+
+	@Test
+	public void remoteModifiersAreOpaqueAcrossLocalComposition() {
+		BindingSetAssignment heterogeneous = new BindingSetAssignment();
+		heterogeneous.setDeclaredBindingNames(Set.of("x"));
+		heterogeneous.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		for (TupleExpr modifier : List.of(new Slice(new SingletonSet(), 0, 1),
+				new Distinct(new Union(heterogeneous, new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))),
+				new Reduced(new Union(heterogeneous.clone(),
+						new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))))) {
+			Service service = service(modifier);
+			for (TupleExpr composition : List.of(service, new Join(service.clone(), new SingletonSet()),
+					new LeftJoin(new SingletonSet(), service.clone()),
+					new Union(service.clone(), new SingletonSet()), new Lateral(new SingletonSet(), service.clone()))) {
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(composition,
+						EmptyBindingSet.getInstance());
+				assertThat(TupleExprs.containsResultSetModifier(composition, analysis)).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void remoteSubqueriesDoNotCreateALocalScopeBoundary() {
+		Service service = service(subquery());
+		assertThat(TupleExprs.containsSubquery(service)).isFalse();
+		assertThat(TupleExprs.containsSubquery(new Union(service, subquery()))).isTrue();
+	}
+
+	@Test
+	public void localModifiersRemainSensitiveBesideRemoteModifiers() {
+		BindingSetAssignment heterogeneous = new BindingSetAssignment();
+		heterogeneous.setDeclaredBindingNames(Set.of("x"));
+		heterogeneous.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		for (TupleExpr modifier : List.of(new Slice(new SingletonSet(), 0, 1),
+				new Distinct(new Union(heterogeneous, new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))),
+				new Reduced(new Union(heterogeneous.clone(),
+						new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))))) {
+			for (TupleExpr composition : List.of(new Union(service(new Slice(new SingletonSet(), 0, 1)), modifier),
+					new Lateral(new SingletonSet(), modifier.clone()))) {
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(composition,
+						EmptyBindingSet.getInstance());
+				assertThat(TupleExprs.containsResultSetModifier(composition, analysis)).isTrue();
+			}
+		}
+	}
+
+	private static Service service(TupleExpr body) {
+		return new Service(Var.of("endpoint"), body, "", Map.of(), null, false);
 	}
 
 	private static Join join() {

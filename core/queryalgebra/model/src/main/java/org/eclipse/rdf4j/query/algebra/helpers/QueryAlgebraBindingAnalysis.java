@@ -786,6 +786,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private boolean computeContainsResultSetModifier(TupleExpr expression, ReadOnlyContext input) {
+		if (expression instanceof Service) {
+			return false;
+		}
 		if (expression instanceof Slice) {
 			return true;
 		}
@@ -1016,6 +1019,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private OutputFacts assignmentFacts(BindingSetAssignment assignment, ReadOnlyContext input) {
+		if (!assignment.hasRepeatableBindingSets()) {
+			return OutputFacts.unknown(input);
+		}
 		Set<String> possible = new HashSet<>();
 		Set<String> guaranteed = null;
 		Map<String, Value> fixed = new HashMap<>();
@@ -1162,15 +1168,15 @@ public final class QueryAlgebraBindingAnalysis {
 			return new ValueExprFacts(true, constant.getValue(), Set.of(valueKind(constant.getValue())));
 		}
 		if (expression instanceof Var var) {
+			if (var.hasValue()) {
+				return new ValueExprFacts(true, var.getValue(), Set.of(valueKind(var.getValue())));
+			}
 			if (var.getName() != null && input.visibleNames.contains(var.getName())) {
 				if (input.guaranteedNames.contains(var.getName())) {
 					return new ValueExprFacts(true, input.fixedValues.get(var.getName()),
 							input.valueKinds.getOrDefault(var.getName(), Set.of()));
 				}
 				return ValueExprFacts.unknown();
-			}
-			if (var.hasValue()) {
-				return new ValueExprFacts(true, var.getValue(), Set.of(valueKind(var.getValue())));
 			}
 			if (var.getName() != null && input.guaranteedNames.contains(var.getName())) {
 				return new ValueExprFacts(true, input.fixedValues.get(var.getName()),

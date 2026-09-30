@@ -487,6 +487,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	@Override
+	public void removeBinding(String name) {
+		setBinding(name, null);
+	}
+
+	@Override
 	public boolean isEmpty() {
 		return empty;
 	}

@@ -12,7 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,30 +24,45 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 class ArrayBindingBasedQueryEvaluationContextTest {
 
@@ -132,6 +151,190 @@ class ArrayBindingBasedQueryEvaluationContextTest {
 			assertThat(result.getValue("object")).isEqualTo(object);
 			assertThat(result.getValue("seed")).isEqualTo(valueFactory.createLiteral("row"));
 		}
+	}
+
+	@Test
+	void failedExtensionClearsAnExistingTargetAcrossBindingSetImplementations() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		BindingSetAssignment seed = new BindingSetAssignment();
+		MapBindingSet seedRow = new MapBindingSet();
+		seedRow.addBinding("seed", valueFactory.createLiteral("row"));
+		seedRow.addBinding("target", valueFactory.createIRI("urn:old-target"));
+		seed.setBindingSets(List.of(seedRow));
+
+		QueryRoot query = new QueryRoot(new Extension(seed,
+				new ExtensionElem(Var.of("missing"), "target")));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		List<QueryEvaluationContext> contexts = bindingContexts(query, valueFactory);
+
+		assertAll(contexts.stream().map(context -> (Executable) () -> {
+			List<BindingSet> results = evaluate(strategy.precompile(query.clone(), context));
+			assertThat(results).hasSize(1);
+			assertOnlySeedBinding(results.getFirst());
+			assertThat(results.getFirst().getValue("seed")).isEqualTo(valueFactory.createLiteral("row"));
+		}).toArray(Executable[]::new));
+	}
+
+	@Test
+	void expressionErrorClearsTargetAndInvalidatesBindingSetViews() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		BindingSetAssignment seed = seedAssignment(valueFactory);
+		ValueExpr expression = new ValueConstant(valueFactory.createLiteral("unused"));
+		Extension extension = new Extension(seed, new ExtensionElem(expression, "target"));
+		QueryRoot query = new QueryRoot(extension);
+		MapBindingSet seedRow = seedRow(valueFactory);
+		List<QueryEvaluationContext> contexts = bindingContexts(query, valueFactory);
+
+		assertAll(contexts.stream().map(context -> (Executable) () -> {
+			QueryValueEvaluationStep failingStep = bindings -> {
+				assertThat(bindings.getBindingNames()).contains("target");
+				if (bindings instanceof ArrayBindingSet arrayBindingSet) {
+					assertThat(arrayBindingSet.getSortedBindingNames()).contains("target");
+				}
+				throw new ValueExprEvaluationException("expected expression failure");
+			};
+			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+			doReturn(failingStep).when(strategy).precompile(eq(expression), eq(context));
+			MutableBindingSet bindings = context.createBindingSet(seedRow);
+			ExtensionIterator.buildLambdaToEvaluateTheExpressions(extension, strategy, context).accept(bindings);
+			assertOnlySeedBinding(bindings);
+		}).toArray(Executable[]::new));
+	}
+
+	@Test
+	void failedExtensionIsVisibleToFollowingBoundCoalesceAndExtensionElements() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Literal fallback = valueFactory.createLiteral("fallback");
+		BindingSetAssignment seed = seedAssignment(valueFactory);
+		Extension extension = new Extension(seed,
+				new ExtensionElem(Var.of("missing"), "target"),
+				new ExtensionElem(new Bound(Var.of("target")), "wasBound"),
+				new ExtensionElem(new Coalesce(List.of(Var.of("target"), new ValueConstant(fallback))), "coalesced"),
+				new ExtensionElem(Var.of("target"), "copy"));
+		QueryRoot query = new QueryRoot(extension);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		List<QueryEvaluationContext> contexts = bindingContexts(query, valueFactory);
+
+		assertAll(contexts.stream().map(context -> (Executable) () -> {
+			List<BindingSet> results = evaluate(strategy.precompile(query.clone(), context));
+			assertThat(results).hasSize(1);
+			BindingSet result = results.getFirst();
+			assertTargetAbsent(result);
+			assertThat(result.getValue("wasBound")).isEqualTo(valueFactory.createLiteral(false));
+			assertThat(result.getValue("coalesced")).isEqualTo(fallback);
+			assertThat(result.hasBinding("copy")).isFalse();
+		}).toArray(Executable[]::new));
+	}
+
+	@Test
+	void successfulSelfReferenceKeepsTheExistingTargetBound() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		BindingSetAssignment seed = seedAssignment(valueFactory);
+		Extension extension = new Extension(seed, new ExtensionElem(Var.of("target"), "target"));
+		QueryRoot query = new QueryRoot(extension);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		Value expectedTarget = valueFactory.createIRI("urn:old-target");
+
+		assertAll(bindingContexts(query, valueFactory).stream().map(context -> (Executable) () -> {
+			List<BindingSet> results = evaluate(strategy.precompile(query.clone(), context));
+			assertThat(results).hasSize(1);
+			assertThat(results.getFirst().hasBinding("target")).isTrue();
+			assertThat(results.getFirst().getValue("target")).isEqualTo(expectedTarget);
+		}).toArray(Executable[]::new));
+	}
+
+	@Test
+	void arrayContextRemovalFallsBackForVariablesOutsideItsArraySchema() {
+		QueryEvaluationContext.Minimal delegate = new QueryEvaluationContext.Minimal((Dataset) null);
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(delegate,
+				new String[] { "known" }, null);
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("target", SimpleValueFactory.getInstance().createIRI("urn:old-target"));
+
+		context.removeBinding("target").accept(bindings);
+
+		assertTargetAbsent(bindings);
+		assertThat(bindings).isEmpty();
+	}
+
+	@Test
+	void failedExtensionAllowsJoinAndOptionalToBindTargetAndLeavesMinusInputUnbound() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Value expectedTarget = valueFactory.createIRI("urn:right-target");
+		BindingSetAssignment right = new BindingSetAssignment();
+		MapBindingSet rightRow = new MapBindingSet();
+		rightRow.addBinding("target", expectedTarget);
+		right.setBindingSets(List.of(rightRow));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+
+		for (int operator = 0; operator < 3; operator++) {
+			boolean minusCase = operator == 2;
+			BindingSetAssignment seed = seedAssignment(valueFactory);
+			Extension failedBind = new Extension(seed, new ExtensionElem(Var.of("missing"), "target"));
+			QueryRoot query = switch (operator) {
+			case 0 -> new QueryRoot(new Join(failedBind, right.clone()));
+			case 1 -> new QueryRoot(new LeftJoin(failedBind, right.clone()));
+			default -> new QueryRoot(new Difference(failedBind, right.clone()));
+			};
+
+			assertAll(bindingContexts(query, valueFactory).stream().map(context -> (Executable) () -> {
+				List<BindingSet> results = evaluate(strategy.precompile(query.clone(), context));
+				assertThat(results).hasSize(1);
+				if (minusCase) {
+					assertOnlySeedBinding(results.getFirst());
+				} else {
+					assertThat(results.getFirst().getValue("target")).isEqualTo(expectedTarget);
+				}
+			}).toArray(Executable[]::new));
+		}
+	}
+
+	private static BindingSetAssignment seedAssignment(ValueFactory valueFactory) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(seedRow(valueFactory)));
+		return assignment;
+	}
+
+	private static MapBindingSet seedRow(ValueFactory valueFactory) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("seed", valueFactory.createLiteral("row"));
+		row.addBinding("target", valueFactory.createIRI("urn:old-target"));
+		return row;
+	}
+
+	private static void assertTargetAbsent(BindingSet bindings) {
+		assertThat(bindings.hasBinding("target")).isFalse();
+		assertThat(bindings.getBinding("target")).isNull();
+		assertThat(bindings.getValue("target")).isNull();
+	}
+
+	private static void assertOnlySeedBinding(BindingSet bindings) {
+		assertTargetAbsent(bindings);
+		assertThat(bindings.size()).isEqualTo(1);
+		assertThat(bindings.getBindingNames()).containsExactly("seed");
+		List<String> iteratedNames = new ArrayList<>();
+		for (Binding binding : bindings) {
+			iteratedNames.add(binding.getName());
+		}
+		assertThat(iteratedNames).containsExactly("seed");
+	}
+
+	private static List<QueryEvaluationContext> bindingContexts(QueryRoot query, ValueFactory valueFactory) {
+		QueryEvaluationContext.Minimal queryContext = new QueryEvaluationContext.Minimal((Dataset) null, valueFactory,
+				null);
+		QueryEvaluationContext mapContext = new QueryEvaluationContext.Minimal((Dataset) null, valueFactory, null) {
+			@Override
+			public MutableBindingSet createBindingSet(BindingSet bindings) {
+				MapBindingSet result = new MapBindingSet(bindings.size());
+				for (Binding binding : bindings) {
+					result.addBinding(binding);
+				}
+				return result;
+			}
+		};
+		ArrayBindingBasedQueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(queryContext,
+				ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery(query.clone()), null);
+		return List.of(queryContext, mapContext, arrayContext);
 	}
 
 	private static List<BindingSet> evaluate(QueryEvaluationStep step) throws Exception {

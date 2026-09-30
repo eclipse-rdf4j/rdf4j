@@ -116,6 +116,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				|| !(filter.getArg()instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
 				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
