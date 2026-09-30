@@ -407,6 +407,8 @@ final class LmdbNativeKernelBindings {
 	final FilterHook[] filterHooks;
 	final BindHook[] bindHooks;
 	final int[] columnEngineSlots;
+	/** Physical kernel columns, including scratch columns mapped to -1; emission can project or reorder them. */
+	final int[] kernelColumnEngineSlots;
 	final List<MaskedFilter> residualFilters;
 	/** Bind-time order descriptor for each kernel scan site; null means the source's natural index choice. */
 	final StatementOrder[] scanOrders;
@@ -519,6 +521,17 @@ final class LmdbNativeKernelBindings {
 			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
 			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
 			DynamicRequest[] dynamicRequests, WildcardRequest[] wildcardRequests) {
+		this(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks, columnEngineSlots,
+				residualFilters, scanSites, planRequests, groupLayout, hooksRequired, distinctExpected,
+				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests, columnEngineSlots);
+	}
+
+	private LmdbNativeKernelBindings(AdjacencyRequest[] adjacencies, long[] constants, int[] entrySlotIds,
+			DomainRequest[] keyDomains, FilterHook[] filterHooks, BindHook[] bindHooks, int[] columnEngineSlots,
+			List<MaskedFilter> residualFilters, ScanSite[] scanSites, PlanRequest[] planRequests,
+			KernelGroupLayout groupLayout, boolean hooksRequired, int distinctExpected,
+			MaskedFilter[] kernelResiduals, NodePredicateRequest[] nodePredicateRequests,
+			DynamicRequest[] dynamicRequests, WildcardRequest[] wildcardRequests, int[] kernelColumnEngineSlots) {
 		this.nodePredicateRequests = nodePredicateRequests;
 		this.dynamicRequests = dynamicRequests;
 		this.wildcardRequests = wildcardRequests;
@@ -529,6 +542,7 @@ final class LmdbNativeKernelBindings {
 		this.filterHooks = filterHooks;
 		this.bindHooks = bindHooks;
 		this.columnEngineSlots = columnEngineSlots;
+		this.kernelColumnEngineSlots = kernelColumnEngineSlots;
 		this.residualFilters = residualFilters;
 		this.scanSites = scanSites.clone();
 		this.scanOrders = scanOrders(scanSites);
@@ -567,7 +581,7 @@ final class LmdbNativeKernelBindings {
 		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
 				filterHooks, bindHooks,
 				columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout, hooksRequired,
-				distinctExpected, kernelResiduals, nodePredicates, dynamics, wildcards);
+				distinctExpected, kernelResiduals, nodePredicates, dynamics, wildcards, kernelColumnEngineSlots);
 		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
 		copy.typeMatrixRequests = typeMatrixRequests;
 		return copy;
@@ -580,7 +594,7 @@ final class LmdbNativeKernelBindings {
 		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
 				filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout,
 				hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
-				wildcardRequests);
+				wildcardRequests, kernelColumnEngineSlots);
 		copy.nodeDomainIntersectionRequests = requests.clone();
 		copy.typeMatrixRequests = typeMatrixRequests;
 		return copy;
@@ -593,7 +607,7 @@ final class LmdbNativeKernelBindings {
 		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
 				filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout,
 				hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
-				wildcardRequests);
+				wildcardRequests, kernelColumnEngineSlots);
 		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
 		copy.typeMatrixRequests = requests.clone();
 		return copy;
@@ -607,7 +621,18 @@ final class LmdbNativeKernelBindings {
 				filterHooks,
 				bindHooks,
 				sinkColumns, residualFilters, scanSites, planRequests, groupLayout, sinkHooksRequired, distinctExpected,
-				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests);
+				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests, kernelColumnEngineSlots);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
+	/** Attaches the physical column map independently of the emitted row's slot map. */
+	LmdbNativeKernelBindings withKernelColumns(int[] kernelColumns) {
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds,
+				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests,
+				groupLayout, hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests, kernelColumns);
 		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
 		copy.typeMatrixRequests = typeMatrixRequests;
 		return copy;

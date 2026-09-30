@@ -85,6 +85,7 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 
 	/** Per-run wall-clock cap; {@code explain} otherwise defaults to sixty seconds per query. */
 	private static final int QUERY_TIMEOUT_SECONDS = 5;
+	private static final long DIRECT_ADJACENCY_MAX_BYTES = 256L * 1024 * 1024;
 
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String SYNCHRONOUS_CODEGEN_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
@@ -283,8 +284,8 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		previousSynchronous = System.getProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, "true");
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+		LmdbStore store = new LmdbStore(dataDir, adjacencyEnabledNativeConfig());
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
@@ -294,10 +295,12 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 					ThemeDataSetGenerator.socialMediaConfig().withUserCount(400).withPostsPerUser(4), inserter);
 			connection.commit();
 		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("large adversarial corpus direct adjacency base is ready")
+				.isTrue();
 
-		smallPathRepository = new SailRepository(
-				new LmdbStore(new File(dataDir, "small-path"),
-						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+		LmdbStore smallPathStore = new LmdbStore(new File(dataDir, "small-path"), adjacencyEnabledNativeConfig());
+		smallPathRepository = new SailRepository(smallPathStore);
 		try (SailRepositoryConnection connection = smallPathRepository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			ValueFactory valueFactory = connection.getValueFactory();
@@ -322,6 +325,16 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 			connection.add(e, other, f);
 			connection.commit();
 		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(smallPathStore))
+				.as("small path corpus direct adjacency base is ready")
+				.isTrue();
+	}
+
+	private static LmdbStoreConfig adjacencyEnabledNativeConfig() {
+		return new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMaxBytes(DIRECT_ADJACENCY_MAX_BYTES);
 	}
 
 	@AfterAll

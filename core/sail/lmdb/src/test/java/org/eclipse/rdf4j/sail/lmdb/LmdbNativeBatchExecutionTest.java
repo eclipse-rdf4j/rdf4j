@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -22,10 +23,12 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -33,7 +36,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceAccessMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(value = Resources.SYSTEM_PROPERTIES, mode = ResourceAccessMode.READ_WRITE)
 class LmdbNativeBatchExecutionTest {
 
 	private static final String EX = "http://example.com/";
@@ -42,10 +49,15 @@ class LmdbNativeBatchExecutionTest {
 	@TempDir
 	File dataDir;
 
+	private final Map<String, String> previousProperties = new HashMap<>();
+
 	SailRepository repository;
 
 	@BeforeEach
 	void setUp() {
+		rememberProperty(NATIVE_FLAG);
+		rememberProperty(NativeBatch.ENABLED_PROPERTY);
+		rememberProperty(NativeBatch.ROWS_PROPERTY);
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -66,9 +78,8 @@ class LmdbNativeBatchExecutionTest {
 
 	@AfterEach
 	void tearDown() {
-		System.clearProperty(NativeBatch.ENABLED_PROPERTY);
-		System.clearProperty(NativeBatch.ROWS_PROPERTY);
-		System.clearProperty(NATIVE_FLAG);
+		previousProperties.forEach(LmdbNativeBatchExecutionTest::restoreProperty);
+		previousProperties.clear();
 		repository.shutDown();
 	}
 
@@ -83,7 +94,8 @@ class LmdbNativeBatchExecutionTest {
 			System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
 			System.setProperty(NativeBatch.ROWS_PROPERTY, Integer.toString(capacity));
 
-			assertThat(rows(query)).as("batch size " + capacity).isEqualTo(generic);
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_BATCH)).as("batch size " + capacity)
+					.isEqualTo(generic);
 			assertThat(NativeBatch.ROOT_ITERATIONS.get()).isPositive();
 			assertThat(NativeBatch.DIRECT_PATTERN_FILLS.get()).isPositive();
 			assertThat(NativeBatch.FILTER_BATCHES.get()).isPositive();
@@ -125,21 +137,42 @@ class LmdbNativeBatchExecutionTest {
 	}
 
 	private List<String> genericRows(String query) {
+		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, "false");
 		try {
 			return rows(query);
 		} finally {
-			System.clearProperty(NATIVE_FLAG);
+			restoreProperty(NATIVE_FLAG, previous);
 		}
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeBatchExecutionTest::canonical)
 					.sorted()
 					.collect(Collectors.toList());
+		}
+	}
+
+	private void rememberProperty(String property) {
+		previousProperties.put(property, System.getProperty(property));
+	}
+
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
 		}
 	}
 

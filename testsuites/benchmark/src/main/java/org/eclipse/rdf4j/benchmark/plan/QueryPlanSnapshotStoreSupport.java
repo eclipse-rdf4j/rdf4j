@@ -80,6 +80,7 @@ final class QueryPlanSnapshotStoreSupport {
 			deleteDataDirectory = true;
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		config.setDirectAdjacencyEnabled(options.directAdjacencyReadyTimeoutSeconds != null);
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());

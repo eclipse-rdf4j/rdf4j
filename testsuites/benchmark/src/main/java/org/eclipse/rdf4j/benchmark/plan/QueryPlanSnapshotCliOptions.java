@@ -558,7 +558,8 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --query-file <path>                  load query text from file");
 		output.println("  --query-timeout-seconds <int>=0      per-query max execution time (0 disables timeout)");
 		output.println("  --await-direct-adjacency-seconds <int>=1");
-		output.println("                                       fail unless LMDB adjacency becomes exact in time");
+		output.println(
+				"                                       enable LMDB adjacency and fail unless it becomes exact in time");
 		output.println("  --execution-repeat-min-runs <int>=1  minimum repeated verification runs");
 		output.println("  --execution-repeat-max-runs <int>=1  maximum repeated verification runs");
 		output.println("  --execution-repeat-soft-limit-millis <long>=1");

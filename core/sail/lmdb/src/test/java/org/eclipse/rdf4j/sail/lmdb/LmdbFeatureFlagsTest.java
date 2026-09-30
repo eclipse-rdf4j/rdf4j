@@ -18,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
@@ -40,6 +42,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceAccessMode;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 @ResourceLock(value = Resources.SYSTEM_PROPERTIES, mode = ResourceAccessMode.READ_WRITE)
 class LmdbFeatureFlagsTest {
@@ -77,6 +82,60 @@ class LmdbFeatureFlagsTest {
 		restoreProperty(OVERLAY_REVERSE_SLOTS_PROPERTY, previousOverlayReverseSlots);
 		restoreProperty(ADJACENCY_BUILD_THREADS_PROPERTY, previousAdjacencyBuildThreads);
 		restoreProperty(NATIVE_ENGINE_ENABLED_PROPERTY, previousNativeEngineEnabled);
+	}
+
+	@ParameterizedTest(name = "mode={0}, feature flags={1}")
+	@MethodSource("independentFeatureModes")
+	void optionalEqualityFiltersPreserveKnownMatchesAcrossIndependentFeatures(QueryEvaluationMode mode, int flags,
+			@TempDir Path tempDir)
+			throws Exception {
+		List<String> bodies = List.of(
+				"?person a :Person . OPTIONAL { ?person :nick ?nick } FILTER(?nick = \"Alice\")",
+				"?person a :Person . OPTIONAL { ?person :nick ?nick } FILTER(\"Alice\" = ?nick)",
+				"?person a :Person . OPTIONAL { ?person :nick ?nick } "
+						+ "BIND(?nick AS ?copy) FILTER(?copy = \"Alice\")",
+				"?person a :Person . OPTIONAL { ?person :nick ?nick . "
+						+ "OPTIONAL { ?person :friend ?friend } } FILTER(?nick = \"Alice\")",
+				"?person a :Person . OPTIONAL { { ?person :nick ?nick } "
+						+ "UNION { ?person :alias ?nick } } FILTER(?nick = \"Alice\")",
+				"{ SELECT ?person ?nick WHERE { ?person a :Person . "
+						+ "OPTIONAL { ?person :nick ?nick } } } FILTER(?nick = \"Alice\")");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled((flags & 1) != 0)
+				.setDirectAdjacencyEnabled((flags & 2) != 0)
+				.setDirectAdjacencyMaxBytes(ADJACENCY_MAX_BYTES)
+				.setValueOverlayEnabled((flags & 4) != 0);
+		config.setDefaultQueryEvaluationMode(mode);
+		Path storePath = Files.createDirectory(tempDir.resolve("optional-" + mode + "-" + flags));
+		LmdbStore store = new LmdbStore(storePath.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			if ((flags & 2) != 0) {
+				assertThat(store.awaitDirectAdjacencyReady(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+			}
+			if ((flags & 4) != 0) {
+				assertThat(store.awaitValueOverlayReady(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				addFeatureFlagDataset(connection);
+				for (String body : bodies) {
+					String prefix = "PREFIX : <urn:feature-flags:> ";
+					assertQueryRows(connection, prefix + "SELECT ?person WHERE { " + body + " }",
+							List.of(List.of("urn:feature-flags:alice")), "person");
+					assertQueryRows(connection,
+							prefix + "SELECT (COUNT(?person) AS ?count) WHERE { " + body + " }",
+							List.of(List.of("1")), "count");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static Stream<Arguments> independentFeatureModes() {
+		return Stream.of(QueryEvaluationMode.STANDARD, QueryEvaluationMode.STRICT)
+				.flatMap(mode -> IntStream.range(0, 8).mapToObj(flags -> Arguments.of(mode, flags)));
 	}
 
 	@Test
@@ -370,7 +429,7 @@ class LmdbFeatureFlagsTest {
 				actual.add(row);
 			}
 		}
-		assertThat(actual).isEqualTo(expected);
+		assertThat(actual).as("query:%n%s", query).isEqualTo(expected);
 	}
 
 	private static void restoreProperty(String name, String value) {

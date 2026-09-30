@@ -464,6 +464,37 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void lmdbRuntimeKeepsAcceleratorsDisabledWithoutWait() throws Exception {
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0"
+		});
+
+		try (var runtime = QueryPlanSnapshotStoreSupport.createStoreRuntime(options)) {
+			assertFalse(runtime.lmdbStoreConfig.getNativeEvaluationEnabled());
+			assertFalse(runtime.lmdbStoreConfig.getDirectAdjacencyEnabled());
+			assertFalse(runtime.lmdbStoreConfig.getValueOverlayEnabled());
+		}
+	}
+
+	@Test
+	void directAdjacencyWaitEnablesOnlyRequestedAccelerator() throws Exception {
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--await-direct-adjacency-seconds", "10"
+		});
+
+		try (var runtime = QueryPlanSnapshotStoreSupport.createStoreRuntime(options)) {
+			assertTrue(runtime.lmdbStoreConfig.getDirectAdjacencyEnabled());
+			assertFalse(runtime.lmdbStoreConfig.getNativeEvaluationEnabled());
+			assertFalse(runtime.lmdbStoreConfig.getValueOverlayEnabled());
+		}
+	}
+
+	@Test
 	void directAdjacencyWaitInitializesReusedLmdbStore() throws Exception {
 		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-adjacency-ready-");
 		try {

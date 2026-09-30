@@ -16,18 +16,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.Arm;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.EvaluationResult;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.parallel.Resources;
  */
 @Timeout(180)
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
+@Isolated("Observes process-wide hash-join counters")
 public class LmdbNativeHashJoinChainStatsTest {
 
 	private static final String EX = "urn:hash-chain:";
@@ -50,15 +54,18 @@ public class LmdbNativeHashJoinChainStatsTest {
 	private static final String RAW_Q_QUERY = "SELECT ?s WHERE { ?s <" + Q + "> <" + C + "> }";
 	private static final String JOIN_QUERY = "SELECT ?a ?s WHERE { ?a <" + P + "> ?s . ?s <" + Q
 			+ "> <" + C + "> }";
-	private static final Map<String, String> SEMANTIC_HASH_SETTINGS = Map.of(
-			LmdbNativeMergeJoin.ENABLED_PROPERTY, "false",
-			LmdbNativeLeapfrogJoin.ENABLED_PROPERTY, "false",
-			LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false",
-			LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false",
-			LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "false",
-			"rdf4j.lmdb.factorizedRows.enabled", "false",
-			"rdf4j.lmdb.packedFtree.enabled", "false",
-			"rdf4j.lmdb.parallel.enabled", "false");
+	private static final Map<String, String> SEMANTIC_HASH_SETTINGS = Map.ofEntries(
+			Map.entry(NativeBatch.ENABLED_PROPERTY, "true"),
+			Map.entry(LmdbNativeHashJoin.ENABLED_PROPERTY, "true"),
+			Map.entry(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false"),
+			Map.entry(LmdbNativeLeapfrogJoin.ENABLED_PROPERTY, "false"),
+			Map.entry(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false"),
+			Map.entry(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false"),
+			Map.entry(LmdbNativeAdaptiveFilterPlacement.ENABLED_PROPERTY, "false"),
+			Map.entry("rdf4j.lmdb.factorizedRows.enabled", "false"),
+			Map.entry("rdf4j.lmdb.factor.transport.enabled", "false"),
+			Map.entry("rdf4j.lmdb.packedFtree.enabled", "false"),
+			Map.entry("rdf4j.lmdb.parallel.enabled", "false"));
 
 	@Test
 	public void buildTimeChainStatisticsTrackDuplicates() {
@@ -159,7 +166,7 @@ public class LmdbNativeHashJoinChainStatsTest {
 			try {
 				long buildsBefore = LmdbNativeHashJoin.BUILDS.get();
 				long countedProbesBefore = LmdbNativeHashJoin.COUNTED_CHAIN_PROBES.get();
-				semanticHashJoined = oracle.evaluateAll(JOIN_QUERY);
+				semanticHashJoined = evaluateSemanticHash(oracle);
 				builds = LmdbNativeHashJoin.BUILDS.get() - buildsBefore;
 				countedProbes = LmdbNativeHashJoin.COUNTED_CHAIN_PROBES.get() - countedProbesBefore;
 			} finally {
@@ -176,6 +183,21 @@ public class LmdbNativeHashJoinChainStatsTest {
 							.isEqualTo(4_200),
 					() -> assertExactJoinedResults("semantic native hash isolation", semanticHashJoined));
 		}
+	}
+
+	private static Map<Arm, EvaluationResult> evaluateSemanticHash(IndependentSparqlOracle oracle) {
+		Map<Arm, EvaluationResult> results = new EnumMap<>(Arm.class);
+		for (Arm arm : Arm.values()) {
+			// Hash join is the internal implementation of the batch strategy. Force that public route only in the
+			// native arm; the other arms remain independent semantic oracles.
+			EvaluationResult result = arm == Arm.LMDB_PRODUCTION
+					? oracle.evaluate(arm, JOIN_QUERY,
+							query -> ((SailQuery) query)
+									.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_BATCH))
+					: oracle.evaluate(arm, JOIN_QUERY);
+			results.put(arm, result);
+		}
+		return results;
 	}
 
 	private static void loadMultiplicityFixture(RepositoryConnection connection) {

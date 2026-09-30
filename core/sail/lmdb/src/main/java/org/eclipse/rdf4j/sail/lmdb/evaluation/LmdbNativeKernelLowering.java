@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -631,7 +632,7 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			if (col >= 0) {
-				keyCols.add(col);
+				keyCols.add(((LmdbNativeKernelIr.Emit) lowered.kernel.terminal).cols[col]);
 			} else if (slot < 0 || slot >= 64 || (builder.entryMask >>> slot & 1L) == 0L) {
 				declineDistinct(declineTarget, "distinct-sink:unproduced-key[slot=" + slot + "]");
 				return null;
@@ -754,7 +755,7 @@ final class LmdbNativeKernelLowering {
 				new LmdbNativeKernelIr.Emit(emitCols, true, aligned.size(), LmdbNativeKernelIr.OutputMods.none()));
 		int[] sunkSlots = new int[emitCols.length];
 		for (int i = 0; i < emitCols.length; i++) {
-			sunkSlots[i] = emittedSlots[emitCols[i]];
+			sunkSlots[i] = bindings.kernelColumnEngineSlots[emitCols[i]];
 		}
 		LmdbNativeKernelBindings sunk = bindings.withAdjacenciesAndColumns(adjacencyRequests, sunkSlots,
 				bindings.hooksRequired);
@@ -1929,6 +1930,7 @@ final class LmdbNativeKernelLowering {
 		 * table only; worker binding still compiles each retained plan against that worker's source and codec.
 		 */
 		final Map<ScalarReuseKey, Integer> reusableScalars = new HashMap<>();
+		/** One physical column space for engine bindings and unmapped (-1) scratch values. */
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		final List<Integer> columnOrderedDomains = new ArrayList<>();
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
@@ -1996,7 +1998,14 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private int columnDomain() {
-			return columnEngineSlots.size() + scratchColumns;
+			return columnEngineSlots.size();
+		}
+
+		private int allocateColumn(int engineSlot) {
+			int column = columnEngineSlots.size();
+			columnEngineSlots.add(engineSlot);
+			columnOrderedDomains.add(UNASSIGNED_DOMAIN);
+			return column;
 		}
 
 		private int newColumn(int engineSlot) {
@@ -2008,9 +2017,7 @@ final class LmdbNativeKernelLowering {
 				slotColumnDepth[engineSlot] = depth();
 				return pinned;
 			}
-			columnEngineSlots.add(engineSlot);
-			columnOrderedDomains.add(UNASSIGNED_DOMAIN);
-			int column = columnEngineSlots.size() - 1;
+			int column = allocateColumn(engineSlot);
 			invalidateScalarReuseForColumn(column);
 			slotColumn[engineSlot] = column;
 			slotColumnDepth[engineSlot] = depth();
@@ -2235,7 +2242,7 @@ final class LmdbNativeKernelLowering {
 				}
 				slotColumnDepth[slot] = depth();
 			}
-			if (columnEngineSlots.isEmpty() && scratchColumns == 0) {
+			if (columnEngineSlots.isEmpty()) {
 				scratchColumn();
 			}
 			int[] inputArray = inputSlots.stream().mapToInt(Integer::intValue).toArray();
@@ -3922,14 +3929,18 @@ final class LmdbNativeKernelLowering {
 			int filterHookMark = filterHooks.size();
 			int scanMark = scanSites.size();
 			int residualMark = kernelResiduals.size();
-			int scratchMark = scratchColumns;
+			int columnMark = columnEngineSlots.size();
 			int entryFilterMark = entryDepthFilters.size();
 			int[] depthFilterMarks = new int[filtersPerDepth.size()];
 			for (int depth = 0; depth < filtersPerDepth.size(); depth++) {
 				depthFilterMarks[depth] = filtersPerDepth.get(depth).size();
 			}
 			String reasonBefore = reason;
-			if (attempt.getAsBoolean()) {
+			boolean lowered = attempt.getAsBoolean();
+			// WitnessColumns owns the local slot map; these callbacks allocate scratch columns only and leave the
+			// outer slot/depth, pinned-column and scalar-reuse maps untouched.
+			assert columnEngineSlots.subList(columnMark, columnEngineSlots.size()).stream().allMatch(slot -> slot < 0);
+			if (lowered) {
 				return true;
 			}
 			while (adjacencies.size() > adjacencyMark) {
@@ -3962,7 +3973,10 @@ final class LmdbNativeKernelLowering {
 					depthFilters.remove(depthFilters.size() - 1);
 				}
 			}
-			scratchColumns = scratchMark;
+			while (columnEngineSlots.size() > columnMark) {
+				columnEngineSlots.remove(columnEngineSlots.size() - 1);
+				columnOrderedDomains.remove(columnOrderedDomains.size() - 1);
+			}
 			reason = reasonBefore;
 			return false;
 		}
@@ -4357,8 +4371,6 @@ final class LmdbNativeKernelLowering {
 			}
 		}
 
-		int scratchColumns;
-
 		/**
 		 * Engine slots the DISTINCT consumer retains (plan 32): non-zero activates the existential rewrite of join
 		 * branches whose fresh variables all fall outside this mask. Only {@code lowerDistinctRows} sets it — the
@@ -4366,16 +4378,15 @@ final class LmdbNativeKernelLowering {
 		 */
 		long distinctRetainedMask;
 
-		/** A kernel column not backed by an engine slot: witness-local probe targets. */
+		/** Scratch values reserve physical columns just like engine bindings, even before later slots are lowered. */
 		private int scratchColumn() {
-			return columnEngineSlots.size() + scratchColumns++;
+			return allocateColumn(-1);
 		}
 
 		/**
 		 * Hash-favored two-pattern join awaiting its build-side lowering (M8). The build sub-pipeline writes scratch
-		 * columns, and scratch indices live PAST the engine-slot-backed ones, so the sub-pipeline can only lower once
-		 * the engine column space is final — {@code build()} does it and prepends the {@code HashBuild} preamble,
-		 * exactly like witness sub-pipelines defer to {@code buildAggregate()}.
+		 * columns. {@code build()} lowers that sub-pipeline and prepends its {@code HashBuild} preamble once the
+		 * probe-side column mappings are complete.
 		 */
 		private LmdbNativeHashJoin.KernelHashPlan pendingHashBuild;
 
@@ -6035,10 +6046,10 @@ final class LmdbNativeKernelLowering {
 						columnDomain(), d, barrierCountBefore(d, 0));
 			}
 			pipeline.addAll(terminalCompatibility);
-			if (columnEngineSlots.isEmpty() && scratchColumns == 0) {
+			if (columnEngineSlots.isEmpty()) {
 				scratchColumn();
 			}
-			int columnCount = columnEngineSlots.size() + scratchColumns;
+			int columnCount = columnDomain();
 			if (columnCount > 64) {
 				reason = "agg:no-columns";
 				return null;
@@ -6078,10 +6089,7 @@ final class LmdbNativeKernelLowering {
 			for (int i = 0; i < entryArray.length; i++) {
 				entryArray[i] = entrySlotIds.get(i);
 			}
-			int[] columnArray = new int[columnEngineSlots.size()];
-			for (int i = 0; i < columnArray.length; i++) {
-				columnArray[i] = columnEngineSlots.get(i);
-			}
+			int[] columnArray = emittedEngineSlots();
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
@@ -6091,7 +6099,7 @@ final class LmdbNativeKernelLowering {
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]),
 					new LmdbNativeKernelBindings.KernelGroupLayout(groupSlots.clone(), outs), hooksRequired,
 					distinctExpected, kernelResiduals.toArray(new MaskedFilter[0]));
-			return new Lowered(kernel, withVariablePredicateRequests(bindings));
+			return new Lowered(kernel, withVariablePredicateRequests(bindings.withKernelColumns(kernelEngineSlots())));
 		}
 
 		// ------------------------------------------------------------------
@@ -6216,12 +6224,14 @@ final class LmdbNativeKernelLowering {
 		}
 
 		Lowered build() {
-			if (columnEngineSlots.isEmpty() || columnEngineSlots.size() > 64) {
+			if (columnEngineSlots.stream().noneMatch(slot -> slot >= 0)) {
 				return null;
 			}
-			// The hash-join build side lowers here, once the engine column space is final (its scratch columns index
-			// past it), and its preamble runs after the entry filters but before every producer loop.
+			// The hash-join build side lowers after the probe mappings, then runs before every producer loop.
 			Node hashPreamble = pendingHashBuild == null ? null : lowerPendingHashBuild();
+			if (columnDomain() > 64) {
+				return null;
+			}
 			List<Node> pipeline = new ArrayList<>(entryDepthFilters);
 			if (hashPreamble != null) {
 				pipeline.add(hashPreamble);
@@ -6237,16 +6247,13 @@ final class LmdbNativeKernelLowering {
 			pipeline.addAll(terminalCompatibility);
 			markDomainDrivenEnumerations(pipeline);
 			pipeline = new ArrayList<>(fuseSipBatchProbes(pipeline));
-			int[] emitColumns = new int[columnEngineSlots.size()];
-			for (int i = 0; i < emitColumns.length; i++) {
-				emitColumns[i] = i;
-			}
-			// Witness sub-pipelines (Exists rewrites under DISTINCT sinking) hold their scratch in columns past the
-			// engine-slot-backed ones; the kernel must declare those fields too.
+			int[] emitColumns = IntStream.range(0, columnDomain())
+					.filter(column -> columnEngineSlots.get(column) >= 0)
+					.toArray();
 			if (!row.encounterOrderRequired) {
-				pipeline = orientReusableProducers(pipeline, columnEngineSlots.size() + scratchColumns);
+				pipeline = orientReusableProducers(pipeline, columnDomain());
 			}
-			Kernel kernel = new Kernel(columnEngineSlots.size() + scratchColumns, pipeline,
+			Kernel kernel = new Kernel(columnDomain(), pipeline,
 					new LmdbNativeKernelIr.Emit(emitColumns, false, LmdbNativeKernelIr.OutputMods.none()));
 
 			long[] constantArray = new long[constants.size()];
@@ -6257,10 +6264,7 @@ final class LmdbNativeKernelLowering {
 			for (int i = 0; i < entryArray.length; i++) {
 				entryArray[i] = entrySlotIds.get(i);
 			}
-			int[] columnArray = new int[columnEngineSlots.size()];
-			for (int i = 0; i < columnArray.length; i++) {
-				columnArray[i] = columnEngineSlots.get(i);
-			}
+			int[] columnArray = emittedEngineSlots();
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					adjacencies.toArray(new LmdbNativeKernelBindings.AdjacencyRequest[0]), constantArray, entryArray,
 					keyDomains.toArray(new LmdbNativeKernelBindings.DomainRequest[0]),
@@ -6269,7 +6273,15 @@ final class LmdbNativeKernelLowering {
 					scanSites.toArray(new LmdbNativeKernelBindings.ScanSite[0]),
 					planRequests.toArray(new LmdbNativeKernelBindings.PlanRequest[0]), null, false, 16,
 					kernelResiduals.toArray(new MaskedFilter[0]));
-			return new Lowered(kernel, withVariablePredicateRequests(bindings));
+			return new Lowered(kernel, withVariablePredicateRequests(bindings.withKernelColumns(kernelEngineSlots())));
+		}
+
+		private int[] emittedEngineSlots() {
+			return columnEngineSlots.stream().mapToInt(Integer::intValue).filter(slot -> slot >= 0).toArray();
+		}
+
+		private int[] kernelEngineSlots() {
+			return columnEngineSlots.stream().mapToInt(Integer::intValue).toArray();
 		}
 	}
 }

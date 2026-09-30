@@ -20,6 +20,7 @@ import java.util.NoSuchElementException;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -27,7 +28,8 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
-final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet> {
+final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<BindingSet>
+		implements CooperativeCancellation {
 
 	static final int INITIAL_BATCH_SIZE = 128;
 	static final int DEFAULT_MAX_BATCH_SIZE = 4096;
@@ -38,6 +40,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private final CloseableIteration<? extends BindingSet> source;
 	private final int maxBatchSize;
 	private final Object bufferLock = new Object();
+	private final Object sourceLock = new Object();
+	private volatile boolean cancellationRequested;
+	private volatile boolean sourceClosing;
 	private final LongIntHashMap valueIndexesById = new LongIntHashMap(INITIAL_COLLECTION_SIZE);
 	private final IdentityHashMap<LmdbValue, Boolean> unknownValuesByIdentity = new IdentityHashMap<>();
 	private final IdentityHashMap<LmdbValue, Boolean> deferredValuesByIdentity = new IdentityHashMap<>();
@@ -77,13 +82,16 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	@Override
 	public boolean hasNext() {
 		synchronized (bufferLock) {
-			if (isClosed()) {
+			if (sourceClosing || isClosed() || closeIfCancelled()) {
 				return false;
 			}
 			if (bufferIndex < bufferSize) {
 				return true;
 			}
-			boolean hasNext = source.hasNext();
+			boolean hasNext = sourceHasNext();
+			if (stopTraversal()) {
+				return false;
+			}
 			if (!hasNext) {
 				close();
 			}
@@ -94,19 +102,27 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	@Override
 	public BindingSet next() {
 		synchronized (bufferLock) {
-			if (isClosed()) {
+			if (sourceClosing || isClosed() || closeIfCancelled()) {
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
 			if (!firstReturned) {
-				BindingSet first = source.next();
+				BindingSet first = sourceNext();
+				if (stopTraversal()) {
+					throw new NoSuchElementException("The iteration has been cancelled.");
+				}
 				firstReturned = true;
 				materialize(first);
+				if (closeIfCancelled()) {
+					throw new NoSuchElementException("The iteration has been cancelled.");
+				}
 				return first;
 			}
 			if (bufferIndex >= bufferSize) {
-				fillBuffer();
+				if (!fillBuffer()) {
+					throw new NoSuchElementException();
+				}
 			}
-			if (bufferIndex >= bufferSize) {
+			if (closeIfCancelled() || bufferIndex >= bufferSize) {
 				throw new NoSuchElementException();
 			}
 			BindingSet result = buffer[bufferIndex];
@@ -117,30 +133,94 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	@Override
 	protected void handleClose() {
+		sourceClosing = true;
 		try {
-			source.close();
+			requestSourceCancellation();
 		} finally {
-			synchronized (bufferLock) {
-				clearBuffer();
+			try {
+				// Readers hold bufferLock before sourceLock. Release sourceLock before waiting for the buffer:
+				// source closure may proceed during value materialization, but cannot invalidate active traversal.
+				synchronized (sourceLock) {
+					source.close();
+				}
+			} finally {
+				synchronized (bufferLock) {
+					clearBuffer();
+				}
 			}
 		}
 	}
 
-	private void fillBuffer() {
+	@Override
+	public boolean requestCancellation() {
+		if (sourceClosing || isClosed()) {
+			return false;
+		}
+		cancellationRequested = true;
+		requestSourceCancellation();
+		return true;
+	}
+
+	private void requestSourceCancellation() {
+		if (source instanceof CooperativeCancellation cancellation) {
+			cancellation.requestCancellation();
+		}
+	}
+
+	private boolean closeIfCancelled() {
+		if (cancellationRequested) {
+			close();
+			return true;
+		}
+		return false;
+	}
+
+	private boolean stopTraversal() {
+		return sourceClosing || closeIfCancelled();
+	}
+
+	private boolean sourceHasNext() {
+		synchronized (sourceLock) {
+			return !sourceClosing && !cancellationRequested && source.hasNext();
+		}
+	}
+
+	private BindingSet sourceNext() {
+		synchronized (sourceLock) {
+			if (sourceClosing || cancellationRequested) {
+				// The caller polls immediately after traversal and closes on the reader thread, outside sourceLock.
+				return null;
+			}
+			return source.next();
+		}
+	}
+
+	private boolean fillBuffer() {
 		bufferIndex = 0;
 		bufferSize = 0;
 		ensureBufferCapacity(nextBufferCapacity);
-		while (bufferSize < nextBufferCapacity && source.hasNext()) {
-			buffer[bufferSize++] = source.next();
+		while (bufferSize < nextBufferCapacity && sourceHasNext()) {
+			if (stopTraversal()) {
+				return false;
+			}
+			BindingSet next = sourceNext();
+			if (stopTraversal()) {
+				return false;
+			}
+			buffer[bufferSize++] = next;
+		}
+		if (stopTraversal()) {
+			return false;
 		}
 		if (bufferSize == 0) {
 			close();
-			return;
+			return false;
 		}
 		materializeBufferedValues();
 		if (bufferSize == nextBufferCapacity && nextBufferCapacity < maxBatchSize) {
 			nextBufferCapacity = Math.min(maxBatchSize, doubleCapacity(nextBufferCapacity));
 		}
+		return true;
 	}
 
 	private void materializeBufferedValues() {

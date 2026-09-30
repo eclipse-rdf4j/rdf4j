@@ -390,6 +390,37 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void rawScanScratchColumnsStaySeparateFromSubsequentConstantAndVariableBindings() {
+		long[] values = { PRED + 11L, PRED, PRED + 23L, PRED + 37L };
+		for (int position = 0; position < values.length; position++) {
+			Term[] terms = Arrays.stream(values).mapToObj(Term::constant).toArray(Term[]::new);
+			terms[position] = Term.constantSlot(0, values[position]);
+			PatternPlan constant = new PatternPlan(terms[0], terms[1], terms[2], terms[3],
+					ContextConstraint.UNRESTRICTED, position == 3, 1D);
+			PatternPlan later = pattern(Term.slot(1), Term.slot(2));
+			for (SlotPlan plan : List.of(new JoinPlan(constant, later),
+					new LeftJoinPlan(constant, later), new UnionPlan(constant, later))) {
+				var lowered = lowerWithScans(plan);
+				assertNotNull(lowered, "raw constant scan followed by bindings at quad position " + position);
+				int[] physicalSlots = lowered.bindings.kernelColumnEngineSlots;
+				assertEquals(lowered.kernel.columnCount, physicalSlots.length);
+				assertTrue(Arrays.stream(physicalSlots).anyMatch(slot -> slot == -1),
+						"fully bound raw scans need a reserved multiplicity scratch column");
+				LmdbNativeKernelIr.Emit emit = (LmdbNativeKernelIr.Emit) lowered.kernel.terminal;
+				assertEquals(emit.cols.length, lowered.bindings.columnEngineSlots.length);
+				for (int output = 0; output < emit.cols.length; output++) {
+					assertTrue(physicalSlots[emit.cols[output]] >= 0, "scratch columns must not become query bindings");
+					assertEquals(physicalSlots[emit.cols[output]], lowered.bindings.columnEngineSlots[output]);
+				}
+				assertTrue(Arrays.stream(lowered.bindings.columnEngineSlots).anyMatch(slot -> slot == 0),
+						"the constant slot must survive the preceding scratch allocation");
+				assertTrue(Arrays.stream(lowered.bindings.columnEngineSlots).anyMatch(slot -> slot == 2),
+						"later variables must also retain distinct physical columns");
+			}
+		}
+	}
+
+	@Test
 	void mixedBindingCatalogueMatchesTheEffectiveDefault() {
 		String property = LmdbNativeKernelLowering.MIXED_BINDING_PROPERTY;
 		String previous = System.getProperty(property);
@@ -860,8 +891,8 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	private static int columnForEngineSlot(LmdbNativeKernelLowering.Lowered lowered, int engineSlot) {
-		for (int column = 0; column < lowered.bindings.columnEngineSlots.length; column++) {
-			if (lowered.bindings.columnEngineSlots[column] == engineSlot) {
+		for (int column = 0; column < lowered.bindings.kernelColumnEngineSlots.length; column++) {
+			if (lowered.bindings.kernelColumnEngineSlots[column] == engineSlot) {
 				return column;
 			}
 		}

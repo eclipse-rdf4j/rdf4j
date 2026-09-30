@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.lang.ref.Cleaner;
+import java.lang.ref.WeakReference;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -35,8 +36,15 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 
 	@Override
 	public void close() {
-		state.close();
-		cleanable.clean();
+		try {
+			state.close();
+		} finally {
+			cleanable.clean();
+		}
+	}
+
+	CleanupRegistration cleanupRegistration() {
+		return new CleanupRegistration(this, state, cleanable);
 	}
 
 	@Override
@@ -62,6 +70,32 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 		return cancellation.requestCancellation();
 	}
 
+	/** Connection-owned cleanup authority that never keeps the returned iteration reachable. */
+	static final class CleanupRegistration {
+		private final WeakReference<CleanerIteration<?>> referent;
+		private final CleanableState<?> state;
+		private final Cleaner.Cleanable cleanable;
+
+		private CleanupRegistration(CleanerIteration<?> iteration, CleanableState<?> state,
+				Cleaner.Cleanable cleanable) {
+			this.referent = new WeakReference<>(iteration);
+			this.state = state;
+			this.cleanable = cleanable;
+		}
+
+		void closeIfAbandoned() {
+			if (referent.refersTo(null)) {
+				try {
+					// Cleanable.clean() alone does not wait when the cleaner has already claimed the action. The
+					// shared state joins that close before the connection releases its backing resources.
+					state.run();
+				} finally {
+					cleanable.clean();
+				}
+			}
+		}
+	}
+
 	private final static class CleanableState<E> implements Runnable {
 
 		private final CloseableIteration<E> iteration;
@@ -73,15 +107,22 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 
 		@Override
 		public void run() {
-			if (!closed) {
-				logger.warn(
-						"Forced closing of unclosed iteration. Set the system property 'org.eclipse.rdf4j.repository.debug' to 'true' to get stack traces.");
-				iteration.close();
-			}
+			close(true);
 		}
 
 		public void close() {
+			close(false);
+		}
+
+		private synchronized void close(boolean abandoned) {
+			if (closed) {
+				return;
+			}
 			closed = true;
+			if (abandoned) {
+				logger.warn(
+						"Forced closing of unclosed iteration. Set the system property 'org.eclipse.rdf4j.repository.debug' to 'true' to get stack traces.");
+			}
 			iteration.close();
 		}
 

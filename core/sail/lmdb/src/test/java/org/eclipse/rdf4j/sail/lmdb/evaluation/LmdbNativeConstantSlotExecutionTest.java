@@ -285,8 +285,10 @@ class LmdbNativeConstantSlotExecutionTest {
 			long[] projected = new long[emit.cols.length];
 			for (int i = 0; i < emit.cols.length; i++) {
 				int column = emit.cols[i];
-				assertThat(column).isLessThan(lowered.bindings.columnEngineSlots.length);
-				projected[i] = sourceRow[lowered.bindings.columnEngineSlots[column]];
+				assertThat(column).isLessThan(lowered.bindings.kernelColumnEngineSlots.length);
+				assertThat(lowered.bindings.kernelColumnEngineSlots[column])
+						.isEqualTo(lowered.bindings.columnEngineSlots[i]);
+				projected[i] = sourceRow[lowered.bindings.columnEngineSlots[i]];
 			}
 			result.add(Arrays.toString(projected));
 		}
@@ -363,8 +365,10 @@ class LmdbNativeConstantSlotExecutionTest {
 			long[] projected = new long[emit.cols.length];
 			for (int i = 0; i < emit.cols.length; i++) {
 				int column = emit.cols[i];
-				assertThat(column).isLessThan(lowered.bindings.columnEngineSlots.length);
-				int engineSlot = lowered.bindings.columnEngineSlots[column];
+				assertThat(column).isLessThan(lowered.bindings.kernelColumnEngineSlots.length);
+				assertThat(lowered.bindings.kernelColumnEngineSlots[column])
+						.isEqualTo(lowered.bindings.columnEngineSlots[i]);
+				int engineSlot = lowered.bindings.columnEngineSlots[i];
 				assertThat(engineSlot).isLessThan(sourceRow.length);
 				projected[i] = sourceRow[engineSlot];
 			}

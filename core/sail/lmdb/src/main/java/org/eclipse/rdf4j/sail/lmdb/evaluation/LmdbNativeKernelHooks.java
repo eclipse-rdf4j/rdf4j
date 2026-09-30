@@ -162,7 +162,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			}
 			this.residuals = bindings.kernelResiduals;
 			this.groupLayout = bindings.groupLayout;
-			this.columnSlots = bindings.columnEngineSlots;
+			this.columnSlots = bindings.kernelColumnEngineSlots;
 			int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
 			this.rowStates = new AggState[aggregateCount][];
 			this.rowAggregateContext = new AggContext(source, false, false, false, memory);
@@ -592,6 +592,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public void setAggregateInput(int column, long value) {
+		assert columnSlots[column] >= 0 : "row-state aggregate inputs must map to engine slots";
 		installScratchInput(columnSlots[column], value);
 	}
 
