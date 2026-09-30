@@ -96,6 +96,33 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
+	void lmdbTemplateExposesPredicateGuaranteeControls() throws IOException {
+		CreateTemplateConfig template = CreateTemplateConfig.load("lmdb");
+
+		assertThat(field(template, "Predicate guarantee index").getControl())
+				.isEqualTo(CreateTemplateConfig.FieldControl.RADIO);
+		assertThat(field(template, "Predicate guarantee rebuild on startup").getControl())
+				.isEqualTo(CreateTemplateConfig.FieldControl.RADIO);
+		assertThat(field(template, "Predicate guarantee excluded predicates").getSize()).isEqualTo(80);
+
+		Map<String, String> values = defaultTemplateValues(template);
+		values.put("Repository ID", "lmdb-predicate-guarantee");
+		values.put("Repository title", "LMDB predicate guarantee");
+		values.put("Predicate guarantee index", "false");
+		values.put("Predicate guarantee rebuild on startup", "false");
+		values.put("Predicate guarantee excluded predicates",
+				"http://example.com/private, http://example.com/volatile");
+
+		String rendered = template.render(values);
+
+		assertThat(rendered)
+				.contains("lmdb:predicateGuaranteeIndexEnabled false")
+				.contains("lmdb:predicateGuaranteeIndexAutoRebuild false")
+				.contains("lmdb:predicateGuaranteeExcludedPredicates "
+						+ "\"http://example.com/private, http://example.com/volatile\"");
+	}
+
+	@Test
 	void parseRejectsLegacyInlineFieldHints() {
 		assertThatThrownBy(() -> parse("synthetic", String.join("\n",
 				"# @workbench.template label=\"Synthetic\" order=5",

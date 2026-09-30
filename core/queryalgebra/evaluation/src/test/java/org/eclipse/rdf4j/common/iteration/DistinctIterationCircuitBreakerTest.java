@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +81,20 @@ class DistinctIterationCircuitBreakerTest {
 				breaker.complete(handle);
 			}
 		});
+	}
+
+	@Test
+	void shouldStopCleanlyWhenClosedDuringAccept() {
+		DistinctIteration<Integer> iteration = new DistinctIteration<>(
+				new CloseableIteratorIteration<>(List.of(1).iterator()), HashSet::new) {
+			@Override
+			protected boolean add(Integer object) {
+				close();
+				return super.add(object);
+			}
+		};
+
+		assertFalse(iteration.hasNext());
 	}
 
 	private DistinctIteration<Integer> distinctIteration() {

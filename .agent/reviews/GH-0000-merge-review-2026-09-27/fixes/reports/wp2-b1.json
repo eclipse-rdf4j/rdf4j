@@ -1,0 +1,145 @@
+{
+ "wp": "wp2-packed-rules",
+ "batch": "b1",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp2.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp2/initial-evidence.wp2.txt",
+ "findings": [
+  {
+   "id": "3.2.2",
+   "status": "fixed",
+   "rootCause": "PackedLogicalRuleProgram.addScalarDependencies treated an EXISTS/IN/ANY/ALL subquery's dependency set as addRelationOutputs(body) (names the body can BIND) instead of the names it REFERENCES, and ignored the referenced-name set the codec already records in the scalar's semanticScope slot. Planner-derived EXISTS (existsScalar(int)) recorded no referenced set at all and the codec recorded none for IN/COMPARE_ANY/COMPARE_ALL. Consumers pruneUnusedOptionals (DISTINCT/REDUCED/GROUP observers) and addProjectionBelowOrderAlternative therefore dropped an OPTIONAL binding that only the subquery's inner FILTER reads.",
+   "change": "(1) New shared PLRP analysis relationReferencedNames/addRelationReferencedNames (structural over-approximation of every binding symbol a packed relation references, with a completeness flag for SERVICE/UNSUPPORTED; roadmap 4.1 'referenced'). (2) addScalarDependencies uses the codec's semanticScope name set when present, else the structural set (SUBQUERY_VALUE guard kept). (3) existsScalar(int) records nameSetPayload(relationReferencedNames(body)) so derived EXISTS carry full masks (PackedBindingFacts scheduling). (4) Precision guard: projection-below-ORDER masks the ORDER dependencies by the ORDER input's outputs so EXISTS-local names do not block the push. (5) PackedQueryCodec.compareSubqueryScalar records VarNameCollector names for IN/ANY/ALL; PackedBindingFacts reads the slot for all four operators. Over-approximating dependencies can only keep more OPTIONALs / decline more pushes, never introduce a wrong plan. (Work completed by the interrupted attempt; verified present and green in this session's tree.)",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFacts.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedExistsReferencedDependenciesTest.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanDifferentialSupport.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbExistsReferencedBindingsTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedRuleDifferentialSupport.java"
+   ],
+   "testsAdded": [
+    "PackedExistsReferencedDependenciesTest#projectionBelowOrderKeepsBindingObservedByExistsInOrderKey",
+    "PackedExistsReferencedDependenciesTest#distinctKeepsOptionalObservedByExistsInnerFilter",
+    "PackedExistsReferencedDependenciesTest#reducedKeepsOptionalObservedByExistsInnerFilter",
+    "PackedExistsReferencedDependenciesTest#distinctKeepsOptionalObservedByNotExistsInnerFilter",
+    "PackedExistsReferencedDependenciesTest#countDistinctKeepsOptionalObservedByExistsInnerFilter",
+    "PackedExistsReferencedDependenciesTest#distinctStillPrunesOptionalWhenExistsReferencesOnlyAssuredVariables",
+    "PackedExistsReferencedDependenciesTest#distinctKeepsOptionalObservedByInSubquery",
+    "PackedExistsReferencedDependenciesTest#distinctKeepsOptionalObservedByCompareAnySubquery",
+    "PackedExistsReferencedDependenciesTest#projectionBelowOrderDeclinesWhenOrderExistsReferencesProjectedAwayBinding",
+    "PackedExistsReferencedDependenciesTest#projectionBelowOrderAppliesWhenOrderExistsReferencesOnlyLocalAndProjectedBindings",
+    "LmdbExistsReferencedBindingsTest#distinctExistsInnerFilterObservesOptionalBinding",
+    "LmdbExistsReferencedBindingsTest#reducedExistsInnerFilterObservesOptionalBinding",
+    "LmdbExistsReferencedBindingsTest#distinctNotExistsInnerFilterObservesOptionalBinding",
+    "LmdbExistsReferencedBindingsTest#countDistinctExistsInnerFilterObservesOptionalBinding",
+    "LmdbExistsReferencedBindingsTest#plainSelectExistsInnerFilterBaseline",
+    "LmdbExistsReferencedBindingsTest#projectionBelowOrderExistsOrderKey"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedExistsReferencedDependenciesTest.txt\nTests run: 11, Failures: 8, Errors: 0, Skipped: 0 <<< FAILURE!\ndistinctKeepsOptionalObservedByExistsInnerFilter: the EXISTS inner FILTER reads the optional ?b ... expected: <false> but was: <true>\nprojectionBelowOrderKeepsBindingObservedByExistsInOrderKey: expected: <[s=urn:t:b]> but was: <[s=urn:t:a]>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbExistsReferencedBindingsTest.txt\nTests run: 6, Failures: 5, Errors: 0, Skipped: 0 <<< FAILURE!\ndistinctExistsInnerFilterObservesOptionalBinding: expected: <[s=urn:t:a]> but was: <[]>\ndistinctNotExistsInnerFilterObservesOptionalBinding: expected: <[s=urn:t:b, s=urn:t:c]> but was: <[s=urn:t:a, s=urn:t:b, s=urn:t:c]>\ncountDistinctExistsInnerFilterObservesOptionalBinding: expected: <[n=1]> but was: <[n=0]>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedExistsReferencedDependenciesTest.txt\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.464 s\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbExistsReferencedBindingsTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.785 s\n(the derived-EXISTS name-set assertion moved to PackedMinusReferencedVariablesTest#derivedNotExistsRecordsEveryReferencedNameOfItsBody, owned by 3.2.1)"
+  },
+  {
+   "id": "3.2.1",
+   "status": "fixed",
+   "rootCause": "PackedLogicalRuleProgram.addCorrelatedMinusAlternative guarded the MINUS -> FILTER(NOT EXISTS) rewrite (and the typed SEMI_ANTI_MINUS_ASSURED_SHARED anti-joins + SEMANTIC_ASSURED_SHARED_MINUS_FILTER hint) only on shared = outputs(L) \u2229 outputs(R) being assured on both sides plus an operator allow-list. Nothing checked names the body merely REFERENCES: for `?x :p ?n MINUS { ?x :q ?m FILTER(?n = ?m) }` ?n (left-only, read by the inner FILTER) or a nested MINUS right side reading ?n were invisible. At execution FilterIterator.evaluateSubstitutedExists substitutes EVERY bound name of the incoming row (BindingAssignerOptimizer), so the probe got NOT EXISTS semantics while MINUS never lets ?n reach the body; the derived EXISTS also recorded only the shared names. The FILTER alternative is not protected by the Join's Difference-only binding-push guard, so an enclosing join can also hand outer-scope bindings to it (critique).",
+   "change": "New guard substitutionEquivalentMinusBody, evaluated after the existing P1 checks and before ANY of the three emissions (FILTER alternative, typed anti-joins, semantic flag): P2 widened per the critique \u2014 referenced(R) \u2229 (outputs(L) \u222a names occurring anywhere in the query outside R) \u2286 shared, using relationReferencedNames (3.2.2) plus a new root walk addNamesOutsideMinusBody (the codec now passes the root relation to the rule program via setRootExpression; unknown root or incomplete referenced set => decline, fail-safe); P4 conservative \u2014 no PROJECTION/MULTI_PROJECTION anywhere in R (including nested EXISTS/IN/ANY/ALL bodies); P5 \u2014 no EXTENSION or GROUP element in R targets a shared name. P3 (nested DIFFERENCE/INTERSECTION right side referencing a shared name) was DROPPED per the critique: the differential test minusWithNestedMinusOnSharedVariableOnlyStaysRewritableAndCorrect (anti-join forced by cost) proves the substituted variable keeps its name and comparison domain (green before and after; PackedCorrelatedMinusAlternativeTest#typedSemiAntiAlternativesSupportComposedLocalRightHandSides therefore keeps its Difference RHS case). The derived EXISTS now records nameSetPayload(referenced(R)) (full set) while the anti-join correlation key stays the shared names; addSemiAntiAlternatives computes correlatedNames = outputs(L) \u2229 referenced(R) (cost-only; the executor recomputes keys from the body). Planner half of 3.4.4: the minus-assured-shared hint is emitted exactly for bodies passing P1+P2(widened)+P4+P5 and safeCorrelatedMinusProbe, and propagates only to the FILTER_COMMUTATION copies of that same FILTER (same input/body), which the new hint-scan test re-checks against P2.",
+   "files": [
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCodec.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMinusReferencedVariablesTest.java",
+    "core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanDifferentialSupport.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbMinusReferencedVariablesTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedRuleDifferentialSupport.java"
+   ],
+   "testsAdded": [
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenRightFilterReadsLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenSmallLeftAndRightFilterReadsLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenNestedMinusRightSideReadsLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#minusKeepsRowsWhenRightFilterReadsOuterScopeVariable",
+    "PackedMinusReferencedVariablesTest#minusWithNestedMinusOnSharedVariableOnlyStaysRewritableAndCorrect",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenRightFilterReadsLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenRightFilterTestsBoundOfLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenNestedMinusRightSideReadsLeftOnlyVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenRightBodyReadsOuterScopeVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenSubSelectAliasesSharedVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenSubSelectHidesSharedVariable",
+    "PackedMinusReferencedVariablesTest#declinesRewriteWhenBindProducesSharedVariable",
+    "PackedMinusReferencedVariablesTest#stillRewritesWhenRightBodyReadsOnlySharedAndLocalVariables",
+    "PackedMinusReferencedVariablesTest#stillRewritesWhenBodyIsUnionOfLocalProbes",
+    "PackedMinusReferencedVariablesTest#derivedNotExistsRecordsEveryReferencedNameOfItsBody",
+    "PackedMinusReferencedVariablesTest#everyAssuredSharedMinusFilterReferencesOnlySharedOrLocalNames",
+    "LmdbMinusReferencedVariablesTest#minusRightFilterReferencingLeftOnlyVariable",
+    "LmdbMinusReferencedVariablesTest#minusRightFilterNotBoundOfLeftOnlyVariable",
+    "LmdbMinusReferencedVariablesTest#minusRightFilterReferencingLeftOnlyVariableLargeRight",
+    "LmdbMinusReferencedVariablesTest#minusRightFilterReferencingLeftOnlyVariableLargeRightTypedLeft",
+    "LmdbMinusReferencedVariablesTest#minusSmallLeftLargeRightFilterOnLeftOnlyVariable",
+    "LmdbMinusReferencedVariablesTest#minusSmallLeftLargeRightNestedMinus",
+    "LmdbMinusReferencedVariablesTest#minusSmallLeftLargeRightFilterOnOuterScopeVariable",
+    "LmdbMinusReferencedVariablesTest#minusSmallLeftLargeRightNestedMinusOnSharedVariableOnly"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest.txt\nTests run: 16, Failures: 9, Errors: 0, Skipped: 0, Time elapsed: 0.509 s <<< FAILURE!\nminusKeepsRowsWhenSmallLeftAndRightFilterReadsLeftOnlyVariable: expected: <[n=\"1\"^^xsd:int|x=urn:t:a, n=\"2\"^^xsd:int|x=urn:t:b]> but was: <[n=\"2\"^^xsd:int|x=urn:t:b]>\nminusKeepsRowsWhenNestedMinusRightSideReadsLeftOnlyVariable: selected packed plan changed the result bag (generatedRuleMask=0xa000)\ndeclinesRewriteWhenRightFilterReadsLeftOnlyVariable: expected: <false> but was: <true>\ndeclinesRewriteWhenRightBodyReadsOuterScopeVariable: expected: <false> but was: <true>\ndeclinesRewriteWhenSubSelectHidesSharedVariable: expected: <false> but was: <true>\neveryAssuredSharedMinusFilterReferencesOnlySharedOrLocalNames: expected: <0> but was: <1>\nderivedNotExistsRecordsEveryReferencedNameOfItsBody: expected: <[dose, entity]> but was: <[entity]>\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusReferencedVariablesTest.txt\nTests run: 8, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 3.145 s <<< FAILURE!\nminusSmallLeftLargeRightFilterOnLeftOnlyVariable(File): expected: <[n=1|x=urn:t:a, n=2|x=urn:t:b]> but was: <[n=2|x=urn:t:b]>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedMinusReferencedVariablesTest.txt\nTests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.452 s -- in ...PackedMinusReferencedVariablesTest\nReport: .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusReferencedVariablesTest.txt\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.371 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbMinusReferencedVariablesTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "PackedExistsReferencedDependenciesTest (core/queryalgebra/evaluation)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 PackedExistsReferencedDependenciesTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=10, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "LmdbExistsReferencedBindingsTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 LmdbExistsReferencedBindingsTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=6, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "PackedMinusReferencedVariablesTest (core/queryalgebra/evaluation)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 PackedMinusReferencedVariablesTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=16, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "LmdbMinusReferencedVariablesTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 LmdbMinusReferencedVariablesTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=8, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite (covers PackedCorrelatedMinusAlternativeTest, PackedSearchTest#correlated*, FilterIteratorTelemetryTest, PackedExistsReferencedDependenciesTest, PackedMinusReferencedVariablesTest)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/queryalgebra/evaluation --retain-logs (verify log .mvnf/workspaces/wp2/logs/20260928T005708.721715Z-53474-e476b802/verify.log; reports .mvnf/workspaces/wp2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports)",
+   "result": "tests=1755, failures=3, errors=1, skipped=0 (time=167.4s); all packed-rule classes green incl. PackedCorrelatedMinusAlternativeTest and PackedSearchTest",
+   "reds": [
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental \u2014 java.nio.file.NoSuchFileException .../wt-wp2/papers2/papers/docs/sparql_query_rewrite_catalog.md; that file exists only as an UNTRACKED directory in the main checkout (git ls-files papers2 is empty) so any fresh worktree lacks it; no planner code involved, my diff does not touch it.",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly / #spillFileIsRemovedWhenIterationIsExhausted: pre-existing/environmental \u2014 the tests count spill files under System.getProperty(\"java.io.tmpdir\") (test :717) and got 0; the wp2 workspace runner redirects run-specific test temp data under .mvnf/workspaces/wp2/tmp/<run-id>/..., so the executor's spill dir and the test's lookup dir diverge. Executor-only test (MinusQueryEvaluationStep), not touched by this batch's planner-only diff; not re-run outside the workspace because raw mvn is forbidden here.",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: suspected flaky/load \u2014 JUnit preemptive timeout at 120000 ms while 3 reactor threads ran; the test does not touch the MINUS/EXISTS rules changed here. Isolated re-run NOT completed in this session (harness forced the final report) \u2014 must be re-run to confirm."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb unit suite (LmdbOptimizerPipelineTest etc.)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp2 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "NOT RUN \u2014 blocked behind the evaluation suite on the shared wp2 workspace lock until the harness forced the final report; must be run by the next batch/integrator (LmdbOptimizerPipelineTest#lmdbCascadesPushesFiniteMembershipBelowMinusBeforeMaterializedExists is the most relevant class).",
+   "reds": [
+    "not run"
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp4 (FilterIterator/MaterializedExistsFilterIteration): the planner now emits minus-assured-shared only for bodies passing P1 + widened P2 + P4 (no sub-select) + P5 (no BIND/aggregate on a shared name); the executor may add defense in depth (never substitute non-shared names) but must not widen what the hint allows.",
+  "wp3 (PackedPlanCache/PackedQueryCacheIdentity): the interning keys of derived EXISTS scalars (full referenced set), IN/ANY/ALL scalars (referenced set in semanticScope) and SEMI_ANTI_JOIN payloads (correlation names = outputs(L) \u2229 referenced(R)) changed; bump whatever rule-program version participates in the cache identity / invalidate persisted plan decisions.",
+  "LMDB cost model (LmdbMappedSemiAntiCosting): typed anti-join correlation names for user-written NOT EXISTS now include referenced-but-not-output names (more keys); cost-only.",
+  "LMDB plan-shape ITs (LmdbMedicalQ9PlanStabilityIT, ThemeQueryBenchmarkSmokeIT, LmdbForcedMedicalQ9PerformanceIT assert the minus-assured-shared hint): if a theme MINUS body references a left-only/outer-scope name or contains a sub-select, the anti-join is now declined \u2014 re-baseline rather than weaken the guard. Not run in this batch.",
+  "3.4.4 planner answer: hinted bodies = MINUS right sides with non-empty shared = pv(L)\u2229pv(R), shared assured on both sides, safeCorrelatedMinusProbe, referenced(R) \u2229 (pv(L) \u222a names outside R) \u2286 shared, no PROJECTION in R, no BIND/aggregate producing a shared name; plus the FILTER_COMMUTATION copies of that same FILTER (same input and body)."
+ ],
+ "followUps": [
+  "Run the core/sail/lmdb unit suite and re-run PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix in isolation; confirm the two environmental evaluation reds (papers2 untracked docs, spill-file tmpdir under workspace redirection) are green on the main checkout.",
+  "P4 precise rule (admit sub-selects that pass every shared name through unaliased) once wp4 fixes substitution into nested Projection scopes.",
+  "Consider a scalar flag to distinguish planner-derived EXISTS from a user-written NOT EXISTS with the same body/referenced set (today a collision silently drops the MINUS alternative via internLogicalIfSameGroup; benign).",
+  "External initial bindings: MINUS bodies referencing caller-prebound names are constants after BindingAssignerOptimizer in the LMDB pipeline; confirm no packed entry point plans with non-empty initial bindings without prior substitution."
+ ]
+}

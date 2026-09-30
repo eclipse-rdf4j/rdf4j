@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -38,6 +39,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -80,6 +83,15 @@ class LateralQueryEvaluationStepTest {
 		Projection hidingProjection = new Projection(nestedLateral,
 				new ProjectionElemList(new ProjectionElem("visible")));
 		TupleExpr rightArg = new Join(hidingProjection, new SingletonSet());
+		RuntimeFeedbackContract feedbackContract = mock(RuntimeFeedbackContract.class);
+		rightArg.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				node.setRuntimeFeedbackContract(feedbackContract);
+				node.setCostFeedbackTrackingEnabled(true);
+				super.meetNode(node);
+			}
+		});
 		Lateral outerLateral = new Lateral(new SingletonSet(), rightArg, Set.of("lateral"));
 
 		QueryEvaluationStep left = bindings -> iteration(leftBindings);
@@ -102,6 +114,14 @@ class LateralQueryEvaluationStepTest {
 				.asString()
 				.startsWith("-lateral-hidden-")
 				.endsWith("-lateral");
+		precompiled.get(2).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				assertThat(node.getRuntimeFeedbackContract()).isNull();
+				assertThat(node.isCostFeedbackTrackingEnabled()).isFalse();
+				super.meetNode(node);
+			}
+		});
 	}
 
 	private static CloseableIteration<BindingSet> iteration(BindingSet bindingSet) {

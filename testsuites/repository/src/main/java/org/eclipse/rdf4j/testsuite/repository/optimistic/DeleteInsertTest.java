@@ -24,6 +24,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Test that a complex delete-insert SPARQL query gets correctly executed.
@@ -67,6 +68,7 @@ public class DeleteInsertTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void test() throws Exception {
 		String load = IOUtil.readString(cl.getResource("test/insert-data.ru"));
 		con.prepareUpdate(QueryLanguage.SPARQL, load, NS).execute();

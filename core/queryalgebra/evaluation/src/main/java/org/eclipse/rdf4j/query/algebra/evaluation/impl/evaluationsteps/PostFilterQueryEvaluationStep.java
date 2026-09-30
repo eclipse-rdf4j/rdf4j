@@ -25,6 +25,7 @@ public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep wrapped;
 	private final Predicate<BindingSet> condition;
 	private final QueryModelNode metricTarget;
+	private final DeferredLongMetric rejectedRows;
 
 	public PostFilterQueryEvaluationStep(QueryEvaluationStep wrapped, QueryValueEvaluationStep condition) {
 		this(wrapped, condition, null);
@@ -35,6 +36,8 @@ public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 		this.wrapped = wrapped;
 		this.condition = condition.asPredicate();
 		this.metricTarget = metricTarget;
+		this.rejectedRows = DeferredLongMetric.create(metricTarget,
+				TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL);
 	}
 
 	@Override
@@ -50,12 +53,17 @@ public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 			@Override
 			protected boolean accept(BindingSet bindings) {
 				boolean accepted = condition.test(bindings);
-				if (!accepted && metricTarget != null) {
-					metricTarget.setLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL,
-							Math.max(0L,
-									metricTarget.getLongMetricActual(
-											TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
-									+ 1L);
+				if (!accepted) {
+					if (rejectedRows != null) {
+						rejectedRows.increment();
+					} else if (metricsEnabled(metricTarget)) {
+						metricTarget.setLongMetricActual(
+								TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL,
+								Math.max(0L,
+										metricTarget.getLongMetricActual(
+												TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
+										+ 1L);
+					}
 				}
 				return accepted;
 			}
@@ -65,5 +73,9 @@ public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 				// Nothing to close
 			}
 		};
+	}
+
+	private static boolean metricsEnabled(QueryModelNode node) {
+		return node != null && (node.isRuntimeTelemetryEnabled() || node.isCostFeedbackTrackingEnabled());
 	}
 }

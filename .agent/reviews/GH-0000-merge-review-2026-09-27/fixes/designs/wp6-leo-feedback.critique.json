@@ -1,0 +1,125 @@
+{
+  "wp": "wp6-leo-feedback",
+  "verdict": "sound-with-fixes",
+  "issues": [
+    {
+      "findingId": "3.7.1",
+      "severity": "major",
+      "issue": "The guard list misses a live publication channel. LmdbEvaluationStatistics.recordFilterOutcome (both overloads, core/sail/lmdb/.../LmdbEvaluationStatistics.java:195-203) -> LmdbEvaluationFilterServices.recordFilterOutcome (:91-97) -> LmdbFilterSelectivityStats.recordFilterOutcome (:362-375) trains filter cells. It is reached for LMDB: FilterIterator's fused VALUES-join path passes `recordFilterOutcomes = shouldRecordFilterOutcomes(...)` (core/queryalgebra/evaluation/.../iterator/FilterIterator.java:527, 535-537), NOT the legacy flag, and FilteredBindingSetAssignmentJoinIteration.handleClose (:141-147) calls evaluationStatistics.recordFilterOutcome. Only the FilterIterator's own legacy path is inert for LMDB (requiresPreboundRuntimeFeedback()==true, FilterIterator:292-293/791-792). Concrete: committed <urn:s1> <urn:p> <urn:o1>; txn adds <urn:s2> <urn:p> <urn:o2>, <urn:s3> <urn:p> <urn:o3>; run `SELECT ?s { VALUES ?o {<urn:o1> <urn:o2> <urn:o3>} ?s <urn:p> ?o FILTER(STR(?o) != \"urn:o9\") }` then rollback -> filter cell learned passed=3 at the committed stamp.",
+      "suggestion": "Route all seven entry points (shouldTrackCostFeedback, resolveRuntimeFeedbackTarget, publishRuntimeFeedbackTargets, recordOperatorOutcome x2, recordSemiAntiOutcome, recordFilterOutcome x2) through one private `publicationAllowed()` check; add the VALUES+FILTER repro variant to the LMDB test."
+    },
+    {
+      "findingId": "3.7.1",
+      "severity": "major",
+      "issue": "Binding point does not cover all strategies. LmdbStore.setEvaluationStrategyFactory (core/sail/lmdb/.../LmdbStore.java:263) / config factory (:198-201) makes getEvaluationStrategyFactory (:230-238) return the user's factory; SailSourceConnection.getEvaluationStrategy (core/sail/base/.../SailSourceConnection.java:220-222) hands store.getEvaluationStatistics() to it, so LmdbEvaluationStrategy is never constructed and `usesDefaultAutomaticOptimizerPipeline()` (LmdbStore:508-510) is false, skipping the second binding site too. With the design's default-open unbound state the leak persists unchanged for those deployments. No accessor exposes the strategy's statistics for a connection-level bind (grep of DefaultEvaluationStrategy/EvaluationStrategy finds none), and LmdbStoreConnection does not override evaluateInternal.",
+      "suggestion": "Make the unbound default fail-closed (no publication) and bind explicitly in LmdbEvaluationStrategy + LmdbQueryOptimizerPipeline; add bindExecutionSnapshot(OptionalLong.of(0L)) to the direct constructions in tests (LmdbOperatorFeedbackStatsTest x3, LmdbEvaluationStatisticsMemoizationTest x4, LmdbOptimizerPipelineTest x4, LmdbPackedPlanCacheTest x1). Alternatively expose the statistics on LmdbEvaluationStrategy and bind in LmdbStoreConnection.getEvaluationStrategy for LMDB strategies only, still fail-closed elsewhere."
+    },
+    {
+      "findingId": "3.7.1",
+      "severity": "minor",
+      "issue": "The claim that gating shouldTrackCostFeedback 'removes the observer-effect algorithm switch for these queries' is false. JoinQueryEvaluationStep:52-53 reads the NODE flag join.isCostFeedbackTrackingEnabled(), set by PackedPlanMaterializer.applyInvocationFeedbackContract (core/queryalgebra/evaluation/.../packed/PackedPlanMaterializer.java:809-811) at materialization; DefaultEvaluationStrategy's costFeedbackTracking (:590) only initializes counters (:684-705) and never sets that flag.",
+      "suggestion": "Drop the claim; if the observer effect should be avoided for suppressed queries, clear the node flag when the pipeline installs a plan for an uncommitted snapshot (or leave it to 3.7.5c)."
+    },
+    {
+      "findingId": "3.7.1",
+      "severity": "minor",
+      "issue": "Default includeInferred=true queries read a UnionSailDataset (SailSourceConnection:651, 761-763) whose getSnapshotEpoch (core/sail/base/.../UnionSailDataset.java:63-71) is empty when the two branch datasets carry different epochs (a commit landing between the two dataset() opens). Those queries silently stop publishing. Fail-closed, but the design's 'only queries reading uncommitted rows are excluded' is slightly overstated and the proposed 'write-free transaction still publishes' test must run with includeInferred=true to detect systematic over-suppression.",
+      "suggestion": "State the union rule in the design and run the over-suppression test with includeInferred=true on a store that has an inferred branch."
+    },
+    {
+      "findingId": "3.7.2",
+      "severity": "major",
+      "issue": "A collision class is missed: TripleRef (`public class TripleRef extends AbstractQueryModelNode implements TupleExpr`, core/queryalgebra/model/.../TripleRef.java:24) is neither Unary nor Binary, so LeoOperatorKey.fingerprint falls to line 246 and emits just 'TripleRef', dropping subject/predicate/object/exprVar. Concrete: `<<?s <urn:p> ?o>> ?x . ?x <urn:q> ?s` (linked) and `<<?s <urn:p> ?o>> ?x . ?x <urn:q> ?z` (unlinked) get identical JOIN fingerprints because ?s only survives inside the dropped TripleRef. This contradicts the 'collision-free by construction' claim for RDF-star joins.",
+      "suggestion": "Add a TripleRef branch: 'TRIPLEREF' + scope + s/p/o varKey + exprVar varKey (and audit any other TupleExpr that is neither Unary nor Binary, e.g. EmptySet/SingletonSet are fine)."
+    },
+    {
+      "findingId": "3.7.2",
+      "severity": "minor",
+      "issue": "'Equal strings imply isomorphic trees' also needs constant escaping. Separators ';' ',' '|' '=' appear unescaped inside literal labels/IRIs (valueKey LeoOperatorKey.java:527-541, row join :368, rows join :379). A one-column VALUES with the single label \"a|lang=|dt=http://www.w3.org/2001/XMLSchema#string;literal:b\" produces the same 'rows=' string as the two-row table {\"a\",\"b\"} (rowCount is only emitted in the bounded form, :376-379). Adversarial rather than realistic, but the by-construction claim is what justifies dropping the LMDB outputMask.",
+      "suggestion": "Length-prefix or escape constants (and VALUES cells) in the fingerprint; then the claim holds."
+    },
+    {
+      "findingId": "3.7.2",
+      "severity": "minor",
+      "issue": "Not in scope of the finding but adjacent and unaddressed: OperatorKey.writeTo (LmdbOperatorFeedbackStats.java:4001-4008) does not persist `abstractedSignature`, and readFrom (:4010-4013) restores it as \"\", so generalized keys change identity across restart even after the PERSIST_VERSION bump.",
+      "suggestion": "Either persist abstractedSignature in version 24 or exclude it from OperatorKey equality; decide in the same PR since the sidecar format is being bumped anyway."
+    },
+    {
+      "findingId": "3.7.3",
+      "severity": "minor",
+      "issue": "Invalid-sample no-op lives only in LeoConfidenceModel. The LMDB wrappers still count the sample: LearnedOperatorCounts.add (LmdbOperatorFeedbackStats.java:4080-4093) does sampleCount++ and sums nonNegative(NaN)=0, and estimate() (:4136-4138) falls back to `confidence(sampleCount)` whenever confidenceModel.sampleCount()==0, so a key fed only NaN-planned observations still yields a correction with wrapper-derived confidence. The design's file entry also misattributes lines 4085-4110 to LearnedMultiplierCounts (that class starts at :4389; 4080-4145 is LearnedOperatorCounts).",
+      "suggestion": "Decide explicitly: either skip add() when plannedRows/plannedWorkRows are non-finite (consistent with the model) or document that wrapper ratios use actual/left rows only and are valid without a planned value; fix the line attribution."
+    },
+    {
+      "findingId": "3.7.3",
+      "severity": "minor",
+      "issue": "The epoch-regression scenario as written ('failed sidecar load resets feedbackEpoch to 0 while entries carry large lastEpoch') is not reachable for the .operators sidecar: entries and loadedEpoch come from the same file and are applied together (LmdbOperatorFeedbackStats.java:2383-2499). It IS reachable across the two sidecars: .leo surfaces load independently (:2346) and carry their own lastEpoch (LmdbLeoSurfaceStats.java:431/452) while feedbackEpoch comes from .operators. Also note decayForMutation (LmdbLeoSurfaceStats:402-415) sets lastEpoch to the FUTURE nextEpoch before feedbackEpoch is assigned (LmdbOperatorFeedbackStats:683); under |distance| semantics this stays age 0 only because every early return (:665-667, :680-682) is reached without any surface having been decayed - verified, but fragile.",
+      "suggestion": "Name the cross-sidecar scenario in the design and test it (corrupt .operators, keep .leo); add an assertion in recordStoreMutation that no surface lastEpoch exceeds feedbackEpoch after the method returns."
+    },
+    {
+      "findingId": "3.7.4",
+      "severity": "minor",
+      "issue": "LeoRolloutProfile.fromSystemProperties() is re-evaluated on every rollout() call (LmdbOperatorFeedbackStats.java:2679-2681, used from shouldTrackRuntimeFeedback :2659-2663 and the shouldExpose* methods), so a naive WARN in parse() would log per estimate. The monotone-ladder option changes behaviour for the benchmark harness profiles 'safe_rule_steering' and 'safe_plan_reranking' (scripts/leo-workload-template.txt:7-8, scripts/leo-workload-benchmark.sh:30), which would gain lifecycle enforcement.",
+      "suggestion": "Guard the warning with a static AtomicBoolean (or cache the parsed profile per distinct raw value); call out the harness impact if the ladder option is chosen."
+    },
+    {
+      "findingId": "3.7.5",
+      "severity": "major",
+      "issue": "(a) The numerator 'mutatedStatements = stamp delta' is wrong in the cases that matter most. TripleStore.recordFrontierMutation (core/sail/lmdb/.../TripleStore.java:2274-2281): with the frontier estimator OFF, recordDisabledFrontierMutation (:2283-2300) increments the sequence ONCE per write transaction (guard frontierJournalDisabledMutationRecorded); with recordCache != null (bulk-load / map-resize fallback, :2977-2995) the per-statement append is skipped entirely. A 1e6-statement bulk load in OFF mode yields delta 1 -> fraction ~0 -> no decay, so learned multipliers/exact facts from the 10-row era keep full weight - a regression versus today's halving.",
+      "suggestion": "Answer the open question 'no' and use a real statement count: count approved/deprecated statements in the LMDB sink (next to learnedOptimizerTouchedPredicates()) or the tripleStore statement-count delta; never the journal sequence. Keep the flat halving as the floor when the count is unavailable."
+    },
+    {
+      "findingId": "3.7.5",
+      "severity": "major",
+      "issue": "(b) 'Any LMDB test asserting IllegalArgumentException on stamp regression (grep found none)' is wrong: LmdbOperatorFeedbackStatsTest.exactCardinalityFactFollowsLiveStamp asserts assertThrows(IllegalArgumentException, () -> stats.recordStoreMutation(41L)) (core/sail/lmdb/src/test/.../LmdbOperatorFeedbackStatsTest.java:~2680-2682) and LmdbFilterSelectivityStatsEvidencePolicyTest does the same at :232-238. Both break under regress->reset+adopt.",
+      "suggestion": "Rewrite both assertions (Routine A) to assert reset + adopted stamp instead of the throw; keep the negative-stamp assertThrows."
+    },
+    {
+      "findingId": "3.7.5",
+      "severity": "major",
+      "issue": "(b) Swallowing hook failures must degrade toward 'no evidence', not 'stale evidence'. If statisticsService.recordStoreCommit (core/sail/lmdb/.../frontier/LmdbStatisticsService.java:523-534) throws, latestStoreSequence stays behind and frontier views keep serving pre-commit exact heavy counts/zeros with no staleness signal (raw notes item 3); if operatorFeedbackStats.recordStoreMutation throws after advanceAppliedStatementMutationStamp (:637) but before decay, learned multipliers/surfaces keep full weight. A bare logger.warn turns a loud failure into silent mis-planning.",
+      "suggestion": "In the fail-safe catch, call a per-service degrade hook: operatorFeedbackStats.reset() / filterSelectivityStats.reset(), and for the statistics service a mark-stale or requestFrontierRebuild() (coordinate with wp5). Also note the catch today calls running.set(false) (LmdbSailStore.java:2389, 2394), which stops the whole store - the design should list its removal as part of the behaviour change."
+    },
+    {
+      "findingId": "3.7.5",
+      "severity": "minor",
+      "issue": "(b) The proposed integration test 'stamp-regression scenario via a sidecar with a higher applied stamp' cannot be built: appliedStatementMutationStamp is initialized from the live store (LmdbOperatorFeedbackStats.java:282) and a sidecar is only loaded when its stamp equals it (:2383-2385), so the sidecar can never push the applied stamp ahead. Regression is only reachable through the live journal sequence moving backwards.",
+      "suggestion": "Use a package-private seam (inject a failing hook / a stamp supplier that regresses) for the integration test."
+    },
+    {
+      "findingId": "3.7.5",
+      "severity": "minor",
+      "issue": "(c) The guard kernels never evaluate the right child (BoundStatementPatternGuardJoinIteration.java:62-72 only counts via guardCounter and repeats the left binding), so a 'telemetry-capable' guard kernel will report 0 rows for the right StatementPattern unless statementCount is explicitly attributed to the right child's result-size/cost-feedback counters and the join's rightRows. Otherwise LEO learns 'right SP produces 0 rows' - worse than today's observer effect. The design also cites the guard branches as 97-125; the first guard branch is at JoinQueryEvaluationStep.java:90-96.",
+      "suggestion": "Specify that the kernel must credit the counted statements to the right child's telemetry (resultSizeActual / costFeedbackActualRows) and to join right-row counters; add that assertion to the evaluation-module test."
+    }
+  ],
+  "missedFindings": [
+    "3.7.1: recordFilterOutcome channel (LmdbEvaluationStatistics:195-203 via FilteredBindingSetAssignmentJoinIteration:141-147) is a publication path not covered by the guard list.",
+    "3.7.2: TripleRef fingerprinted as bare class name (LeoOperatorKey.java:246) - RDF-star join factors collide; not in the design's (c) list.",
+    "3.7.2: OperatorKey.writeTo/readFrom drop abstractedSignature (LmdbOperatorFeedbackStats.java:4001-4013) - generalized keys change identity across restart; pre-existing but touched by the same version bump.",
+    "3.7.3: LMDB wrapper add() paths (LearnedOperatorCounts:4080-4093, LearnedMultiplierCounts:4396-4403) still count invalid observations; the design's no-op is model-only.",
+    "3.7.5b: two existing tests assert the IllegalArgumentException on stamp regression (LmdbOperatorFeedbackStatsTest ~2680-2682, LmdbFilterSelectivityStatsEvidencePolicyTest 232-238); design says none exist.",
+    "3.7.5a: stamp delta is per-transaction in frontier-OFF mode and absent under recordCache (TripleStore:2274-2300, 2977-2995); the design's open question must be answered 'no'.",
+    "Cross-WP (wp3, out of scope here): PackedPlanCache context (LmdbCascadesOptimizer.cacheContext:353-370) is not keyed on executionSnapshotEpoch.isPresent() while the pipeline cache is (LmdbQueryOptimizerPipeline:91-93); plans costed with the committed rangeProvider can be served to uncommitted-overlay queries."
+  ],
+  "semanticRegressionRisks": [
+    "3.7.5a (learning, not results): bulk load of N statements in one transaction with FrontierEstimatorMode.OFF advances the mutation stamp by 1 (TripleStore:2283-2300); proportional decay computes fraction ~0 and preserves pre-load learned multipliers/exact facts that today's flat halving would fade. E.g. learn `?s <urn:p> ?o . ?s <urn:q> ?v` on 10 rows, bulk-add 1e6 rows, next plan still trusts the 10-row correction.",
+    "3.7.5c (results): a telemetry-capable BoundStatementPattern(Guard|Left)JoinIteration must keep the `statementCount < 0 -> evaluate right side` fallback and exact duplicate repetition (BoundStatementPatternGuardJoinIteration:62-72); wrapping the probe step with JoinMetricsTracking must not change getFullyBoundStatementCount semantics. Test: `?s <urn:p> ?o . ?s <urn:q> ?o` with duplicate quads in two contexts must return the same multiset with and without trackResultSize.",
+    "3.7.1 (learning): includeInferred=true queries whose UnionSailDataset branch epochs differ (UnionSailDataset:63-71) stop publishing; if this happens systematically on a store with an inferencer, LEO never learns from default queries - verify with the over-suppression test run with includeInferred=true.",
+    "3.7.3 (planning): correctionRatio = max(actual,1)/max(estimate,1) makes actual=0 and actual=1 indistinguishable; for `SELECT ?s { ?s <urn:p> ?o FILTER(?o = <urn:missing>) }` a 50-row estimate now corrects to 1 row instead of 5e-5 - sound (never below one row) but empty-result patterns will be costed at 1 row instead of ~0.",
+    "3.7.4 (planning quality, intended): a misspelled profile (e.g. -Drdf4j.optimizer.lmdb.leo.rolloutProfile=safe_cardinality_corection) now yields OFF, and LmdbSailStore:416-420 may then skip learned-service initialization entirely (sidecars not loaded); previously such deployments silently ran SAFE_CARDINALITY_CORRECTION.",
+    "3.7.2 (planning): all >=7-factor join, filter-over-join, unary and large-VALUES keys change; after the PERSIST_VERSION bump every store relearns once - expected, but theme ITs comparing plans across runs will show one-time trajectory changes."
+  ],
+  "verifiedClaims": [
+    "LmdbEvaluationStatistics is instantiated per query: SailSourceConnection.getEvaluationStrategy (core/sail/base/.../SailSourceConnection.java:220-222) calls store.getEvaluationStatistics() and LmdbSailStore.getEvaluationStatistics (:1481-1482) returns a fresh LmdbStoreEvaluationStatistics; LmdbEvaluationStrategyFactory (:32-42) passes the same instance and tripleSource to LmdbEvaluationStrategy and LmdbQueryOptimizerPipeline; LmdbStoreConnection.getEvaluationStrategy (:68-77) creates a second statistics for the serializable pipeline.",
+    "Snapshot-epoch signal: SailDataset default empty (:47-49); SailDatasetImpl overlay layered per changeset in SailSourceBranch.dataset (:524-527) and only for changesets with actual changes (merge :389-393 `if (isChanged(change)) changes.add(...)`), so write-free transactions keep a present epoch; SailDatasetTripleTermSource.getSnapshotEpoch (:59-61) delegates; UnionSailDataset (:63-71) requires equal present epochs; LmdbCascadesOptimizer (:123-133) already derives committedSnapshotOnly from it and LmdbQueryOptimizerPipeline (:91-93) captures it.",
+    "Feedback side ignores the signal: LmdbMappedFrontierLearningSession.contract (:432-449) sets ADMIT_LOGICAL|PHYSICAL|LIFECYCLE|ORIGIN_CERTIFIED and EXACT_FACT_ELIGIBLE with dataEpoch = revisions.dataRevision(); publishResolved (LmdbOperatorFeedbackStats:485-504) stamps exactFact with appliedStatementMutationStamp when opens()==1 && exactLogicalCardinality(); recordFrontierOutcome (:1307-1315) does the same; exactCardinalityFact (:1608-1623) only checks stamp equality; LmdbMappedFrontierLearningSession (:179-187) serves it as DATABASE_EXACT / frontier-v2-exact-fact; filter cells via publishResolved :506-509; semi/anti via LmdbEstimatorRuntime :158-162.",
+    "All runtime publication funnels through LmdbEvaluationStatistics: callers are NodeTelemetryAccumulator:195-197 (recordOperatorOutcome), FilterIterator:879 and FilteredBindingSetAssignmentJoinIteration:145 (recordFilterOutcome), MaterializedExistsFilterIteration:535 (recordSemiAntiOutcome), DefaultEvaluationStrategy:594 (resolveRuntimeFeedbackTarget), :682 (shouldTrackCostFeedback), :2317 (publishRuntimeFeedbackTargets); LmdbDetachedPlanRefresh publishes nothing. The FilterIterator legacy path is inert for LMDB because requiresPreboundRuntimeFeedback() returns true (LmdbEvaluationStatistics:270-273, FilterIterator:292-293).",
+    "Existing precedent for an explain-visible planner->feedback refusal stamp: LmdbCascadesOptimizer:164-171 sets optimizer.datasetRestricted and LmdbOperatorFeedbackStats.hasDatasetRestrictedSelfOrAncestor (:895-903) consumes it.",
+    "LeoOperatorKey defects: unlinked per-factor canonicalizers in the >720 fallback (:252-259, MAX=720 :67); winning permutation's ordinals discarded (:264-268), canonicalUnion fresh canonicalizers (:337-344); Filter/LeftJoin conditions keyed after the arg on the parent table (:222-225, :232-236); UnaryTupleOperator class-name-only (:242-245); VALUES 32-bit hashes (:371, :377); LMDB keyFor drops outputMask (:2992-3004) and displayBindings is \"\" for unary operators (:3031-3045); OperatorKey.writeTo (:4001-4008). Distinct/Projection/Extension/Order are LEARN_AS_CHILD_MULTIPLIER (:2703-2711) so the DISTINCT repro is relevant at the LMDB level.",
+    "LeoConfidenceModel defects at the cited lines (:23-27, :83-117, :163-173, :175-188, :190-214) and production feeds raw plannedRows (LmdbOperatorFeedbackStats:4091-4092, :4401-4402). Recomputed calibration against LeoConfidenceModelTest: stable(3)=0.50, stable(8)=0.875, highVariance decayed q-error 85 -> penalty 0.265 with rowQErrorMax kept at 100, recentSamples exp(0.6*ln10)=3.98>3 and confidence ~0.39<0.65, zeroEstimate -> 0, symmetric flip log-EWMA amplitude \u00b11.97 -> ratio in [0.14, 7.2]; all five repro methods pass under the described fix.",
+    "LeoRolloutProfile.parse (:81-92) returns the fallback for any non-blank unknown; constructor drops explainEnabled/ruleSteeringEnabled (:41-47); declared order (:23-30) is non-monotone; LeoEvidence.compareBest ranks Kind first (:126-144). All in-repo property values are valid names (tests, LmdbMedicalQ9PlanStabilityIT, scripts), so fail-closed parsing breaks nothing in-repo; LeoEvidenceTest's sketch has confidence 0.75 and base has 0.95, so the zero-confidence filter keeps those tests green.",
+    "3.7.5: recordStoreMutation (:636-686) decays frontier by factor 0.5 (:881-893) and advances feedbackEpoch by 2048 (:660-661, :683) for every mutating commit; LmdbSailStore.flush (:2313-2400) runs the advisory hooks inside the durable-commit try and the RuntimeException/IOException catches call rollback() (:812-833) + discardEstimatorUpdatesIfTouched() + running.set(false); advanceAppliedStatementMutationStamp throws on regression in both stats classes (:3626-3633, LmdbFilterSelectivityStats:1917-1924); JoinQueryEvaluationStep:52-53 folds isCostFeedbackTrackingEnabled into runtimeTelemetryTrackingActive and all guard branches (:90-124) require it false; PackedPlanMaterializer:809-811 enables the flag on every node with a finite contract prediction.",
+    "Repro tests exercise the changed code: LmdbRolledBackFeedbackReviewReproTest drives the frontier runtime-target path (AUTHORITATIVE mode -> contract -> publishRuntimeFeedbackTargets -> publishResolved exact fact and filter cells) through LmdbEvaluationStatistics, i.e. the gate location; LeoLearningReviewReproTest hits LeoOperatorKey.from, LeoConfidenceModel.observe/decayedConfidence, LeoEvidence.bestOf and LeoRolloutProfile.parse directly. LeoOperatorKeyTest.canonicalJoinSurfaceMatchesExhaustiveReference uses 6 factors and the JOIN|factors= format, so keeping the exhaustive path for <=6 factors preserves it; unionBranchOrderDoesNotAffectKey and alphaEquivalentJoinSurfacesHaveSameStructuralKey remain valid under child()/adopt()."
+  ]
+}

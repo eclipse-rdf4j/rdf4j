@@ -1,0 +1,159 @@
+{
+ "wp": "wp3-plan-caching",
+ "batch": "b1",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp3.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/initial-evidence.wp3.txt",
+ "findings": [
+  {
+   "id": "3.9.2",
+   "status": "fixed",
+   "rootCause": "LmdbPipelinePlanCache.detachedTemplate() copied every BindingSetAssignment row as new ListBindingSet(List.copyOf(names), List.copyOf(values)); a VALUES ... UNDEF cell is a null value (ListBindingSet reads null as unbound) and List.copyOf rejects nulls, so every retainable LMDB plan containing VALUES with UNDEF threw NullPointerException in LmdbPipelinePlanCache$2.meet.",
+   "change": "Keep the freshly built ArrayList of values and seal it with Collections.unmodifiableList instead of List.copyOf; names/bindingNames stay List.copyOf/Set.copyOf (never null). Sound: the template row is a detached immutable copy with identical unbound semantics; PackedQueryCodec re-substitutes the caller's rows on a hit (e2e test asserts the warm run equals the cold run, UNDEF cells stay unbound and the plan is a pipelinePlanCacheHit).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheUndefRowsTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPipelinePlanCacheUndefRowsTest#retainedTemplateKeepsUndefRows",
+    "LmdbPipelinePlanCacheUndefRowsTest#singleRowWithEveryCellUndefIsRetained",
+    "LmdbPlanningNullValueRegressionTest#valuesWithUndefRowsEvaluatesColdAndFromTheCache",
+    "LmdbPlanningNullValueRegressionTest#singleColumnValuesWithUndefRowEvaluatesTwice"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.txt\nTests run: 2, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.061 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest\norg.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.singleRowWithEveryCellUndefIsRetained -- Time elapsed: 0.039 s <<< ERROR!\njava.lang.NullPointerException\n\tat java.base/java.util.Objects.requireNonNull(Objects.java:220)\n\tat java.base/java.util.ImmutableCollections$List12.<init>(ImmutableCollections.java:583)\n\tat java.base/java.util.List.of(List.java:1166)\n\tat java.base/java.util.ImmutableCollections.listCopy(ImmutableCollections.java:191)\n\tat java.base/java.util.List.copyOf(List.java:1191)\n(e2e: LmdbPlanningNullValueRegressionTest Tests run: 5, Failures: 0, Errors: 4)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest.txt\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.119 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheUndefRowsTest\nReport: .../org.eclipse.rdf4j.sail.lmdb.LmdbPlanningNullValueRegressionTest.txt\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.300 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanningNullValueRegressionTest\nCompliance (Failsafe, log .mvnf/workspaces/wp3/logs/20260928T005913.798423Z-54446-b098f007/verify.log):\n[INFO] Tests run: 176, Failures: 0, Errors: 0, Skipped: 0 -- in org.eclipse.rdf4j.sail.lmdb.LmdbSPARQL11QueryComplianceTest"
+  },
+  {
+   "id": "3.9.1",
+   "status": "fixed",
+   "rootCause": "LmdbPipelinePlanCache$DatasetIdentity.immutable used Set.copyOf, which rejects null elements; a null graph IRI is the documented way to name the store default graph in a Dataset (the SPARQL UPDATE compliance harness does addDefaultGraph(null)), and DatasetIdentity.of runs for every optimized query, so all such update WHERE clauses failed with NullPointerException at LmdbPipelinePlanCache.java:502.",
+   "change": "immutable() now returns Collections.unmodifiableSet(new LinkedHashSet<>(values)) (empty -> Set.of()). Equality stays content based, so the {null} default graph remains part of the identity and is distinct from a named graph and from an unrestricted dataset. Per the critique the {null} semantics are kept consistent with LmdbCascadesOptimizer.datasetUsesStoreDefaults and LmdbDetachedPlanRefresh (non-empty default graphs => restricted dataset, storeDefaults=false); this is documented in the javadoc and pinned e2e (queryWithNullDefaultGraphDatasetSeesOnlyTheNullContext asserts optimizer.datasetRestricted=true and that the restricted and unrestricted plans are never confused). Normalizing {null} to store defaults was not done: it is semantically a restriction to the null context, and the helper lives in wp1-owned LmdbCascadesOptimizer.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPipelinePlanCacheDatasetIdentityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "LmdbPipelinePlanCacheDatasetIdentityTest#datasetWithNullDefaultGraphIsCacheable",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#nullDefaultGraphIsDistinctFromNamedAndUnrestrictedDatasets",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#nullInEveryGraphSetIsAccepted",
+    "LmdbPipelinePlanCacheDatasetIdentityTest#detachedRefreshDatasetRoundTripKeepsNullDefaultGraph",
+    "LmdbPlanningNullValueRegressionTest#updateWithNullDefaultGraphDatasetInsertsRows",
+    "LmdbPlanningNullValueRegressionTest#queryWithNullDefaultGraphDatasetSeesOnlyTheNullContext"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.txt\nTests run: 4, Failures: 0, Errors: 4, Skipped: 0, Time elapsed: 0.044 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest\norg.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.nullDefaultGraphIsDistinctFromNamedAndUnrestrictedDatasets -- Time elapsed: 0.014 s <<< ERROR!\njava.lang.NullPointerException\n\tat java.base/java.util.Objects.requireNonNull(Objects.java:220)\n\tat java.base/java.util.ImmutableCollections$Set12.<init>(ImmutableCollections.java:1009)\n\tat java.base/java.util.Set.of(Set.java:702)\n\tat java.base/java.util.Set.copyOf(Set.java:734)\n\tat org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCache$DatasetIdentity.immutable(LmdbPipelinePlanCache.java:502)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.095 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPipelinePlanCacheDatasetIdentityTest\n(first post-fix run had 1 error in the test itself: Set.of().contains(null) throws by JDK contract; assertion replaced, class rerun green)\nCompliance report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sparql-compliance/6.2.0-SNAPSHOT/failsafe-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest.txt\nTests run: 90, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.805 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest"
+  },
+  {
+   "id": "3.9.3",
+   "status": "fixed",
+   "rootCause": "PatternKeys.predicateKey(IRI predicate, Value object) dereferenced predicate.stringValue() whenever object != null, but FilterSelectivityKeys.patternKeyFor passes a null predicate for a variable predicate with a constant object (?s ?p <const>), reached from LmdbFilterPassSelection / LmdbFilterSelectivityStats on the LMDB planning path -> NullPointerException at PatternKeys.java:36.",
+   "change": "Null-safe prefix: key = (predicate == null ? \"\" : predicate.stringValue()) + \"\\u0000\" + object, still folded into the synthetic constant-object IRI. Keys for constant predicates are byte-identical to before (persisted learned cells keep matching, pinned by constantPredicateKeysStayByteIdentical); variable-predicate cells keep the constant object in their identity instead of collapsing onto PatternKey(null, mask) (design's recommended option; test variablePredicateCellDiffersFromConstantPredicateCell). Javadoc documents the nullable predicate.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKeys.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/PatternKeysVariablePredicateTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningNullValueRegressionTest.java"
+   ],
+   "testsAdded": [
+    "PatternKeysVariablePredicateTest#variablePredicateWithConstantObjectYieldsStableKey",
+    "PatternKeysVariablePredicateTest#variablePredicateCellDiffersFromConstantPredicateCell",
+    "PatternKeysVariablePredicateTest#constantPredicateKeysStayByteIdentical",
+    "PatternKeysVariablePredicateTest#fullyVariablePatternKeepsNullPredicate",
+    "LmdbPlanningNullValueRegressionTest#variablePredicateWithConstantObjectEvaluates"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.txt\nTests run: 4, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.053 s <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest\norg.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.variablePredicateCellDiffersFromConstantPredicateCell -- Time elapsed: 0.003 s <<< ERROR!\njava.lang.NullPointerException: Cannot invoke \"org.eclipse.rdf4j.model.IRI.stringValue()\" because \"predicate\" is null\n\tat org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeys.predicateKey(PatternKeys.java:36)\n\tat org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys.patternKeyFor(FilterSelectivityKeys.java:76)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.081 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKeysVariablePredicateTest\n(e2e LmdbPlanningNullValueRegressionTest: Tests run: 5, Failures: 0, Errors: 0; compliance LmdbSPARQL11QueryComplianceTest: Tests run: 176, Failures: 0, Errors: 0)"
+  },
+  {
+   "id": "3.3.1",
+   "status": "fixed",
+   "rootCause": "PackedPlanCache.sameSource() accepted a routing-hash candidate as the cached query as soon as snapshot.equals(candidate) was true, before consulting the collision-proof packed identity; the routing fingerprint hashes only class names/var names, and the model equals/hashCode of ArbitraryLengthPath ignored minLength and of GroupConcat ignored the separator. So ?s <p>* ?o and ?s <p>+ ?o (and GROUP_CONCAT ',' vs '|') authenticated as the same query and the cached PackedQuery (which does encode minLength/separator) was replayed -> wrong results. (Critique narrative correction adopted: the identity was non-null for these queries because the parser marks constant Vars anonymous; the ordering was the defect.)",
+   "change": "(A) Model: ArbitraryLengthPath.equals compares minLength and hashCode mixes Long.hashCode(minLength); GroupConcat.equals compares the separator with Objects.equals and hashCode mixes Objects.hashCode(separator). (B) Cache: PackedQueryCacheIdentity.create (nullable) removed; PackedCascadesPlanner.optimizeWithCache and the two-arg PackedPlanCache overloads use createPlanIdentity (non-null for codec-supported algebra, canonicalizes only provably safe anonymous names). sameSource now: mixed (one identity, one none) -> false; known identity mismatch -> false (the load-bearing gate, independent of any future lossy equals); then structural equals confirms; identity match without equals is reused only under the existing alpha-equivalence guard (no external bindings, parameterVariant 0); both-null identities fall back to equals alone (documented: only UNSUPPORTED-codec algebra, which materialization rejects). Family reuse across constants remains legitimate and re-materializes the requested constant (test familyReuseAcrossConstantsMaterializesTheRequestedConstant); the ordering is pinned by identityMismatchRejectsEqualLookingSource with non-null identities on both sides and a deliberately lossy equals under a forced fingerprint collision.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/main/java/org/eclipse/rdf4j/query/algebra/ArbitraryLengthPath.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/main/java/org/eclipse/rdf4j/query/algebra/GroupConcat.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryCacheIdentity.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCacheTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/test/java/org/eclipse/rdf4j/query/algebra/ArbitraryLengthPathEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/model/src/test/java/org/eclipse/rdf4j/query/algebra/GroupConcatEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCacheOperatorParameterIdentityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp3/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPlanCacheOperatorParameterTest.java"
+   ],
+   "testsAdded": [
+    "ArbitraryLengthPathEqualityTest#minLengthParticipatesInEquality",
+    "ArbitraryLengthPathEqualityTest#sameMinLengthStaysEqual",
+    "GroupConcatEqualityTest#separatorParticipatesInEquality",
+    "GroupConcatEqualityTest#sameSeparatorStaysEqual",
+    "GroupConcatEqualityTest#distinctStillParticipatesInEquality",
+    "PackedPlanCacheOperatorParameterIdentityTest#starPathPlanIsNotServedForPlusPath",
+    "PackedPlanCacheOperatorParameterIdentityTest#plusPathPlanIsNotServedForStarPath",
+    "PackedPlanCacheOperatorParameterIdentityTest#groupConcatPlanIsNotServedForOtherSeparator",
+    "PackedPlanCacheOperatorParameterIdentityTest#familyReuseAcrossConstantsMaterializesTheRequestedConstant",
+    "PackedPlanCacheOperatorParameterIdentityTest#identityMismatchRejectsEqualLookingSource",
+    "PackedPlanCacheOperatorParameterIdentityTest#identityMatchStillReusesTheGenuinePlan",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeStarPathPlanForPlusPath",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServePlusPathPlanForStarPath",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparator",
+    "LmdbPackedPlanCacheOperatorParameterTest#packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparatorReversed"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest.txt\nTests run: 4, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 5.083 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest\n...packedPlanCacheMustNotServeGroupConcatPlanWithOtherSeparator(File) <<< FAILURE!\norg.opentest4j.AssertionFailedError: GROUP_CONCAT with separator '|' returned 'x,y' ==> expected: <true> but was: <false>\n...packedPlanCacheMustNotServeStarPathPlanForPlusPath(File, File) <<< FAILURE!\nReport: .../rdf4j-queryalgebra-evaluation/.../PackedPlanCacheOperatorParameterIdentityTest.txt: Tests run: 5, Failures: 4\norg.opentest4j.AssertionFailedError: p* must not be served the cached p+ plan ==> expected: <false> but was: <true>\nReport: .../rdf4j-queryalgebra-model/.../ArbitraryLengthPathEqualityTest.txt: Tests run: 2, Failures: 1 (p* and p+ must not be equal ==> expected: not equal)\nReport: .../GroupConcatEqualityTest.txt: Tests run: 3, Failures: 1 (different separators must not be equal ==> expected: not equal)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp3/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest.txt\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.715 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPackedPlanCacheOperatorParameterTest\nReport: .../rdf4j-queryalgebra-evaluation/.../PackedPlanCacheOperatorParameterIdentityTest.txt\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.352 s -- in ...PackedPlanCacheOperatorParameterIdentityTest\n(first post-fix run 5 tests/2 failures were fixture errors: family reuse across constants legitimately re-materializes; tests now pin no exact-entry hit + materialized separator; rerun green)\nReport: .../rdf4j-queryalgebra-model/.../ArbitraryLengthPathEqualityTest.txt: Tests run: 2, Failures: 0, Errors: 0\nReport: .../GroupConcatEqualityTest.txt: Tests run: 3, Failures: 0, Errors: 0\nPackedPlanCacheTest (existing, evaluation suite): Tests run: 47, Failures: 0; LmdbPackedPlanCacheTest: Tests run: 12, Failures: 0"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/model module unit suite (whole batch in tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/queryalgebra/model --retain-logs",
+   "result": "tests=88, failures=0, errors=0, skipped=1",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation module unit suite (whole batch in tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1739, failures=2, errors=1, skipped=0 (baseline 1729 + 10 new tests)",
+   "reds": [
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental \u2014 NoSuchFileException for papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2 is an untracked directory (git ls-files: 0 entries) that exists only in the main checkout, not in this worktree; the test reads nothing this batch touches.",
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsExhausted and .spillFileIsRemovedWhenIterationIsClosedEarly: pre-existing/environmental (workspace mode only) \u2014 class rerun deterministic (Tests run: 36, Failures: 2, same two). Root cause proven with a throwaway probe (ScratchTmpDirProbeTest, source deleted, evidence kept): the pom's workspace-build-root profile (activated by -Drdf4j.build.root, i.e. mvnf --workspace) sets java.io.tmpdir via surefire systemPropertyVariables inside the forked JVM, but the JDK temp-file helper had already cached the original dir, so Files.createTempFile writes to /private/var/folders/... while the test lists the redirected dir (probe: 'java.io.tmpdir=.../.mvnf/workspaces/wp3/tmp/... but Files.createTempFile wrote to /private/var/folders/0m/...'). Outside workspace mode the property is untouched (matches the review's 0-failure baseline). This batch changes no MINUS evaluation code; the test builds MinusQueryEvaluationStep from stub steps with no optimizer/cache/model-equality involvement."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb module unit suite (whole batch in tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2301, failures=0, errors=1, skipped=7 (Maven total; agent-evidence per-report sum 2186)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: environmental \u2014 java.io.IOException: No space left on device from LmdbUtil.E <- ValueStore.open (mdb_env_open) while 200 LmdbStores (400 LMDB environments) initialize in parallel on a volume at 97% (7.0 of 7.3 TiB used, 244 GiB free); class rerun reproduces the same ENOSPC (Tests run: 1, Errors: 1). Store initialization is untouched by this batch; the only config-file edits (LmdbStoreConfig/LmdbStoreSchema) are the integrator's deprecated no-op japicmp-compat accessors.",
+    "mvnf exit=1 additionally from japicmp on rdf4j-sail-lmdb (pre-existing binary-incompat break, review section 1, commit d13767b49c); not a test failure."
+   ]
+  },
+  {
+   "selection": "compliance/sparql LmdbSPARQL11QueryComplianceTest (Failsafe; the 3.9.2/3.9.3 reproducer)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmdbSPARQL11QueryComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=176, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql LmdbPARQL11UpdateComplianceTest (Failsafe; the 3.9.1 reproducer)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp3 --threads 3 --it LmdbPARQL11UpdateComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=90, failures=0, errors=0, skipped=0",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "Model equals/hashCode of ArbitraryLengthPath (minLength) and GroupConcat (separator) now participate in equality for every store (public model API); no existing test compared unlike trees; model/evaluation/lmdb suites and both LMDB SPARQL 1.1 compliance classes are green on the affected paths. wp2/wp7 planners that dedupe by TupleExpr.equals now see p* and p+ as distinct (correct).",
+  "PackedQueryCacheIdentity.create(TupleExpr) (nullable) was removed; all packed cache paths use createPlanIdentity. Any WP touching PackedPlanCache/PackedCascadesPlanner (wp2 codec facts, 3.3.5/3.8.4 later batches) must keep sameSource's ordering: identity mismatch rejects before equals is consulted.",
+  "3.9.1: a Dataset whose only default graph is null is treated as a RESTRICTED dataset (planned with storeDefaults=false) consistently in DatasetIdentity, LmdbCascadesOptimizer.datasetUsesStoreDefaults (wp1-owned, untouched) and LmdbDetachedPlanRefresh; this is the semantically correct reading (null context only) and is pinned by LmdbPlanningNullValueRegressionTest. If wp1 decides to normalize {null} to store defaults, the DatasetIdentity test nullDefaultGraphIsDistinctFromNamedAndUnrestrictedDatasets must keep passing (identity must still differ from the unrestricted one).",
+  "Both LMDB SPARQL 1.1 compliance classes are now fully green (176 + 90 tests); the review's remaining 13 non-NPE compliance failures must live in the SPARQL 1.2 / other classes and belong to other WPs."
+ ],
+ "followUps": [
+  "Build infrastructure: in workspace mode (-Drdf4j.build.root) surefire systemPropertyVariables cannot redirect java.io.tmpdir for JDK temp-file APIs already initialized (e.g. by the Mockito javaagent); pass -Djava.io.tmpdir=${rdf4j.test.tmpDirectory} via argLine instead so MinusQueryEvaluationStepTest's spill-file assertions hold under mvnf --workspace.",
+  "OptimizerRuleCatalogTest depends on an untracked papers2/ directory; either track the research inputs or make the test skip when the directory is absent, otherwise every fresh worktree reports it red.",
+  "LmdbStoreMultiRepoTest (200 parallel stores) fails with ENOSPC on this 97%-full volume; consider a smaller default map size in the test config or a disk-space precondition.",
+  "PatternKeys.CONSTANT_OBJECT_KEYS is a static unbounded ConcurrentHashMap (design note, out of scope): cap or scope per store.",
+  "Optional (not required for correctness): mix ALP minLength and GROUP_CONCAT separator presence into PackedPlanCache.ShapeFingerprint to cut collision probing."
+ ]
+}

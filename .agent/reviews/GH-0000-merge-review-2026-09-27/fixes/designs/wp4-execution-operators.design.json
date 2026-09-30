@@ -1,0 +1,312 @@
+{
+  "wp": "wp4-execution-operators",
+  "summary": "All five in-scope executor findings are real and share one root cause: correlation bindings are pushed into operands whose SPARQL semantics are bottom-up scope boundaries (sub-SELECT projections, MINUS right operands, OPTIONAL operands containing them), while the one place where pushed bindings ARE in scope (LATERAL substitution) is treated as a badly-designed leak. The design introduces one shared executor-side scope analysis (`BindingScopeAnalysis`: out-of-scope-for-correlation predicate, compatibility-selection-safe allowlist, LATERAL-substituted input names, nested-projection test) and makes three operators enforce it: `ProjectionQueryEvaluationStep` becomes the scope boundary for nested sub-selects (withholds non-projected incoming bindings, pre-binds projected names only when the body is selection-safe, filters results by compatibility), `LeftJoinQueryEvaluationStep` uses a hash left-join with a residual condition for every out-of-scope right operand (fixing the REG 3.4.1 and the correlated MINUS leak) and excludes LATERAL-substituted names from its problem-variable set (fixing the pre-existing lateral()[2] / SPARQL12 tests()[6] compliance failures, which I traced to the branch's `whenWellDesigned` wrapper), and `MinusQueryEvaluationStep` restricts the right operand's input to the MINUS comparison domain. The EXISTS per-probe substitution stops at sub-select boundaries, the `minus-assured-shared` anti-join stops trusting the planner (validates assured-shared names, probes with the shared names only, never substitutes, falls back to a real `MinusQueryEvaluationStep`), and `HashJoinIteration` closes its left input when opening the right fails. The unbounded hash build side is a real resource problem but needs a spilling build store; I recommend deferring it as roadmap 4.7 work with a concrete outline.",
+  "findings": [
+    {
+      "id": "3.4.1",
+      "title": "OPTIONAL with a condition over a sub-SELECT leaks the left row into the sub-select (REG vs develop)",
+      "status": "confirmed-by-repro",
+      "severity": "S1 (wrong results, all stores, regression vs develop)",
+      "rootCause": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java:95 `if (!leftJoin.hasCondition() && TupleExprs.containsSubquery(leftJoin.getRightArg()))` is the only path that evaluates a sub-select right operand independently (HashJoinIteration, BuildSide.RIGHT, :96-101). With a condition the step falls through to `standard` (:131) whose `evaluate` (:166-181) uses `LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep)`; LeftJoinIterator.java:94/:103 calls `rightEvaluationStep.evaluate(leftBindings)` per left row, PostFilterQueryEvaluationStep wraps `wrapped.evaluate(leftBindings)`, and ProjectionQueryEvaluationStep.java:37 `qes.evaluate(bindings)` hands the whole left row to the sub-select body, so `?t :r ?x` is evaluated with the outer `?x` bound (x is NOT projected by the sub-select, so under SPARQL bottom-up semantics it is a fresh variable), `ORDER BY ?x LIMIT 1` selects among pre-filtered rows, and `COUNT(?o)` (GroupIterator.java ~299 `arguments.evaluate(parentBindings)`) counts only compatible rows. develop (git show 4354ff137b^2 \u2026LeftJoinQueryEvaluationStep.java:46-53) returned the HashJoinIteration unconditionally before computing the condition (a different bug: it dropped the condition), so the branch's `!hasCondition()` guard plus `whenWellDesigned` (:183-185) is what makes conditioned OPTIONAL-over-sub-select correlated. Note the same leak exists for `OPTIONAL { {SELECT \u2026} ?t :z ?y }` even without a condition because `TupleExprs.containsSubquery` (model/helpers/TupleExprs.java:51-80) stops at a Join, and the Join step only protects its *right* arg (JoinQueryEvaluationStep.java:80,159-162) \u2014 JoinIterator evaluates a sub-select *left* arg with the correlated row. That variant is only closed by finding 3.4.3's projection boundary.",
+      "fix": "(a) In `supply`, replace the `!hasCondition() && containsSubquery(rightArg)` branch with `BindingScopeAnalysis.isOutOfScopeForCorrelation(rightArg)` (= variable scope change || containsSubquery || containsDifferenceInCurrentScope, i.e. exactly JoinQueryEvaluationStep.isOutOfScopeForLeftArgBindings moved to the shared helper) and build `optimized = bs -> new HashJoinIteration(left, right, bs, true, contract, context, BuildSide.RIGHT, leftJoin, residual)` where `residual` is `null` without a condition, otherwise `new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(), condition).asPredicate()` (same predicate/error handling as PostFilterQueryEvaluationStep: a ValueExprEvaluationException counts as false). (b) Add an optional `Predicate<BindingSet> residualCondition` to HashJoinIteration (new constructor overload; existing constructors pass null). In `getNextElement` (HashJoinIteration.java:191-262), when `leftJoin && residualCondition != null`: for the current probe row iterate the candidate build rows, build the merged row, test the predicate, emit only passing rows, and track `currentScanElemMatched`; when the candidate iterator is exhausted without any passing row emit the bare probe row (SPARQL LeftJoin: \u03bc1 survives alone iff no compatible \u03bc2 satisfies expr). Inner joins ignore the parameter (or apply it as a plain post-filter). (c) Keep bottom-up semantics for badly-designed inputs: `whenWellDesigned` currently routes them to BadlyDesignedLeftJoinIterator, which is itself correlated (BadlyDesignedLeftJoinIterator.java:131/:140 `rightEvaluationStep.evaluate(leftBindings)`) and therefore leaks too. Replace it for out-of-scope right operands with a generic scope wrapper: evaluate `optimized` with `getFilteredBindings(bindings, problemVars)` (BadlyDesignedLeftJoinIterator.java:181-185) and wrap the result in a FilterIteration that drops rows incompatible with the input bindings and re-adds the problem variables (the logic of BadlyDesignedLeftJoinIterator.java:84-106, extracted to a small `ScopeFilteredIteration`/static factory). (d) `problemVars`/`optionalVars` must exclude LATERAL-substituted names (see finding 3.9-lateral); otherwise the hash path is skipped for LATERAL inputs. The hash left join is sound here because the right operand is evaluated once with the LeftJoin's own input bindings (never with left rows), and HashJoinBindingContract.from (cascades/HashJoinBindingContract.java) already gives lookup = assured\u2229assured and compatibility = possible\u2229possible with partial-key indexes, so a nullable shared binding cannot drop rows.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java",
+          "lines": "64-131 (supply), 166-195 (evaluate/whenWellDesigned/isWellDesignedFor)",
+          "change": "Out-of-scope predicate instead of `!hasCondition() && containsSubquery`; residual-condition hash left join; scope-filtered badly-designed wrapper instead of correlated BadlyDesignedLeftJoinIterator for out-of-scope right operands."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+          "lines": "140-161 (constructors), 191-262 (getNextElement)",
+          "change": "New constructor overload with `Predicate<BindingSet> residualCondition`; left-join residual filtering with 'emit probe row when no candidate passes'."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/JoinQueryEvaluationStep.java",
+          "lines": "159-177",
+          "change": "Delegate isOutOfScopeForLeftArgBindings/containsDifferenceInCurrentScope to the shared BindingScopeAnalysis (behaviour-neutral)."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/BadlyDesignedLeftJoinIterator.java",
+          "lines": "84-106, 181-185",
+          "change": "Extract compatibility filter + problem-var extension and getFilteredBindings into a reusable static helper/iteration usable around any inner step."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java (new)",
+          "change": "Shared analysis: isOutOfScopeForCorrelation, containsDifferenceInCurrentScope, isCompatibilitySelectionSafe (moved from FilterIterator:446-475), lateralSubstitutedNames, isNestedProjection, projectedSourceNames."
+        }
+      ],
+      "reproTestMethods": [
+        "OperatorContractReviewReproTest#optionalOverSubSelectDoesNotLeakOuterBindingIntoNonProjectedVariable (all 3 params) -> core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/",
+        "OperatorContractReviewReproTest#optionalOverLimitedSubSelectIsEvaluatedIndependently (3 params) -> core/sail/memory",
+        "OperatorContractReviewReproTest#optionalOverAggregateSubSelectIsEvaluatedIndependently (3 params) -> core/sail/memory",
+        "OperatorContractReviewReproTest#adaptiveHashOptionalFallbackKeepsResults (guard) -> core/sail/memory"
+      ],
+      "additionalTests": [
+        "LeftJoinQueryEvaluationStepTest: subquery RHS with condition uses HashJoinIteration and applies the residual (true/false/error condition; multiple matches where only some pass; no match -> left row alone).",
+        "LeftJoinQueryEvaluationStepTest: badly-designed input (input binds a variable only the sub-select mentions) with a sub-select RHS keeps bottom-up semantics and never evaluates the RHS with the input's problem variable (assert RHS input bindings).",
+        "HashJoinIterationTest: residual condition on left join (with partial-key build rows and nullable compatibility bindings).",
+        "Memory e2e: `OPTIONAL { {SELECT ?t WHERE {?t :r ?x}} ?t :z ?y }` (sub-select as left arg of a Join inside OPTIONAL) \u2014 only green together with 3.4.3.",
+        "Port the three memory repro queries to testsuites/sparql SubselectTest so LMDB/Native run them too."
+      ],
+      "existingTestsAtRisk": [
+        "LeftJoinQueryEvaluationStepTest#subqueryOptionalWithFalseConditionDeclinesHashJoin and #subqueryOptionalWithConditionErrorDeclinesHashJoin assert algorithm `LeftJoinIterator` (:654-690): keep the result assertion (left row alone) but expect `HashJoinIteration`; rename.",
+        "LeftJoinQueryEvaluationStepTest#badlyDesignedOptionalDeclinesIndependentEvaluationAlgorithms (Projection case, :95-125): must still pass via the scope-filtered wrapper; if it asserts the BadlyDesignedLeftJoinIterator algorithm name, update the name expectation.",
+        "core/sail/memory QueryPlanRetrievalTest plan-text assertions naming `LeftJoin (LeftJoinIterator)` \u2014 only affected if an OPTIONAL there has a sub-select/MINUS RHS with a condition (none spotted; re-run).",
+        "testsuites SubselectTest#testSES2154SubselectOptional / #testSES2373SubselectOptional (no condition; should stay green)."
+      ],
+      "size": "medium",
+      "risk": "Medium: touches the hot LeftJoin path; hash left join changes the evaluation order (right operand fully materialised) for OPTIONAL-with-condition over sub-select/MINUS \u2014 a memory risk that the deferred 3.4.5(b) bound would cover. Semantics are the SPARQL-mandated ones.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Confirmed S1 regression vs develop in all stores; fix is the reviewer's proposed shape and reuses existing hash-join machinery."
+    },
+    {
+      "id": "3.4.2",
+      "title": "MINUS right operand evaluated with correlated (out-of-scope) bindings, e.g. MINUS inside OPTIONAL",
+      "status": "confirmed-by-repro",
+      "severity": "S1 (wrong results, all stores, pre-existing in develop)",
+      "rootCause": "MinusQueryEvaluationStep.java:93-102 passes the operator's full input `bindings` to the right operand: SPARQLMinusIteration via `DelayedEvaluationIteration(rightQes, bindings)` (:97) and AdaptiveMinusIteration.initialize `rightQes.evaluate(parentBindings)` (:254). For `?s :p ?z OPTIONAL { ?s :q ?y MINUS { ?y :r ?z } }` the correlated LeftJoinIterator hands `{s=a,z=z1}` to the Difference; the RHS `?y :r ?z` is evaluated with z pre-bound to z1 and yields nothing, so nothing is removed, although develop's `comparisonBindingNames` (:104-137, shared *output* names = {y}) correctly excludes z from the comparison domain. Pre-binding a variable into the RHS is a selection on that variable and is only equivalent to MINUS compatibility for variables in the comparison domain; z is not, so the pushdown is unsound. The Join step avoids this for its own right arg (`containsDifferenceInCurrentScope`, JoinQueryEvaluationStep.java:164-177) but LeftJoin does not, and any enclosing correlated operator can re-introduce it.",
+      "fix": "In `MinusQueryEvaluationStep.evaluate` compute `rightInput = comparisonBindingNames == null ? bindings : retain(bindings, comparisonBindingNames \u222a BindingScopeAnalysis.lateralSubstitutedNames(rightArg))` and pass `rightInput` to both the SPARQLMinusIteration delayed right evaluation and AdaptiveMinusIteration (store it instead of `parentBindings` for `rightQes.evaluate`). Pushing exactly the comparison names is sound: every MINUS-left row l carries \u03bc(v) for those names (the left operand receives \u03bc), so selecting RHS rows with r(v)=\u03bc(v) or v\u2209dom(r) is precisely the compatible set; names outside the comparison domain are fresh variables in the RHS under bottom-up semantics and must not be constrained. LATERAL-substituted names are added because under LATERAL they are constants in the whole right-hand side (see 3.9-lateral). The `comparisonBindingNames == null` legacy constructors keep full pushdown (they also compare on all names, which is self-consistent). Optional hardening (4.6): if `!BindingScopeAnalysis.isCompatibilitySelectionSafe(rightArg)` push nothing; I do not recommend it by default because nested OPTIONAL/sub-select operands are already scoped by 3.4.1/3.4.3 and pushing nothing turns correlated MINUS into a full RHS scan per invocation.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+          "lines": "93-102 (evaluate), 178-207/248-306 (AdaptiveMinusIteration ctor + initialize :254)",
+          "change": "Restrict the right operand's input bindings to comparisonBindingNames (+ lateral-substituted names); thread `rightInput` into both right-evaluation paths."
+        }
+      ],
+      "reproTestMethods": [
+        "OperatorContractReviewReproTest#minusInsideOptionalIsEvaluatedIndependently (3 params) -> core/sail/memory (also fixed by 3.4.1's hash path; keep both fixes, this one covers MINUS under any correlated operator)"
+      ],
+      "additionalTests": [
+        "MinusQueryEvaluationStepTest: right operand receives only comparison names (assert the BindingSet passed to rightQes) for materialized, streaming (Long.MAX_VALUE) and overflow paths.",
+        "Memory e2e: `?a :x ?w . { ?s :q ?y MINUS { ?y :r ?w } } ` nested under a JoinIterator left arg and under an OPTIONAL left row; `LATERAL { ?s :q ?y MINUS { ?y :r ?z } }` where z is a LATERAL input must still substitute z (guard for the lateral exception).",
+        "Port to testsuites/sparql MinusTest / SparqlMinusScopingTests."
+      ],
+      "existingTestsAtRisk": [
+        "testsuites SparqlMinusScopingTests, MinusTest, memory MemoryStoreMinusScopingDebugTest and compliance minus/minusScope tests: any test that encoded the old correlated behaviour flips; per memory notes some compliance minus reds are pre-existing \u2014 triage each red as outdated-test vs real bug.",
+        "MinusQueryEvaluationStepTest#materializedRightOverflowFallsBackWithoutLeftRowCorrelation and friends (count rightEvaluations only; should stay green)."
+      ],
+      "size": "small",
+      "risk": "Low-medium: localized; the restriction can only remove pre-binding, so results move toward bottom-up semantics; perf is unchanged for well-formed correlated MINUS (comparison names still pushed).",
+      "recommendation": "fix-now",
+      "recommendationReason": "Small, precise, root-cause; independent of the other findings."
+    },
+    {
+      "id": "3.4.3",
+      "title": "EXISTS over a sub-SELECT leaks outer bindings (per-probe substitution descends into nested Projection scopes; sub-select step passes incoming bindings through)",
+      "status": "confirmed-by-repro",
+      "severity": "S1 (wrong results, all stores, pre-existing)",
+      "rootCause": "Two cooperating leaks. (1) FilterIterator.java:361-369 `evaluateSubstitutedExists` clones the EXISTS body and runs `new BindingAssignerOptimizer().optimize(clone, null, bindings)`; BindingAssignerOptimizer.java:36-53 VarVisitor replaces every Var whose name is bound, including Vars inside a nested sub-select Projection (`?t :r ?x` becomes `?t :r 1` although x is not projected and is therefore a fresh variable inside the sub-select). It is reached for every body that is not compatibility-selection-safe (FilterIterator.java:442-475 excludes Projection) from both DefaultEvaluationStrategy.prepare(Exists) (:2112-2129) and the specialised semi-join path (:303-304). (2) Even with a scope-aware substitution the probe still calls `.evaluate(bindings)` on the compiled body (FilterIterator.java:368; MaterializedExistsFilterIteration probe/materialization :195/:307), and ProjectionQueryEvaluationStep.java:37 forwards the outer row into the sub-select body; GroupIterator ~299 evaluates the aggregate argument with `parentBindings`, so `COUNT(?o)` sees o pre-bound. This is the general mechanism behind 3.4.1 as well and is the 4.1 'one binding/scope analysis' item.",
+      "fix": "(a) ProjectionQueryEvaluationStep becomes the scope boundary for nested sub-selects. At construction compute (via BindingScopeAnalysis) `nested = isNestedProjection(projection)` (some ancestor other than QueryRoot/Slice/Distinct/Reduced/Order/DescribeOperator), `lateralNames = lateralSubstitutedNames(projection) \u2229 projectedSourceNames`, `innerSafe = isCompatibilitySelectionSafe(projection.getArg())` and `projectedSource = projectedSourceNames(projection)` (elements whose target equals the source name). In `evaluate(bindings)`: if `!nested` keep today's behaviour; else `inner = retain(bindings, lateralNames \u222a (innerSafe ? projectedSource : \u2205))`, evaluate `qes.evaluate(inner)`, and wrap ProjectionIterator (parentBindings = original `bindings`) in a FilterIteration that drops rows whose projected target values conflict with a value in `bindings` (compatibility on projected names). This implements 'sub-select evaluated independently, then joined on projected names' with bind-join pre-binding retained only where it is provably a selection. Top-level projections are untouched (external bindings are already substituted by BindingAssignerOptimizer in every pipeline; FedX does not run it and must keep the pass-through). (b) EXISTS substitution must stop at sub-select boundaries: add `BindingAssignerOptimizer.substituteInScope(TupleExpr, BindingSet)` (or a new ScopedBindingSubstitution visitor) that overrides `meet(Projection)`/`meet(MultiProjection)` to not descend; keep the shared optimizer's external-binding semantics unchanged. (c) In `evaluateSubstitutedExists` clone into a holder `new Exists(subQuery.clone())` and precompile `holder.getSubQuery()` so the clone has a parent and (a)'s `isNestedProjection` sees a Projection-rooted body as nested (today the clone is a parentless root). Same holder idea is used for LATERAL (3.9-lateral). (d) Follow-up perf item (not required for correctness): with (a) a Projection-rooted EXISTS body is independent of the outer row, so FilterIterator.supplyMaterializedExistsSemiJoin could stop declining `subquery-scope-boundary`/`unprojected-correlation-reference` for such bodies and materialise once instead of probing per row.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/ProjectionQueryEvaluationStep.java",
+          "lines": "20-47",
+          "change": "Nested-projection scope boundary: restricted inner bindings, compatibility filter on projected names."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/ProjectionIterator.java",
+          "lines": "64-116",
+          "change": "Optionally expose the projected-value/parent compatibility check (or leave the iterator as is and filter in the step)."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/BindingAssignerOptimizer.java",
+          "lines": "27-53",
+          "change": "Add a scope-aware substitution entry point that does not descend into Projection/MultiProjection sub-selects; existing optimize() unchanged."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java",
+          "lines": "353-369 (existsProbeFunction/evaluateSubstitutedExists), 442-475 (allowlist -> shared helper)",
+          "change": "Use scoped substitution and an Exists holder for the runtime clone; delegate isCompatibilitySelectionSafe to BindingScopeAnalysis."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java (new)",
+          "change": "isNestedProjection, projectedSourceNames, lateralSubstitutedNames, isCompatibilitySelectionSafe."
+        }
+      ],
+      "reproTestMethods": [
+        "OperatorContractReviewReproTest#existsOverSubSelectDoesNotSubstituteNonProjectedVariable (negated=false/true) -> core/sail/memory",
+        "OperatorContractReviewReproTest#existsOverAggregateSubSelectDoesNotSubstituteNonProjectedVariable (2 params) -> core/sail/memory",
+        "OperatorContractReviewReproTest#existsInsideJoinedGroupDoesNotSeeOuterJoinBinding and #existsUnionBodyAfterMaterializationBudget (guards) -> core/sail/memory"
+      ],
+      "additionalTests": [
+        "Evaluation module: ProjectionQueryEvaluationStep unit test \u2014 nested projection withholds non-projected incoming bindings, pre-binds projected names only for selection-safe bodies (SP/Join/Union/Filter/BSA vs Slice/Group/LeftJoin), drops incompatible projected values, passes parent bindings through; top-level projection unchanged (external binding still flows).",
+        "EXISTS with a *projected* variable over a LIMIT sub-select (`FILTER EXISTS { SELECT ?x WHERE {?t :r ?x} ORDER BY ?x LIMIT 1 }`) \u2014 pins down the chosen semantics (see open question).",
+        "Sub-select as the *left* arg of a Join inside OPTIONAL/EXISTS (the containsSubquery-stops-at-Join hole).",
+        "Guards: testsuites/repository SparqlSetBindingTest#testBindingSubselect (external binding into sub-select must still filter), HashJoinUserVariableTest#compatibleSubqueryBindingPreservesDuplicates/#optionalSubqueryPreservesUnmatchedUserBinding, SubselectTest, LateralTest/LateralScopeTest (all 17 + 1), FedX compliance (FedX does not run BindingAssigner)."
+      ],
+      "existingTestsAtRisk": [
+        "Any evaluation-module test that evaluates a nested Projection with pre-bound hidden variables expecting them to flow into the body (grep tests constructing Projection under Join/LeftJoin/Exists and passing bindings); FilterIteratorSemanticRegressionTest and MemoryStoreMinusScopingDebugTest#T21 should stay green.",
+        "FilterIteratorTelemetryTest / MaterializedExistsLifecycleTest: probe counts may change if the semi-join path is later widened (only for the optional follow-up (d)).",
+        "tools/federation compliance/tests: FedX relies on incoming query bindings reaching top-level projections \u2014 kept by the `nested` guard, but run FedX suites."
+      ],
+      "size": "medium",
+      "risk": "Medium-high: changes the semantics of correlated evaluation of every nested sub-select (toward the SPARQL-mandated bottom-up semantics); perf can regress where a non-selection-safe sub-select (LIMIT/aggregate) was previously (incorrectly) bind-joined per outer row and now runs unbound per invocation \u2014 mitigated because Join/LeftJoin already prefer hash joins for sub-select operands. Ship behind a system-property kill switch defaulting ON (fail-safe per roadmap 4.6) so a perf cliff can be disabled without losing the fix elsewhere.",
+      "recommendation": "fix-now-behind-flag",
+      "recommendationReason": "Root-cause fix for a pre-existing S1 in all stores and the shared mechanism behind 3.4.1's Join-variant; behaviour surface is wide enough to warrant a kill switch and a differential compliance run (roadmap 4.8)."
+    },
+    {
+      "id": "3.4.4",
+      "title": "`minus-assured-shared` anti-join hint trusted blindly: hinted body probed with full substitution (NOT EXISTS semantics), materialised with referenced-name parameters",
+      "status": "confirmed-by-repro",
+      "severity": "S1 (wrong results when the packed planner chooses the anti-join; executor-level)",
+      "rootCause": "FilterIterator.java:249-256: `assuredSharedMinus` only relaxes the root scope-change check (`containsVariableScopeChange(subQuery, true)`); after that the MINUS body is treated exactly like an EXISTS body: `requiresPerProbeExistsSubstitution` (:257) is true for any FILTER/EXTENSION/PROJECTION/LEFT_JOIN/GROUP body, the probe is `evaluateSubstitutedExists` (:358-369) which substitutes ALL left-row bindings (including `?o`, which is out of scope inside a MINUS operand), and `correlationCandidates`/`materializationParameterBindingNames` (:265-280) include every variable referenced in the body (VarNameCollector), so the materialisation path also pre-binds `?o`. Result: `Filter(left, Not(Exists(?s :q ?v FILTER(?v=?o))))` removes the row (a :q o1 matches with o substituted) while `Difference(left, same body)` keeps it. The planner side (PackedLogicalRuleProgram.java:381-421, safeCorrelatedMinusProbe :604-627) accepts such bodies (wp2, finding 3.2.1); the LMDB e2e repro passed only because the planner happened to keep Difference.",
+      "fix": "Executor implements MINUS semantics for this kind and validates the hint (roadmap 4.2 'rewrite re-checked at execution', 4.6 fail-safe). In `supplyMaterializedExistsSemiJoin` when `assuredSharedMinus`: (1) `shared = outputs(filter.getArg()) \u2229 outputs(subQuery)` (use MinusQueryEvaluationStep's actualOutputBindingNames logic, minus constant var names); validate `!shared.isEmpty()`, `filter.getArg().getAssuredBindingNames().containsAll(shared)` and `subQuery.getAssuredBindingNames().containsAll(shared)`; (2) probe function = `row -> existsArg.evaluate(retain(row, shared))` \u2014 never `evaluateSubstitutedExists`; (3) `correlationKeyBindingNames = shared`, `materializationParameterBindingNames = \u2205` (materialise the body once, unbound; `matches()` then is exactly MINUS compatibility on assured shared names, and dom(l)\u2229dom(r)\u2260\u2205 holds because shared is assured on both sides); (4) `strategyMode`: if `BindingScopeAnalysis.isCompatibilitySelectionSafe(subQuery)` honour the planned mode, else force MATERIALIZED (a restricted probe is a selection only for selection-safe bodies); (5) if validation fails, do not fall back to the plain FilterIterator (that is NOT EXISTS): return `bs -> new MinusQueryEvaluationStep(arg, existsArg, filter.getArg(), subQuery).evaluate(bs)` \u2014 the node carries the semantic kind, so a real MINUS operator is always the correct fallback \u2014 and record disposition `declined:minus-hint-invalid`. Keep `semanticKind()` telemetry in MaterializedExistsFilterIteration.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java",
+          "lines": "226-336 (supplyMaterializedExistsSemiJoin), 249-256, 265-280, 294-304",
+          "change": "Minus-mode branch: validation, shared-only probe without substitution, empty materialisation parameters, MATERIALIZED for non-selection-safe bodies, MinusQueryEvaluationStep fallback."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+          "lines": "104-137",
+          "change": "Expose (package/@InternalUseOnly) the shared-output-name computation for reuse by the minus-mode validation."
+        }
+      ],
+      "reproTestMethods": [
+        "PhysicalOperatorReviewReproTest#minusAssuredSharedHintEvaluatesBodyWithNotExistsSubstitution (bodyRootIsScopeChange=false/true) -> core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/",
+        "LmdbMinusAntiJoinReviewReproTest#minusWithLeftOnlyReferenceKeepsRows (4 shapes; currently green, keep as e2e guard) -> core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/"
+      ],
+      "additionalTests": [
+        "Hinted anti-join with `materialized-hash` and `memoized-correlated` hints on the same bodies (all modes must give MINUS results).",
+        "Hint with a non-assured shared name (OPTIONAL-produced) -> fallback to MinusQueryEvaluationStep, disposition recorded.",
+        "Hint whose body is a sub-select `SELECT ?s WHERE {?s :q ?o}` (shared {s}) and a LEFT_JOIN body (forces MATERIALIZED).",
+        "Genuine NOT EXISTS (`semiAntiKind=not-exists`) still uses substitution semantics (guard)."
+      ],
+      "existingTestsAtRisk": [
+        "FilterIteratorTelemetryTest and LMDB LmdbMappedSemiAntiCosting/anti-join explain tests that assert `actualSemiAntiAlgorithm`/probe counters for minus-assured-shared plans: forcing MATERIALIZED for non-selection-safe bodies changes actual algorithm strings and iteratorOpens; update expectations.",
+        "LMDB LmdbOptimizerPipelineTest finite-membership-below-MINUS (merge notes) \u2014 planner-side, should be unaffected."
+      ],
+      "size": "small",
+      "risk": "Low: only the hinted mode changes; fallback is the existing MINUS operator. Cost-model mismatch (planner priced a streaming anti-join, executor materialises) is a perf, not correctness, concern.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Executor must not depend on planner soundness for result correctness; the planner fix (3.2.1, wp2) is independent and both should land."
+    },
+    {
+      "id": "3.4.5a",
+      "title": "HashJoinIteration leaks its left input when opening the right input throws",
+      "status": "confirmed-by-repro",
+      "severity": "S2 (resource leak / cursor leak on LMDB reader pool)",
+      "rootCause": "HashJoinIteration.java:145-146: `this.leftIter = left.evaluate(bindings); this.rightIter = right.evaluate(bindings);` in the constructor; a QueryEvaluationException from the second call propagates before the object exists, so `handleClose` (:264-311) can never close `leftIter`. All production callers (JoinQueryEvaluationStep :77/:83, LeftJoinQueryEvaluationStep :98, FederationEvaluationStrategy :823, BoundedHashJoinIteration super call :670) are affected; AdaptiveHashLeftJoinIteration avoids it only because it owns its inputs.",
+      "fix": "In the contract-aware constructor open the left input, then open the right input inside try/catch(RuntimeException|Error): on failure close the left input (adding a close failure as suppressed) and rethrow. Roadmap 4.7's lazy opening (open both inputs in setupHashTable under a lifecycle lock, as AdaptiveHashLeftJoinIteration does) is the fuller form; it is not needed for this leak and changes close-before-first-next semantics, so keep it as a follow-up.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+          "lines": "140-161",
+          "change": "Guarded right-input opening with suppressed-exception cleanup of the left input."
+        }
+      ],
+      "reproTestMethods": [
+        "PhysicalOperatorReviewReproTest#hashJoinClosesLeftWhenRightEvaluationFails -> core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIterationTest (or new HashJoinIterationLifecycleTest)"
+      ],
+      "additionalTests": [
+        "Left close failure during cleanup is attached as suppressed to the original exception; left-open failure does not attempt to close a right input."
+      ],
+      "existingTestsAtRisk": [
+        "None expected (HashJoinIterationTest, JoinMetricsTrackingTest, AdaptiveHashLeftJoinLifecycleTest use successful inputs)."
+      ],
+      "size": "small",
+      "risk": "Very low.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Trivial, confirmed, independent."
+    },
+    {
+      "id": "3.4.5b",
+      "title": "Hash-join build side is drained without any bound or spill",
+      "status": "confirmed-by-code-reading",
+      "severity": "S2 (unbounded memory for out-of-scope joins that cannot fall back to a correlated algorithm)",
+      "rootCause": "HashJoinIteration.java:344-364 setupHashTable / :369-375 `drain` buffer the whole build input into an in-memory Collection (makeIterationCache :657-659) with no limit. Only the LeftJoin UNION path bounds it (LeftJoinQueryEvaluationStep BoundedHashJoinIteration :665-687 + fallback to LeftJoinIterator) \u2014 a fallback that is only valid for compatibility-selection-safe right operands; for the out-of-scope operands that force a hash join (sub-selects, scope changes, MINUS-containing groups, and after 3.4.1 every conditioned OPTIONAL over them) no correct fallback exists, so a bound alone would just fail the query.",
+      "fix": "Roadmap 4.7: give HashJoinIteration a bounded, spilling build store. Extract MinusQueryEvaluationStep's RightSpill/spilled-row scanning (:178-400, temp file + per-left-block rescan) into a shared `SpillableBindingSetStore` in evaluation/iterator; in HashJoinIteration, when the build collection exceeds `org.eclipse.rdf4j.query.algebra.evaluation.hashjoin.maxBuildRows` (default 1_000_000, same convention as the other properties), switch to block nested-loop over the spilled build rows per probe block (correct for inner and left joins and independent of correlation semantics). Publish `actualCostPeakMemoryRows`/spill counters so the cost model (wp2/LEO) learns the switch. Keep the existing `add`/`makeIterationCache` hooks so BoundedHashJoinIteration keeps working.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+          "lines": "344-399, 401-440, 657-717",
+          "change": "Bounded build with spill-to-disk block nested loop."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+          "lines": "178-400 (RightSpill)",
+          "change": "Extract spill store for reuse."
+        }
+      ],
+      "reproTestMethods": [],
+      "additionalTests": [
+        "Build side > limit: results identical to unbounded hash join for inner and left joins, with partial-key build rows and cross products; spill file removed on exhaustion and on early close; close during spill scan."
+      ],
+      "existingTestsAtRisk": [
+        "HashJoinIterationTest, AdaptiveHashLeftJoinLifecycleTest, MinusQueryEvaluationStepTest spill tests (refactor of RightSpill)."
+      ],
+      "size": "large",
+      "risk": "Medium (I/O, lifecycle, cancellation); no correctness change when under the limit.",
+      "recommendation": "defer",
+      "recommendationReason": "Real robustness gap but not a wrong-result bug; needs a spilling store and its own ExecPlan (Routine D). Land after 3.4.1 raises hash-join usage."
+    },
+    {
+      "id": "3.9-lateral",
+      "title": "LATERAL { OPTIONAL { SELECT \u2026 LIMIT 1 } } returns 1 row instead of 3 (compliance lateral()[2] and SPARQL12 tests()[6], all stores)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 (wrong results, all stores, introduced on this branch before the merge)",
+      "rootCause": "Both failing ids are the same query (`?s ex:predicate ?o LATERAL { OPTIONAL { SELECT * { ?s rdfs:label ?label } LIMIT 1 } }`; JUnit dynamic-test indices are 1-based: LateralTest.tests() #2 = testLateralWithOptional, SPARQL 1.2 manifest-all = 4 aggregates + lateral-02 'LATERAL join with OPTIONAL' = #6). LateralQueryEvaluationStep.java:90-92 evaluates the right arg per left row with the LATERAL input names {s,o} (substitution semantics: those names are in scope inside the right-hand side). The right arg is LeftJoin(SingletonSet, Slice(Projection)); LeftJoinQueryEvaluationStep.supply computes optionalVars = vars(rightArg) \u2212 bindingNames(leftArg=SingletonSet) = {s,label} (:81-92,:133-164) and the branch-added `whenWellDesigned` (:98-101,:183-195) sends any input binding `s` to BadlyDesignedLeftJoinIterator with problemVars={s}: the SingletonSet and the sub-select are evaluated WITHOUT s (BadlyDesignedLeftJoinIterator.java:73,:131), `LIMIT 1` returns the store's first label (subject1/'Label 1'), the joined row is then rejected as incompatible with the input for subject2/subject3 (:84-86) and, because the join 'succeeded', the left row is never emitted either \u2014 exactly 1 row (subject1) instead of 3. develop returned the HashJoinIteration unconditionally for a sub-select RHS (git show 4354ff137b^2 \u2026:46-53), which passed the row with s bound into the sub-select, so the test passed there. Under LATERAL semantics the substituted variables are constants inside the right-hand side and can never be badly-designed problem variables; the LeftJoin step has no way to know that today, and the cloned right arg (LateralQueryEvaluationStep.java:101-104) has no parent chain to discover the enclosing Lateral.",
+      "fix": "(a) `BindingScopeAnalysis.lateralSubstitutedNames(TupleExpr node)`: walk `getParentNode()`; whenever the current node is the right arg (or inside it) of a `Lateral`, add `lateral.getRightInputBindingNames()`; when passing through a Projection/MultiProjection keep only names that are projected source names (defensive; the HiddenLateralBindingRenamer already renamed hidden names). (b) LateralQueryEvaluationStep.prepareRight (:95-105): after cloning/renaming, attach a synthetic parent `new Lateral(new SingletonSet(), scopedRight, rightInputBindingNames)` before `strategy.precompile(scopedRight, context)` so the parent walk works for the clone too (the non-cloned `right` already has the real Lateral parent). (c) LeftJoinQueryEvaluationStep.supply: `optionalVars.removeAll(BindingScopeAnalysis.lateralSubstitutedNames(leftJoin))` before constructing the step, so `isWellDesignedFor` ignores them; the well-designed path (hash for the sub-select RHS, LeftJoinIterator otherwise) then passes s into the RHS, and with 3.4.3's projection boundary the Projection pushes `s` because it is a lateral-substituted projected source name. (d) Same set feeds MinusQueryEvaluationStep (3.4.2) and ProjectionQueryEvaluationStep (3.4.3). This is the 4.1 roadmap item in executor form: one analysis answering 'which incoming names are in scope by substitution' for all operators.",
+      "files": [
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LateralQueryEvaluationStep.java",
+          "lines": "95-105",
+          "change": "Give the cloned right arg a synthetic Lateral parent carrying rightInputBindingNames."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java",
+          "lines": "81-92, 133-164, 187-195",
+          "change": "Exclude LATERAL-substituted names from optionalVars/problemVars."
+        },
+        {
+          "path": "core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java (new)",
+          "change": "lateralSubstitutedNames(node)."
+        }
+      ],
+      "reproTestMethods": [
+        "Already red in-repo: compliance MemorySPARQLComplianceTest/NativeSPARQLComplianceTest/LmdbSPARQLComplianceTest lateral()[2] (LateralTest#testLateralWithOptional) and Memory/Native/Lmdb SPARQL12QueryComplianceTest tests()[6] (testcases-sparql-1.2/lateral/lateral-02). Add a fast unit repro first: core/queryalgebra/evaluation/src/test/\u2026/impl/evaluationsteps/LeftJoinQueryEvaluationStepTest#lateralSubstitutedInputIsNotAProblemVariable (LeftJoin(SingletonSet, Slice(Projection(SP))) under a Lateral, input {s}, expect HashJoinIteration and the s-bound sub-select row)."
+      ],
+      "additionalTests": [
+        "LateralQueryEvaluationStepTest e2e with DefaultEvaluationStrategy + list TripleSource for lateral-02 (OPTIONAL over LIMIT sub-select), and for `LATERAL { OPTIONAL { ?s rdfs:label ?label } }` (non-subselect RHS: LeftJoinIterator path must also treat s as in scope).",
+        "LATERAL right arg containing MINUS that references a lateral input (`LATERAL { ?s :q ?y MINUS { ?y :r ?z } }` with z from the left) \u2014 substituted z must be pushed into the MINUS RHS (interplay with 3.4.2).",
+        "Nested LATERAL inside a sub-select that hides an outer lateral name (renamer path) still works (LateralTest#testNestedLateralSubSelectDoesNotSeeHiddenOuterBinding, LateralQueryEvaluationStepTest#renamesNestedLateralInputMetadata\u2026)."
+      ],
+      "existingTestsAtRisk": [
+        "LateralTest (17) and LateralScopeTest compliance tests \u2014 expected to go fully green; LateralQueryEvaluationStepTest#renamesNestedLateralInputMetadataWhenHidingProjectionSourceBinding asserts `precompiled.size()==3` and the third precompiled tree \u2014 adding a synthetic parent does not change what is passed to precompile but verify.",
+        "LeftJoinQueryEvaluationStepTest#badlyDesignedOptionalDeclinesIndependentEvaluationAlgorithms must remain red-free (no Lateral involved)."
+      ],
+      "size": "small",
+      "risk": "Low: only inputs arriving through a Lateral are affected; the analysis is purely structural.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Branch-introduced S1 compliance failure in all stores with a fully traced mechanism; fix is small once the shared analysis exists."
+    }
+  ],
+  "implementationOrder": [
+    "3.4.5a",
+    "3.4.2",
+    "3.9-lateral",
+    "3.4.1",
+    "3.4.3",
+    "3.4.4",
+    "3.4.5b"
+  ],
+  "sharedInfrastructure": "New `org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis` (@InternalUseOnly, evaluation module): (1) `isOutOfScopeForCorrelation(TupleExpr)` = TupleExprs.isVariableScopeChange || TupleExprs.containsSubquery || containsDifferenceInCurrentScope (moved from JoinQueryEvaluationStep.java:159-177; used by JoinQueryEvaluationStep and LeftJoinQueryEvaluationStep); (2) `isCompatibilitySelectionSafe(TupleExpr)` (moved from FilterIterator.java:446-475; used by FilterIterator EXISTS probes, the minus-assured-shared mode, ProjectionQueryEvaluationStep pre-binding, and should replace LeftJoinQueryEvaluationStep.isIndependentEvaluationSafe/isPositiveBindingSubtree's overlapping checks over time); (3) `lateralSubstitutedNames(TupleExpr)` (parent walk over enclosing Lateral right args, filtered through projection source names; requires LateralQueryEvaluationStep to give its runtime clone a synthetic Lateral parent; used by LeftJoin, Minus and Projection steps); (4) `isNestedProjection(Projection)` and `projectedSourceNames(Projection)` (used by ProjectionQueryEvaluationStep; FilterIterator.evaluateSubstitutedExists must clone the EXISTS body under an `Exists` holder so it counts as nested). Planner-side analyses (cascades BindingShapeAnalyzer/StreamBindingSchema, packed relationOutputs/referenced sets \u2014 wp2) should converge on the same definitions of 'referenced', 'assured' and 'substituted' names per roadmap 4.1, and PackedLogicalRuleProgram's MINUS\u2192anti-join rule should apply the same fv(R)\u2229pv(L)\u2286shared test the executor now validates.",
+  "crossWpTouchpoints": [
+    "wp2 (planner hint emission): PackedLogicalRuleProgram.addCorrelatedMinusAlternative (:381-421) / safeCorrelatedMinusProbe (:604-627) must add fv(R)\u2229pv(L)\u2286shared (finding 3.2.1); the executor's minus-assured-shared validation (3.4.4) uses the same shared/assured definition and falls back to MinusQueryEvaluationStep when it fails \u2014 agree on the definition (MinusQueryEvaluationStep.actualOutputBindingNames) so valid plans are not declined.",
+    "wp2 / LMDB cost model: LmdbMappedSemiAntiCosting (core/sail/lmdb/.../LmdbMappedSemiAntiCosting.java:112,410,499) prices minus-assured-shared as streaming/memoized probes; the executor now forces MATERIALIZED for non-selection-safe bodies, so actualSemiAntiAlgorithm feedback and explain expectations change.",
+    "wp9 (FilterOptimizer / SameTermFilterOptimizer): the standard pipeline now runs FilterOptimizer(evaluationStatistics,false,false) (StandardQueryOptimizerPipeline.java:83-85 vs develop's (false,true)); filters relocated into a LeftJoin right arg vs kept as the LeftJoin condition decide whether 3.4.1's residual-condition hash path or a Filter inside the RHS is used \u2014 both must be correct, but explain/plan tests will differ; finding 3.4.6 (SameTerm EXISTS blind spot) is wp9's.",
+    "wp9/normalizer: QueryModelNormalizerOptimizer.meet(Join) LeftJoin reordering uses isWellDesigned; unchanged here, but the LeftJoin step's new lateral-aware problem-variable set must not be assumed by the optimizer.",
+    "LMDB rewrites (3.1.x, other WP): LmdbFilterSimplifier null-rejecting OPTIONAL\u2192INNER and LmdbBoundSimplifier inside LATERAL/EXISTS bodies \u2014 the same 'substituted input names' notion (BindingScopeAnalysis.lateralSubstitutedNames) is what those rewrites need for their correlation-aware binding context (REVIEW 3.1.1/3.1.3 fix); consider reusing it rather than a second implementation.",
+    "wp5/compliance (3.9 NPEs): the LATERAL compliance ids are fixed here; the LMDB VALUES-UNDEF / dataset NPEs are not.",
+    "FedX (tools/federation): FederationEvaluationStrategy does not run BindingAssignerOptimizer and calls HashJoinIteration directly (:823); the projection boundary is guarded to nested projections and the HashJoinIteration constructor change is source-compatible, but FedX suites must be run.",
+    "Semantics decision needed with the spec owners: whether SPARQL 1.2 EXISTS substitution pushes *projected* variables into a non-monotone sub-select (LIMIT/aggregate) or the sub-select is evaluated independently and joined (design chooses the latter; one-line switch in ProjectionQueryEvaluationStep for EXISTS context if the former is required)."
+  ],
+  "openQuestions": [
+    "SPARQL 1.2 substitute() semantics for EXISTS over a sub-select whose *projected* variable is bound in the outer row and whose body is not monotone (`EXISTS { SELECT ?x WHERE {\u2026} ORDER BY ?x LIMIT 1 }`): substitution into the body vs independent evaluation + compatibility. The repro tests only cover non-projected variables; the design picks compatibility (consistent with Join/LeftJoin hash paths) and pins it with a test \u2014 confirm against the spec text before landing 3.4.3.",
+    "Should the projection boundary also withhold correlation bindings from top-level projections when the strategy is used without the BindingAssignerOptimizer (FedX, direct strategy.evaluate callers)? Design keeps pass-through for top-level projections to preserve external-binding semantics; verify with FedX compliance.",
+    "Perf envelope of 3.4.3 for EXISTS over LIMIT/aggregate sub-selects (per-probe unbound evaluation): decide whether to widen FilterIterator.supplyMaterializedExistsSemiJoin to Projection-rooted bodies (materialise once) in the same change or as a follow-up.",
+    "3.4.2 hardening: push nothing into a MINUS RHS that is not compatibility-selection-safe (fail-safe) vs push comparison names always (perf). Design: push comparison names; revisit if a correctness case surfaces that 3.4.1/3.4.3 do not already cover.",
+    "No stored Surefire report of the compliance run was found (compliance/sparql/target has no reports; .mvnf workspaces only hold a July 6.1.0 run); the lateral()[2] root cause is confirmed by tracing but should be re-verified by running LateralTest#testLateralWithOptional red before the fix (repo Routine A requirement)."
+  ]
+}

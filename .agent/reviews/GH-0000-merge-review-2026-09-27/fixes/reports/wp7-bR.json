@@ -1,0 +1,211 @@
+{
+ "wp": "wp7-cost-model-search",
+ "batch": "bR",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7",
+ "findings": [
+  {
+   "id": "3.8-missed-1 (review-notes item 9: B&B assumes monotone costs, objectiveScore unchecked, negative scalar costs accepted)",
+   "status": "fixed",
+   "rootCause": "Branch-and-bound pruning and winner selection add scalar objectives and assume each one is a finite, non-negative cost. PackedCostSession.objectiveScore is a provider hook (LmdbFrontierStatisticsCostSession and test providers override it), and its result was never checked. A negative objective made a plan look cheaper than free. A negative or NaN objective also reached PackedCandidateArena.append, which throws IllegalArgumentException('invalid packed candidate row'), so a single bad provider value failed the whole planning run.",
+   "change": "EventSourcingPackedCostSession is the provider boundary: every production planning run wraps its session in it (PackedCascadesPlanner:480-481), and replay uses it too. It now routes both objectiveScore() and the five trace.append objective arguments through a new private providerObjective(). That method passes finite, non-negative values through unchanged and maps negative, NaN or infinite values to Double.MAX_VALUE, the packed planner's existing saturated or unknown cost. This matches PackedIncumbentSearch.objectiveIncrement and the saturatedAdd helpers. Because every objective entering the planner is now non-negative, cost sums stay monotone. That also settles the critique minor about PJE's saturatedAdd not rejecting negative sums while PIS's does: the two now behave the same. PackedCostAlgebra's NaN-propagating comparisons are unreachable, because PackedCostVectorArena:97-99 rejects NaN and negative components at write time.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostSession.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedObjectiveScoreContractTest.java"
+   ],
+   "testsAdded": [
+    "PackedObjectiveScoreContractTest#negativeProviderObjectiveIsAnUnknownCostAtTheSessionBoundary",
+    "PackedObjectiveScoreContractTest#nonFiniteProviderObjectiveIsAnUnknownCostAtTheSessionBoundary",
+    "PackedObjectiveScoreContractTest#validProviderObjectiveIsPassedThroughUnchanged",
+    "PackedObjectiveScoreContractTest#negativeProviderObjectiveMustNotProduceANegativePlanCost",
+    "PackedObjectiveScoreContractTest#negativeProviderObjectiveMustNotProduceANegativeJoinPlanCost",
+    "PackedObjectiveScoreContractTest#nanProviderObjectiveMustNotFailPlanning"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedObjectiveScoreContractTest.txt (run 20260928T082407.416125Z-85899-de8c3789)\nTests run: 6, Failures: 2, Errors: 3, Skipped: 0, Time elapsed: 0.387 s <<< FAILURE!\nnegativeProviderObjectiveMustNotProduceANegativeJoinPlanCost <<< ERROR!\njava.lang.IllegalArgumentException: invalid packed candidate row\n\tat ...packed.PackedCandidateArena.append(PackedCandidateArena.java:50)\nnanProviderObjectiveMustNotFailPlanning <<< ERROR!\njava.lang.IllegalArgumentException: invalid packed candidate row\nnonFiniteProviderObjectiveIsAnUnknownCostAtTheSessionBoundary <<< FAILURE!\norg.opentest4j.AssertionFailedError: expected: <1.7976931348623157E308> but was: <NaN>\nnegativeProviderObjectiveMustNotProduceANegativePlanCost <<< ERROR! (IllegalArgumentException: invalid packed candidate row)\nnegativeProviderObjectiveIsAnUnknownCostAtTheSessionBoundary <<< FAILURE!\norg.opentest4j.AssertionFailedError: a negative objective is not a cost; it must be treated as unknown ==> expected: <1.7976931348623157E308> but was: <-50.0>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedObjectiveScoreContractTest.txt (run 20260928T082801.851160Z-87897-7ea47116; selection with 18 related classes: tests=334, failures=0)\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.013 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedObjectiveScoreContractTest\nSame run: PackedPhysicalCostContractTest 21/0 (custom-objective contracts 110.0 / 101.0 unchanged), PackedSearchTest 93/0, PackedPlannerResourceBudgetTest 16/0\nFinal module run 20260928T093230.633944Z-48565-c23e943e: Tests run: 6, Failures: 0, Errors: 0, Skipped: 0 -- in ...PackedObjectiveScoreContractTest"
+  },
+  {
+   "id": "3.8-missed-2 (review-notes item 9: nanoTime <= 0 means no deadline)",
+   "status": "fixed",
+   "rootCause": "Planner deadlines are absolute System.nanoTime() values, and the JDK allows that clock to have any origin, so readings and deadlines can be negative. Two canonical constructors, OptimizationGoal and PackedPlannerLimits, mapped deadlineNanos <= 0 to Long.MAX_VALUE, silently turning a legal deadline into 'no deadline'. OptimizationGoal.asBudgeted also computed its overflow check as Long.MAX_VALUE - now < nanos. For a negative now, that subtraction overflows, so the budgeted deadline became unbounded.",
+   "change": "Long.MAX_VALUE is now the only 'no deadline' sentinel. The <= 0 mapping is removed from both canonical constructors, and both records document the contract. asBudgeted delegates to a new package-private OptimizationGoal.deadlineAfter(now, timeout), which saturates only on real overflow (now > MAX - timeout). No caller in core or tests passed 0 or a negative value to mean 'no deadline'; every no-deadline caller already passes Long.MAX_VALUE. LmdbCascadesOptimizer.withExplicitConfiguredDeadline already used the correct overflow form. PackedSearchBudget still compares with nanoTime() >= deadline, which is right because deadlines saturate instead of wrapping. The subtraction form would wrongly treat a far-past deadline as unexpired.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoal.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlannerLimits.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizationGoalDeadlineTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlannerDeadlineTest.java"
+   ],
+   "testsAdded": [
+    "OptimizationGoalDeadlineTest#negativeAbsoluteDeadlineIsARealDeadline",
+    "OptimizationGoalDeadlineTest#zeroAbsoluteDeadlineIsARealDeadline",
+    "OptimizationGoalDeadlineTest#onlyLongMaxValueMeansNoDeadline",
+    "OptimizationGoalDeadlineTest#budgetedDeadlineAfterANegativeClockReadingIsNotUnbounded",
+    "OptimizationGoalDeadlineTest#budgetedDeadlineSaturatesOnlyOnRealOverflow",
+    "PackedPlannerDeadlineTest#negativeAbsoluteDeadlineIsKeptByTheLimits",
+    "PackedPlannerDeadlineTest#expiredNegativeDeadlineStopsOptionalWork",
+    "PackedPlannerDeadlineTest#unboundedLimitsNeverReachTheDeadline"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerDeadlineTest.txt (run 20260928T082407.416125Z-85899-de8c3789)\nTests run: 3, Failures: 2, Errors: 0, Skipped: 0 <<< FAILURE!\nnegativeAbsoluteDeadlineIsKeptByTheLimits: a negative nanoTime deadline must not become 'no deadline' ==> expected: <-5> but was: <9223372036854775807>\nexpiredNegativeDeadlineStopsOptionalWork: a deadline in the past must refuse optional work ==> expected: <false> but was: <true>\nReport: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoalDeadlineTest.txt (run 20260928T082608.410529Z-86780-5edc3f01, deadlineAfter extracted verbatim from asBudgeted)\nTests run: 5, Failures: 3, Errors: 0, Skipped: 0 <<< FAILURE!\nbudgetedDeadlineAfterANegativeClockReadingIsNotUnbounded:49 a clock reading below zero must still yield a finite deadline ==> expected: <-50> but was: <9223372036854775807>\nnegativeAbsoluteDeadlineIsARealDeadline:31 ... ==> expected: <-5> but was: <9223372036854775807>\nzeroAbsoluteDeadlineIsARealDeadline:37 expected: <0> but was: <9223372036854775807>",
+   "postFixEvidence": "Run 20260928T082801.851160Z-87897-7ea47116 (tests=334, failures=0):\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoalDeadlineTest\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerDeadlineTest\nFinal module run 20260928T093230.633944Z-48565-c23e943e: both classes green again (5/0, 3/0)"
+  },
+  {
+   "id": "3.8.2-residual (found in the bR diff review: the tie-break digest hashed parser-generated anonymous variable names)",
+   "status": "fixed",
+   "rootCause": "The b1 canonical tie-break digest (PackedRelationDigest) hashed every node's getSignature(), including Var names. The SPARQL parser names anonymous variables (blank nodes, collections, path intermediates) with a counter in query-text order (BlankNodeVarProcessor:76-84: _anon_bnode_N). So a textual permutation of blank-node patterns renames them, changes the digests, and flips the plan chosen among exactly tied alternatives. Four equal-estimate blank-node star patterns across 24 orders gave 16 different plans.",
+   "change": "PackedRelationDigest.meet(Var) hashes a fixed ANONYMOUS_VARIABLE token for an anonymous Var without a value, and delegates to meetNode otherwise. Constants, which are anonymous Vars with values, and named variables keep their full signature, so predicates and constants still discriminate. A digest collision only falls back to the existing state-id tie-break.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRelationDigest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanAnonymousVariableOrderIndependenceTest.java"
+   ],
+   "testsAdded": [
+    "PackedPlanAnonymousVariableOrderIndependenceTest#anonymousVariableNamesAssignedInTextOrderMustNotPickThePlan",
+    "PackedPlanAnonymousVariableOrderIndependenceTest#anonymousVariableDigestStillDistinguishesConstants"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanAnonymousVariableOrderIndependenceTest.txt (run 20260928T091104.920910Z-25274-3edc6dee)\nTests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.586 s <<< FAILURE!\nanonymousVariableNamesAssignedInTextOrderMustNotPickThePlan: blank-node star with equal estimates, 24 textual orders, several plans: {Join(p1,Join(Join(p2,p3),p4))=1, ... Join(p4,Join(Join(p3,p2),p1))=3} ==> expected: <1> but was: <16>\nanonymousVariableDigestStillDistinguishesConstants: a generated anonymous name is not content ==> expected: <-5885860908729790990> but was: <-1913687424367660699>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp7/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanAnonymousVariableOrderIndependenceTest.txt (run 20260928T091216.629432Z-25592-4f6feab4; with PackedPlanOrderIndependenceTest, PackedCorrelatedComponentRowsTest, PackedSearchTest, PackedAccessEnablingSeedBudgetTest, PackedPlanCacheTest, PackedJoinOrderedPrefixTest, PackedMemoContractTest: tests=215, failures=0)\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0 -- in ...PackedPlanAnonymousVariableOrderIndependenceTest\nFinal module run 20260928T093230.633944Z-48565-c23e943e: Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.081 s"
+  },
+  {
+   "id": "3.8-missed-3 (LmdbFactorCostAssembler.finiteDifference / saturatingAdd / saturatingMultiply return Double.MAX_VALUE)",
+   "status": "deferred",
+   "rootCause": "LmdbFactorCostAssembler maps overflow and non-finite totals to Double.MAX_VALUE, so LMDB can inject saturated costs into the packed cost stream.",
+   "change": "No code change, deliberately. Double.MAX_VALUE is the packed planner's own saturation value (PJE/PIS saturatedAdd, objectiveIncrement, and now providerObjective). It is finite, so PackedWinnerTable accepts it, and since b1 ties among saturated costs are broken by the canonical content digest, not by text order. Remapping only LMDB to a smaller ceiling (such as CostVector's 1e15 UNKNOWN_COMPONENT_ROWS) would rank a genuinely overflowed plan below a real 1e16-row plan, which is critique 3.8.1 point (b). Any finite double ceiling at or above ~1e16 loses additivity, exactly as MAX_VALUE does. The real fix is roadmap 4.4's log-space, confidence-quantile objective.",
+   "deferredReason": "Needs roadmap 4.4, a log-space objective shared by PackedJoinEnumerator, PackedIncumbentSearch, PackedCostAlgebra and LmdbFactorCostAssembler. That redesigns the objective scale and is outside this reconcile batch.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFactorCostAssembler.java"
+   ]
+  },
+  {
+   "id": "critique reconciliation 3.8.1 (major: finite ceilings; minors: PackedCostAlgebra NaN, dead UNKNOWN_ROWS_CEILING, CostVector.INFINITE)",
+   "status": "fixed",
+   "rootCause": "See the b1 finding 3.8.1: CostVector mapped unknown components to MAX_VALUE, and EstimateVector.filter treated a pass ratio as a row count.",
+   "change": "Every item is handled in the tree. Major: the packed 1e60/1e150 ceilings were not adopted (b1 deviation). joinRows and saturatedAdd still saturate at MAX_VALUE, so PackedCostNumericContractTest#hugeJoinProductsSaturateInsteadOfOverflowing and PackedExecutableFallbackTierTest keep their MAX_VALUE expectations; both classes are green in the final module run. Saturated ties are resolved by the 3.8.2 digest, as the critique requested. Minor PackedCostAlgebra NaN: unreachable, because PackedCostVectorArena:97-99 rejects non-finite and negative components at write time. Minor dead UNKNOWN_ROWS_CEILING: no packed ceiling was added. The packed planner's unknown fallback remains statementPatternRows (PIS), and CostVector.UNKNOWN_COMPONENT_ROWS applies only to the CostVector/CascadesPlanner summary path. Minor CostVector.INFINITE: unchanged, so OptimizationGoal.costBound, goalFingerprint and explain output are unaffected. Semantic risk 'pass ratio 0 -> [0,0]': old and new code give the same result, there is no production caller of EstimateVector.filter, and the interval confidence is carried in plannedFilterConfidence.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/CostVector.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/EstimateVector.java"
+   ]
+  },
+  {
+   "id": "critique reconciliation 3.8.2 (major: do not sort in collectStackedFactors; minor: winner-table anchors)",
+   "status": "fixed",
+   "rootCause": "See the b1 finding 3.8.2: exact-cost ties fell back to factor ordinals assigned in query-text order.",
+   "change": "No factor array is sorted anywhere. git diff HEAD shows no change to collectStackedFactors, collectEmittedPrefixFactors, collectPhysicalPrefixRelations or collectSelectedFactors, and there is no Arrays.sort. Positional prefix and checkpoint semantics are therefore untouched, and PackedPlanCacheTest (47) and PackedJoinOrderedPrefixTest are green. Ties are broken by the content digest in the dense, correlated and greedy kernels. The anonymous-variable residual is fixed in this batch (above). PackedWinnerTable's physicalExpressionId fallback and WideJoinStates (more than 64 factors) are unchanged and stay listed as follow-ups. Semantic risk 'budgeted searches explore in canonical order': PackedAccessEnablingSeedBudgetTest (20) is green, including seedsEveryLateAccessEnablingRecipeBeforeExhaustiveSearchInEitherInputOrder.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedRelationDigest.java"
+   ]
+  },
+  {
+   "id": "critique reconciliation 3.8.3 (blocker: invariant sites; majors: sampleDeadline, PackedPlanningResult flags)",
+   "status": "fixed",
+   "rootCause": "See the b2 finding 3.8.3: one refused optional block latched workLimitReached and closed every gate.",
+   "change": "Blocker: all six 'traversal stopped without a search limit' invariant checks (PackedJoinEnumerator:5656, 6158, 6436, 8539, 8574, 9008) still test budget.workLimitReached(). The new exhausted() predicate is used only at loop-abort sites (PJE 5227, 5274, 6596, 8543, 8716, 8950, 9157; PIS 782, 988, 1015). Major sampleDeadline: it tests only the deadline, resource and unsupported flags. PackedSearchBudgetTest#refusedOptionalBlockReportsAnIncompleteSearchButAdmitsMandatoryCompletion asserts sampleDeadline() and canBeginMandatoryCompletion(1) after a refusal. Major flags: PackedCascadesPlanner:590-595 derives both legacy flags from budget.completionStatus(), covered by #refusedOptionalBlockFollowedByTheDeadlineReportsOneCompletionStatus. Related missed finding (deadline sentinel) fixed above.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchBudget.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner.java"
+   ]
+  },
+  {
+   "id": "critique reconciliation 3.8.5 (major: not-ready SERVICE bridge; minor: path connectivity names)",
+   "status": "fixed",
+   "rootCause": "See the b2 finding 3.8.5: QueryJoinOptimizer ranked cost first and allowed Cartesian products inside a connected component.",
+   "change": "Major: selectNextTupleExpr computes JoinComponentAnalysis over the ranked ready set and falls back to cost-only ranking when the legal set is empty (QueryJoinOptimizer:1049). This is covered by QueryJoinOptimizerConnectedComponentTest#notReadyServiceBridgeLeavesAReadyLegalCandidate. Minor: connectivityNames() (QJO:1694) returns only subject, object and context for ArbitraryLengthPath. It is used by both JoinComponentAnalysis and connectedByRealBinding (QJO:1949, 1957), and is covered by #propertyPathInternalVariablesDoNotBridgeComponents. The lost 'certified-small input' ordering (semantic risk) is kept as a follow-up.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryJoinOptimizer.java"
+   ]
+  },
+  {
+   "id": "critique reconciliation 3.8.6 (major: exactness only by flag, per-operator empty policy; minors: EvidenceProfile API, wide hypergraph, q-error producers)",
+   "status": "fixed",
+   "rootCause": "See the b1 finding 3.8.6: exactness was inferred from confidence 1.0, q-error metrics collapsed uncertainty, semiJoin produced a confident zero, and masks were built as int.",
+   "change": "Major: exactness comes only from the explicit EvidenceProfile.exact bit. semiJoin with an unproven empty right side keeps the zero point estimate at min(left, right) confidence (documented deviation from the 0.5 floor). An exact empty right side gives an exact empty result. difference() returns `this` for an empty right side (left rows kept), keeps the 0.5 floor for unproven full coverage, and requires exact && right.exact for exactMatchCoverage. BagEstimateMathTest#semiJoinUsesRhsExistenceWhenThereAreNoSharedVariables uses BagEstimate.exact and is green. Minor API: the 10-argument constructor and of(...) are kept as delegating overloads. Minor wide graph: wideFactorHypergraph (PJE:9525) uses PackedNodeSetArena node sets, not int masks. factorHypergraph throws PackedMemoInvariantException above LONG_FACTOR_LIMIT (PJE:11614). Minor q-error producers: traced in b1; no production code writes the five keys onto FactorCostEstimate metrics.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/BagEstimate.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/JoinFactorCostModel.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedJoinEnumerator.java"
+   ]
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "new bR classes (PackedObjectiveScoreContractTest, OptimizationGoalDeadlineTest, PackedPlannerDeadlineTest) pre-fix",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/queryalgebra/evaluation --retain-logs -- -Dtest='PackedObjectiveScoreContractTest,OptimizationGoalDeadlineTest,PackedPlannerDeadlineTest' -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=12, failures=6, errors=3, skipped=0 (run 20260928T082407.416125Z-85899-de8c3789)",
+   "reds": [
+    "all 9 are the intended pre-fix reds of findings 3.8-missed-1 and 3.8-missed-2"
+   ]
+  },
+  {
+   "selection": "bR classes + 18 related packed/cascades classes, post-fix",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/queryalgebra/evaluation --retain-logs -- -Dtest='PackedObjectiveScoreContractTest,OptimizationGoalDeadlineTest,PackedPlannerDeadlineTest,CascadesEstimateVectorTest,CostVectorSaturationInvariantTest,PackedAccessEnablingSeedBudgetTest,PackedContinuationParetoArenaTest,PackedCostOrderedStateQueueTest,PackedCostSessionLifecycleTest,PackedExecutableFallbackTierTest,PackedJoinOrderedPrefixTest,PackedMemoContractTest,PackedOperatorComponentRefinementTest,PackedPhysicalCostContractTest,PackedPlanCacheTest,PackedPlanOrderIndependenceTest,PackedPlanRecipeTest,PackedPlannerResourceBudgetTest,PackedSearchTest,PackedSearchBudgetTest,PackedPlannerBoundaryTest' -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=334, failures=0, errors=0, skipped=0 (run 20260928T082801.851160Z-87897-7ea47116)",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite (after M1/M2 fixes, before the digest fix)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1791, failures=3, errors=1, skipped=0 (run ~20260928T082955, output ../wp7-bR-eval-suite.out)",
+   "reds": [
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly/#spillFileIsRemovedWhenIterationIsExhausted: pre-existing. Also red on the HEAD baseline worktree wt-wp7-baseline (run 20260928T084416.934288Z-99536-45f030d9, Tests run: 36, Failures: 2).",
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: pre-existing/environmental (NoSuchFile papers2/..., an untracked directory of the main checkout that is absent from every worktree).",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky/environmental 120 s preemptive timeout under load average ~90. The HEAD baseline run concurrently also timed out: Tests run: 1, Failures: 1, 120.1 s (baseline run 20260928T083959.128573Z-95611-17c5b677; current run 20260928T084006.510433Z-95753-13227cbc). The whole class passed 40/40 in the final run below (132.4 s, load ~20)."
+   ]
+  },
+  {
+   "selection": "PackedPlanAnonymousVariableOrderIndependenceTest pre-fix",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 PackedPlanAnonymousVariableOrderIndependenceTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=2, failures=2, errors=0, skipped=0 (run 20260928T091104.920910Z-25274-3edc6dee)",
+   "reds": [
+    "intended pre-fix red of finding 3.8.2-residual"
+   ]
+  },
+  {
+   "selection": "digest test + digest/budget-sensitive packed classes, post-fix",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/queryalgebra/evaluation --retain-logs -- -Dtest='PackedPlanAnonymousVariableOrderIndependenceTest,PackedPlanOrderIndependenceTest,PackedCorrelatedComponentRowsTest,PackedSearchTest,PackedAccessEnablingSeedBudgetTest,PackedPlanCacheTest,PackedJoinOrderedPrefixTest,PackedMemoContractTest' -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=215, failures=0, errors=0, skipped=0 (run 20260928T091216.629432Z-25592-4f6feab4)",
+   "reds": []
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite, FINAL tree (all WP test classes included: CostVectorSaturationInvariantTest 7, FactorEstimateExactnessInvariantTest 11, PackedFactorMaskWidthTest 3, PackedPlanOrderIndependenceTest 8, PackedSearchBudgetTest 7, QueryJoinOptimizerConnectedComponentTest 12, PackedObjectiveScoreContractTest 6, OptimizationGoalDeadlineTest 5, PackedPlannerDeadlineTest 3, PackedPlanAnonymousVariableOrderIndependenceTest 2, all green)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1793, failures=2, errors=1, skipped=0 (run 20260928T093230.633944Z-48565-c23e943e)",
+   "reds": [
+    "MinusQueryEvaluationStepTest x2: pre-existing (red on the HEAD baseline, run 20260928T084416.934288Z-99536-45f030d9)",
+    "OptimizerRuleCatalogTest: pre-existing/environmental (missing untracked papers2/ directory)"
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb full module (surefire; failsafe skipped by the surefire error); tree before the digest fix, which touches only the evaluation module",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "Maven: Tests run: 2289, Failures: 0, Errors: 1, Skipped: 7 (mvnf summary tests=2174; run 20260928T084643.766996Z-1166-268beae6)",
+   "reds": [
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: IOException 'No space left on device' (200 parallel LMDB environments, host volume 98% full). Pre-existing/environmental: it failed the same way on a current-tree rerun (run 20260928T091350.362546Z-25984-1ab8fe70) and on the HEAD baseline worktree (run 20260928T091510.853310Z-26625-e9cff2e4)."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb full failsafe set (LMDB ITs) + LmdbPackedCostModelFullyBoundLookupTest, LmdbOptimizerPipelineTest, LmdbEstimateAuditHarnessTest, FINAL tree",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp7 --threads 3 core/sail/lmdb --retain-logs -- -Dtest='LmdbPackedCostModelFullyBoundLookupTest,LmdbOptimizerPipelineTest,LmdbEstimateAuditHarnessTest' -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=236, failures=0, errors=0, skipped=98 (run 20260928T091616.795181Z-26910-64c08092); failsafe alone tests=144, failures=0, errors=0, skipped=98, incl. LmdbSocialMediaOptimizedQueryRegressionIT 3/0 (q10) and LmdbMedicalOptimizedQueryRegressionIT 8/0",
+   "reds": []
+  }
+ ],
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp7.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp7/initial-evidence.wp7.txt",
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp3 (fail-safe): a provider objective that is negative or non-finite no longer throws IllegalArgumentException from PackedCandidateArena. EventSourcingPackedCostSession maps it to the saturated cost Double.MAX_VALUE, which removes one planning-failure source that wp3's fallback would otherwise have to absorb. PackedPlanCache and its single-flight code are untouched.",
+  "All WPs: OptimizationGoal and PackedPlannerLimits no longer treat deadlineNanos <= 0 as 'no deadline'; only Long.MAX_VALUE means none. Any WP code that passes 0 or -1 to mean 'unbounded' must pass Long.MAX_VALUE instead. No such caller exists at HEAD, and grep found none in core.",
+  "wp2/wp6: PackedRelationDigest now ignores the names of anonymous, valueless Vars. Code that reuses the digest as a key (roadmap 4.5) gets name-insensitive identities for blank-node and path variables.",
+  "The '// Some portions generated by Claude' signature line was added below the existing signature in each Java file this WP modified (not the integrator's LmdbStoreConfig/LmdbStoreSchema edits). Other WPs adding the identical line at the same place will merge cleanly.",
+  "The patch is cumulative for the worktree and still contains the integrator's LmdbStoreConfig/LmdbStoreSchema japicmp edits, which were left untouched."
+ ],
+ "followUps": [
+  "Roadmap 4.4: a log-space, confidence-quantile objective to replace MAX_VALUE saturation in PackedJoinEnumerator, PackedIncumbentSearch, PackedCostAlgebra and LmdbFactorCostAssembler (deferred finding 3.8-missed-3).",
+  "Extend the digest tie-break to WideJoinStates (more than 64 factors) and to PackedWinnerTable.candidateIsBetter's physicalExpressionId fallback once a repro exists.",
+  "3.8.6(c): revisit flooring unproven-empty EXISTS rows (min(1,left)) once plan-shape tests for EXISTS over empty predicates exist.",
+  "3.8.5: decide on a certified-small-input exception and on the all-variable 'segment fence' policy (dropped test reorderJoinArgsTreatsAllVariablePatternAsSegmentFence).",
+  "Run core/sail/memory, core/sail/nativerdf, testsuites/sparql and compliance/sparql against the 3.8.5 QueryJoinOptimizer change before integration (all-store impact; not run by this WP).",
+  "Rerun LmdbStoreMultiRepoTest and PackedFrontierSubsetKernelContractTest#arbitraryWidthBushy... on an idle host with free disk space. Both are environmental reds that also fail on the HEAD baseline.",
+  "OptimizationGoal.hashCode mixes the absolute deadline (review-notes item 9, 'absolute nanoTime deadline in hashCode'): budgeted goals never share memo keys across calls. Not changed here."
+ ]
+}

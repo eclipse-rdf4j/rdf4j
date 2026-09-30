@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -59,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -1536,6 +1538,188 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			}
 			super.meet(statementPattern);
 		}
+	}
+
+	@Test
+	public void reorderJoinArgsKeepsLeadingValuesBeforeStatementPatternSegment() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("target"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		StatementPattern firstConsumer = new StatementPattern(Var.of("entity"),
+				Var.of("pA", vf.createIRI("ex:pA")), Var.of("target"));
+		StatementPattern secondConsumer = new StatementPattern(Var.of("entity"),
+				Var.of("pB", vf.createIRI("ex:pB")), Var.of("other"));
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(
+				new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource()),
+				new ArrayDeque<>(List.of(values, firstConsumer, secondConsumer)));
+
+		assertThat(reordered).containsExactly(values, firstConsumer, secondConsumer);
+	}
+
+	@Test
+	public void reorderJoinArgsKeepsValuesBetweenStatementPatternSegments() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern beforeValues = new StatementPattern(Var.of("sa"),
+				Var.of("pA", vf.createIRI("ex:pA")), Var.of("oa"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("target"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		StatementPattern afterValues = new StatementPattern(Var.of("sb"),
+				Var.of("pB", vf.createIRI("ex:pB")), Var.of("ob"));
+		StatementPattern afterValuesNeighbor = new StatementPattern(Var.of("sc"),
+				Var.of("pC", vf.createIRI("ex:pC")), Var.of("oc"));
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(
+				new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource()),
+				new ArrayDeque<>(List.of(beforeValues, values, afterValues, afterValuesNeighbor)));
+
+		assertThat(reordered).containsExactly(beforeValues, values, afterValues, afterValuesNeighbor);
+	}
+
+	@Test
+	public void reorderJoinArgsKeepsConnectivityWhenJoinEstimatesAreInfinite() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern first = new StatementPattern(Var.of("a"),
+				Var.of("pA", vf.createIRI("ex:pA")), Var.of("bridgeAB"));
+		StatementPattern middle = new StatementPattern(Var.of("bridgeAB"),
+				Var.of("pB", vf.createIRI("ex:pB")), Var.of("bridgeBC"));
+		StatementPattern last = new StatementPattern(Var.of("bridgeBC"),
+				Var.of("pC", vf.createIRI("ex:pC")), Var.of("c"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(first);
+		ordered.add(last);
+		ordered.add(middle);
+
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof StatementPattern pattern) {
+					return switch (getPredicateValue(pattern)) {
+					case "ex:pA" -> 1.0d;
+					case "ex:pB" -> 2.0d;
+					case "ex:pC" -> 3.0d;
+					default -> 10.0d;
+					};
+				}
+				if (expression instanceof Join) {
+					return Double.POSITIVE_INFINITY;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(new QueryJoinOptimizer(statistics, new EmptyTripleSource()),
+				ordered);
+
+		assertThat(reordered).containsExactly(first, middle, last);
+	}
+
+	@Test
+	public void reorderJoinArgsDoesNotTreatConstantPseudoBindingsAsJoinEdges() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern first = new StatementPattern(
+				Var.of("_const_shared", vf.createIRI("ex:shared"), true, true),
+				Var.of("pA", vf.createIRI("ex:pA")), Var.of("bridge"));
+		StatementPattern falseNeighbor = new StatementPattern(
+				Var.of("_const_shared", vf.createIRI("ex:shared"), true, true),
+				Var.of("pC", vf.createIRI("ex:pC")), Var.of("z"));
+		StatementPattern realNeighbor = new StatementPattern(Var.of("bridge"),
+				Var.of("pB", vf.createIRI("ex:pB")), Var.of("c"));
+
+		Deque<TupleExpr> ordered = new ArrayDeque<>();
+		ordered.add(first);
+		ordered.add(falseNeighbor);
+		ordered.add(realNeighbor);
+
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof StatementPattern pattern) {
+					return switch (getPredicateValue(pattern)) {
+					case "ex:pA" -> 1.0d;
+					case "ex:pB" -> 2.0d;
+					case "ex:pC" -> 3.0d;
+					default -> 10.0d;
+					};
+				}
+				if (expression instanceof Join join) {
+					// Equal join estimates leave connectivity as the only tie-break: a shared constant pseudo
+					// binding must not count as a join edge.
+					return 10.0d;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(new QueryJoinOptimizer(statistics, new EmptyTripleSource()),
+				ordered);
+
+		assertThat(reordered).containsExactly(first, realNeighbor, falseNeighbor);
+	}
+
+	// REINFORCE: a trailing non-eligible factor (VALUES) stays after the reordered statement-pattern segment
+	@Test
+	public void reorderJoinArgsKeepsTrailingValuesAfterStatementPatternSegment() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern a = new StatementPattern(Var.of("sa"), Var.of("pA", vf.createIRI("ex:pA")),
+				Var.of("oa"));
+		StatementPattern b = new StatementPattern(Var.of("sb"), Var.of("pB", vf.createIRI("ex:pB")),
+				Var.of("ob"));
+		StatementPattern c = new StatementPattern(Var.of("sc"), Var.of("pC", vf.createIRI("ex:pC")),
+				Var.of("oc"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("target"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(
+				new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource()),
+				new ArrayDeque<>(List.of(a, b, c, values)));
+
+		assertThat(reordered).containsExactly(b, c, a, values);
+	}
+
+	// REINFORCE: a Filter join factor is a segment fence; it keeps its position and only the eligible run after
+	// it is reordered by the estimator
+	@Test
+	public void reorderJoinArgsKeepsFilterFactorAsSegmentFence() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern beforeFence = new StatementPattern(Var.of("sa"),
+				Var.of("pA", vf.createIRI("ex:pA")), Var.of("oa"));
+		Filter filterFence = new Filter(
+				new StatementPattern(Var.of("sf"), Var.of("pF", vf.createIRI("ex:pF")), Var.of("of")),
+				new Compare(Var.of("of"), new ValueConstant(vf.createLiteral(1)), Compare.CompareOp.GT));
+		StatementPattern afterFenceExpensive = new StatementPattern(Var.of("sc"),
+				Var.of("pC", vf.createIRI("ex:pC")), Var.of("oc"));
+		StatementPattern afterFenceCheap = new StatementPattern(Var.of("sb"),
+				Var.of("pB", vf.createIRI("ex:pB")), Var.of("ob"));
+
+		Deque<TupleExpr> reordered = invokeReorderJoinArgs(
+				new QueryJoinOptimizer(new PairwiseJoinStatistics(), new EmptyTripleSource()),
+				new ArrayDeque<>(List.of(beforeFence, filterFence, afterFenceExpensive, afterFenceCheap)));
+
+		assertThat(reordered).containsExactly(beforeFence, filterFence, afterFenceCheap, afterFenceExpensive);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Deque<TupleExpr> invokeReorderJoinArgs(QueryJoinOptimizer optimizer, Deque<TupleExpr> ordered)
+			throws Exception {
+		Object joinVisitor = buildJoinVisitor(optimizer);
+		Method reorderJoinArgs = joinVisitor.getClass().getDeclaredMethod("reorderJoinArgs", Deque.class, Set.class);
+		reorderJoinArgs.setAccessible(true);
+		return (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered, Set.of());
 	}
 
 	private Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {

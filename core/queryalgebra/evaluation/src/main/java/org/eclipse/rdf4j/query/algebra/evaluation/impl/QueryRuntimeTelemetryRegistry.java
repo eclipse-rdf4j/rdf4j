@@ -33,6 +33,7 @@ public final class QueryRuntimeTelemetryRegistry {
 
 	private static final int MAX_PATTERN_KEYS = 1024;
 	private static final int EVICTION_CHECK_INTERVAL = 512;
+	private static final Object NORMALIZED_KEY_METADATA = new Object();
 	private static final ConcurrentHashMap<String, TelemetryAggregate> BY_PATTERN_KEY = new ConcurrentHashMap<>();
 	// Intentionally best-effort. MAX_PATTERN_KEYS is a soft ceiling, so occasional delayed checks are acceptable.
 	// Keeping this as a plain counter avoids adding extra contention to every telemetry record() call.
@@ -46,6 +47,12 @@ public final class QueryRuntimeTelemetryRegistry {
 	public static void clear() {
 		BY_PATTERN_KEY.clear();
 		EVICTION_CHECK_COUNTER = 0;
+	}
+
+	static void prepare(QueryModelNode node) {
+		if (node instanceof TupleExpr tupleExpr && node.getQueryModelMetadata(NORMALIZED_KEY_METADATA) == null) {
+			node.setQueryModelMetadata(NORMALIZED_KEY_METADATA, tupleExprKey(tupleExpr));
+		}
 	}
 
 	public static void record(QueryModelNode node) {
@@ -93,8 +100,8 @@ public final class QueryRuntimeTelemetryRegistry {
 		if (!(node instanceof TupleExpr)) {
 			return null;
 		}
-
-		return tupleExprKey((TupleExpr) node);
+		Object prepared = node.getQueryModelMetadata(NORMALIZED_KEY_METADATA);
+		return prepared instanceof String ? (String) prepared : tupleExprKey((TupleExpr) node);
 	}
 
 	private static String tupleExprKey(TupleExpr tupleExpr) {
@@ -129,7 +136,25 @@ public final class QueryRuntimeTelemetryRegistry {
 		if (valueExpr == null) {
 			return "<null>";
 		}
-		return valueExpr.toString().replaceAll("\\s+", " ").trim();
+		return compactWhitespace(valueExpr.toString());
+	}
+
+	private static String compactWhitespace(String input) {
+		StringBuilder compacted = new StringBuilder(input.length());
+		boolean pendingSpace = false;
+		for (int i = 0; i < input.length(); i++) {
+			char c = input.charAt(i);
+			if (c == ' ' || c == '\t' || c == '\n' || c == '\u000B' || c == '\f' || c == '\r') {
+				pendingSpace = compacted.length() > 0;
+			} else {
+				if (pendingSpace) {
+					compacted.append(' ');
+					pendingSpace = false;
+				}
+				compacted.append(c);
+			}
+		}
+		return compacted.toString();
 	}
 
 	private static void recordFilterDerivedStatementPatternTelemetry(QueryModelNode node,

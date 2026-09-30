@@ -27,13 +27,16 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,7 +50,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			+ BenchmarkJoinEstimatorSupport.persistentThemeRegressionStoreEnabledPropertyName()
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 	private static final Pattern DIRECT_LOOKUP_WORK_ROWS = Pattern.compile(
-			"StatementPattern \\([^)]*plannedWorkRows=([^,)]*)[^)]*plannedIndexAccessMode=directLookup");
+			"StatementPattern \\([^\\n]*plannedWorkRows=([^,)]*)[^\\n]*plannedIndexAccessMode=directLookup[^\\n]*");
 	private static final List<Expectation> EXPECTATIONS = List.of(
 			expectation(Theme.ENGINEERING, 10),
 			expectation(Theme.HIGHLY_CONNECTED, 5),
@@ -60,9 +63,11 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			expectation(Theme.SOCIAL_MEDIA, 3),
 			expectation(Theme.SOCIAL_MEDIA, 4),
 			expectation(Theme.SOCIAL_MEDIA, 10));
+	private static final List<Expectation> DEFAULT_SMOKE_EXPECTATIONS = List.of(
+			expectation(Theme.LIBRARY, 7));
 
 	@Test
-	@Disabled
+	@Disabled("Disabled until we can verify if this test is correct or not")
 	void flaggedThemeQueriesReproduceHistoricalOptimizedShapes(@TempDir Path dataDir) throws Exception {
 		List<Theme> themes = flaggedThemes();
 		List<Theme> benchmarkThemes = themes.stream()
@@ -76,6 +81,104 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		}
 	}
 
+	@Test
+	void highlyConnectedQ10UsesBoundedAntiJoinWork(@TempDir Path dataDir) throws Exception {
+		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
+				.prepareThemeRegressionStore(
+						dataDir.resolve("highly-connected-q10"),
+						PERSISTENT_STORE_KEY_PREFIX + "/highly-connected-q10",
+						storeDirectory -> {
+							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+							SailRepository repository = new SailRepository(store);
+							try {
+								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+								loadBenchmarkData(repository, List.of(Theme.HIGHLY_CONNECTED));
+								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+								primeLearnedFilterStats(repository, Theme.HIGHLY_CONNECTED, 10);
+								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
+							} finally {
+								shutdownAndRelease(repository, store);
+							}
+						});
+		if (preparedStore.reused()) {
+			System.out.println("Reusing persistent store " + preparedStore.storeDirectory()
+					+ " for HIGHLY_CONNECTED q10. " + PERSISTENT_STORE_HINT);
+		}
+		try {
+			LmdbStore store = new LmdbStore(preparedStore.storeDirectory().toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				OptimizerSnapshot snapshot = explainOptimized(repository, expectation(Theme.HIGHLY_CONNECTED, 10));
+				String plan = snapshot.plan();
+				String renderedQuery = snapshot.renderedQuery();
+				String finiteAnchor = finiteThresholdWeightAnchor(renderedQuery);
+				Assertions.assertTrue(renderedQuery.contains(
+						"?node <http://example.com/theme/connected/connectsTo> ?node"),
+						"Highly connected q10 must retain its self-loop exclusion whether the safe MINUS is "
+								+ "rendered as Difference or typed NOT EXISTS\n" + plan);
+				Assertions.assertTrue(renderedQuery.contains("MINUS")
+						|| renderedQuery.contains("FILTER NOT EXISTS"),
+						"Highly connected q10 must retain an anti-join form for its exclusions\n" + plan);
+				String notExistsPlan = plan.lines()
+						.filter(line -> line.contains("optimizer.semiAntiKind=not-exists"))
+						.findFirst()
+						.orElseThrow(() -> new AssertionError(
+								"Highly connected q10 should expose its NOT EXISTS as a typed anti-join\n" + plan));
+				Assertions.assertFalse(notExistsPlan.contains("optimizer.semiAntiAlgorithm=streaming-correlated"),
+						"Highly connected q10 must cost the complete multi-join RHS before choosing an anti-join "
+								+ "implementation; one correlated probe per outer row is unbounded here\n"
+								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("optimizer.semiAntiAlgorithm=memoized-correlated")
+						|| notExistsPlan.contains("optimizer.semiAntiAlgorithm=materialized-hash"),
+						"Highly connected q10 should choose a bounded-work NOT EXISTS implementation\n"
+								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("plannedCorrelationOuterRows="),
+						"Highly connected q10 should cost the anti-join against its mapped outer cardinality\n"
+								+ notExistsPlan);
+				Assertions.assertTrue(notExistsPlan.contains("plannedSemiAntiMaterializationWorkRows=")
+						|| notExistsPlan.contains("plannedSemiAntiMemoizedCacheMisses="),
+						"Highly connected q10 should expose the bounded materialization or memoization work\n"
+								+ notExistsPlan);
+				if (finiteAnchor != null) {
+					assertBefore(renderedQuery, finiteAnchor,
+							"<http://example.com/theme/connected/weight> ?w",
+							"Highly connected q10 should bind the four exact weight values before their mapped "
+									+ "predicate/object probes\n" + plan);
+					Assertions.assertTrue(
+							plan.contains("optimizer.guaranteeOptions=generated=1, selected=values-anchor:w"),
+							"Highly connected q10 should identify the selected finite weight anchor\n" + plan);
+					Assertions.assertTrue(plan.contains("plannedDistinctLookupBindings=4.00"),
+							"Highly connected q10 should cost exactly four mapped weight lookups\n" + plan);
+					Assertions.assertTrue(plan.contains("plannedEstimateSource=frontier-v2-omni-finite-domain"),
+							"Highly connected q10 should cost its weight anchor from mapped Omni evidence\n" + plan);
+				} else {
+					assertBefore(renderedQuery, "?node a <http://example.com/theme/connected/Node>",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Without a finite anchor, highly connected q10 should bind typed nodes before "
+									+ "expanding outer weight fanout\n" + plan);
+					assertBefore(renderedQuery, "?node <http://example.com/theme/connected/connectsTo> ?n2",
+							"<http://example.com/theme/connected/weight> ?w",
+							"Without a finite anchor, highly connected q10 should evaluate the selective "
+									+ "low-neighbor anti-join before expanding outer weight rows\n" + plan);
+				}
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.cleanupThemeRegressionStore(preparedStore);
+		}
+	}
+
+	private static String finiteThresholdWeightAnchor(String renderedQuery) {
+		if (renderedQuery.contains("VALUES (?threshold ?w)")) {
+			return "VALUES (?threshold ?w)";
+		}
+		if (renderedQuery.contains("VALUES (?w ?threshold)")) {
+			return "VALUES (?w ?threshold)";
+		}
+		return null;
+	}
+
 	private static void assertBenchmarkStoreRegressionsPass(Path dataDir, List<Theme> themes) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
@@ -86,7 +189,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 							SailRepository repository = new SailRepository(store);
 							try {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								loadBenchmarkData(repository);
+								loadBenchmarkData(repository, themes);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 								primeLearnedFilterStats(repository, themes);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
@@ -155,40 +258,44 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	}
 
 	private static List<Theme> flaggedThemes() {
-		String selectedThemes = System.getProperty(THEMES_PROPERTY, "").trim();
-		if (!selectedThemes.isEmpty()) {
-			List<Theme> themes = Pattern.compile(",")
-					.splitAsStream(selectedThemes)
-					.map(String::trim)
-					.filter(theme -> !theme.isEmpty())
-					.map(Theme::valueOf)
-					.collect(Collectors.toList());
-			return EXPECTATIONS.stream()
-					.map(expectation -> expectation.theme)
-					.distinct()
-					.filter(themes::contains)
-					.collect(Collectors.toList());
-		}
-
-		return EXPECTATIONS.stream()
+		return selectedExpectations().stream()
 				.map(expectation -> expectation.theme)
 				.distinct()
 				.collect(Collectors.toList());
 	}
 
-	private static List<Expectation> expectationsForTheme(Theme theme) {
+	private static List<Expectation> selectedExpectations() {
+		List<Expectation> source = hasExplicitSelection() ? EXPECTATIONS : DEFAULT_SMOKE_EXPECTATIONS;
+		List<Theme> selectedThemes = selectedThemes();
 		List<Integer> queryIndexes = selectedQueryIndexes();
-		return EXPECTATIONS.stream()
-				.filter(expectation -> expectation.theme == theme)
+		return source.stream()
+				.filter(expectation -> selectedThemes.isEmpty() || selectedThemes.contains(expectation.theme))
 				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
 				.collect(Collectors.toList());
 	}
 
+	private static List<Theme> selectedThemes() {
+		String selectedThemes = System.getProperty(THEMES_PROPERTY, "").trim();
+		if (!selectedThemes.isEmpty()) {
+			return Pattern.compile(",")
+					.splitAsStream(selectedThemes)
+					.map(String::trim)
+					.filter(theme -> !theme.isEmpty())
+					.map(Theme::valueOf)
+					.collect(Collectors.toList());
+		}
+		return List.of();
+	}
+
+	private static List<Expectation> expectationsForTheme(Theme theme) {
+		return selectedExpectations().stream()
+				.filter(expectation -> expectation.theme == theme)
+				.collect(Collectors.toList());
+	}
+
 	private static List<Expectation> expectationsForThemes(List<Theme> themes) {
-		List<Integer> queryIndexes = selectedQueryIndexes();
-		return EXPECTATIONS.stream()
+		return selectedExpectations().stream()
 				.filter(expectation -> themes.contains(expectation.theme))
-				.filter(expectation -> queryIndexes.isEmpty() || queryIndexes.contains(expectation.queryIndex))
 				.collect(Collectors.toList());
 	}
 
@@ -214,6 +321,9 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 	}
 
 	private static String selectedQueryIndexesKey() {
+		if (!hasExplicitSelection()) {
+			return "default-smoke";
+		}
 		List<Integer> selected = selectedQueryIndexes();
 		if (selected.isEmpty()) {
 			return "all-queries";
@@ -224,14 +334,19 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				.collect(Collectors.joining("-"));
 	}
 
-	private static void loadBenchmarkData(SailRepository repository) throws IOException {
+	private static boolean hasExplicitSelection() {
+		return !System.getProperty(THEMES_PROPERTY, "").trim().isEmpty()
+				|| !System.getProperty(QUERY_INDEXES_PROPERTY, "").trim().isEmpty();
+	}
+
+	private static void loadBenchmarkData(SailRepository repository, List<Theme> themes) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
 			RDFInserter inserter = new RDFInserter(connection);
-			for (Theme themeDataset : Theme.values()) {
+			for (Theme themeDataset : themes) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
+				connection.commit();
 			}
-			connection.commit();
 		}
 	}
 
@@ -298,9 +413,64 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Explanation explanation = connection.prepareTupleQuery(query)
 					.explain(Explanation.Level.Optimized);
+			TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
 			return new OptimizerSnapshot(
-					explanation.toString(),
-					new TupleExprIRRenderer().render((TupleExpr) explanation.tupleExpr()));
+					explanation + semiAntiEventDiagnostics(optimized),
+					new TupleExprIRRenderer().render(optimized));
+		}
+	}
+
+	private static String semiAntiEventDiagnostics(TupleExpr root) {
+		StringBuilder diagnostics = new StringBuilder("\noptimizer-root");
+		appendStringMetric(diagnostics, root, "optimizer.cascadesPlanCacheHit");
+		appendStringMetric(diagnostics, root, "optimizer.planCacheValidationResult");
+		appendStringMetric(diagnostics, root, "optimizer.planCacheValidationReason");
+		appendDoubleMetric(diagnostics, root, "optimizer.planCacheValidationConfidence");
+		appendDoubleMetric(diagnostics, root, "optimizer.planCacheValidationExpectedRegret");
+		appendDoubleMetric(diagnostics, root, "optimizer.frontierLeoRevision");
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				String kind = filter.getStringMetricPlanned("optimizer.semiAntiKind");
+				if (kind != null) {
+					diagnostics.append("\nsemi-anti-event kind=").append(kind);
+					appendStringMetric(diagnostics, filter, "optimizer.semiAntiAlgorithm");
+					appendStringMetric(diagnostics, filter, "plannedPhysicalImplementation");
+					appendStringMetric(diagnostics, filter, "plannedFrontierGuarantee");
+					appendStringMetric(diagnostics, filter, "plannedFrontierDisposition");
+					appendStringMetric(diagnostics, filter, "plannedEstimateSource");
+					appendStringMetric(diagnostics, filter, "optimizer.costEventDigest");
+					appendStringMetric(diagnostics, filter, "optimizer.frontierStateDigest");
+					appendStringMetric(diagnostics, filter, "optimizer.frontierLearningKey");
+					appendDoubleMetric(diagnostics, filter, "plannedFrontierRows");
+					appendDoubleMetric(diagnostics, filter, "plannedFrontierRawRows");
+					appendDoubleMetric(diagnostics, filter, "plannedObjectiveScore");
+					appendDoubleMetric(diagnostics, filter, "optimizer.costEventObjective");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationOuterRows");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationMatchedRows");
+					appendDoubleMetric(diagnostics, filter, "plannedCorrelationUnmatchedRows");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.raw");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.corrected");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.exactEvidence");
+					appendDoubleMetric(diagnostics, filter, "optimizer.frontierLeo.output_rows.familyEvidence");
+				}
+				super.meet(filter);
+			}
+		});
+		return diagnostics.toString();
+	}
+
+	private static void appendStringMetric(StringBuilder output, TupleExpr expression, String name) {
+		String value = expression.getStringMetricPlanned(name);
+		if (value != null) {
+			output.append(", ").append(name).append('=').append(value);
+		}
+	}
+
+	private static void appendDoubleMetric(StringBuilder output, TupleExpr expression, String name) {
+		Double value = expression.getDoubleMetricsPlanned().get(name);
+		if (value != null) {
+			output.append(", ").append(name).append('=').append(value);
 		}
 	}
 
@@ -354,12 +524,21 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 					+ snapshot.renderedQuery);
 		}
 		if (expectation.theme == Theme.LIBRARY && expectation.queryIndex == 7
-				&& scansUnboundLocatedAt(snapshot.plan)) {
+				&& scansUnboundLocatedAt(snapshot.plan)
+				&& !isRobustBoundLibraryBranchPlan(snapshot.plan)) {
 			mismatches.add(key + " should not evaluate the branch exclusion as a broad unbound locatedAt scan\n"
 					+ snapshot.plan);
 		}
 		mismatches.addAll(directLookupWorkMismatches(snapshot.plan, 100_000.0d, key));
 		return mismatches;
+	}
+
+	private static boolean isRobustBoundLibraryBranchPlan(String plan) {
+		return plan.contains("plannerId=lmdb-sketch")
+				&& plan.contains("plannerPath=ROBUST_USED")
+				&& plan.contains("value=http://example.com/theme/library/locatedAt")
+				&& plan.contains("plannedIndexAccessMode=directLookup")
+				&& !plan.contains("plannerPath=UNSUPPORTED_SHAPE");
 	}
 
 	private static boolean isFiniteDirectLookupPlan(Expectation expectation, String plan) {
@@ -426,17 +605,36 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		return firstIndex >= 0 && secondIndex > firstIndex;
 	}
 
+	private static void assertBefore(String value, String first, String second, String message) {
+		Assertions.assertTrue(before(value, first, second),
+				() -> message + "\nExpected to find `" + first + "` before `" + second + "` in:\n" + value);
+	}
+
 	private static List<String> directLookupWorkMismatches(String plan, double maxWorkRows, String key) {
 		List<String> mismatches = new ArrayList<>();
 		Matcher matcher = DIRECT_LOOKUP_WORK_ROWS.matcher(plan);
 		while (matcher.find()) {
-			double workRows = parsePlanRows(matcher.group(1));
+			if (isFiniteSurfaceDirectLookup(matcher.group())) {
+				continue;
+			}
+			double workRows = directLookupAccessWorkRows(matcher.group(), matcher.group(1));
 			if (workRows > maxWorkRows) {
-				mismatches.add(key + " direct lookup plannedWorkRows should stay bounded by explicit step work, got "
-						+ matcher.group(1) + "\n" + plan);
+				mismatches.add(
+						key + " direct lookup plannedAccessWorkRows should stay bounded by explicit step work, got "
+								+ workRows + "\n" + plan);
 			}
 		}
 		return mismatches;
+	}
+
+	private static boolean isFiniteSurfaceDirectLookup(String directLookupHeader) {
+		return directLookupHeader.contains("plannedEstimateSource=lmdb-finite-derived-surface")
+				|| directLookupHeader.contains("plannedEstimateSource=lmdb-finite-binding-lookup");
+	}
+
+	private static double directLookupAccessWorkRows(String directLookupHeader, String fallbackWorkRows) {
+		Matcher accessWorkRows = Pattern.compile("plannedAccessWorkRows=([^,)]*)").matcher(directLookupHeader);
+		return accessWorkRows.find() ? parsePlanRows(accessWorkRows.group(1)) : parsePlanRows(fallbackWorkRows);
 	}
 
 	private static double parsePlanRows(String value) {

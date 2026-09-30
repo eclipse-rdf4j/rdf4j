@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class ArrayBindingBasedQueryEvaluationContextTest {
 
 	private static <T extends QueryModelNode> T findFirst(QueryModelNode root, Class<T> type) {
 		List<T> matches = new ArrayList<>(1);
-		root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) throws RuntimeException {
 				if (matches.isEmpty() && type.isInstance(node)) {

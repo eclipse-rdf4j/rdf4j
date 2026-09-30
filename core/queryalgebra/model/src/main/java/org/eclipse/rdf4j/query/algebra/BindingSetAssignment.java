@@ -24,62 +24,78 @@ import org.eclipse.rdf4j.query.BindingSet;
 public class BindingSetAssignment extends AbstractQueryModelNode implements TupleExpr {
 
 	private Set<String> bindingNames;
-
+	private boolean bindingNamesExplicitlySet;
 	private Set<String> assuredBindingNames;
-
-	private boolean bindingNamesExplicit;
 
 	private Iterable<BindingSet> bindingSets;
 
 	@Override
 	public Set<String> getBindingNames() {
-		if (bindingNames == null) {
-			initializeBindingNames();
+		if (!bindingNamesExplicitlySet) {
+			ensureDerivedBindingNames();
 		}
 		return bindingNames;
 	}
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		if (assuredBindingNames == null) {
-			if (bindingSets == null) {
-				assuredBindingNames = bindingNames == null ? new LinkedHashSet<>() : new LinkedHashSet<>(bindingNames);
-			} else {
-				initializeBindingNames();
-			}
+		if (!bindingNamesExplicitlySet) {
+			ensureDerivedBindingNames();
+		} else if (assuredBindingNames == null) {
+			assuredBindingNames = findAssuredBindingNames(bindingNames);
 		}
 		return assuredBindingNames;
 	}
 
-	private void initializeBindingNames() {
-		Set<String> allNames = new LinkedHashSet<>();
-		Set<String> guaranteedNames = new LinkedHashSet<>();
+	private void ensureDerivedBindingNames() {
+		if (bindingNames != null && assuredBindingNames != null) {
+			return;
+		}
+		Set<String> possible = new LinkedHashSet<>();
+		Set<String> assured = new LinkedHashSet<>();
 		boolean firstRow = true;
 		if (bindingSets != null) {
 			for (BindingSet set : bindingSets) {
-				Set<String> rowNames = set.getBindingNames();
-				allNames.addAll(rowNames);
-				Set<String> actualRowNames = new LinkedHashSet<>();
-				for (String name : rowNames) {
-					if (set.getValue(name) != null) {
-						actualRowNames.add(name);
-					}
+				if (set == null) {
+					assured.clear();
+					firstRow = false;
+					continue;
 				}
+				Set<String> rowBindingNames = set.getBindingNames();
+				possible.addAll(rowBindingNames);
 				if (firstRow) {
-					guaranteedNames.addAll(actualRowNames);
+					for (String name : rowBindingNames) {
+						if (set.getValue(name) != null) {
+							assured.add(name);
+						}
+					}
 					firstRow = false;
 				} else {
-					guaranteedNames.retainAll(actualRowNames);
+					assured.removeIf(name -> set.getValue(name) == null);
 				}
 			}
 		}
-		if (!bindingNamesExplicit) {
-			bindingNames = allNames;
+		bindingNames = possible;
+		assuredBindingNames = firstRow ? Set.of() : assured;
+	}
+
+	private Set<String> findAssuredBindingNames(Set<String> declaredBindingNames) {
+		Set<String> assured = new LinkedHashSet<>(declaredBindingNames);
+		boolean hasRows = false;
+		if (bindingSets != null) {
+			for (BindingSet set : bindingSets) {
+				hasRows = true;
+				if (set == null) {
+					assured.clear();
+					break;
+				}
+				assured.removeIf(name -> set.getValue(name) == null);
+				if (assured.isEmpty()) {
+					break;
+				}
+			}
 		}
-		if (firstRow && bindingNamesExplicit) {
-			guaranteedNames.addAll(bindingNames);
-		}
-		assuredBindingNames = guaranteedNames;
+		return hasRows ? assured : Set.of();
 	}
 
 	@Override
@@ -142,8 +158,8 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	 */
 	public void setBindingNames(Set<String> bindingNames) {
 		this.bindingNames = bindingNames;
-		this.bindingNamesExplicit = bindingNames != null;
-		this.assuredBindingNames = null;
+		bindingNamesExplicitlySet = bindingNames != null;
+		assuredBindingNames = null;
 	}
 
 	/**
@@ -151,10 +167,10 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	 */
 	public void setBindingSets(Iterable<BindingSet> bindingSets) {
 		this.bindingSets = bindingSets;
-		if (!bindingNamesExplicit) {
-			this.bindingNames = null;
+		assuredBindingNames = null;
+		if (!bindingNamesExplicitlySet) {
+			bindingNames = null;
 		}
-		this.assuredBindingNames = null;
 	}
 
 	/**

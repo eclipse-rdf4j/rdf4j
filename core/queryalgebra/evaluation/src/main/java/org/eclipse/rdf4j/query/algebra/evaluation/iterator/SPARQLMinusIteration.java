@@ -96,6 +96,8 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 			// Build set of elements-to-exclude from right argument
 			excludeSet = makeSet(getRightArg());
 			excludeSetList = excludeSet.toArray(new BindingSet[0]);
+			// SPARQL MINUS compares solution domains, and a declared-but-unbound variable (VALUES ?a { UNDEF }, an
+			// OPTIONAL that did not match) is not part of a solution's domain: only bound variables can be shared.
 			excludeSetBindingNames = new HashSet<>();
 			excludeSetBindingNamesAreAllTheSame = true;
 			Set<String> firstBindingNames = null;
@@ -103,7 +105,7 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 				Set<String> bindingNames = comparisonNames(excluded);
 				if (firstBindingNames == null) {
 					firstBindingNames = bindingNames;
-				} else if (!firstBindingNames.equals(bindingNames)) {
+				} else if (excludeSetBindingNamesAreAllTheSame && !firstBindingNames.equals(bindingNames)) {
 					excludeSetBindingNamesAreAllTheSame = false;
 				}
 				excludeSetBindingNames.addAll(bindingNames);
@@ -142,20 +144,21 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		Set<String> bindingNames = bindingSet.getBindingNames();
 		boolean hasSharedBindings = false;
 
-		// Fast union check: if no variable is shared with the union of right variables, accept immediately
+		// Fast union check: if no bound variable is shared with the union of bound right variables, accept
+		// immediately
 		if (!excludeSetBindingNames.isEmpty()) {
 			final Set<String> left = bindingNames;
 			final Set<String> rightUnion = excludeSetBindingNames;
 			if (left.size() <= rightUnion.size()) {
 				for (String name : left) {
-					if (rightUnion.contains(name)) {
+					if (rightUnion.contains(name) && bindingSet.getValue(name) != null) {
 						hasSharedBindings = true;
 						break;
 					}
 				}
 			} else {
 				for (String name : rightUnion) {
-					if (left.contains(name)) {
+					if (left.contains(name) && bindingSet.getValue(name) != null) {
 						hasSharedBindings = true;
 						break;
 					}
@@ -196,20 +199,10 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		for (BindingSet excluded : excludeSetList) {
 			if (!excludeSetBindingNamesAreAllTheSame) {
 				hasSharedBindings = false;
-				final Set<String> excludedNames = comparisonNames(excluded);
-				if (bindingNames.size() <= excludedNames.size()) {
-					for (String name : bindingNames) {
-						if (excludedNames.contains(name)) {
-							hasSharedBindings = true;
-							break;
-						}
-					}
-				} else {
-					for (String name : excludedNames) {
-						if (bindingNames.contains(name)) {
-							hasSharedBindings = true;
-							break;
-						}
+				for (String name : bindingNames) {
+					if (bindingSet.getValue(name) != null && excluded.getValue(name) != null) {
+						hasSharedBindings = true;
+						break;
 					}
 				}
 			}

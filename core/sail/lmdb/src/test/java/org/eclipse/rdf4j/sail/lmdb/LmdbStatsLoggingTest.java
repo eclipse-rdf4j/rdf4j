@@ -75,7 +75,8 @@ class LmdbStatsLoggingTest {
 		LmdbStats committed;
 		try {
 			assertThat(snapshots(Level.INFO)).containsExactly(store.getLmdbStats());
-			assertThat(events(Level.INFO).getFirst().getFormattedMessage()).contains("startup", dataDir.toString());
+			assertThat(statsEvents(Level.INFO).getFirst().getFormattedMessage()).contains("startup",
+					dataDir.toString());
 			try (NotifyingSailConnection connection = store.getConnection()) {
 				connection.begin();
 				connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
@@ -87,7 +88,7 @@ class LmdbStatsLoggingTest {
 			store.shutDown();
 		}
 		assertThat(snapshots(Level.INFO)).hasSize(2).last().isEqualTo(committed);
-		assertThat(events(Level.INFO).getLast().getFormattedMessage()).contains("shutdown", dataDir.toString());
+		assertThat(statsEvents(Level.INFO).getLast().getFormattedMessage()).contains("shutdown", dataDir.toString());
 		assertThat(snapshots(Level.TRACE)).isEmpty();
 
 		appender.list.clear();
@@ -208,7 +209,7 @@ class LmdbStatsLoggingTest {
 		try (store; SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 			sink.approve(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
 			sink.flush();
-			assertThat(events(Level.WARN)).hasSize(2).allSatisfy(event -> {
+			assertThat(statsFailureWarnings()).hasSize(2).allSatisfy(event -> {
 				assertThat(event.getFormattedMessage()).contains("Unable to read native LMDB statistics");
 				assertThat(event.getThrowableProxy().getMessage()).isEqualTo("Stats unavailable for test");
 			});
@@ -216,7 +217,7 @@ class LmdbStatsLoggingTest {
 			assertThat(store.getLmdbStats().tripleDatabases().get("contexts").entries()).isEqualTo(1);
 			store.failStats = true;
 		}
-		assertThat(events(Level.WARN)).hasSize(3);
+		assertThat(statsFailureWarnings()).hasSize(3);
 	}
 
 	private void assertWriteSnapshots(LmdbStats before, LmdbStats after) {
@@ -229,6 +230,20 @@ class LmdbStatsLoggingTest {
 
 	private List<ILoggingEvent> events(Level level) {
 		return appender.list.stream().filter(event -> event.getLevel().equals(level)).toList();
+	}
+
+	/** Events that carry an LMDB statistics snapshot; the store logs other lifecycle messages at the same levels. */
+	private List<ILoggingEvent> statsEvents(Level level) {
+		return events(level).stream()
+				.filter(event -> event.getArgumentArray() != null
+						&& Arrays.stream(event.getArgumentArray()).anyMatch(LmdbStats.class::isInstance))
+				.toList();
+	}
+
+	private List<ILoggingEvent> statsFailureWarnings() {
+		return events(Level.WARN).stream()
+				.filter(event -> event.getFormattedMessage().contains("Unable to read native LMDB statistics"))
+				.toList();
 	}
 
 	private List<LmdbStats> snapshots(Level level) {

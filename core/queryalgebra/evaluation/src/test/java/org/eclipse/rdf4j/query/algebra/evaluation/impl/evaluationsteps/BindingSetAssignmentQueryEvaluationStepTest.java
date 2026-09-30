@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -75,6 +76,86 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		assertThat(parent.hasBindingReadCount("b")).isEqualTo(1);
 	}
 
+	@Test
+	void allUndefAssignmentPreservesOverlappingParentRow() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"),
+				EmptyBindingSet.getInstance());
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).containsExactly(parent);
+		assertThat(results.getFirst()).isSameAs(parent);
+	}
+
+	@Test
+	void compatibleBoundAssignmentPreservesOverlappingParentValue() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		MapBindingSet compatible = new MapBindingSet();
+		compatible.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"), compatible);
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		assertThat(results(step.evaluate(parent))).containsExactly(parent);
+	}
+
+	@Test
+	void conflictingBoundAssignmentRejectsOverlappingParentValue() {
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral("outer"));
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"), binding("x", "other"));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		assertThat(results(step.evaluate(parent))).isEmpty();
+	}
+
+	// REINFORCE: with an overlapping parent, every all-UNDEF VALUES row yields the parent once, interleaved with
+	// conflicting rows (dropped) and compatible rows (kept), and the telemetry counter sees every emitted row.
+	@Test
+	void allUndefRowsPreserveParentMultiplicityAmongConflictingAndCompatibleRows() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"),
+				EmptyBindingSet.getInstance(), binding("x", "other"), binding("x", "outer"),
+				EmptyBindingSet.getInstance());
+		assignment.setRuntimeTelemetryEnabled(true);
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).containsExactly(parent, parent, parent);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.BINDINGS_PROVIDED_ACTUAL)).isEqualTo(3L);
+	}
+
+	// REINFORCE: without parent overlap an all-UNDEF row still yields the parent unchanged while bound rows extend it.
+	@Test
+	void allUndefRowWithoutParentOverlapYieldsParentUnchanged() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("a", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("b"),
+				EmptyBindingSet.getInstance(), binding("b", "1"));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).hasSize(2);
+		assertThat(results.getFirst()).isSameAs(parent);
+		assertThat(results.get(1).getValue("a")).isEqualTo(outer);
+		assertThat(results.get(1).getValue("b")).isEqualTo(SimpleValueFactory.getInstance().createLiteral("1"));
+	}
+
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {
 		try (iteration) {
 			return iteration.stream().toList();
@@ -87,6 +168,14 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 				.stream()
 				.map(value -> binding(bindingName, value))
 				.toList());
+		return assignment;
+	}
+
+	private static BindingSetAssignment assignmentWithDeclaredNames(Set<String> bindingNames,
+			BindingSet... bindingSets) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(bindingNames);
+		assignment.setBindingSets(List.of(bindingSets));
 		return assignment;
 	}
 

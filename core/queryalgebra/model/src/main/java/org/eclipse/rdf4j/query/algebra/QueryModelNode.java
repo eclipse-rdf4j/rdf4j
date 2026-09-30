@@ -15,8 +15,11 @@ import java.io.Serializable;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /**
  * Main interface for all query model nodes.
@@ -129,6 +132,133 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setCostEstimate(double costEstimate) {
+		// no-op for backwards compatibility
+	}
+
+	/**
+	 * Enables a lightweight runtime feedback path for learned optimizer feedback. Unlike full runtime telemetry, this
+	 * path only counts output rows and low-cost operator work counters needed to decide whether an operator should
+	 * report an estimate/cost miss.
+	 */
+	@Experimental
+	default boolean isCostFeedbackTrackingEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setCostFeedbackTrackingEnabled(boolean costFeedbackTrackingEnabled) {
+		// no-op for backwards compatibility
+	}
+
+	/** Returns the typed planning contract that is resolved before evaluation, if any. */
+	@Experimental
+	default RuntimeFeedbackContract getRuntimeFeedbackContract() {
+		return null;
+	}
+
+	/** Attaches an immutable typed feedback contract without encoding it in generic metric maps. */
+	@Experimental
+	default void setRuntimeFeedbackContract(RuntimeFeedbackContract runtimeFeedbackContract) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackExpectedRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackExpectedRows(double rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackExpectedWorkRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackExpectedWorkRows(double workRows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackActualRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackActualRows(long rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackActualWorkRows() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackActualWorkRows(double workRows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default double getCostFeedbackReportQErrorThreshold() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackReportQErrorThreshold(double qErrorThreshold) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default boolean isCostFeedbackCompletedActual() {
+		return false;
+	}
+
+	@Experimental
+	default void setCostFeedbackCompletedActual(boolean completed) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackCloseCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackCloseCountActual(long closeCount) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackLeftRowsWithMatchActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackLeftRowsWithMatchActual(long rows) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackEmptyRightProbeCountActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackEmptyRightProbeCountActual(long probeCount) {
+		// no-op for backwards compatibility
+	}
+
+	@Experimental
+	default long getCostFeedbackMaxRightRowsPerLeftActual() {
+		return -1;
+	}
+
+	@Experimental
+	default void setCostFeedbackMaxRightRowsPerLeftActual(long rows) {
 		// no-op for backwards compatibility
 	}
 
@@ -340,6 +470,40 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	@Experimental
 	default void setStringMetricPlanned(String metricName, String metricValue) {
 		// no-op
+	}
+
+	/**
+	 * Attaches a planned string metric whose value may be expensive to construct. Implementations may defer invoking
+	 * the supplier until the metric is observed, copied to a non-deferred node, or serialized. The default
+	 * implementation resolves the supplier immediately for backwards compatibility.
+	 *
+	 * @param metricName  metric name
+	 * @param metricValue non-null value supplier
+	 */
+	@Experimental
+	default void setStringMetricPlannedDeferred(String metricName, Supplier<String> metricValue) {
+		if (metricName != null && metricValue != null) {
+			setStringMetricPlanned(metricName, metricValue.get());
+		}
+	}
+
+	/**
+	 * Removes planned string metrics whose names match the predicate. Implementations with deferred metrics should
+	 * remove matching producers without evaluating them.
+	 */
+	@Experimental
+	default void removeStringMetricsPlannedIf(Predicate<String> predicate) {
+		Objects.requireNonNull(predicate, "predicate");
+		getStringMetricsPlanned().keySet().removeIf(predicate);
+	}
+
+	/** Copies all planned metrics to {@code target}, preserving deferred values when both nodes support them. */
+	@Experimental
+	default void copyPlannedMetricsTo(QueryModelNode target) {
+		Objects.requireNonNull(target, "target");
+		getStringMetricsPlanned().forEach(target::setStringMetricPlanned);
+		getDoubleMetricsPlanned().forEach(target::setDoubleMetricPlanned);
+		getLongMetricsPlanned().forEach(target::setLongMetricPlanned);
 	}
 
 	@Experimental

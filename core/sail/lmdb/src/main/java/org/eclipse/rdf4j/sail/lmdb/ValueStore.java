@@ -16,6 +16,10 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.MemoryUtil.memGetAddress;
+import static org.lwjgl.system.MemoryUtil.memGetByte;
+import static org.lwjgl.system.MemoryUtil.memUTF8;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -66,6 +70,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.IntPredicate;
 import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -79,6 +84,8 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
@@ -92,6 +99,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -99,6 +107,12 @@ import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
@@ -133,7 +147,13 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private static final int MAX_KEY_SIZE = 16;
 
+	private static final int BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT = 16;
+
+	private static final long UNKNOWN_REF_COUNT = Long.MIN_VALUE;
+
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
+	private static final VarHandle VALUE_CACHE_HANDLE = MethodHandles.arrayElementVarHandle(LmdbValue[].class);
+	private static final VarHandle PREDICATE_CACHE_HANDLE = MethodHandles.arrayElementVarHandle(LmdbIRI[].class);
 
 	static {
 		try {
@@ -142,6 +162,12 @@ class ValueStore extends AbstractValueFactory {
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
 		}
+	}
+
+	private static Long2LongOpenHashMap newRefCountsTxCache() {
+		Long2LongOpenHashMap cache = new Long2LongOpenHashMap();
+		cache.defaultReturnValue(UNKNOWN_REF_COUNT);
+		return cache;
 	}
 
 	/**
@@ -165,6 +191,11 @@ class ValueStore extends AbstractValueFactory {
 	private final LmdbValue[] valueCache;
 	private final long[] valueCacheId;
 	private final int valueCacheMask;
+	private final LmdbIRI[] predicateCache;
+	private final long[] predicateCacheId;
+	private final int predicateCacheMask;
+	private final DatatypeCacheEntry[] datatypeCache;
+	private final int datatypeCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
@@ -178,8 +209,9 @@ class ValueStore extends AbstractValueFactory {
 	 * namespace.
 	 */
 	private final ConcurrentCache<String, Long> namespaceIDCache;
-	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
+	private final Long2LongOpenHashMap refCountsTxCache = newRefCountsTxCache();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
+	private final Set<Long> seededDatatypeIds = ConcurrentHashMap.newKeySet();
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -242,6 +274,13 @@ class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
+	/**
+	 * How language literals are keyed in the data-to-id direction, see {@link LanguageTagKeyMode}. Written only during
+	 * construction (a legacy store may switch from {@link LanguageTagKeyMode#BYTE_EXACT} to
+	 * {@link LanguageTagKeyMode#CANONICAL} once {@link #migrateLanguageTagKeysIfNeeded()} has re-keyed it).
+	 */
+	private LanguageTagKeyMode languageTagKeyMode;
+
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
@@ -258,12 +297,18 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
+		this.languageTagKeyMode = initialLanguageTagKeyMode();
 		open();
 
 		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
 		valueCache = new LmdbValue[cacheSize];
 		valueCacheId = new long[cacheSize];
 		valueCacheMask = cacheSize - 1;
+		predicateCache = new LmdbIRI[cacheSize];
+		predicateCacheId = new long[cacheSize];
+		predicateCacheMask = cacheSize - 1;
+		datatypeCache = new DatatypeCacheEntry[1024];
+		datatypeCacheMask = 1024 - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
@@ -272,6 +317,7 @@ class ValueStore extends AbstractValueFactory {
 		startTransaction(true);
 		initTermIndexes(config);
 		commit();
+		freeUnusedIdsOnOpen();
 
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
@@ -318,6 +364,35 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
+
+		// Seeding may allocate IDs, so it must run after nextId has been initialized from the persisted data.
+		startTransaction(true);
+		seedCoreDatatypes();
+		commit();
+
+		migrateLanguageTagKeysIfNeeded();
+	}
+
+	private void seedCoreDatatypes() throws IOException {
+		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
+			seedCoreDatatype(datatype);
+		}
+		seedCoreDatatype(CoreDatatype.RDF.LANGSTRING);
+	}
+
+	private void seedCoreDatatype(CoreDatatype datatype) throws IOException {
+		IRI datatypeIri = datatype.getIri();
+		long id = getId(datatypeIri, true);
+		if (id == LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+
+		LmdbIRI value = getLmdbURI(datatypeIri);
+		value.setInternalID(id, revision);
+		cacheValue(id, value);
+		cacheDatatype(id, value);
+		commonVocabulary.put(datatypeIri, id);
+		seededDatatypeIds.add(id);
 	}
 
 	private void openHashFileQuietly() {
@@ -338,39 +413,6 @@ class ValueStore extends AbstractValueFactory {
 				string.startsWith("http://purl.org/") ||
 				string.startsWith("http://publications.europa.eu/resource/authority") ||
 				string.startsWith("http://xmlns.com/");
-	}
-
-	@SuppressWarnings("unused")
-	private void logValues() throws IOException {
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			try {
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
-
-				MDBVal keyData = MDBVal.calloc(stack);
-				// set cursor to min key
-				keyData.mv_data(stack.bytes(new byte[] { ID_KEY }));
-				MDBVal valueData = MDBVal.calloc(stack);
-				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				while (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-					long id = data2id(keyData.mv_data());
-					try {
-						logger.debug("id {} has value {}", id, getValue(id));
-					} catch (IllegalArgumentException e) {
-						logger.debug("id {} has namespace value {}", id, getNamespace(id));
-					}
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
-			}
-			return null;
-		});
 	}
 
 	private void open() throws IOException {
@@ -445,7 +487,17 @@ class ValueStore extends AbstractValueFactory {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, freeDbi, stat));
 			freeIdsAvailable = stat.ms_entries() > 0;
+			return null;
+		});
+	}
 
+	/**
+	 * Frees the ids a previous session marked unused but did not free before it closed. Needs the triple-term indexes:
+	 * freeing an unused triple term deletes its id-to-triple entry.
+	 */
+	private void freeUnusedIdsOnOpen() throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, unusedDbi, stat));
 			if (stat.ms_entries() > 0) {
 				// free unused IDs
@@ -501,7 +553,11 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			// Persist the EFFECTIVE term-index set (config plus defaults): a null config value would otherwise
+			// leave the property unwritten and fail reopen validation.
+			Set<String> effectiveTermSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
+			effectiveTermSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+			properties.setTripleTermIndexes(String.join(",", TripleIndex.orderIndexSpecs(effectiveTermSpecs)));
 		} catch (IOException | SailException e) {
 			throw e;
 		}
@@ -678,6 +734,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	int getStoredHash(long id) {
+		if (!valueHashCacheEnabled) {
+			return 0;
+		}
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
 			pendingHash = pendingHashUpdates.get(id);
@@ -697,7 +756,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void storeHash(long id, int hash) {
-		if (id == LmdbValue.UNKNOWN_ID) {
+		if (!valueHashCacheEnabled || id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
 		if (writeTxn != 0) {
@@ -715,7 +774,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void clearStoredHash(long id) {
-		if (id == LmdbValue.UNKNOWN_ID) {
+		if (!valueHashCacheEnabled || id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
 		if (writeTxn != 0) {
@@ -733,8 +792,9 @@ class ValueStore extends AbstractValueFactory {
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
+				ByteBuffer data = valueData.mv_data();
+				byte[] valueBytes = new byte[data.remaining()];
+				data.get(valueBytes);
 				return valueBytes;
 			}
 			return null;
@@ -744,7 +804,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Get value from cache by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Acquire the cached reference so readers see the decoded fields published by the writer.
 	 *
 	 * @param id ID of a value object
 	 * @return the value object or <code>null</code> if not found
@@ -759,7 +819,7 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		}
 
-		LmdbValue value = valueCache[idx];
+		LmdbValue value = (LmdbValue) VALUE_CACHE_HANDLE.getAcquire(valueCache, idx);
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
@@ -769,7 +829,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Cache value by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Publish decoded fields before making the cached reference available to other threads.
 	 *
 	 * @param id    ID of a value object
 	 * @param value ID of a value object
@@ -777,7 +837,54 @@ class ValueStore extends AbstractValueFactory {
 	void cacheValue(long id, LmdbValue value) {
 		int idx = (int) (id & valueCacheMask);
 		valueCacheId[idx] = id;
-		valueCache[idx] = value;
+		VALUE_CACHE_HANDLE.setRelease(valueCache, idx, value);
+	}
+
+	LmdbIRI cachedPredicate(long id) {
+		int idx = (int) (id & predicateCacheMask);
+		if (predicateCacheId[idx] != id) {
+			return null;
+		}
+
+		LmdbIRI value = (LmdbIRI) PREDICATE_CACHE_HANDLE.getAcquire(predicateCache, idx);
+		if (value != null && value.getInternalID() == id) {
+			return value;
+		}
+		return null;
+	}
+
+	void cachePredicate(long id, LmdbIRI value) {
+		int idx = (int) (id & predicateCacheMask);
+		predicateCacheId[idx] = id;
+		PREDICATE_CACHE_HANDLE.setRelease(predicateCache, idx, value);
+	}
+
+	LmdbIRI cachedDatatype(long id) {
+		DatatypeCacheEntry entry = cachedDatatypeEntry(id);
+		return entry == null ? null : entry.value();
+	}
+
+	CoreDatatype cachedDatatypeCoreDatatype(long id) {
+		DatatypeCacheEntry entry = cachedDatatypeEntry(id);
+		return entry == null ? null : entry.coreDatatype();
+	}
+
+	void cacheDatatype(long id, LmdbIRI value) {
+		// Readers may race with a colliding replacement. Publish the ID, value and
+		// core datatype together so a reader can only observe one complete entry.
+		datatypeCache[datatypeCacheIndex(id)] = new DatatypeCacheEntry(id, value, CoreDatatype.from(value));
+	}
+
+	private DatatypeCacheEntry cachedDatatypeEntry(long id) {
+		DatatypeCacheEntry entry = datatypeCache[datatypeCacheIndex(id)];
+		return entry != null && entry.id() == id && entry.value().getInternalID() == id ? entry : null;
+	}
+
+	private int datatypeCacheIndex(long id) {
+		return (int) (ValueIds.getValue(id) & datatypeCacheMask);
+	}
+
+	private record DatatypeCacheEntry(long id, LmdbIRI value, CoreDatatype coreDatatype) {
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -826,6 +933,27 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 
+			return resultValue;
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
+
+	LmdbIRI getLazyPredicate(long id) throws IOException {
+		long stamp = revisionLock.readLock();
+		try {
+			LmdbIRI resultValue = cachedPredicate(id);
+			if (resultValue != null) {
+				return resultValue;
+			}
+
+			LmdbValue cachedValue = cachedValue(id);
+			if (cachedValue instanceof LmdbIRI) {
+				resultValue = (LmdbIRI) cachedValue;
+			} else {
+				resultValue = new LmdbIRI(lazyRevision, id);
+			}
+			cachePredicate(id, resultValue);
 			return resultValue;
 		} finally {
 			revisionLock.unlockRead(stamp);
@@ -890,7 +1018,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 		// Try to get from cache
 		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+		if (cached != null && cachedValueMatchesRevision(cached, getRevision())) {
 			value.setFromInitializedValue(cached);
 			return true;
 		}
@@ -912,6 +1040,215 @@ class ValueStore extends AbstractValueFactory {
 			throw new SailException(e);
 		}
 		return false;
+	}
+
+	void resolveValues(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, LmdbValue[] values,
+			int[] order, int count) {
+		try {
+			readTransaction(env, (stack, txn) -> {
+				BatchValueResolver resolver = new BatchValueResolver(expectedRevision, resolvedRevision, stack, txn);
+				try {
+					for (int i = 0; i < count; i++) {
+						LmdbValue value = values[order[i]];
+						if (!value.isInitialized()) {
+							value.init(resolver);
+						}
+					}
+				} finally {
+					resolver.closeCursor();
+				}
+				return null;
+			});
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
+	}
+
+	private boolean resolveValueInTxn(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, long id,
+			LmdbValue value, BatchValueResolver resolver) throws IOException {
+		// unpack inlined values if possible
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			((LmdbLiteral) value).setLabel(unpacked.getLabel());
+			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+			if (resolvedRevision != null) {
+				value.setInternalID(id, resolvedRevision);
+			}
+			return true;
+		}
+
+		LmdbValue cached = cachedValue(id);
+		if (cached != null && cachedValueMatchesRevision(cached, expectedRevision)) {
+			value.setFromInitializedValue(cached);
+			if (resolvedRevision != null) {
+				value.setInternalID(id, resolvedRevision);
+			}
+			return true;
+		}
+
+		if (!resolver.positionAtOrAfter(id)) {
+			return false;
+		}
+		if (!resolver.currentKeyMatchesTarget()) {
+			return false;
+		}
+
+		data2value(id, resolver.valueDataAddress(), resolver.valueDataLength(), value);
+		if (resolvedRevision != null) {
+			value.setInternalID(id, resolvedRevision);
+		}
+		cacheValue(id, value);
+		return true;
+	}
+
+	private boolean cachedValueMatchesRevision(LmdbValue cached, ValueStoreRevision expectedRevision) {
+		ValueStoreRevision cachedRevision = cached.getValueStoreRevision();
+		return cachedRevision != null && cachedRevision.equals(expectedRevision);
+	}
+
+	void onBatchResolveCursorOpened() {
+	}
+
+	void onBatchResolveCursorSeek() {
+	}
+
+	void onBatchResolveCursorNext() {
+	}
+
+	void onBatchResolveKeyBufferWrapped() {
+	}
+
+	void onBatchResolveValueBufferWrapped() {
+	}
+
+	void onBatchResolveDataBufferSliced() {
+	}
+
+	private final class BatchValueResolver implements LmdbValue.Resolver {
+
+		private final ValueStoreRevision expectedRevision;
+		private final ValueStoreRevision resolvedRevision;
+		private final MemoryStack stack;
+		private final long txn;
+		private final MDBVal keyData;
+		private final MDBVal valueData;
+		private final ByteBuffer keyBuffer;
+		private long cursor;
+		private boolean cursorPositioned;
+		private ByteBuffer targetKey;
+		private long targetKeyAddress;
+		private int targetKeyLength;
+		private long currentKeyAddress;
+		private int currentKeyLength;
+		private long valueDataAddress;
+		private int valueDataLength;
+
+		private BatchValueResolver(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision,
+				MemoryStack stack, long txn) {
+			this.expectedRevision = expectedRevision;
+			this.resolvedRevision = resolvedRevision;
+			this.stack = stack;
+			this.txn = txn;
+			keyData = MDBVal.calloc(stack);
+			valueData = MDBVal.calloc(stack);
+			keyBuffer = idBuffer(stack);
+		}
+
+		@Override
+		public boolean resolve(long id, LmdbValue value) {
+			try {
+				return resolveValueInTxn(expectedRevision, resolvedRevision, id, value, this);
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+		}
+
+		private boolean positionAtOrAfter(long id) throws IOException {
+			ensureCursor();
+			keyBuffer.clear();
+			targetKey = id2data(keyBuffer, id).flip();
+			targetKeyAddress = memAddress(targetKey);
+			targetKeyLength = targetKey.remaining();
+
+			if (!cursorPositioned) {
+				return seek();
+			}
+
+			for (int i = 0; i < BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT; i++) {
+				int comparison = compareCurrentKeyToTarget();
+				if (comparison >= 0) {
+					return true;
+				}
+				onBatchResolveCursorNext();
+				int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT));
+				if (rc != MDB_SUCCESS) {
+					cursorPositioned = false;
+					return false;
+				}
+				updateCursorData();
+			}
+
+			return seek();
+		}
+
+		private void ensureCursor() throws IOException {
+			if (cursor == 0) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+				onBatchResolveCursorOpened();
+			}
+		}
+
+		private boolean seek() throws IOException {
+			keyData.mv_data(targetKey);
+			onBatchResolveCursorSeek();
+			int rc = E(mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE));
+			cursorPositioned = rc == MDB_SUCCESS;
+			if (cursorPositioned) {
+				updateCursorData();
+			}
+			return cursorPositioned;
+		}
+
+		private void updateCursorData() {
+			long keyDataAddress = keyData.address();
+			currentKeyAddress = memGetAddress(keyDataAddress + MDBVal.MV_DATA);
+			currentKeyLength = Math.toIntExact(keyData.mv_size());
+			long valueDataAddress = valueData.address();
+			this.valueDataAddress = memGetAddress(valueDataAddress + MDBVal.MV_DATA);
+			valueDataLength = Math.toIntExact(valueData.mv_size());
+		}
+
+		private boolean currentKeyMatchesTarget() {
+			return compareCurrentKeyToTarget() == 0;
+		}
+
+		private int compareCurrentKeyToTarget() {
+			int length = Math.min(currentKeyLength, targetKeyLength);
+			for (int i = 0; i < length; i++) {
+				int result = (memGetByte(currentKeyAddress + i) & 0xff) - (memGetByte(targetKeyAddress + i) & 0xff);
+				if (result != 0) {
+					return result;
+				}
+			}
+			return currentKeyLength - targetKeyLength;
+		}
+
+		private long valueDataAddress() {
+			return valueDataAddress;
+		}
+
+		private int valueDataLength() {
+			return valueDataLength;
+		}
+
+		private void closeCursor() {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+				cursor = 0;
+			}
+		}
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
@@ -968,78 +1305,76 @@ class ValueStore extends AbstractValueFactory {
 		// literals have a datatype id and URIs have a namespace id
 		if (data[0] == LITERAL_VALUE || data[0] == URI_VALUE) {
 			// skip type marker
-			long id = Varint.readUnsigned(ByteBuffer.wrap(data, 1, data.length - 1));
-			refCountsTxCache.compute(id, (k, v) -> {
-				if (v == null) {
-					try {
-						stack.push();
-						MDBVal idVal = MDBVal.calloc(stack);
-						MDBVal dataVal = MDBVal.calloc(stack);
-						idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
-						long newCount = 1;
-						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-							// update count
-							newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-						}
-						return newCount;
-					} finally {
-						stack.pop();
+			long id = Varint.readUnsigned(data, 1);
+			long count = refCountsTxCache.get(id);
+			if (count == UNKNOWN_REF_COUNT) {
+				try {
+					stack.push();
+					MDBVal idVal = MDBVal.calloc(stack);
+					MDBVal dataVal = MDBVal.calloc(stack);
+					idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
+					count = 1;
+					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
+						// update count
+						count = Varint.readUnsigned(dataVal.mv_data()) + 1;
 					}
-				} else {
-					return v + 1;
+				} finally {
+					stack.pop();
 				}
-			});
+			} else {
+				count++;
+			}
+			refCountsTxCache.put(id, count);
 		}
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					var bb = idBuffer(stack);
-					Varint.writeUnsigned(bb, id);
-					idVal.mv_data(bb.flip());
-					long newCount = 1;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
+		long count = refCountsTxCache.get(id);
+		if (count == UNKNOWN_REF_COUNT) {
+			try {
+				stack.push();
+				MDBVal idVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				var bb = idBuffer(stack);
+				Varint.writeUnsigned(bb, id);
+				idVal.mv_data(bb.flip());
+				count = 1;
+				if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
+					// update count
+					count = Varint.readUnsigned(dataVal.mv_data()) + 1;
 				}
-			} else {
-				return v + 1;
+			} finally {
+				stack.pop();
 			}
-		});
+		} else {
+			count++;
+		}
+		refCountsTxCache.put(id, count);
 	}
 
 	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		return refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
-					Varint.writeUnsigned(idBb, id);
-					idVal.mv_data(idBb.flip());
-					long newCount = 0;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
+		long count = refCountsTxCache.get(id);
+		if (count == UNKNOWN_REF_COUNT) {
+			try {
+				stack.push();
+				MDBVal idVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
+				Varint.writeUnsigned(idBb, id);
+				idVal.mv_data(idBb.flip());
+				count = 0;
+				if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
+					// update count
+					count = Varint.readUnsigned(dataVal.mv_data()) - 1;
 				}
-			} else {
-				return v - 1;
+			} finally {
+				stack.pop();
 			}
-		}) == 0;
+		} else {
+			count--;
+		}
+		refCountsTxCache.put(id, count);
+		return count == 0;
 	}
 
 	private void updateRefCounts(MemoryStack stack, long writeTxn) throws IOException {
@@ -1049,11 +1384,11 @@ class ValueStore extends AbstractValueFactory {
 			ByteBuffer idBb = idBuffer(stack);
 			ByteBuffer countBb = stack.malloc(Long.BYTES + 1);
 			MDBVal dataVal = MDBVal.calloc(stack);
-			for (Map.Entry<Long, Long> entry : refCountsTxCache.entrySet()) {
-				long count = entry.getValue();
+			for (Long2LongMap.Entry entry : refCountsTxCache.long2LongEntrySet()) {
+				long count = entry.getLongValue();
 				idBb.clear();
 				idBb.put(ID_KEY);
-				Varint.writeUnsigned(idBb, entry.getKey());
+				Varint.writeUnsigned(idBb, entry.getLongKey());
 				idVal.mv_data(idBb.flip());
 				if (count <= 0) {
 					// delete count entry
@@ -1072,13 +1407,29 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	/**
+	 * Finds (and optionally creates) the id of an encoded value. The data-to-id direction is keyed by
+	 * {@link #lookupKey(byte[])} (the canonical language-tag form), the id-to-data direction stores {@code data} as
+	 * given.
+	 */
 	private long findId(byte[] data, boolean create) throws IOException {
+		byte[] key = lookupKey(data);
+		return findId(data, key, lookupLanguageRange(key), create);
+	}
+
+	/**
+	 * @param data          the encoded value (stored as the id-to-data payload when an id is created)
+	 * @param key           the data-to-id key of {@code data}
+	 * @param languageRange the language-tag range of {@code key} inside which stored payloads may differ from the key
+	 *                      in ASCII case, or -1 for byte-exact payload comparison
+	 */
+	private long findId(byte[] data, byte[] key, long languageRange, boolean create) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
-			if (data.length <= MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
+			if (key.length <= MAX_KEY_SIZE) {
+				MDBVal keyVal = MDBVal.calloc(stack);
+				keyVal.mv_data(stack.bytes(key));
 				MDBVal idVal = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				if (mdb_get(txn, dbi, keyVal, idVal) == MDB_SUCCESS) {
 					return data2id(idVal.mv_data());
 				}
 				if (!create) {
@@ -1090,8 +1441,9 @@ class ValueStore extends AbstractValueFactory {
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+					MDBVal dataVal = key == data ? keyVal : MDBVal.calloc(stack2).mv_data(stack2.bytes(data));
 
-					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+					E(mdb_put(writeTxn, dbi, keyVal, idVal, 0));
 					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
 
 					// update ref count if necessary
@@ -1102,8 +1454,7 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				MDBVal idVal = MDBVal.calloc(stack);
 
-				ByteBuffer dataBb = ByteBuffer.wrap(data);
-				long dataHash = hash(data);
+				long dataHash = hash(key);
 				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
 				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
 				hashBb.put(HASH_KEY);
@@ -1118,7 +1469,8 @@ class ValueStore extends AbstractValueFactory {
 				// ID of first value is directly stored with hash as key
 				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
+					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+							&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 						return data2id(idVal.mv_data());
 					}
 				} else {
@@ -1168,7 +1520,7 @@ class ValueStore extends AbstractValueFactory {
 							hashIdBb.position(hashLength);
 							idVal.mv_data(hashIdBb);
 							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-									&& dataVal.mv_data().compareTo(dataBb) == 0) {
+									&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 								// id was found if stored value is equal to requested value
 								return data2id(hashIdBb);
 							}
@@ -1203,11 +1555,11 @@ class ValueStore extends AbstractValueFactory {
 
 					// store mapping of hash+ID -> []
 					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+					E(mdb_put(writeTxn, dbi, hashVal, dataVal, 0));
 
 					dataVal.mv_size(data.length);
 					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+					E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
 
 					// update ref count if necessary
@@ -1218,6 +1570,22 @@ class ValueStore extends AbstractValueFactory {
 			}
 		});
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
+	}
+
+	private void findIds(byte[][] data, int[] indexes, long[] ids, int count) throws IOException {
+		byte[][] keys = lookupKeys(data, count);
+		int[] order = count > 1 ? sortedStoreOrder(keys, count) : null;
+		if (writeTxn == 0) {
+			writeTransaction((stack, txn) -> {
+				findIds(data, keys, indexes, ids, count, order, stack, txn);
+				return null;
+			});
+			return;
+		}
+		readTransaction(env, (stack, txn) -> {
+			findIds(data, keys, indexes, ids, count, order, stack, txn);
+			return null;
+		});
 	}
 
 	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
@@ -1251,6 +1619,220 @@ class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
+	}
+
+	private void findIds(byte[][] data, byte[][] keys, int[] indexes, long[] ids, int count, int[] order,
+			MemoryStack stack, long txn) throws IOException {
+		BatchIdStorer storer = new BatchIdStorer(stack, txn);
+		for (int i = 0; i < count; i++) {
+			int dataIndex = order == null ? i : order[i];
+			ids[indexes[dataIndex]] = storer.findId(data[dataIndex], keys[dataIndex]);
+		}
+	}
+
+	private int[] sortedStoreOrder(byte[][] data, int count) {
+		int[] order = new int[count];
+		long[] primaryStoreKeys = new long[count];
+		long[] secondaryStoreKeys = new long[count];
+		for (int i = 0; i < count; i++) {
+			order[i] = i;
+			primaryStoreKeys[i] = primaryStoreSortKey(data[i]);
+			secondaryStoreKeys[i] = secondaryStoreSortKey(data[i]);
+		}
+		int[] scratchOrder = new int[count];
+		long[] scratchKeys = new long[count];
+		int[] counts = new int[256];
+		int[] offsets = new int[256];
+		LeadingFieldSorters.lsdRadixSort(order, secondaryStoreKeys, count, scratchOrder, scratchKeys, counts,
+				offsets);
+		for (int i = 0; i < count; i++) {
+			primaryStoreKeys[i] = primaryStoreSortKey(data[order[i]]);
+		}
+		LeadingFieldSorters.lsdRadixSort(order, primaryStoreKeys, count, scratchOrder, scratchKeys, counts, offsets);
+		return order;
+	}
+
+	private long primaryStoreSortKey(byte[] data) {
+		if (data.length <= MAX_KEY_SIZE) {
+			return leadingStoreKey(data, 0);
+		}
+		return ((long) HASH_KEY << 56) | hash(data);
+	}
+
+	private long secondaryStoreSortKey(byte[] data) {
+		if (data.length <= MAX_KEY_SIZE) {
+			return leadingStoreKey(data, Long.BYTES);
+		}
+		return 0;
+	}
+
+	private long leadingStoreKey(byte[] data, int offset) {
+		if (offset >= data.length) {
+			return 0;
+		}
+		long key = 0;
+		int length = Math.min(data.length - offset, Long.BYTES);
+		for (int i = 0; i < length; i++) {
+			key = (key << Byte.SIZE) | (data[offset + i] & 0xFFL);
+		}
+		return key << ((Long.BYTES - length) * Byte.SIZE);
+	}
+
+	private final class BatchIdStorer {
+
+		private final MemoryStack stack;
+		private final long txn;
+		private final MDBVal dataVal;
+		private final MDBVal idVal;
+		private final MDBVal hashVal;
+		private final ByteBuffer idBuffer;
+		private final ByteBuffer hashBuffer;
+
+		private BatchIdStorer(MemoryStack stack, long txn) {
+			this.stack = stack;
+			this.txn = txn;
+			dataVal = MDBVal.calloc(stack);
+			idVal = MDBVal.calloc(stack);
+			hashVal = MDBVal.calloc(stack);
+			idBuffer = idBuffer(stack);
+			hashBuffer = stack.malloc(2 + 2 * Long.BYTES + 2);
+		}
+
+		/**
+		 * @param data the encoded value (stored as the id-to-data payload)
+		 * @param key  {@link #lookupKey(byte[])} of {@code data}: the data-to-id key
+		 */
+		private long findId(byte[] data, byte[] key) throws IOException {
+			stack.push();
+			try {
+				if (key.length <= MAX_KEY_SIZE) {
+					return findSmallId(data, key);
+				}
+				return findLargeId(data, key);
+			} finally {
+				stack.pop();
+			}
+		}
+
+		private long findSmallId(byte[] data, byte[] key) throws IOException {
+			dataVal.mv_data(stack.bytes(key));
+			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				return data2id(idVal.mv_data());
+			}
+
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			idVal.mv_data(id2data(idBuffer, newId).flip());
+			long writeTxn = currentWriteTxn(txn);
+			E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+			if (key != data) {
+				// the id -> data payload keeps the encoding as given, only the lookup key is canonical
+				dataVal.mv_data(stack.bytes(data));
+			}
+			E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
+			incrementRefCount(stack, writeTxn, data);
+			return newId;
+		}
+
+		private long findLargeId(byte[] data, byte[] key) throws IOException {
+			long languageRange = lookupLanguageRange(key);
+			long dataHash = hash(key);
+			hashBuffer.clear();
+			hashBuffer.put(HASH_KEY);
+			Varint.writeUnsigned(hashBuffer, dataHash);
+			int hashLength = hashBuffer.position();
+			hashBuffer.flip();
+			hashVal.mv_data(hashBuffer);
+
+			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+				idVal.mv_data(dataVal.mv_data());
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+						&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
+					return data2id(idVal.mv_data());
+				}
+			} else {
+				return storeFirstLargeId(data);
+			}
+
+			hashBuffer.put(0, HASHID_KEY);
+			hashVal.mv_data(hashBuffer);
+
+			long cursor = 0;
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
+					do {
+						if (compareRegion(hashVal.mv_data(), 0, hashBuffer, 0, hashLength) != 0) {
+							break;
+						}
+
+						ByteBuffer hashIdBb = hashVal.mv_data();
+						hashIdBb.position(hashLength);
+						idVal.mv_data(hashIdBb);
+						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+								&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
+							return data2id(hashIdBb);
+						}
+					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+
+			return storeHashCollisionId(data, hashLength);
+		}
+
+		private long storeFirstLargeId(byte[] data) throws IOException {
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			idVal.mv_data(id2data(idBuffer, newId).flip());
+			dataVal.mv_size(data.length);
+			long writeTxn = currentWriteTxn(txn);
+			E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
+			E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(data);
+			incrementRefCount(stack, writeTxn, data);
+			return newId;
+		}
+
+		private long storeHashCollisionId(byte[] data, int hashLength) throws IOException {
+			resizeMap(txn, 1 + Long.BYTES + hashBuffer.capacity() + 2L * data.length);
+
+			long newId = nextId(data[0]);
+			idBuffer.clear();
+			ByteBuffer idBb = id2data(idBuffer, newId).flip();
+			idVal.mv_data(idBb);
+
+			hashBuffer.limit(hashBuffer.capacity());
+			hashBuffer.position(hashLength);
+			hashBuffer.put(idBb);
+			idBb.rewind();
+			hashBuffer.flip();
+			hashVal.mv_data(hashBuffer);
+
+			long writeTxn = currentWriteTxn(txn);
+			dataVal.mv_data(stack.bytes());
+			E(mdb_put(writeTxn, dbi, hashVal, dataVal, 0));
+
+			dataVal.mv_size(data.length);
+			E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
+			dataVal.mv_data().put(data);
+			incrementRefCount(stack, writeTxn, data);
+			return newId;
+		}
+	}
+
+	private long currentWriteTxn(long fallbackTxn) {
+		return writeTxn != 0 ? writeTxn : fallbackTxn;
 	}
 
 	long findTripleTermId(long subj, long pred, long obj, boolean create) throws IOException {
@@ -1419,6 +2001,814 @@ class ValueStore extends AbstractValueFactory {
 		return result;
 	}
 
+	private boolean bufferEquals(ByteBuffer buffer, byte[] data) {
+		if (buffer.remaining() != data.length) {
+			return false;
+		}
+		int position = buffer.position();
+		for (int i = 0; i < data.length; i++) {
+			if (buffer.get(position + i) != data[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Language-tag key policy
+	// ---------------------------------------------------------------------------------------------------------
+
+	/**
+	 * How language literals are keyed in the data-to-id direction of the value dictionary. {@code Literal.equals}
+	 * compares language tags case-insensitively (RDF 1.1 Concepts 3.3 lower-cases them in the value space), so
+	 * {@code "abc"@en} and {@code "abc"@EN} are one RDF term and must resolve to one id independent of whether the
+	 * (equals-based) value-id cache is warm.
+	 */
+	enum LanguageTagKeyMode {
+		/**
+		 * The data-to-id key lower-cases the ASCII letters of the language tag ({@link #canonicalLanguageKey(byte[])}),
+		 * so every spelling of a tag resolves to the one id of the term. The id-to-data payload keeps the spelling that
+		 * was stored first.
+		 */
+		CANONICAL,
+		/**
+		 * Legacy policy: the encoding is looked up byte-exactly. Only used for stores written before the canonical key
+		 * existed that hold distinct ids for case variants of one term and therefore cannot simply be re-keyed (see
+		 * {@link #migrateLanguageTagKeysIfNeeded()}), until {@link LmdbLanguageTagVariantMerge} has merged the variants
+		 * when the LMDB store opens.
+		 */
+		BYTE_EXACT
+	}
+
+	LanguageTagKeyMode languageTagKeyMode() {
+		return languageTagKeyMode;
+	}
+
+	private LanguageTagKeyMode initialLanguageTagKeyMode() {
+		String policy = properties.getLanguageTagKey();
+		if (StoreProperties.LANGUAGE_TAG_KEY_CANONICAL.equals(policy)) {
+			return LanguageTagKeyMode.CANONICAL;
+		}
+		if (StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT.equals(policy)) {
+			logger.info("LMDB value store {} still keys language literals byte-exactly (case variants of one language "
+					+ "tag, \"abc\"@en vs \"abc\"@EN, may be separate values); the LMDB store merges the variants and "
+					+ "switches to canonical keys when it is opened", dir);
+			return LanguageTagKeyMode.BYTE_EXACT;
+		}
+		// no recorded policy: a store written before the policy existed, or a new (empty) store. Byte-exact until
+		// migrateLanguageTagKeysIfNeeded has inspected the data - the policy is derived from the data rather than from
+		// whether store.properties could be loaded, so existing entries can never become unreachable
+		return LanguageTagKeyMode.BYTE_EXACT;
+	}
+
+	/**
+	 * Returns the data-to-id key for an encoded value: the encoding itself, or - under
+	 * {@link LanguageTagKeyMode#CANONICAL} for a literal with a language tag - a copy whose tag is lower-cased.
+	 */
+	private byte[] lookupKey(byte[] data) {
+		return languageTagKeyMode == LanguageTagKeyMode.CANONICAL ? canonicalLanguageKey(data) : data;
+	}
+
+	private byte[][] lookupKeys(byte[][] data, int count) {
+		if (languageTagKeyMode != LanguageTagKeyMode.CANONICAL) {
+			return data;
+		}
+		byte[][] keys = data;
+		for (int i = 0; i < count; i++) {
+			byte[] key = canonicalLanguageKey(data[i]);
+			if (key != data[i]) {
+				if (keys == data) {
+					keys = Arrays.copyOf(data, data.length);
+				}
+				keys[i] = key;
+			}
+		}
+		return keys;
+	}
+
+	/**
+	 * The language-tag range ({@link #languageTagRange(ByteBuffer)}) of a lookup key, or -1 when stored payloads must
+	 * match the key byte-exactly.
+	 */
+	private long lookupLanguageRange(byte[] key) {
+		return languageTagKeyMode == LanguageTagKeyMode.CANONICAL ? languageTagRange(ByteBuffer.wrap(key)) : -1L;
+	}
+
+	/**
+	 * Returns the encoding with the ASCII letters of its language tag lower-cased, or {@code data} itself (same array)
+	 * when it is not a language literal or the tag is already lower case. The lower-cased form has the same length, so
+	 * the short-key / hash-path decision is identical for key and payload.
+	 */
+	static byte[] canonicalLanguageKey(byte[] data) {
+		long range = languageTagRange(ByteBuffer.wrap(data));
+		if (range < 0) {
+			return data;
+		}
+		int start = (int) (range >>> 32);
+		int end = (int) range;
+		int i = start;
+		while (i < end && !isAsciiUpperCase(data[i])) {
+			i++;
+		}
+		if (i == end) {
+			return data;
+		}
+		byte[] key = data.clone();
+		for (; i < end; i++) {
+			if (isAsciiUpperCase(key[i])) {
+				key[i] = (byte) (key[i] + ('a' - 'A'));
+			}
+		}
+		return key;
+	}
+
+	private static boolean hasUpperCaseLanguageTag(ByteBuffer data) {
+		long range = languageTagRange(data);
+		if (range < 0) {
+			return false;
+		}
+		int position = data.position();
+		for (int i = (int) (range >>> 32); i < (int) range; i++) {
+			if (isAsciiUpperCase(data.get(position + i))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isAsciiUpperCase(byte b) {
+		return b >= 'A' && b <= 'Z';
+	}
+
+	/**
+	 * Locates the language tag inside an encoded literal ({@code [LITERAL_VALUE][varint datatype id][direction |
+	 * language length, or 0xC0 | direction followed by a varint length][language][label]}).
+	 *
+	 * @return {@code start << 32 | end} of the tag relative to the buffer position, or -1 when the encoding is not a
+	 *         literal with a language tag
+	 */
+	private static long languageTagRange(ByteBuffer data) {
+		int position = data.position();
+		int length = data.remaining();
+		if (length < 3 || data.get(position) != LITERAL_VALUE) {
+			return -1L;
+		}
+		int pos = 1 + Varint.firstToLength(data.get(position + 1));
+		if (pos >= length) {
+			return -1L;
+		}
+		int directionAndLangLength = data.get(position + pos) & 0xFF;
+		pos++;
+		int langLength;
+		if (directionAndLangLength >> 6 == 3) {
+			// extended header: a varint with the language tag length follows
+			if (pos >= length) {
+				return -1L;
+			}
+			langLength = (int) Varint.readUnsigned(data, position + pos);
+			pos += Varint.firstToLength(data.get(position + pos));
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		if (langLength <= 0 || pos + langLength > length) {
+			return -1L;
+		}
+		return ((long) pos << 32) | (pos + langLength);
+	}
+
+	/**
+	 * Whether a stored payload denotes the value looked up by {@code key}: byte-equal outside the language tag and,
+	 * inside it, equal up to ASCII case ({@code key} carries the lower-cased tag). With {@code languageRange < 0} this
+	 * is plain byte equality.
+	 */
+	private static boolean payloadMatchesKey(ByteBuffer payload, byte[] key, long languageRange) {
+		if (payload.remaining() != key.length) {
+			return false;
+		}
+		int position = payload.position();
+		int langStart = languageRange < 0 ? 0 : (int) (languageRange >>> 32);
+		int langEnd = languageRange < 0 ? 0 : (int) languageRange;
+		for (int i = 0; i < key.length; i++) {
+			byte stored = payload.get(position + i);
+			if (stored != key[i]) {
+				if (i < langStart || i >= langEnd || !isAsciiUpperCase(stored)
+						|| (byte) (stored + ('a' - 'A')) != key[i]) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Re-keys a store written before the language-tag key policy existed so that its language literals are found via
+	 * the canonical key. Language literals whose data-to-id key would collide (the legacy create path handed case
+	 * variants of one term distinct ids whenever the value-id cache was cold) cannot be merged by re-keying - that
+	 * would silently hide every triple of the losing id - so such a store is left {@link LanguageTagKeyMode#BYTE_EXACT}
+	 * until {@link LmdbLanguageTagVariantMerge} merges the variants, which needs the triple store as well. The decision
+	 * is persisted either way so the scan runs once. A new store takes the same path: its scan is trivially empty.
+	 */
+	private void migrateLanguageTagKeysIfNeeded() throws IOException {
+		if (properties.getLanguageTagKey() != null) {
+			return;
+		}
+		LanguageTagRekey rekey;
+		startTransaction(true);
+		try {
+			rekey = writeTransaction(this::rekeyLanguageTagKeys);
+			commit();
+		} catch (IOException | RuntimeException e) {
+			rollback();
+			throw e;
+		}
+		if (rekey.collisions() > 0) {
+			logger.info("LMDB value store {} holds {} language literal(s) whose language tag differs only in case "
+					+ "from another stored literal ({} literals scanned). They received distinct ids before this "
+					+ "version; the LMDB store merges them into one value when it is opened.", dir,
+					rekey.collisions(), rekey.literals());
+			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
+			return;
+		}
+		if (rekey.rekeyed() > 0) {
+			logger.info("LMDB value store {} now keys language literals by their canonical (lower-cased) language "
+					+ "tag; {} of {} literals were re-keyed", dir, rekey.rekeyed(), rekey.literals());
+		}
+		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+	}
+
+	private record LegacyLanguageTagEntry(long id, byte[] data, byte[] key) {
+	}
+
+	/**
+	 * Outcome of {@link #rekeyLanguageTagKeys}: the number of language literals that collide with another stored
+	 * literal under the canonical key (nothing is re-keyed then), the number re-keyed, and the literals scanned.
+	 */
+	private record LanguageTagRekey(int collisions, int rekeyed, long literals) {
+	}
+
+	/**
+	 * Re-keys every language literal with an upper-case tag under its canonical key, unless two ids would share one
+	 * canonical key. Entries already found under their own canonical key (re-keyed by an earlier run whose outcome was
+	 * not yet recorded in store.properties) are left alone.
+	 */
+	private LanguageTagRekey rekeyLanguageTagKeys(MemoryStack stack, long txn) throws IOException {
+		List<LegacyLanguageTagEntry> entries = new ArrayList<>();
+		Set<ByteBuffer> canonicalKeys = new HashSet<>();
+		int collisions = 0;
+		long literals = 0;
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, dbi, pp));
+		long cursor = pp.get(0);
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			keyVal.mv_data(stack.bytes(new byte[] { ID_KEY }));
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			while (rc == MDB_SUCCESS && keyVal.mv_data().get(0) == ID_KEY) {
+				ByteBuffer payload = dataVal.mv_data();
+				if (payload.remaining() > 0 && payload.get(0) == LITERAL_VALUE) {
+					literals++;
+					if (hasUpperCaseLanguageTag(payload)) {
+						byte[] data = new byte[payload.remaining()];
+						payload.get(data);
+						byte[] key = canonicalLanguageKey(data);
+						long id = data2id(keyVal.mv_data());
+						// canonical lookup of the key: an entry stored with the lower-case spelling, or one already
+						// re-keyed, is found under it
+						long canonicalId = findId(key, key, languageTagRange(ByteBuffer.wrap(key)), false);
+						// canonicalId == id: re-keyed by an earlier migration whose commit was not yet recorded in
+						// store.properties, nothing left to do for this entry
+						if (canonicalId != id) {
+							if (canonicalId != LmdbValue.UNKNOWN_ID || !canonicalKeys.add(ByteBuffer.wrap(key))) {
+								// another id already denotes the same term
+								collisions++;
+							}
+							entries.add(new LegacyLanguageTagEntry(id, data, key));
+						}
+					}
+				}
+				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+
+		if (collisions > 0) {
+			return new LanguageTagRekey(collisions, 0, literals);
+		}
+
+		if (!entries.isEmpty()) {
+			resizeMap(txn, entries.size() * 4L * (MAX_KEY_SIZE + 2L + 2L * Long.BYTES + 2L));
+			long writeTxn = currentWriteTxn(txn);
+			for (LegacyLanguageTagEntry entry : entries) {
+				stack.push();
+				try {
+					ByteBuffer idBb = id2data(idBuffer(stack), entry.id()).flip();
+					if (entry.key().length <= MAX_KEY_SIZE) {
+						MDBVal oldKeyVal = MDBVal.calloc(stack);
+						oldKeyVal.mv_data(stack.bytes(entry.data()));
+						mdb_del(writeTxn, dbi, oldKeyVal, null);
+						MDBVal newKeyVal = MDBVal.calloc(stack);
+						newKeyVal.mv_data(stack.bytes(entry.key()));
+						MDBVal idVal = MDBVal.calloc(stack);
+						idVal.mv_data(idBb);
+						E(mdb_put(writeTxn, dbi, newKeyVal, idVal, 0));
+					} else {
+						removeHashAssociation(stack, writeTxn, hash(entry.data()), idBb);
+						addHashAssociation(stack, writeTxn, hash(entry.key()), idBb);
+					}
+				} finally {
+					stack.pop();
+				}
+			}
+		}
+		return new LanguageTagRekey(0, entries.size(), literals);
+	}
+
+	/**
+	 * Plans the merge of the ids that denote one RDF term in a {@link LanguageTagKeyMode#BYTE_EXACT} store (see
+	 * {@link LmdbLanguageTagVariantMerge}): every group of case variants of one language literal, and every triple term
+	 * that becomes equal to another one once its components are replaced by their survivors. It only reads, and the
+	 * plan depends on nothing but the stored values, so a merge that was interrupted before
+	 * {@link #applyLanguageTagVariantMerge} committed plans the same merge again.
+	 */
+	LanguageTagVariantMergePlan planLanguageTagVariantMerge() throws IOException {
+		LanguageTagVariantMergePlan plan = new LanguageTagVariantMergePlan();
+		// a write transaction that is rolled back: the nested lookups (findId, findTripleTermId) then read the same
+		// snapshot as the scans
+		startTransaction(false);
+		try {
+			writeTransaction((stack, txn) -> {
+				planLanguageLiteralGroups(plan, stack, txn);
+				if (!plan.isEmpty()) {
+					planTripleTermMerges(plan, stack, txn);
+				}
+				return null;
+			});
+		} finally {
+			rollback();
+		}
+		return plan;
+	}
+
+	private void planLanguageLiteralGroups(LanguageTagVariantMergePlan plan, MemoryStack stack, long txn)
+			throws IOException {
+		Map<ByteBuffer, LongArrayList> variantsByKey = new LinkedHashMap<>();
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, dbi, pp));
+		long cursor = pp.get(0);
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			keyVal.mv_data(stack.bytes(new byte[] { ID_KEY }));
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			while (rc == MDB_SUCCESS && keyVal.mv_data().get(0) == ID_KEY) {
+				ByteBuffer payload = dataVal.mv_data();
+				if (payload.remaining() > 0 && payload.get(0) == LITERAL_VALUE && hasUpperCaseLanguageTag(payload)) {
+					plan.countUpperCaseLanguageLiteral();
+					byte[] data = new byte[payload.remaining()];
+					payload.get(data);
+					byte[] key = canonicalLanguageKey(data);
+					long id = data2id(keyVal.mv_data());
+					LongArrayList variants = variantsByKey.get(ByteBuffer.wrap(key));
+					if (variants == null) {
+						variants = new LongArrayList(2);
+						// the variant spelled in lower case is stored under exactly the canonical key
+						long lowerCaseId = findId(key, key, -1L, false);
+						if (lowerCaseId != LmdbValue.UNKNOWN_ID && lowerCaseId != id) {
+							variants.add(lowerCaseId);
+						}
+						variantsByKey.put(ByteBuffer.wrap(key), variants);
+					}
+					if (!variants.contains(id)) {
+						variants.add(id);
+					}
+				}
+				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+		for (LongArrayList variants : variantsByKey.values()) {
+			if (variants.size() > 1) {
+				plan.addLiteralGroup(variants);
+			}
+		}
+	}
+
+	private record TripleTermComponents(long subject, long predicate, long object) {
+	}
+
+	/**
+	 * Groups the triple terms whose components, resolved through the merges planned so far, are equal - including every
+	 * triple term already stored with exactly those components - and lets the smallest id survive. Triple terms stored
+	 * twice with identical components (left behind when a merge was interrupted after rewriting a survivor) are grouped
+	 * as well. Repeats until nothing changes, so a triple term nested in a merged triple term is merged too.
+	 */
+	private void planTripleTermMerges(LanguageTagVariantMergePlan plan, MemoryStack stack, long txn)
+			throws IOException {
+		boolean changed = true;
+		while (changed) {
+			Map<TripleTermComponents, LongArrayList> membersByComponents = new LinkedHashMap<>();
+			Long2ObjectLinkedOpenHashMap<long[]> storedById = new Long2ObjectLinkedOpenHashMap<>();
+			stack.push();
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+				long cursor = pp.get(0);
+				try {
+					MDBVal keyVal = MDBVal.calloc(stack);
+					MDBVal dataVal = MDBVal.calloc(stack);
+					long[] quad = new long[4];
+					long[] previous = null;
+					int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_FIRST);
+					while (rc == MDB_SUCCESS) {
+						tripleTermSpocIndex.keyToQuad(keyVal.mv_data(), quad);
+						long id = quad[TripleIndex.CONTEXT_IDX];
+						TripleTermComponents resolved = new TripleTermComponents(
+								plan.resolve(quad[TripleIndex.SUBJ_IDX]), plan.resolve(quad[TripleIndex.PRED_IDX]),
+								plan.resolve(quad[TripleIndex.OBJ_IDX]));
+						if (resolved.subject() != quad[TripleIndex.SUBJ_IDX]
+								|| resolved.predicate() != quad[TripleIndex.PRED_IDX]
+								|| resolved.object() != quad[TripleIndex.OBJ_IDX]) {
+							storedById.put(id, new long[] { quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+									quad[TripleIndex.OBJ_IDX] });
+							addTripleTermMember(membersByComponents, resolved, id);
+						} else if (previous != null && previous[0] == quad[0] && previous[1] == quad[1]
+								&& previous[2] == quad[2]) {
+							// the index is sorted by components, so triple terms stored twice are adjacent
+							addTripleTermMember(membersByComponents, resolved, previous[3]);
+							addTripleTermMember(membersByComponents, resolved, id);
+						}
+						previous = quad.clone();
+						rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			} finally {
+				stack.pop();
+			}
+
+			Long2LongOpenHashMap survivorByLoser = new Long2LongOpenHashMap();
+			Long2ObjectLinkedOpenHashMap<long[]> losers = new Long2ObjectLinkedOpenHashMap<>();
+			Long2ObjectLinkedOpenHashMap<long[]> rewrites = new Long2ObjectLinkedOpenHashMap<>();
+			for (Map.Entry<TripleTermComponents, LongArrayList> group : membersByComponents.entrySet()) {
+				TripleTermComponents components = group.getKey();
+				LongArrayList members = group.getValue();
+				// triple terms stored with exactly the resolved components mention no losing id, so they were not
+				// collected above; they denote the same term and join the group
+				LongArrayList existing = tripleTermIds(stack, txn, components);
+				for (int i = 0; i < existing.size(); i++) {
+					if (!members.contains(existing.getLong(i))) {
+						members.add(existing.getLong(i));
+					}
+				}
+				long survivor = Long.MAX_VALUE;
+				for (int i = 0; i < members.size(); i++) {
+					survivor = Math.min(survivor, members.getLong(i));
+				}
+				long[] resolved = { components.subject(), components.predicate(), components.object() };
+				for (int i = 0; i < members.size(); i++) {
+					long member = members.getLong(i);
+					// members that were not collected as affected are stored with the resolved components
+					long[] stored = storedById.containsKey(member) ? storedById.get(member) : resolved;
+					if (member != survivor) {
+						survivorByLoser.put(member, survivor);
+						losers.put(member, stored);
+					} else if (storedById.containsKey(member)) {
+						rewrites.put(member, new long[] { stored[0], stored[1], stored[2], resolved[0], resolved[1],
+								resolved[2] });
+					}
+				}
+			}
+			changed = plan.replaceTripleTermMerges(survivorByLoser, losers, rewrites);
+		}
+	}
+
+	private static void addTripleTermMember(Map<TripleTermComponents, LongArrayList> membersByComponents,
+			TripleTermComponents components, long id) {
+		LongArrayList members = membersByComponents.computeIfAbsent(components, ignored -> new LongArrayList(2));
+		if (!members.contains(id)) {
+			members.add(id);
+		}
+	}
+
+	/** The ids of every triple term stored with exactly the given components. */
+	private LongArrayList tripleTermIds(MemoryStack stack, long txn, TripleTermComponents components)
+			throws IOException {
+		LongArrayList ids = new LongArrayList(1);
+		stack.push();
+		try {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+			long cursor = pp.get(0);
+			try {
+				MDBVal keyVal = MDBVal.calloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				tripleTermSpocIndex.getMinKey(keyBuf, components.subject(), components.predicate(),
+						components.object(), -1);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+				GroupMatcher matcher = tripleTermSpocIndex.createMatcher(components.subject(),
+						components.predicate(), components.object(), -1);
+				long[] quad = new long[4];
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && matcher.matches(keyVal.mv_data())) {
+					tripleTermSpocIndex.keyToQuad(keyVal.mv_data(), quad);
+					ids.add(quad[TripleIndex.CONTEXT_IDX]);
+					rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} finally {
+			stack.pop();
+		}
+		return ids;
+	}
+
+	/**
+	 * Test seam: when it accepts the number of a completed step of {@link #applyLanguageTagVariantMerge} (1 surviving
+	 * triple terms rewritten, 2 losing triple terms retired, 3 losing literals retired), the work so far is committed -
+	 * as a map resize at that point would - and the merge fails as if the process had died.
+	 */
+	static volatile IntPredicate crashAfterLanguageTagMergeStepForTesting;
+
+	/**
+	 * Carries out a {@link LanguageTagVariantMergePlan} after every statement of the triple store has been rewritten to
+	 * the surviving ids, then keys every language literal canonically and switches this store to
+	 * {@link LanguageTagKeyMode#CANONICAL}. Runs in one write transaction; if the value map has to grow mid-way, the
+	 * work done so far is committed early, and every such prefix is a state from which
+	 * {@link #planLanguageTagVariantMerge} plans the rest of the merge: surviving triple terms are rewritten first
+	 * (they then have the resolved components and are no longer affected), each losing id is retired as a whole
+	 * (deleted, marked unused, hash cleared), losing triple terms before losing literals (so no triple term refers to a
+	 * deleted literal), and re-keying comes last and skips entries that are already keyed canonically.
+	 *
+	 * @throws IOException if a language literal still collides with another one after the merge (the transaction is
+	 *                     rolled back and the store stays byte-exact)
+	 */
+	void applyLanguageTagVariantMerge(LanguageTagVariantMergePlan plan) throws IOException {
+		LanguageTagRekey rekey;
+		startTransaction(true);
+		try {
+			rekey = writeTransaction((stack, txn) -> {
+				if (!plan.isEmpty()) {
+					resizeMap(txn, languageTagVariantMergeBytes(plan));
+					rewriteSurvivingTripleTerms(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(1);
+					retireLosingTripleTerms(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(2);
+					retireLosingLiterals(plan, stack, currentWriteTxn(txn));
+					languageTagMergeStepDone(3);
+				}
+				LanguageTagRekey result = rekeyLanguageTagKeys(stack, currentWriteTxn(txn));
+				if (result.collisions() > 0) {
+					throw new IOException("LMDB value store " + dir + " still holds " + result.collisions()
+							+ " language literal(s) that collide with another stored literal after merging the case "
+							+ "variants of language tags");
+				}
+				return result;
+			});
+			if (!plan.isEmpty()) {
+				// values handed out before the merge may carry a losing id
+				invalidateRevisionOnCommit = true;
+			}
+			commit();
+		} catch (IOException | RuntimeException e) {
+			rollback();
+			throw e;
+		}
+		if (rekey.rekeyed() > 0) {
+			logger.info("LMDB value store {} now keys language literals by their canonical (lower-cased) language "
+					+ "tag; {} of {} literals were re-keyed", dir, rekey.rekeyed(), rekey.literals());
+		}
+		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+	}
+
+	private void languageTagMergeStepDone(int step) throws IOException {
+		IntPredicate crash = crashAfterLanguageTagMergeStepForTesting;
+		if (crash != null && crash.test(step)) {
+			endTransaction(true, true);
+			throw new IOException("simulated crash after step " + step + " of the language-tag variant merge");
+		}
+	}
+
+	/** Upper bound of the map space the merge and the subsequent re-keying need. */
+	private long languageTagVariantMergeBytes(LanguageTagVariantMergePlan plan) {
+		long tripleTermKeys = (2L * plan.tripleTermRewrites().size() + plan.loserTripleTerms().size())
+				* tripleTermIndexes.size();
+		long entries = tripleTermKeys + 4L * plan.loserCount() + 4L * plan.upperCaseLanguageLiterals();
+		return 2L * entries * (TripleIndex.MAX_KEY_LENGTH + MAX_KEY_SIZE + 2L * Long.BYTES + 4L);
+	}
+
+	private void rewriteSurvivingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		for (Long2ObjectMap.Entry<long[]> rewrite : plan.tripleTermRewrites().long2ObjectEntrySet()) {
+			long id = rewrite.getLongKey();
+			long[] components = rewrite.getValue();
+			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
+			writeTripleTermKeys(stack, writeTxn, components[3], components[4], components[5], id, true);
+			for (int i = 0; i < 3; i++) {
+				if (components[i] != components[i + 3]) {
+					incrementRefCount(stack, writeTxn, components[i + 3]);
+					decrementRefCount(stack, writeTxn, components[i]);
+				}
+			}
+			clearStoredHash(id);
+		}
+	}
+
+	private void retireLosingTripleTerms(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		for (Long2ObjectMap.Entry<long[]> loser : plan.loserTripleTerms().long2ObjectEntrySet()) {
+			long id = loser.getLongKey();
+			long[] components = loser.getValue();
+			writeTripleTermKeys(stack, writeTxn, components[0], components[1], components[2], id, false);
+			for (int i = 0; i < 3; i++) {
+				decrementRefCount(stack, writeTxn, components[i]);
+			}
+			retireMergedId(stack, writeTxn, id);
+		}
+	}
+
+	/** Puts ({@code put}) or deletes the keys of one triple term in every triple-term index. */
+	private void writeTripleTermKeys(MemoryStack stack, long writeTxn, long subject, long predicate, long object,
+			long id, boolean put) throws IOException {
+		stack.push();
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			for (TripleIndex index : tripleTermIndexes) {
+				keyBuf.clear();
+				index.toKey(keyBuf, subject, predicate, object, id);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+				if (put) {
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				} else {
+					E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
+				}
+			}
+		} finally {
+			stack.pop();
+		}
+	}
+
+	/**
+	 * Deletes each losing language literal - its byte-exact data-to-id entry (short key or hash association), its
+	 * reference to the datatype and its id-to-data entry - and retires its id.
+	 */
+	private void retireLosingLiterals(LanguageTagVariantMergePlan plan, MemoryStack stack, long writeTxn)
+			throws IOException {
+		LongArrayList losers = plan.loserLiterals();
+		for (int i = 0; i < losers.size(); i++) {
+			long id = losers.getLong(i);
+			stack.push();
+			try {
+				ByteBuffer idBb = id2data(idBuffer(stack), id).flip();
+				MDBVal idVal = MDBVal.calloc(stack);
+				idVal.mv_data(idBb);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				if (mdb_get(writeTxn, dbi, idVal, dataVal) != MDB_SUCCESS) {
+					continue;
+				}
+				byte[] data = new byte[dataVal.mv_data().remaining()];
+				dataVal.mv_data().get(data);
+				if (data.length <= MAX_KEY_SIZE) {
+					MDBVal keyVal = MDBVal.calloc(stack);
+					keyVal.mv_data(stack.bytes(data));
+					MDBVal mappedIdVal = MDBVal.calloc(stack);
+					if (mdb_get(writeTxn, dbi, keyVal, mappedIdVal) == MDB_SUCCESS
+							&& data2id(mappedIdVal.mv_data()) == id) {
+						E(mdb_del(writeTxn, dbi, keyVal, null));
+					}
+				} else {
+					removeHashAssociation(stack, writeTxn, hash(data), idBb.duplicate());
+				}
+				// the datatype of a language literal (rdf:langString / rdf:dirLangString) is seeded and never collected
+				decrementRefCount(stack, writeTxn, Varint.readUnsigned(data, 1));
+				E(mdb_del(writeTxn, dbi, idVal, null));
+				retireMergedId(stack, writeTxn, id);
+			} finally {
+				stack.pop();
+			}
+		}
+	}
+
+	/**
+	 * Drops the reference count of a losing id (nothing refers to it any more), clears its stored hash and marks it
+	 * unused under the current revision, so the normal two-phase garbage collection puts it on the free list (at the
+	 * latest when the store opens next).
+	 */
+	private void retireMergedId(MemoryStack stack, long writeTxn, long id) throws IOException {
+		stack.push();
+		try {
+			ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
+			Varint.writeUnsigned(revIdBb, revision.getRevisionId());
+			MDBVal revIdVal = MDBVal.calloc(stack);
+			revIdVal.mv_data(id2data(revIdBb, id).flip());
+			E(mdb_put(writeTxn, unusedDbi, revIdVal, MDBVal.calloc(stack), 0));
+		} finally {
+			stack.pop();
+		}
+		refCountsTxCache.put(id, 0L);
+		clearStoredHash(id);
+	}
+
+	/**
+	 * Removes the association of {@code dataHash} with the id encoded in {@code idBb}: either the first-entry
+	 * {@code HASH_KEY} record (promoting the next {@code HASHID_KEY} collision record, if any, as
+	 * {@link #deleteValueToIdMappings} does) or the id's own {@code HASHID_KEY} collision record.
+	 */
+	private void removeHashAssociation(MemoryStack stack, long writeTxn, long dataHash, ByteBuffer idBb)
+			throws IOException {
+		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+		hashBb.put(HASH_KEY);
+		Varint.writeUnsigned(hashBb, dataHash);
+		int hashLength = hashBb.position();
+		hashBb.flip();
+		MDBVal hashVal = MDBVal.calloc(stack);
+		hashVal.mv_data(hashBb);
+		MDBVal dataVal = MDBVal.calloc(stack);
+
+		byte[] idBytes = new byte[idBb.remaining()];
+		idBb.duplicate().get(idBytes);
+		if (mdb_get(writeTxn, dbi, hashVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), idBytes)) {
+			E(mdb_del(writeTxn, dbi, hashVal, null));
+			// promote the first collision record for this hash, if any, to the first-entry record
+			ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength);
+			hashIdBb.put(HASHID_KEY);
+			Varint.writeUnsigned(hashIdBb, dataHash);
+			hashIdBb.flip();
+			MDBVal hashIdVal = MDBVal.calloc(stack);
+			hashIdVal.mv_data(hashIdBb);
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				if (mdb_cursor_get(cursor, hashIdVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS
+						&& compareRegion(hashIdVal.mv_data(), 0, hashIdBb, 0, hashLength) == 0) {
+					ByteBuffer nextIdBb = hashIdVal.mv_data();
+					nextIdBb.position(hashLength);
+					MDBVal nextIdVal = MDBVal.calloc(stack);
+					nextIdVal.mv_data(nextIdBb);
+					hashVal.mv_data(hashBb);
+					E(mdb_put(writeTxn, dbi, hashVal, nextIdVal, 0));
+					E(mdb_cursor_del(cursor, 0));
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} else {
+			ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength + idBytes.length);
+			hashIdBb.put(HASHID_KEY);
+			Varint.writeUnsigned(hashIdBb, dataHash);
+			hashIdBb.put(idBytes);
+			hashIdBb.flip();
+			MDBVal hashIdVal = MDBVal.calloc(stack);
+			hashIdVal.mv_data(hashIdBb);
+			mdb_del(writeTxn, dbi, hashIdVal, null);
+		}
+	}
+
+	/**
+	 * Associates {@code dataHash} with the id encoded in {@code idBb}: as the first-entry {@code HASH_KEY} record when
+	 * the hash is new, else as a {@code HASHID_KEY} collision record (the layout {@link #findId(byte[], boolean)}
+	 * reads).
+	 */
+	private void addHashAssociation(MemoryStack stack, long writeTxn, long dataHash, ByteBuffer idBb)
+			throws IOException {
+		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+		hashBb.put(HASH_KEY);
+		Varint.writeUnsigned(hashBb, dataHash);
+		hashBb.flip();
+		MDBVal hashVal = MDBVal.calloc(stack);
+		hashVal.mv_data(hashBb);
+		MDBVal dataVal = MDBVal.calloc(stack);
+		MDBVal idVal = MDBVal.calloc(stack);
+		idVal.mv_data(idBb.duplicate());
+		if (mdb_get(writeTxn, dbi, hashVal, dataVal) != MDB_SUCCESS) {
+			E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
+			return;
+		}
+		ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength + idBb.remaining());
+		hashIdBb.put(HASHID_KEY);
+		Varint.writeUnsigned(hashIdBb, dataHash);
+		hashIdBb.put(idBb.duplicate());
+		hashIdBb.flip();
+		MDBVal hashIdVal = MDBVal.calloc(stack);
+		hashIdVal.mv_data(hashIdBb);
+		dataVal.mv_data(stack.bytes());
+		E(mdb_put(writeTxn, dbi, hashIdVal, dataVal, 0));
+	}
+
 	/**
 	 * Gets the ID for the specified value.
 	 *
@@ -1532,6 +2922,128 @@ class ValueStore extends AbstractValueFactory {
 		return LmdbValue.UNKNOWN_ID;
 	}
 
+	void storeValues(Value[] values, long[] ids, int count) throws IOException {
+		if (count == 0) {
+			return;
+		}
+
+		byte[][] unresolvedData = null;
+		int[] unresolvedIndexes = null;
+		int unresolvedCount = 0;
+		boolean[] cacheAfterLookup = new boolean[count];
+		boolean[] ownValues = new boolean[count];
+
+		long stamp = revisionLock.readLock();
+		try {
+			for (int i = 0; i < count; i++) {
+				Value value = values[i];
+				boolean isOwnValue = isOwnValue(value);
+				ownValues[i] = isOwnValue;
+
+				long id = getKnownOrInlineId(value, isOwnValue);
+				ids[i] = id;
+				if (id != LmdbValue.UNKNOWN_ID) {
+					if (isOwnValue) {
+						((LmdbValue) value).setInternalID(id, revision);
+					}
+					continue;
+				}
+
+				if (value.isTripleTerm()) {
+					// Triple terms are stored via their component ids and the triple-term indexes, not as plain
+					// value records; route through getId which handles creation and caching.
+					long tripleId = getId(value, true);
+					ids[i] = tripleId;
+					if (isOwnValue && tripleId != LmdbValue.UNKNOWN_ID) {
+						((LmdbValue) value).setInternalID(tripleId, revision);
+					}
+					continue;
+				}
+				byte[] data = value2data(value, true);
+				if (data == null && value instanceof Literal) {
+					data = literal2legacy((Literal) value);
+				}
+				if (data != null) {
+					if (unresolvedData == null) {
+						unresolvedData = new byte[count][];
+						unresolvedIndexes = new int[count];
+					}
+					unresolvedData[unresolvedCount] = data;
+					unresolvedIndexes[unresolvedCount] = i;
+					unresolvedCount++;
+					cacheAfterLookup[i] = true;
+				}
+			}
+
+			if (unresolvedCount > 0) {
+				findIds(unresolvedData, unresolvedIndexes, ids, unresolvedCount);
+			}
+
+			for (int i = 0; i < count; i++) {
+				if (cacheAfterLookup[i] && ids[i] != LmdbValue.UNKNOWN_ID) {
+					cacheStoredId(values[i], ids[i], ownValues[i]);
+				}
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
+
+	private long getKnownOrInlineId(Value value, boolean isOwnValue) {
+		if (isOwnValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			if (revisionIsCurrent(lmdbValue)) {
+				long id = lmdbValue.getInternalID();
+				if (id != LmdbValue.UNKNOWN_ID) {
+					return id;
+				}
+			}
+		}
+
+		Long cachedID = valueIDCache.get(value);
+		if (cachedID == null) {
+			cachedID = commonVocabulary.get(value);
+		}
+		if (cachedID != null) {
+			return cachedID;
+		}
+
+		if (inlineLiterals && value instanceof Literal) {
+			try {
+				long packedId = Values.packLiteral((Literal) value);
+				if (packedId != 0L) {
+					Literal unpacked = Values.unpackLiteral(packedId, this);
+					if (unpacked.equals(value)) {
+						return packedId;
+					}
+				}
+			} catch (IllegalArgumentException e) {
+				// ignore, invalid literal
+			}
+		}
+
+		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private void cacheStoredId(Value value, long id, boolean isOwnValue) {
+		if (isOwnValue) {
+			LmdbValue lmdbValue = (LmdbValue) value;
+			lmdbValue.setInternalID(id, revision);
+			valueIDCache.put(lmdbValue, id);
+		} else {
+			LmdbValue nv = getLmdbValue(value);
+			nv.setInternalID(id, revision);
+
+			if (nv.isIRI() && isCommonVocabulary((IRI) nv)) {
+				commonVocabulary.put(value, id);
+			}
+			valueIDCache.put(nv, id);
+		}
+		if (!ValueIds.isInlined(id)) {
+			storeHashIfAbsent(id, value);
+		}
+	}
+
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
 		if (!enableGC()) {
 			return;
@@ -1554,12 +3066,16 @@ class ValueStore extends AbstractValueFactory {
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					for (Long id : finalIds) {
+						long idValue = id;
+						if (seededDatatypeIds.contains(id)) {
+							continue;
+						}
 						revIdBb.position(revLength).limit(revIdBb.capacity());
-						revIdVal.mv_data(id2data(revIdBb, id).flip());
+						revIdVal.mv_data(id2data(revIdBb, idValue).flip());
 						// check if id has internal references and therefore cannot be deleted
 						idVal.mv_data(revIdBb.slice().position(revLength));
-						Long refCount = refCountsTxCache.get(id);
-						if (refCount == null) {
+						long refCount = refCountsTxCache.get(idValue);
+						if (refCount == UNKNOWN_REF_COUNT) {
 							if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 								continue;
 							}
@@ -1604,6 +3120,10 @@ class ValueStore extends AbstractValueFactory {
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
+				long idValue = id;
+				if (seededDatatypeIds.contains(id)) {
+					continue;
+				}
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
 				// special handling of triple terms
@@ -1647,11 +3167,12 @@ class ValueStore extends AbstractValueFactory {
 					continue;
 				}
 
-				idVal.mv_data(id2data(idBb.clear(), id).flip());
+				idVal.mv_data(id2data(idBb.clear(), idValue).flip());
 				// id must not have a reference count or reference count must be zero and id must have an associated
 				// value
-				Long refCount = refCountsTxCache.get(id);
-				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
+				long refCount = refCountsTxCache.get(idValue);
+				if (((refCount != UNKNOWN_REF_COUNT && refCount <= 0)
+						|| mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
 						mdb_get(writeTxn, dbi, idVal, dataVal) == 0) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
 
@@ -1667,7 +3188,8 @@ class ValueStore extends AbstractValueFactory {
 					if (dataLength > MAX_KEY_SIZE) {
 						byte[] data = new byte[dataLength];
 						dataBuffer.get(data);
-						long dataHash = hash(data);
+						// the hash association is keyed by the canonical form of the stored encoding
+						long dataHash = hash(lookupKey(data));
 
 						hashBb.clear();
 						hashBb.put(HASH_KEY);
@@ -1715,6 +3237,18 @@ class ValueStore extends AbstractValueFactory {
 							hashVal.mv_data(hashBb);
 							// delete HASH+ID -> [] association
 							mdb_del(writeTxn, dbi, hashVal, null);
+						}
+					} else if (languageTagKeyMode == LanguageTagKeyMode.CANONICAL
+							&& hasUpperCaseLanguageTag(dataBuffer)) {
+						// the value -> ID association is keyed by the canonical (lower-cased language tag) encoding
+						byte[] data = new byte[dataLength];
+						dataBuffer.duplicate().get(data);
+						stack.push();
+						try {
+							dataVal.mv_data(stack.bytes(canonicalLanguageKey(data)));
+							mdb_del(writeTxn, dbi, dataVal, null);
+						} finally {
+							stack.pop();
 						}
 					} else {
 						// delete value -> ID association
@@ -1952,13 +3486,20 @@ class ValueStore extends AbstractValueFactory {
 		ValueStoreHashFile.deleteIfPresent(dir);
 
 		clearCaches();
+		seededDatatypeIds.clear();
 		open();
 		setNewRevision();
+		startTransaction(true);
+		seedCoreDatatypes();
+		commit();
 	}
 
 	protected void clearCaches() {
 		Arrays.fill(valueCache, null);
 		Arrays.fill(valueCacheId, 0);
+		Arrays.fill(predicateCache, null);
+		Arrays.fill(predicateCacheId, 0);
+		Arrays.fill(datatypeCache, null);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
@@ -2102,7 +3643,7 @@ class ValueStore extends AbstractValueFactory {
 		int nsIDLength = Varint.calcLengthUnsigned(nsID);
 		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
 		uriData[0] = URI_VALUE;
-		Varint.writeUnsigned(ByteBuffer.wrap(uriData, 1, nsIDLength), nsID);
+		Varint.writeUnsigned(uriData, 1, nsID);
 		ByteArrayUtil.put(localNameData, uriData, 1 + nsIDLength);
 
 		return uriData;
@@ -2121,6 +3662,15 @@ class ValueStore extends AbstractValueFactory {
 	private byte[] literal2data(Literal literal, boolean create) throws IOException {
 		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getBaseDirection(),
 				literal.getDatatype(), create);
+	}
+
+	private byte[] literal2legacy(Literal literal) throws IOException {
+		IRI dt = literal.getDatatype();
+		if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(dt)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(dt)) {
+			return literal2data(literal.getLabel(), literal.getLanguage(), null, null, false);
+		}
+		return literal2data(literal.getLabel(), literal.getLanguage(), null, dt, false);
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, Literal.BaseDirection baseDirection, IRI dt,
@@ -2193,6 +3743,16 @@ class ValueStore extends AbstractValueFactory {
 		};
 	}
 
+	private LmdbValue data2value(long id, long dataAddress, int dataLength, LmdbValue value) throws IOException {
+		byte type = memGetByte(dataAddress);
+		return switch (type) {
+		case URI_VALUE -> data2uri(id, dataAddress, dataLength, (LmdbIRI) value);
+		case BNODE_VALUE -> data2bnode(id, dataAddress, dataLength, (LmdbBNode) value);
+		case LITERAL_VALUE -> data2literal(id, dataAddress, dataLength, (LmdbLiteral) value);
+		default -> throw new IllegalArgumentException("Invalid type " + type + " for value with id " + id);
+		};
+	}
+
 	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
@@ -2200,6 +3760,22 @@ class ValueStore extends AbstractValueFactory {
 		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
+
+		if (value == null) {
+			return new LmdbIRI(revision, namespace, localName, id);
+		} else {
+			value.setNamespaceAndIri(namespace, localName);
+//			value.setIRIString(namespace + localName);
+			return value;
+		}
+	}
+
+	private LmdbIRI data2uri(long id, long dataAddress, int dataLength, LmdbIRI value) throws IOException {
+		int position = 1;
+		long nsID = readUnsignedFromMemory(dataAddress, position);
+		position += varintLengthFromMemory(dataAddress, position);
+		String namespace = getNamespace(nsID);
+		String localName = stringFromMemory(dataAddress, position, dataLength - position);
 
 		if (value == null) {
 			return new LmdbIRI(revision, namespace, localName, id);
@@ -2220,6 +3796,16 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private LmdbBNode data2bnode(long id, long dataAddress, int dataLength, LmdbBNode value) {
+		String nodeID = stringFromMemory(dataAddress, 1, dataLength - 1);
+		if (value == null) {
+			return new LmdbBNode(revision, nodeID, id);
+		} else {
+			value.setID(nodeID);
+			return value;
+		}
+	}
+
 	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
@@ -2227,9 +3813,14 @@ class ValueStore extends AbstractValueFactory {
 		// Get datatype
 		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
+		CoreDatatype coreDatatype = null;
 		// literal without a datatype
 		if (datatypeID > 0) {
-			datatype = (IRI) getValue(datatypeID);
+			datatype = getDatatype(datatypeID);
+			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
+			if (datatype != null && coreDatatype == null) {
+				coreDatatype = CoreDatatype.from(datatype);
+			}
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -2248,11 +3839,7 @@ class ValueStore extends AbstractValueFactory {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
-		Literal.BaseDirection baseDirection = switch (directionValue) {
-		case 1 -> Literal.BaseDirection.LTR;
-		case 2 -> Literal.BaseDirection.RTL;
-		default -> Literal.BaseDirection.NONE;
-		};
+		Literal.BaseDirection baseDirection = baseDirection(directionValue);
 
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
@@ -2262,7 +3849,7 @@ class ValueStore extends AbstractValueFactory {
 			if (lang != null) {
 				return new LmdbLiteral(revision, label, lang, baseDirection, id);
 			} else if (datatype != null) {
-				return new LmdbLiteral(revision, label, datatype, id);
+				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
 			} else {
 				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
 			}
@@ -2277,12 +3864,129 @@ class ValueStore extends AbstractValueFactory {
 					value.setDatatype(CoreDatatype.RDF.LANGSTRING);
 				}
 			} else if (datatype != null) {
-				value.setDatatype(datatype);
+				value.setDatatype(datatype, coreDatatype);
 			} else {
 				value.setDatatype(CoreDatatype.XSD.STRING);
 			}
 			return value;
 		}
+	}
+
+	private LmdbLiteral data2literal(long id, long dataAddress, int dataLength, LmdbLiteral value) throws IOException {
+		int position = 1;
+		long datatypeID = readUnsignedFromMemory(dataAddress, position);
+		position += varintLengthFromMemory(dataAddress, position);
+		IRI datatype = null;
+		CoreDatatype coreDatatype = null;
+		// literal without a datatype
+		if (datatypeID > 0) {
+			datatype = getDatatype(datatypeID);
+			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
+			if (datatype != null && coreDatatype == null) {
+				coreDatatype = CoreDatatype.from(datatype);
+			}
+		}
+
+		int directionAndLangLength = memGetByte(dataAddress + position) & 0xFF;
+		position++;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			// extended header: the low bits hold the direction, a varint follows with the language tag length
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) readUnsignedFromMemory(dataAddress, position);
+			position += varintLengthFromMemory(dataAddress, position);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		Literal.BaseDirection baseDirection = baseDirection(directionValue);
+
+		// Get language tag
+		String lang = null;
+		int langPosition = position;
+		if (langLength > 0) {
+			lang = stringFromMemory(dataAddress, langPosition, langLength);
+		}
+
+		// Get label
+		int labelPosition = langPosition + langLength;
+		String label = stringFromMemory(dataAddress, labelPosition, dataLength - labelPosition);
+
+		if (value == null) {
+			if (lang != null) {
+				return new LmdbLiteral(revision, label, lang, baseDirection, id);
+			} else if (datatype != null) {
+				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
+			} else {
+				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+			}
+		} else {
+			value.setLabel(label);
+			if (lang != null) {
+				value.setLanguage(lang);
+				value.setBaseDirection(baseDirection);
+				value.setDatatype(baseDirection == Literal.BaseDirection.NONE
+						? CoreDatatype.RDF.LANGSTRING
+						: CoreDatatype.RDF.DIRLANGSTRING);
+			} else if (datatype != null) {
+				value.setDatatype(datatype, coreDatatype);
+			} else {
+				value.setDatatype(CoreDatatype.XSD.STRING);
+			}
+			return value;
+		}
+	}
+
+	private static Literal.BaseDirection baseDirection(int directionValue) {
+		return switch (directionValue) {
+		case 1 -> Literal.BaseDirection.LTR;
+		case 2 -> Literal.BaseDirection.RTL;
+		default -> Literal.BaseDirection.NONE;
+		};
+	}
+
+	private String stringFromMemory(long address, int position, int length) {
+		if (length == 0) {
+			return "";
+		}
+		return memUTF8(address + position, length);
+	}
+
+	private int varintLengthFromMemory(long address, int position) {
+		return Varint.firstToLength(memGetByte(address + position));
+	}
+
+	private long readUnsignedFromMemory(long address, int position) {
+		int a0 = memGetByte(address + position) & 0xFF;
+
+		if (a0 <= 240) {
+			return a0;
+		} else if (a0 <= 248) {
+			int a1 = memGetByte(address + position + 1) & 0xFF;
+			return 240 + 256L * (a0 - 241) + a1;
+		} else if (a0 == 249) {
+			int a1 = memGetByte(address + position + 1) & 0xFF;
+			int a2 = memGetByte(address + position + 2) & 0xFF;
+			return 2288 + 256L * a1 + a2;
+		} else {
+			int bytes = a0 - 250 + 3;
+			long result = 0;
+			for (int i = 0; i < bytes; i++) {
+				result = (result << 8) | (memGetByte(address + position + 1 + i) & 0xFFL);
+			}
+			return result;
+		}
+	}
+
+	private LmdbIRI getDatatype(long datatypeID) throws IOException {
+		LmdbIRI datatype = cachedDatatype(datatypeID);
+		if (datatype == null) {
+			datatype = (LmdbIRI) getValue(datatypeID);
+			if (datatype != null) {
+				cacheDatatype(datatypeID, datatype);
+			}
+		}
+		return datatype;
 	}
 
 	private String data2namespace(byte[] data) {
@@ -2336,7 +4040,13 @@ class ValueStore extends AbstractValueFactory {
 
 	@Override
 	public LmdbIRI createIRI(String uri) {
-		return new LmdbIRI(revision, uri);
+
+//		if(uri.startsWith("http://www.w3.org/")) {
+//			//TODO: check if the iri is in the common vocabulary and return that instead
+//		}
+
+		LmdbIRI lmdbIRI = new LmdbIRI(revision, uri);
+		return lmdbIRI;
 	}
 
 	@Override
@@ -2413,6 +4123,13 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbIRI getLmdbURI(IRI uri) {
 		if (isOwnValue(uri)) {
 			return (LmdbIRI) uri;
+		}
+
+		if (uri instanceof InternedIRI || uri.stringValue().startsWith("http://www.w3.org")) {
+			Long l = commonVocabulary.get(uri);
+			if (l != null) {
+				return new LmdbIRI(revision, uri.toString(), l);
+			}
 		}
 
 		return new LmdbIRI(revision, uri.toString());

@@ -11,11 +11,13 @@
 package org.eclipse.rdf4j.sail.base;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -68,6 +70,27 @@ class ObservingSailDataset extends DelegatingSailDataset {
 			Resource... contexts) throws SailException {
 		observer.observe(subj, pred, obj, contexts);
 		return super.getStatements(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatements(statementPattern, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatementCount(statementPattern, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatements(statementOrder, subj, pred, obj, contexts);
 	}
 
 }

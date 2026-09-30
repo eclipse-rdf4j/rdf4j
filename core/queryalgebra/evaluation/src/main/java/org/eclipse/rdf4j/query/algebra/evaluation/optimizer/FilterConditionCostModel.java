@@ -18,12 +18,12 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 
-final class FilterConditionCostModel {
+public final class FilterConditionCostModel {
 
 	private FilterConditionCostModel() {
 	}
 
-	static int conditionCostClass(ValueExpr condition) {
+	public static int conditionCostClass(ValueExpr condition) {
 		if (condition instanceof And and) {
 			return Math.max(conditionCostClass(and.getLeftArg()), conditionCostClass(and.getRightArg()));
 		}

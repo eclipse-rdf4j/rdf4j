@@ -1,0 +1,6 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f1 LmdbLogicalRewriteReviewReproTest --module core/sail/lmdb --retain-logs
+Reports: .mvnf/workspaces/review-f1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbLogicalRewriteReviewReproTest.xml, .mvnf/workspaces/review-f1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbLogicalRewriteReviewReproTest.txt
+Summary: tests=37, failures=19, errors=0, skipped=0, time=4.933s
+Failure: org.eclipse.rdf4j.sail.lmdb.LmdbLogicalRewriteReviewReproTest.c3_nullRejectingOptionalInsideLateralWithCorrelatedWitness: failure: LMDB pipeline vs SPARQL spec query=PREFIX : <http://example.org/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> SELECT ?s ?x WHERE { ?s :p ?w LATERAL { ?s ...
+Log: .mvnf/workspaces/review-f1/logs/20260927T003316.458756Z-20535-b1f0f67a/verify.log

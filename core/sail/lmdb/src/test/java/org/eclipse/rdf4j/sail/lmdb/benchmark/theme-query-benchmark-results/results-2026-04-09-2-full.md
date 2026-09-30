@@ -496,23 +496,19 @@ MINUS { ?enc med:hasObservation ?obs . ?obs med:value ?value . FILTER(?value < 6
 
 ### Optimized Query ###
 SELECT (COUNT(DISTINCT ?enc) AS ?count) WHERE {
-?enc a <http://example.com/theme/medical/Encounter> .
-?enc <http://example.com/theme/medical/hasCondition> ?cond .
-?cond <http://example.com/theme/medical/code> ?condCode .
-FILTER (?condCode IN ("DX-200", "DX-201", "DX-202"))
-VALUES ?code { "DX-200" "DX-201" }
-OPTIONAL {
-?enc <http://example.com/theme/medical/handledBy> ?practitioner .
-}
-MINUS {
-?enc <http://example.com/theme/medical/hasObservation> ?obs .
-{
-{
-?obs <http://example.com/theme/medical/value> ?value .
-FILTER (?value < 60)
-}
-}
-}
+    ?enc a <http://example.com/theme/medical/Encounter> .
+    ?enc <http://example.com/theme/medical/hasCondition> ?cond .
+    ?cond <http://example.com/theme/medical/code> ?condCode .
+    FILTER (?condCode IN ("DX-200", "DX-201", "DX-202"))
+    VALUES ?code { "DX-200" "DX-201" }
+    OPTIONAL {
+        ?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+    }
+    MINUS {
+        ?enc <http://example.com/theme/medical/hasObservation> ?obs .
+        ?obs <http://example.com/theme/medical/value> ?value .
+        FILTER (?value < 60)
+    }
 }
 
 190.739 ms/op

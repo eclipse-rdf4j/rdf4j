@@ -82,7 +82,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
 				ITERATIVE_EVALUATION_OPTIMIZER,
-				new FilterOptimizer(evaluationStatistics, false, true),
+				// Localize filters after join ordering so placement cannot distort the selected factor order.
+				new FilterOptimizer(evaluationStatistics, false, false),
 				FILTER_IN_VALUES_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics),
 				ORDER_LIMIT_OPTIMIZER

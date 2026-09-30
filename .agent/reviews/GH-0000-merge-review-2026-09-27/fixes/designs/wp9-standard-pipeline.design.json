@@ -1,0 +1,336 @@
+{
+  "wp": "wp9-standard-pipeline",
+  "summary": "Every confirmed WP9 finding is the same defect wearing different clothes: a standard-pipeline rewrite grants itself permission from *possible* binding names (or ignores names visible from an enclosing scope) where soundness requires *assured* names, or fails closed on an unrelated signal (jar CodeSource) instead of the declared contract. The fixes are four precise guards plus one contract flip, each independently landable and all small: (1) QueryModelNormalizerOptimizer may push a VALUES relation through a scoped BIND only if every Filter inside the pushed-into algebra has its pushed variables assured by that Filter's own argument (the review's whole-arg assured check is neither sufficient nor necessary); (2) FilterOptimizer.FilterRelocator may move a filter into one operand of Join/LeftJoin only if each filter variable is assured there or cannot be bound by the sibling operand (same rule for Extension element names), and PackedFilterRules:91-92 gets the identical mask rule via a new allocation-free `maskContainsAllIntersection` accessor; (3) ScalarEvaluationEffects becomes a denylist (VOLATILE iff `Function.mustReturnDifferentResult()`, Now QUERY_STABLE, unregistered UNKNOWN; model operators recognised by exact package, no CodeSource); (4) SameTermFilterOptimizer's EmptySet shortcut must count names visible from enclosing EXISTS bodies and LATERAL left arguments as possibly bound. A small shared `BindingScopeAnalysis` helper (roadmap 4.1) carries the two predicates (`canPushInto`, `outerVisibleNames`) so wp1/wp2 can adopt them. Of the two pre-existing compliance failures, LMDB `builtinFunction()[20]` is `SES869ValueOfNow` whose `p == n` identity assertion is broken because LmdbValueLookupOptimizer wraps the shared NOW literal into a fresh LmdbLiteral per ValueConstant (confirmed by code reading; fix is identity-memoised lookup, wp1 file); the four custom-aggregate DISTINCT failures are exactly the five GROUP BY tests that assert implementation-defined group order with no ORDER BY, the Group/DISTINCT code is unchanged vs develop, so the producer of the order change is not yet identified and a run-and-diff triage is specified rather than a fix. Item 3.11.6 is designed as a three-layer differential run (develop-vs-branch compliance id diff per store, operator-mode sweep forcing every EXISTS/LeftJoin/HashJoin alternative, and a seeded NoREC-style oracle generator against StrictEvaluationStrategy on unoptimized algebra).",
+  "findings": [
+    {
+      "id": "3.11.1",
+      "title": "QueryModelNormalizerOptimizer pushes VALUES through a scope-changing BIND using possible names; nested Filters observe boundness of the pushed variable",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results, REG vs develop (develop has no such push at all: git show origin/develop shows meet(Join) ends at the LeftJoin cases), all stores (LmdbQueryOptimizerPipeline:257 also runs QUERY_MODEL_NORMALIZER)",
+      "rootCause": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryModelNormalizerOptimizer.java:102-118 rewrites Join(BSA, Extension[scope](A)) into Extension[scope](Join(BSA, A)). canPushAssignmentThroughScopedExtension (:127-147) checks only (a) the BIND expressions do not mention/assign the pushed names and (b) `extension.getArg().getBindingNames().containsAll(assignmentNames)` (:133), a *possible*-name check. isPlainJoinAlgebra (:149-164) admits any non-scoped Filter whose condition is not itself a SubQueryValueOperator (:159-161), so `Filter(!BOUND(?x), \u2026)` and `Filter(Not(Exists(\u2026?x\u2026)), \u2026)` pass. After the push the Join is evaluated as a bound (nested-loop) join, so the FilterIterator inside A sees ?x bound from the outer VALUES row, whereas the original plan evaluated A unbound (scope boundary) and joined afterwards. This is only equivalent when every Filter in A that mentions a pushed name has that name assured by the Filter's own argument (then the merged value equals the row's own value by join compatibility). In the repro `VALUES ?x {UNDEF}` inside GRAPH leaves ?x unassured, so `!BOUND(?x)` flips true\u2192false (0 rows instead of 2) and `NOT EXISTS { ?s :q ?x }` flips false\u2192true (spurious rows). Note the review's proposed fix `extension.getArg().getAssuredBindingNames().containsAll(assignmentNames)` is NOT sufficient: A = Join(Filter(!BOUND(?x), SP1), SP2(?x)) assures ?x at the top yet the Filter sits over SP1 where ?x is not assured, and bound evaluation still flips it. It is also stronger than needed (a filter-free A with unassured ?x is pushable).",
+      "fix": "Make the plain-algebra walk name-aware. Replace `isPlainJoinAlgebra(extension.getArg())` with `isPlainJoinAlgebra(extension.getArg(), assignmentNames)` where the Filter case becomes:\n\n```java\nif (tupleExpr instanceof Filter filterArg && !filterArg.isVariableScopeChange()) {\n    if (filterArg.getCondition() instanceof SubQueryValueOperator) return false;\n    Set<String> conditionNames = VarNameCollector.process(filterArg.getCondition()); // descends into EXISTS bodies (AbstractSimpleQueryModelVisitor visits subqueries)\n    conditionNames.retainAll(pushedNames);\n    if (!filterArg.getArg().getAssuredBindingNames().containsAll(conditionNames)) return false; // pushed var only possibly bound below this filter -> boundness observable\n    return isPlainJoinAlgebra(filterArg.getArg(), pushedNames);\n}\n```\nStatementPattern, non-scoped BindingSetAssignment and non-scoped Join cases are unchanged (bound evaluation of an SP/BSA with x=v equals unbound evaluation filtered by compatibility, and Join distributes). Keep the existing possible-name containsAll at :133 as a cheap precondition (it only blocks). Implement the predicate as `BindingScopeAnalysis.filterDependsOnlyOnAssured(Filter, Set<String>)` in the shared helper (see sharedInfrastructure) so LMDB rewrites can reuse it. Sound because: for each pushed name n mentioned by a Filter f, n \u2208 assured(f.arg) means every row reaching f already carries n, join compatibility forces it to equal the VALUES value, so f evaluates identically in bound and unbound form; names not mentioned by f cannot change f's outcome; BIND expressions were already required not to mention n.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryModelNormalizerOptimizer.java",
+          "lines": "127-164",
+          "change": "thread assignmentNames into isPlainJoinAlgebra; add per-Filter assured check on VarNameCollector(condition) \u2229 pushedNames; javadoc of canPushAssignmentThroughScopedExtension item (4) updated to state the assured requirement"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/QueryModelNormalizerTest.java",
+          "change": "add algebra-level tests: push declined for Filter(!BOUND(?x)) over unassured ?x; push declined for the nested counterexample Join(Filter(!BOUND(?x),SP1),SP2(?x)) built programmatically; push still performed for VALUES ?x {..} { ?x :p ?o BIND(1 AS ?one) } (x assured) so the optimisation is preserved"
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Only declines the rewrite in the observable cases; the benchmark-motivating shape (inner group assures the VALUES variable through a statement pattern) still pushes. No existing test asserts the pushed shape (QueryModelNormalizerTest has no VALUES/Extension cases; the introducing commit 6d4398d57b added no normalizer test).",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 regression vs develop affecting Memory, Native and LMDB; two-line guard with a clear soundness argument.",
+      "reproTestMethods": [
+        "StandardPipelineReviewReproTest#valuesPushedThroughScopedBindBreaksNotBound -> port to core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/ (memory module, e.g. StandardPipelineScopeSoundnessTest)",
+        "StandardPipelineReviewReproTest#valuesPushedThroughScopedBindBreaksNotExists -> same memory test class",
+        "StandardPipelineReviewReproTest#valuesThroughScopedBindControlWithoutPush -> same class (control; expected to pass before and after)"
+      ],
+      "additionalTests": [
+        "algebra-level: QueryModelNormalizerTest cases listed above, including the nested-filter counterexample that the review's whole-arg assured check would wrongly accept",
+        "LMDB: same three queries through LmdbStore (LmdbQueryOptimizerPipeline runs the normalizer) to cover the packed planner consuming the un-pushed shape",
+        "positive coverage: explain-plan test asserting the push still happens when the inner group assures ?x via a statement pattern (protects the intended hash-join avoidance)"
+      ],
+      "existingTestsAtRisk": [
+        "none found: QueryModelNormalizerTest has no VALUES/Extension tests; LmdbOptimizerPipelineTest#lmdbPipelineRunsNormalizationBeforePackedCascadesByDefault only asserts optimizer ordering; LMDB theme benchmark plans could change only where the pushed variable is unassured inside the group (rare; a correctness fix if so)"
+      ]
+    },
+    {
+      "id": "3.11.2 / 3.2.5 (standard)",
+      "title": "FilterOptimizer.FilterRelocator pushes a filter into a Join/LeftJoin operand that only possibly binds a filter variable also bindable by the sibling operand",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results, PRE (develop FilterOptimizer:340-356 has the identical meet(Join)); all stores; LMDB amplified because LmdbNullRejectingOptionalSupport then turns the mis-placed Filter-over-LeftJoin into an inner join",
+      "rootCause": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterOptimizer.java:349-367 meet(Join): `join.getLeftArg().getBindingNames().containsAll(filterVars)` (possible names) permits descending into the left operand. For `?s :p ?y OPTIONAL{?s :q ?x} ?s :r ?x FILTER(?x=?y)` the left operand LeftJoin has possible {s,y,x} so the relocator descends, meet(LeftJoin) (:378-384) finds the LeftJoin's left SP lacks x and relocates the filter onto the LeftJoin. Rows whose OPTIONAL did not match reach the filter with ?x unbound (error \u2192 dropped) although the original plan bound ?x from `?s :r ?x` before filtering. Same pattern at meet(LeftJoin) :379 (`leftJoin.getLeftArg().getBindingNames()` \u2014 Filter(c, LeftJoin(L,R)) \u2192 LeftJoin(Filter(c,L),R) is wrong when c mentions a variable only possibly bound in L and possibly bound in R, e.g. two stacked OPTIONALs binding the same ?x) and at meet(Extension) :424 (does not check filterVars \u2229 element names, and ExtensionIterator.setValue overwrites bindings unconditionally). The second repro `VALUES ?x {UNDEF :w} ?s :p ?x FILTER(sameTerm(?x,:v))` is the same defect: BSA possible {x} contains filterVars so the filter is pushed onto the BSA, whose UNDEF row then errors; the correct target is the SP (x assured there).",
+      "fix": "Add one predicate and use it at the three sites. In FilterRelocator (or in shared BindingScopeAnalysis and call from here):\n\n```java\n/** Filter may move into `target`, one operand of a binary operator whose other operand is `sibling`. */\nprivate boolean canPushInto(TupleExpr target, TupleExpr sibling) {\n    if (!target.getBindingNames().containsAll(filterVars)) return false;      // existing precondition (possible names may only block)\n    Set<String> assured = target.getAssuredBindingNames();\n    Set<String> siblingPossible = sibling.getBindingNames();\n    for (String v : filterVars) {\n        if (!assured.contains(v) && siblingPossible.contains(v)) return false; // sibling could supply v after the join\n    }\n    return true;\n}\n```\nmeet(Join): `if (canPushInto(left, right)) {\u2026existing left branch\u2026} else if (canPushInto(right, left)) {\u2026} else relocate(filter, join);`\nmeet(LeftJoin): `if (canPushInto(leftJoin.getLeftArg(), leftJoin.getRightArg())) leftJoin.getLeftArg().visit(this); else relocate(filter, leftJoin);`\nmeet(Extension): additionally require `Collections.disjoint(filterVars, elementNames)` (an Extension element that rewrites a filter variable makes the pushed filter observe the pre-BIND value).\nSoundness: the filter's outcome depends only on filterVars; for each v, either target assures v (merged value == target row value by compatibility) or the sibling can never bind v (merged value == target row value, possibly unbound in both). Union/Intersection cloning and Difference\u2192left remain exact. shouldKeepFilterAtJoin cost logic is untouched (it only decides between the two already-sound positions).",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FilterOptimizer.java",
+          "lines": "349-367, 378-384, 423-429 (+ new helper near 468)",
+          "change": "introduce canPushInto(target, sibling); use in meet(Join), meet(LeftJoin); add element-name disjointness in meet(Extension)"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/FilterOptimizerTest.java",
+          "change": "add expected-shape tests: filter stays above Join for the OPTIONAL/?x case; filter stays above outer LeftJoin for stacked OPTIONALs binding the same ?x; filter still pushed into a left SP that assures the variable; filter pushed onto the SP (not the BSA) for VALUES ?x {UNDEF :w} ?s :p ?x FILTER(sameTerm(?x,:v))"
+        }
+      ],
+      "size": "small",
+      "risk": "Low-medium. Strictly fewer pushes, only in the unsound cases. Plan-shape tests that happened to pin an unsound placement may shift (see existingTestsAtRisk). LMDB explain-plan tests in theme suites could move a filter from a LeftJoin factor to the join; that is the intended correction.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 in every store, pre-existing upstream but amplified on LMDB by the null-rejecting OPTIONAL rewrite; ~15 lines; also removes the trigger for the LMDB inner-join conversion without touching wp1 code.",
+      "reproTestMethods": [
+        "StandardPipelineReviewReproTest#filterPushedOntoLeftJoinLosesRows -> core/sail/memory test tree",
+        "StandardPipelineReviewReproTest#sameTermWithUndefValuesColumn -> core/sail/memory test tree",
+        "StandardPipelineReviewReproTest#sameTermWithUndefValuesColumnTwoVars -> core/sail/memory test tree",
+        "PackedRuleSemanticsReviewReproTest#c3StandardFilterOptimizerAloneOnMaybeBoundOptionalVariable -> core/queryalgebra/evaluation packed test package (split the c3 methods into their own class, e.g. FilterPlacementSoundnessTest, because the rest of PackedRuleSemanticsReviewReproTest belongs to wp2)"
+      ],
+      "additionalTests": [
+        "stacked OPTIONAL case: `?s :p ?o OPTIONAL{?s :q ?x} OPTIONAL{?s :r ?x} FILTER(?x = :v)` end-to-end on MemoryStore (covers the meet(LeftJoin) site, not in the review)",
+        "Extension overwrite case built programmatically: Filter(?x = :v, Extension(x := \u2026, A)) must not push below the Extension",
+        "LMDB end-to-end for the three f8 queries (LmdbStore) to prove the null-rejection amplifier is gone",
+        "regression guard that the sound pushes still happen (filter onto SP assuring all vars; filter into left operand when sibling cannot bind the var) so performance-visible behaviour is preserved"
+      ],
+      "existingTestsAtRisk": [
+        "FilterOptimizerTest cases all push into operands that assure the variables (name/locatedAt, parent/name, MINUS left) \u2014 expected unchanged; re-run the class",
+        "LmdbOptimizerPipelineTest#lmdbPipelineDoesNotSplitPrefixFilterOntoBindingAssignmentOnlyRoot asserts *no* unsafe filter over a BSA \u2014 the fix only strengthens this; expected green",
+        "LMDB explain/plan-shape suites (LmdbEstimateAuditHarnessTest, theme plan tests) may show a filter kept at a Join instead of on a LeftJoin factor: re-baseline only after confirming the old shape was the unsound one"
+      ]
+    },
+    {
+      "id": "3.2.5 (packed) / PackedFilterRules:90-92",
+      "title": "PackedFilterRules binary push rule places a relocatable filter using the operand's OUTPUT (possible) mask instead of its ASSURED mask",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results, BR; only reachable through the fallback path (PackedIncumbentSearch.applyUncoveredFilterPlacement: lattice unsupported/incomplete/stale, work budget exhausted, or factors+filters > DENSE_FACTOR_LIMIT=16), so results depend on budget and query width",
+      "rootCause": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedFilterRules.java:90-93: for freely relocatable predicates `leftContains = query.maskContainsAll(query.relOutputMaskId(leftRelationId), dependencyMaskId)` (same for right). relOutputMaskId is the possible-binding mask; a LeftJoin factor's output mask includes its optional-side variables. The dense lattice is sound (PackedJoinEnumerator.collectRequiredProviderMasks :3468-3490 and prefixAssuresCorrelatedBindings :3375-3400 use relAssuredMaskId), and the guarded-correlated branch of this very rule (:85-89) uses relAssuredMaskId, so only the freely-relocatable branch of the fallback rule is unsound. PackedIncumbentSearch:1215-1226 routes to this rule exactly when the lattice did not complete, i.e. under tight budgets (PackedCascadesPlanner.optimize(\u2026, workLimit\u2026)) or wide regions (>16 factors), matching the repro's workLimit sweep and extra=18 case.",
+      "fix": "Apply the same rule as FilterOptimizer with masks, allocation-free:\n\n```java\nint leftOutput = query.relOutputMaskId(leftRelationId);\nint rightOutput = query.relOutputMaskId(rightRelationId);\nleftContains = query.maskContainsAll(leftOutput, dependencyMaskId)\n        && query.maskContainsAllIntersection(query.relAssuredMaskId(leftRelationId), dependencyMaskId, rightOutput);\nrightContains = query.maskContainsAll(rightOutput, dependencyMaskId)\n        && query.maskContainsAllIntersection(query.relAssuredMaskId(rightRelationId), dependencyMaskId, leftOutput);\n```\ni.e. (deps \u2229 possible(other)) \u2286 assured(target). Add the accessor `boolean maskContainsAllIntersection(int container, int left, int right)` to PackedQuery delegating to a new one-line `PackedBindingFacts.containsAllIntersection(...)` that calls the existing `PackedMaskInterner.containsAllIntersection` (:128, already used at PackedBindingFacts:115). No allocation, so the @PackedHotPath audit in PackedQueryCodecTest (which lists PackedFilterRules) stays satisfied.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedFilterRules.java",
+          "lines": "90-93",
+          "change": "assured-or-absent-from-sibling containment for both operands"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery.java",
+          "lines": "near 238-250",
+          "change": "add maskContainsAllIntersection(container,left,right) accessor (shared infra owned by wp2; coordinate)"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedBindingFacts.java",
+          "lines": "near 112-116",
+          "change": "expose containsAllIntersection delegating to masks.containsAllIntersection"
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Only the fallback rule changes; lattice placements are unaffected. A filter that previously landed on a LeftJoin factor in fallback mode now stays at the join (correct). Hot-path constraint: keep the change primitive-only.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 with budget-dependent (non-deterministic-looking) results; four-line fix using an existing mask primitive.",
+      "reproTestMethods": [
+        "PackedRuleSemanticsReviewReproTest#c3PackedPlannerTinyBudgetOnMaybeBoundOptionalVariable -> core/queryalgebra/evaluation packed test package (forces the fallback via workLimit)",
+        "PackedRuleSemanticsReviewReproTest#c3PackedPlannerSelectiveFilterWideAndNarrow -> same (extra=18 > DENSE_FACTOR_LIMIT forces the fallback)",
+        "PackedRuleSemanticsReviewReproTest#c3PackedPlannerOnMaybeBoundOptionalVariable -> same (likely already green because the lattice covers it; keep as guard)"
+      ],
+      "additionalTests": [
+        "unit test driving PackedFilterRules.apply directly on an encoded Join(LeftJoin(SP,SP), SP)+Filter query asserting no helper FILTER alternative is added on the LeftJoin group and one is added when the filter variable is assured on that side",
+        "LMDB end-to-end variant with 18 extra patterns to show the store-level result is stable across workLimit"
+      ],
+      "existingTestsAtRisk": [
+        "PackedQueryCodecTest hot-path/bytecode audit that lists PackedFilterRules.class \u2014 must stay allocation-free",
+        "packed plan-shape tests that pin a fallback filter placement onto a LeftJoin side (search `PackedFilterRules`/`filter placement` expectations in PackedCascadesPlannerTest/PackedIncumbentSearch tests at implementation time)"
+      ]
+    },
+    {
+      "id": "3.11.3",
+      "title": "ScalarEvaluationEffects classifies every non-core-jar function (GeoSPARQL, SPIN, user functions) and every foreign-CodeSource operator as UNKNOWN, blocking FilterOptimizer splitting/relocation/merging in all stores",
+      "status": "confirmed-by-code-reading",
+      "severity": "S2 catastrophic plan / performance regression vs develop (develop's FilterOptimizer has no effect gate at all); all stores; also pins cheap conjuncts (STRSTARTS) that share an And with the unknown function; a null CodeSource (native image, some classloaders) disables almost all relocation",
+      "rootCause": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/ScalarEvaluationEffects.java:122-148: functionEffect returns REPEATABLE only when auditedCoreFunction() holds, i.e. the implementation class name starts with `org.eclipse.rdf4j.query.algebra.evaluation.function.` AND has the same CodeSource as Function.class (:142-148, :155-159). GeoSPARQL functions live in that package prefix but in another jar; SPIN and user functions are elsewhere: all UNKNOWN (:139). combine() (:200-211) propagates UNKNOWN through And (:102-104), so FilterUnMerger (FilterOptimizer:260-261) will not split `STRSTARTS(..) && geof:sfWithin(..)`, FilterOrganizer (:314) will not relocate, FilterMerger (:285-286) will not merge. auditedModelOperator/auditedTupleOperator (:150-153, :191-198) also require CodeSource equality, so contractSource == null makes every model operator UNKNOWN. The only volatility contract the model defines is Function.mustReturnDifferentResult() (Function.java:58-66; implemented by Rand, UUID, STRUUID, spif GenerateUUID/Random) and it is what ConstantOptimizer (:300) and DefaultEvaluationStrategy (:1881) already trust \u2014 the allowlist is stricter than the rest of the engine for no correctness gain.",
+      "fix": "Flip to the declared contract (denylist) and drop the CodeSource dependence:\n\n```java\nprivate static Effect functionEffect(String iri, Effect arguments) {\n    Function function = FunctionRegistry.getInstance().get(iri).orElse(null);\n    if (function == null) return Effect.UNKNOWN;               // unresolvable: cannot evaluate anyway, fail closed\n    if (function.mustReturnDifferentResult()) return Effect.VOLATILE;\n    if (arguments == Effect.VOLATILE || arguments == Effect.UNKNOWN) return arguments;\n    if (function instanceof Now) return Effect.QUERY_STABLE;   // shared per query, not repeatable across queries (LMDB FilterSurfaceKey needs this distinction)\n    return arguments;                                          // REPEATABLE, or QUERY_STABLE inherited from a NOW() argument\n}\n```\nRemove auditedCoreFunction, valueArgsAreConstant and the `constantArguments -> QUERY_STABLE` special case (a deterministic function of constants is REPEATABLE; QUERY_STABLE was only a workaround for the allowlist). In auditedModelOperator/auditedTupleOperator replace `startsWith(pkg + \".\") && sameCodeSource(...)` with exact package equality `implementation.getPackageName().equals(ValueExpr.class.getPackageName())` (model operators live exactly in org.eclipse.rdf4j.query.algebra; FedX/LMDB/test subclasses in other packages still fail closed), delete sameCodeSource. Keep Service/TupleFunctionCall -> UNKNOWN. Follow-up outside this module (recommended, separate small change with its own red test in core/spin): override mustReturnDifferentResult() -> true in org.eclipse.rdf4j.spin.function.spif.Invoke, EvalFunction and SpinxFunction (dynamic dispatch / scripts may call RAND); this also stops ConstantOptimizer from folding spif:invoke(<rand>), a latent pre-existing bug the denylist would otherwise inherit.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/ScalarEvaluationEffects.java",
+          "lines": "81-84, 122-159, 191-198, 213-220",
+          "change": "denylist functionEffect; exact-package operator audit; delete CodeSource comparison and constant-args special case"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/ScalarEvaluationEffectsTest.java",
+          "lines": "100-120",
+          "change": "customFunctionRequiresQueryConstantArguments -> custom registered function is REPEATABLE with Var and constant args; keep missing-function UNKNOWN and ForeignUnaryValueExpr UNKNOWN (its package is \u2026algebra.evaluation.optimizer.cascades, not \u2026algebra)"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/spin/src/main/java/org/eclipse/rdf4j/spin/function/spif/Invoke.java",
+          "change": "(follow-up) mustReturnDifferentResult() -> true"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/spin/src/main/java/org/eclipse/rdf4j/spin/function/EvalFunction.java",
+          "change": "(follow-up) mustReturnDifferentResult() -> true"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/spin/src/main/java/org/eclipse/rdf4j/spin/function/SpinxFunction.java",
+          "change": "(follow-up) mustReturnDifferentResult() -> true"
+        }
+      ],
+      "size": "small",
+      "risk": "Medium blast radius, low correctness risk: the classification is consumed by FilterOptimizer, PackedQueryCodec:1135 (SCALAR_REORDERING_SAFE -> more filters relocatable in the packed planner), FilterIterator:783 shouldRecordFilterOutcomes, and LMDB stats keys (FilterSurfaceKey:81, SemiAntiSurfaceKey:112, LmdbFilterSelectivityStats:1722, LmdbFiniteJoinSurfaceEstimator:917, LmdbFilterSimplifierOptimizer:1744-1768, LmdbSetSemanticsOptimizer:83). All of these become *more* permissive for deterministic custom functions, which is the develop baseline for placement and the intended behaviour for learning. Truly volatile custom functions that do not declare mustReturnDifferentResult() were already mis-folded by ConstantOptimizer, so no new class of failure is introduced.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Performance regression vs develop for every GeoSPARQL/SPIN/user-function query in every store, plus a fail-closed path that disables relocation entirely under null CodeSource; the fix aligns the effect model with the engine's single existing volatility contract.",
+      "reproTestMethods": [
+        "GeoFilterPlacementReviewReproTest#geofFunctionIsClassifiedUnknown (assert REPEATABLE) -> core/queryalgebra/geosparql/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/function/geosparql/",
+        "GeoFilterPlacementReviewReproTest#geoFilterIsPushedToWktPattern -> same (verify the geosparql module has a test-scope dependency on sail-memory; the reviewer ran it there)",
+        "GeoFilterPlacementReviewReproTest#cheapConjunctNextToGeoFilterIsPushedReversed -> same",
+        "GeoFilterPlacementReviewReproTest#cheapConjunctNextToGeoFilterIsPushed -> same"
+      ],
+      "additionalTests": [
+        "ScalarEvaluationEffectsTest: registered custom function with Var arg -> REPEATABLE; function declaring mustReturnDifferentResult -> VOLATILE; NOW() -> QUERY_STABLE; unregistered IRI -> UNKNOWN; model operator classification independent of CodeSource (simulate by asserting on And/Or/If/Regex directly)",
+        "FilterOptimizerTest: `FILTER(STRSTARTS(?n,\"n1\") && <urn:custom>(?wkt))` splits and pushes both conjuncts when <urn:custom> is a registered deterministic test function",
+        "core/spin follow-up: ConstantOptimizer does not fold spif:invoke(<rand-iri>) once Invoke declares volatility"
+      ],
+      "existingTestsAtRisk": [
+        "ScalarEvaluationEffectsTest#customFunctionRequiresQueryConstantArguments (expects UNKNOWN for Var args) -> change expectation to REPEATABLE and rename",
+        "ScalarEvaluationEffectsTest#missingDynamicAndForeignExpressionsFailClosed -> unchanged (missing IRI still UNKNOWN; spif:invoke unregistered in this module; foreign class outside the model package)",
+        "LMDB tests that assert a custom-function filter is NOT learnable/anchorable or stays un-relocated (grep FilterSurfaceKey/SemiAntiSurfaceKey tests) may flip; re-evaluate each as intended behaviour",
+        "packed planner plan-shape tests where a user-function filter previously stayed at the top (SCALAR_REORDERING_SAFE now set)"
+      ]
+    },
+    {
+      "id": "3.11.4 / 3.4.6",
+      "title": "SameTermFilterOptimizer's 'unbound variable -> EmptySet' shortcut ignores variables visible from enclosing scopes (EXISTS/NOT EXISTS bodies, LATERAL right arguments)",
+      "status": "confirmed-by-code-reading",
+      "severity": "S1 wrong results, PRE (file identical to develop), all stores (standard pipeline and LmdbQueryOptimizerPipeline:255 both run it)",
+      "rootCause": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/SameTermFilterOptimizer.java:83-90: `bindingNames = filterArg.getBindingNames()`; if a sameTerm operand Var without a value is not in that set the whole Filter is replaced by EmptySet. SameTermFilterVisitor is an AbstractSimpleQueryModelVisitor(false) so it descends into Exists subqueries; for `FILTER EXISTS { ?s :q ?o FILTER(sameTerm(?x, :v1)) }` the inner filterArg is SP(?s :q ?o), ?x is absent, and the EXISTS body becomes EmptySet, although SPARQL EXISTS substitutes the outer solution (?x is bound per probe). The same holds for a Filter inside the right argument of Lateral (model class exists: core/queryalgebra/model/.../Lateral.java; outer left bindings are visible). The inlining path (:92-97) is already correct: an outer-correlated variable is never assured by filterArg so nothing is inlined. Secondary latent issue (:118): the VALUES guard uses bsa.getAssuredBindingNames(); on this branch UNDEF rows revoke assurance, so a BSA that possibly binds the renamed variable escapes the guard and renameVar (:164-173) cannot rewrite BSA rows.",
+      "fix": "Track outer-visible names while visiting. In SameTermFilterVisitor add `private final Deque<Set<String>> outerVisible = new ArrayDeque<>();` and:\n- override `meetSubQueryValueOperator(SubQueryValueOperator node)`: compute `visible = new HashSet<>(outerVisible.isEmpty() ? Set.of() : outerVisible.peek()); QueryModelNode p = node.getParentNode(); while (p != null && !(p instanceof TupleExpr)) p = p.getParentNode(); if (p != null) visible.addAll(((TupleExpr) p).getBindingNames());` (for a Filter that is its arg's names; for a LeftJoin condition L\u222aR; for Extension/Order their arg \u2014 all conservative supersets), push, `super.meetSubQueryValueOperator(node)`, pop.\n- override `meet(Lateral node)`: visit left arg normally; push `top \u222a node.getLeftArg().getBindingNames()` around visiting the right arg.\n- in extracted(): `Set<String> possiblyBound = outerVisible.isEmpty() ? filterArg.getBindingNames() : union(filterArg.getBindingNames(), outerVisible.peek());` and use possiblyBound for the EmptySet shortcut (:84-90). Keep the assured check (:92-97) on filterArg only (never inline a correlated variable). Treat outer names as visible throughout the EXISTS body regardless of nested scope-change flags (EXISTS substitution is textual over the whole pattern), i.e. never produce EmptySet on that basis inside an EXISTS.\n- (latent) change the BSA guard at :118 to `bsa.getBindingNames()` (possible names may only block).\nExpose the ancestor walk as `BindingScopeAnalysis.outerVisibleNames(QueryModelNode)` so LmdbBoundSimplifierOptimizer (wp1, same blind spot per raw notes) can reuse it.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/SameTermFilterOptimizer.java",
+          "lines": "60-97, 111-129",
+          "change": "outer-visible name stack for SubQueryValueOperator and Lateral right arg; use union for the EmptySet shortcut; BSA guard on possible names"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/SameTermFilterOptimizerTest.java",
+          "change": "currently only inherits QueryOptimizerTest parent-reference checks; add behaviour tests: Filter inside EXISTS with outer var is kept (no EmptySet, no inlining); truly unbound var still yields EmptySet; LATERAL right-arg variant kept; nested group inside EXISTS kept"
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Only suppresses an EmptySet proof in correlated positions; inlining behaviour unchanged. Slight loss of an (unsound) short-circuit in EXISTS bodies.",
+      "recommendation": "fix-now",
+      "recommendationReason": "S1 wrong results in every store for a common EXISTS shape; ~40 lines; creates the scope-analysis helper the roadmap (4.1) wants and wp1 needs.",
+      "reproTestMethods": [
+        "StandardPipelineReviewReproTest#sameTermInsideExistsWithOuterVar -> core/sail/memory test tree",
+        "(no f5 method covers 3.4.6; OperatorContractReviewReproTest is wp4 executor material)"
+      ],
+      "additionalTests": [
+        "NOT EXISTS variant: `?s :p ?x FILTER NOT EXISTS { ?s :q ?o FILTER(sameTerm(?x, :v1)) }` expects the row to be dropped for s1 (currently EmptySet makes NOT EXISTS true for every row)",
+        "LATERAL variant on MemoryStore: `?s :p ?x LATERAL { ?s :q ?o FILTER(sameTerm(?x, :v1)) }`",
+        "LMDB end-to-end of the f8 query (pipeline runs the same optimizer)",
+        "algebra-level: nested scoped group inside EXISTS keeps the filter; a variable bound nowhere (not outer, not inner) still becomes EmptySet"
+      ],
+      "existingTestsAtRisk": [
+        "none identified: SameTermFilterOptimizerTest has no behavioural assertions; FilterOptimizerTest#standardPipelineKeepsExistsValuesInsideScopeBoundary should be re-run (touches EXISTS + VALUES shapes)"
+      ]
+    },
+    {
+      "id": "3.11.6",
+      "title": "Differential compliance run vs develop over MaterializedExistsFilterIteration / LeftJoin / HashJoin / Path evaluation-step rewrites (design only)",
+      "status": "could-not-confirm",
+      "severity": "S1 risk surface (5 files, +2,359/-248 lines vs develop: FilterIterator +549, HashJoinIteration +535, MaterializedExistsFilterIteration +962 new, PathIteration +483, ZeroLengthPathIteration +78; LeftJoinQueryEvaluationStep +624); EXISTS now always routes through FilterIterator.supplyMaterializedExistsSemiJoin with default mode ADAPTIVE (FilterIterator:293-302)",
+      "rootCause": "Not a defect; a verification gap. The merge compared branch-before vs branch-after (54 identical failing ids) but never branch vs develop on the same JDK, and the W3C manifests do not exercise the branch-specific operator modes (STREAMING/MEMOIZED/MATERIALIZED/ADAPTIVE EXISTS chosen by the planner hint OPTIMIZER_FILTER_ALGORITHM_HINT values streaming-correlated/memoized-correlated/materialized-hash, FilterIterator:85-87,228; LeftJoin memo/materialisation budgets via system properties org.eclipse.rdf4j.query.algebra.evaluation.leftjoin.maxMaterializedRightRows / .memoized.maxKeys / .memoized.maxRows, LeftJoinQueryEvaluationStep:50-52; semi/anti memo capacity rdf4j.evaluation.semiAntiMemoCapacity, FilterIterator:91) nor the spill/fallback paths.",
+      "fix": "Three layers, all read-only with respect to production code (Routine C), run per store class (Memory, Native, LMDB; ExtensibleStore/FedX optional):\n1. Baseline parity: two worktrees (origin/develop 5eee576f5a and HEAD 4354ff137b), named Maven workspaces so they can run concurrently (`python3 .codex/skills/mvnf/scripts/mvnf.py --workspace dev compliance/sparql --retain-logs` / `--workspace br`), extract failing ids with `python3 scripts/agent-evidence.py` from the GAV-specific surefire dirs, diff per class (SPARQL11/12 Query+Update, RepositorySPARQLComplianceTestSuite subclasses incl. optional(), lateral(), filterScopeTests(), aggregate(), arbitraryLengthPath()). Precondition for LMDB: the three 3.9 NPEs (LmdbPipelinePlanCache$DatasetIdentity.immutable:502, $2.meet:430, PatternKeys.predicateKey:36) mask 41 tests \u2014 fix or exclude them first, otherwise LMDB parity is uninformative.\n2. Operator-mode sweep on the branch (roadmap 4.8 'every alternative chosen at least once'): rerun the Memory compliance classes under each forced configuration: (a) a test-only QueryOptimizer appended to the pipeline via a custom EvaluationStrategyFactory in newRepository() that stamps `filter.setStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT, mode)` on every Filter whose condition contains Exists, for mode in {streaming-correlated, memoized-correlated, materialized-hash, default}; (b) `-Drdf4j.evaluation.semiAntiMemoCapacity=1`; (c) `-D\u2026leftjoin.maxMaterializedRightRows=1`, `-D\u2026leftjoin.memoized.maxKeys=1`, `-D\u2026leftjoin.memoized.maxRows=1` (force spill/fallback); (d) if MaterializedExistsFilterIteration.PROBE_LIMIT / MaterializationCache has a switch, its smallest value. Any id failing in one mode but not another is a mode-specific executor bug (file to wp4 with a 2-5 triple repro).\n3. Oracle differential (NoREC/TLP-style, seeded): a generator test in core/queryalgebra/evaluation modelled on SPARQLMinusIterationFuzzTest (fixed seeds) and PackedRuleSemanticsReviewReproTest.evaluate (StrictEvaluationStrategy over the *unoptimized* algebra as reference): random 2-5-triple datasets with mixed literal forms (\"1\"^^int, \"01\"^^int, 1.0, \"a\"@en/@EN, UNDEF VALUES) and random shapes over OPTIONAL (with/without condition, over sub-SELECT with LIMIT/aggregate), MINUS (inside OPTIONAL, with right-only filter), EXISTS/NOT EXISTS (over sub-SELECT, UNION body, inside a joined group \u2014 the f5 shapes), VALUES with UNDEF, paths :p* :p+ :p? and zero-length with constants on cyclic data, LATERAL; compare bags against (i) the standard pipeline on MemoryStore and (ii) LmdbStore (lmdb module). Optional third oracle: Jena ARQ via the existing ThemeQueryCatalogJenaOracleTest pattern (testsuites/benchmark-common). Deliverable: per-store, per-mode failing-id diff plus one minimal red test per divergence handed to the owning WP.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/src/test/java/org/eclipse/rdf4j/sail/memory/MemorySPARQL11QueryComplianceTest.java",
+          "change": "(sweep only, test-scope) variant subclass or parameter injecting the hint-stamping optimizer / system properties; no production change"
+        },
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/",
+          "change": "new seeded oracle generator test (e.g. OptimizedVersusStrictOracleFuzzTest) using StrictEvaluationStrategy on unoptimized algebra as reference"
+        }
+      ],
+      "size": "medium",
+      "risk": "Run-time cost (compliance module 5-10 min per configuration per store) and the LMDB NPE precondition; no production risk.",
+      "recommendation": "fix-now",
+      "recommendationReason": "The four rewrites are the largest unreviewed all-store surface; the run is cheap relative to the S1 exposure and directly feeds wp4 with red tests. Do not run in this task.",
+      "reproTestMethods": [
+        "OperatorContractReviewReproTest#existsInsideJoinedGroupDoesNotSeeOuterJoinBinding and #existsUnionBodyAfterMaterializationBudget (f5, wp4-owned) are the seed shapes for the EXISTS part of the sweep",
+        "GeoFilterPlacementReviewReproTest / StandardPipelineReviewReproTest methods above double as sweep queries once ported"
+      ],
+      "additionalTests": [
+        "the generator test itself (seeded, fails with printed query+data+seed)",
+        "one explicit test per operator mode for the f5 shapes (streaming/memoized/materialized/adaptive) so the mode coverage survives after the one-off run"
+      ],
+      "existingTestsAtRisk": [
+        "none; read-only run. LMDB compliance classes will remain red on the 3.9 NPEs until those are fixed (owned elsewhere)"
+      ]
+    },
+    {
+      "id": "3.9-custom-aggregate-distinct",
+      "title": "CustomAggregateFunctionEvaluationTest *WithDistinct (4) pre-existing failures",
+      "status": "could-not-confirm",
+      "severity": "unknown until run: either outdated tests (order) or S1 (values); PRE on the branch, no compliance reports on disk",
+      "rootCause": "Not reproducible by reading. What the code shows: (1) the only methods in /Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/src/test/java/org/eclipse/rdf4j/query/parser/sparql/function/CustomAggregateFunctionEvaluationTest.java that use `group by` are exactly the *WithDistinct* methods (SumWithDistinct, VarianceWithDistinct, VarianceWithDistinct_WithStdv, MultipleSumWithDistinct, MultipleSumWithDistinctGroupBy) and they assert the *order* of group rows (book8, book1, book5, \u2026 ) with no ORDER BY; that order is implementation-defined (GroupIterator:316 `cf.createGroupByMap()` = LinkedHashMap in DefaultCollectionFactory:97, i.e. first-appearance order of the `?s ?p ?o` / `?s <urn:n> ?o` scan). (2) GroupIterator differs from develop by 16 telemetry-only lines; DistinctValues (:717-728) and the custom-aggregate wiring (:520-580) are unchanged; core/sail/memory main has no diff vs develop; StatementOrder is only attached by QueryJoinOptimizer (:353,:1812) and PackedPlanMaterializer:494, none of which applies to a single statement pattern. So the DISTINCT predicate is not the suspect; the input order to GroupIterator or the scan path is. StatementPatternQueryEvaluationStep (+78 lines vs develop) and sail-base dataset wrappers are the remaining candidates but nothing read proves an order change.",
+      "fix": "Triage, not a fix yet (memory policy: every red is outdated-test or real-bug). Run `python3 .codex/skills/mvnf/scripts/mvnf.py CustomAggregateFunctionEvaluationTest --module compliance/sparql --retain-logs`; for each failing method compare the produced (s, m) multiset with the expected one. If the multisets match and only the order differs: outdated tests \u2014 add `ORDER BY ?s` to the five GROUP BY queries and reorder expectations (Routine B, test-only), and additionally record which component changed the MemoryStore scan/group order (git bisect on the 5 tests between develop and HEAD; it is a behaviour change worth knowing even if SPARQL permits it). If any value differs (e.g. `0.002500019073522708` or a null for book5): real bug in the DISTINCT aggregate path -> Routine A with the failing method as the red test, starting at GroupIterator.Entry.addSolution / DistinctValues equality (cf.createValueSet()).",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/compliance/sparql/src/test/java/org/eclipse/rdf4j/query/parser/sparql/function/CustomAggregateFunctionEvaluationTest.java",
+          "lines": "207-460",
+          "change": "only if triage shows order-only divergence: add ORDER BY ?s and sort expectations"
+        }
+      ],
+      "size": "small",
+      "risk": "Low; triage first.",
+      "recommendation": "defer",
+      "recommendationReason": "Cannot be confirmed without running; pre-existing; the failing set is exactly the order-asserting GROUP BY tests, so the most likely outcome is a test fix, but a value defect must be excluded by running.",
+      "reproTestMethods": [
+        "compliance/sparql CustomAggregateFunctionEvaluationTest#testCustomFunction_SumWithDistinct, #testCustomFunction_VarianceWithDistinct, #testCustomFunction_VarianceWithDistinct_WithStdv, #testCustomFunction_MultipleSumWithDistinctGroupBy (already in the module tree; red)"
+      ],
+      "additionalTests": [
+        "if a real value bug: a GroupIterator unit test with a custom AggregateFunctionFactory and DISTINCT over duplicate values of different lexical forms"
+      ],
+      "existingTestsAtRisk": [
+        "the four/five tests themselves"
+      ]
+    },
+    {
+      "id": "3.9-lmdb-builtinFunction-20",
+      "title": "LMDB builtinFunction()[20] = SES869ValueOfNow: NOW() shared literal loses object identity through LmdbValueLookupOptimizer",
+      "status": "confirmed-by-code-reading",
+      "severity": "S3 (equal values, broken identity contract asserted by the testsuite) unless the run shows assertEquals failing too; PRE on the branch; LMDB only",
+      "rootCause": "Dynamic test #20 (1-based) of BuiltinFunctionTest.tests() (/Users/havardottestad/Documents/Programming/rdf4j-small-things/testsuites/sparql/src/main/java/org/eclipse/rdf4j/testsuite/sparql/tests/BuiltinFunctionTest.java:427-449) is SES869ValueOfNow (:110-127): `SELECT ?p (NOW() as ?n) { BIND(NOW() as ?p) }` asserting `assertEquals(p, n)` AND `assertTrue(p == n)`. On every store ConstantOptimizer (:280-300, isConstantZeroArgFunction) folds both NOW() calls into ValueConstants holding DefaultEvaluationStrategy.sharedValueOfNow (:218, reset per QueryRoot :370/:420/:1098), one Literal instance. The LMDB pipeline then runs LmdbValueLookupOptimizer (/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbValueLookupOptimizer.java:69-71 meet(ValueConstant) -> `node.setValue(lookup(node.getValue()).value)`; lookup :116-132 -> `valueStore.getLmdbValue(value)` creates a fresh LmdbLiteral wrapper per call, id UNKNOWN). Each ValueConstant therefore ends up with a distinct but equal LmdbLiteral, so `p == n` is false while `assertEquals` passes. Memory/Native have no such step and pass.",
+      "fix": "In LmdbValueLookupOptimizer keep an `IdentityHashMap<Value, Lookup>` for the duration of one optimize() pass and return the memoised Lookup for the same input instance (also de-duplicates repeated constants and ValueStore round-trips). Alternative (less preferred): return the original Value when `id == UNKNOWN_ID` \u2014 rejected because the unknown-id LmdbValue is used as a 'not in store' marker (knownValue == null) by later rewrites. File is owned by wp1 (Lmdb*Optimizer); land as a tiny wp1 change or with wp1's approval.",
+      "files": [
+        {
+          "path": "/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbValueLookupOptimizer.java",
+          "lines": "55-71, 116-132",
+          "change": "per-pass IdentityHashMap<Value, Lookup> memo in lookup(); ValueConstants/Vars holding the same Value instance resolve to the same LmdbValue instance"
+        }
+      ],
+      "size": "small",
+      "risk": "Low. Identity is only strengthened; memo lives for one optimize() call.",
+      "recommendation": "fix-now",
+      "recommendationReason": "Mechanism is clear from code and the fix is a few lines; it also removes redundant ValueStore lookups. Confirm the exact failing assertion by running LmdbSPARQLComplianceTest builtinFunction first (rule: in-repo red test before the change; the compliance test is already red).",
+      "reproTestMethods": [
+        "compliance/sparql LmdbSPARQLComplianceTest#builtinFunction()[20] (SES869ValueOfNow) \u2014 already in the module tree, red"
+      ],
+      "additionalTests": [
+        "core/sail/lmdb unit test: two ValueConstant nodes referencing one Literal instance -> after LmdbValueLookupOptimizer both hold the same LmdbValue instance; a Var with the same value likewise",
+        "regression: a literal present in the store still resolves to a knownValue (id != UNKNOWN_ID)"
+      ],
+      "existingTestsAtRisk": [
+        "none identified; LmdbValueLookupOptimizer tests (if any) asserting fresh wrapper per node would be wrong by construction"
+      ]
+    }
+  ],
+  "implementationOrder": [
+    "3.11.2 / 3.2.5 (standard)",
+    "3.11.1",
+    "3.11.4 / 3.4.6",
+    "3.2.5 (packed) / PackedFilterRules:90-92",
+    "3.11.3",
+    "3.9-lmdb-builtinFunction-20",
+    "3.9-custom-aggregate-distinct",
+    "3.11.6"
+  ],
+  "sharedInfrastructure": "New package-private/static helper in core/queryalgebra/evaluation, org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingScopeAnalysis (roadmap 4.1: one binding/scope analysis, 'rules that introduce or move predicates require assured; possible names may only block'). Methods: (1) `boolean canPushInto(Set<String> filterVars, TupleExpr target, TupleExpr sibling)` = target possible \u2287 filterVars AND \u2200v\u2208filterVars: v \u2208 assured(target) \u2228 v \u2209 possible(sibling) \u2014 used by FilterOptimizer.meet(Join)/meet(LeftJoin) (3.11.2) and mirrored bit-for-bit in PackedFilterRules via maskContainsAll + maskContainsAllIntersection (3.2.5); (2) `boolean filterDependsOnlyOnAssured(Filter f, Set<String> names)` = VarNameCollector(f.condition) \u2229 names \u2286 assured(f.arg) \u2014 used by QueryModelNormalizerOptimizer (3.11.1); (3) `Set<String> outerVisibleNames(QueryModelNode n)` = union over enclosing SubQueryValueOperator boundaries of the nearest enclosing TupleExpr's possible names, plus Lateral left-arg names when n sits in a Lateral right arg \u2014 used by SameTermFilterOptimizer (3.11.4). Candidates to adopt it: wp1 LmdbBoundSimplifierOptimizer (BOUND(?x)->false inside EXISTS, same blind spot), LmdbFilterSimplifierOptimizer.makeOptionalBindingMandatory (uses right-arg possible names), LmdbNullRejectingOptionalSupport; wp2 PackedLogicalRuleProgram MINUS->NOT EXISTS guard and addScalarDependencies (referenced-vs-output). ScalarEvaluationEffects (3.11.3) is already shared infrastructure; its denylist semantics must be documented at the call sites listed in crossWpTouchpoints.",
+  "crossWpTouchpoints": [
+    "PackedQuery.java / PackedBindingFacts.java (packed shared infra, wp2): add maskContainsAllIntersection accessor for the PackedFilterRules fix; allocation-free, PackedQueryCodecTest hot-path audit lists PackedFilterRules",
+    "PackedQueryCodec.java:1135 SCALAR_REORDERING_SAFE (wp2): the ScalarEvaluationEffects denylist marks custom/GeoSPARQL/SPIN function filters relocatable in the packed planner; PackedFilterRules and the PackedJoinEnumerator lattice will now place them",
+    "PackedLogicalRuleProgram MINUS->NOT EXISTS (:381-421) and addScalarDependencies (:3616-3631) (wp2): same referenced-vs-assured principle as 3.11.1/3.11.2; should consume the shared analysis rather than a second implementation",
+    "FilterIterator.java:783 shouldRecordFilterOutcomes (wp4 executor): denylist makes outcomes of deterministic custom-function filters recordable (intended)",
+    "LMDB learning/statistics keys gated on Effect.REPEATABLE (wp1): FilterSurfaceKey:81, SemiAntiSurfaceKey:112, LmdbFilterSelectivityStats:1722, LmdbFiniteJoinSurfaceEstimator:917, LmdbFilterSimplifierOptimizer:1744-1768, LmdbSetSemanticsOptimizer:83 \u2014 custom-function filters become learnable/anchorable after 3.11.3; NOW() must stay QUERY_STABLE so these keys keep excluding it",
+    "LmdbValueLookupOptimizer.java (wp1 Lmdb*Optimizer file): identity-memoised lookup for the builtinFunction()[20] fix",
+    "LmdbBoundSimplifierOptimizer / LmdbFilterSimplifierOptimizer.makeOptionalBindingMandatory / LmdbNullRejectingOptionalSupport (wp1, findings 3.1.x): should adopt BindingScopeAnalysis.outerVisibleNames and canPushInto; after 3.11.2 lands the null-rejecting OPTIONAL rewrite no longer receives the mis-pushed Filter-over-LeftJoin, but its own soundness remains wp1's",
+    "LeftJoinQueryEvaluationStep / HashJoinIteration / MaterializedExistsFilterIteration / PathIteration (wp4): consumers of the 3.11.6 differential run; the operator-mode sweep drives them via the planned hint OPTIMIZER_FILTER_ALGORITHM_HINT and the leftjoin/semiAnti system properties (test-only stamping, no production change)",
+    "LmdbPipelinePlanCache NPEs (3.9, plan-cache owner): UNDEF VALUES and default-graph UPDATE NPEs mask 41 LMDB compliance tests and must be fixed or excluded before the LMDB leg of the 3.11.6 parity run is meaningful",
+    "core/spin Invoke / EvalFunction / SpinxFunction (no WP owner): recommended mustReturnDifferentResult() -> true follow-up so dynamic dispatch is VOLATILE for both ScalarEvaluationEffects and ConstantOptimizer",
+    "QueryJoinOptimizer policy (3.8.5, wp-cost/search): unrelated to WP9 fixes, but FilterOptimizer runs after join ordering in both pipelines, so 3.11.2 does not reverse any join-order decision"
+  ],
+  "openQuestions": [
+    "3.11.3: should a deterministic custom function with constant arguments be REPEATABLE (proposed) rather than the current QUERY_STABLE? REPEATABLE makes such filters learnable by LMDB FilterSurfaceKey; QUERY_STABLE was only a workaround for the allowlist.",
+    "3.11.3 porting: does core/queryalgebra/geosparql declare a test-scope dependency on rdf4j-sail-memory (the f8 GeoFilterPlacementReviewReproTest imports MemoryStore and was run by the reviewer)? If not, the three placement tests go to compliance/geosparql and only the classification test stays in the geosparql module; adding a dependency needs approval.",
+    "3.2.5 packed: does c3PackedPlannerOnMaybeBoundOptionalVariable already pass (lattice covers it)? Port it anyway as a guard; the tiny-budget and extra=18 methods are the true reproducers.",
+    "3.11.1: is there an LMDB theme benchmark whose plan relied on the VALUES push with an unassured inner variable (the introducing commit 6d4398d57b added no normalizer test)? Re-run planQuery for MEDICAL/theme queries containing VALUES + nested BIND after the fix.",
+    "3.9 custom aggregate: which component changed the MemoryStore scan/group order between develop and HEAD if triage confirms order-only divergence (candidates: StatementPatternQueryEvaluationStep +78 lines, sail-base dataset wrappers)? Worth a bisect even though SPARQL permits any order.",
+    "LATERAL compliance failures (lateral()[2], SPARQL12 tests()[6], all stores) may share the scope blind spot fixed in 3.11.4 (optimizers treating the LATERAL right arg as an independent scope: SameTermFilterOptimizer, LmdbBoundSimplifierOptimizer, BindingSetAssignmentInliner); check in the 3.11.6 run whether they flip after 3.11.4.",
+    "Ownership check: 3.4.6 (SameTermFilterOptimizer EXISTS blind spot) is listed under the executor section but is an optimizer defect; this design treats it as WP9's (same fix as 3.11.4)."
+  ]
+}

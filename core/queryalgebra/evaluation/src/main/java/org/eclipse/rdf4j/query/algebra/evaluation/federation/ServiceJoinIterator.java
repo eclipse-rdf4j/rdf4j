@@ -11,6 +11,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -28,6 +30,13 @@ import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
  * @author Andreas Schwarte
  */
 public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
+	private static final String DEFERRED_TELEMETRY_METADATA = "org.eclipse.rdf4j.query.algebra.evaluation.impl.deferredServiceTelemetry";
+	private static final int REQUEST = 0;
+	private static final int EVALUATE = 3;
+	private static final int ERROR = 4;
+	private static final int TIMEOUT = 5;
+	private static final int BYTES_SENT = 6;
+	private static final int BYTES_RECEIVED = 7;
 
 	protected Service service;
 
@@ -53,6 +62,7 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	@Override
 	protected void handleBindings() throws Exception {
 		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
+		Object[] deferredTelemetry = deferredTelemetry(service);
 		boolean fallbackEvaluation = false;
 		try {
 			Var serviceRef = service.getServiceRef();
@@ -68,7 +78,8 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				while (!isClosed() && leftIter.hasNext()) {
 					BindingSet leftBindings = leftIter.next();
 					if (runtimeTelemetryEnabled) {
-						incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
+						addLongMetric(service, deferredTelemetry, EVALUATE,
+								TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL, 1L);
 					}
 					CloseableIteration<BindingSet> result = strategy.evaluate(service, leftBindings);
 					addResult(result);
@@ -78,9 +89,12 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 
 			// use vectored evaluation
 			if (runtimeTelemetryEnabled) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
-				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
+				addLongMetric(service, deferredTelemetry, REQUEST,
+						TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL, 1L);
+				addLongMetric(service, deferredTelemetry, EVALUATE,
+						TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL, 1L);
+				addLongMetric(service, deferredTelemetry, BYTES_SENT,
+						TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateUtf8Bytes(service.getServiceExpressionString()));
 			}
 			FederatedService fs = strategy.getService(serviceUri);
@@ -88,28 +102,25 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			try {
 				CloseableIteration<BindingSet> result = fs.evaluate(service, leftIter, service.getBaseURI());
 				if (runtimeTelemetryEnabled) {
-					addResult(trackResponseBytes(service, result));
+					addResult(trackResponseBytes(service, deferredTelemetry, result));
 				} else {
 					addResult(result);
 				}
 			} finally {
 				if (runtimeTelemetryEnabled) {
-					recordRequestLatency(service, started);
+					recordRequestLatency(service, deferredTelemetry, started);
 				}
 			}
 		} catch (Exception e) {
 			if (runtimeTelemetryEnabled && !fallbackEvaluation) {
-				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);
+				addLongMetric(service, deferredTelemetry, ERROR, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL, 1L);
 				if (isTimeoutException(e)) {
-					incrementLongMetric(service, TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL);
+					addLongMetric(service, deferredTelemetry, TIMEOUT,
+							TelemetryMetricNames.REMOTE_TIMEOUT_COUNT_ACTUAL, 1L);
 				}
 			}
 			throw e;
 		}
-	}
-
-	private static void incrementLongMetric(Service service, String metricName) {
-		addLongMetric(service, metricName, 1L);
 	}
 
 	private static void addLongMetric(Service service, String metricName, long delta) {
@@ -119,8 +130,27 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 		service.setLongMetricActual(metricName, Math.max(0L, service.getLongMetricActual(metricName)) + delta);
 	}
 
-	private static void recordRequestLatency(Service service, long startedNanos) {
+	private static void addLongMetric(Service service, Object[] deferredTelemetry, int counter, String metricName,
+			long delta) {
+		if (deferredTelemetry != null && delta > 0L) {
+			AtomicLongArray counters = (AtomicLongArray) deferredTelemetry[0];
+			while (true) {
+				long current = counters.get(counter);
+				long next = current > Long.MAX_VALUE - delta ? Long.MAX_VALUE : current + delta;
+				if (counters.compareAndSet(counter, current, next)) {
+					return;
+				}
+			}
+		}
+		addLongMetric(service, metricName, delta);
+	}
+
+	private static void recordRequestLatency(Service service, Object[] deferredTelemetry, long startedNanos) {
 		long latencyNanos = Math.max(0L, System.nanoTime() - startedNanos);
+		if (deferredTelemetry != null) {
+			((LongConsumer) deferredTelemetry[1]).accept(latencyNanos);
+			return;
+		}
 		addLongMetric(service, TelemetryMetricNames.REMOTE_LATENCY_TOTAL_NANOS_ACTUAL, latencyNanos);
 		updateLatencyQuantileEstimate(service, TelemetryMetricNames.REMOTE_LATENCY_P50_NANOS_ACTUAL, 0.50,
 				latencyNanos);
@@ -148,12 +178,13 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 		service.setDoubleMetricActual(metricName, Math.max(0D, updated));
 	}
 
-	private static CloseableIteration<BindingSet> trackResponseBytes(Service service,
+	private static CloseableIteration<BindingSet> trackResponseBytes(Service service, Object[] deferredTelemetry,
 			CloseableIteration<BindingSet> delegate) {
 		return new ConvertingIteration<BindingSet, BindingSet>(delegate) {
 			@Override
 			protected BindingSet convert(BindingSet sourceObject) {
-				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL,
+				addLongMetric(service, deferredTelemetry, BYTES_RECEIVED,
+						TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL,
 						estimateUtf8Bytes(sourceObject == null ? null : sourceObject.toString()));
 				return sourceObject;
 			}
@@ -174,6 +205,15 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 
 	private static boolean isRuntimeTelemetryEnabled(Service service) {
 		return service != null && service.isRuntimeTelemetryEnabled();
+	}
+
+	private static Object[] deferredTelemetry(Service service) {
+		Object state = service == null ? null : service.getQueryModelMetadata(DEFERRED_TELEMETRY_METADATA);
+		if (!(state instanceof Object[] values) || values.length < 2
+				|| !(values[0] instanceof AtomicLongArray) || !(values[1] instanceof LongConsumer)) {
+			return null;
+		}
+		return values;
 	}
 
 	private static boolean isTimeoutException(Throwable throwable) {

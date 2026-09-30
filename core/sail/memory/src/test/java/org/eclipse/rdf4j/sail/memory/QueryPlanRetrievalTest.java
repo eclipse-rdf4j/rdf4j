@@ -313,19 +313,19 @@ public class QueryPlanRetrievalTest {
 					"      ║        Var (name=x)\n" +
 					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
 					"      Union\n" +
-					"      ╠══ Filter\n" +
+					"      ╠══ Filter (new scope)\n" +
 					"      ║  ├── Not\n" +
 					"      ║  │     Bound\n" +
 					"      ║  │        Var (name=g)\n" +
 					"      ║  └── Join (JoinIterator)\n" +
-					"      ║     ╠══ Filter (new scope) [left]\n" +
+					"      ║     ╠══ Filter [left]\n" +
 					"      ║     ║  ├── And\n" +
-					"      ║     ║  │  ╠══ Bound\n" +
-					"      ║     ║  │  ║     Var (name=s)\n" +
-					"      ║     ║  │  ╚══ Compare (>)\n" +
-					"      ║     ║  │        Var (name=o)\n" +
-					"      ║     ║  │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║     ║  │  ╠══ Compare (>)\n" +
+					"      ║     ║  │  ║     Var (name=o)\n" +
+					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
+					"      ║     ║  │  ╚══ Bound\n" +
+					"      ║     ║  │        Var (name=s)\n" +
 					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
@@ -459,7 +459,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
 					+
 					"      ║  └── SingletonSet\n" +
-					"      ╚══ Join (JoinIterator) [right]\n" +
+					"      ╚══ Join (HashJoinIteration) [right]\n" +
 					"         ├── Filter [left]\n" +
 					"         │  ╠══ Compare (!=)\n" +
 					"         │  ║     Var (name=o)\n" +
@@ -468,20 +468,20 @@ public class QueryPlanRetrievalTest {
 					"         │        s: Var (name=s)\n" +
 					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
 					"         │        o: Var (name=o)\n" +
-					"         └── LeftJoin [right]\n" +
+					"         └── LeftJoin (new scope) [right]\n" +
 					"            ╠══ Join (HashJoinIteration) [left]\n" +
-					"            ║  ├── Filter (new scope) [left]\n" +
+					"            ║  ├── Filter [left]\n" +
 					"            ║  │  ╠══ And\n" +
-					"            ║  │  ║  ├── Compare (>)\n" +
-					"            ║  │  ║  │     Var (name=score)\n" +
-					"            ║  │  ║  │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  ├── Compare (!=)\n" +
+					"            ║  │  ║  │  ╠══ MathExpr (-)\n" +
+					"            ║  │  ║  │  ║     Var (name=score)\n" +
+					"            ║  │  ║  │  ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │  ║  └── Compare (!=)\n" +
-					"            ║  │  ║     ╠══ MathExpr (-)\n" +
-					"            ║  │  ║     ║     Var (name=score)\n" +
-					"            ║  │  ║     ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  │  ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │  ║     ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  └── Compare (>)\n" +
+					"            ║  │  ║        Var (name=score)\n" +
+					"            ║  │  ║        ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
 					"            ║  │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
 					"            ║  │        s: Var (name=s)\n" +
@@ -661,17 +661,17 @@ public class QueryPlanRetrievalTest {
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"a\"\n" +
 					"╚══ LeftJoin (LeftJoinIterator)\n" +
-					"   ├── Join (JoinIterator) [left]\n" +
-					"   │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00) [left]\n" +
-					"   │  ║     s: Var (name=a)\n" +
-					"   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"   ├── Filter [left]\n" +
+					"   │  ╠══ Compare (!=)\n" +
+					"   │  ║     Var (name=c)\n" +
+					"   │  ║     Var (name=d)\n" +
+					"   │  ╚══ Join (JoinIterator)\n" +
+					"   │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00) [left]\n" +
+					"   │     │     s: Var (name=a)\n" +
+					"   │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"   │  ║     o: Var (name=d)\n" +
-					"   │  ╚══ Filter [right]\n" +
-					"   │     ├── Compare (!=)\n" +
-					"   │     │     Var (name=c)\n" +
-					"   │     │     Var (name=d)\n" +
-					"   │     └── Join (HashJoinIteration)\n" +
+					"   │     │     o: Var (name=d)\n" +
+					"   │     └── Join (HashJoinIteration) [right]\n" +
 					"   │        ╠══ Filter [left]\n" +
 					"   │        ║  ├── Compare (!=)\n" +
 					"   │        ║  │     Var (name=c)\n" +
@@ -739,18 +739,18 @@ public class QueryPlanRetrievalTest {
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"a\"\n" +
 					"╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"   ├── Join (JoinIterator) (resultSizeActual=2) [left]\n" +
-					"   │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+					"   ├── Filter (resultSizeActual=2) [left]\n" +
+					"   │  ╠══ Compare (!=)\n" +
+					"   │  ║     Var (name=c)\n" +
+					"   │  ║     Var (name=d)\n" +
+					"   │  ╚══ Join (JoinIterator) (resultSizeActual=6)\n" +
+					"   │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
 					+
-					"   │  ║     s: Var (name=a)\n" +
-					"   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"   │     │     s: Var (name=a)\n" +
+					"   │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"   │  ║     o: Var (name=d)\n" +
-					"   │  ╚══ Filter (resultSizeActual=2) [right]\n" +
-					"   │     ├── Compare (!=)\n" +
-					"   │     │     Var (name=c)\n" +
-					"   │     │     Var (name=d)\n" +
-					"   │     └── Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"   │     │     o: Var (name=d)\n" +
+					"   │     └── Join (HashJoinIteration) (resultSizeActual=6) [right]\n" +
 					"   │        ╠══ Filter (resultSizeActual=6) [left]\n" +
 					"   │        ║  ├── Compare (!=)\n" +
 					"   │        ║  │     Var (name=c)\n" +
@@ -792,18 +792,18 @@ public class QueryPlanRetrievalTest {
 					"╠══ ProjectionElemList\n" +
 					"║     ProjectionElem \"a\"\n" +
 					"╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"   ├── Join (JoinIterator) (resultSizeActual=2) [left]\n" +
-					"   │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+					"   ├── Filter (resultSizeActual=2) [left]\n" +
+					"   │  ╠══ Compare (!=)\n" +
+					"   │  ║     Var (name=c)\n" +
+					"   │  ║     Var (name=d)\n" +
+					"   │  ╚══ Join (JoinIterator) (resultSizeActual=6)\n" +
+					"   │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
 					+
-					"   │  ║     s: Var (name=a)\n" +
-					"   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"   │     │     s: Var (name=a)\n" +
+					"   │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"   │  ║     o: Var (name=d)\n" +
-					"   │  ╚══ Filter (resultSizeActual=2) [right]\n" +
-					"   │     ├── Compare (!=)\n" +
-					"   │     │     Var (name=c)\n" +
-					"   │     │     Var (name=d)\n" +
-					"   │     └── Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"   │     │     o: Var (name=d)\n" +
+					"   │     └── Join (HashJoinIteration) (resultSizeActual=6) [right]\n" +
 					"   │        ╠══ Filter (resultSizeActual=6) [left]\n" +
 					"   │        ║  ├── Compare (!=)\n" +
 					"   │        ║  │     Var (name=c)\n" +
@@ -873,7 +873,7 @@ public class QueryPlanRetrievalTest {
 	}
 
 	@Test
-	public void testEstimateStabilityStatsAreHiddenUntilTelemetryLevel() {
+	public void testEstimateStabilityStatsAreHiddenWhenNoEstimateSamplesExist() {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 
@@ -900,10 +900,10 @@ public class QueryPlanRetrievalTest {
 			assertThat(timed).doesNotContain("stddevActual=");
 			assertThat(timed).doesNotContain("confidenceScoreActual=");
 
-			assertThat(telemetry).contains("sampleCountActual=");
-			assertThat(telemetry).contains("varianceActual=");
-			assertThat(telemetry).contains("stddevActual=");
-			assertThat(telemetry).contains("confidenceScoreActual=");
+			assertThat(telemetry).doesNotContain("sampleCountActual=");
+			assertThat(telemetry).doesNotContain("varianceActual=");
+			assertThat(telemetry).doesNotContain("stddevActual=");
+			assertThat(telemetry).doesNotContain("confidenceScoreActual=");
 		}
 		sailRepository.shutDown();
 
@@ -1103,18 +1103,18 @@ public class QueryPlanRetrievalTest {
 			String actual = query.explain(Explanation.Level.Executed).toString();
 			String expected = "Slice (limit=1) (resultSizeActual=1)\n" +
 					"   LeftJoin (LeftJoinIterator) (resultSizeActual=1)\n" +
-					"   ├── Join (JoinIterator) (resultSizeActual=1) [left]\n" +
-					"   │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=3) [left]\n"
+					"   ├── Filter (resultSizeActual=1) [left]\n" +
+					"   │  ╠══ Compare (!=)\n" +
+					"   │  ║     Var (name=c)\n" +
+					"   │  ║     Var (name=d)\n" +
+					"   │  ╚══ Join (JoinIterator) (resultSizeActual=4)\n" +
+					"   │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=3) [left]\n"
 					+
-					"   │  ║     s: Var (name=a)\n" +
-					"   │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"   │     │     s: Var (name=a)\n" +
+					"   │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"   │  ║     o: Var (name=d)\n" +
-					"   │  ╚══ Filter (resultSizeActual=1) [right]\n" +
-					"   │     ├── Compare (!=)\n" +
-					"   │     │     Var (name=c)\n" +
-					"   │     │     Var (name=d)\n" +
-					"   │     └── Join (HashJoinIteration) (resultSizeActual=4)\n" +
+					"   │     │     o: Var (name=d)\n" +
+					"   │     └── Join (HashJoinIteration) (resultSizeActual=4) [right]\n" +
 					"   │        ╠══ Filter (resultSizeActual=4) [left]\n" +
 					"   │        ║  ├── Compare (!=)\n" +
 					"   │        ║  │     Var (name=c)\n" +
@@ -1165,18 +1165,18 @@ public class QueryPlanRetrievalTest {
 					"         ProjectionElem \"d\" AS \"object\"\n" +
 					"      Extension (resultSizeActual=2)\n" +
 					"      ╠══ LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"      ║  ├── Join (JoinIterator) (resultSizeActual=2) [left]\n" +
-					"      ║  │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+					"      ║  ├── Filter (resultSizeActual=2) [left]\n" +
+					"      ║  │  ╠══ Compare (!=)\n" +
+					"      ║  │  ║     Var (name=c)\n" +
+					"      ║  │  ║     Var (name=d)\n" +
+					"      ║  │  ╚══ Join (JoinIterator) (resultSizeActual=6)\n" +
+					"      ║  │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
 					+
-					"      ║  │  ║     s: Var (name=a)\n" +
-					"      ║  │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"      ║  │     │     s: Var (name=a)\n" +
+					"      ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"      ║  │  ║     o: Var (name=d)\n" +
-					"      ║  │  ╚══ Filter (resultSizeActual=2) [right]\n" +
-					"      ║  │     ├── Compare (!=)\n" +
-					"      ║  │     │     Var (name=c)\n" +
-					"      ║  │     │     Var (name=d)\n" +
-					"      ║  │     └── Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"      ║  │     │     o: Var (name=d)\n" +
+					"      ║  │     └── Join (HashJoinIteration) (resultSizeActual=6) [right]\n" +
 					"      ║  │        ╠══ Filter (resultSizeActual=6) [left]\n" +
 					"      ║  │        ║  ├── Compare (!=)\n" +
 					"      ║  │        ║  │     Var (name=c)\n" +
@@ -1257,18 +1257,18 @@ public class QueryPlanRetrievalTest {
 					"      ╠══ ProjectionElemList\n" +
 					"      ║     ProjectionElem \"a\"\n" +
 					"      ╚══ LeftJoin (LeftJoinIterator) (resultSizeActual=2)\n" +
-					"         ├── Join (JoinIterator) (resultSizeActual=2) [left]\n" +
-					"         │  ╠══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+					"         ├── Filter (resultSizeActual=2) [left]\n" +
+					"         │  ╠══ Compare (!=)\n" +
+					"         │  ║     Var (name=c)\n" +
+					"         │  ║     Var (name=d)\n" +
+					"         │  ╚══ Join (JoinIterator) (resultSizeActual=6)\n" +
+					"         │     ├── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
 					+
-					"         │  ║     s: Var (name=a)\n" +
-					"         │  ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"         │     │     s: Var (name=a)\n" +
+					"         │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"         │  ║     o: Var (name=d)\n" +
-					"         │  ╚══ Filter (resultSizeActual=2) [right]\n" +
-					"         │     ├── Compare (!=)\n" +
-					"         │     │     Var (name=c)\n" +
-					"         │     │     Var (name=d)\n" +
-					"         │     └── Join (HashJoinIteration) (resultSizeActual=6)\n" +
+					"         │     │     o: Var (name=d)\n" +
+					"         │     └── Join (HashJoinIteration) (resultSizeActual=6) [right]\n" +
 					"         │        ╠══ Filter (resultSizeActual=6) [left]\n" +
 					"         │        ║  ├── Compare (!=)\n" +
 					"         │        ║  │     Var (name=c)\n" +
@@ -1594,6 +1594,18 @@ public class QueryPlanRetrievalTest {
 					+
 					"   UUID -> UUID [label=\"left\"] ;\n" +
 					"   UUID -> UUID [label=\"right\"] ;\n" +
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Filter</U></td></tr></table>> shape=plaintext];\n"
+					+
+					"   UUID -> UUID [label=\"left\"] ;\n" +
+					"   UUID -> UUID [label=\"right\"] ;\n" +
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Compare (!=)</U></td></tr></table>> shape=plaintext];\n"
+					+
+					"   UUID -> UUID [label=\"left\"] ;\n" +
+					"   UUID -> UUID [label=\"right\"] ;\n" +
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=c)</U></td></tr></table>> shape=plaintext];\n"
+					+
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=d)</U></td></tr></table>> shape=plaintext];\n"
+					+
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Join</U></td></tr> <tr><td>Algorithm</td><td>JoinIterator</td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID -> UUID [label=\"left\"] ;\n" +
@@ -1606,18 +1618,6 @@ public class QueryPlanRetrievalTest {
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=a)</U></td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)</U></td></tr></table>> shape=plaintext];\n"
-					+
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=d)</U></td></tr></table>> shape=plaintext];\n"
-					+
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Filter</U></td></tr></table>> shape=plaintext];\n"
-					+
-					"   UUID -> UUID [label=\"left\"] ;\n" +
-					"   UUID -> UUID [label=\"right\"] ;\n" +
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Compare (!=)</U></td></tr></table>> shape=plaintext];\n"
-					+
-					"   UUID -> UUID [label=\"left\"] ;\n" +
-					"   UUID -> UUID [label=\"right\"] ;\n" +
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=c)</U></td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=d)</U></td></tr></table>> shape=plaintext];\n"
 					+

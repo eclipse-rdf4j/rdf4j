@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Locale;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,6 +80,72 @@ class GenericPlanNodeTest {
 		assertTrue(actual.contains("sourceRowsScannedActual=10"), actual);
 		assertTrue(actual.contains("sourceRowsMatchedActual=11"), actual);
 		assertTrue(actual.contains("sourceRowsFilteredActual=12"), actual);
+	}
+
+	@Test
+	void toStringAndJsonIncludeLegacyEstimatesWithoutPlannerUsage() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(12.0);
+		node.setResultSizeEstimate(34.0);
+		node.setResultSizeActual(21L);
+
+		String text = node.toString();
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertTrue(text.contains("costEstimate=12"), text);
+		assertTrue(text.contains("resultSizeEstimate=34"), text);
+		assertTrue(text.contains("resultSizeActual=21"), text);
+		assertTrue(json.contains("\"costEstimate\""), json);
+		assertTrue(json.contains("\"resultSizeEstimate\""), json);
+		assertTrue(json.contains("\"resultSizeActual\""), json);
+	}
+
+	@Test
+	void toStringRendersLegacyScalarsAndPlannerUsedCardinalityAndCostVector() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(12.0);
+		node.setResultSizeEstimate(34.0);
+		node.setStringMetricPlanned("plannedEstimateUsage", "join_order_candidate");
+		node.setStringMetricPlanned("plannedEstimateDecisionId", "join-order:abc123");
+		node.setStringMetricPlanned("plannedCardinalityShape", "range");
+		node.setDoubleMetricPlanned("plannedCardinalityRows", 34.0);
+		node.setDoubleMetricPlanned("plannedCardinalityLower", 30.0);
+		node.setDoubleMetricPlanned("plannedCardinalityUpper", 40.0);
+		node.setStringMetricPlanned("plannedCostShape", "vector");
+		node.setDoubleMetricPlanned("plannedCostWorkRows", 12.0);
+		node.setDoubleMetricPlanned("plannedCostLookupProbes", 4.0);
+		node.setDoubleMetricPlanned("plannedObjectiveScore", 13.0);
+
+		String actual = node.toString();
+
+		assertTrue(actual.contains("costEstimate=12"), actual);
+		assertTrue(actual.contains("resultSizeEstimate=34"), actual);
+		assertTrue(actual.contains("plannedEstimateUsage=join_order_candidate"), actual);
+		assertTrue(actual.contains("plannedEstimateDecisionId=join-order:abc123"), actual);
+		assertTrue(actual.contains("plannedCardinalityShape=range"), actual);
+		assertTrue(actual.contains("plannedCardinalityRows=34"), actual);
+		assertTrue(actual.contains("plannedCardinalityLower=30"), actual);
+		assertTrue(actual.contains("plannedCardinalityUpper=40"), actual);
+		assertTrue(actual.contains("plannedCostShape=vector"), actual);
+		assertTrue(actual.contains("plannedCostWorkRows=12"), actual);
+		assertTrue(actual.contains("plannedCostLookupProbes=4"), actual);
+		assertTrue(actual.contains("plannedObjectiveScore=13"), actual);
+	}
+
+	@Test
+	void toStringOmitsFrontierLearningKeyButJsonRetainsIt() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		String learningKey = "flk1|logical-expression|applicability";
+		node.setStringMetricPlanned("plannedEstimateUsage", "alternative_ranking");
+		node.setStringMetricPlanned("optimizer.frontierLearningKey", learningKey);
+
+		String text = node.toString();
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertFalse(text.contains("optimizer.frontierLearningKey"), text);
+		assertFalse(text.contains(learningKey), text);
+		assertTrue(json.contains("\"optimizer.frontierLearningKey\""), json);
+		assertTrue(json.contains(learningKey), json);
 	}
 
 	@Test
@@ -322,6 +389,29 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void distinctCursorSkipActualMetricsAreAccessOnly() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		join.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String joinPlan = join.toString();
+
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL), joinPlan);
+		assertFalse(joinPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL), joinPlan);
+
+		GenericPlanNode statementPattern = new GenericPlanNode("StatementPattern");
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL, 3L);
+		statementPattern.setLongMetricActual(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL, 2L);
+
+		String statementPatternPlan = statementPattern.toString();
+
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_COUNT_ACTUAL),
+				statementPatternPlan);
+		assertTrue(statementPatternPlan.contains(TelemetryMetricNames.DISTINCT_CURSOR_SKIP_SEEK_COUNT_ACTUAL),
+				statementPatternPlan);
+	}
+
+	@Test
 	void regularJoinTypeIsHidden() {
 		GenericPlanNode join = new GenericPlanNode("Join");
 		join.setStringMetricActual("joinType", "regular join");
@@ -506,6 +596,79 @@ class GenericPlanNodeTest {
 		assertEquals(8.0, parent.getSelfTimeActual());
 		String actual = parent.toString();
 		assertTrue(actual.contains("Join (totalTimeActual=72.0ms, selfTimeActual=8.0ms)"), actual);
+	}
+
+	// REINFORCE: lifecycle coherence markers are optimizer-prefixed but stay hidden until runtime telemetry is on
+	@Test
+	void lifecycleMarkersAreHiddenWithoutRuntimeTelemetryButVisibleWithIt() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL, 1L);
+		node.setLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL, 2L);
+		node.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 3L);
+		node.setLongMetricActual("optimizer.candidateCount", 4L);
+
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(4L), node.getLongMetricActual("optimizer.candidateCount"));
+
+		Map<String, Long> visible = node.getLongMetricsActual();
+		assertNotNull(visible);
+		assertFalse(visible.containsKey(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertFalse(visible.containsKey(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertFalse(visible.containsKey(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertTrue(visible.containsKey("optimizer.candidateCount"));
+
+		String text = node.toString();
+		assertFalse(text.contains("queryCancelled"), text);
+		assertFalse(text.contains("queryAborted"), text);
+		assertFalse(text.contains("exhaustedCloseCountActual"), text);
+		assertTrue(text.contains("optimizer.candidateCount=4"), text);
+
+		node.setRuntimeTelemetryEnabled(true);
+		assertEquals(Long.valueOf(1L), node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(2L), node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(3L), node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertTrue(node.getLongMetricsActual().containsKey(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+	}
+
+	// REINFORCE: the DOT rendering carries the legacy cost and cardinality estimates and omits them when unset
+	@Test
+	void toDotIncludesCostAndResultSizeEstimateRows() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setCostEstimate(12.0);
+		join.setResultSizeEstimate(34.0);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		join.addPlans(child);
+
+		String dot = join.toDot();
+
+		assertTrue(dot.contains("<tr><td>Cost estimate</td><td>12</td></tr>"), dot);
+		assertTrue(dot.contains("<tr><td>Result size estimate</td><td>34</td></tr>"), dot);
+		// rows whose value is UNKNOWN are filtered out of the DOT table, so the child renders neither row
+		assertFalse(dot.contains("<td>UNKNOWN</td>"), dot);
+		assertEquals(1, dot.split("<tr><td>Cost estimate</td>", -1).length - 1, dot);
+		assertEquals(1, dot.split("<tr><td>Result size estimate</td>", -1).length - 1, dot);
+	}
+
+	// REINFORCE: negative legacy estimates stay unknown and are omitted from text and JSON output
+	@Test
+	void negativeEstimatesRemainUnknownAndAreOmittedFromTextAndJson() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(-1.0);
+		node.setResultSizeEstimate(-1.0);
+
+		assertNull(node.getCostEstimate());
+		assertNull(node.getResultSizeEstimate());
+
+		String text = node.toString();
+		assertFalse(text.contains("costEstimate="), text);
+		assertFalse(text.contains("resultSizeEstimate="), text);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+		assertFalse(json.contains("\"costEstimate\""), json);
+		assertFalse(json.contains("\"resultSizeEstimate\""), json);
 	}
 
 	@Test

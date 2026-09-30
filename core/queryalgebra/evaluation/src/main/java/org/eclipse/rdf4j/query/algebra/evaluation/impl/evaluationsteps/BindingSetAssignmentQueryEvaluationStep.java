@@ -102,6 +102,9 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 						MutableBindingSet nextResult = null;
 						while (nextResult == null && assignments.hasNext()) {
 							final BindingSet assignedBindings = assignments.next();
+							if (assignedBindings.isEmpty()) {
+								return bindings;
+							}
 
 							for (String name : assignedBindings.getBindingNames()) {
 								if (nextResult == null) {

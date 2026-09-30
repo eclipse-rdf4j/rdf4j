@@ -370,11 +370,6 @@ public class CreateServletTest {
 						Map.entry("Value hash cache enabled", "true"),
 						Map.entry("Inline literals", "false"),
 						Map.entry("Sketch estimator enabled", "true"),
-						Map.entry("Sketch estimator subject bucket count", "8192"),
-						Map.entry("Sketch estimator predicate bucket count", "128"),
-						Map.entry("Sketch estimator object bucket count", "16384"),
-						Map.entry("Sketch estimator context bucket count", "32"),
-						Map.entry("Sketch estimator context pair sketches enabled", "true"),
 						Map.entry("Sketch estimator throttle every N", "17"),
 						Map.entry("Sketch estimator throttle millis", "3"),
 						Map.entry("Optimizer sampling enabled", "false"),
@@ -417,11 +412,11 @@ public class CreateServletTest {
 				.contains("valueHashCacheEnabled")
 				.contains("inlineLiterals")
 				.contains("sketchEstimatorEnabled")
-				.contains("sketchEstimatorSubjectBucketCount")
-				.contains("sketchEstimatorPredicateBucketCount")
-				.contains("sketchEstimatorObjectBucketCount")
-				.contains("sketchEstimatorContextBucketCount")
-				.contains("sketchEstimatorContextPairSketchesEnabled")
+				.doesNotContain("sketchEstimatorSubjectBucketCount")
+				.doesNotContain("sketchEstimatorPredicateBucketCount")
+				.doesNotContain("sketchEstimatorObjectBucketCount")
+				.doesNotContain("sketchEstimatorContextBucketCount")
+				.doesNotContain("sketchEstimatorContextPairSketchesEnabled")
 				.contains("sketchEstimatorThrottleEveryN")
 				.contains("sketchEstimatorThrottleMillis")
 				.contains("optimizerSamplingEnabled")
@@ -436,11 +431,6 @@ public class CreateServletTest {
 		assertThat(invokeBooleanGetter(sailConfig, "getValueHashCacheEnabled")).isTrue();
 		assertThat(invokeBooleanGetter(sailConfig, "getInlineLiterals")).isFalse();
 		assertThat(invokeObjectGetter(sailConfig, "getSketchEstimatorEnabled")).isEqualTo(Boolean.TRUE);
-		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorSubjectBucketCount")).isEqualTo(8192);
-		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorPredicateBucketCount")).isEqualTo(128);
-		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorObjectBucketCount")).isEqualTo(16384);
-		assertThat(invokeIntGetter(sailConfig, "getSketchEstimatorContextBucketCount")).isEqualTo(32);
-		assertThat(invokeBooleanGetter(sailConfig, "getSketchEstimatorContextPairSketchesEnabled")).isTrue();
 		assertThat(invokeLongGetter(sailConfig, "getSketchEstimatorThrottleEveryN")).isEqualTo(17L);
 		assertThat(invokeLongGetter(sailConfig, "getSketchEstimatorThrottleMillis")).isEqualTo(3L);
 		assertThat(invokeBooleanGetter(sailConfig, "getOptimizerSamplingEnabled")).isFalse();

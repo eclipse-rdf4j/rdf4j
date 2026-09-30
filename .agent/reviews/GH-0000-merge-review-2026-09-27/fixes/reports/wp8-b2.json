@@ -1,0 +1,135 @@
+{
+ "wp": "wp8-reader-pool-and-exactness",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp8",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp8.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp8/initial-evidence.wp8.txt",
+ "findings": [
+  {
+   "id": "3.10.1",
+   "status": "fixed",
+   "rootCause": "Planner-time storage reads were not bound to the query's own snapshot lease. develop's TxnManager (GH-5970) admits 127 ordinary leases plus one reserved slot with a 30 s admission timeout; every default query already holds two ordinary leases (explicit + inferred LmdbSailDataset) while it plans, and branch-added planner code then took further leases on the same thread: TripleStore.repeatedVariableCardinality/exactCardinality/boundedDistinctCursorSkipCardinality/sampleTriplesStratified/indexCostProfile (ordinary), LmdbFiniteJoinSurfaceEstimator L131/L173/L369 and LmdbFilterSelectivityStats L690/L787/L1352 (ordinary createReadTxn), plus develop's own doWithPriority sites (page estimator, 5.3.2 sampler) that all queries share through the single reserved slot. Reproduced end-to-end in this repo: with only the query's dataset slots free and the reserved slot held elsewhere, 10 of 12 pressure cases stalled past 8 s at exactly those sites (cardinalityUsingPageEstimator:1916 via LmdbFilterSelectivityStats.expectedRuntimeRows and LmdbStatementPatternCardinalitySource.qualifiedIds, LmdbFiniteJoinSurfaceEstimator.estimate:369, TripleStore.repeatedVariableCardinality:1839 in frontier-OFF mode, TripleStore.sampleTriplesStratified:1507 via LmdbFilterSimplifierOptimizer), after which the IOException is swallowed and the estimate silently lost.",
+   "change": "Pinned planning read lease, as the design prescribes, with the critique's corrections. TxnManager: Txn gains a per-lease id (advanced on reuse), isLive(leaseId) (owned && !closed && !idle && same lease, under the Txn monitor: this is what makes a Mode.RESET pooled/recycled transaction detectable, since its handle stays live), isTracked(), and planningView(target) (a non-owning view that mirrors handle/version/value pool so LmdbRecordIterator cursors renew exactly like on the target; close() is a no-op, no permit); plus LongAdder admission counters and permit accessors for lease-accounting tests. TripleStore: ThreadLocal depth-counted pinPlanningTxn(Txn) (outermost pin wins; refuses null/foreign/untracked/non-live transactions; untracked refusal is the structural answer to the shared-cache poisoning critique: an untracked reader keeps its pre-commit snapshot while SHARED_*_CACHE keys assume every planning read sees the head, so LmdbDetachedPlanRefresh stays unpinned and could not pin even if it tried), livePinnedPlanningTxn() re-checks isLive on every use so a pin whose dataset was closed from any thread falls back instead of reading a recycled txn, planningReadTxn() (pinned view, else ordinary lease; only for reads that go through getTriples/LmdbRecordIterator, which lock and version-check per step), planningRead(callback) (pinned: run on pinned handle under lockManager.readLock(); unpinned: doWithPriority, i.e. develop behaviour) for short raw-handle reads, planningScan(callback) (unpinned: ordinary doWith, so a background sampler never occupies the reserved slot) for bounded scans, and planningRead(Txn, callback) for a caller-supplied transaction under the read lock. Converted sites: cardinalityUsingPageEstimator, both legacy-sampler callbacks, boundedExactCardinality, indexCostProfile -> planningRead; sampleTriplesStratified -> planningScan (plus a Txn-taking overload); repeatedVariableCardinality, exactCardinality(cap), boundedDistinctCursorSkipCardinality -> planningReadTxn (getTriples path). LmdbFiniteJoinSurfaceEstimator L131/L173/L369 -> planningReadTxn(), so the nested planningCardinality inside L369 reuses the same pinned txn and the self-deadlock is structurally impossible. LmdbFilterSelectivityStats: exactBoundedFilterZero and exactMatchingDistinctValues -> planningReadTxn(); sampleFilterPassRatio opens ONE planning txn and passes it to both the stratified pass (Txn overload, locked) and the prefix fallback, removing the second 30 s admission wait. Establishing the pin: LmdbQueryOptimizerPipeline.optimize wraps its whole body (request-bound optimizers incl. LmdbFilterSimplifierOptimizer, cascades, order/limit, uncached path) in try-with-resources on runtime.pinPlanningReads(txn), resolving the txn via SailDatasetTripleTermSource.unwrapDataset(LmdbPinnedReadTxnSource.class) -> LmdbSailDataset.pinnedReadTxn() (empty once closed). sail-base: SailDataset.unwrap(Class) default plus overrides in UnionSailDataset (dataset1 then dataset2; note dataset1 is the INFERRED member, harmless since both see the same env), DelegatingSailDataset (delegate) and SailDatasetImpl (derivedFrom: the pin is the committed base snapshot, the uncommitted Changeset is never consulted by planner storage reads, which is today's behaviour), and SailDatasetTripleTermSource.unwrapDataset. Deviation from the design, stated: the pin is NOT stored in LmdbEstimatorOptimizationScope/beginScope(Txn). Opening one estimator scope around the entire pipeline would have shared identity-keyed factor fingerprints across request-bound rewrites that mutate nodes in place (LmdbFilterSimplifierOptimizer currently owns a separate scope from cascades), so the pin is a TripleStore-level ThreadLocal independent of scope caching; LmdbCascadesOptimizer and LmdbDetachedPlanRefresh are untouched. Existing mock fixtures (LmdbExactFilterProbeCacheTest, LmdbFilterProbeScanCapTest) stub tripleStore.planningReadTxn(); no production signature used by other Mockito tests changed. Critique majors for this batch: #2 read-lock discipline (raw-handle reads only via planningRead/planningScan/planningRead(Txn,cb) under lockManager.readLock(); bare planningReadTxn() only for getTriples/LmdbRecordIterator paths); #3 Mode.RESET reuse (Txn.isLive(leaseId) with per-lease id advanced in reuse(), re-checked on every planning read; pin structurally nested in LmdbQueryOptimizerPipeline.optimize); #4 detached-refresh poisoning (pinPlanningTxn refuses untracked/view/non-live txns, LmdbDetachedPlanRefresh stays unpinned); #5 attribution (admission counters asserted, default and OFF modes). indexCostProfile (LmdbPhysicalCostObjective.loadProfile -> runtime.indexCostProfile -> TripleStore.indexCostProfile) now runs through planningRead and is part of pinnedPlannerReadsTakeNoNestedLease. This resumed run made no code changes: it verified the tree (staged diff identical to patches/wp8.patch) and completed the module unit suite and the LMDB ITs on the final tree.",
+   "files": [
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TxnManager.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteJoinSurfaceEstimator.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSelectivityStats.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPinnedReadTxnSource.java",
+    "core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+    "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDataset.java",
+    "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/UnionSailDataset.java",
+    "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/DelegatingSailDataset.java",
+    "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDatasetImpl.java",
+    "core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDatasetTripleTermSource.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlannerReaderLeaseTest.java",
+    "core/sail/base/src/test/java/org/eclipse/rdf4j/sail/base/SailDatasetUnwrapTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbExactFilterProbeCacheTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterProbeScanCapTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccessV2Test.java"
+   ],
+   "testsAdded": [
+    "LmdbPlannerReaderLeaseTest#queryPlansWithoutNestedReaderLeases (4 queries x {default, OFF}: repeated variable, plain, filter, VALUES join; all ordinary slots but the 2 dataset slots held, reserved slot held by another thread, cold plan)",
+    "LmdbPlannerReaderLeaseTest#explicitOnlyQueryPlansWithoutNestedReaderLeases (x2 modes, 1 dataset slot free)",
+    "LmdbPlannerReaderLeaseTest#activeTransactionQueryPlansWithoutNestedReaderLeases (x2 modes, SailDatasetImpl overlay resolution)",
+    "LmdbPlannerReaderLeaseTest#pinnedPlannerReadsTakeNoNestedLease (all 8 converted TripleStore reads, both semaphores drained, admission counters unchanged, values equal to unpressured)",
+    "LmdbPlannerReaderLeaseTest#finiteSurfaceEstimateWithNestedPlanningReadCompletesWhilePinned (L369 nesting, both semaphores drained)",
+    "LmdbPlannerReaderLeaseTest#pinLifetimeIsStructurallyNested",
+    "LmdbPlannerReaderLeaseTest#pipelinePinIsReleasedBeforeTheQueryReturns",
+    "LmdbPlannerReaderLeaseTest#unpinnedFallbacksKeepDevelopLeaseDiscipline (scan = 1 ordinary, never reserved; short read exhausted of ordinary slots = reserved)",
+    "LmdbPlannerReaderLeaseTest#closedOrRecycledPinFallsBackToAFreshLease (Mode.RESET pooled + recycled txn)",
+    "LmdbPlannerReaderLeaseTest#untrackedSnapshotIsNeverPinned (refusal + planning read sees committed head while the untracked snapshot does not)",
+    "LmdbPlannerReaderLeaseTest#datasetUnwrapResolvesThePinnedTransaction",
+    "SailDatasetUnwrapTest#defaultUnwrapReturnsSelfOnlyForMatchingType",
+    "SailDatasetUnwrapTest#unionResolvesTheFirstMemberThatMatches",
+    "SailDatasetUnwrapTest#delegatingAndOverlayDatasetsForwardToTheirBase",
+    "SailDatasetUnwrapTest#tripleTermSourceExposesTheResolution"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest.txt\nTests run: 12, Failures: 10, Errors: 0, Skipped: 0, Time elapsed: 85.26 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest\norg.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest.activeTransactionQueryPlansWithoutNestedReaderLeases(FrontierEstimatorMode, Path)[1] -- Time elapsed: 9.876 s <<< FAILURE!\norg.opentest4j.AssertionFailedError: query did not finish within 8000 ms while only its 2 dataset slot(s) were free: a planner read took a nested reader lease ==> expected: <true> but was: <false>\n\tat org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest.runUnderReaderPressure(LmdbPlannerReaderLeaseTest.java:260)\n(worker stacks in TEST-*.xml: TripleStore.cardinalityUsingPageEstimator:1916 <- LmdbFilterSelectivityStats.expectedRuntimeRows / LmdbStatementPatternCardinalitySource.qualifiedIds; LmdbFiniteJoinSurfaceEstimator.estimate:369; TripleStore.repeatedVariableCardinality:1839 (OFF); TripleStore.sampleTriplesStratified:1507 <- LmdbFilterSimplifierOptimizer in the plan-cache-warm first run)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest.txt (final-tree module suite, log .mvnf/workspaces/wp8/logs/20260928T060345.622729Z-74059-ee06b4af/verify.log)\nTests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.113 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlannerReaderLeaseTest\nTests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.708 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanningCardinalityExactnessTest\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterProbeScanCapTest\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.110 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteProbeExactnessLabelTest\nTests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 12.93 s -- in org.eclipse.rdf4j.sail.lmdb.TxnManagerTest\nTests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.023 s -- in org.eclipse.rdf4j.sail.lmdb.CardinalityTest"
+  },
+  {
+   "id": "3.10.1b",
+   "status": "fixed",
+   "rootCause": "(b1 carry-over) unbounded planner scans repeatedVariableCardinality/exactCardinality and an exact cache that could publish a capped/extrapolated repeated-mask count as exact; b1 landed the fix but its two new test classes had not been run.",
+   "change": "No further production change in b2. The corrected expectation (:s0 has exactly one :p row -> exactCardinality 1.0) was verified and both b1 classes were run; the scans now additionally go through the pinned planning lease (planningReadTxn) so a capped scan never holds a nested reader lease either.",
+   "files": [
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPlanningCardinalityExactnessTest.java",
+    "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterProbeScanCapTest.java"
+   ],
+   "testsAdded": [],
+   "preFixEvidence": "(see b1 report) Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPlanningCardinalityExactnessTest.txt\nTests run: 1, Failures: 1, Errors: 0, Skipped: 0 -- exactCandidateIsUnavailableBeyondThePlanningScanCap: an exact count over 10000 rows exceeds the planning scan cap and must be unavailable ==> expected: <-1.0> but was: <10000.0>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp8/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/ (final-tree module suite)\nTests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.708 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPlanningCardinalityExactnessTest\nTests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterProbeScanCapTest\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbStatementPatternCardinalitySourceTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/sail/lmdb unit suite (final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2205, failures=0, errors=1, skipped=7 (Maven total incl. nested: 2320); log .mvnf/workspaces/wp8/logs/20260928T060345.622729Z-74059-ee06b4af/verify.log",
+   "reds": [
+    "LmdbStoreMultiRepoTest#testRandomLoadManyRepositoriesInParallel: pre-existing/environmental. java.io.IOException: No space left on device from mdb_env_open during repository.init() (before any query) while 200 stores open in parallel; ValueStore/LmdbStore/LmdbUtil and the test are outside this WP's diff; it failed the same way in b1 before any 3.10.1 change and in isolation on an idle host during b2; a sem_open probe during this run found only 402 creatable POSIX named semaphores (errno 28 ENOSPC; kern.posix.sem.max=10000; LMDB needs two per environment); 207 GiB disk free."
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb integration tests (final tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/lmdb --retain-logs -- -PskipUnitTests",
+   "result": "tests=144, failures=0, errors=5, skipped=98; log .mvnf/workspaces/wp8/logs/20260928T063137.246869Z-32705-85a82417/verify.log",
+   "reds": [
+    "LmdbMedicalOptimizedQueryRegressionIT#medicalQ4CompleteStoreWithoutDphypRetainsCheapestCodeLookup: flaky/environmental, rerun green. The 180 s class timeout expired inside setup() (BenchmarkJoinEstimatorSupport.awaitEstimatorReady -> LmdbQuadSynopsisService.rebuild), before any query was planned. Host load average was 45-63 (peak 180) on 16 CPUs. The isolated rerun was 8/8 green (670 s).",
+    "LmdbMedicalOptimizedQueryRegressionIT#medicalQ2PreparedBenchmarkPlanUsesRecordedOnPredicateRangeAnchor and #medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes: cascade from the Q4 interrupt ('Cannot delete file' when setup() deleted the store directory that the interrupted store left behind); green in the isolated rerun.",
+    "LmdbSocialQ7OptimizedPlanIT#finiteAnchorsStayLocalAndSelfLoopProbesStayBound: flaky/environmental, rerun green. The 120 s timeout expired during data loading (ThemeQueryBenchmark.rebuildStoreFromScratch). The isolated rerun was 1/1 green (89 s).",
+    "ThemeQueryBenchmarkSmokeIT#medicalRecordsQueryTwoBenchmarkUsesRecordedOnPredicateRangeAnchor: environmental, rerun green. ENOSPC from mdb_env_open in TripleStore.<init>:295 (named-semaphore exhaustion). The isolated rerun was 20/20 (18 skipped), no errors."
+   ]
+  },
+  {
+   "selection": "LmdbSocialQ7OptimizedPlanIT (isolated rerun)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 --it LmdbSocialQ7OptimizedPlanIT --module core/sail/lmdb --retain-logs",
+   "result": "tests=1, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "ThemeQueryBenchmarkSmokeIT (isolated rerun)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 --it ThemeQueryBenchmarkSmokeIT --module core/sail/lmdb --retain-logs",
+   "result": "tests=20, failures=0, errors=0, skipped=18",
+   "reds": []
+  },
+  {
+   "selection": "LmdbMedicalOptimizedQueryRegressionIT (isolated rerun)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 --it LmdbMedicalOptimizedQueryRegressionIT --module core/sail/lmdb --retain-logs",
+   "result": "tests=8, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/base unit suite (b2, sail-base sources unchanged since)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp8 --threads 3 core/sail/base --retain-logs",
+   "result": "tests=24, failures=0, errors=0, skipped=0 (b2 run; not re-run in this resume)",
+   "reds": []
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "No new user-facing flags. Package-private: LmdbStatementPatternCardinalitySource.PLANNING_EXACT_SCAN_MAX_ROWS (=4096), ZERO_ESCALATION_MAX_KEYS (=8192); TxnManager admission diagnostics (ordinaryAdmissions/reservedAdmissions/available*Permits). Public, compatible: default method SailDataset.unwrap(Class) plus SailDatasetTripleTermSource.unwrapDataset."
+ ],
+ "crossWpNotes": [
+  "sail-base (no WP owner listed): additive default method SailDataset.unwrap(Class) with overrides in UnionSailDataset/DelegatingSailDataset/SailDatasetImpl and SailDatasetTripleTermSource.unwrapDataset; japicmp should classify it as METHOD_NEW_DEFAULT (compatible). wp3/wp5 snapshot-identity plumbing (getSnapshotEpoch) now has a sibling lookup that returns the same dataset handle.",
+  "wp5 (frontier lifecycle / LmdbDetachedPlanRefresh): deliberately NOT pinned. TripleStore.pinPlanningTxn refuses untracked transactions, so detached-refresh estimates keep reading the committed head via the unpinned fallbacks and the revision-keyed shared caches cannot be poisoned by a pre-commit snapshot (critique major #4). If wp5 ever wants snapshot-consistent refresh estimates it must first key the shared caches on the txn snapshot instead of dataRevision.",
+  "wp1/wp3 (LmdbFilterSimplifierOptimizer and other request-bound optimizers): they are now covered by the pipeline-level pin without opening a shared estimator scope; the deviation from the design (pin not stored in LmdbEstimatorOptimizationScope) avoids sharing identity-keyed factor fingerprints across in-place rewrites.",
+  "Entry points that bypass LmdbQueryOptimizerPipeline (LmdbEvaluationStatistics.beginQueryOptimizationScope from tests/other optimizers, LmdbEstimatorRuntime.exact*Surface with scope==null) still run unpinned: short reads fall back to doWithPriority (develop discipline), iterator reads to one ordinary lease. Critique minor #9 acknowledged, not eliminated.",
+  "Shared-infrastructure rule for wp2/wp6 future probes (critique major #2): a raw-handle read (direct cursors, mdb_stat) MUST be a planningRead/planningScan callback (read lock held for the whole callback); only reads that go through TripleStore.getTriples/LmdbRecordIterator may use a bare planningReadTxn() transaction.",
+  "LmdbStoreMultiRepoTest ENOSPC on this shared host is environmental; the integrator should expect it to pass on an idle machine (it needs ~800 POSIX named semaphores at once on Darwin).",
+  "The finite_binding_probe explain change from b1 (certified_bound_only/scalar_fallback instead of database_exact for sampled probes) stands; no golden test in the module or the ITs asserted the old label (final tree: 2205 unit tests with only the environmental LmdbStoreMultiRepoTest red; 144 ITs, whose 5 setup-phase environmental errors were green on isolated rerun).",
+  "Resumed batch (quota interruption): the previous attempt had completed all edits, evidence and the report; this resume verified the patch equals the staged tree, re-ran LmdbPlannerReaderLeaseTest (20/0/0) and re-ran the full core/sail/lmdb unit suite on the final tree (see suiteRuns); the LMDB IT run at 01:53Z already covered the final production code. Log: .mvnf/workspaces/wp8/logs/20260928T051729.836008Z-24713-8cf62868/verify.log",
+  "This resume made no code changes. Staged diff was verified byte-identical to patches/wp8.patch, and the patch was regenerated after git add -A (28 files, +2535/-116). The integrator's LmdbStoreConfig/LmdbStoreSchema japicmp edits were left as they were."
+ ],
+ "followUps": [
+  "Integrator: run the formatter.",
+  "Host: release leaked POSIX named semaphores (reboot or sem_unlink sweep; only ~400 of 10000 creatable), then rerun LmdbStoreMultiRepoTest to close its environmental triage.",
+  "Optional (critique minor #9): owner-thread tagging of ordinary admissions in TxnManager to find planner entry points that bypass the pipeline pin (LmdbEvaluationStatistics.beginQueryOptimizationScope from other callers, LmdbEstimatorRuntime.exact*Surface with scope==null).",
+  "Optional (critique minor, 3.10.2): plumb the query's includeInferred into the estimator so the legacy exact label is explicit-plane-honest on stores with inferred rows.",
+  "wp5: a frontier rebuild degraded by resource exhaustion once left LmdbDistinctCursorSkipOverlayTest#contextClearPreservesRepresentativesInOtherContexts wrong (b2); green in both later runs, worth a lifecycle guard."
+ ]
+}

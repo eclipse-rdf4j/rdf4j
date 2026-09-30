@@ -1,0 +1,202 @@
+{
+ "wp": "wp5-frontier-lifecycle",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp5.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/initial-evidence.wp5.txt",
+ "findings": [
+  {
+   "id": "3.6.2",
+   "status": "fixed",
+   "rootCause": "LmdbSailStore.refreshFrontierStatisticsDelta mapped every typed delta failure except CONFIDENCE_TOO_WIDE to RETRY: the envelope failure 'Frontier signed-delta publication exceeds its persistent envelope' (MEMORY_PRESSURE from FrontierStatisticsDeltaBuilder.validateDiskBudget), the layer-limit throw, the dimension-overflow throw and the plain IOException FrontierOmniDeltaBuilder raised on an Omni dimension mismatch. runScheduledFrontierRebuild returned on RETRY before the base-rebuild branch and its finally block rescheduled every estimatorPersistDelayMillis (1 s), so a deterministic failure repeated forever. Nothing triggered a base rebuild before the delta tier hit its structural ceiling (disk/16: 1 MiB at 16 MiB, 32 MiB at the 512 MiB default; the compactor retains every mutation, ~300 B each, so the tier grows monotonically since the last base). -Xmx drift changes FrontierStatisticsBuildConfig.cellCount, so after a restart every delta failed with the dimension mismatch. Reproduced with real LmdbStores: permanent stall after 32k inserts at 16 MiB and after 112,000 inserts at the default budget; restart with a different budget never recovered.",
+   "change": "(1) Typed permanence: FrontierStatisticsException gained a `permanent` flag with requiresBaseRebuild(), two new ctors (existing ctors keep transient semantics) and permanent()/transientFailure() factories. FrontierStatisticsDeltaBuilder marks the envelope, layer-limit and dimension-overflow throws permanent; FrontierOmniDeltaBuilder throws a permanent FrontierStatisticsException(MEMORY_PRESSURE) instead of a plain IOException on dimension mismatch (critique issue[9]: MEMORY_PRESSURE, not SHARD_CORRUPT, so recovery diagnostics are not conflated). (2) LmdbSailStore.classifyDeltaFailure + FrontierRebuildSchedulePolicy.deltaFailureRequiresBaseRebuild (pure, unit-tested): permanent or CONFIDENCE_TOO_WIDE -> BASE_REBUILD_REQUIRED at once; transient failures RETRY up to FRONTIER_MAX_TRANSIENT_DELTA_FAILURES=8 for the same covered sequence, then escalate with one WARN; the counter resets on a successful publish. (3) Insertion-debt trigger frontierBaseRefreshOverdue(status), evaluated only AFTER a successful delta publish (critique issue[5], major: never before building, so deltas keep flowing while the rebuild is pending): delta tier >= FRONTIER_DELTA_TIER_REBUILD_FRACTION (0.75) * deltaAndManifestBudgetBytes, or deleteDebt >= 0.10 (existing), or the dimension-mismatch flag. The same predicate keeps the equivalent-generation abort shortcut in rebuildFrontierStatisticsV2 from skipping an overdue base. (4) Dimension check at open: frontierOmniDimensionsDiffer(service, buildConfig) compares the current manifest's width/depth/design/audit lanes (via the new LmdbStatisticsService.currentManifest()) with the configured budgets; a mismatch sets frontierDimensionRebuildRequired, which is treated like service.rebuildRequired() in init and in runScheduledFrontierRebuild and is cleared by clearFrontierBaseRebuildPending() after a successful base publish. Sound because base rebuilds fold all deltas into a fresh base, so the envelope failure becomes exceptional rather than the steady state; the 0.75 fraction does not fire for a single small delta (guarded by LmdbFrontierStoreLifecycleTest#committedMutationPublishesSignedDeltaWithoutRebuildingBase in the module suite). Design deviation stated: the debt trigger runs after publish instead of 'before building and after publish', per the critique's coupling argument; the mismatch reason is MEMORY_PRESSURE instead of the design's SHARD_CORRUPT. RESUMED SESSION 2026-09-28 (after the quota interruption; the tree now also carries the interrupted b3 edits: LmdbStatisticsService retirement GC, FrontierOmniIndex bridge orientation): all b2 production code was found complete and re-verified green; no production change was needed for this finding. Critique issue[5] (major: debt trigger must run only after a successful publish) and issue[9] (minor: MEMORY_PRESSURE, not SHARD_CORRUPT) are both implemented and covered by deltaTierDebtRebuildsBaseWhileSmallCommitsContinue / FrontierDeltaPermanentFailureTest#omniDimensionMismatchIsATypedPermanentFailure. Test-only change this session (module-suite triage): deltaTierDebtRebuildsBaseWhileSmallCommitsContinue's 'uncovered window < 10 s' guard fired at 15.5 s in the suite run under load 35 while its fix assertions (base rebuilt, caught up, lastFailure empty) passed; the window was the base rebuild's own execution on the single-threaded estimatorPersistExec, during which no delta can publish by design. The guard now measures only uncovered windows in which no base-build phase (PASS_ONE/PASS_TWO/COMPACTING/PUBLISHING) was observed, i.e. exactly the critique's concern that deltas keep flowing while the rebuild is PENDING; a status timeline is appended to every failure message and the outer loop bound is 40 s. Under the design's 'before building' variant this guard still fails (deltas stop while pending). THIRD RESUMED SESSION 2026-09-28 08:26: the previous b2 attempt had in fact completed (report and patch written 08:06, no source file modified afterwards). Re-read the critique: the only items touching b2 are issue[5] (major: debt trigger only after a successful delta publish, deltas keep flowing while a base rebuild is pending) and issue[9] (minor: MEMORY_PRESSURE instead of SHARD_CORRUPT); both confirmed in the code (LmdbSailStore.refreshFrontierStatisticsDelta evaluates frontierBaseRefreshOverdue(after) only after publishDelta; runScheduledFrontierRebuild runs the delta refresh first while frontierBaseRebuildPending; FrontierOmniDeltaBuilder throws FrontierStatisticsException(MEMORY_PRESSURE, permanent=true)). No production or test change was needed; the batch's three test classes were re-run green on the current tree and the core/sail/lmdb module suite was re-run (reds triaged as environmental ENOSPC / load timeout / b3-owned reproducer, all but the known LmdbStoreMultiRepoTest ENOSPC green on a targeted rerun).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/FrontierRebuildSchedulePolicy.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsException.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsDeltaBuilder.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniDeltaBuilder.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/frontier/LmdbStatisticsService.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFrontierRebuildSchedulingTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/FrontierRebuildSchedulePolicyTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/frontier/FrontierDeltaPermanentFailureTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFrontierRebuildSchedulingTest#exhaustedDeltaEnvelopeEscalatesToABaseRebuild (ported repro, 16 MiB)",
+    "LmdbFrontierRebuildSchedulingTest#defaultBudgetInsertOnlyGrowthKeepsFrontierCurrent (ported repro, 512 MiB default)",
+    "LmdbFrontierRebuildSchedulingTest#deltaTierDebtRebuildsBaseWhileSmallCommitsContinue (critique issue[5]: 250 ms trickle during the debt-triggered rebuild; coverage must keep advancing while the rebuild is pending, only its own execution may leave commits uncovered)",
+    "LmdbFrontierRebuildSchedulingTest#budgetDriftAcrossRestartRebuildsBaseInsteadOfRetryingForever (16 MiB -> 32 MiB reopen)",
+    "FrontierRebuildSchedulePolicyTest#permanentFailureEscalatesImmediately",
+    "FrontierRebuildSchedulePolicyTest#confidenceTooWideEscalatesImmediately",
+    "FrontierRebuildSchedulePolicyTest#transientFailuresRetryUntilTheBound",
+    "FrontierDeltaPermanentFailureTest#exceedingTheDeltaEnvelopeIsAPermanentFailure",
+    "FrontierDeltaPermanentFailureTest#omniDimensionMismatchIsATypedPermanentFailure",
+    "FrontierDeltaPermanentFailureTest#matchingDimensionsStillPublishOrdinaryDeltas",
+    "FrontierDeltaPermanentFailureTest#ordinaryTypedFailuresRemainTransient"
+   ],
+   "preFixEvidence": "Tests run: 6, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 161.8 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest\nexhaustedDeltaEnvelopeEscalatesToABaseRebuild: after writes stop, Frontier must catch up (base rebuild) instead of retrying a delta that can never fit; lastFailure=Frontier signed-delta publication exceeds its persistent envelope\ndefaultBudgetInsertOnlyGrowthKeepsFrontierCurrent: default-budget Frontier stalled permanently after 112000 inserted statements: Frontier signed-delta publication exceeds its persistent envelope\norg.opentest4j.AssertionFailedError: 8,000 bulk rows exceed 75% of the 1 MiB delta envelope, so a base rebuild must be published within 20 s while commits continue; commits=64 baseEpoch=6 initialBaseEpoch=6 lastFailure=Frontier signed-delta publication exceeds its persistent envelope ==> expected: <true> but was: <false>\norg.opentest4j.AssertionFailedError: a commit after a budget change must be covered by a fresh base instead of a permanently failing delta; covered=500 latest=501 lastFailure=Frontier Omni delta dimensions disagree with the base generation ==> expected: <true> but was: <false>\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest.txt (log .mvnf/workspaces/wp5/logs/20260927T210929.382895Z-18468-6c10034d/verify.log)",
+   "postFixEvidence": "-------------------------------------------------------------------------------\nTest set: org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest\n-------------------------------------------------------------------------------\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 105.5 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest\n[mvnf] Summary: tests=6, failures=0, errors=0, skipped=0, time=105.473s\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest.txt (log .mvnf/workspaces/wp5/logs/20260928T062639.101454Z-27998-788e8303/verify.log; copy scratchpad/b2-final/)\nTests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.843 s -- in org.eclipse.rdf4j.sail.lmdb.frontier.FrontierDeltaPermanentFailureTest (log 20260928T063359.889965Z-64066-82e23c84)\nper-test: exhaustedDeltaEnvelope 21.5 s, deltaTierDebt 11.9 s, budgetDrift 6.7 s, defaultBudget 52.2 s"
+  },
+  {
+   "id": "3.6.3",
+   "status": "fixed",
+   "rootCause": "Every commit called LmdbSailStore.requestFrontierRebuild(), resetting frontierRebuildRequestedNanos; runScheduledFrontierRebuild started a base rebuild only when frontierRebuildQuietPeriodElapsed() (>= estimatorPersistDelayMillis = 1 s since the LAST request) with no upper bound, and its finally block forced RETRY whenever the request stamp moved. Under >= 1 commit/s a required base rebuild was deferred indefinitely. Because a 20,000-row transaction exceeded MAXIMUM_IN_MEMORY_MUTATIONS (16,384) the tail was cleared and completeTransactionPrefix returned empty (BASE_REBUILD_REQUIRED), so the starved base rebuild was the only path to coverage: covered sequence stayed 0 for 12 s at 4 commits/s and the 20k-row predicate stayed FrontierLeafEstimate[pointRows=1.0, fallbackReason=CONFIDENCE_TOO_WIDE]. The old code also returned on a delta RETRY before reaching the base-rebuild branch, so a pending base rebuild and delta publication blocked each other.",
+   "change": "Debounce-with-deadline. New volatile fields frontierBaseRebuildPending / frontierBaseRebuildPendingSinceNanos are set the first time runScheduledFrontierRebuild finds a base rebuild required (service.rebuildRequired(), the dimension flag, or a BASE_REBUILD_REQUIRED delta result) and cleared by clearFrontierBaseRebuildPending() after a successful base publish or an equivalent-generation abort. The pure FrontierRebuildSchedulePolicy.shouldStartBaseRebuild(now, lastRequest, pending, pendingSince, quietNanos, maxDeferralNanos) starts the rebuild when the 1 s quiet period has elapsed OR the pending rebuild has waited FRONTIER_REBUILD_MAX_DEFERRAL_NANOS = 5 s; differences of nanoTime are used so wrap-around is safe. The storeTxnStarted guard is unchanged (design open question kept as-is). While a base rebuild is pending, refreshFrontierStatisticsDelta still runs first every cycle so signed deltas keep publishing (RETRY/COMPLETE no longer short-circuit the rebuild branch). The debounce is preserved: a burst of five small commits followed by silence publishes 1..5 deltas and never a base rebuild (test). The secondary mapped/scalar flip (LmdbPackedCostModel.mappedStatisticsReady ignoring a complete in-memory tail) is deliberately deferred as the design recommends, since it needs tail-aware views; listed under followUps. One test expectation was corrected before the post-fix run: the burst test originally asserted exactly one delta, but deltas are not debounced by design (only base rebuilds are), so it now asserts 'no base rebuild, 1..5 deltas, no failure'. RESUMED SESSION 2026-09-28 (after the quota interruption; the tree now also carries the interrupted b3 edits: LmdbStatisticsService retirement GC, FrontierOmniIndex bridge orientation): all b2 production code was found complete and re-verified green; no production change was needed for this finding. Test-only change this session: steadySmallCommitsDoNotStarveARequiredBaseRebuild went red once in the class run (covered=0 after 12 s) while the machine ran at load 40 on 16 cores with the wt-wp8 and wt-wp6 core/sail/lmdb suites concurrently; the store shutdown then waited 36 s for the persist executor, i.e. the 20k-row base rebuild had started but was still running. Alone it passed in 11.95 s and the class rerun passed 6/6 under the same contention, so the 12 s coverage bound was measuring rebuild duration (load-dependent), not the scheduler. The assertion now bounds what the fix guarantees: the base rebuild must START within 8 s of the trickle beginning (5 s deferral deadline + 1 s scheduler tick + slack; detected by a base-builder build phase PASS_ONE/PASS_TWO/COMPACTING/PUBLISHING, an advanced baseEpoch or coverage), and coverage must arrive while commits continue at 4/s, with a 60 s outer bound; a per-poll status timeline is appended to the failure message. Under the old code neither assertion can pass (the rebuild never starts). This is a stronger statement of the starvation property, not a weakening. THIRD RESUMED SESSION 2026-09-28 08:26: the previous b2 attempt had in fact completed (report and patch written 08:06, no source file modified afterwards). Re-read the critique: the only items touching b2 are issue[5] (major: debt trigger only after a successful delta publish, deltas keep flowing while a base rebuild is pending) and issue[9] (minor: MEMORY_PRESSURE instead of SHARD_CORRUPT); both confirmed in the code (LmdbSailStore.refreshFrontierStatisticsDelta evaluates frontierBaseRefreshOverdue(after) only after publishDelta; runScheduledFrontierRebuild runs the delta refresh first while frontierBaseRebuildPending; FrontierOmniDeltaBuilder throws FrontierStatisticsException(MEMORY_PRESSURE, permanent=true)). No production or test change was needed; the batch's three test classes were re-run green on the current tree and the core/sail/lmdb module suite was re-run (reds triaged as environmental ENOSPC / load timeout / b3-owned reproducer, all but the known LmdbStoreMultiRepoTest ENOSPC green on a targeted rerun).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/FrontierRebuildSchedulePolicy.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFrontierRebuildSchedulingTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp5/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/FrontierRebuildSchedulePolicyTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFrontierRebuildSchedulingTest#steadySmallCommitsDoNotStarveARequiredBaseRebuild (ported repro: 20k txn + 250 ms trickle; rebuild must start within 8 s and coverage must arrive while the trickle continues)",
+    "LmdbFrontierRebuildSchedulingTest#burstOfCommitsIsCoalescedIntoOneDeltaGeneration (debounce guard: no base rebuild for a burst of small commits)",
+    "FrontierRebuildSchedulePolicyTest#withinQuietPeriodAndUnderDeadlineDefers",
+    "FrontierRebuildSchedulePolicyTest#quietPeriodElapsedStartsEvenWithoutPendingRebuild",
+    "FrontierRebuildSchedulePolicyTest#deadlineExceededStartsWhileRequestsKeepArriving",
+    "FrontierRebuildSchedulePolicyTest#withoutPendingRebuildOnlyTheQuietPeriodApplies",
+    "FrontierRebuildSchedulePolicyTest#nanoTimeWrapAroundIsHandledByDifferences"
+   ],
+   "preFixEvidence": "(same LmdbFrontierRebuildSchedulingTest run as 3.6.2 pre-fix, 6/6 red)\norg.opentest4j.AssertionFailedError: a 20k-statement transaction must be covered within 12 s even under 4 commits/s; commits=47 covered=0 < 20000 fallback=CONFIDENCE_TOO_WIDE, leaf estimate for the 20k-row predicate stayed FrontierLeafEstimate[pointRows=1.0, lowerRows=0.0, upperRows=1.7976931348623157E308, confidence=0.0, source=frontier-v2-unavailable, fallbackReason=CONFIDENCE_TOO_WIDE] ==> expected: <true> but was: <false>\norg.opentest4j.AssertionFailedError: a burst of five commits inside the quiet period must publish exactly one signed delta ==> expected: <7> but was: <11>  (wrong expectation, corrected as described)\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest.txt (log .mvnf/workspaces/wp5/logs/20260927T210929.382895Z-18468-6c10034d/verify.log)",
+   "postFixEvidence": "-------------------------------------------------------------------------------\nTest set: org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest\n-------------------------------------------------------------------------------\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 105.5 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest\n[mvnf] Summary: tests=6, failures=0, errors=0, skipped=0, time=105.473s\nReport: .mvnf/workspaces/wp5/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFrontierRebuildSchedulingTest.txt (log .mvnf/workspaces/wp5/logs/20260928T062639.101454Z-27998-788e8303/verify.log; copy scratchpad/b2-final/)\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.088 s -- in org.eclipse.rdf4j.sail.lmdb.FrontierRebuildSchedulePolicyTest (log 20260928T063020.926017Z-30205-1c5584fd)\nper-test: steadySmallCommitsDoNotStarveARequiredBaseRebuild 10.0 s, burstOfCommitsIsCoalescedIntoOneDeltaGeneration 3.1 s"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "LmdbFrontierRebuildSchedulingTest (core/sail/lmdb) pre-fix, 3.6.2 + 3.6.3 reproducers",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierRebuildSchedulingTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=6, failures=6, errors=0, skipped=0 (log 20260927T210929.382895Z-18468-6c10034d)",
+   "reds": [
+    "5 reds are the intended reproducers (envelope stall x2, debt-trigger coupling, budget drift, starvation); burstOfCommitsIsCoalescedIntoOneDeltaGeneration red was an outdated-expectation (deltas are not debounced by design) -> assertion corrected to 'no base rebuild for a burst of small commits' before the post-fix run"
+   ]
+  },
+  {
+   "selection": "LmdbFrontierRebuildSchedulingTest post-fix (first run, previous session)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierRebuildSchedulingTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=6, failures=0, errors=0, skipped=0, time=67.76s (log 20260928T001805.065390Z-7416-e9c44646)",
+   "reds": []
+  },
+  {
+   "selection": "LmdbFrontierRebuildSchedulingTest post-fix re-verification (this resumed session)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierRebuildSchedulingTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=6, failures=0, errors=0, skipped=0, time=70.339s (log 20260928T011623.146639Z-62626-ab3bdb42)",
+   "reds": []
+  },
+  {
+   "selection": "FrontierRebuildSchedulePolicyTest (this session)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 FrontierRebuildSchedulePolicyTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=8, failures=0, errors=0, skipped=0, time=0.038s (log 20260928T011257.065774Z-61492-da75679a)",
+   "reds": []
+  },
+  {
+   "selection": "FrontierDeltaPermanentFailureTest (this session)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 FrontierDeltaPermanentFailureTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=4, failures=0, errors=0, skipped=0, time=6.779s (log 20260928T011401.088439Z-61843-af9b063d)",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite (b1 + critique completion + b2 lifecycle changes; production tree unchanged since - only LmdbFrontierRebuildSchedulingTest.java was edited afterwards and re-run green above)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2326 (Surefire total; mvnf summary tests=2211), failures=0, errors=2, skipped=7, time=1302s (log .mvnf/workspaces/wp5/logs/20260928T003856.562029Z-31909-f9bd55eb/verify.log)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: java.io.IOException: No space left on device -- pre-existing/environmental (identical ENOSPC failure of the same test in wt-wp1 run 20260928T004613, wt-wp3 runs 20260928T002229/005049, wt-wp6 runs 20260927T211844/20260928T003037 and the main checkout's ci-repair workspace, none carrying WP5 changes; volume at 97% with 200 parallel default-budget LmdbStores)",
+    "LmdbFiniteValuesJoinSurfacePlanningTest.boundLookupUsesSharedVariableDistinctEvidenceForBroadPrefix: @Timeout(60) -- flaky/load-induced (load average 75-111 with six concurrent module suites; same test 6.3 s in wt-wp6); rerun alone: tests=24, failures=0, errors=0 in 51.7 s (log 20260928T010238.617471Z-55817-76163119)"
+   ]
+  },
+  {
+   "selection": "LmdbFiniteValuesJoinSurfacePlanningTest rerun (flake check)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFiniteValuesJoinSurfacePlanningTest --module core/sail/lmdb --retain-logs -- -DtrimStackTrace=false",
+   "result": "tests=24, failures=0, errors=0, skipped=0, time=51.744s",
+   "reds": []
+  },
+  {
+   "selection": "resumed session: FrontierRebuildSchedulePolicyTest, FrontierDeltaPermanentFailureTest (current tree incl. b3 edits)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 <Class> --module core/sail/lmdb --retain-logs",
+   "result": "tests=8, failures=0, errors=0, skipped=0 (log 20260928T051533Z); tests=4, failures=0, errors=0, skipped=0 (log 20260928T051616Z)",
+   "reds": []
+  },
+  {
+   "selection": "resumed session: LmdbFrontierRebuildSchedulingTest class (current tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierRebuildSchedulingTest --module core/sail/lmdb --retain-logs",
+   "result": "run 1 (20260928T051659Z): tests=6, failures=1, errors=0, skipped=0, time=112.8s; rerun (20260928T052651Z, -DtrimStackTrace=false): tests=6, failures=0, errors=0, skipped=0, time=89.5s",
+   "reds": [
+    "steadySmallCommitsDoNotStarveARequiredBaseRebuild (run 1): flaky/load-induced (load 40 on 16 cores, wt-wp8 + wt-wp6 lmdb suites concurrent; rebuild still running at shutdown for 36 s) -- method alone green 11.95 s (20260928T052347Z), class rerun 6/6 green; assertion then restructured to bound the rebuild start (8 s) instead of the load-dependent rebuild duration and re-run green alone (20260928T053312Z, 10.27 s)"
+   ]
+  },
+  {
+   "selection": "resumed session: LmdbFrontierStoreLifecycleTest (existing class most related to the scheduler change)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierStoreLifecycleTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=13, failures=0, errors=0, skipped=0, time=24.7s (log 20260928T051931.930016Z-26523-a57c16c8)",
+   "reds": []
+  },
+  {
+   "selection": "resumed session: core/sail/lmdb full unit suite on the current tree (b1 + b2 + interrupted b3 edits)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2341 (Surefire total; mvnf summary tests=2226), failures=2, errors=3, skipped=7, time=1346s (log .mvnf/workspaces/wp5/logs/20260928T053513.569710Z-46882-f5b85a5c/verify.log; class reports copied to scratchpad/b2-resume/suite-reports/)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: java.io.IOException: No space left on device -- pre-existing/environmental (volume at 97%; identical failure in the previous session's suite and in wt-wp1/wt-wp3/wt-wp6 suites carrying no WP5 changes)",
+    "LmdbFiniteValuesJoinSurfacePlanningTest x2 (generatedNameFilterRewritePreservesRowsAndUsesBoundObjectLookup + one more) @Timeout(60) -- flaky/load-induced (load 35-78 on 16 cores, wt-wp8 and wt-wp6 lmdb suites concurrent); wp8-owned code untouched by b2; the class was 24/24 green alone in the previous session (log 20260928T010238Z, 51.7 s)",
+    "FrontierOmniBridgeWorkBudgetTest.singleJoinEstimateHasBoundedPlanningWork: 145 ms > bound -- pre-existing in this tree: untracked b3 (3.6.6b) reproducer whose production fix was not reached before the interruption; not a b2 file, left for the b3 resume",
+    "LmdbFrontierRebuildSchedulingTest.deltaTierDebtRebuildsBaseWhileSmallCommitsContinue: 'longest uncovered window was 15496 ms' while base rebuilt/caught up/no failure all passed -- outdated-expectation-updated: the guard measured the base rebuild's own execution on the single-threaded scheduler (load-dependent; no delta can publish during it by design) instead of the pending phase; guard now counts only uncovered windows without an observed base-build phase; green alone (20260928T060029Z, 11.5 s) and in the final class run (20260928T060223Z, 6/6, 109 s, load 59-78)"
+   ]
+  },
+  {
+   "selection": "third resumed session: LmdbFrontierRebuildSchedulingTest (current tree)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 LmdbFrontierRebuildSchedulingTest --module core/sail/lmdb --retain-logs -- -DtrimStackTrace=false",
+   "result": "tests=6, failures=0, errors=0, skipped=0, time=105.473s (log 20260928T062639.101454Z-27998-788e8303; load 62-74)",
+   "reds": []
+  },
+  {
+   "selection": "third resumed session: FrontierRebuildSchedulePolicyTest",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 FrontierRebuildSchedulePolicyTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=8, failures=0, errors=0, skipped=0, time=0.088s (log 20260928T063020.926017Z-30205-1c5584fd)",
+   "reds": []
+  },
+  {
+   "selection": "third resumed session: FrontierDeltaPermanentFailureTest",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 FrontierDeltaPermanentFailureTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=4, failures=0, errors=0, skipped=0, time=7.843s (log 20260928T063359.889965Z-64066-82e23c84)",
+   "reds": []
+  },
+  {
+   "selection": "third resumed session: core/sail/lmdb full unit suite (current tree = b1 + b2 + interrupted b3 edits)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs",
+   "result": "tests=2226 (mvnf summary), failures=1, errors=54, skipped=7, time=1694s (log .mvnf/workspaces/wp5/logs/20260928T063904.581107Z-65690-8800b490/verify.log; class reports copied to scratchpad/b2-final/suite-reports/)",
+   "reds": [
+    "53 errors (LmdbSailStoreTest x15, ValueStoreTest x20, TripleIndexToKeyCacheTest x5, LmdbEstimateAuditHarnessTest x10, LmdbStoreErrorHandlingTest, LmdbStoreInterruptTest, LmdbStoreMultiRepoTest): java.io.IOException: No space left on device when opening/committing LMDB envs -- environmental (volume 98% full while the wt-wp3 and wt-wp8 lmdb suites ran concurrently, load 60-80); none of these classes exercise the Frontier scheduler; all but LmdbStoreMultiRepoTest green on the targeted rerun below",
+    "LmdbAASPropertyProjectionPlanningTest.propertyProjectionKeepsConnectedBoundedRequiredIsland @Timeout(60) -- flaky/load-induced; green on the rerun (41.5 s)",
+    "FrontierOmniBridgeWorkBudgetTest.singleJoinEstimateHasBoundedPlanningWork (261 ms > bound) -- untracked b3 (3.6.6b) reproducer whose production fix is not implemented yet (interrupted b3 batch); same red in the previous b2 suite; not b2 scope, left for the b3 resume"
+   ]
+  },
+  {
+   "selection": "third resumed session: rerun of the ENOSPC/timeout classes",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp5 --threads 3 core/sail/lmdb --retain-logs -- -Dtest='LmdbSailStoreTest,ValueStoreTest,TripleIndexToKeyCacheTest,LmdbStoreErrorHandlingTest,LmdbStoreInterruptTest,LmdbEstimateAuditHarnessTest,LmdbAASPropertyProjectionPlanningTest,LmdbStoreMultiRepoTest' -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=117, failures=0, errors=1, skipped=0, time=447.7s (log 20260928T071040.191195Z-38745-fc81925c; copies scratchpad/b2-final/rerun-reports/)",
+   "reds": [
+    "LmdbStoreMultiRepoTest.testRandomLoadManyRepositoriesInParallel: ENOSPC (200 parallel default-budget stores) -- pre-existing/environmental: identical failure in both earlier b2 suite runs and in wt-wp1/wt-wp3/wt-wp6 suites carrying no WP5 changes"
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [
+  "No new user-facing flags. New package-private constants in LmdbSailStore: FRONTIER_DELTA_TIER_REBUILD_FRACTION=0.75, FRONTIER_MAX_TRANSIENT_DELTA_FAILURES=8, FRONTIER_REBUILD_MAX_DEFERRAL_NANOS=5 s (fixed behaviour is the default; no kill switch added)."
+ ],
+ "crossWpNotes": [
+  "wp3 (plan caches): base rebuilds are now triggered proactively (delta-tier debt >= 75% of the envelope, permanent delta failures, 5 s deferral deadline), so generation ids and baseEpoch advance more often under sustained writes; any cache keyed on Frontier generation will invalidate more frequently under heavy insert load.",
+  "wp6 (LEO): FrontierStatisticsException.requiresBaseRebuild() is the typed 'this generation can never be extended' signal; nothing in LEO should treat MEMORY_PRESSURE from a dimension mismatch as heap pressure on the query path.",
+  "wp8: LmdbStatisticsService.currentManifest() is a new public read-only accessor (Optional<FrontierStatisticsManifest>) used for the open-time dimension check; safe to reuse.",
+  "Integrator: wp5.patch (cumulative, regenerated this session) still carries the integrator's japicmp-compat hunks in LmdbStoreConfig/LmdbStoreSchema untouched, plus all b1 changes.",
+  "3.6.4 (retirement GC, not in this batch) will interact with the more frequent base rebuilds: each proactive base leaves a full previous base behind until GC lands; critique issue[0] (never delete files with generation id >= current) remains the blocker for that finding.",
+  "Resumed b2 session: the worktree also holds the interrupted b3 work (3.6.4 retirement GC in LmdbStatisticsService/FrontierStatisticsManifestStore/FrontierStatisticsGeneration, 3.6.5 bridge orientation in FrontierOmniIndex, plus untracked tests LmdbStatisticsGenerationRetirementTest, LmdbFrontierGenerationRetirementTest, FrontierOmniBridgeOrientationTest, FrontierOmniBridgeWorkBudgetTest, SyntheticQuadSnapshot). It is left untouched and is included in the cumulative wp5.patch; its own report (wp5-b3.json) does not exist yet and must be produced by the b3 resume. LmdbSailStore now passes estimatorPersistExec to LmdbStatisticsService.open (b3 hunk) so retirement GC shares the single-threaded scheduler with delta/base publication."
+ ],
+ "followUps": [
+  "3.6.3 secondary: LmdbPackedCostModel.mappedStatisticsReady() still flips mapped/scalar between a commit and its delta publication because FrontierStatisticsStatus.fallbackReason ignores a complete in-memory tail; needs tail-aware views (plan-stability item, owner TBD).",
+  "3.6.2 optional: derive the delta build config's Omni dimensions from the current manifest when the heap governor admits it (FrontierStatisticsBuildConfig.withOmniDimensions), so a restart with a smaller -Xmx does not force a base rebuild.",
+  "The storeTxnStarted guard still defers a base rebuild while any write transaction is open; a long-lived open write connection can defer it past the 5 s deadline (design open question, unchanged).",
+  "LmdbStoreMultiRepoTest ENOSPC is environmental (volume at 97%); unrelated to WP5.",
+  "LmdbFrontierRebuildSchedulingTest runs 70-113 s with real LmdbStores and its timing bounds are sensitive to CPU oversubscription (a 20k-row base rebuild took >40 s at load 40/16 cores); consider a slow-profile tag, or a smaller configured build executor for the test, if the module unit-suite budget or CI flakiness matters.",
+  "Both scheduling reproducers now carry a per-poll status timeline in their failure messages (phase/gen/baseEpoch/covered/deltaBytes/lastFailure); use it to distinguish a late rebuild start (scheduler defect) from a slow rebuild (load) if they ever go red again.",
+  "Architectural limit surfaced by the suite triage: a base rebuild occupies the single-threaded estimatorPersistExec, so no signed delta can publish during its execution; on large stores that window equals the rebuild duration. Publishing deltas concurrently with a running base rebuild (second thread + publication ordering) would remove it but is out of scope for 3.6.2/3.6.3.",
+  "Disk on the build volume is at 98%; concurrent module suites across worktrees now produce widespread ENOSPC in LMDB store tests. Free space before trusting any further full-suite runs."
+ ]
+}

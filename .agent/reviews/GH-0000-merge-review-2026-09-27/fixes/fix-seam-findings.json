@@ -1,0 +1,107 @@
+{
+ "items": [
+  {
+   "id": "I1",
+   "status": "fixed",
+   "change": "In util/BindingScopeAnalysis.outerScope, the walk now records the source names that every crossed sub-SELECT (Projection or MultiProjection) projects, in a new `substitutable` set built with crossSubSelect. An EXISTS-style frame (SubQueryValueOperator) or a LATERAL right-argument frame calls enterSubstitutionFrame. From that frame outwards, names in `substitutable` go back into possibleInScope. Rows that a Join, OPTIONAL or MINUS pushes in beyond a sub-select stay leak-only. Assured stays blocked, which is conservative. The javadoc and the stale 'executor still passes outer bindings' comment are updated. As a result, LmdbBoundSimplifierOptimizer no longer folds BOUND(?x) to false when ?x is a projected name that the executor substitutes.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/util/OuterScopeBindingsTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubSelectScopeTest.java"
+   ],
+   "testsAdded": [
+    "OuterScopeBindingsTest#existsSubSelectKeepsTheOwnerRowNamesItProjectsInScope",
+    "OuterScopeBindingsTest#lateralSubSelectKeepsTheSubstitutedNamesItProjectsInScope",
+    "LmdbSubSelectScopeTest#lateralSubSelectSeesTheSubstitutedProjectedVariableInBound",
+    "LmdbSubSelectScopeTest#notExistsSubSelectSeesTheSubstitutedProjectedVariableInBound"
+   ],
+   "preFixEvidence": "OuterScopeBindingsTest: 2 failures, 'expected: <[x]> but was: <[]>' for possibleInScope. LmdbSubSelectScopeTest (log 20260928T112303.828885Z-55412-ae25cd7d): NOT EXISTS returned [] where [{s=urn:ex:a}] was expected. LATERAL returned [{lbl=one,s=a},{lbl=two,s=a}] where only [{lbl=one,s=a}] was expected. In both plans the inner FILTER had been folded away.",
+   "postFixEvidence": "OuterScopeBindingsTest tests=21 failures=0 (log 20260928T112458.233328Z-55803-ba84f402). LmdbSubSelectScopeTest tests=10 failures=0 (log 20260928T112545.608389Z-55983-d6ea0a7a)."
+  },
+  {
+   "id": "I2",
+   "status": "refuted-on-reproduction",
+   "change": "No production change. I added a guard test, LmdbGuaranteeWeakeningCommitWindowTest, parameterized over NONE and SNAPSHOT_READ isolation. It warms Q, then commits \"05\"^^xsd:int. From TripleStore.durableCommitBarrierForTesting it starts a reader that runs Q inside the commit window (the barrier does not join it). The test asserts the window precondition: the heap guarantee has lost CANONICAL_INTEGER while the data revision is unchanged. It then asserts the in-window reader and three later runs all return both a and b. The test passes. A temporary stack-trace diagnostic, since removed, showed why. In both isolation levels the in-window reader was spinning in StampedLongAdderLockManager.readLock, called from LmdbFrontierSnapshotSource.snapshotEpochAndVersion, called from the LmdbSailDataset constructor, called from SailSourceConnection.evaluateInternal. That is before the optimizer runs. So no planner can pair the weak guarantee with the old revision R0 or reach the PackedPlanCache or pipeline cache inside the window. This matches the second verifier's refutation.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbGuaranteeWeakeningCommitWindowTest.java"
+   ],
+   "testsAdded": [
+    "LmdbGuaranteeWeakeningCommitWindowTest#queryPlannedInTheCommitWindowSeesTheWeakenedGuarantee[NONE,SNAPSHOT_READ]"
+   ],
+   "preFixEvidence": "Reproduction passed, tests=2 failures=0 (log 20260928T114333.741633Z-59464-bb60ff58). Diagnostic printed from inside the window: 'reader state=RUNNABLE revision=7 domain=[LITERAL, LITERAL_WITHOUT_LANGUAGE, NUMBER, INT]', with the reader blocked in the readLock during LmdbSailDataset.<init>.",
+   "postFixEvidence": "Guard run with the precondition assertion, no diagnostics: tests=2 failures=0 (log 20260928T114448.928346Z-59589-e4f2aa46).",
+   "reason": "The query's LMDB dataset takes the TripleStore read lock while it is being created, before planning starts. A planner therefore always observes the advanced revision R1, whichever isolation level is used."
+  },
+  {
+   "id": "I3",
+   "status": "fixed",
+   "change": "In the LmdbPackedCostModel fully-bound clamp, a pattern with a bound context is still capped at one row per invocation. A pattern with no context term is now capped at invocations \u00d7 contextMultiplicity(). contextMultiplicity() is the number of stored contexts (default graph included) in the planning snapshot: a new TripleStore.planningContextCount() reads ms_entries from mdb_stat on the contexts db under planningRead, plumbed through LmdbEstimatorStorageAccess.contextCount() and LmdbEstimatorRuntime.contextCount(). The value is cached per cost-model instance, has a minimum of 1, and on an IOException it becomes 'unknown', which means no clamp. The javadoc and comments no longer claim 'at most one statement per invocation' for context-less patterns. The single-graph behaviour covered by the existing wp7 test is unchanged.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedCostModel.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorStorageAccess.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbEstimatorRuntime.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFullyBoundLookupNamedGraphTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFullyBoundLookupNamedGraphTest#contextlessFullyBoundPatternKeepsItsPerGraphMultiplicity"
+   ],
+   "preFixEvidence": "Log 20260928T113211.975894Z-56852-e06027e0: 'the triple is stored in 500 graphs ... but the plan prices 1.0 rows per invocation', with plannedFullyBoundLookupUnboundedRows=500.0 and plannedRowsPerInvocation=1.0.",
+   "postFixEvidence": "LmdbFullyBoundLookupNamedGraphTest together with LmdbPackedCostModelFullyBoundLookupTest: tests=4 failures=0 (log 20260928T113350.282018Z-57072-6f5152ac)."
+  },
+  {
+   "id": "I4",
+   "status": "fixed",
+   "change": "In EvidenceProfile.composeInnerJoin, a join is now labelled exact only when both inputs are counted: `joinedExact = exact && right.exact && (joinVars.isEmpty() || scalar EXACT_FINITE)`. This matches the MINUS rule wp7 already applies. A FILTER IN-list domain relation attached to a sampled bag can no longer turn an intersection size into an exactness proof.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/EvidenceProfile.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/FactorEstimateExactnessInvariantTest.java"
+   ],
+   "testsAdded": [
+    "FactorEstimateExactnessInvariantTest#innerJoinOverASampledBagCarryingADomainRelationIsNotExact"
+   ],
+   "preFixEvidence": "Log 20260928T112726.166563Z-56373-1c489001: 'a join with a sampled input is not counted: rows=1.0 ==> expected: <false> but was: <true>'.",
+   "postFixEvidence": "FactorEstimateExactnessInvariantTest tests=12 failures=0 (log 20260928T112820.814382Z-56473-b350b9e9)."
+  },
+  {
+   "id": "I5",
+   "status": "fixed",
+   "change": "Executor side: FilterIterator.supplyAssuredSharedMinusAntiJoin now probes a minus-assured-shared operand only when the new isMinusProbeSelectionSafe accepts it. That check is the existing selection-safe allowlist plus a FILTER whose condition has no EXISTS/IN/ANY/ALL subquery; this is sound because shared names are verified as assured and no other left binding is referenced. Every other operand now gets the bounded, spilling MinusQueryEvaluationStep, with disposition 'declined:minus-operand-not-probe-safe', instead of an unbounded unbound MATERIALIZED run. As a result, FILTER bodies now honour the planned streaming or memoized algorithm, so feedback is no longer -1. Planner side: PackedLogicalRuleProgram.addCorrelatedMinusAlternative only offers the correlated or typed anti-join when the mirrored executorProbesMinusBodyBySelection accepts the body. Bodies with OPTIONAL, BIND, GROUP, nested MINUS or a nested EXISTS keep their Difference, so the cost model prices what actually runs. Outdated tests updated: PackedCorrelatedMinusAlternativeTest#typedSemiAntiAlternativesSupportComposedLocalRightHandSides now checks its MINUS half only for the probe-safe Union RHS. Three PackedMinusReferencedVariablesTest 'stillRewritesWhen\u2026' checks for BIND, nested EXISTS and OPTIONAL bodies became 'keepsDifferenceWhen\u2026' checks.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/AssuredSharedMinusAntiJoinTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCorrelatedMinusAlternativeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-int/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMinusReferencedVariablesTest.java"
+   ],
+   "testsAdded": [
+    "AssuredSharedMinusAntiJoinTest#filteredOperandHonoursThePlannedStreamingProbe",
+    "AssuredSharedMinusAntiJoinTest#operandThatCannotBeProbedBySelectionUsesTheBoundedMinusOperator",
+    "PackedCorrelatedMinusAlternativeTest#minusOverOperandTheExecutorCannotProbeKeepsItsDifference"
+   ],
+   "preFixEvidence": "Log 20260928T113752.611594Z-58419-55ecf65a: actualSemiAntiAlgorithm was \"materialized-hash\" where \"streaming-correlated\" was expected. The disposition was \"compiled-specialized\" where \"declined:minus-operand-not-probe-safe\" was expected. The planner generated 3 typed anti-joins for a MINUS over a LeftJoin where 0 were expected.",
+   "postFixEvidence": "AssuredSharedMinusAntiJoinTest together with PackedCorrelatedMinusAlternativeTest: tests=37 failures=0 (log 20260928T113938.651744Z-59047-859d8b8d). After updating PackedMinusReferencedVariablesTest, the 5 changed classes ran with tests=100 failures=0 (log 20260928T114941.864077Z-76157-b80d4dfc)."
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation full module (-DskipITs), log .mvnf/workspaces/int/logs/20260928T114606.202520Z-59843-a809005b/verify.log",
+   "result": "tests=2110, failures=4. Three were outdated PackedMinusReferencedVariablesTest expectations; they were rewritten and are now green. The fourth is a workspace-only environment red, explained under reds.",
+   "reds": [
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs: this is a workspace-only environment red. docs/query-optimizer/rewrite-and-optimization-catalog.md is untracked in the main checkout and absent from wt-int, the same class of issue as papers2. It is unrelated to these changes."
+   ]
+  },
+  {
+   "selection": "evaluation: PackedMinusReferencedVariablesTest, PackedCorrelatedMinusAlternativeTest, AssuredSharedMinusAntiJoinTest, OuterScopeBindingsTest, FactorEstimateExactnessInvariantTest (log 20260928T114941.864077Z-76157-b80d4dfc)",
+   "result": "tests=100, failures=0"
+  },
+  {
+   "selection": "core/sail/lmdb: 25 related classes, covering the BoundSimplifier, CorrelatedScopeRewrite, SubSelectScope, the FilterSimplifier pair, the PackedCostModel variants including FullyBoundLookup, FullyBoundLookupNamedGraph, FiniteProbeExactnessLabel, the estimator/engine classes, Minus AntiJoin and ReferencedVariables, the PackedPlanCache pair, SemiAntiFeedbackSurface, GuaranteeWeakeningCommitWindow and TripleStoreGuaranteePublication (log 20260928T115039.824139Z-76265-7215a6b2)",
+   "result": "tests=289, failures=0"
+  },
+  {
+   "selection": "core/sail/memory: FilterRelocationSoundnessTest, OptionalSubSelectScopeTest, ExistsSubSelectScopeTest (log 20260928T115203.108852Z-76415-00219585)",
+   "result": "tests=37, failures=0"
+  }
+ ]
+}

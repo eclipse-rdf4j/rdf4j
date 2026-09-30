@@ -1,0 +1,216 @@
+{
+ "wp": "wp4-execution-operators",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp4.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/initial-evidence.wp4.txt",
+ "findings": [
+  {
+   "id": "3.4.1",
+   "status": "fixed",
+   "rootCause": "LeftJoinQueryEvaluationStep.supply only took the independent HashJoinIteration path for a sub-select optional part when the OPTIONAL had no condition (`!leftJoin.hasCondition() && TupleExprs.containsSubquery(rightArg)`); with a FILTER it fell back to the correlated LeftJoinIterator, which evaluates the optional part once per left row with the left row as input, and ProjectionQueryEvaluationStep forwarded that row into the sub-select body. A variable the sub-select does not project (fresh under bottom-up semantics) was therefore pre-bound, ORDER BY/LIMIT selected among pre-filtered rows and COUNT counted only compatible rows. The same leak existed without a condition for `OPTIONAL { { SELECT ... } ?t :z ?y }` because containsSubquery stops at a Join and the Join step only protects its right arg; badly designed inputs went through BadlyDesignedLeftJoinIterator, which is itself correlated.",
+   "change": "LeftJoinQueryEvaluationStep routes every optional part that is a bottom-up scope boundary (BindingScopeAnalysis.isOutOfScopeForOptionalCorrelation: sub-select or MINUS in the current scope; deliberately NOT the parser's `{A} UNION {B}` scope-change flag, per critique 3.4.1 major, so the bounded adaptive/memoized UNION paths stay) to a HashJoinIteration(BuildSide.RIGHT) that evaluates the optional part exactly once with the OPTIONAL's own input and applies the condition as a residual predicate on every candidate: HashJoinIteration got a `Predicate<BindingSet> residualCondition` constructor (a probe row survives alone iff no compatible build row satisfies it; candidates still flow through the compatibility iterator so the candidate counters keep seeing rejected rows). The residual uses ScopedQueryValueEvaluationStep over leftJoin.getBindingNames() UNION lateralSubstitutedNames (critique 3.4.1 minor) with error-as-false and LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL telemetry like the post-filter, and the branch publishes its algorithm name. Badly designed inputs are handled bottom-up around the independent step by the new BadlyDesignedLeftJoinIterator.scopeFiltered (filtered input, compatibility check, problem-variable re-extension; the correlated iterator's post-processing was extracted into extendWithProblemVars). The Join-variant (sub-select as left arg of a Join inside the OPTIONAL) is closed by 3.4.3's sub-select scope boundary: the correlated LeftJoinIterator/JoinIterator may push the left row, but the nested sub-select unit withholds it. Two existing LeftJoinQueryEvaluationStepTest methods that asserted the correlated LeftJoinIterator for a conditioned sub-select OPTIONAL were renamed and now expect HashJoinIteration with the same (left-row-alone) result, as the design's existingTestsAtRisk prescribes.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIteration.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/BadlyDesignedLeftJoinIterator.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinResidualConditionScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/HashJoinIterationResidualConditionTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/LeftJoinQueryEvaluationStepTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/OptionalSubSelectScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubSelectScopeTest.java"
+   ],
+   "testsAdded": [
+    "LeftJoinResidualConditionScopeTest#subqueryOptionalWithConditionEvaluatesTheSubSelectOnceWithTheInputBindings",
+    "LeftJoinResidualConditionScopeTest#subqueryOptionalWithFalseConditionKeepsEveryLeftRowBare",
+    "LeftJoinResidualConditionScopeTest#subqueryOptionalWithErroringConditionKeepsEveryLeftRowBare",
+    "LeftJoinResidualConditionScopeTest#residualConditionKeepsOnlyThePassingCandidatesAndNoBareRow",
+    "LeftJoinResidualConditionScopeTest#badlyDesignedSubqueryOptionalWithConditionNeverCorrelatesAndKeepsBottomUpSemantics",
+    "LeftJoinResidualConditionScopeTest#minusOptionalPartIsEvaluatedOnceWithTheInputBindings",
+    "LeftJoinResidualConditionScopeTest#minusOptionalPartWithConditionAppliesTheResidual",
+    "LeftJoinResidualConditionScopeTest#scopeChangedUnionOptionalKeepsTheBoundedAdaptivePath",
+    "HashJoinIterationResidualConditionTest#leftJoinResidualKeepsPassingCandidatesAndEmitsBareProbeRowsOtherwise",
+    "HashJoinIterationResidualConditionTest#leftJoinResidualSeesTheMergedRow",
+    "HashJoinIterationResidualConditionTest#leftJoinWithoutMatchesIgnoresTheResidual",
+    "HashJoinIterationResidualConditionTest#partiallyBoundBuildRowsGoThroughTheResidual",
+    "HashJoinIterationResidualConditionTest#innerJoinResidualDropsFailingRowsWithoutBareRows",
+    "OptionalSubSelectScopeTest#optionalOverSubSelectDoesNotLeakOuterBindingIntoNonProjectedVariable (3 params)",
+    "OptionalSubSelectScopeTest#optionalOverLimitedSubSelectIsEvaluatedIndependently (3)",
+    "OptionalSubSelectScopeTest#optionalOverAggregateSubSelectIsEvaluatedIndependently (3)",
+    "OptionalSubSelectScopeTest#optionalConditionOverSubSelectIsAppliedToEveryMatch",
+    "OptionalSubSelectScopeTest#optionalConditionRejectingEveryMatchKeepsTheBareLeftRow",
+    "OptionalSubSelectScopeTest#optionalOverSubSelectJoinedWithPatternIsEvaluatedIndependently",
+    "OptionalSubSelectScopeTest#optionalOverLimitedSubSelectJoinedWithPatternIsEvaluatedIndependently",
+    "OptionalSubSelectScopeTest#minusInsideOptionalIsEvaluatedIndependently (3)",
+    "OptionalSubSelectScopeTest#adaptiveHashOptionalFallbackKeepsResults (2)",
+    "LeftJoinQueryEvaluationStepTest#subqueryOptionalWithFalseConditionUsesHashJoinAndKeepsLeftRow (renamed)",
+    "LeftJoinQueryEvaluationStepTest#subqueryOptionalWithConditionErrorUsesHashJoinAndKeepsLeftRow (renamed)",
+    "LmdbSubSelectScopeTest#optionalOverLimitedSubSelectIsEvaluatedIndependently (2)",
+    "LmdbSubSelectScopeTest#optionalOverAggregateSubSelectIsEvaluatedIndependently (2)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinResidualConditionScopeTest.txt (log 20260928T021130.589605Z-79542-dc1ee718)\nTests run: 8, Failures: 7, Errors: 0, Skipped: 0, Time elapsed: 0.753 s <<< FAILURE! -- in ...LeftJoinResidualConditionScopeTest\nsubqueryOptionalWithConditionEvaluatesTheSubSelectOnceWithTheInputBindings <<< FAILURE! [the sub-select must be evaluated once, with the OPTIONAL's input] Expecting actual: [[leftValue=\"one\";root=urn:root:1], [leftValue=\"two\";root=urn:root:2]] to contain exactly: [[]]\nbadlyDesignedSubqueryOptionalWithConditionNeverCorrelatesAndKeepsBottomUpSemantics <<< FAILURE! Expected size: 1 but was: 2\nsubqueryOptionalWithFalseConditionKeepsEveryLeftRowBare <<< FAILURE! Expecting actual: [] to contain exactly: [[]]\n--- memory e2e (report ...rdf4j-sail-memory/.../org.eclipse.rdf4j.sail.memory.OptionalSubSelectScopeTest.txt, log 20260928T021320.361613Z-80129-dcde3774) ---\nTests run: 18, Failures: 5 <<< FAILURE! -- optionalOverSubSelectDoesNotLeakOuterBindingIntoNonProjectedVariable[3]: Expecting actual: [\"{s=urn:ex:a, x=1}\"] to contain exactly: [\"{s=urn:ex:a, t=urn:ex:c, x=1}\"]; optionalOverLimitedSubSelectIsEvaluatedIndependently[3]: actual [\"{s=urn:ex:a, t=urn:ex:d, x=2}\"] expected [\"{s=urn:ex:a, x=2}\"]; optionalOverAggregateSubSelectIsEvaluatedIndependently[3]: actual [\"{n=1, s=urn:ex:a}\"] expected [\"{n=2, s=urn:ex:a}\"]; optionalOverSubSelectJoinedWithPatternIsEvaluatedIndependently / optionalOverLimitedSubSelectJoinedWithPatternIsEvaluatedIndependently (Join-variant hole)",
+   "postFixEvidence": "Report dir: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports (log 20260928T053624.016565Z-47470-e6a0134b)\nTests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in ...LeftJoinResidualConditionScopeTest\nTests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.389 s -- in ...LeftJoinQueryEvaluationStepTest\nTests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in ...HashJoinIterationResidualConditionTest\n--- memory e2e (report .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.OptionalSubSelectScopeTest.txt, log 20260928T053949.307871Z-49226-7f35f544) ---\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.307 s -- in org.eclipse.rdf4j.sail.memory.OptionalSubSelectScopeTest\n--- LMDB e2e (log 20260928T055628.877404Z-55440-2871a1a1) --- Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.208 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbSubSelectScopeTest"
+  },
+  {
+   "id": "3.4.3",
+   "status": "fixed",
+   "rootCause": "Two cooperating leaks. (1) FilterIterator.evaluateSubstitutedExists cloned the EXISTS body and ran BindingAssignerOptimizer.optimize, whose VarVisitor replaces every bound Var with no scope awareness, so `?t :r ?x` inside a nested `SELECT ?t` became `?t :r 1` although x is not projected and is a fresh variable inside the sub-select. (2) Independently of substitution, the compiled body was evaluated with the outer row and ProjectionQueryEvaluationStep forwarded it into the sub-select body (GroupIterator evaluates the aggregate argument with parentBindings), which is also the mechanism behind 3.4.1's Join-variant and behind correlated MINUS over sub-selects. The nested ProjectionIterator additionally overwrote conflicting parent bindings instead of rejecting the row (critique missed finding).",
+   "change": "Following the critique instead of the design where they differ: (a) BindingAssignerOptimizer.substituteInScope(TupleExpr, BindingSet) is a new scoped substitution (ScopedVarVisitor) that replaces a Var wherever it is in scope but, inside a Projection/MultiProjection, only Vars whose name is a projected source name of that projection and of every enclosing projection (nested sub-selects intersect the visible set); non-projected variables are fresh by construction and stay untouched, projected ones are substituted before the sub-select's LIMIT/aggregation as the SPARQL 1.2 / EXISTS-CG substitute() requires (critique 3.4.3 major; pinned by existsOverLimitedSubSelectSubstitutesProjectedVariableBeforeTheLimit and existsOverGroupedSubSelectSubstitutesProjectedGroupKey). optimize() for external bindings is unchanged. (b) The runtime scope boundary is placed at the ROOT of the nested sub-select unit (the Projection plus the Slice/Distinct/Reduced/Order the parser stacks above it), not at the Projection: BindingScopeAnalysis.isNestedSubSelectRoot(node) identifies such a root (isSubquery() Projection unit with an ancestor other than QueryRoot/DescribeOperator/MaterializeTupleExpr; parentless or top-level units keep pass-through of external bindings) and DefaultEvaluationStrategy.precompile wraps the compiled unit in the new SubSelectScopeBoundaryQueryEvaluationStep: the unit is evaluated with only BindingScopeAnalysis.lateralSubstitutedNames (constants by LATERAL definition), NO other incoming binding is pushed (no pre-binding of projected names at all, so the critique's Slice-above-Projection blocker cannot occur), and the rows are joined with the incoming bindings afterwards by compatibility on every name (conflicting rows dropped, never overwritten; compatible rows extended). Because the check happens above the Slice, LIMIT/DISTINCT/aggregation stay bottom-up (projectedNamesAreJoinedByCompatibilityAfterTheSubSelectIsComplete, subSelectAsLeftArgOfAJoinInsideAnOptionalIsEvaluatedBottomUp, and the memory Join-variant cases). (c) evaluateSubstitutedExists clones under an `Exists` holder before precompiling (design (c)); the critique argued the holder becomes unnecessary, but the code proves it still is: without a parent the clone's sub-select is a top-level unit and would pass the outer row through, re-introducing leak (2); the holder also makes the clone compile exactly like the original body (isPartOfSubQuery scoping of inner filters). ProjectionIterator itself is unchanged: its nested/outer notion now only decides whether the (already restricted) parent bindings are copied in, so the two notions cannot disagree on results. No kill switch was added although the design recommended one (see followUps).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/BindingAssignerOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/BindingScopeAnalysis.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/SubSelectScopeBoundaryQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/DefaultEvaluationStrategy.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/NestedSubSelectScopeBoundaryTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/memory/src/test/java/org/eclipse/rdf4j/sail/memory/ExistsSubSelectScopeTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubSelectScopeTest.java"
+   ],
+   "testsAdded": [
+    "NestedSubSelectScopeBoundaryTest#nestedSubSelectDoesNotSeeIncomingBindingsOfVariablesItDoesNotProject",
+    "NestedSubSelectScopeBoundaryTest#projectedNamesAreJoinedByCompatibilityAfterTheSubSelectIsComplete",
+    "NestedSubSelectScopeBoundaryTest#compatibleProjectedRowsAreMergedAndConflictingRowsAreDroppedNotOverwritten",
+    "NestedSubSelectScopeBoundaryTest#subSelectUnderAnExistsHolderIsNested",
+    "NestedSubSelectScopeBoundaryTest#topLevelProjectionKeepsPassingIncomingBindingsThrough",
+    "NestedSubSelectScopeBoundaryTest#topLevelSliceAboveProjectionKeepsPassingIncomingBindingsThrough",
+    "NestedSubSelectScopeBoundaryTest#lateralSubstitutedNamesArePushedIntoTheSubSelect",
+    "NestedSubSelectScopeBoundaryTest#subSelectAsLeftArgOfAJoinInsideAnOptionalIsEvaluatedBottomUp",
+    "NestedSubSelectScopeBoundaryTest#existsSubstitutionReplacesVisibleVariablesOnly",
+    "NestedSubSelectScopeBoundaryTest#existsSubstitutionLeavesTheOriginalExpressionUntouchedWhenNothingIsBound",
+    "ExistsSubSelectScopeTest#existsOverSubSelectDoesNotSubstituteNonProjectedVariable (2 params)",
+    "ExistsSubSelectScopeTest#existsOverAggregateSubSelectDoesNotSubstituteNonProjectedVariable (2)",
+    "ExistsSubSelectScopeTest#existsOverSubSelectJoinedWithPatternDoesNotSubstituteNonProjectedVariable (2)",
+    "ExistsSubSelectScopeTest#existsOverLimitedSubSelectSubstitutesProjectedVariableBeforeTheLimit (2)",
+    "ExistsSubSelectScopeTest#existsOverGroupedSubSelectSubstitutesProjectedGroupKey",
+    "ExistsSubSelectScopeTest#notExistsOverSubSelectRemovesRowsWhoseProjectedValueMatches",
+    "ExistsSubSelectScopeTest#existsInsideJoinedGroupDoesNotSeeOuterJoinBinding",
+    "ExistsSubSelectScopeTest#existsUnionBodyAfterMaterializationBudget (2)",
+    "LmdbSubSelectScopeTest#existsOverSubSelectDoesNotSubstituteNonProjectedVariable (2)",
+    "LmdbSubSelectScopeTest#existsOverLimitedSubSelectSubstitutesProjectedVariableBeforeTheLimit (2)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.ExistsSubSelectScopeTest.txt (log 20260928T052454.387115Z-42291-db5a9f4e)\nTests run: 13, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 0.547 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.memory.ExistsSubSelectScopeTest\nexistsOverSubSelectDoesNotSubstituteNonProjectedVariable:78 Expecting actual: [] to contain exactly: [\"{s=urn:ex:a}\"]  /  :76 Expecting empty but was: [\"{s=urn:ex:a}\"]\nexistsOverAggregateSubSelectDoesNotSubstituteNonProjectedVariable:96 Expecting empty but was: [\"{s=urn:ex:a}\"]\nexistsOverSubSelectJoinedWithPatternDoesNotSubstituteNonProjectedVariable:118 Expecting actual: [] to contain exactly: [\"{s=urn:ex:a}\"]\n--- unit (report ...rdf4j-queryalgebra-evaluation/.../org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NestedSubSelectScopeBoundaryTest.txt, log 20260928T052749.716459Z-43987-1e9a62ac) ---\nTests run: 10, Failures: 6 <<< FAILURE! -- projectedNamesAreJoinedByCompatibilityAfterTheSubSelectIsComplete: [LIMIT 1 keeps {t=c, x=1}, which is incompatible with the incoming ?x=2] Expecting empty but was: [\"{t=urn:ex:d, x=2}\"]; subSelectAsLeftArgOfAJoinInsideAnOptionalIsEvaluatedBottomUp: actual [\"{t=urn:ex:d, x=2, y=urn:ex:y1}\"] expected [\"{s=urn:ex:a, x=2}\"]; existsSubstitutionReplacesVisibleVariablesOnly: [?x is fresh inside the outer sub-select] Expecting value to be false but was true",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NestedSubSelectScopeBoundaryTest.txt (log 20260928T053624.016565Z-47470-e6a0134b)\nTests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.092 s -- in ...NestedSubSelectScopeBoundaryTest\n--- memory e2e (report .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-memory/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.memory.ExistsSubSelectScopeTest.txt, log 20260928T053949.307871Z-49226-7f35f544) ---\nTests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.122 s -- in org.eclipse.rdf4j.sail.memory.ExistsSubSelectScopeTest\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.307 s -- in org.eclipse.rdf4j.sail.memory.OptionalSubSelectScopeTest\n--- LMDB e2e (report ...rdf4j-sail-lmdb/.../org.eclipse.rdf4j.sail.lmdb.LmdbSubSelectScopeTest.txt, log 20260928T055628.877404Z-55440-2871a1a1) --- Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.208 s"
+  },
+  {
+   "id": "3.4.4",
+   "status": "fixed",
+   "rootCause": "FilterIterator trusted the planner's `optimizer.semiAntiKind = minus-assured-shared` stamp: inside supplyMaterializedExistsSemiJoin the flag only relaxed the root scope-change check, after which the MINUS body was treated exactly like an EXISTS body (per-probe evaluateSubstitutedExists substituting ALL left-row bindings, including names that are out of scope inside a MINUS operand such as `?o` in `MINUS { ?s :q ?v FILTER(?v = ?o) }`; materialization parameters = every referenced variable). Result: the hinted anti-join removed rows MINUS keeps. Worse (critique 3.4.4 major), that branch was not even the only path: a scope-changed filter, a filter nested in an EXISTS body, the fused VALUES-join filter, a `streaming-exists` hint or a kind-only stamp without an algorithm hint all reached the generic FilterIterator/ExistsQueryValueEvaluationStep and were evaluated with NOT EXISTS substitution semantics.",
+   "change": "FilterIterator.supply now starts with supplyAssuredSharedMinusAntiJoin, before the fused VALUES join and before every decline rule, so a rewritten MINUS can never reach the generic filter. For a `Not(Exists(body))` filter with the kind it re-checks the rewrite certificate (roadmap 4.2/4.6) with assuredSharedMinusNames: shared = MinusQueryEvaluationStep.sharedOutputBindingNames(left, body) minus constant var names, must be non-empty and assured on BOTH sides, and fv(body) \u2229 pv(left) \u2286 shared (the 3.2.1 precondition; a left-bound variable the operand references without sharing is fresh inside a MINUS operand but a correlation inside a probe). If the certificate fails the filter is evaluated by a real `new MinusQueryEvaluationStep(arg, existsArg, left, body)` (the node carries the semantic kind, so MINUS is always the right fallback) and the disposition `declined:minus-hint-invalid` is recorded. If it holds, the anti-join is built with sharedBindingNames = correlationKeyBindingNames = shared, materializationParameterBindingNames = empty (materialize once, unbound; MaterializedExistsFilterIteration.matches is then exactly MINUS compatibility on assured shared names) and a probe that evaluates the body with `BindingScopeAnalysis.retain(row, shared)` and never substitutes; the planned mode is honoured only for compatibility-selection-safe bodies, any other body is forced to MATERIALIZED. The common construction tail of the semi-join was extracted into materializedExistsStep so both paths share it; the old hint-trusting relaxation of containsVariableScopeChange was removed. MinusQueryEvaluationStep.sharedOutputBindingNames is exposed as @InternalUseOnly public static. Other Filter shapes stamped with the kind (not Not(Exists)) are left on the normal path. semanticKind() telemetry (MINUS_ASSURED_SHARED) is unchanged (FilterIteratorTelemetryTest#safeMinusRecordsItsOwnSemanticKind stays green).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/FilterIterator.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/evaluationsteps/MinusQueryEvaluationStep.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/AssuredSharedMinusAntiJoinTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp4/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbMinusAntiJoinSemanticsTest.java"
+   ],
+   "testsAdded": [
+    "AssuredSharedMinusAntiJoinTest#hintedAntiJoinWithLeftOnlyReferenceKeepsTheMinusResult (2 params)",
+    "AssuredSharedMinusAntiJoinTest#everyAlgorithmHintKeepsTheMinusResult (streaming-correlated, memoized-correlated, materialized-hash, streaming-exists, none)",
+    "AssuredSharedMinusAntiJoinTest#scopeChangedHintedFilterKeepsTheMinusResult",
+    "AssuredSharedMinusAntiJoinTest#hintedFilterNestedInsideAnExistsBodyKeepsTheMinusResult",
+    "AssuredSharedMinusAntiJoinTest#hintedFilterOverAValuesJoinKeepsTheMinusResult",
+    "AssuredSharedMinusAntiJoinTest#hintWithANonAssuredSharedNameFallsBackToMinusCompatibility (asserts declined:minus-hint-invalid)",
+    "AssuredSharedMinusAntiJoinTest#validHintIsEvaluatedAsAnAntiJoin (asserts compiled-specialized)",
+    "AssuredSharedMinusAntiJoinTest#subSelectOperandIsEvaluatedIndependentlyOfTheLeftRow",
+    "AssuredSharedMinusAntiJoinTest#optionalOperandKeepsTheMinusResult",
+    "AssuredSharedMinusAntiJoinTest#genuineNotExistsKeepsSubstitutionSemantics",
+    "LmdbMinusAntiJoinSemanticsTest#minusOperandReferencingLeftOnlyVariableKeepsMinusSemantics (6 shapes: FILTER / sub-select / shared body x 4 and 400 rows, 3 runs each)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.AssuredSharedMinusAntiJoinTest.txt (log 20260928T054343.864940Z-50968-316cd43b)\nTests run: 15, Failures: 12, Errors: 0, Skipped: 0 <<< FAILURE! -- in org.eclipse.rdf4j.query.algebra.evaluation.impl.AssuredSharedMinusAntiJoinTest\nhintedAntiJoinWithLeftOnlyReferenceKeepsTheMinusResult[1,2]:114 [minus-assured-shared anti-join must keep MINUS semantics] Expecting actual: [] to contain exactly: [\"{o=urn:ex:o1, s=urn:ex:a}\"]\neveryAlgorithmHintKeepsTheMinusResult[5 hints]:124 Expecting actual: [] to contain exactly: [\"{o=urn:ex:o1, s=urn:ex:a}\"]\nscopeChangedHintedFilterKeepsTheMinusResult:133 / hintedFilterNestedInsideAnExistsBodyKeepsTheMinusResult:144 / hintedFilterOverAValuesJoinKeepsTheMinusResult:161 Expecting actual: [] ...\nhintWithANonAssuredSharedNameFallsBackToMinusCompatibility:177 expected: \"declined:minus-hint-invalid\" but was: \"compiled-specialized\"\noptionalOperandKeepsTheMinusResult:214 Expecting actual: [\"{o=urn:ex:o3, s=urn:ex:c}\"] to contain exactly: [a-row, c-row]\n[mvnf] Summary: tests=15, failures=12, errors=0, skipped=0, time=0.259s",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.impl.AssuredSharedMinusAntiJoinTest.txt (log 20260928T054938.852026Z-53155-8884adf3)\nTests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.060 s -- in org.eclipse.rdf4j.query.algebra.evaluation.impl.AssuredSharedMinusAntiJoinTest\nTests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.436 s -- in ...FilterIteratorTelemetryTest\nTests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in ...MaterializedExistsLifecycleTest\nTests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.224 s -- in ...PackedCorrelatedMinusAlternativeTest\n--- LMDB e2e (report .mvnf/workspaces/wp4/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMinusAntiJoinSemanticsTest.txt, log 20260928T055143.351084Z-53774-b50abd49) ---\nTests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.185 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbMinusAntiJoinSemanticsTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "core/queryalgebra/evaluation (module unit suite, final; log .mvnf/workspaces/wp4/logs/20260928T055741.670494Z-55787-90ae9b8c/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/queryalgebra/evaluation --retain-logs",
+   "result": "tests=1809, failures=3, errors=1, skipped=0",
+   "reds": [
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsExhausted | pre-existing (same red and evidence as the b1 report: workspace profile sets java.io.tmpdir as a Surefire systemPropertyVariable after JVM start, JDK 25 Files.createTempFile uses the startup value; legacy constructor, RightSpill untouched in b2)",
+    "MinusQueryEvaluationStepTest#spillFileIsRemovedWhenIterationIsClosedEarly | pre-existing (same tmpdir/JDK 25 workspace artifact)",
+    "OptimizerRuleCatalogTest#generatedDocumentationMatchesManifestAndResearchInputs | pre-existing (NoSuchFile papers2/papers/docs/sparql_query_rewrite_catalog.md; untracked papers2 directory exists only in the main checkout)",
+    "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix | flaky (execution timed out after 120000 ms; pure planner test, PackedCascadesPlanner.optimize over a 66-factor chain under assertTimeoutPreemptively(120s), no query evaluation on its path; standalone rerun log 20260928T061228.862946Z-92733-83b49c08 also hit 120.071 s while the host load average was 30-53 (uptime); the b1 standalone rerun passed in 104.3 s)"
+   ]
+  },
+  {
+   "selection": "core/sail/memory (module unit suite, final; log .mvnf/workspaces/wp4/logs/20260928T060147.768409Z-73204-4ca2935b/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/sail/memory --retain-logs",
+   "result": "tests=845, failures=0, errors=0, skipped=3",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it MemorySPARQLComplianceTest (full class; log .mvnf/workspaces/wp4/logs/20260928T060308.929814Z-73746-099272a3/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it MemorySPARQLComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=169, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it MemorySPARQL12QueryComplianceTest#tests (log 20260928T060452.875104Z-83302-89a180a7)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it MemorySPARQL12QueryComplianceTest#tests --module compliance/sparql --retain-logs",
+   "result": "tests=66, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "compliance/sparql --it LmdbSPARQLComplianceTest (full class; log .mvnf/workspaces/wp4/logs/20260928T060757.059469Z-90925-12103228/verify.log)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it LmdbSPARQLComplianceTest --module compliance/sparql --retain-logs",
+   "result": "tests=169, failures=1, errors=9, skipped=0",
+   "reds": [
+    "LmdbSPARQLComplianceTest#propertyPath()[8] | pre-existing (REVIEW 3.9: NPE at PatternKeys.predicateKey(PatternKeys.java:36) for a variable predicate with constant object; wp1/planner-side)",
+    "LmdbSPARQLComplianceTest#values()[3], #optional()[2], #lateral()[13], #aggregate()[7], #aggregate()[20], #aggregate()[21], #aggregate()[22], #aggregate()[23] | pre-existing (REVIEW 3.9: LMDB `VALUES ... UNDEF` NPE at LmdbPipelinePlanCache$2.meet(LmdbPipelinePlanCache.java:430), wp3; grep of the log for any wp4-touched file frame = 0)",
+    "LmdbSPARQLComplianceTest#builtinFunction()[20] | pre-existing (REVIEW 3.9 lists LMDB builtinFunction()[20]; BuiltinFunctionTest.testSES869ValueOfNow, NOW() value identity, unrelated to scope/anti-join changes)"
+   ]
+  },
+  {
+   "selection": "compliance/sparql --it LmbdSPARQL12QueryComplianceTest#tests (log 20260928T061109.336108Z-92272-693ee013)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 --it LmbdSPARQL12QueryComplianceTest#tests --module compliance/sparql --retain-logs",
+   "result": "tests=66, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "core/sail/lmdb new e2e guards: LmdbMinusAntiJoinSemanticsTest (log 20260928T055143.351084Z-53774-b50abd49), LmdbSubSelectScopeTest (log 20260928T055628.877404Z-55440-2871a1a1)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 LmdbMinusAntiJoinSemanticsTest --retain-logs ; python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 LmdbSubSelectScopeTest --retain-logs",
+   "result": "tests=6+8, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "b2 re-verification after resume: evaluation focused classes (LeftJoinResidualConditionScopeTest, HashJoinIterationResidualConditionTest, LeftJoinQueryEvaluationStepTest, NestedSubSelectScopeBoundaryTest, AssuredSharedMinusAntiJoinTest, FilterIteratorTelemetryTest, MaterializedExistsLifecycleTest, PackedCorrelatedMinusAlternativeTest, BindingScopeAnalysisTest); log .mvnf/workspaces/wp4/logs/20260928T062646.674937Z-28099-aa979538/verify.log",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/queryalgebra/evaluation --retain-logs -- -Dtest=<9 classes> -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=137, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "b2 re-verification after resume: memory e2e (OptionalSubSelectScopeTest, ExistsSubSelectScopeTest, LateralOptionalSubSelectTest, MinusInsideCorrelatedOperatorScopeTest); log .mvnf/workspaces/wp4/logs/20260928T062817.173761Z-29237-224c45a0/verify.log",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/sail/memory --retain-logs -- -Dtest=<4 classes> -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "tests=47, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "b2 re-verification after resume: LMDB e2e (LmdbSubSelectScopeTest 8/0, LmdbMinusAntiJoinSemanticsTest 6/0 in Surefire); the module verify then also entered Failsafe ITs (not part of the selection) and was stopped after LmdbFrontierThemeCoverageIT; log .mvnf/workspaces/wp4/logs/20260928T062958.855259Z-30050-ab6aa21d/verify.log",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp4 --threads 3 core/sail/lmdb --retain-logs -- -Dtest=LmdbSubSelectScopeTest,LmdbMinusAntiJoinSemanticsTest -Dsurefire.failIfNoSpecifiedTests=false",
+   "result": "surefire tests=14, failures=0, errors=0; failsafe (partial, stopped) tests=10, failures=1, skipped=6",
+   "reds": [
+    "LmdbFrontierThemeCoverageIT#allThemeQueriesReturnExpectedResultsAndPublishClassifiedFrontierEvidence | flaky (first run: 'PHARMA q6 Frontier did not complete on bounded coverage data', QueryInterruptedException after the 30 s per-query budget at host load average ~80; PHARMA q6 has no sub-select/MINUS, only a plain FILTER EXISTS over one pattern; isolated rerun themes=PHARMA queryIndexes=6 passed in 11.91 s (log 20260928T065045.715007Z-842-1ccc1b5c); full-class rerun passed: Tests run: 1, Failures: 0, Errors: 0, Time elapsed ~171 s (log 20260928T065353.568239Z-18521-6e5ce061))"
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [],
+ "newFlagsOrConfig": [],
+ "crossWpNotes": [
+  "wp2 (PackedLogicalRuleProgram MINUS->anti-join rule, finding 3.2.1): the executor now validates exactly fv(R) \u2229 pv(L) \u2286 shared, shared non-empty and assured on both sides (shared = MinusQueryEvaluationStep.sharedOutputBindingNames minus constant var names) and otherwise runs a real MinusQueryEvaluationStep with disposition `declined:minus-hint-invalid`. The planner should emit the hint only under the same certificate so the fallback (which loses the anti-join's cost model) stays rare; agree on that definition.",
+  "wp2 / LMDB cost model (LmdbMappedSemiAntiCosting): a valid minus-assured-shared body that is not compatibility-selection-safe (Filter/LeftJoin/Extension/sub-select bodies) is now executed MATERIALIZED (once, unbound) regardless of the planned streaming/memoized mode, and valid selection-safe bodies are probed with the shared names only; actualSemiAntiAlgorithm feedback may therefore differ from the planned algorithm for those bodies (perf/feedback concern, results are MINUS-correct).",
+  "wp3 (plan caching): the ten LmdbSPARQLComplianceTest reds are the REVIEW 3.9 pre-existing families (LmdbPipelinePlanCache$2.meet:430 VALUES/UNDEF NPE x8, PatternKeys.predicateKey:36 NPE, builtinFunction()[20]); lateral()[2] and all subselect/minus/exists ids are green on LMDB.",
+  "wp1/wp2/wp9 (rewrites that reason about sub-select scope): the executor now treats every nested sub-select unit (Slice/Distinct/Reduced/Order over an isSubquery Projection, inside any operator) as a bottom-up boundary that withholds correlated input except LATERAL-substituted names and joins projected names by compatibility afterwards (BindingScopeAnalysis.isNestedSubSelectRoot + SubSelectScopeBoundaryQueryEvaluationStep). Planner-side pushdown of correlated bindings into a sub-select is therefore never observed at runtime; a MINUS over a sub-select loses the comparison-name selection (perf only). Packed materializer re-creates Projections with the subquery flag (payloadFlags), which the boundary relies on.",
+  "FedX (tools/federation, outside this WP's module list): FederationEvaluationStrategy has its own `!hasCondition && containsSubquery` gate with a correlated fallback (critique missed finding) and does not run BindingAssignerOptimizer; the new boundary only affects FedX where it compiles through DefaultEvaluationStrategy.precompile. FedX suites were not run here; recommend an integrator run of tools/federation.",
+  "SPARQL 1.2 EXISTS semantics: projected variables of a sub-select inside an EXISTS body are substituted before the sub-select's LIMIT/aggregation (CG-report substitute()/PrjMap), non-projected ones are fresh; pinned by ExistsSubSelectScopeTest and LmdbSubSelectScopeTest. Confirm against the final SPARQL 1.2 section 18 text if it changes.",
+  "Integrator: the two LmdbStoreConfig/LmdbStoreSchema japicmp edits remain untouched in the cumulative patch; the formatter has not been run (several pre-existing >120-column lines in DefaultEvaluationStrategy/FilterIterator/LeftJoinQueryEvaluationStep will be re-wrapped by it)."
+ ],
+ "followUps": [
+  "3.4.3 kill switch: the design recommended shipping the projection boundary behind a default-on system property; not added because switching it off re-introduces wrong results (repo rule: no flags that disable correctness), and no existing kill-switch pattern in FilterIterator/DefaultEvaluationStrategy covers semantics. If a perf cliff for EXISTS over LIMIT/aggregate sub-selects surfaces, implement design item 3.4.3(d) instead: with the boundary a Projection-rooted EXISTS body is independent of the outer row (except LATERAL names), so FilterIterator.supplyMaterializedExistsSemiJoin can stop declining `unprojected-correlation-reference` for such bodies and materialize once instead of probing per row.",
+  "Port the memory OPTIONAL/EXISTS sub-select scope queries (OptionalSubSelectScopeTest, ExistsSubSelectScopeTest) into testsuites/sparql SubselectTest so Native and other stores run them; LMDB is covered by LmdbSubSelectScopeTest.",
+  "PackedFrontierSubsetKernelContractTest#arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix runs ~104 s on an idle host against a 120 s preemptive budget and times out under load; raise the budget or shrink the factor count (planner-side test, wp2/wp7).",
+  "ProjectionIterator (nested) still overwrites a conflicting parent binding via setBinding; unreachable for conflicts now that the boundary restricts parent bindings to LATERAL constants, but aligning it to reject-on-conflict would remove the latent divergence between its Projection-ancestor notion and BindingScopeAnalysis.isNestedSubSelectRoot.",
+  "3.4.4: MaterializedExistsFilterIteration materializes the unbound MINUS operand without a bound (same 4.7 gap as 3.4.5b); the MinusQueryEvaluationStep fallback spills, the anti-join path does not.",
+  "b1 follow-ups still open: 3.4.5a fully lazy HashJoinIteration opening (4.7), LATERAL static/runtime substituted-name divergence, PreFilter path ignoring LATERAL-substituted names, workspace java.io.tmpdir in argLine.",
+  "Integrator: the LMDB Failsafe IT suite (baseline 144/0 per REVIEW \u00a71) was not run in full for wp4 b2; only LmdbFrontierThemeCoverageIT (green on rerun), LmdbEngineeringThemeQueryRegressionIT (6 skipped) and LmdbMedicalQ9PlanStabilityIT (3/0) ran. Recommend a full core/sail/lmdb --it run on a quiet host."
+ ]
+}

@@ -1,0 +1,11 @@
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f2 --threads 4 --retain-logs LmdbPackedRuleSemanticsReviewReproTest --module core/sail/lmdb
+Reports: .mvnf/workspaces/review-f2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbPackedRuleSemanticsReviewReproTest.xml, .mvnf/workspaces/review-f2/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPackedRuleSemanticsReviewReproTest.txt
+Summary: tests=31, failures=8, errors=0, skipped=0, time=3.771s
+Failure: org.eclipse.rdf4j.sail.lmdb.LmdbPackedRuleSemanticsReviewReproTest.c3FilterOverWideJoinWithMaybeBoundOptionalVariable(File): failure: LMDB (first run) differs from reference evaluation Projection (costEstimate=200, resultSizeEstimate=1.00, plannedCostPathExpansions=0, plannedCostRemoteCalls...
+
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace review-f2 --threads 4 --retain-logs PackedRuleSemanticsReviewReproTest --module core/queryalgebra/evaluation
+Reports: .mvnf/workspaces/review-f2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleSemanticsReviewReproTest.xml, .mvnf/workspaces/review-f2/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleSemanticsReviewReproTest.txt
+Summary: tests=13, failures=6, errors=0, skipped=0, time=1.725s
+Failure: org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleSemanticsReviewReproTest.c4CodeTypeRewriteWithoutScopeFlags: failure: generated=0x10 QueryRoot (costEstimate=14, resultSizeEstimate=1.00) Projection (costEstimate=13, resultSizeEstimate=1.00) ProjectionElemList ProjectionElem "...

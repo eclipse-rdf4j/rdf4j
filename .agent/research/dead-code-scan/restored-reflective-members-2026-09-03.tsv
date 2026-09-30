@@ -1,0 +1,77 @@
+DEAD-CLASS	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$TypedSemiAntiDistinctEstimate	-	final
+DEAD-CLASS	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$VariantPublication	-	final
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/FrontierDecisionRiskController	<init>()V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedNodeSetArena	<init>(I)V	
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context	<init>(JJJJJJJJ)V	public
+DEAD-CTOR	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context	<init>(JJJJJJJJJ)V	public
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$TypedSemiAntiDistinctEstimate	<init>(JJJDD)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanVersion	<init>(JLorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ExecutableRecipe;Ljava/lang/String;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$EstimatedCostInterval;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$DeploymentRole;JJ)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$VariantPublication	<init>(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanFamilyKey;JLorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$SemanticDependencies;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$EvidenceSnapshot;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$EvidenceSnapshot;JLorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;Ljava/lang/String;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$EstimatedCostInterval;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$SearchCertificate;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanStabilityEnvelope;JJ)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService	<init>(Ljava/nio/file/Path;JLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotSourceFactory;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierFileOps;)V	
+DEAD-CTOR	org/eclipse/rdf4j/sail/lmdb/frontier/LmdbFrontierSynopsisService	<init>(Ljava/nio/file/Path;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierFileOps;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierSynopsisStatus;)V	private
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	classExists(Ljava/lang/String;)Z	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	descriptorIdentityViolations()Ljava/util/List;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	inventoryViolations()Ljava/util/List;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	joinOrderOwners()Ljava/util/Set;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	productionRegistrationViolations()Ljava/util/List;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	scalarBoundaryViolations()Ljava/util/List;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/FrontierDecisionRiskController$Config	defaults()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/FrontierDecisionRiskController$Config;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/FrontierPairedCostSequence	observe(DDDZ)V	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner	optimize(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQuery;JJZLorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostModel;JJZ)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCascadesPlanner$Computation;	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostDimensionRegistry	dimensionId(Ljava/lang/String;)I	static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostingReplay$Result	eventCost(I)D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostingTraceArena	computedDigestCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateCostKnown(II)Z	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateCostLineageId(II)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateCostLower(II)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDecisionCertificate	candidateCostUpper(II)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateCostLineageId(II)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateCostLower(II)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedDetachedDecisionState	candidateCostUpper(II)D	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedMemo	installRuleAlternative(IILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/RuleApplicabilityResult;)I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizationDecision	candidatePhysicalFingerprint(I)J	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizationDecision	challengerCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedOptimizationDecision	materializeCandidate(ILorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedQueryFamilyIdentity;)Lorg/eclipse/rdf4j/query/algebra/TupleExpr;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache	findStructuralPlan(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Fingerprint;Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$Context;Lorg/eclipse/rdf4j/query/algebra/TupleExpr;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanCache$PlanEntry;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanValidationRequest	lowerBound(I)D	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanValidationRequest	selectedEventId()I	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	completionStatus()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCompletionStatus;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	phase()Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint$Phase;	
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedStalePlanValidation	certifiedUnchanged(Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanValidationRequest;)Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedStalePlanValidation;	public static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	align(J)J	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	arrayBytes(II)J	private static
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	retainedBytes()J	public
+DEAD-METHOD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	saturatedAdd(JJ)J	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	allocatedPlannerCacheBudgetBytes()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierSnapshotSource	scan(ZLorg/eclipse/rdf4j/sail/lmdb/LmdbFrontierSnapshotSource$RawQuadSink;)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	frontierCorrection(Lorg/eclipse/rdf4j/sail/lmdb/FrontierLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/FrontierCostDimension;DZ)Ljava/util/OptionalDouble;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats	typedSemiAntiDistinctEstimate(Lorg/eclipse/rdf4j/sail/lmdb/LogicalLearningKey;Lorg/eclipse/rdf4j/sail/lmdb/PhysicalResidualKey;Lorg/eclipse/rdf4j/sail/lmdb/LearningApplicability;)Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$TypedSemiAntiDistinctEstimate;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$TypedSemiAntiDistinctCounts	estimate()Lorg/eclipse/rdf4j/sail/lmdb/LmdbOperatorFeedbackStats$TypedSemiAntiDistinctEstimate;	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	mergeEnvelopes(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanStabilityEnvelope;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanStabilityEnvelope;)Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanStabilityEnvelope;	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	mergeableVariantIndex(Ljava/util/List;Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$PlanVariant;)I	private static
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	publishVariant(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$VariantPublication;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	scheduleRefresh(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$RefreshRequest;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard	canMerge(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard;)Z	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard	merge(Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard;)Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$ApplicabilityGuard;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$LookupRequest	withCanary(JJ)Lorg/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache$LookupRequest;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/config/LmdbStoreConfig	getFrontierDeleteReserveFraction()D	public
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierManifestStore	load(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierManifestIdentity;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierManifest;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierOmniIndex$Scratch	candidateRowsVisited()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	generation()J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	kind()Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadKind;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	recordCount()I	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	accumulateLaneDiagnostics(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;III[J[D)J	private
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndex	accumulateLaneDiagnostics(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;I[J[D[J[D)J	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexView	laneDiagnostics(Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierLeafSelector;I)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierQueryIndexLaneDiagnostics;	
+DEAD-METHOD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuilder	build(Ljava/nio/file/Path;JJLorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierSnapshotSource;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsHeapGovernor;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsBuildConfig;Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierFileOps;)Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierStatisticsManifest;	static
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/OptimizerRuleCatalog	JOIN_ORDER_OWNERS Ljava/util/Set;	private static final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPlanValidationRequest	selectedEventId I	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	completionStatus Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCompletionStatus;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	phase Lorg/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint$Phase;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedSearchCheckpoint	retainedBytes J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cost/FrontierExactPayloadSnapshot	retainedBytes J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbFrontierPlannerSettings	allocatedPlannerCacheBudgetBytes J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/LmdbPlanDecisionCache	maximumVariants I	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	generation J	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	kind Lorg/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadKind;	private final
+WRITEONLY-FIELD	org/eclipse/rdf4j/sail/lmdb/frontier/FrontierPayloadBlock	recordCount I	private final

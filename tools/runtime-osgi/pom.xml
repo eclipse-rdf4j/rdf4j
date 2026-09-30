@@ -51,6 +51,8 @@
 							<goal>shade</goal>
 						</goals>
 						<configuration>
+							<createDependencyReducedPom>false</createDependencyReducedPom>
+							<generateUniqueDependencyReducedPom>false</generateUniqueDependencyReducedPom>
 							<artifactSet>
 								<includes>
 									<include>${project.groupId}:*:*</include>

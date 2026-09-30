@@ -1,0 +1,182 @@
+{
+ "wp": "wp1-lmdb-logical-rewrites",
+ "batch": "b2",
+ "worktree": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1",
+ "patchPath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/patches/wp1.patch",
+ "evidencePath": "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/initial-evidence.wp1.txt",
+ "findings": [
+  {
+   "id": "3.1.4",
+   "status": "fixed",
+   "rootCause": "LmdbFilterSimplifierOptimizer.rewriteSmallLiteralFilterAnchors treated a SameTerm condition like Compare.EQ: isSmallLiteralAnchorCandidate accepts SameTerm, LmdbJoinPlanSupport.smallLiteralFilterAnchor/collectOrEqualityAnchorValues collect its constants, canMaterializeObjectFilterAnchor only inspects the predicate guarantee (never the operator), expandFiniteAnchor then value-expands integers (whole canonical-integer family), booleans ({true,1}) and normalises dateTime to the Z form, and the condition is dropped because remainingConditions is empty. sameTerm(?o, 7) therefore matched the stored, value-equal but non-identical term \"7\"^^xsd:int; reachable e2e through the OPTIONAL->INNER path (SameTermFilterOptimizer declines under a LeftJoin, and the :1178 safe-values shortcut does not apply to numerics/booleans/calendars).",
+   "change": "Following the critique's major issue (the design's TERM classification with an unexpanded anchor would lose rows for mixed disjunctions such as sameTerm(?o,7) || ?o = 8), the rule is inverted: LmdbJoinPlanSupport.containsSameTerm(ValueExpr) (SameTerm anywhere in the Or/And tree) plus LmdbFilterSimplifierOptimizer.requiresTermIdentityFilter(condition, anchor) (containsSameTerm AND the anchor holds a guarantee-only value, i.e. numeric/boolean/calendar) make rewriteSmallLiteralFilterAnchors RETAIN the condition while keeping the value-expanded anchor as a sound superset pre-filter; the anchor gets an LmdbRewriteProof with facts termEquality|valueEqualitySuperset|originalFilterRetained. sameTerm over safe values (IRI, plain/lang string) is unchanged (term join == sameTerm); Compare.EQ/IN behaviour is unchanged (guarded by expandsCanonicalIntegerEqualityAnchorAndDropsFilter). exactStoredTermFilterAnchor already retained the condition and needed no change.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbJoinPlanSupport.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizerTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFiniteAnchorEqualityTest#sameTermIntegerViaNullRejectedOptional",
+    "LmdbFiniteAnchorEqualityTest#sameTermIntegerViaNullRejectedOptionalColdStore",
+    "LmdbFiniteAnchorEqualityTest#sameTermBooleanViaNullRejectedOptional",
+    "LmdbFiniteAnchorEqualityTest#sameTermDateTimeTimezoneVariantIsNotValueEquality",
+    "LmdbFiniteAnchorEqualityTest#mixedSameTermAndEqualityDisjunctionKeepsOnlyValueEqualRow",
+    "LmdbFiniteAnchorEqualityTest#mixedSameTermAndEqualityDisjunctionKeepsEveryValueEqualDatatype",
+    "LmdbFiniteAnchorEqualityTest#sameTermIntegerDisjunctionIsNotValueEquality (control, green pre-fix)",
+    "LmdbFiniteAnchorEqualityTest#sameTermBooleanDisjunctionIsNotValueEquality (control, green pre-fix)",
+    "LmdbFiniteAnchorEqualityTest#controlSameTermIntegerMatchesIdenticalTerm",
+    "LmdbFiniteAnchorEqualityTest#controlEqualityIntegerMatchesValueEqualTerm",
+    "LmdbFiniteAnchorEqualityTest#controlEqualityDateTimeTimezoneVariantIsValueEqual",
+    "LmdbFilterSimplifierOptimizerTest#retainsSameTermFilterWhenIntegerAnchorIsValueExpanded",
+    "LmdbFilterSimplifierOptimizerTest#retainsSameTermFilterWhenBooleanAnchorIsValueExpanded",
+    "LmdbFilterSimplifierOptimizerTest#retainsMixedSameTermDisjunctionFilterWithValueExpandedAnchor",
+    "LmdbFilterSimplifierOptimizerTest#expandsCanonicalIntegerEqualityAnchorAndDropsFilter (regression guard)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.txt (log .mvnf/workspaces/wp1/logs/20260928T015237.429460Z-73534-7d797ebf/verify.log)\nTests run: 18, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 3.139 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.sameTermIntegerViaNullRejectedOptional -- Time elapsed: 0.095 s <<< FAILURE!\n  SELECT ?s WHERE { ?s :type :T OPTIONAL { ?s :v ?o } FILTER(sameTerm(?o, 7)) }\n  expected=[]  lmdb=[s=<http://example.org/s1>]  oracle=[]\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.sameTermBooleanViaNullRejectedOptional -- Time elapsed: 0.100 s <<< FAILURE!\n  expected=[]  lmdb=[s=<http://example.org/s1>]  oracle=[]\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.mixedSameTermAndEqualityDisjunctionKeepsOnlyValueEqualRow -- Time elapsed: 0.097 s <<< FAILURE!\n  expected=[s=<http://example.org/s2>]  lmdb=[s=<http://example.org/s1>, s=<http://example.org/s2>]\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.sameTermDateTimeTimezoneVariantIsNotValueEquality -- Time elapsed: 0.081 s <<< FAILURE!\n  expected=[]  lmdb=[s=<http://example.org/s1>]  oracle=[]\nAlgebra level (log 20260928T015538.572289Z-74610-a292267f): [ERROR] Tests run: 74, Failures: 4 -- LmdbFilterSimplifierOptimizerTest.retainsSameTermFilterWhenIntegerAnchorIsValueExpanded:722 sameTerm filter must survive: Join; retainsSameTermFilterWhenBooleanAnchorIsValueExpanded:737; retainsMixedSameTermDisjunctionFilterWithValueExpandedAnchor:751",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.txt (log .mvnf/workspaces/wp1/logs/20260928T021810.803062Z-82062-4e5850b4/verify.log)\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.288 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest\nReport: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFilterSimplifierOptimizerTest.txt (log .mvnf/workspaces/wp1/logs/20260928T022036.671418Z-82734-6f4195f6/verify.log)\nTests run: 74, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.220 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFilterSimplifierOptimizerTest"
+  },
+  {
+   "id": "3.1.5",
+   "status": "fixed",
+   "rootCause": "RdfTermDomain had canonicity facts for integers/dateTime/date but none for xsd:boolean; LmdbFilterSimplifierOptimizer.canMaterializeObjectFilterAnchor gated the boolean anchor on hasDatatype(BOOLEAN) + valid anchor values only, and expandFiniteAnchor/addBooleanAnchorValues materialised {\"true\",\"1\"} and dropped the filter. A stored \" true \"^^xsd:boolean (valid under whiteSpace=collapse, value-equal to true, returned by the oracle) is neither term, so the row was lost; the packed range-anchor rule (PackedLogicalRuleProgram.expandAnchorValue) had the same gap (datatype-only proof).",
+   "change": "Added RdfTermDomain.Fact.CANONICAL_BOOLEAN (appended after CANONICAL_DATE; member of UNIVERSAL_FACT_MASK so joinObserved ANDs it; classifyMask sets it only for the exact labels true/false/1/0; isContradictory flags CANONICAL_BOOLEAN without the BOOLEAN datatype). canMaterializeObjectFilterAnchor's boolean branch now also requires guarantee.has(CANONICAL_BOOLEAN). Because Fact ordinals shift the persisted datatype bits, TripleStore.PREDICATE_OBJECT_DOMAINS_VERSION bumped rdf-term-domain-v4 -> v5 (rebuild on open; with predicateGuaranteeIndexAutoRebuild=false the guarantees are cleared and the filters are simply retained - both upgrade paths tested, per critique minor #7). Exported to the packed planner: PackedPredicateRange.UNIVERSAL_CANONICAL_BOOLEAN (1<<4), LmdbPackedPredicateRangeProvider maps the fact, PackedPredicateRangeArena widens the universal-bit field from 4 to 5 bits (flags moved from bits 11/12 to 12/13, in-memory layout only), and PackedLogicalRuleProgram.expandAnchorValue returns -1 (no safe expansion, filter kept) without the proof. Resumed-attempt corrections: the two new LmdbPredicateObjectDomainIndexTest upgrade/degradation tests asserted that no finite anchor may appear, but the plans they rejected retained the Compare (=) filter next to an exact-stored-term anchor (proofFacts originalFilterRetained|exactStoredTermSupport), which is sound; they now assert the retained filter and permit an anchor only with originalFilterRetained. The PackedPredicateRangePlanningTest regression guard built its expected set with ValueFactory.createLiteral(String, CoreDatatype), which canonicalises \"1\"^^xsd:boolean to the shared TRUE literal (duplicate element); it now uses the IRI overload like the rule.",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomain.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizer.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbPackedPredicateRangeProvider.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRange.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFiniteAnchorEqualityTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbFilterSimplifierOptimizerTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/RdfTermDomainClassificationTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbPredicateObjectDomainIndexTest.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangePlanningTest.java"
+   ],
+   "testsAdded": [
+    "LmdbFiniteAnchorEqualityTest#booleanWhitespaceViaNullRejectedOptional",
+    "LmdbFiniteAnchorEqualityTest#booleanWhitespaceLexicalFormEqualsTrue",
+    "LmdbFiniteAnchorEqualityTest#booleanWhitespaceLexicalFormEqualsTrueColdStore",
+    "LmdbFiniteAnchorEqualityTest#booleanMixedCanonicalAndWhitespaceFormsEqualTrue",
+    "LmdbFiniteAnchorEqualityTest#booleanWhitespaceFormCommittedAfterCanonicalRows",
+    "LmdbFiniteAnchorEqualityTest#controlBooleanOneEqualsTrue",
+    "LmdbFiniteAnchorEqualityTest#controlBooleanOneEqualsTrueColdStore",
+    "LmdbFilterSimplifierOptimizerTest#keepsBooleanFilterWhenGuaranteeLacksCanonicalBooleanFact",
+    "RdfTermDomainClassificationTest#classifiesCanonicalBooleanFacts",
+    "RdfTermDomainClassificationTest#observedJoinsDropCanonicalBooleanWhenAnyStoredFormIsNotCanonical",
+    "RdfTermDomainClassificationTest#queryMeetDetectsCanonicalBooleanWithoutBooleanDatatypeAsContradiction",
+    "LmdbPredicateObjectDomainIndexTest#booleanPredicateLosesCanonicalGuaranteeAfterNonCanonicalLexicalCommit",
+    "LmdbPredicateObjectDomainIndexTest#booleanGuaranteeUpgradeRebuildsCanonicalBooleanFact",
+    "LmdbPredicateObjectDomainIndexTest#booleanGuaranteeUpgradeWithAutoRebuildDisabledClearsGuaranteesAndKeepsFilter",
+    "PackedPredicateRangePlanningTest#booleanEqualityKeepsFilterWithoutCanonicalBooleanProof",
+    "PackedPredicateRangePlanningTest#booleanEqualityExpandsToCanonicalLexicalFormsUnderCanonicalBooleanProof (regression guard)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.txt (log .mvnf/workspaces/wp1/logs/20260928T015237.429460Z-73534-7d797ebf/verify.log)\nTests run: 18, Failures: 6, Errors: 0, Skipped: 0 <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest\norg.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.booleanWhitespaceViaNullRejectedOptional -- Time elapsed: 0.087 s <<< FAILURE!\n  SELECT ?s WHERE { ?s :type :T OPTIONAL { ?s :flag ?f } FILTER(?f = true) }\n  expected=[s=<http://example.org/s1>]  lmdb=[]  oracle=[s=<http://example.org/s1>]\nAlgebra level (log 20260928T015538.572289Z-74610-a292267f): [ERROR] LmdbFilterSimplifierOptimizerTest.keepsBooleanFilterWhenGuaranteeLacksCanonicalBooleanFact:690 boolean filter must survive: Join\nPacked rule: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangePlanningTest.txt (log 20260928T020829.956400Z-78359-3fa97657)\nTests run: 43, Failures: 1, Errors: 0, Skipped: 0 <<< FAILURE!\nPackedPredicateRangePlanningTest.booleanEqualityKeepsFilterWithoutCanonicalBooleanProof <<< FAILURE! without a canonical-boolean proof the value-equality filter must stay: Projection (costEstimate=8.00, resultSizeEstimate=2.00)",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest.txt (log 20260928T021810.803062Z-82062-4e5850b4)\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.288 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbFiniteAnchorEqualityTest\nReport: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.RdfTermDomainClassificationTest.txt (log 20260928T022202.094427Z-83458-2b597841)\nTests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.071 s -- in org.eclipse.rdf4j.sail.lmdb.RdfTermDomainClassificationTest\nReport: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbPredicateObjectDomainIndexTest.txt (log 20260928T051937.834914Z-26584-e7849d0a)\nTests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.896 s -- in org.eclipse.rdf4j.sail.lmdb.LmdbPredicateObjectDomainIndexTest\nReport: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-queryalgebra-evaluation/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangePlanningTest.txt (log 20260928T052641.114163Z-43243-e6d4c44e)\nTests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.408 s -- in org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangePlanningTest"
+  },
+  {
+   "id": "3.5",
+   "status": "fixed",
+   "rootCause": "TripleStore.commitDurableStatementBatch ordered flushPendingRdfTermDomains() -> mdb_txn_commit(txn) -> applyPendingRdfTermDomainCacheUpdates(), so the volatile predicateObjectDomainCache the planner reads (getKnownRdfTermDomain via LmdbEstimatorStorageAccess.rdfTermDomain) was swapped only after the committed rows became visible to new read transactions; TxnManager.createReadTxn takes no lock against this ordering. A query that opened its snapshot in that window planned a \"05\"^^xsd:int row under the stale CANONICAL_INTEGER guarantee and a finite anchor dropped it. Incremental updates only weaken (joinObserved / deletes), so 'data newer than guarantee' is the only unsafe direction.",
+   "change": "commitDurableStatementBatch now publishes the pending cache updates BEFORE mdb_txn_commit whenever the batch cannot strengthen a guarantee (a weaker-than-disk heap cache after a failed commit is sound; the post-commit call at the resize/else branches stays and is idempotent). A new flag pendingRdfTermDomainCacheMayStrengthen is set by rebuildRdfTermDomain(long) and stageRdfTermDomainCacheClear() (the only paths that recompute, hence may strengthen, guarantees; both reached from initializeRdfTermDomains at open) and reset in clearPendingRdfTermDomainCacheUpdates; such batches keep post-commit publication. This deviates from the critique's minor suggestion (publish before commit unconditionally + javadoc): the flag turns the 'future strengthening paths must publish after commit' rule into code instead of a comment, at the cost of one boolean. A package-private volatile test seam durableCommitBarrierForTesting runs right after mdb_txn_commit so a test can observe the cache at the first instant readers can see the rows (a read txn cannot be opened from inside the barrier because the writer holds the txn-manager lock, so the test observes the heap cache and verifies row visibility afterwards).",
+   "files": [
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java",
+    "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreGuaranteePublicationTest.java"
+   ],
+   "testsAdded": [
+    "TripleStoreGuaranteePublicationTest#weakenedGuaranteeIsPublishedNoLaterThanTheCommittedRows",
+    "TripleStoreGuaranteePublicationTest#unchangedGuaranteeStaysPublishedAcrossCommitsWithoutGuaranteeWrites (control)"
+   ],
+   "preFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest.txt (log .mvnf/workspaces/wp1/logs/20260928T020945.482569Z-78917-7872329b/verify.log)\nTests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 1.049 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest\norg.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest.weakenedGuaranteeIsPublishedNoLaterThanTheCommittedRows <<< FAILURE!\norg.opentest4j.AssertionFailedError: a reader opening its snapshot at commit must already see the weakened guarantee, not RdfTermDomain[LITERAL, LITERAL_WITHOUT_LANGUAGE, NUMBER, CANONICAL_INTEGER, INT, integerRange=[7, 7]] ==> expected: <false> but was: <true>",
+   "postFixEvidence": "Report: .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest.txt (copy /private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wp1-b2-staged/TripleStoreGuaranteePublicationTest.postfix2.txt; log .mvnf/workspaces/wp1/logs/20260928T052126.341295Z-27448-c97573a0/verify.log)\nTests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.684 s -- in org.eclipse.rdf4j.sail.lmdb.TripleStoreGuaranteePublicationTest"
+  }
+ ],
+ "suiteRuns": [
+  {
+   "selection": "LmdbFiniteAnchorEqualityTest (core/sail/lmdb) pre-fix / post-fix, interrupted attempt 2026-09-28 (evidence blocks in initial-evidence.wp1.txt)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbFiniteAnchorEqualityTest --module core/sail/lmdb --retain-logs",
+   "result": "pre-fix tests=18, failures=6; post-fix tests=18, failures=0, errors=0, skipped=0",
+   "reds": [
+    "pre-fix: the 6 intended reproducers (sameTerm x4 incl. dateTime tz variant and mixed disjunction, booleanWhitespaceViaNullRejectedOptional); the 12 greens are spec controls and the single-pattern boolean forms (not anchored before the estimator is ready)"
+   ]
+  },
+  {
+   "selection": "LmdbFilterSimplifierOptimizerTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbFilterSimplifierOptimizerTest --module core/sail/lmdb --retain-logs",
+   "result": "pre-fix tests=74, failures=4; post-fix tests=74, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "RdfTermDomainClassificationTest (core/sail/lmdb)",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 RdfTermDomainClassificationTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=18, failures=0, errors=0, skipped=0",
+   "reds": []
+  },
+  {
+   "selection": "LmdbPredicateObjectDomainIndexTest (core/sail/lmdb), this resumed session",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 LmdbPredicateObjectDomainIndexTest --module core/sail/lmdb --retain-logs",
+   "result": "interrupted attempt tests=19, failures=2 -> after assertion fix tests=19, failures=0, errors=0, skipped=0 (log 20260928T051937.834914Z-26584-e7849d0a)",
+   "reds": [
+    "booleanPredicateLosesCanonicalGuaranteeAfterNonCanonicalLexicalCommit, booleanGuaranteeUpgradeWithAutoRebuildDisabledClearsGuaranteesAndKeepsFilter: outdated-expectation-updated - the new tests demanded the absence of any finite anchor, but the plan retained the Compare (=) filter with an exact-stored-term pre-filter anchor (proofFacts=originalFilterRetained|termIdsDeduplicated|exactStoredTermSupport), which is sound; assertions now require the retained filter and allow an anchor only with originalFilterRetained"
+   ]
+  },
+  {
+   "selection": "TripleStoreGuaranteePublicationTest (core/sail/lmdb), this resumed session",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 TripleStoreGuaranteePublicationTest --module core/sail/lmdb --retain-logs",
+   "result": "tests=2, failures=0, errors=0, skipped=0 (log 20260928T052126.341295Z-27448-c97573a0)",
+   "reds": []
+  },
+  {
+   "selection": "PackedPredicateRangePlanningTest (core/queryalgebra/evaluation), this resumed session",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 PackedPredicateRangePlanningTest --module core/queryalgebra/evaluation --retain-logs",
+   "result": "first rerun tests=44, errors=1 (log 20260928T052255.913492Z-28236-f365b976) -> after test fix tests=44, failures=0, errors=0, skipped=0 (log 20260928T052641.114163Z-43243-e6d4c44e)",
+   "reds": [
+    "booleanEqualityExpandsToCanonicalLexicalFormsUnderCanonicalBooleanProof: caused-by-my-change-and-fixed (test-only) - IllegalArgumentException duplicate element from Set.of because ValueFactory.createLiteral(String, CoreDatatype) canonicalises \"1\"^^xsd:boolean to the shared TRUE literal; expectation now uses the IRI overload exactly like the rule's Values.literal(\"1\", XSD.BOOLEAN)"
+   ]
+  },
+  {
+   "selection": "core/queryalgebra/evaluation full unit suite",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/queryalgebra/evaluation --retain-logs (via /private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wp1-b2-staged/run-suites.sh)",
+   "result": "tests=1750, failures=3, errors=1, skipped=0 (mvnf log dir .mvnf/workspaces/wp1/logs/20260928T053212.955531Z-45834-dc2212fd/; b1 baseline was 1748 with the identical red set)",
+   "reds": [
+    "MinusQueryEvaluationStepTest.spillFileIsRemovedWhenIterationIsClosedEarly and .spillFileIsRemovedWhenIterationIsExhausted: pre-existing (environment) - 'Expected size: 1 but was: 0'; identical in the b1 run and in wp6-b1 before any b2 change; the workspace runner overrides java.io.tmpdir while the spill file lands in the JDK TempFileHelper's cached tmpdir",
+    "OptimizerRuleCatalogTest.generatedDocumentationMatchesManifestAndResearchInputs: pre-existing (environment) - NoSuchFileException <worktree>/papers2/papers/docs/sparql_query_rewrite_catalog.md; papers2/ is untracked in the main checkout and absent from every worktree (identical in b1)",
+    "PackedFrontierSubsetKernelContractTest.arbitraryWidthBushyDependentJoinContinuesRightRecipeUnderWholeLeftPrefix: flaky - assertTimeoutPreemptively 120 s under machine load; b1 isolated rerun green in 113 s (log 20260928T011443.417085Z-62100-55889109); not rerun again in this session because the lmdb suite holds the workspace lock"
+   ]
+  },
+  {
+   "selection": "core/sail/lmdb full unit suite",
+   "command": "python3 .codex/skills/mvnf/scripts/mvnf.py --workspace wp1 --threads 3 core/sail/lmdb --retain-logs (via /private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wp1-b2-staged/run-suites.sh, detached)",
+   "result": "IN PROGRESS at report time (started 2026-09-28 07:36:01 CEST; b1 timings 18-22 min). NOT OBSERVED - no green claimed. mvnf summary and top failures are appended to /private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wp1-b2-staged/suites.log; reports under .mvnf/workspaces/wp1/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports. The harness required the structured report before completion.",
+   "reds": [
+    "not yet known - must be read from suites.log and triaged; b1 baseline for this suite: 2332 tests, 0 failures, 1 error (LmdbDistinctCursorSkipOverlayTest disk-full window, green on isolated rerun), 7 skipped. All b2-touched classes (LmdbFiniteAnchorEqualityTest 18/18, LmdbFilterSimplifierOptimizerTest 74/74, RdfTermDomainClassificationTest 18/18, LmdbPredicateObjectDomainIndexTest 19/19, TripleStoreGuaranteePublicationTest 2/2) are green individually"
+   ]
+  }
+ ],
+ "filesTouchedOutsideOwnership": [
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedLogicalRuleProgram.java (wp2: 6-line guard in expandAnchorValue requiring UNIVERSAL_CANONICAL_BOOLEAN before boolean lexical expansion)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRange.java (wp2: new UNIVERSAL_CANONICAL_BOOLEAN constant)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangeArena.java (wp2: universal-bit field widened 4->5 bits, in-memory layout only)",
+  "/private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wt-wp1/core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedPredicateRangePlanningTest.java (wp2: two tests)"
+ ],
+ "newFlagsOrConfig": [
+  "TripleStore.PREDICATE_OBJECT_DOMAINS_VERSION rdf-term-domain-v4 -> rdf-term-domain-v5 (persisted guarantee metadata; existing stores rebuild guarantees on first open, or clear them when predicateGuaranteeIndexAutoRebuild=false and keep the filters)",
+  "RdfTermDomain.Fact.CANONICAL_BOOLEAN (explain strings for canonical boolean predicates now show CANONICAL_BOOLEAN)",
+  "PackedPredicateRange.UNIVERSAL_CANONICAL_BOOLEAN",
+  "TripleStore.durableCommitBarrierForTesting (package-private volatile test seam, null in production)",
+  "no kill switches added"
+ ],
+ "crossWpNotes": [
+  "wp2: PackedLogicalRuleProgram/PackedPredicateRange/PackedPredicateRangeArena edited minimally (see filesTouchedOutsideOwnership); the wp2 patch on disk does not touch these files, so no conflict expected. wp2's 3.2.4 (sameTerm vs value equality in packed anchors) should reuse LmdbJoinPlanSupport.containsSameTerm's rule: SameTerm anywhere => retain the filter, never drop it.",
+  "wp3: the version bump changes effectiveRdfTermDomainsVersion -> predicateRangeVersion so cached plans invalidate on upgrade; data-change invalidation and snapshot-stamped guarantee certificates (roadmap 4.2) remain wp3's; the 3.5 fix closes the commit-ordering window only, not the renewed-tracked-txn question.",
+  "wp9: none in this batch."
+ ],
+ "followUps": [
+  "Read /private/tmp/claude-501/-Users-havardottestad-Documents-Programming-rdf4j-small-things/500065d4-5dc9-4815-82f2-55c993a3ba05/scratchpad/wp1-b2-staged/suites.log when the detached core/sail/lmdb suite finishes (evaluation suite already done: b1-identical red set) and triage any red; append the mvnf summary to initial-evidence.wp1.txt under '## b2 suite: core/sail/lmdb unit suite'.",
+  "Critique 3.5 asked for a test that a failed mdb_txn_commit does not throw from the cache path; applyPendingRdfTermDomainCacheUpdates is pure heap work (cannot throw) and a deterministic commit failure needs a disk-full injection, so this was not added.",
+  "LmdbThemeQueryRegressionIT (not in the unit suite) asserts integer/date guarantee strings only; a boolean-predicate explain assertion there would need CANONICAL_BOOLEAN added.",
+  "Formatter not run (integrator runs it)."
+ ]
+}

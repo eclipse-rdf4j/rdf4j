@@ -19,6 +19,13 @@ By default port 8080 is exposed.
 The default java runtime options (-Xmx2g) can be changed by setting the 
 `JAVA_OPTS` environment variable.
 
+The JDK 25 Tomcat and Jetty images resolve the incubating Vector API automatically with
+`--add-modules=jdk.incubator.vector`. The resulting incubator warning at startup is expected. Frontier statistics SIMD
+can be disabled with `-Drdf4j.frontier.vector.enabled=false`, and its batch crossover can be changed with
+`-Drdf4j.frontier.vector.minBatch=<count>`. Preserve the module option when replacing `JAVA_OPTS` or `JAVA_OPTIONS` if
+SIMD should remain enabled. Custom images or externally managed WAR containers must add the module option manually;
+without it, LMDB uses the bit-exact scalar batching fallback.
+
 To avoid data loss between restarts of the docker container, 
 the exposed volumes can be mapped to existing (and writable) directories on the host. 
 
