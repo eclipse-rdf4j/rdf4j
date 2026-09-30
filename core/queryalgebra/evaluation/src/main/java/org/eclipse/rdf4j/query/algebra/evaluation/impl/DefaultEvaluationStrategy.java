@@ -1310,28 +1310,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryValueEvaluationStep prepare(And node, QueryEvaluationContext context) throws QueryEvaluationException {
-		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
-		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
+		QueryValueEvaluationStep leftStep = precompileOrFail(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightStep = precompileOrFail(node.getRightArg(), context);
 
 		return AndValueEvaluationStep.supply(leftStep, rightStep, node);
 	}
 
 	protected QueryValueEvaluationStep prepare(Or node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryValueEvaluationStep leftArg = null;
-		QueryValueEvaluationStep rightArg = null;
-		try {
-			try {
-				leftArg = precompile(node.getLeftArg(), context);
-			} catch (ValueExprEvaluationException e) {
-				// leftArg would always be false in this case so no need to evaluate it.
-				return precompile(node.getRightArg(), context);
-			}
-			rightArg = precompile(node.getRightArg(), context);
-		} catch (ValueExprEvaluationException e) {
-			// Both failed to compile so we know we will always throw an exception
-			return new QueryValueEvaluationStep.Fail("Value Expressions in OR both failed to prepare/precompile");
-		}
+		QueryValueEvaluationStep leftArg = precompileOrFail(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightArg = precompileOrFail(node.getRightArg(), context);
 		return new OrValueEvaluationStep(leftArg, rightArg, node);
 	}
 
@@ -1459,9 +1447,23 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			// binding.
 			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> null);
 		}
-		QueryValueEvaluationStep result = precompile(node.getResult(), context);
-		QueryValueEvaluationStep alternative = precompile(node.getAlternative(), context);
+		// only the selected branch is evaluated, so an error in the other branch must not surface
+		QueryValueEvaluationStep result = precompileOrFail(node.getResult(), context);
+		QueryValueEvaluationStep alternative = precompileOrFail(node.getAlternative(), context);
 		return new IfValueEvaluationStep(result, condition, alternative, node);
+	}
+
+	/**
+	 * Precompile an operand whose value error may be discarded by the enclosing expression (for example
+	 * <code>true || error</code> or <code>false &amp;&amp; error</code>). An error raised while precompiling is
+	 * deferred until the operand is evaluated.
+	 */
+	private QueryValueEvaluationStep precompileOrFail(ValueExpr expr, QueryEvaluationContext context) {
+		try {
+			return precompile(expr, context);
+		} catch (ValueExprEvaluationException e) {
+			return new QueryValueEvaluationStep.Fail(e.getMessage());
+		}
 	}
 
 	protected QueryValueEvaluationStep prepare(In node, QueryEvaluationContext context)
