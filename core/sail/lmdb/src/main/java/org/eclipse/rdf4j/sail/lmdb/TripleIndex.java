@@ -29,7 +29,7 @@ import java.util.StringTokenizer;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
-import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
+import org.eclipse.rdf4j.sail.lmdb.util.IndexEntryWriters;
 
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
@@ -42,24 +42,27 @@ class TripleIndex {
 
 	@FunctionalInterface
 	interface StatementFieldValueAccessor {
-		long get(long[] subj, long[] pred, long[] obj, long[] context, int statementIndex);
+		long[] get(long[] subj, long[] pred, long[] obj, long[] context);
 	}
 
 	private final char[] fieldSeq;
-	private final IndexKeyWriters.KeyWriter keyWriter;
-	private final IndexKeyWriters.MatcherFactory matcherFactory;
+	private final IndexEntryWriters.EntryWriter entryWriter;
 	final StatementFieldValueAccessor[] fieldValueAccessors;
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
 	private final int[] indexMap;
 	private final long env;
 	private String name;
+	private int indexSplitPosition;
 
-	TripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn) throws IOException {
+	public TripleIndex(String name, String fieldSeq, int indexSplitPosition, boolean createInferredIndex, long env,
+			long writeTxn) throws IOException {
 		this.name = name;
 		this.fieldSeq = fieldSeq.toCharArray();
-		this.keyWriter = IndexKeyWriters.forFieldSeq(fieldSeq);
-		this.matcherFactory = IndexKeyWriters.matcherFactory(fieldSeq);
+		// adjust split position for indexes starting with context
+		this.indexSplitPosition = fieldSeq.startsWith("c") ? Math.min(indexSplitPosition + 1, 4)
+				: indexSplitPosition;
+		this.entryWriter = IndexEntryWriters.forFieldSeq(fieldSeq);
 		this.fieldValueAccessors = createFieldValueAccessors(this.fieldSeq);
 		this.leadingFieldValueAccessor = this.fieldValueAccessors[0];
 		this.indexMap = getIndexes(this.fieldSeq);
@@ -120,18 +123,13 @@ class TripleIndex {
 	}
 
 	private StatementFieldValueAccessor getFieldValueAccessor(char field) {
-		switch (field) {
-		case 's':
-			return (subj, pred, obj, context, statementIndex) -> subj[statementIndex];
-		case 'p':
-			return (subj, pred, obj, context, statementIndex) -> pred[statementIndex];
-		case 'o':
-			return (subj, pred, obj, context, statementIndex) -> obj[statementIndex];
-		case 'c':
-			return (subj, pred, obj, context, statementIndex) -> context[statementIndex];
-		default:
-			throw new IllegalArgumentException("Unknown index field: " + field);
-		}
+		return switch (field) {
+		case 's' -> (subj, pred, obj, context) -> subj;
+		case 'p' -> (subj, pred, obj, context) -> pred;
+		case 'o' -> (subj, pred, obj, context) -> obj;
+		case 'c' -> (subj, pred, obj, context) -> context;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
 	}
 
 	protected int[] getIndexes(char[] fieldSeq) {
@@ -198,30 +196,38 @@ class TripleIndex {
 		return score;
 	}
 
-	void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+	void getMinEntry(long[] tuple, long subj, long pred, long obj, long context) {
 		subj = subj <= 0 ? 0 : subj;
 		pred = pred <= 0 ? 0 : pred;
 		obj = obj <= 0 ? 0 : obj;
 		context = context <= 0 ? 0 : context;
-		toKey(bb, subj, pred, obj, context);
+		toEntry(tuple, subj, pred, obj, context);
 	}
 
-	void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+	void getMaxEntry(long[] tuple, long subj, long pred, long obj, long context) {
 		subj = subj <= 0 ? Long.MAX_VALUE : subj;
 		pred = pred <= 0 ? Long.MAX_VALUE : pred;
 		obj = obj <= 0 ? Long.MAX_VALUE : obj;
-		context = context < 0 ? Long.MAX_VALUE : context;
-		toKey(bb, subj, pred, obj, context);
+		context = context <= 0 ? Long.MAX_VALUE : context;
+		toEntry(tuple, subj, pred, obj, context);
 	}
 
-	GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
+	public int getIndexSplitPosition() {
+		return indexSplitPosition;
+	}
+
+	GroupMatcher createKeyMatcher(long subj, long pred, long obj, long context) {
 		int length = getLength(subj, pred, obj, context);
 
 		ByteBuffer bb = ByteBuffer.allocate(length);
-		toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
+		long[] tuple = new long[4];
+		toEntry(tuple, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);
+		for (long value : tuple) {
+			Varint.writeUnsigned(bb, value);
+		}
 		bb.flip();
 
-		return new GroupMatcher(bb.array(), matcherFactory.create(subj, pred, obj, context));
+		return new GroupMatcher(bb.array(), new boolean[] { tuple[0] > 0, tuple[1] > 0, tuple[2] > 0, tuple[3] > 0 });
 	}
 
 	private int getLength(long subj, long pred, long obj, long context) {
@@ -244,50 +250,15 @@ class TripleIndex {
 		return length;
 	}
 
-	void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
-		boolean shouldCache = threeOfFourAreZeroOrMax(subj, pred, obj, context);
-		if (shouldCache) {
-			long sum = subj + pred + obj + context;
-			if (sum == 0 && subj == pred && obj == context) {
-				bb.put(Varint.ALL_ZERO_QUAD);
-				return;
-			}
-
-			if (sum < 241) { // keys with sum < 241 only need 4 bytes to write and don't need caching
-				shouldCache = false;
-			}
-		}
-
-		// Pass through to the keyWriter with caching hint
-		keyWriter.write(bb, subj, pred, obj, context, shouldCache);
+	void toEntry(long[] tuple, long subj, long pred, long obj, long context) {
+		entryWriter.write(tuple, subj, pred, obj, context);
 	}
 
-	void keyToQuad(ByteBuffer key, long[] quad) {
-		Varint.readQuadUnsigned(key, indexMap, quad);
-	}
-
-	void keyToQuad(ByteBuffer key, long[] originalQuad, long[] quad) {
-		// directly use index map to read values in to correct positions
-		if (originalQuad[indexMap[0]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[0]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[1]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[1]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[2]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[2]] = Varint.readUnsigned(key);
-		}
-		if (originalQuad[indexMap[3]] != -1) {
-			Varint.skipUnsigned(key);
-		} else {
-			quad[indexMap[3]] = Varint.readUnsigned(key);
-		}
+	void entryToQuad(long[] tuple, long[] quad) {
+		quad[indexMap[0]] = tuple[0];
+		quad[indexMap[1]] = tuple[1];
+		quad[indexMap[2]] = tuple[2];
+		quad[indexMap[3]] = tuple[3];
 	}
 
 	@Override
@@ -329,21 +300,6 @@ class TripleIndex {
 		}
 
 		return bestIndex;
-	}
-
-	static boolean threeOfFourAreZeroOrMax(long subj, long pred, long obj, long context) {
-		// Precompute the 8 equalities once (cheapest operations here)
-		boolean zS = subj == 0L, zP = pred == 0L, zO = obj == 0L, zC = context == 0L;
-		boolean mS = subj == Long.MAX_VALUE, mP = pred == Long.MAX_VALUE, mO = obj == Long.MAX_VALUE,
-				mC = context == Long.MAX_VALUE;
-
-		// ≥3-of-4 ≡ ab(c∨d) ∨ cd(a∨b). Apply once for zeros and once for maxes.
-		// Using '&' and '|' (not &&/||) keeps it branchless and predictable.
-
-		return (((zS & zP & (zO | zC)) | (zO & zC & (zS | zP)))// ≥3 zeros
-				| ((mS & mP & (mO | mC)) | (mO & mC & (mS | mP))));// ≥3 Long.MAX_VALUE
-//				& !(zS & zP & zO & zC)    // not all zeros
-//				& !(mS & mP & mO & mC);   // not all max
 	}
 
 	static Set<String> orderIndexSpecs(Set<String> indexSpecs) {
@@ -506,6 +462,10 @@ class TripleIndex {
 			currentIndex++;
 		}
 		return true;
+	}
+
+	public int[] getIndexMap() {
+		return indexMap;
 	}
 
 	record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {

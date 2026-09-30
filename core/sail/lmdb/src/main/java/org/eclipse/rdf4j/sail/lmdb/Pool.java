@@ -27,12 +27,21 @@ final class Pool {
 
 	private final MpmcRingBuffer<MDBVal> valPool = new MpmcRingBuffer<>(POOL_SIZE);
 	private final MpmcRingBuffer<ByteBuffer> keyPool = new MpmcRingBuffer<>(POOL_SIZE);
+	private final LmdbRecordIterator.State[] statePool = new LmdbRecordIterator.State[128];
+	private int statePoolIndex = -1;
 
 	private volatile boolean closed;
 
 	MDBVal getVal() {
 		MDBVal val = valPool.poll();
 		return val != null ? val : MDBVal.malloc();
+	}
+
+	final LmdbRecordIterator.State getState() {
+		if (statePoolIndex >= 0) {
+			return statePool[statePoolIndex--];
+		}
+		return new LmdbRecordIterator.State();
 	}
 
 	ByteBuffer getKeyBuffer() {
@@ -57,8 +66,19 @@ final class Pool {
 		}
 	}
 
+	final void free(LmdbRecordIterator.State state) {
+		if (statePoolIndex < statePool.length - 1) {
+			statePool[++statePoolIndex] = state;
+		} else {
+			state.close();
+		}
+	}
+
 	void close() {
 		closed = true;
+		while (statePoolIndex >= 0) {
+			statePool[statePoolIndex--].close();
+		}
 		MDBVal val;
 		while ((val = valPool.poll()) != null) {
 			val.close();

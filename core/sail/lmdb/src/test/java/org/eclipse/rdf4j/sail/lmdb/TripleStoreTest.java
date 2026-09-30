@@ -13,35 +13,32 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.mdb_del;
-import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
-import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -53,7 +50,7 @@ public class TripleStoreTest {
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
 		this.dataDir = dataDir;
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc,psoc"), null);
 	}
 
 	int count(RecordIterator it) {
@@ -117,58 +114,8 @@ public class TripleStoreTest {
 	}
 
 	@Test
-	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
-		File fallbackDir = new File(dataDir, "aligned-fallback-store");
-		fallbackDir.mkdirs();
-		try (TripleStore fallbackStore = new TripleStore(fallbackDir, new LmdbStoreConfig("spoc,ospc,psoc"), null)) {
-			long[] subj = { 11 };
-			long[] pred = { 22 };
-			long[] obj = { 33 };
-			long[] context = { 44 };
-
-			fallbackStore.startTransaction();
-			fallbackStore.storeTriple(subj[0], pred[0], obj[0], context[0], false);
-			fallbackStore.commit();
-
-			fallbackStore.startTransaction();
-			TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
-			long writeTxn = getWriteTxn(fallbackStore);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				MDBVal keyVal = MDBVal.malloc(stack);
-				MDBVal dataVal = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				mainIndex.toKey(keyBuf, subj[0], pred[0], obj[0], context[0]);
-				keyBuf.flip();
-				keyVal.mv_data(keyBuf);
-				LmdbUtil.E(mdb_put(writeTxn, mainIndex.getDB(true), keyVal, dataVal, MDB_NOOVERWRITE));
-				assertEquals("Main inferred row should be removed before fallback replay", MDB_SUCCESS,
-						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
-			}
-
-			Method fallBackFromAlignedWrite = TripleStore.class.getDeclaredMethod("fallBackFromAlignedWrite",
-					int[].class, int.class, long[].class, long[].class, long[].class, long[].class, boolean[].class,
-					int.class, int.class, boolean.class, LongIntHashMap.class, IntConsumer.class);
-			fallBackFromAlignedWrite.setAccessible(true);
-			fallBackFromAlignedWrite.invoke(fallbackStore, new int[] { 0 }, 1, subj, pred, obj, context,
-					new boolean[] { true }, 1, 1, true, new LongIntHashMap(), null);
-			fallbackStore.commit();
-
-			try (Txn txn = fallbackStore.getTxnManager().createReadTxn()) {
-				assertEquals("PSOC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, false)));
-				assertEquals("OSPC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, false)));
-				assertEquals("PSOC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, true)));
-				assertEquals("OSPC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, true)));
-			}
-		}
-	}
-
-	@Test
 	public void testLeadingFieldSortPreservesPriorOrderWithinGroups() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingFields", int[].class,
 				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
@@ -190,49 +137,8 @@ public class TripleStoreTest {
 	}
 
 	@Test
-	public void testLeadingFieldSortIgnoresFullKeySortProperty() throws Exception {
-		String previousAlignedWriteStrategy = System.getProperty("rdf4j.lmdb.alignedWriteStrategy");
-		System.setProperty("rdf4j.lmdb.alignedWriteStrategy", "FULL_KEY_SORT");
-
-		File ignoredPropertyDir = new File(dataDir, "ignored-full-key-sort-property");
-		ignoredPropertyDir.mkdirs();
-
-		try (TripleStore ignoredPropertyStore = new TripleStore(ignoredPropertyDir, new LmdbStoreConfig("spoc,posc"),
-				null)) {
-			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
-			method.setAccessible(true);
-			Field indexesField = TripleStore.class.getDeclaredField("indexes");
-			indexesField.setAccessible(true);
-
-			@SuppressWarnings("unchecked")
-			List<TripleIndex> indexes = (List<TripleIndex>) indexesField
-					.get(ignoredPropertyStore);
-
-			int[] statementIndices = { 0, 1, 2, 3 };
-			long[] subj = { 101, 102, 103, 104 };
-			long[] pred = { 7, 7, 7, 7 };
-			long[] obj = { 20, 10, 40, 30 };
-			long[] context = { 0, 0, 0, 0 };
-
-			method.invoke(ignoredPropertyStore, statementIndices, statementIndices.length, indexes.get(1), subj, pred,
-					obj,
-					context);
-
-			assertEquals("Leading-field sort should ignore legacy full-key strategy configuration",
-					Arrays.toString(new int[] { 0, 1, 2, 3 }), Arrays.toString(statementIndices));
-		} finally {
-			if (previousAlignedWriteStrategy == null) {
-				System.clearProperty("rdf4j.lmdb.alignedWriteStrategy");
-			} else {
-				System.setProperty("rdf4j.lmdb.alignedWriteStrategy", previousAlignedWriteStrategy);
-			}
-		}
-	}
-
-	@Test
 	public void testLeadingFieldSortKeepsPriorOrderWhenLeadingValuesMatch() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingFields", int[].class,
 				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
@@ -255,7 +161,7 @@ public class TripleStoreTest {
 
 	@Test
 	public void testLeadingFieldSortPreservesDuplicateGroupOrder() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingFields", int[].class,
 				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 		method.setAccessible(true);
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
@@ -277,121 +183,13 @@ public class TripleStoreTest {
 	}
 
 	@Test
-	public void testLeadingFieldSortReusesPriorIndexOrderForTargetTransition() throws Exception {
-		File orderedIndexDir = new File(dataDir, "leading-field-transition-store");
-		orderedIndexDir.mkdirs();
-
-		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir,
-				new LmdbStoreConfig("spoc,psoc,opsc,ospc"),
-				null)) {
-			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
-			method.setAccessible(true);
-			Field indexesField = TripleStore.class.getDeclaredField("indexes");
-			indexesField.setAccessible(true);
-
-			@SuppressWarnings("unchecked")
-			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(orderedIndexStore);
-			TripleIndex psoc = findIndex(indexes, "psoc");
-			TripleIndex opsc = findIndex(indexes, "opsc");
-
-			int[] statementIndices = { 0, 2, 1, 3 };
-			long[] subj = { 1, 2, 1, 2 };
-			long[] pred = { 1, 1, 2, 2 };
-			long[] obj = { 2, 1, 1, 2 };
-			long[] context = { 0, 0, 0, 0 };
-
-			method.invoke(orderedIndexStore, statementIndices, statementIndices.length, psoc, subj, pred, obj, context);
-			method.invoke(orderedIndexStore, statementIndices, statementIndices.length, opsc, subj, pred, obj, context);
-
-			assertEquals("OPSC sort should retain PSOC order inside equal object groups",
-					Arrays.toString(new int[] { 1, 2, 0, 3 }), Arrays.toString(statementIndices));
-		}
-	}
-
-	@Test
-	public void testLeadingFieldSortCompletesForEqualLeadingValues() throws Exception {
-		Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-				int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
-		method.setAccessible(true);
-		Field indexesField = TripleStore.class.getDeclaredField("indexes");
-		indexesField.setAccessible(true);
-
-		@SuppressWarnings("unchecked")
-		List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(tripleStore);
-
-		int size = 512;
-		int[] statementIndices = new int[size];
-		long[] subj = new long[size];
-		long[] pred = new long[size];
-		long[] obj = new long[size];
-		long[] context = new long[size];
-
-		for (int i = 0; i < size; i++) {
-			statementIndices[i] = i;
-			subj[i] = i;
-			pred[i] = 7;
-			obj[i] = size - i;
-		}
-
-		int[] expected = range(size);
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> method.invoke(tripleStore, statementIndices,
-				statementIndices.length, indexes.get(1), subj, pred, obj, context));
-		assertEquals("Equal leading values should preserve the prior order", Arrays.toString(expected),
-				Arrays.toString(statementIndices));
-	}
-
-	@Test
-	public void testLeadingFieldSortMatchesReferenceStableSortAcrossTransitions() throws Exception {
-		File orderedIndexDir = new File(dataDir, "leading-field-randomized-store");
-		orderedIndexDir.mkdirs();
-
-		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir, new LmdbStoreConfig("spoc,psoc,opsc"),
-				null)) {
-			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
-					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
-			method.setAccessible(true);
-			Field indexesField = TripleStore.class.getDeclaredField("indexes");
-			indexesField.setAccessible(true);
-
-			@SuppressWarnings("unchecked")
-			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(orderedIndexStore);
-			TripleIndex psoc = findIndex(indexes, "psoc");
-			TripleIndex opsc = findIndex(indexes, "opsc");
-
-			Random random = new Random(378245L);
-			for (int attempt = 0; attempt < 25; attempt++) {
-				int[] statementIndices = range(64);
-				long[] subj = new long[statementIndices.length];
-				long[] pred = new long[statementIndices.length];
-				long[] obj = new long[statementIndices.length];
-				long[] context = new long[statementIndices.length];
-
-				for (int i = 0; i < statementIndices.length; i++) {
-					subj[i] = i;
-					pred[i] = random.nextInt(8);
-					obj[i] = random.nextInt(8);
-					context[i] = random.nextInt(3);
-				}
-
-				assertLeadingFieldSortMatchesReference(method, orderedIndexStore, psoc, statementIndices, subj, pred,
-						obj,
-						context);
-				assertLeadingFieldSortMatchesReference(method, orderedIndexStore, opsc, statementIndices, subj, pred,
-						obj,
-						context);
-			}
-		}
-	}
-
-	@Test
 	public void testLeadingFieldSortMatchesReferenceAcrossResetRequiredTransition() throws Exception {
 		File orderedIndexDir = new File(dataDir, "leading-field-reset-store");
 		orderedIndexDir.mkdirs();
 
 		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir, new LmdbStoreConfig("spoc,psoc,ospc"),
 				null)) {
-			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingField", int[].class,
+			Method method = TripleStore.class.getDeclaredMethod("sortStatementIndicesByLeadingFields", int[].class,
 					int.class, TripleIndex.class, long[].class, long[].class, long[].class, long[].class);
 			method.setAccessible(true);
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
@@ -554,6 +352,185 @@ public class TripleStoreTest {
 		tripleStore.commit();
 		tripleStore.filterUsedIds(removed);
 		assertEquals(Arrays.asList(6L, 7L, 8L), removed.stream().sorted().collect(Collectors.toList()));
+	}
+
+	@Test
+	public void testHighCardinalityPredicates() throws Exception {
+		tripleStore.startTransaction();
+
+		int[] preds = { 42, 41, 40, 42, 43, 42, 40 };
+
+		Random random = new Random(378245L);
+		int maxObj = 1 << 24;
+		int size = 256;
+		int subj = 1;
+
+		Map<String, Set<String>> expectedByPredicate = new HashMap<>();
+		for (int pred : preds) {
+			for (int i = 1; i <= size; i++) {
+				int obj = random.nextInt(maxObj) + 1; // many object values, randomized insertion order
+				int context = 1;
+				expectedByPredicate.computeIfAbsent(String.valueOf(pred), k -> new HashSet<>())
+						.add(subj + "," + pred + "," + obj + "," + context);
+				tripleStore.storeTriple(subj, pred, obj, context, true);
+				subj++;
+			}
+		}
+
+		tripleStore.commit();
+
+		// check for duplicates in each index
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (TripleIndex index : tripleStore.getIndexes()) {
+				Set<String> foundQuads = new HashSet<>();
+				String indexName = new String(index.getFieldSeq());
+				try (RecordIterator it = tripleStore.getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index,
+						index.getPatternScore(-1, -1, -1, -1))) {
+					long[] quad;
+					while ((quad = it.next()) != null) {
+						String quadStr = quad[0] + "," + quad[1] + "," + quad[2] + "," + quad[3];
+						if (!foundQuads.add(quadStr)) {
+							fail("Duplicate quad found in index: " + indexName + ": " + quadStr);
+						}
+					}
+				}
+			}
+		}
+
+		random = new Random(378245L);
+		subj = 1;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (int pred : preds) {
+				for (int i = 1; i <= size; i++) {
+					int obj = random.nextInt(maxObj) + 1;
+					try (var it = tripleStore.getTriples(txn, subj, pred, obj, 1, true)) {
+						assertNotNull(it.next());
+					}
+					subj++;
+				}
+			}
+		}
+
+		assertExistingTriples(preds, expectedByPredicate);
+
+		// test removal of some triples for each predicate
+
+		tripleStore.startTransaction();
+		random = new Random(378245L);
+		subj = 1;
+		for (int pred : preds) {
+			for (int i = 1; i <= size; i++) {
+				int obj = random.nextInt(maxObj) + 1;
+				if ((i - 1) % 5 == 0) {
+					tripleStore.removeTriplesByContext(subj, pred, obj, 1, true, quad -> {
+						// no-op
+					});
+					expectedByPredicate.get(String.valueOf(pred)).remove(subj + "," + pred + "," + obj + "," + 1);
+				}
+				subj++;
+			}
+		}
+		tripleStore.commit();
+
+		assertExistingTriples(preds, expectedByPredicate);
+	}
+
+	@Test
+	public void testHighCardinalityPredicatesStoreAligned() throws Exception {
+		tripleStore.startTransaction();
+
+		int[] preds = { 42, 41, 40, 42, 43, 42, 40 };
+
+		Random random = new Random(378245L);
+		int maxObj = 1 << 24;
+		int size = 256;
+		int subj = 1;
+
+		Map<String, Set<String>> expectedByPredicate = new HashMap<>();
+		for (int pred : preds) {
+			long[] subjects = new long[size];
+			long[] predicates = new long[size];
+			long[] objects = new long[size];
+			long[] contexts = new long[size];
+			for (int i = 0; i < size; i++) {
+				int obj = random.nextInt(maxObj) + 1; // many object values, randomized insertion order
+				int context = 1;
+				expectedByPredicate.computeIfAbsent(String.valueOf(pred), k -> new HashSet<>())
+						.add(subj + "," + pred + "," + obj + "," + context);
+				subjects[i] = subj;
+				predicates[i] = pred;
+				objects[i] = obj;
+				contexts[i] = context;
+				subj++;
+			}
+			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, true);
+		}
+
+		tripleStore.commit();
+
+		// check for duplicates in each index
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (TripleIndex index : tripleStore.getIndexes()) {
+				Set<String> foundQuads = new HashSet<>();
+				String indexName = new String(index.getFieldSeq());
+				try (RecordIterator it = tripleStore.getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, 0)) {
+					long[] quad;
+					while ((quad = it.next()) != null) {
+						String quadStr = quad[0] + "," + quad[1] + "," + quad[2] + "," + quad[3];
+						if (!foundQuads.add(quadStr)) {
+							fail("Duplicate quad found in index: " + indexName + ": " + quadStr);
+						}
+					}
+				}
+			}
+		}
+
+		random = new Random(378245L);
+		subj = 1;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (int pred : preds) {
+				for (int i = 1; i <= size; i++) {
+					int obj = random.nextInt(maxObj) + 1;
+					try (var it = tripleStore.getTriples(txn, subj, pred, obj, 1, true)) {
+						var quad = it.next();
+						if (quad == null) {
+							fail("Expected quad not found: " + Arrays.toString(new long[] { subj, pred, obj, 1 }));
+						}
+					}
+					subj++;
+				}
+			}
+		}
+
+		assertExistingTriples(preds, expectedByPredicate);
+	}
+
+	private void assertExistingTriples(int[] preds, Map<String, Set<String>> expectedByPredicate) throws IOException {
+		for (int pred : new LinkedHashSet<>(Arrays.stream(preds).boxed().toList())) {
+			try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				for (TripleIndex index : tripleStore.getIndexes()) {
+					String indexName = new String(index.getFieldSeq());
+					Set<String> expectedInIndex = new HashSet<>(expectedByPredicate.get(String.valueOf(pred)));
+					try (RecordIterator it = tripleStore.getTriplesUsingIndex(txn, -1, pred, -1, -1, true, index,
+							index.getPatternScore(-1, pred, -1, -1))) {
+						long[] quad;
+						while ((quad = it.next()) != null) {
+							String quadStr = quad[0] + "," + quad[1] + "," + quad[2] + "," + quad[3];
+							boolean wasRemoved = expectedInIndex.remove(quadStr);
+							if (!wasRemoved) {
+								fail("Unexpected quad in index '" + indexName + "' for predicate " + pred + ": "
+										+ quadStr);
+							}
+						}
+					}
+					assertEquals(
+							"All expected quads should have been found in index '" + indexName + "' for predicate "
+									+ pred,
+							0,
+							expectedInIndex.size());
+				}
+			}
+		}
 	}
 
 	@AfterEach

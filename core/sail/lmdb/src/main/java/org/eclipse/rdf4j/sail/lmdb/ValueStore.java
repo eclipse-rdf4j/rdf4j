@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.compareRegion;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -26,6 +27,8 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET_KEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -92,6 +95,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -510,7 +514,7 @@ class ValueStore extends AbstractValueFactory {
 	private void initTripleTermIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
-			var index = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
+			var index = new TripleIndex("term-" + fieldSeq, fieldSeq, 0, false, env, writeTxn);
 			tripleTermIndexes.add(index);
 			// ensure simple access to main indexes
 			switch (fieldSeq) {
@@ -535,30 +539,35 @@ class ValueStore extends AbstractValueFactory {
 		if (!addedIndexSpecs.isEmpty()) {
 			TripleIndex sourceIndex = tripleTermIndexes.getFirst();
 			try (MemoryStack stack = stackPush()) {
+				long[] tuple = new long[4];
 				MDBVal keyValue = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				keyValue.mv_data(keyBuf);
 				MDBVal dataValue = MDBVal.calloc(stack);
+				ByteBuffer keyScratch = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				ByteBuffer valueScratch = stack.malloc(4096);
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
 				for (String fieldSeq : addedIndexSpecs) {
 					logger.debug("Initializing new index '{}'...", fieldSeq);
 
-					TripleIndex addedIndex = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
+					TripleIndex addedIndex = new TripleIndex("term-" + fieldSeq, fieldSeq, 0, false, env, writeTxn);
 					RecordIterator[] sourceIter = { null };
 					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
+						sourceIter[0] = new LmdbRecordIterator(sourceIndex, 0, -1, -1, -1, -1,
 								true, txnManager.createTxn(writeTxn));
 
 						RecordIterator it = sourceIter[0];
 						long[] quad;
 						while ((quad = it.next()) != null) {
-							keyBuf.clear();
-							addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-									quad[TripleIndex.OBJ_IDX],
-									quad[TripleIndex.CONTEXT_IDX]);
-							keyBuf.flip();
+							addedIndex.toEntry(tuple, quad[0], quad[1], quad[2], quad[3]);
 
 							resizeMap(writeTxn, 0L);
-							E(mdb_put(writeTxn, addedIndex.getDB(true), keyValue, dataValue, 0));
+							E(mdb_cursor_open(writeTxn, addedIndex.getDB(true), cursorHandle));
+							long cursor = cursorHandle.get(0);
+							try {
+								E(Chunks.mergeChunk(cursor, addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+										tuple, keyScratch, valueScratch));
+							} finally {
+								mdb_cursor_close(cursor);
+							}
 						}
 					} finally {
 						if (sourceIter[0] != null) {
@@ -1229,26 +1238,52 @@ class ValueStore extends AbstractValueFactory {
 			long cursor = pp.get(0);
 
 			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(keyBuf, -1, -1, -1, id);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			MDBVal dataVal = MDBVal.malloc(stack);
 
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-				long[] quad = new long[4];
-				index.keyToQuad(keyVal.mv_data(), quad);
-				if (value != null) {
-					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
-					return value;
-				} else {
-					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+			ByteBuffer keyScratch = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			int splitPoint = index.getIndexSplitPosition();
+			long[] pattern = new long[] { id, 0, 0, 0 };
+
+			int keyPrefixLength;
+			for (int i = 0; i < splitPoint; i++) {
+				Varint.writeUnsigned(keyScratch, pattern[i]);
+			}
+			keyPrefixLength = keyScratch.position();
+			for (int i = splitPoint; i < pattern.length; i++) {
+				Varint.writeUnsigned(keyScratch, pattern[i]);
+			}
+			keyScratch.flip();
+
+			keyVal.mv_data(keyScratch);
+
+			int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE));
+			if (rc == MDB_SUCCESS) {
+				E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV));
+			} else {
+				rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_LAST));
+			}
+			if (rc == MDB_SUCCESS) {
+				var keyBuf = keyVal.mv_data();
+				if (compareRegion(keyScratch, 0, keyBuf, 0, keyPrefixLength) == 0) {
+					var chunkInput = new ChunkInput(keyBuf, dataVal.mv_data(), 4, splitPoint);
+					if (chunkInput.seek(pattern) >= 0) {
+						long[] tuple = chunkInput.next();
+						if (tuple != null && tuple[0] == id) {
+							if (value != null) {
+								value.setFromInitializedValue(
+										new LmdbTripleTerm(revision, (Resource) getLazyValue(tuple[1]),
+												(IRI) getLazyValue(tuple[2]), getLazyValue(tuple[3]), id));
+								return value;
+							} else {
+								return new LmdbTripleTerm(revision, (Resource) getLazyValue(tuple[1]),
+										(IRI) getLazyValue(tuple[2]),
+										getLazyValue(tuple[3]), id);
+							}
+						}
+					}
 				}
 			}
+
 			return null;
 		});
 	}
@@ -1262,40 +1297,67 @@ class ValueStore extends AbstractValueFactory {
 			long cursor = pp.get(0);
 
 			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			mainIndex.getMinKey(keyBuf, subj, pred, obj, -1);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			MDBVal dataVal = MDBVal.malloc(stack);
 
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
-				var bb = keyVal.mv_data();
-				return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
-						Varint.calcLengthUnsigned(obj));
+			ByteBuffer keyScratch = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			int splitPoint = mainIndex.getIndexSplitPosition();
+			long[] pattern = new long[] { subj, pred, obj, 0 };
+
+			int keyPrefixLength;
+			for (int i = 0; i < splitPoint; i++) {
+				Varint.writeUnsigned(keyScratch, pattern[i]);
+			}
+			keyPrefixLength = keyScratch.position();
+			for (int i = splitPoint; i < pattern.length; i++) {
+				Varint.writeUnsigned(keyScratch, pattern[i]);
+			}
+			keyScratch.flip();
+
+			keyVal.mv_data(keyScratch);
+
+			int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE));
+			if (rc == MDB_SUCCESS) {
+				E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV));
+			} else {
+				rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_LAST));
+			}
+			if (rc == MDB_SUCCESS) {
+				if (compareRegion(keyScratch, 0, keyVal.mv_data(), 0, keyPrefixLength) == 0) {
+					var chunkInput = new ChunkInput(keyVal.mv_data(), dataVal.mv_data(), 4, splitPoint);
+					if (chunkInput.seek(pattern) >= 0) {
+						long[] tuple = chunkInput.next();
+						if (tuple != null && tuple[0] == subj && tuple[1] == pred && tuple[2] == obj) {
+							return tuple[3];
+						}
+					}
+				}
 			}
 
 			if (!create) {
 				return LmdbValue.UNKNOWN_ID;
 			}
 
+			ByteBuffer valueScratch = stack.malloc(4096);
 			return writeTransaction((stack2, writeTxn) -> {
 				incrementRefCount(stack2, writeTxn, subj);
 				incrementRefCount(stack2, writeTxn, pred);
 				incrementRefCount(stack2, writeTxn, obj);
 
+				long[] tuple = new long[4];
+
 				long id = nextId(TRIPLE_VALUE);
 				for (TripleIndex index : tripleTermIndexes) {
-					keyBuf.clear();
-					index.toKey(keyBuf, subj, pred, obj, id);
-					keyBuf.flip();
-
-					// update buffer positions in MDBVal
-					keyVal.mv_data(keyBuf);
+					index.toEntry(tuple, subj, pred, obj, id);
 
 					resizeMap(writeTxn, 0L);
-					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+					E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
+					long indexCursor = pp.get(0);
+					try {
+						E(Chunks.mergeChunk(indexCursor, index.getIndexSplitPosition(), keyVal, dataVal, tuple,
+								keyScratch, valueScratch));
+					} finally {
+						mdb_cursor_close(indexCursor);
+					}
 				}
 				return id;
 			});
@@ -1304,10 +1366,10 @@ class ValueStore extends AbstractValueFactory {
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
-		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
+		int indexScore = index.getPatternScore(subj, pred, obj, -1);
 		Txn txn = txnManager.createReadTxn();
 		try {
-			return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
+			return new LmdbRecordIterator(index, indexScore, subj, pred, obj, -1, true, txn) {
 				@Override
 				public void close() {
 					try {
@@ -1597,7 +1659,8 @@ class ValueStore extends AbstractValueFactory {
 		MDBVal ignoreVal = MDBVal.calloc(stack);
 
 		MDBVal keyVal = MDBVal.malloc(stack);
-		ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		ByteBuffer keyScratch = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		ByteBuffer valueScratch = stack.malloc(4096);
 		PointerBuffer pp = stack.mallocPointer(1);
 
 		long termsCursor = 0;
@@ -1613,35 +1676,66 @@ class ValueStore extends AbstractValueFactory {
 						termsCursor = pp.get(0);
 					}
 
-					keyBuf.clear();
-					tripleTermCspoIndex.getMinKey(keyBuf, -1, -1, -1, id);
-					keyBuf.flip();
-					keyVal.mv_data(keyBuf);
+					int splitPoint = tripleTermCspoIndex.getIndexSplitPosition();
+					long[] pattern = new long[] { id, 0, 0, 0 };
 
-					int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
-					if (rc == MDB_SUCCESS
-							&& tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-						long[] quad = new long[4];
-						tripleTermCspoIndex.keyToQuad(keyVal.mv_data(), quad);
-						for (int i = 0; i < 3; i++) {
-							if (decrementRefCount(stack, writeTxn, quad[i])) {
-								newGcIds.add(quad[i]);
+					int keyPrefixLength;
+					for (int i = 0; i < splitPoint; i++) {
+						Varint.writeUnsigned(keyScratch, pattern[i]);
+					}
+					keyPrefixLength = keyScratch.position();
+					for (int i = splitPoint; i < pattern.length; i++) {
+						Varint.writeUnsigned(keyScratch, pattern[i]);
+					}
+					keyScratch.flip();
+
+					keyVal.mv_data(keyScratch);
+
+					int rc = E(mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE));
+					if (rc == MDB_SUCCESS) {
+						E(mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_PREV));
+					} else {
+						rc = E(mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_LAST));
+					}
+					long[] foundCspo = null;
+					if (rc == MDB_SUCCESS) {
+						var keyBuffer = keyVal.mv_data();
+						if (compareRegion(keyScratch, 0, keyBuffer, 0, keyPrefixLength) == 0) {
+							var chunkInput = new ChunkInput(keyBuffer, dataVal.mv_data(), 4, splitPoint);
+							if (chunkInput.seek(pattern) >= 0) {
+								long[] tuple = chunkInput.next();
+								if (tuple != null && tuple[0] == id) {
+									foundCspo = tuple;
+								}
 							}
 						}
+					}
 
-						for (TripleIndex index : tripleTermIndexes) {
-							// keep index for resolving id -> triple term
-							if (index == tripleTermCspoIndex) {
-								continue;
-							}
-							keyBuf.clear();
-							index.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-									quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
-							keyBuf.flip();
-							// update buffer positions in MDBVal
-							keyVal.mv_data(keyBuf);
+					if (foundCspo == null) {
+						// id was not found, skip
+						continue;
+					}
 
-							E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
+					for (int i = 1; i < 4; i++) {
+						if (decrementRefCount(stack, writeTxn, foundCspo[i])) {
+							newGcIds.add(foundCspo[i]);
+						}
+					}
+
+					for (TripleIndex index : tripleTermIndexes) { // keep index for resolving id -> triple term
+						if (index == tripleTermCspoIndex) {
+							continue;
+						}
+
+						index.toEntry(pattern, foundCspo[1], foundCspo[2], foundCspo[3], id);
+
+						E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
+						long indexCursor = pp.get(0);
+						try {
+							Chunks.deleteFromChunk(indexCursor, index.getIndexSplitPosition(), keyVal, dataVal,
+									pattern, false, keyScratch, valueScratch);
+						} finally {
+							mdb_cursor_close(indexCursor);
 						}
 					}
 					continue;
@@ -1741,7 +1835,8 @@ class ValueStore extends AbstractValueFactory {
 		MDBVal dataVal = MDBVal.calloc(stack);
 		MDBVal emptyVal = MDBVal.calloc(stack);
 		MDBVal keyVal = null;
-		ByteBuffer keyBuf = null;
+		ByteBuffer keyScratch = null;
+		ByteBuffer valueScratch = null;
 
 		ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 
@@ -1778,20 +1873,14 @@ class ValueStore extends AbstractValueFactory {
 									E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
 									termsCursor = pp.get(0);
 									keyVal = MDBVal.calloc(stack);
-									keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+									keyScratch = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+									valueScratch = stack.malloc(4096);
 								}
 
-								keyBuf.clear();
-								tripleTermCspoIndex.getMinKey(keyBuf, -1, -1, -1, id);
-								keyBuf.flip();
-								keyVal.mv_data(keyBuf);
-
-								int rc = mdb_cursor_get(termsCursor, keyVal, dataVal, MDB_SET_RANGE);
-								if (rc == MDB_SUCCESS &&
-										tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-									// delete id -> triple term association
-									E(mdb_cursor_del(termsCursor, 0));
-								}
+								int splitPoint = tripleTermCspoIndex.getIndexSplitPosition();
+								long[] pattern = new long[] { id, -1, -1, -1 };
+								Chunks.deleteFromChunk(termsCursor, splitPoint, keyVal, dataVal, pattern, true,
+										keyScratch, valueScratch);
 							} else {
 								// delete id -> value association
 								E(mdb_del(txn, dbi, idVal, null));

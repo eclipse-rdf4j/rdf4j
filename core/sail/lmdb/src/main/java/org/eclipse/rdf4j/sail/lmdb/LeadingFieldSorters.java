@@ -20,20 +20,21 @@ final class LeadingFieldSorters {
 	private LeadingFieldSorters() {
 	}
 
-	public static void lsdRadixSort(int[] statementIndices, long[] leadingValues, int length, int[] scratchIndices,
+	public static void lsdRadixSort(int[] indices, long[] values, int from, int to, int[] scratchIndices,
 			long[] scratchValues, int[] counts, int[] offsets) {
-		if (length < 2 || isSorted(leadingValues, 0, length)) {
+		int length = to - from;
+		if (length < 2) {
 			return;
 		}
 		if (length <= LSD_RADIX_THRESHOLD) {
-			unguardedInsertionSort(statementIndices, leadingValues, 0, length);
+			unguardedInsertionSort(indices, values, from, to);
 			return;
 		}
 
 		long differingBits = 0L;
-		long firstValue = leadingValues[0];
-		for (int i = 1; i < length; i++) {
-			differingBits |= firstValue ^ leadingValues[i];
+		long firstValue = values[from];
+		for (int i = from + 1; i < to; i++) {
+			differingBits |= firstValue ^ values[i];
 		}
 		if (differingBits == 0L) {
 			return;
@@ -46,18 +47,18 @@ final class LeadingFieldSorters {
 			}
 		}
 
-		int[] sourceIndices = statementIndices;
-		long[] sourceValues = leadingValues;
+		int[] sourceIndices = indices;
+		long[] sourceValues = values;
 		int[] targetIndices = scratchIndices;
 		long[] targetValues = scratchValues;
 
 		if ((activePasses & 1) != 0) {
-			System.arraycopy(statementIndices, 0, scratchIndices, 0, length);
-			System.arraycopy(leadingValues, 0, scratchValues, 0, length);
+			System.arraycopy(indices, from, scratchIndices, from, length);
+			System.arraycopy(values, from, scratchValues, from, length);
 			sourceIndices = scratchIndices;
 			sourceValues = scratchValues;
-			targetIndices = statementIndices;
-			targetValues = leadingValues;
+			targetIndices = indices;
+			targetValues = values;
 		}
 
 		for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
@@ -65,18 +66,20 @@ final class LeadingFieldSorters {
 				continue;
 			}
 
-			Arrays.fill(counts, 0);
-			for (int i = 0; i < length; i++) {
-				counts[(int) ((sourceValues[i] >>> shift) & 0xFFL)]++;
+			Arrays.fill(counts, 0, 256, 0);
+
+			for (int i = from; i < to; i++) {
+				int bucket = (int) ((sourceValues[i] >>> shift) & 0xFFL);
+				counts[bucket]++;
 			}
 
-			int offset = 0;
-			for (int bucket = 0; bucket < counts.length; bucket++) {
+			int offset = from;
+			for (int bucket = 0; bucket < 256; bucket++) {
 				offsets[bucket] = offset;
 				offset += counts[bucket];
 			}
 
-			for (int i = 0; i < length; i++) {
+			for (int i = from; i < to; i++) {
 				int bucket = (int) ((sourceValues[i] >>> shift) & 0xFFL);
 				int target = offsets[bucket]++;
 				targetIndices[target] = sourceIndices[i];
@@ -93,48 +96,39 @@ final class LeadingFieldSorters {
 		}
 	}
 
-	private static void unguardedInsertionSort(int[] statementIndices, long[] leadingValues, int from, int to) {
+	private static void unguardedInsertionSort(int[] indices, long[] values, int from, int to) {
 		if (to - from < 2) {
 			return;
 		}
 		int minPosition = from;
-		long minValue = leadingValues[from];
+		long minValue = values[from];
 		for (int i = from + 1; i < to; i++) {
-			long value = leadingValues[i];
+			long value = values[i];
 			if (value < minValue) {
 				minValue = value;
 				minPosition = i;
 			}
 		}
 		if (minPosition != from) {
-			int minIndex = statementIndices[minPosition];
+			int minIndex = indices[minPosition];
 			for (int i = minPosition; i > from; i--) {
-				statementIndices[i] = statementIndices[i - 1];
-				leadingValues[i] = leadingValues[i - 1];
+				indices[i] = indices[i - 1];
+				values[i] = values[i - 1];
 			}
-			statementIndices[from] = minIndex;
-			leadingValues[from] = minValue;
+			indices[from] = minIndex;
+			values[from] = minValue;
 		}
 		for (int i = from + 1; i < to; i++) {
-			int statementIndex = statementIndices[i];
-			long statementValue = leadingValues[i];
+			int statementIndex = indices[i];
+			long statementValue = values[i];
 			int position = i;
-			while (statementValue < leadingValues[position - 1]) {
-				statementIndices[position] = statementIndices[position - 1];
-				leadingValues[position] = leadingValues[position - 1];
+			while (statementValue < values[position - 1]) {
+				indices[position] = indices[position - 1];
+				values[position] = values[position - 1];
 				position--;
 			}
-			statementIndices[position] = statementIndex;
-			leadingValues[position] = statementValue;
+			indices[position] = statementIndex;
+			values[position] = statementValue;
 		}
-	}
-
-	private static boolean isSorted(long[] leadingValues, int from, int to) {
-		for (int i = from + 1; i < to; i++) {
-			if (leadingValues[i - 1] > leadingValues[i]) {
-				return false;
-			}
-		}
-		return true;
 	}
 }
