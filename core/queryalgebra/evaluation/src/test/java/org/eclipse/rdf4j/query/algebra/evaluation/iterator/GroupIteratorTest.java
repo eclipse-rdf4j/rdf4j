@@ -175,8 +175,8 @@ public class GroupIteratorTest {
 
 			assertThat(gi.hasNext()).isTrue();
 			BindingSet next = gi.next();
-			assertEquals(1, next.size());
-			assertEquals(one, next.getBinding("max").getValue());
+			assertEquals(0, next.size());
+			assertThat(gi.hasNext()).isFalse();
 		}
 	}
 
@@ -370,8 +370,9 @@ public class GroupIteratorTest {
 	}
 
 	@Test
-	public void testCustomNAryAggregateFunction_Empty_DistinctTuplePredicateInvoked() throws QueryEvaluationException {
-		AggregateNAryFunctionFactory nAryFactory = new DistinctTupleTouchingAggregateNAryFunctionFactory();
+	public void testCustomNAryAggregateFunction_Empty_DoesNotProcessSyntheticSolution()
+			throws QueryEvaluationException {
+		var nAryFactory = new DistinctTupleTouchingAggregateNAryFunctionFactory();
 		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
 		try {
 			Group group = new Group(EMPTY_ASSIGNMENT);
@@ -380,6 +381,8 @@ public class GroupIteratorTest {
 			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
 				assertThat(gi.next().getBinding("naryDistinct").getValue())
 						.isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+				assertThat(nAryFactory.processedSolutions).isZero();
+				assertThat(gi.hasNext()).isFalse();
 			}
 		} finally {
 			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);
@@ -663,6 +666,8 @@ public class GroupIteratorTest {
 
 	private static final class DistinctTupleTouchingAggregateNAryFunctionFactory
 			implements AggregateNAryFunctionFactory {
+		private int processedSolutions;
+
 		@Override
 		public String getIri() {
 			return "https://www.rdf4j.org/aggregate#nary-distinct-touching";
@@ -676,6 +681,7 @@ public class GroupIteratorTest {
 				@Override
 				public void processAggregate(BindingSet bindingSet, Predicate<List<Value>> distinctValue,
 						SumCollector sumCollector) throws QueryEvaluationException {
+					processedSolutions++;
 					List<Value> tuple = new ArrayList<>(2);
 					tuple.add(evaluate(0, bindingSet));
 					tuple.add(evaluate(1, bindingSet));
