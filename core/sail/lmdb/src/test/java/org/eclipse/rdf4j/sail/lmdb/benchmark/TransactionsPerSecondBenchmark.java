@@ -187,6 +187,7 @@ public class TransactionsPerSecondBenchmark {
 			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
 			config.setSketchEstimatorEnabled(false);
 			config.setForceSync(false);
+			config.setTripleDBSize(1_073_741_824L); // 1 GiB
 			config.setValueDBSize(1_073_741_824L); // 1 GiB
 			return config;
 		}

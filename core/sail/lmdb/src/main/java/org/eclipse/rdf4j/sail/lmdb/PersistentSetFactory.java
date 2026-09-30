@@ -248,6 +248,14 @@ class PersistentSetFactory<T extends Serializable> {
 		}
 	}
 
+	synchronized void abort() {
+		if (writeTxn != 0) {
+			long transaction = writeTxn;
+			writeTxn = 0;
+			nativeTransactionOperations.abort(transaction);
+		}
+	}
+
 	void ensureResize() throws IOException, InterruptedException {
 		if (LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0)) {
 			StampedLongAdderLockManager lockManager = txnManager.lockManager();

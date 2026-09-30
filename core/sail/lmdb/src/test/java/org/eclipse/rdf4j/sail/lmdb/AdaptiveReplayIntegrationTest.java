@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
@@ -435,7 +436,8 @@ class AdaptiveReplayIntegrationTest {
 
 	@Test
 	void delayedAsyncWriterCannotCreateAnOwnerlessFailureAfterDictionaryStartupExhaustion() throws Exception {
-		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig());
+		// This fault fixture requires async startup; disabled bulk retains the direct scalar scheduling preference.
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig().setBulkOperationSize(0));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var writer = repository.getConnection()) {
@@ -1074,7 +1076,9 @@ class AdaptiveReplayIntegrationTest {
 
 	private static void await(CountDownLatch latch) throws IOException {
 		try {
-			latch.await();
+			if (!latch.await(10, TimeUnit.SECONDS)) {
+				throw new IOException("The paired native-startup fixture did not release its latch");
+			}
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new IOException(interrupted);

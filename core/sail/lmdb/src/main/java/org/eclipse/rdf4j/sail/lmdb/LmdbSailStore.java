@@ -1298,14 +1298,28 @@ class LmdbSailStore implements SailStore {
 		Consumer<Statement> estimatorCallback;
 		int size;
 
-		BulkAddQuadsOperation(boolean explicit) {
+		BulkAddQuadsOperation(boolean explicit, int capacity) {
+			assert capacity > 0 && capacity <= bulkOperationSize;
 			this.explicit = explicit;
-			this.capacity = bulkOperationSize;
+			this.capacity = capacity;
 			this.subjects = new long[capacity];
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
 			this.statements = new Statement[capacity];
+		}
+
+		BulkAddQuadsOperation withConfiguredCapacity() {
+			assert size == capacity && capacity < bulkOperationSize;
+			BulkAddQuadsOperation expanded = new BulkAddQuadsOperation(explicit, bulkOperationSize);
+			System.arraycopy(subjects, 0, expanded.subjects, 0, size);
+			System.arraycopy(predicates, 0, expanded.predicates, 0, size);
+			System.arraycopy(objects, 0, expanded.objects, 0, size);
+			System.arraycopy(contexts, 0, expanded.contexts, 0, size);
+			System.arraycopy(statements, 0, expanded.statements, 0, size);
+			expanded.size = size;
+			expanded.estimatorCallback = estimatorCallback;
+			return expanded;
 		}
 
 		void add(long subject, long predicate, long object, long context) {
@@ -1317,7 +1331,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		boolean isFull() {
-			return size == capacity;
+			return size == bulkOperationSize;
 		}
 
 		boolean isEmpty() {
@@ -1337,7 +1351,7 @@ class LmdbSailStore implements SailStore {
 					unusedIds.remove(contexts[i]);
 				}
 			}
-			if (size < capacity) {
+			if (size < bulkOperationSize) {
 				for (int i = 0; i < size; i++) {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
@@ -2610,15 +2624,15 @@ class LmdbSailStore implements SailStore {
 						if (tripleStoreException == null && opQueue.add(ROLLBACK_TRANSACTION)) {
 							break;
 						}
-						Thread.onSpinWait();
+						Thread.yield();
 					}
 					while (!asyncTransactionFinished) {
-						Thread.onSpinWait();
+						Thread.yield();
 					}
 					// A failed operation may have left later writes queued after the worker aborted its transaction.
 					// They belong to the discarded transaction and must not run in the next one.
 					while (opQueue.remove() != null) {
-						Thread.onSpinWait();
+						Thread.yield();
 					}
 					if (asyncRollbackException != null) {
 						throw new SailException("Failed to abort the asynchronous TripleStore transaction",
@@ -2827,8 +2841,8 @@ class LmdbSailStore implements SailStore {
 					}
 					try {
 						rollback(owner);
-					} catch (SailException rollbackFailure) {
-						e.addSuppressed(rollbackFailure);
+					} catch (RuntimeException | Error rollbackFailure) {
+						retainRollbackFailure(e, rollbackFailure);
 					}
 				}
 				if (e instanceof Error error) {
@@ -2851,13 +2865,13 @@ class LmdbSailStore implements SailStore {
 			if (tripleStoreException != null) {
 				throw wrapTripleStoreException();
 			}
-			Thread.onSpinWait();
+			Thread.yield();
 		}
 		while (!namespaceWrite.finished) {
 			if (tripleStoreException != null) {
 				throw wrapTripleStoreException();
 			}
-			Thread.onSpinWait();
+			Thread.yield();
 		}
 		if (namespaceWrite.failure instanceof IOException io) {
 			throw io;
@@ -2878,7 +2892,7 @@ class LmdbSailStore implements SailStore {
 			if (tripleStoreException != null) {
 				throw wrapTripleStoreException();
 			}
-			Thread.onSpinWait();
+			Thread.yield();
 		}
 		while (!asyncOperationsDrained) {
 			if (tripleStoreException != null) {
@@ -2897,7 +2911,7 @@ class LmdbSailStore implements SailStore {
 			if (tripleStoreException != null) {
 				throw wrapTripleStoreException();
 			}
-			Thread.onSpinWait();
+			Thread.yield();
 		}
 		while (!asyncTransactionFinished) {
 			if (tripleStoreException != null) {
@@ -3772,23 +3786,35 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void rollbackAfterMutationFailure(Throwable failure) {
-			recordWriterCapacityFailure(writerOwner(), failure);
+			Object owner = writerOwner();
+			try {
+				recordWriterCapacityFailure(owner, failure);
+			} catch (RuntimeException | Error cleanupFailure) {
+				retainRollbackFailure(failure, cleanupFailure);
+			}
 			try {
 				long generation = backingTransactionGeneration;
 				if (generation != 0L) {
-					rollback(writerOwner(), generation);
+					rollback(owner, generation);
 				} else if (!storeTxnStarted.get()) {
-					rollback(writerOwner());
+					rollback(owner);
 				}
-			} catch (SailException rollbackFailure) {
-				if (rollbackFailure != failure) {
-					failure.addSuppressed(rollbackFailure);
-				}
+			} catch (RuntimeException | Error rollbackFailure) {
+				retainRollbackFailure(failure, rollbackFailure);
 			} finally {
 				backingTransactionGeneration = 0L;
+				try {
+					discardEstimatorUpdatesIfTouched();
+				} catch (RuntimeException | Error cleanupFailure) {
+					retainRollbackFailure(failure, cleanupFailure);
+				} finally {
+					try {
+						releaseMutationLease();
+					} catch (RuntimeException | Error cleanupFailure) {
+						retainRollbackFailure(failure, cleanupFailure);
+					}
+				}
 			}
-			discardEstimatorUpdatesIfTouched();
-			releaseMutationLease();
 		}
 
 		@Override
@@ -3945,16 +3971,27 @@ class LmdbSailStore implements SailStore {
 
 			sinkStoreAccessLock.lock();
 			try {
-				startTransaction(true);
+				// A supplied set fitting one configured operation has no later batch to overlap with ingestion.
+				// Only the first physical start selects the mode; subsequent calls keep that writer's ownership.
+				int remainingHint = approved.size();
+				startTransaction(remainingHint > bulkOperationSize);
 
 				HashMap<IRI, Long> predicateCache = new HashMap<>();
 				HashMap<Resource, Long> contextCache = new HashMap<>();
 				Resource previousSubject = null;
 				long previousSubjectId = LmdbValue.UNKNOWN_ID;
-				BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit);
-				bulk.estimatorCallback = this::queueEstimatorAdd;
+				BulkAddQuadsOperation bulk = null;
 
 				for (Statement statement : approved) {
+					if (bulk == null) {
+						int capacity = remainingHint > 0 ? Math.min(bulkOperationSize, remainingHint)
+								: bulkOperationSize;
+						bulk = new BulkAddQuadsOperation(explicit, capacity);
+						bulk.estimatorCallback = this::queueEstimatorAdd;
+					} else if (bulk.size == bulk.capacity) {
+						// A weakly consistent set's size is only an allocation hint. Expand before resolving this row.
+						bulk = bulk.withConfiguredCapacity();
+					}
 					last = statement;
 					Resource subj = statement.getSubject();
 					IRI pred = statement.getPredicate();
@@ -4003,17 +4040,19 @@ class LmdbSailStore implements SailStore {
 						bulk.contexts[batchIndex] = contextId;
 					}
 
+					if (remainingHint > 0) {
+						remainingHint--;
+					}
 					if (bulk.isFull()) {
 						submitOperation(bulk);
-						bulk = new BulkAddQuadsOperation(explicit);
-						bulk.estimatorCallback = this::queueEstimatorAdd;
+						bulk = null;
 					}
 				}
 
-				if (!bulk.isEmpty()) {
+				if (bulk != null && !bulk.isEmpty()) {
 					submitOperation(bulk);
 				}
-			} catch (IOException | RuntimeException e) {
+			} catch (IOException | RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
@@ -4023,6 +4062,9 @@ class LmdbSailStore implements SailStore {
 							last, e);
 				}
 
+				if (e instanceof Error error) {
+					throw error;
+				}
 				if (e instanceof RuntimeException) {
 					throw (RuntimeException) e;
 				}
@@ -4111,13 +4153,13 @@ class LmdbSailStore implements SailStore {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							}
-							Thread.onSpinWait();
+							Thread.yield();
 						}
 					} else {
 						q.execute();
 					}
 				}
-			} catch (IOException | RuntimeException e) {
+			} catch (IOException | RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
 				if (multiThreadingActive) {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
@@ -4127,6 +4169,9 @@ class LmdbSailStore implements SailStore {
 							last, e);
 				}
 
+				if (e instanceof Error error) {
+					throw error;
+				}
 				if (e instanceof RuntimeException) {
 					throw (RuntimeException) e;
 				}
@@ -4163,6 +4208,8 @@ class LmdbSailStore implements SailStore {
 					if (storeTxnGeneration == 0L) {
 						storeTxnGeneration++;
 					}
+					// Own this generation before either native start or asynchronous submission can fail.
+					backingTransactionGeneration = storeTxnGeneration;
 					// Capture committed data before starting either writer or queuing any native writes.
 					logLmdbStats(Level.TRACE, "before writes");
 					multiThreadingActive = preferThreading && enableMultiThreading;
@@ -4170,9 +4217,12 @@ class LmdbSailStore implements SailStore {
 					asyncTransactionFinished = false;
 					asyncOperationsDrained = false;
 					asyncRollbackException = null;
+					boolean workerRequired = false;
+					boolean workerSubmitted = false;
 					try {
 						if (multiThreadingActive) {
 							if (running.compareAndSet(false, true)) {
+								workerRequired = true;
 								tripleStoreException = null;
 								tripleStoreExecutor.submit(() -> {
 									try {
@@ -4189,7 +4239,15 @@ class LmdbSailStore implements SailStore {
 													} else if (op == DRAIN_TRANSACTION) {
 														asyncOperationsDrained = true;
 													} else if (op == ROLLBACK_TRANSACTION) {
-														tripleStore.rollback();
+														try {
+															tripleStore.rollback();
+														} catch (IOException | RuntimeException
+																| Error rollbackFailure) {
+															// Recovery may succeed, but the caller must still retain
+															// this cleanup failure.
+															asyncRollbackException = rollbackFailure;
+															throw rollbackFailure;
+														}
 														nextTransactionAsync = false;
 														asyncTransactionFinished = true;
 														break;
@@ -4239,9 +4297,10 @@ class LmdbSailStore implements SailStore {
 										try {
 											tripleStore.rollback();
 										} catch (Throwable rollbackFailure) {
-											asyncRollbackException = rollbackFailure;
-											if (rollbackFailure != e) {
-												e.addSuppressed(rollbackFailure);
+											asyncRollbackException = retainRollbackFailure(asyncRollbackException,
+													rollbackFailure);
+											if (e != asyncRollbackException) {
+												retainRollbackFailure(e, rollbackFailure);
 											}
 										} finally {
 											synchronized (storeTxnStarted) {
@@ -4251,15 +4310,22 @@ class LmdbSailStore implements SailStore {
 										}
 									}
 								});
+								workerSubmitted = true;
 							}
 						} else {
 							tripleStore.startTransaction(storeReplayDecision);
 						}
 						valueStore.startTransaction(true);
-					} catch (Exception e) {
-						storeTxnStarted.set(false);
-						storeTransactionOwner = null;
-						clearDictionaryCheckpointPending(storeTxnGeneration);
+					} catch (Exception | Error e) {
+						if (workerRequired && !workerSubmitted) {
+							// There is no worker to consume a rollback request when executor submission itself failed.
+							running.set(false);
+							asyncTransactionFinished = true;
+						}
+						if (e instanceof Error error) {
+							throw error;
+						}
+						// Keep generation/owner intact for the enclosing mutation's complete native cleanup.
 						throw new SailException(e);
 					}
 				}
@@ -4320,7 +4386,7 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				rollbackAfterMutationFailure(e);
 				throw new SailException(e);
-			} catch (RuntimeException e) {
+			} catch (RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
 				logger.error("Encountered an unexpected problem while trying to add a statement", e);
 				throw e;
@@ -4335,7 +4401,7 @@ class LmdbSailStore implements SailStore {
 					if (tripleStoreException != null) {
 						throw wrapTripleStoreException();
 					}
-					Thread.onSpinWait();
+					Thread.yield();
 				}
 			} else {
 				try {
@@ -4465,7 +4531,7 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				rollbackAfterMutationFailure(e);
 				throw new SailException(e);
-			} catch (RuntimeException e) {
+			} catch (RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
