@@ -93,7 +93,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 	private static final String XLINK_NS = "http://www.w3.org/1999/xlink";
 	private static final String DC_NS = "http://purl.org/dc/elements/1.1/";
 	private static final String META_NS = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0";
-	private static final String NUMBER_NS = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
+	private static final String DATASTYLE_NS = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
 	private static final String SVG_NS = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
 	private static final String MANIFEST_NS = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
 
@@ -106,7 +106,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 	private static final String XLINK_PRE = "xlink";
 	private static final String DC_PRE = "dc";
 	private static final String META_PRE = "meta";
-	private static final String NUMBER_PRE = "datastyle";
+	private static final String DATASTYLE_PRE = "datastyle";
 	private static final String SVG_PRE = "svg";
 	private static final String MANIFEST_PRE = "manifest";
 
@@ -227,7 +227,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 
 		try {
 			startTag(contentXmlWriter, TABLE_PRE, "table-row");
-			// contentXmlWriter.attribute(TABLE_NS, "style-name", "ro1"); // Optional:
+			// contentXmlWriter.attribute(TABLE_PRE, "style-name", "ro1"); // Optional:
 			// Assuming default row style
 
 			Value[] values = new Value[columnCount]; // To hold values in correct column order
@@ -310,7 +310,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 	private void writeContentXmlStart() throws IOException {
 		contentXmlWriter.startDocument();
 		declareNamespaces(contentXmlWriter, OFFICE_PRE, OFFICE_NS, TABLE_PRE, TABLE_NS, TEXT_PRE, TEXT_NS, FO_PRE,
-				FO_NS, XLINK_PRE, XLINK_NS, DC_PRE, DC_NS, META_PRE, META_NS, NUMBER_PRE, NUMBER_NS, STYLE_PRE,
+				FO_NS, XLINK_PRE, XLINK_NS, DC_PRE, DC_NS, META_PRE, META_NS, DATASTYLE_PRE, DATASTYLE_NS, STYLE_PRE,
 				STYLE_NS, SVG_PRE, SVG_NS);
 		startTag(contentXmlWriter, OFFICE_PRE, "document-content");
 		setAttribute(contentXmlWriter, OFFICE_PRE, "version", "1.2");
@@ -384,9 +384,11 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 
 	private void writeStylesXml(XMLWriter stylesXmlWriter) throws IOException {
 		stylesXmlWriter.startDocument();
-		declareNamespaces(stylesXmlWriter, "office", OFFICE_NS, "style", STYLE_NS, "text", TEXT_NS, "table", TABLE_NS,
+		declareNamespaces(stylesXmlWriter, OFFICE_PRE, OFFICE_NS, STYLE_PRE, STYLE_NS, TEXT_PRE, TEXT_NS, TABLE_PRE,
+				TABLE_NS,
 				// "draw", "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
-				"fo", FO_NS, "xlink", XLINK_NS, "dc", DC_NS, "meta", META_NS, "number", NUMBER_NS, "svg", SVG_NS);
+				FO_PRE, FO_NS, XLINK_PRE, XLINK_NS, DC_PRE, DC_NS, META_PRE, META_NS, DATASTYLE_PRE, DATASTYLE_NS,
+				SVG_PRE, SVG_NS);
 		setAttribute(stylesXmlWriter, OFFICE_PRE, "version", "1.2");
 		startTag(stylesXmlWriter, OFFICE_PRE, "document-styles");
 		{
@@ -478,68 +480,68 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 
 				// --- Define Number/Date/Bool Data Styles First (referenced by cell styles) ---
 				setAttribute(stylesXmlWriter, STYLE_PRE, "name", "N0");
-				startTag(stylesXmlWriter, NUMBER_PRE, "number-style");
+				startTag(stylesXmlWriter, DATASTYLE_PRE, "number-style");
 				{
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "min-integer-digits", "1");
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "decimal-places", "2");// 2 decimal places
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "grouping", "false");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "number");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "min-integer-digits", "1");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "decimal-places", "2");// 2 decimal places
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "grouping", "false");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "number");
 				}
-				endTag(stylesXmlWriter, NUMBER_PRE, "number-style");
+				endTag(stylesXmlWriter, DATASTYLE_PRE, "number-style");
 
 				setAttribute(stylesXmlWriter, STYLE_PRE, "name", "Ndate");
-				setAttribute(stylesXmlWriter, NUMBER_PRE, "automatic-order", "true");
-				startTag(stylesXmlWriter, NUMBER_PRE, "date-style");
+				setAttribute(stylesXmlWriter, DATASTYLE_PRE, "automatic-order", "true");
+				startTag(stylesXmlWriter, DATASTYLE_PRE, "date-style");
 				{
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "year");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "year");
 
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "month");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "month");
 
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "day");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "day");
 				}
-				endTag(stylesXmlWriter, NUMBER_PRE, "date-style");
+				endTag(stylesXmlWriter, DATASTYLE_PRE, "date-style");
 
 				setAttribute(stylesXmlWriter, STYLE_PRE, "name", "Ndatetime");
-				setAttribute(stylesXmlWriter, NUMBER_PRE, "automatic-order", "true");
-				startTag(stylesXmlWriter, NUMBER_PRE, "date-style");
+				setAttribute(stylesXmlWriter, DATASTYLE_PRE, "automatic-order", "true");
+				startTag(stylesXmlWriter, DATASTYLE_PRE, "date-style");
 				{
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "year");
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "year");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "month");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "month");
 
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "day");
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", " "); // Separator
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "day");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", " "); // Separator
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "hours");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "hours");
 
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "minutes");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "minutes");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyElement(stylesXmlWriter, NUMBER_PRE, "text", "-");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyElement(stylesXmlWriter, DATASTYLE_PRE, "text", "-");
 
-					setAttribute(stylesXmlWriter, NUMBER_PRE, "style", "long");
-					emptyTag(stylesXmlWriter, NUMBER_PRE, "seconds");
+					setAttribute(stylesXmlWriter, DATASTYLE_PRE, "style", "long");
+					emptyTag(stylesXmlWriter, DATASTYLE_PRE, "seconds");
 				}
-				endTag(stylesXmlWriter, NUMBER_PRE, "date-style");
+				endTag(stylesXmlWriter, DATASTYLE_PRE, "date-style");
 
 				setAttribute(stylesXmlWriter, STYLE_PRE, "name", "Nbool");
-				emptyTag(stylesXmlWriter, NUMBER_PRE, "boolean-style"); // Displays TRUE/FALSE
+				emptyTag(stylesXmlWriter, DATASTYLE_PRE, "boolean-style"); // Displays TRUE/FALSE
 
 				// --- Cell styles referencing data styles ---
 				setAttribute(stylesXmlWriter, STYLE_PRE, "name", STYLE_NUMERIC);
@@ -622,7 +624,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 	private void writeMetaXml(XMLWriter writer) throws IOException {
 		setAttribute(writer, OFFICE_PRE, "version", "1.2");
 		writer.startDocument();
-		declareNamespaces(writer, "office", OFFICE_NS, "meta", META_NS, "dc", DC_NS, "xlink", XLINK_NS);
+		declareNamespaces(writer, OFFICE_PRE, OFFICE_NS, META_PRE, META_NS, DC_PRE, DC_NS, XLINK_PRE, XLINK_NS);
 		startTag(writer, OFFICE_PRE, "document-meta");
 		{
 			startTag(writer, OFFICE_PRE, "meta");
@@ -686,7 +688,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 			throws IOException {
 		startTag(writer, TABLE_PRE, "table-row");
 		{
-			// writer.attribute(TABLE_NS, "style-name", "ro1"); // Optional: Assume default
+			// writer.attribute(TABLE_PRE, "style-name", "ro1"); // Optional: Assume default
 			// row style
 
 			for (String name : bindingNames) {
@@ -852,7 +854,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 		setAttribute(writer, TABLE_PRE, "style-name", styleName);
 		startTag(writer, TABLE_PRE, "table-cell");
 
-		startTag(writer, TEXT_NS, "p");
+		startTag(writer, TEXT_PRE, "p");
 		writer.text(value); // XMLWriter handles escaping
 		endTag(writer, TEXT_PRE, "p");
 
