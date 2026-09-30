@@ -28,7 +28,10 @@ public final class DbOtelAttributes {
 	/** The database system, e.g. {@code "rdf4j"}. */
 	public static final AttributeKey<String> DB_SYSTEM_NAME = AttributeKey.stringKey("db.system.name");
 
-	/** The kind of operation: {@code SELECT}, {@code CONSTRUCT}, {@code DESCRIBE}, {@code ASK}, or {@code UPDATE}. */
+	/**
+	 * The kind of operation: {@code SELECT}, {@code CONSTRUCT}, {@code DESCRIBE}, {@code ASK}, {@code UPDATE},
+	 * {@code GET_STATEMENTS}, or {@code HAS_STATEMENT}.
+	 */
 	public static final AttributeKey<String> DB_OPERATION_NAME = AttributeKey.stringKey("db.operation.name");
 
 	/** The repository identifier, as supplied to {@code OpenTelemetrySupport.instrument(Repository, String)}. */

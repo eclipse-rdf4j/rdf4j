@@ -58,7 +58,23 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 	 * responsible for ending the span.
 	 */
 	protected Span startSpan() {
-		String operationName = getOperationName();
+		Span span = startSpan(tracer, config, repositoryId, getOperationName());
+
+		if (config.isCaptureQueryText() && operationString != null) {
+			span.setAttribute(DbOtelAttributes.DB_QUERY_TEXT,
+					truncate(operationString, config.getMaxQueryTextLength()));
+		}
+
+		return span;
+	}
+
+	/**
+	 * Starts a new CLIENT span with the standard {@code db.*} attributes attached (excluding {@code db.query.text},
+	 * which requires an operation string to capture), for use by connection-level operations that aren't a
+	 * {@link Operation} (e.g. {@code getStatements}/{@code hasStatement}). The caller is responsible for ending the
+	 * span.
+	 */
+	static Span startSpan(Tracer tracer, RDF4JOpenTelemetryConfig config, String repositoryId, String operationName) {
 		String spanName = operationName + " " + repositoryId;
 
 		Span span = tracer.spanBuilder(spanName)
@@ -70,15 +86,13 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 		span.setAttribute(DbOtelAttributes.DB_NAMESPACE, repositoryId);
 		span.setAttribute(DbOtelAttributes.DB_QUERY_SUMMARY, spanName);
 
-		if (config.isCaptureQueryText() && operationString != null) {
-			span.setAttribute(DbOtelAttributes.DB_QUERY_TEXT, truncate(operationString));
-		}
-
 		return span;
 	}
 
-	private String truncate(String text) {
-		int maxLength = config.getMaxQueryTextLength();
+	/**
+	 * @return {@code text}, truncated to {@code maxLength} characters if it exceeds that length.
+	 */
+	static String truncate(String text, int maxLength) {
 		return text.length() > maxLength ? text.substring(0, maxLength) : text;
 	}
 

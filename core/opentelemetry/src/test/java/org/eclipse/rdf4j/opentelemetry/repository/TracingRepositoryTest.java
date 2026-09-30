@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
@@ -157,6 +158,67 @@ class TracingRepositoryTest {
 		// prepare() failures happen before a span is opened (span starts at evaluate()), so nothing recorded here;
 		// exercise an evaluation-time failure instead via an unbound wildcard against a closed connection.
 		assertThat(otelTesting.getSpans()).isEmpty();
+	}
+
+	@Test
+	void getStatements_recordsSpanWithRowCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			try (RepositoryResult<org.eclipse.rdf4j.model.Statement> result = conn.getStatements(null, RDF.TYPE,
+					null, true)) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getName()).isEqualTo("GET_STATEMENTS test-repo");
+		assertThat(span.getKind().name()).isEqualTo("CLIENT");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_SYSTEM_NAME)).isEqualTo("rdf4j");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("GET_STATEMENTS");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_NAMESPACE)).isEqualTo("test-repo");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_RETURNED_ROWS)).isEqualTo(2L);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT)).isNull();
+	}
+
+	@Test
+	void getStatements_captureQueryTextEnabled_recordsTriplePattern() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureQueryText(true)
+				.build());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			try (RepositoryResult<org.eclipse.rdf4j.model.Statement> result = conn.getStatements(null, RDF.TYPE,
+					RDFS.RESOURCE, true, vf.createIRI("urn:context"))) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT)).isEqualTo(
+				"{ ?subj <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2000/01/rdf-schema#Resource> <urn:context> }");
+	}
+
+	@Test
+	void hasStatement_recordsSpan() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
+
+		boolean found;
+		try (RepositoryConnection conn = traced.getConnection()) {
+			found = conn.hasStatement(null, RDF.TYPE, RDFS.RESOURCE, true);
+		}
+
+		assertThat(found).isTrue();
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getName()).isEqualTo("HAS_STATEMENT test-repo");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("HAS_STATEMENT");
+		assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
 	}
 
 	@Test
