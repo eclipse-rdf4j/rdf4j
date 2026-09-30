@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -362,7 +363,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 		}
 	}
 
-	@Test
+	@RepeatedTest(20)
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void activePreResultAggregateCooperativelyStopsReadingAfterGrowthIsAccepted(@TempDir Path dataDirectory)
 			throws Exception {
@@ -424,6 +425,10 @@ class LmdbMapGrowthReplayLifecycleTest {
 				return null;
 			});
 			awaitStartedGrowthAdmissionClosure(backingStore, before, writer);
+			// Admission closes before replay is asynchronously accepted; count callbacks only after that handoff.
+			awaitReplayAccepted(backingStore, before, writer);
+			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
+					"the aggregate must be accepted for replay before post-growth callbacks are counted");
 			growthStarted.set(true);
 			function.releaseFirstInvocation();
 

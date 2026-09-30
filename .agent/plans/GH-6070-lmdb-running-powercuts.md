@@ -38,7 +38,13 @@ The QEMU durability job must test actual running LMDB transactions as well as it
 - [done] Size SHACL LMDB fixture maps.
 - [done] Add bounded fixture lifecycle smoke.
 - [done] Prove direct fixtures do not grow maps.
-- [in_progress] Format, review, commit and push.
+- [done] Format, review, commit and push.
+- [done] Reproduce missing replay acceptance precondition.
+- [done] Trace admission closure and replay phases.
+- [done] Gate aggregate callback timing on replay acceptance.
+- [done] Run lifecycle and coordinator regression gates.
+- [done] Format and inspect scoped changes.
+- [in_progress] Commit push and verify remote head.
 
 ## Surprises & Discoveries
 
@@ -55,6 +61,8 @@ The QEMU durability job must test actual running LMDB transactions as well as it
   Evidence: `logs/ci-6073-job-109798032840/map-growth-timeout-30s-shacl-capacity/bounded-smoke-reports/TEST-org.eclipse.rdf4j.sail.shacl.MapGrowthCheckingLmdbStoreFixtureTest.xml`, `interrupted-failsafe-reports/failsafe-summary.xml`, `it-current-thread-dump.txt`, `it-current-thread-dump-2.txt`, and `it-vmmap.txt`.
 - Observation: the existing canonical Python suite needs local loopback/socket permission in this sandbox. Its authorized rerun passed 75 tests in 8.374 seconds.
   Evidence: `logs/ci-6073-job-109798032840/python-harness-suite-escalated.log`.
+- Observation: growth admission closure can precede replay acceptance. The aggregate test released its blocked function and began counting callbacks in that gap, so it was measuring before the old read attempt had reached the replacement phase. The original assertion did not fail in three single runs or a 20-repeat run; a 20-repeat fixture-precondition assertion then failed 20/20, followed by green repeated and neighboring lifecycle gates after awaiting acceptance. No production behavior or LMDB defaults changed.
+  Evidence: `logs/ci-6073-job-109798032840/replay-lifecycle-aggregate-safepoint/red-missing-replay-acceptance/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMapGrowthReplayLifecycleTest.txt`, `post-fix-20-repetitions/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMapGrowthReplayLifecycleTest.txt`, `post-fix-lifecycle-class/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMapGrowthReplayLifecycleTest.txt`, `coordinator-gates/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbMapGrowthCoordinatorTest.txt`, and `replay-exposure-gates/surefire-reports/org.eclipse.rdf4j.sail.lmdb.LmdbReplayExposureContractTest.txt`.
 
 ## Decision Log
 
@@ -86,6 +94,9 @@ The QEMU durability job must test actual running LMDB transactions as well as it
 - Decision: provision the documented local ARM64 guest and attempt the combined campaigns after final source/build acceptance.
   Rationale: this macOS host has QEMU ARM64 with HVF/TCG, firmware, qemu-img and hdiutil. A missing task-owned guest image is a reversible prerequisite that the repository's supported provisioning workflow can supply. The user authorized verification; no host-wide installs or cloud resources are needed. Local ARM64 results remain distinct from the unrun exact hosted x86_64/KVM job.
   Date/Author: 2026-09-30, Codex coordinator.
+- Decision: begin the aggregate test's callback-count phase only after replay acceptance.
+  Rationale: admission closure prevents new attempts from entering growth, while replay acceptance is the signal that distinguishes the old read attempt from its replacement. The existing helper provides that barrier and leaves nested-read, real-growth, callback-stop, and exact-once replay assertions intact.
+  Date/Author: 2026-09-30, Codex worker after coordinator review.
 - Decision: prioritize exact-head hosted validation after scoped publication; defer local provisioning while it is available.
   Rationale: the user authorized commit and push before further work. The hosted Linux x86_64/KVM job can provide exact-head evidence; the local ARM64/HVF guest remains a fallback if hosted validation cannot complete.
   Date/Author: 2026-09-30, Codex coordinator.
@@ -166,3 +177,5 @@ Revision note (2026-09-30): initial running backend/frontier contracts fail (6 e
 Revision note (2026-09-30): Sol implementation and native/Python validation are complete. Final green logs: logs/ci-6073-job-109798032840/running-python-final.log (88 tests, 10.118s) and running-native-final.log (7 tests, 43.945s). Exact red and green snippets are append-preserved in initial-evidence.txt. Copyright check passed; git diff --check and Python compilation passed. Final formatter and selected Java checks transfer to the serialized Maven worker after the coordinator audits its idle age (replace a worker idle over 30 minutes with the same model/effort and a concise handoff). No Maven, Git mutation, commit, push, or GitHub message was performed by the Sol feature worker. Local QEMU binaries are installed, but this macOS host has no /dev/kvm, so the mandatory Linux x86_64/KVM matrix remains unrun. Source edit ownership is released for final format and coordinator review.
 
 Follow-up revision note (2026-09-30): hook-time spill correlation and explicit last-published progress labels are implemented and verified. Final follow-up green logs are `causal-native-final.log` (10 tests, 49.659s) and `causal-python-final-escalated.log` (92 tests, 10.378s). Source ownership is released to the serialized formatting/publication worker. The cached-context retention rule still requires retiring and replacing any completed/stopped worker after more than 30 minutes of inactivity, with the same model/effort and a concise handoff; active work remains uninterrupted.
+
+Replay lifecycle follow-up (2026-09-30): the original aggregate selector passed once, and its original callback-count assertion was not reproduced locally. A separate 20-repeat assertion that admission closure implied replay acceptance failed 20/20, establishing the fixture's missing asynchronous acceptance barrier. The test now waits for the existing replay-accepted signal before counting post-growth callbacks. Green gates: aggregate 20, lifecycle class 24, coordinator 20, replay-exposure 6. Evidence is under `logs/ci-6073-job-109798032840/replay-lifecycle-aggregate-safepoint/`; no production code or LMDB defaults changed.
