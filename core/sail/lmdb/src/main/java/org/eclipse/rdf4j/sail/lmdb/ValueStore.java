@@ -467,48 +467,34 @@ class ValueStore extends AbstractValueFactory {
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
 		String indexesStr = properties.getTripleTermIndexes();
 		if (indexesStr == null || indexesStr.trim().isEmpty()) {
-			throw new SailException(StoreProperties.INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
+			throw new SailException(
+					StoreProperties.TRIPLE_TERM_INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
 		}
 
 		Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexesStr);
 		if (indexSpecs.isEmpty()) {
 			throw new SailException(
-					"Invalid " + StoreProperties.INDEXES_KEY + " found in " + StoreProperties.FILE_NAME + " file");
+					"Invalid " + StoreProperties.TRIPLE_TERM_INDEXES_KEY + " found in " + StoreProperties.FILE_NAME
+							+ " file");
 		}
 		return indexSpecs;
 	}
 
 	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
-		try {
-			String indexSpecStr = config.getTripleIndexes();
-			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
-			if (!properties.isLoaded()) {
-				// newly created lmdb store
-				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				initTripleTermIndexes(termIndexSpecs);
-			} else {
-				// Initialize existing indexes
-				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
-				initTripleTermIndexes(termIndexSpecs);
-
-				// Compare the existing triple term indexes with the requested indexes
-				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				if (reqTermIndexSpecs.isEmpty()) {
-					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleTermIndexes();
-				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
-					// Set of indexes needs to be changed
-					reindex(termIndexSpecs, reqTermIndexSpecs);
-				}
+		Set<String> requested = TripleIndex.parseIndexSpecList(config.getTripleTermIndexes());
+		requested.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+		if (!properties.isLoaded()) {
+			initTripleTermIndexes(requested);
+		} else {
+			Set<String> existing = getTripleTermIndexSpecs();
+			initTripleTermIndexes(existing);
+			if (!requested.equals(existing)) {
+				reindex(existing, requested);
 			}
-
-			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
-		} catch (IOException | SailException e) {
-			throw e;
 		}
+		// Persist what was actually initialized, not a possibly null configuration string. Statement-index metadata
+		// belongs exclusively to TripleStore, which needs its persisted layout to detect statement-index migrations.
+		properties.setTripleTermIndexes(String.join(",", requested));
 	}
 
 	private void initTripleTermIndexes(Set<String> indexSpecs) throws IOException {
