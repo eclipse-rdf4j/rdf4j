@@ -53,8 +53,24 @@ def validate_ready(ready: dict[str, Any], trial: str) -> None:
             "continuous writer lacks forced commits or uses per-generation controller releases")
     require(type(ready.get("spilled_replays")) is int and ready["spilled_replays"] >= 0,
             "continuous writer has no valid spilled-replay telemetry")
+    require(ready.get("spilled_replay_observation") == "before_replay_hook",
+            "continuous writer lacks spill observation before the native replay hook")
     if RUNNING_TRIALS[trial]["profile"] == "journal-replay":
         require(ready["spilled_replays"] > 0, "replay trial observed no genuine spilled journal replay")
+
+
+def validate_activity(activity: dict[str, Any], trial: str, ready: dict[str, Any]) -> None:
+    """This is the last published writer progress, not a synchronous native-phase observation."""
+    require(isinstance(activity, dict) and activity.get("trial") == trial
+            and activity.get("writer_pid") == ready["writer_pid"],
+            "selected I/O has no matching continuous-writer identity")
+    generation = activity.get("last_published_generation")
+    require(type(generation) is int and generation >= ready["returned_generation"]
+            and type(activity.get("last_published_returned_generation")) is int
+            and activity["last_published_returned_generation"] == generation - 1
+            and activity.get("last_published_phase") == "before_transaction"
+            and not {"phase", "generation", "returned_generation"}.intersection(activity),
+            "selected I/O lacks unambiguous last published continuous-writer progress")
 
 
 def read_running_witnesses(directory: Path, trial: str) -> dict[str, Any]:

@@ -16,11 +16,21 @@ The QEMU durability job must test actual running LMDB transactions as well as it
 - [done] Implement continuous writer and faults.
 - [done] Validate recovery prefixes and coverage.
 - [done] (2026-09-30) Complete format and Maven/native checks.
-- [in_progress] Publish branch and monitor exact-head CI.
+- [done] Publish first scoped repair head.
+- [done] Add causal telemetry and phase regressions.
+- [done] Repair counters and activity claim semantics.
+- [done] Verify focused native and Python contracts.
+- [in_progress] Format follow-up and publish scoped repair.
+- [todo] Monitor final exact-head hosted CI.
 - [todo] Resume local ARM64 campaigns if hosted blocked.
 - [todo] Record final CI evidence and disposition.
 
 ## Surprises & Discoveries
+
+- Observation: the first published head combines a replay completed at any time in a generation with a spill observed at any time before commit. An early in-memory replay followed by a later spill can therefore be misreported as spilled replay. The transaction activity file also remains unchanged while post-commit witnesses are published, so its phase and generation are last announced progress rather than the native subphase at the cut.
+  Evidence: the published `CrashPowerCutWriterMain.java` recorded only total replay completions in `afterMapGrowthReplay` and combined it with the observer's generation after commit. The bounded follow-up neutrally extracted the existing progress calculation with matching actual guest coverage, then reproduced both event orders and rejected ambiguous activity labels before repairing behavior.
+- Observation: matching pre/post extraction native tests passed (2 tests each). The compiled guest helper then failed replay-before-spill with `Spill after replay must not qualify as a spilled replay`; spill-before-replay and foreign-generation controls passed. Two activity-label regressions failed, and the readiness gate accepted missing causal-observation evidence.
+  Evidence: `logs/ci-6073-job-109798032840/causal-{extraction-pre-green,extraction-post-green,order-red,activity-red,readiness-red}.log`; exact commands and compact snippets are appended to `initial-evidence.txt` before the behavior repair.
 
 - Observation: job 109798032840 in run 36687945047 uses the same SHA as PR 6073 and this checkout, `bb9a22102e2a9db96eb7f69275f214a0d56d5a49`. Calibration and acknowledged namespace recovery passed; the first precise replay scenario failed before any recovery cut was made.
   Evidence: `logs/ci-6073-job-109798032840/job-109798032840-full.log` and the extracted campaign artifact.
@@ -30,6 +40,13 @@ The QEMU durability job must test actual running LMDB transactions as well as it
   Evidence: `logs/ci-6073-job-109798032840/python-harness-suite-escalated.log`.
 
 ## Decision Log
+
+- Decision: count a generation's spilled replay only when the spill observer has already recorded that generation at the native replay-completion hook. The hook updates only atomics; readiness explicitly records `spilled_replay_observation: before_replay_hook`, which the shared readiness validator requires.
+  Rationale: combining independent events after commit permits an early in-memory replay and a later spill to masquerade as a spilled replay. Observer lag may miss genuine coverage but cannot retroactively qualify an earlier replay. Event-order contracts exercise the same `RunningProgress` helper used by the actual guest, without reflection or source-string assertions.
+  Date/Author: 2026-09-30, Codex implementation worker.
+- Decision: name the activity fields `last_published_generation`, `last_published_returned_generation`, and `last_published_phase: before_transaction`; the backend and gate share validation, and the gate requires equality with the actual CUT trace.
+  Rationale: the publication remains in place during native work and post-commit marker forcing. It attests the last published continuous progress, not an exact native instruction or phase at the device cut. Preserve continuous-writer and real interrupted-I/O evidence without introducing a per-transaction handshake or extra native-hook I/O.
+  Date/Author: 2026-09-30, Codex implementation worker.
 
 - Decision: preserve every precise paused scenario and add independent running coverage.
   Rationale: exact publication-boundary guarantees and races during continuing execution test different failure surfaces. The user explicitly requested both running code and possible interruptions within I/O.
@@ -57,6 +74,8 @@ The QEMU durability job must test actual running LMDB transactions as well as it
   Date/Author: 2026-09-30, Codex coordinator.
 
 ## Outcomes & Retrospective
+
+The causal follow-up passed three compiled event-order regressions, all 21 gate tests, the complete 92-test Python suite, and all ten compiled actual guest tests (three paused boundaries, all four running trial identities, and three direct progress-order tests). The actual replay trials observed spill before their replay-completion hook and still completed multiple sequential transactions without controller releases; both independent recovery copies passed the unchanged complete public oracle. The first sandboxed Python attempt failed because local socket creation was denied; the identical authorized local-socket rerun passed. Logs are `logs/ci-6073-job-109798032840/causal-{order-green,gate-green,native-final,python-final-escalated}.log`; exact red/green evidence and neutral-extraction hit proof are appended to `initial-evidence.txt`. Source review, copyright verification, Python compilation, and `git diff --check` passed. Formatting/publication transfer to Luna after source ownership release; exact-head hosted device-cut evidence remains the coordinator's separate validation responsibility.
 
 The original guest cutpoint defect is locally reproduced and repaired. Final acceptance before publication passed the root quick clean install, configured Spotless formatting, copyright checks, 15 focused `LmdbCrashRecoveryTest` cases, and all seven actual native guest tests after formatting. The canonical Python suite passes 88 tests. The post-format focused Surefire report is retained under `core/sail/lmdb/target/surefire-reports/`; runner logs and earlier reports remain under `logs/ci-6073-job-109798032840`. Local inventory found ARM64 QEMU/HVF, both firmware images, qemu-img and hdiutil, but no provisioned Ubuntu Java 25 qcow2; `/dev/kvm` is absent. The user authorized a scoped commit/push, so exact-head hosted CI is now the priority and local provisioning is deferred. Hosted CI has not yet been checked at the new head.
 
@@ -128,3 +147,5 @@ Revision note (2026-09-30): after implementation, retired the original Luna work
 Revision note (2026-09-30): initial running backend/frontier contracts fail (6 errors: missing arm/frontier support), and both actual guest running tests fail because the current controller rejects running scenarios. Complete outputs are preserved in running-contracts-red.log and running-native-red.log and appended to initial-evidence.txt before feature edits.
 
 Revision note (2026-09-30): Sol implementation and native/Python validation are complete. Final green logs: logs/ci-6073-job-109798032840/running-python-final.log (88 tests, 10.118s) and running-native-final.log (7 tests, 43.945s). Exact red and green snippets are append-preserved in initial-evidence.txt. Copyright check passed; git diff --check and Python compilation passed. Final formatter and selected Java checks transfer to the serialized Maven worker after the coordinator audits its idle age (replace a worker idle over 30 minutes with the same model/effort and a concise handoff). No Maven, Git mutation, commit, push, or GitHub message was performed by the Sol feature worker. Local QEMU binaries are installed, but this macOS host has no /dev/kvm, so the mandatory Linux x86_64/KVM matrix remains unrun. Source edit ownership is released for final format and coordinator review.
+
+Follow-up revision note (2026-09-30): hook-time spill correlation and explicit last-published progress labels are implemented and verified. Final follow-up green logs are `causal-native-final.log` (10 tests, 49.659s) and `causal-python-final-escalated.log` (92 tests, 10.378s). Source ownership is released to the serialized formatting/publication worker. The cached-context retention rule still requires retiring and replacing any completed/stopped worker after more than 30 minutes of inactivity, with the same model/effort and a concise handoff; active work remains uninterrupted.

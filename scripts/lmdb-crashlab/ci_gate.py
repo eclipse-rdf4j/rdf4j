@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from run_powercut_campaign import SCENARIOS, validate_cutpoint_witness, validate_recovery_pair
-from running_contract import RUNNING_TRIALS, REQUEST_WINDOW, validate_ready, validate_running_recovery_pair
+from running_contract import RUNNING_TRIALS, REQUEST_WINDOW, validate_activity, validate_ready, validate_running_recovery_pair
 
 
 POWER_CUT_SCENARIOS = (
@@ -210,13 +210,10 @@ def validate_running_report(report: dict[str, Any], trial: str) -> dict[str, Any
     trace = report.get("automatic_cut_trace")
     _require(isinstance(trace, dict) and trace.get("event") == "AUTOMATIC_CUT"
              and trace.get("request") == request and trace.get("schedule") == schedule
+             and trace.get("activity") == cut.get("activity")
              and trace.get("actual_cut_time_ns") == cut["actual_cut_time_ns"], f"{trial} lacks matching CUT trace")
     activity = cut.get("activity")
-    _require(isinstance(activity, dict) and activity.get("trial") == trial
-             and activity.get("writer_pid") == ready["writer_pid"] and activity.get("phase") == "transaction"
-             and type(activity.get("generation")) is int and activity["generation"] >= ready["returned_generation"]
-             and activity.get("returned_generation") == activity["generation"] - 1,
-             f"{trial} lacks continuous-writer activity recorded at the selected fault")
+    validate_activity(activity, trial, ready)
     _require(report.get("writer_guest_alive_when_automatic_cut_observed") is True
              and report.get("continuous_child_exit_observed_before_cut") is False
              and report.get("writer_guest_reaped_after_cut") is True, f"{trial} did not fence a running guest before reaping")

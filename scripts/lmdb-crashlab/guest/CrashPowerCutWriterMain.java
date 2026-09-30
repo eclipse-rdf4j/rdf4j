@@ -176,35 +176,36 @@ public final class CrashPowerCutWriterMain {
 			awaitController(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)),
 					"CONTINUE_AFTER_A_ACK");
 			store.startSpillObserver();
-			int spilledReplays = 0;
 			boolean ready = false;
 			for (int generation = 1; ; generation = Math.incrementExact(generation)) {
 				String payload = CrashPowerCutFixtures.serializeRunning(trial, generation);
 				publishAtomic(RESULTS.resolve("running-" + generation + "-attempt.tsv"), payload, false);
-				store.generation.set(generation);
+				store.progress.startGeneration(generation);
 				publishAtomic(RESULTS.resolve("actual-running-activity.json"), "{\"trial\":\"" + trial
-						+ "\",\"generation\":" + generation + ",\"returned_generation\":" + (generation - 1)
-						+ ",\"writer_pid\":" + ProcessHandle.current().pid() + ",\"phase\":\"transaction\"}\n", true);
-				int replayBefore = store.replays.get();
+						+ "\",\"last_published_generation\":" + generation
+						+ ",\"last_published_returned_generation\":" + (generation - 1)
+						+ ",\"writer_pid\":" + ProcessHandle.current().pid()
+						+ ",\"last_published_phase\":\"before_transaction\"}\n", true);
+				store.progress.transactionStarted();
 				try (SailConnection connection = store.getConnection()) {
 					connection.begin(IsolationLevels.SNAPSHOT);
 					apply(connection, CrashPowerCutFixtures.runningTransaction(trial, generation));
 					connection.commit();
 				}
-				if (store.replays.get() > replayBefore && store.spilledGeneration.get() == generation) {
-					spilledReplays++;
-				}
+				store.progress.commitReturned();
+				int spilledReplays = store.progress.spilledReplays();
 				if (store.observerFailure.get() != null) {
 					throw new IOException("Unable to observe replay journal spill", store.observerFailure.get());
 				}
 				publishAtomic(RESULTS.resolve("running-" + generation + "-returned.json"), "{\"trial\":\"" + trial
 						+ "\",\"generation\":" + generation + ",\"commit_returned\":true,\"payload_sha256\":\""
 						+ CrashPowerCutFixtures.sha256(payload) + "\",\"spilled_replays\":" + spilledReplays + "}\n", false);
-				if (!ready && generation >= 2 && (!profile.equals("journal-replay") || spilledReplays > 0)) {
+				if (!ready && store.progress.ready(profile)) {
 					publishAtomic(RESULTS.resolve("actual-running-ready.json"), "{\"trial\":\"" + trial
 							+ "\",\"profile\":\"" + profile + "\",\"returned_generation\":" + generation
 							+ ",\"writer_pid\":" + ProcessHandle.current().pid() + ",\"force_sync\":true,"
-							+ "\"generation_controller_releases\":0,\"spilled_replays\":" + spilledReplays + "}\n", false);
+							+ "\"generation_controller_releases\":0,\"spilled_replays\":" + spilledReplays
+							+ ",\"spilled_replay_observation\":\"before_replay_hook\"}\n", false);
 					ready = true;
 				}
 			}
@@ -214,11 +215,57 @@ public final class CrashPowerCutWriterMain {
 		}
 	}
 
+	/** Progress shared by the sequential writer, spill observer, and native replay callback. */
+	static final class RunningProgress {
+		private final AtomicInteger generation = new AtomicInteger();
+		private final AtomicInteger spilledReplayCompletions = new AtomicInteger();
+		private final AtomicInteger spilledGeneration = new AtomicInteger();
+		private int spilledReplayBefore;
+		private int spilledReplays;
+
+		void startGeneration(int nextGeneration) {
+			generation.set(nextGeneration);
+		}
+
+		int generation() {
+			return generation.get();
+		}
+
+		void transactionStarted() {
+			spilledReplayBefore = spilledReplayCompletions.get();
+		}
+
+		void replayCompleted() {
+			// The callback runs under native coordination: atomics only, with no observer I/O or waits.
+			// Observations arriving after this callback cannot retrospectively qualify this replay.
+			int current = generation();
+			if (current > 0 && spilledGeneration.get() == current) {
+				spilledReplayCompletions.incrementAndGet();
+			}
+		}
+
+		void spillObserved(int observedGeneration) {
+			spilledGeneration.set(observedGeneration);
+		}
+
+		void commitReturned() {
+			if (spilledReplayCompletions.get() > spilledReplayBefore) {
+				spilledReplays++;
+			}
+		}
+
+		int spilledReplays() {
+			return spilledReplays;
+		}
+
+		boolean ready(String profile) {
+			return generation() >= 2 && (!profile.equals("journal-replay") || spilledReplays > 0);
+		}
+	}
+
 	private static final class StreamingLmdbStore extends LmdbStore {
 		private final String profile;
-		private final AtomicInteger generation = new AtomicInteger();
-		private final AtomicInteger replays = new AtomicInteger();
-		private final AtomicInteger spilledGeneration = new AtomicInteger();
+		private final RunningProgress progress = new RunningProgress();
 		private final AtomicBoolean observing = new AtomicBoolean(true);
 		private final AtomicReference<IOException> observerFailure = new AtomicReference<>();
 		private Path tripleDirectory;
@@ -242,7 +289,7 @@ public final class CrashPowerCutWriterMain {
 
 							@Override
 							protected void afterMapGrowthReplay() {
-								replays.incrementAndGet();
+								progress.replayCompleted();
 							}
 						};
 					});
@@ -251,11 +298,11 @@ public final class CrashPowerCutWriterMain {
 		private void startSpillObserver() {
 			Thread observer = new Thread(() -> {
 				while (observing.get()) {
-					int current = generation.get();
+					int current = progress.generation();
 					try (DirectoryStream<Path> files = Files.newDirectoryStream(tripleDirectory, "txn-replay-*.bin")) {
 						for (Path file : files) {
-							if (Files.isRegularFile(file) && !Files.isSymbolicLink(file) && current == generation.get()) {
-								spilledGeneration.set(current);
+							if (Files.isRegularFile(file) && !Files.isSymbolicLink(file) && current == progress.generation()) {
+								progress.spillObserved(current);
 							}
 						}
 						Thread.sleep(1);

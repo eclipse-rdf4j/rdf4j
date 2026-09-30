@@ -109,7 +109,8 @@ def running_report(trial):
                 "armed_time_ns": 10}
     request = {"kind": "WRITE" if contract["fault_kind"] == "write" else "FLUSH", "sectors_total": 8,
                "sectors_completed": seed.randint(1, 7), "sector_size": 512, "successful_reply": False}
-    activity = {"trial": trial, "generation": 3, "returned_generation": 2, "writer_pid": 123, "phase": "transaction"}
+    activity = {"trial": trial, "last_published_generation": 3, "last_published_returned_generation": 2,
+                "writer_pid": 123, "last_published_phase": "before_transaction"}
     cut = {"off": True, "survival": "drop", "kept_sectors": 0, "schedule": schedule, "request": request,
            "eligible_requests_at_cut": schedule["request_ordinal"], "actual_cut_time_ns": 20, "activity": activity}
     witnesses = ["actual-A-ack-witness.tsv", "actual-A-commit-ack.json", "actual-running-ready.json",
@@ -123,7 +124,8 @@ def running_report(trial):
             "scenario_contract": contract, "profile": contract["profile"],
             "ready_witness": {"trial": trial, "profile": contract["profile"], "returned_generation": 2,
                               "writer_pid": 123, "force_sync": True, "generation_controller_releases": 0,
-                              "spilled_replays": 1 if contract["profile"] == "journal-replay" else 0},
+                              "spilled_replays": 1 if contract["profile"] == "journal-replay" else 0,
+                              "spilled_replay_observation": "before_replay_hook"},
             "witness_bounds": {"returned_generation": 2, "attempted_generation": 3},
             "fault_schedule": schedule, "cut_report": cut, "automatic_cut_trace": {"event": "AUTOMATIC_CUT", **cut},
             "writer_guest_alive_when_automatic_cut_observed": True, "continuous_child_exit_observed_before_cut": False,
@@ -214,6 +216,45 @@ class CiGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             from ci_gate import validate_running_report
             validate_running_report(replay, replay["trial"])
+
+    def test_running_activity_explicitly_describes_last_published_progress(self):
+        from ci_gate import validate_running_report
+        report = running_report("running-normal-preflight-write")
+        report["cut_report"]["activity"] = {
+            "trial": report["trial"], "writer_pid": 123, "last_published_generation": 3,
+            "last_published_returned_generation": 2, "last_published_phase": "before_transaction"}
+        report["automatic_cut_trace"]["activity"] = report["cut_report"]["activity"]
+        validate_running_report(report, report["trial"])
+
+    def test_running_activity_cannot_claim_current_native_transaction(self):
+        from ci_gate import validate_running_report
+        report = running_report("running-normal-preflight-write")
+        report["cut_report"]["activity"] = {
+            "trial": report["trial"], "writer_pid": 123, "generation": 3,
+            "returned_generation": 2, "phase": "transaction"}
+        report["automatic_cut_trace"]["activity"] = report["cut_report"]["activity"]
+        with self.assertRaises(ValueError):
+            validate_running_report(report, report["trial"])
+
+    def test_replay_readiness_requires_spill_observed_before_hook(self):
+        from running_contract import validate_ready
+        trial = "running-journal-replay-write"
+        ready = running_report(trial)["ready_witness"]
+        ready.pop("spilled_replay_observation")
+        with self.assertRaises(ValueError):
+            validate_ready(ready, trial)
+        ready["spilled_replay_observation"] = "any_time_in_generation"
+        with self.assertRaises(ValueError):
+            validate_ready(ready, trial)
+        ready["spilled_replay_observation"] = "before_replay_hook"
+        validate_ready(ready, trial)
+
+    def test_running_activity_must_match_actual_cut_trace(self):
+        from ci_gate import validate_running_report
+        report = running_report("running-normal-preflight-write")
+        report["automatic_cut_trace"]["activity"] = dict(report["cut_report"]["activity"], writer_pid=456)
+        with self.assertRaises(ValueError):
+            validate_running_report(report, report["trial"])
 
     def test_failed_or_incomplete_calibration_is_rejected(self):
         report = calibration_report()

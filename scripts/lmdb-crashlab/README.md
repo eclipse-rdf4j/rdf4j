@@ -192,11 +192,16 @@ fail recovery. There are no controller releases or deliberate pause hooks after
 continuous execution begins.
 
 The device fault is armed only after two finalized returned generations. Replay
-trials also require a genuine spilled journal and completed native replay in
-the same generation. A separate observer records journal spill; the replay
-hook increments a counter without filesystem forcing or waiting under the
-native lock. This proves replay was exercised before the cut and does not claim
-interruption inside replay.
+trials also require a genuine spilled journal observed before the completed
+native replay callback in the same generation. A separate observer records
+journal spill; the replay hook increments its causal counter only if that
+generation's spill was already observed. The hook performs only atomic reads
+and counter updates, with no filesystem access or waiting under the native lock.
+Observer lag can miss a genuine spilled replay, but a later spill cannot qualify
+an earlier replay. Readiness reports `spilled_replay_observation: before_replay_hook`
+and the number of returned generations with at least one such replay in
+`spilled_replays`. This proves replay was exercised before the cut and does not
+claim interruption inside replay.
 
 The seeded schedule chooses one of the next eight eligible multi-sector
 requests, then an interior sector boundary. WRITE faults admit at least one
@@ -205,8 +210,15 @@ faults destage at least one sector and fewer than all sectors of a FLUSH/FUA
 request before cutting. The interrupted request receives no successful reply;
 completed FLUSH/FUA guarantees remain intact. Reports retain the selected
 request, physical sector offset, progress, actual fence time, and observed
-continuous-writer activity. The request can include ext4 background I/O; the
-report does not attribute a particular Java instruction or LMDB subphase.
+continuous-writer activity. The activity's `last_published_generation`,
+`last_published_returned_generation`, and `last_published_phase: before_transaction`
+describe the writer's most recent progress publication. That publication remains
+unchanged during commit and external returned-witness publication, so it cannot
+establish the writer's current native subphase or latest commit return at the cut.
+The request can include ext4 background I/O; the report attests a continuous writer
+and an interrupted NBD operation without attributing a Java instruction or LMDB
+subphase. The gate requires the activity copied into the CUT trace to match the
+reported activity.
 
 After fencing and stopping the guest, finalized returned generation R and
 attempted generation K must satisfy `R <= K <= R+1`. Recovery must equal the

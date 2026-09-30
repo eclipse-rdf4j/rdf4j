@@ -243,6 +243,7 @@ class Disk:
             self.check()
             if self.armed_fault is not None or self.ignore_flush:
                 raise ValueError("fault already armed or backend ignores durability requests")
+            ready = None
             if activity_dir is not None:
                 from running_contract import validate_ready
                 directory = Path(activity_dir)
@@ -252,6 +253,7 @@ class Disk:
                 validate_ready(ready, trial)
                 if (directory / "actual-running-child-exited.json").exists():
                     raise ValueError("continuous child exited before fault arming")
+            self.armed_ready = ready
             self.fault_rng = random.Random(seed)
             self.armed_fault = dict(fault_kind=fault_kind, seed=seed, request_window=request_window,
                                    request_ordinal=self.fault_rng.randint(1, request_window), eligible_seen=0,
@@ -274,12 +276,12 @@ class Disk:
         fault = self.armed_fault
         activity = None
         if fault["activity_dir"] is not None:
+            from running_contract import validate_activity
             directory = Path(fault["activity_dir"])
             if (directory / "actual-running-child-exited.json").exists():
                 raise ValueError("continuous writer exited before the selected I/O fault")
             activity = json.loads((directory / "actual-running-activity.json").read_text())
-            if activity.get("trial") != fault["trial"] or activity.get("generation", 0) < 2:
-                raise ValueError("selected I/O has no matching continuous-writer activity")
+            validate_activity(activity, fault["trial"], self.armed_ready)
         fault["fired"] = True
         interrupted = dict(**request, sectors_completed=completed, last_sector_offset=sector_offset,
                            sector_size=self.sector, successful_reply=False)

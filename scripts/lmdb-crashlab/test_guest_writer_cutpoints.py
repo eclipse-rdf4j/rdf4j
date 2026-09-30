@@ -66,7 +66,8 @@ class GuestWriterCutpointTests(unittest.TestCase):
         cls.class_dir_temp = tempfile.TemporaryDirectory(prefix="rdf4j-powercut-guest-classes-")
         cls.class_dir = Path(cls.class_dir_temp.name)
         sources = [GUEST_DIR / "CrashPowerCutFixtures.java", GUEST_DIR / "CrashPowerCutWriterMain.java",
-                   GUEST_DIR / "CrashPowerCutOracleMain.java", GUEST_DIR / "CrashPowerCutOracleTestMain.java"]
+                   GUEST_DIR / "CrashPowerCutOracleMain.java", GUEST_DIR / "CrashPowerCutOracleTestMain.java",
+                   GUEST_DIR / "CrashPowerCutProgressTestMain.java"]
         result = subprocess.run(
             [
                 str(javac),
@@ -155,6 +156,22 @@ class GuestWriterCutpointTests(unittest.TestCase):
     def test_commit_returned_before_ack(self):
         self._assert_cutpoint(*SCENARIOS["test_commit_returned_before_ack"])
 
+    def _assert_progress_order(self, order):
+        result = subprocess.run([self.java, "-ea", "-cp", str(self.class_dir) + ":" + self.host_classpath,
+                                 "org.eclipse.rdf4j.sail.lmdb.CrashPowerCutProgressTestMain", order],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS " + order, result.stdout)
+
+    def test_replay_before_spill_cannot_make_trial_ready(self):
+        self._assert_progress_order("replay-before-spill")
+
+    def test_spill_before_replay_makes_trial_ready(self):
+        self._assert_progress_order("spill-before-replay")
+
+    def test_foreign_generation_spill_cannot_make_trial_ready(self):
+        self._assert_progress_order("foreign-generation-spill")
+
     def _assert_running(self, trial, replay):
         with tempfile.TemporaryDirectory(prefix="rdf4j-running-guest-") as temporary:
             root = Path(temporary)
@@ -175,11 +192,15 @@ class GuestWriterCutpointTests(unittest.TestCase):
                 ready = json.loads(marker.read_text())
                 self.assertGreaterEqual(ready["returned_generation"], 2)
                 self.assertEqual(ready["trial"], trial)
+                from running_contract import validate_activity, validate_ready
+                validate_ready(ready, trial)
                 if replay:
                     self.assertGreater(ready["spilled_replays"], 0)
                 self.assertIsNone(process.poll(), "continuous writer must still run")
                 self.assertFalse((results / "actual-cutpoint-child.marker").exists())
                 wait_for_path(process, [results / "running-3-returned.json"], timeout=90)
+                activity = json.loads((results / "actual-running-activity.json").read_text())
+                validate_activity(activity, trial, ready)
             finally:
                 stop_process(process, signal.SIGKILL, timeout=5)
             self.assertGreaterEqual(len(list(results.glob("running-*-returned.json"))), 2)

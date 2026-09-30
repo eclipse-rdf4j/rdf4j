@@ -146,10 +146,11 @@ class AutomaticControlTests(unittest.TestCase):
             control = root / "control.sock"
             backend_source = Path(__file__).with_name("volatile_nbd.py")
             ready = {"trial": trial, "profile": "normal-preflight", "returned_generation": 2,
-                     "writer_pid": 123, "force_sync": True, "generation_controller_releases": 0, "spilled_replays": 0}
+                     "writer_pid": 123, "force_sync": True, "generation_controller_releases": 0, "spilled_replays": 0,
+                     "spilled_replay_observation": "before_replay_hook"}
             (root / "actual-running-ready.json").write_text(json.dumps(ready))
-            activity = {"trial": trial, "generation": 2, "returned_generation": 1,
-                        "writer_pid": 123, "phase": "transaction"}
+            activity = {"trial": trial, "last_published_generation": 2, "last_published_returned_generation": 1,
+                        "writer_pid": 123, "last_published_phase": "before_transaction"}
             (root / "actual-running-activity.json").write_text(json.dumps(activity))
             with socket.socket() as reserved:
                 reserved.bind(("127.0.0.1", 0))
@@ -161,7 +162,7 @@ class AutomaticControlTests(unittest.TestCase):
                 schedule = backend_control(Path(sys.executable), backend_source, control, "arm",
                                            "--fault-kind", "write", "--seed", "41", "--request-window", "1",
                                            "--activity-dir", str(root), "--trial", trial)
-                activity.update(generation=3, returned_generation=2)
+                activity.update(last_published_generation=3, last_published_returned_generation=2)
                 (root / "actual-running-activity.json").write_text(json.dumps(activity))
                 with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
                     self.assertEqual(struct.unpack(">QQH", recvn(client, 18)), (NBD_MAGIC, OPT_MAGIC, 3))
