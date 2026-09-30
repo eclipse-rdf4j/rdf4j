@@ -11,9 +11,12 @@
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,9 +29,16 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.sparqlxslx.SPARQLResultsXLSXWriter;
+import org.eclipse.rdf4j.query.resultio.sparqlxslx.SPARQLResultsXLSXWriterFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -83,6 +93,34 @@ public class SPARQLXLSXTupleTest {
 			assertEquals("boolean", headerRow.getCell(0).getStringCellValue());
 			assertEquals("iri", headerRow.getCell(1).getStringCellValue());
 			assertEquals("int", headerRow.getCell(2).getStringCellValue());
+		}
+	}
+
+	@Test
+	void testCreateTupleWriter() {
+		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(TupleQueryResultFormat.XSLX,
+				new ByteArrayOutputStream());
+		assertInstanceOf(SPARQLResultsXLSXWriter.class, writer);
+	}
+
+	/**
+	 * Same call sequence as AbstractQueryResultIOTest#doTupleLinksAndStylesheetNoStarts: startDocument and startHeader
+	 * are not called.
+	 */
+	@Test
+	void testNoStarts() throws IOException {
+		MapBindingSet bs = new MapBindingSet();
+		bs.setBinding("name", SimpleValueFactory.getInstance().createLiteral("hello"));
+		TupleQueryResult input = new IteratingTupleQueryResult(List.of("name"), List.of(bs));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+		TupleQueryResultWriter writer = new SPARQLResultsXLSXWriterFactory().getWriter(out);
+		writer.handleStylesheet("http://example.org/stylesheet.xsl");
+		writer.handleLinks(List.of("http://example.org/link1"));
+		QueryResults.report(input, writer);
+
+		try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+			assertEquals("hello", wb.getSheet("raw").getRow(1).getCell(0).getStringCellValue());
 		}
 	}
 

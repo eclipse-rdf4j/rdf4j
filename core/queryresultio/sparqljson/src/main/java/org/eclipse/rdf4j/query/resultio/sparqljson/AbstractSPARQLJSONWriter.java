@@ -305,7 +305,8 @@ abstract class AbstractSPARQLJSONWriter extends AbstractQueryResultWriter implem
 			if (Literals.isLanguageLiteral(lit)) {
 				jg.writeStringProperty("xml:lang", lit.getLanguage().orElse(null));
 				if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
-					jg.writeStringProperty(ITS_DIR, lit.getBaseDirection().toString());
+					jg.writeStringProperty(ITS_DIR,
+							lit.getBaseDirection().toString().substring(Literal.BASE_DIR_SEPARATOR.length()));
 				}
 			} else {
 				IRI datatype = lit.getDatatype();
