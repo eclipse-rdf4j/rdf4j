@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -252,10 +253,15 @@ public final class QueryEvaluator {
 			final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
 			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
+		long queryStartedNanos = System.nanoTime();
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
 			ExplainQueryResult explainQueryResult = explain(query, req);
 			explainQuery(builder, explainQueryResult);
+			return;
+		}
+		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			evaluateBrowserBatch(builder, req, con, query, responseQueryText, responseHeartbeat, queryStartedNanos);
 			return;
 		}
 
@@ -287,6 +293,188 @@ public final class QueryEvaluator {
 		}
 		this.evaluate(builder, out, req, resp, cookies, con, query, evaluateCookie, paged, offset, limit,
 				responseQueryText, knownTotalResultCount, responseHeartbeat);
+	}
+
+	private void evaluateBrowserBatch(TupleResultBuilder builder, WorkbenchRequest req, RepositoryConnection connection,
+			Query query, String responseQueryText, QueryResponseHeartbeat heartbeat, long startedNanos)
+			throws RDF4JException, BadRequestException {
+		QueryBatch batch = QueryBatch.from(req);
+		if (!(query instanceof TupleQuery || query instanceof GraphQuery || query instanceof BooleanQuery)) {
+			throw new BadRequestException("Unknown query type: " + query.getClass().getSimpleName());
+		}
+		builder.view(query instanceof TupleQuery ? "query-result-tuple"
+				: query instanceof GraphQuery ? "query-result-graph" : "query-result-boolean");
+		addBatchMetadata(builder, req, responseQueryText, batch, query);
+		long total = 0;
+		long emitted = 0;
+		boolean booleanValue = false;
+		BrowserQueryProgress progress = new BrowserQueryProgress(builder, heartbeat, startedNanos);
+		try (progress) {
+			progress.start();
+			writeNamespaces(builder, connection);
+			if (query instanceof TupleQuery tupleQuery) {
+				try (TupleQueryResult result = tupleQuery.evaluate()) {
+					String[] names = result.getBindingNames().toArray(new String[0]);
+					builder.start(names);
+					builder.link(List.of(INFO));
+					List<Object> values = new ArrayList<>(names.length);
+					while (result.hasNext()) {
+						BindingSet row = result.next();
+						if (total >= batch.getOffset() && emitted < batch.getSize()) {
+							addResult(builder, names, values, row);
+							if (++emitted == batch.getSize()) {
+								builder.flushPageResults();
+							}
+						}
+						checkpointBatch(++total, "WORKBENCH_TUPLE_RESULT");
+						progress.update(total);
+					}
+				}
+			} else if (query instanceof GraphQuery graphQuery) {
+				try (GraphQueryResult result = graphQuery.evaluate()) {
+					builder.start("subject", "predicate", "object", "context");
+					builder.link(List.of(INFO));
+					while (result.hasNext()) {
+						Statement row = result.next();
+						if (total >= batch.getOffset() && emitted < batch.getSize()) {
+							builder.result(row.getSubject(), row.getPredicate(), row.getObject(), row.getContext());
+							if (++emitted == batch.getSize()) {
+								builder.flushPageResults();
+							}
+						}
+						checkpointBatch(++total, "WORKBENCH_GRAPH_RESULT");
+						progress.update(total);
+					}
+				}
+			} else {
+				booleanValue = ((BooleanQuery) query).evaluate();
+				builder.startBoolean();
+			}
+		}
+		progress.checkFailure();
+		builder.terminalMetadata("query-elapsed-ms", progress.elapsedMillis());
+		builder.terminalMetadata(METADATA_QUERY_RESULT_STATUS, "completed");
+		if (query instanceof BooleanQuery) {
+			addBatchTerminalMetadata(builder, batch, 0, false, null);
+			writeBooleanResult(builder, booleanValue);
+			builder.endBoolean();
+		} else {
+			endBatch(builder, batch, emitted, total > batch.nextOffset(emitted), total);
+		}
+		completeResponseHeartbeat(heartbeat);
+	}
+
+	private void addBatchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText,
+			QueryBatch batch, Query query) {
+		addWorkbenchMetadata(builder, req, responseQueryText);
+		builder.metadata(METADATA_QUERY_RESULT_STATUS, "evaluating");
+		builder.metadata(METADATA_INFER, query.getIncludeInferred());
+		builder.metadata("result-offset", batch.getOffset());
+		builder.metadata("result-limit", batch.getSize());
+		String requestId = QueryRequestContext.getQueryRequestId();
+		builder.metadata("result-blank-node-scope", requestId == null ? UUID.randomUUID().toString() : requestId);
+	}
+
+	private void endBatch(TupleResultBuilder builder, QueryBatch batch, long count, boolean hasMore, Long total)
+			throws QueryResultHandlerException, BadRequestException {
+		addBatchTerminalMetadata(builder, batch, count, hasMore, total);
+		builder.end();
+	}
+
+	private void addBatchTerminalMetadata(TupleResultBuilder builder, QueryBatch batch, long count, boolean hasMore,
+			Long total) throws BadRequestException {
+		builder.terminalMetadata("result-offset", batch.getOffset());
+		builder.terminalMetadata("result-limit", batch.getSize());
+		builder.terminalMetadata("result-batch-count", count);
+		builder.terminalMetadata("result-has-more", hasMore);
+		builder.terminalMetadata("result-next-offset", batch.nextOffset(count));
+		if (total != null) {
+			builder.terminalMetadata(METADATA_TOTAL_RESULT_COUNT, total);
+		}
+	}
+
+	private void checkpointBatch(long count, String operator) throws QueryEvaluationException {
+		if (count % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+			checkpointMaterialization(operator);
+		}
+	}
+
+	/** Tracks one original query, independently of the bounded output window. */
+	private static final class BrowserQueryProgress implements AutoCloseable {
+		private static final long COUNT_INTERVAL = 100_000;
+		private static final long TIME_INTERVAL_MILLIS = 3_000;
+		private final TupleResultBuilder builder;
+		private final QueryResponseHeartbeat heartbeat;
+		private final long startedNanos;
+		private volatile long evaluatedCount;
+		private volatile long nextCountProgress = QueryBatch.DEFAULT_SIZE + COUNT_INTERVAL;
+		private long lastProgressMillis;
+		private boolean active = true;
+		private volatile QueryResultHandlerException failure;
+
+		private BrowserQueryProgress(TupleResultBuilder builder, QueryResponseHeartbeat heartbeat, long startedNanos) {
+			this.builder = builder;
+			this.heartbeat = heartbeat;
+			this.startedNanos = startedNanos;
+		}
+
+		private void start() {
+			if (heartbeat != null) {
+				builder.startResponseHeartbeat(heartbeat, () -> {
+					try {
+						publishIfDue();
+					} catch (QueryResultHandlerException exception) {
+						failure = exception;
+						throw new IllegalStateException("Unable to publish Workbench query progress", exception);
+					}
+				});
+			}
+		}
+
+		private void update(long count) throws QueryResultHandlerException {
+			if (count > QueryBatch.MAX_BROWSER_INTEGER) {
+				throw new QueryResultHandlerException("Query result count exceeds the browser integer range");
+			}
+			evaluatedCount = count;
+			if (count >= nextCountProgress || count % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+				publishIfDue();
+			}
+		}
+
+		private synchronized void publishIfDue() throws QueryResultHandlerException {
+			long elapsed = elapsedMillis();
+			long count = evaluatedCount;
+			if (!active || (count < nextCountProgress && elapsed - lastProgressMillis < TIME_INTERVAL_MILLIS)) {
+				return;
+			}
+			builder.progressMetadata(Map.of("result-evaluated-count", count, "query-elapsed-ms", elapsed,
+					METADATA_QUERY_RESULT_STATUS, "evaluating"));
+			lastProgressMillis = elapsed;
+			if (count >= nextCountProgress) {
+				// A time-only update does not move the independent 1.1m, 1.2m, ... count milestones.
+				nextCountProgress = (count / COUNT_INTERVAL + 1) * COUNT_INTERVAL;
+			}
+		}
+
+		private long elapsedMillis() {
+			return (System.nanoTime() - startedNanos) / 1_000_000;
+		}
+
+		private void checkFailure() throws QueryResultHandlerException {
+			if (failure != null) {
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() {
+			synchronized (this) {
+				active = false;
+			}
+			if (heartbeat != null) {
+				heartbeat.stop();
+			}
+		}
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,

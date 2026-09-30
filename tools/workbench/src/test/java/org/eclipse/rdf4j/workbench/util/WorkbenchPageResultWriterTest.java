@@ -14,12 +14,21 @@ package org.eclipse.rdf4j.workbench.util;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -27,6 +36,126 @@ import tools.jackson.databind.ObjectMapper;
 class WorkbenchPageResultWriterTest {
 
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+	@ParameterizedTest
+	@ValueSource(strings = { "query-result-tuple", "query-result-graph" })
+	void earlyTupleOrGraphFailureAfterProgressDoesNotEmitHeadersAheadOfUnknownVariables(String view)
+			throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		WorkbenchPageResultWriter writer = new WorkbenchPageResultWriter(output);
+		writer.view(view);
+		writer.handleNamespace("ex", "urn:example:");
+		writer.handleLinks(List.of("info"));
+		writer.metadata("query-result-status", "evaluating");
+		writer.progressMetadata(Map.of("result-evaluated-count", 0, "query-elapsed-ms", 3000,
+				"query-result-status", "evaluating"));
+		writer.error(502, "incomplete", "Query did not complete.");
+
+		List<JsonNode> records = output.toString(StandardCharsets.UTF_8).lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "progress", "error");
+		assertThat(records.get(3).path("code").asText()).isEqualTo("incomplete");
+		assertThat(records).noneMatch(record -> record.path("type").asText().equals("end"));
+	}
+
+	@Test
+	void startedZeroVariableTupleFailureEmitsKnownVariablesBeforePendingHeadersAndError() throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		WorkbenchPageResultWriter writer = new WorkbenchPageResultWriter(output);
+		writer.view("query-result-tuple");
+		writer.handleNamespace("ex", "urn:example:");
+		writer.handleLinks(List.of("info"));
+		writer.metadata("query-result-status", "evaluating");
+		writer.progressMetadata(Map.of("result-evaluated-count", 0, "query-elapsed-ms", 3000,
+				"query-result-status", "evaluating"));
+		writer.startQueryResult(List.of());
+		writer.error(502, "incomplete", "Query did not complete.");
+
+		List<JsonNode> records = output.toString(StandardCharsets.UTF_8).lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "progress", "vars", "namespaces", "links", "metadata", "error");
+		assertThat(records.get(3).path("values")).isEmpty();
+		assertThat(records.getLast().path("code").asText()).isEqualTo("incomplete");
+		assertThat(records).noneMatch(record -> record.path("type").asText().equals("end"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1024, 300_000 })
+	void progressCannotInterruptAnOrdinaryOrOversizedRowRecord(int lexicalSize) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		CountDownLatch partialRow = new CountDownLatch(1);
+		CountDownLatch releaseRow = new CountDownLatch(1);
+		AtomicBoolean blocked = new AtomicBoolean();
+		OutputStream output = new OutputStream() {
+			@Override
+			public void write(int value) {
+				bytes.write(value);
+			}
+
+			@Override
+			public void write(byte[] values, int offset, int length) throws IOException {
+				bytes.write(values, offset, length);
+				if (new String(values, offset, length, StandardCharsets.UTF_8).contains("\"type\":\"rows\"")
+						&& blocked.compareAndSet(false, true)) {
+					partialRow.countDown();
+					try {
+						assertThat(releaseRow.await(5, TimeUnit.SECONDS)).isTrue();
+					} catch (InterruptedException failure) {
+						throw new IOException(failure);
+					}
+				}
+			}
+		};
+		WorkbenchPageResultWriter writer = new WorkbenchPageResultWriter(output, true);
+		writer.view("query-result-tuple");
+		writer.handleNamespace("ex", "urn:ex:");
+		writer.progressMetadata(Map.of("result-evaluated-count", 0, "query-elapsed-ms", 0,
+				"query-result-status", "evaluating"));
+		writer.startQueryResult(List.of("value"));
+		QueryBindingSet row = new QueryBindingSet();
+		String lexical = "x".repeat(lexicalSize);
+		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral(lexical));
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread rows = Thread.startVirtualThread(() -> {
+			try {
+				writer.handleSolution(row);
+				writer.flush();
+			} catch (Throwable exception) {
+				failure.set(exception);
+			}
+		});
+		assertThat(partialRow.await(5, TimeUnit.SECONDS)).isTrue();
+		CountDownLatch progressStarted = new CountDownLatch(1);
+		CountDownLatch progressDone = new CountDownLatch(1);
+		Thread progress = Thread.startVirtualThread(() -> {
+			progressStarted.countDown();
+			try {
+				writer.progressMetadata(Map.of("result-evaluated-count", 1, "query-elapsed-ms", 3000,
+						"query-result-status", "evaluating"));
+			} catch (Throwable exception) {
+				failure.set(exception);
+			} finally {
+				progressDone.countDown();
+			}
+		});
+		try {
+			assertThat(progressStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(progressDone.await(50, TimeUnit.MILLISECONDS)).isFalse();
+		} finally {
+			releaseRow.countDown();
+			rows.join(5000);
+			progress.join(5000);
+		}
+		assertThat(rows.isAlive()).isFalse();
+		assertThat(progress.isAlive()).isFalse();
+		assertThat(failure.get()).isNull();
+		writer.endQueryResult();
+		List<JsonNode> records = bytes.toString(StandardCharsets.UTF_8).lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "progress", "vars", "namespaces", "rows", "progress", "end");
+		assertThat(records.get(5).path("values").get(0).get(0).get(1).asText()).isEqualTo(lexical);
+		assertThat(records.get(6).path("values").path("result-evaluated-count").asInt()).isEqualTo(1);
+	}
 
 	@Test
 	void delaysProtocolHeaderUntilFirstRecordAndCanEndWithError() throws Exception {
@@ -84,8 +213,25 @@ class WorkbenchPageResultWriterTest {
 				.map(JSON_MAPPER::readTree)
 				.toList();
 		assertThat(records).extracting(record -> record.get("type").asText())
-				.containsExactly("head", "view", "namespaces", "vars", "end");
-		assertThat(records.get(2).path("values")).hasSize(2);
+				.containsExactly("head", "view", "vars", "namespaces", "end");
+		assertThat(records.get(3).path("values")).hasSize(2);
+	}
+
+	@Test
+	void declaresQueryVariablesBeforeNamespacesAsRequiredByTheBrowserProtocol() throws Exception {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		WorkbenchPageResultWriter writer = new WorkbenchPageResultWriter(output);
+
+		writer.view("query-result-tuple");
+		writer.handleNamespace("ex", "urn:example:");
+		writer.handleNamespace("schema", "https://schema.org/");
+		writer.startQueryResult(List.of("subject"));
+		writer.endQueryResult();
+
+		List<JsonNode> records = output.toString(StandardCharsets.UTF_8).lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records).extracting(record -> record.path("type").asText())
+				.containsExactly("head", "view", "vars", "namespaces", "end");
+		assertThat(records.get(3).path("values")).hasSize(2);
 	}
 
 	@Test
@@ -107,8 +253,8 @@ class WorkbenchPageResultWriterTest {
 				.map(JSON_MAPPER::readTree)
 				.toList();
 		assertThat(records).extracting(record -> record.get("type").asText())
-				.containsExactly("head", "view", "links", "vars", "rows", "end");
-		assertThat(records.get(3).path("values").get(0).asText()).isEqualTo("queryName");
+				.containsExactly("head", "view", "vars", "links", "rows", "end");
+		assertThat(records.get(2).path("values").get(0).asText()).isEqualTo("queryName");
 		assertThat(records.get(4).path("values").get(0).get(0).path("value").asText()).isEqualTo("team-query");
 	}
 
@@ -127,8 +273,8 @@ class WorkbenchPageResultWriterTest {
 				.map(JSON_MAPPER::readTree)
 				.toList();
 		assertThat(records).extracting(record -> record.get("type").asText())
-				.containsExactly("head", "view", "links", "vars", "end");
-		assertThat(records.get(3).path("values")).isEmpty();
+				.containsExactly("head", "view", "vars", "links", "end");
+		assertThat(records.get(2).path("values")).isEmpty();
 	}
 
 	@Test

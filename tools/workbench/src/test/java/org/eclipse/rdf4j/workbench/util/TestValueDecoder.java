@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
@@ -112,6 +113,60 @@ public class TestValueDecoder {
 	void testUnicodeLiteralEscapes() throws BadRequestException {
 		assertThat(decoder.decodeValue("\"\\u0041\\u00E9\\U0001F642\""))
 				.isEqualTo(factory.createLiteral("Aé🙂"));
+	}
+
+	@ParameterizedTest
+	@MethodSource("directedLiteralCases")
+	void testDirectedLanguageLiteralPreservesModelSemantics(String encoded, Literal expected)
+			throws BadRequestException {
+		Value value = decoder.decodeValue(encoded);
+		assertThat(value).isInstanceOf(Literal.class);
+		Literal actual = (Literal) value;
+		assertThat(actual.getLabel()).isEqualTo(expected.getLabel());
+		assertThat(actual.getLanguage()).isEqualTo(expected.getLanguage());
+		assertThat(actual.getBaseDirection()).isEqualTo(expected.getBaseDirection());
+		assertThat(actual.getDatatype()).isEqualTo(RDF.DIRLANGSTRING);
+		assertThat(actual).isEqualTo(expected);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "en-US", "sr-Latn-RS", "x-private", "ar-ltr", "fakelanguage123" })
+	void testOrdinaryLanguageLiteralRetainsLegacySemantics(String language) throws BadRequestException {
+		Value value = decoder.decodeValue("\"color\"@" + language);
+		assertThat(value).isInstanceOf(Literal.class);
+		Literal actual = (Literal) value;
+		assertThat(actual.getLabel()).isEqualTo("color");
+		assertThat(actual.getLanguage()).contains(language);
+		assertThat(actual.getBaseDirection()).isEqualTo(Literal.BaseDirection.NONE);
+		assertThat(actual.getDatatype()).isEqualTo(RDF.LANGSTRING);
+		assertThat(actual).isEqualTo(factory.createLiteral("color", language));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "ar--up", "ar--", "ar--RTL", "ar--ltr--rtl", "ar--rtl--ltr", "--rtl" })
+	void testInvalidLiteralDirectionIsReportedAsBadRequest(String suffix) {
+		String encoded = "\"مرحبا\"@" + suffix;
+		assertThatThrownBy(() -> decoder.decodeValue(encoded))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Malformed value: " + encoded);
+	}
+
+	private static Stream<Arguments> directedLiteralCases() {
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		Stream<Arguments> escaped = Stream.of("مرحبا", "quote \" and slash \\ with\nline\ttab", "Unicode Aé🙂")
+				.flatMap(label -> {
+					String encoded = JSON_MAPPER.writeValueAsString(label);
+					return Stream.of(
+							Arguments.of(encoded + "@ar--ltr",
+									factory.createLiteral(label, "ar", Literal.BaseDirection.LTR)),
+							Arguments.of(encoded + "@ar--rtl",
+									factory.createLiteral(label, "ar", Literal.BaseDirection.RTL)));
+				});
+		return Stream.concat(escaped, Stream.of(
+				Arguments.of("\"\\u0645\\u0631\\u062D\\u0628\\u0627\\U0001F642\"@ar--rtl",
+						factory.createLiteral("مرحبا🙂", "ar", Literal.BaseDirection.RTL)),
+				Arguments.of("\"\\u0041\\u00E9\\U0001F642\"@en-US--ltr",
+						factory.createLiteral("Aé🙂", "en-US", Literal.BaseDirection.LTR))));
 	}
 
 	private static Stream<Arguments> escapedLiteralCases() {

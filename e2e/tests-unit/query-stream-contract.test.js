@@ -225,7 +225,8 @@ test('query stream sends exactly one typed request and exposes terminal metadata
     assert.equal(requests.length, 1, 'an execution descriptor should produce one POST');
     assert.equal(requests[0].url, '/repositories/test/query');
     assert.equal(requests[0].init.method, 'POST');
-    assert.equal(requests[0].init.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(requests[0].init.headers.Accept,
+        'application/vnd.rdf4j.workbench-query-v2+ndjson, application/vnd.rdf4j.workbench+ndjson;q=0.9');
     assert.equal(requests[0].init.body.some(parameter => parameter.name === 'Accept'), false);
     assert.equal(outcome.type, 'end');
     assert.equal(outcome.metadata.count, 1);
@@ -314,7 +315,7 @@ test('graph results retain the four positional statement variables', () => {
     }), /graph|context/i);
 });
 
-test('terminal paging metadata computes the displayed range and server continuation', () => {
+test('legacy paging metadata helper remains isolated from the streamed query view', () => {
     const queryStream = loadQueryStreamApi();
     assert.equal(typeof queryStream.calculateResultPaging, 'function');
 
@@ -340,7 +341,7 @@ test('terminal paging metadata computes the displayed range and server continuat
         'result-limit': 0
     });
     assert.equal(unlimited.lastRow, 100000);
-    assert.equal(unlimited.hasNext, false, 'limit_query=0 keeps one complete unlimited result');
+    assert.equal(unlimited.hasNext, false, 'a zero legacy limit means there is no legacy next page');
 });
 
 test('execution form binding is explicit and leaves raw downloads native', () => {
@@ -447,7 +448,7 @@ test('re-binding a saved-query window binds new forms and disposes detached form
     assert.equal(second.listeners.get('submit').length, 0);
 });
 
-test('a bound execution form streams once into its declared result mount', async () => {
+test('a bound execution form requests the default million-row batch into its declared result mount', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const form = document.createElement('form');
@@ -462,8 +463,13 @@ test('a bound execution form streams once into its declared result mount', async
     const query = document.createElement('textarea');
     query.name = 'query';
     query.value = 'SELECT * WHERE {?s ?p ?o}';
+    const oldPageLimit = document.createElement('input');
+    oldPageLimit.name = 'limit_query';
+    oldPageLimit.value = '17';
     form.appendChild(action);
     form.appendChild(query);
+    form.appendChild(oldPageLimit);
+    document.cookie = 'total_result_count=23; path=/';
     const target = document.createElement('section');
     target.setAttribute('id', 'saved-query-results-0');
     document.body.appendChild(form);
@@ -475,7 +481,13 @@ test('a bound execution form streams once into its declared result mount', async
         { type: 'view', id: 'tuple' },
         { type: 'vars', values: ['value'] },
         { type: 'rows', values: [[{ kind: 'literal', value: 'streamed' }]] },
-        { type: 'end', metadata: { 'total-result-count': 2, 'result-offset': 0, 'result-limit': 1 } }
+        { type: 'end', metadata: {
+            'result-offset': 0,
+            'result-limit': 1000000,
+            'result-batch-count': 1,
+            'result-has-more': false,
+            'result-next-offset': 1
+        } }
     ].map(record => JSON.stringify(record) + '\n').join('');
     const bytes = new TextEncoder().encode(wire);
     queryStream.__testWindow.fetch = async (url, init) => {
@@ -516,33 +528,33 @@ test('a bound execution form streams once into its declared result mount', async
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, '/repositories/test/query');
     assert.equal(requests[0].init.method, 'POST');
-    assert.equal(requests[0].init.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(requests[0].init.headers.Accept,
+        'application/vnd.rdf4j.workbench-query-v2+ndjson, application/vnd.rdf4j.workbench+ndjson;q=0.9');
     assert.equal(requests[0].init.body.get('action'), 'exec');
     assert.equal(requests[0].init.body.get('query'), 'SELECT * WHERE {?s ?p ?o}');
     assert.ok(requests[0].init.body.get('query-request-id'));
     assert.equal(target.getAttribute('aria-busy'), 'false');
-    assert.equal(target.querySelector('.query-result-status').textContent, 'Rows 1–1 of 2.',
+    assert.equal(target.querySelector('.query-result-status').textContent, '1 result.',
         target.querySelector('.ERROR').textContent);
     assert.equal(target.querySelector('td').textContent, '"streamed"');
-    assert.match(document.cookie, /total_result_count=2/);
+    assert.equal(requests[0].init.body.get('batch-size'), '1000000');
+    assert.equal(requests[0].init.body.get('batch-offset'), '0');
+    assert.equal(requests[0].init.body.has('limit_query'), false);
+    assert.equal(requests[0].init.body.has('know_total'), false);
+    assert.equal(target.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
+    assert.equal(target.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false);
 
     form.trigger('submit');
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests[1].init.body.get('know_total'), '2',
-        'the completed stream count must be reused for the next paged request');
-
-    const pageSize = target.querySelectorAll('select').find(select => select.name === 'stream-result-limit');
-    assert.ok(pageSize, 'result options expose the query page-size control');
-    pageSize.value = '10';
-    pageSize.trigger('change');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.length, 3, 'changing page size starts one new query execution');
-    assert.equal(requests[2].init.body.get('limit_query'), '10');
-    assert.equal(requests[2].init.body.get('offset'), '0');
+    assert.equal(requests.length, 2, 'Execute starts a fresh query rather than navigating a result page');
+    assert.equal(requests[1].init.body.get('batch-size'), '1000000');
+    assert.equal(requests[1].init.body.get('batch-offset'), '0');
+    assert.equal(requests[1].init.body.has('know_total'), false,
+        'a previous response count is not carried into a later execution');
     dispose();
 });
 
-test('unlimited result rendering keeps every row in worker storage and bounds table DOM', async () => {
+test('large batched results stay in worker storage and bound table DOM', async () => {
     const queryStream = loadQueryStreamApi();
     assert.equal(typeof queryStream.QueryResultRenderer, 'function');
 
@@ -550,20 +562,24 @@ test('unlimited result rendering keeps every row in worker storage and bounds ta
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 0, maxDomRows: 80, rowStore: inMemoryRowStore()
+        batched: true, requestedLimit: 1000000, maxDomRows: 80, rowStore: inMemoryRowStore()
     });
+    renderer.beginBatch(0);
+    await renderer.accept({ type: 'head', version: 1 });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
     await renderer.accept({ type: 'rows', values: Array.from({ length: 100000 }, () => [null]) });
     await renderer.accept({ type: 'end', metadata: {
-        'total-result-count': 100000,
         'result-offset': 0,
-        'result-limit': 0
+        'result-limit': 1000000,
+        'result-batch-count': 100000,
+        'result-has-more': false,
+        'result-next-offset': 100000
     } });
 
     assert.equal(renderer.state.rowCount, 100000);
     assert.equal(Array.isArray(renderer.state.rows), false,
-        'unlimited results must not retain an all-rows array on the main thread');
+        'large result batches must not retain an all-rows array on the main thread');
     assert.equal(renderer.tableBody.children.length <= 82, true,
         'the live table must contain at most 80 rows plus two spacers');
     renderer.tableWrap.scrollTop = 450000;
@@ -574,74 +590,102 @@ test('unlimited result rendering keeps every row in worker storage and bounds ta
         .filter(value => value !== undefined)
         .map(Number);
     assert.equal(renderedIndexes.some(index => index >= 99900), true,
-        'the scroll window reaches the end of the complete unlimited result');
+        'the scroll window can seek near the end of a large loaded batch');
     assert.equal(renderer.tableBody.children.length <= 82, true);
 });
 
-test('records layout pages through every unlimited row with bounded DOM', async () => {
+test('records layout scrolls through loaded rows with bounded DOM and no local page controls', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 0, maxDomRows: 10, rowStore: inMemoryRowStore()
+        batched: true, requestedLimit: 25, maxDomRows: 10, rowStore: inMemoryRowStore()
     });
+    renderer.beginBatch(0);
+    await renderer.accept({ type: 'head', version: 1 });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] });
     await renderer.accept({ type: 'rows', values: Array.from({ length: 25 }, (_, index) => [
         { kind: 'literal', value: String(index) }, null, null, null, null, null, null
     ]) });
     await renderer.accept({ type: 'end', metadata: {
-        'total-result-count': 25,
         'result-offset': 0,
-        'result-limit': 0
+        'result-limit': 25,
+        'result-batch-count': 25,
+        'result-has-more': false,
+        'result-next-offset': 25
     } });
 
     renderer.layoutControl.value = 'records';
     renderer.layoutControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(renderer.records.children.length, 10,
-        'records layout should keep only the configured number of rows in the DOM');
-    assert.equal(renderer.recordNextButton.hidden, false,
-        'unlimited results need local navigation through records beyond the first window');
+    assert.equal(renderer.records.children.length <= 12, true,
+        'records layout should keep a bounded visible window with overscan');
+    assert.equal(renderer.records.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false,
+        'local record paging controls are replaced by scrolling');
+    assert.equal(renderer.loadMoreButton.hidden, true,
+        'a short final batch has no continuation control');
 
-    renderer.recordNextButton.trigger('click');
+    renderer.records.scrollTop = 20 * 20;
+    renderer.records.trigger('scroll');
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(renderer.records.children.length, 10);
-    assert.match(renderer.records.children[0].children[0].textContent, /Record 11/);
-    renderer.recordNextButton.trigger('click');
+    assert.equal(renderer.records.children.length <= 12, true);
+    assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '20'), true,
+        'scrolling should materialize a later record window from the loaded row store');
+    renderer.rowPositionControl.value = '25';
+    renderer.rowPositionControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(renderer.records.children.length, 5);
-    assert.match(renderer.records.children[0].children[0].textContent, /Record 21/);
-    assert.equal(renderer.recordNextButton.disabled, true);
-    renderer.recordPreviousButton.trigger('click');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.match(renderer.records.children[0].children[0].textContent, /Record 11/);
+    assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '24'), true,
+        'Go to row can seek to a precise loaded record');
 });
 
-test('record titles restart at one for each server-paged result page', async () => {
+test('record titles retain their global positions across appended batches', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedOffset: 20, requestedLimit: 10, rowStore: inMemoryRowStore()
+        batched: true, requestedOffset: 0, requestedLimit: 2, rowStore: inMemoryRowStore()
     });
+    renderer.beginBatch(0);
+    await renderer.accept({ type: 'head', version: 1 });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
-    await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'page row' }]] });
+    await renderer.accept({ type: 'rows', values: [
+        [{ kind: 'literal', value: 'first row' }],
+        [{ kind: 'literal', value: 'second row' }]
+    ] });
     await renderer.accept({ type: 'end', metadata: {
-        'total-result-count': 21,
-        'result-offset': 20,
-        'result-limit': 10
+        'result-offset': 0,
+        'result-limit': 2,
+        'result-batch-count': 2,
+        'result-has-more': true,
+        'result-next-offset': 2
+    } });
+    renderer.beginBatch(2);
+    await renderer.accept({ type: 'head', version: 1 });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    await renderer.accept({ type: 'rows', values: [
+        [{ kind: 'literal', value: 'third row' }],
+        [{ kind: 'literal', value: 'fourth row' }]
+    ] });
+    await renderer.accept({ type: 'end', metadata: {
+        'result-offset': 2,
+        'result-limit': 2,
+        'result-batch-count': 2,
+        'result-has-more': false,
+        'result-next-offset': 4
     } });
 
     renderer.layoutControl.value = 'records';
     renderer.layoutControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
 
-    assert.match(renderer.records.children[0].children[0].textContent, /Record 1/,
-        'legacy XSL position() restarts on each server-paged response');
+    assert.match(renderer.records.children[0].children[0].textContent, /Record 1/);
+    assert.match(renderer.records.children[3].children[0].textContent, /Record 4/,
+        'appended batches keep one continuous row index instead of restarting record numbering');
 });
 
 test('query page lifecycle hook is exported and owns one form submit listener', () => {
@@ -694,7 +738,13 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
             { type: 'view', id: 'tuple' },
             { type: 'vars', values: ['item'] },
             { type: 'rows', values: [[{ kind: 'literal', value: 'persisted row' }]] },
-            { type: 'end', metadata: { 'total-result-count': 1 } }
+            { type: 'end', metadata: {
+                'result-offset': 0,
+                'result-limit': 1000000,
+                'result-batch-count': 1,
+                'result-has-more': false,
+                'result-next-offset': 1
+            } }
         ].map(record => JSON.stringify(record) + '\n').join('');
         const bytes = new TextEncoder().encode(records);
         let delivered = false;

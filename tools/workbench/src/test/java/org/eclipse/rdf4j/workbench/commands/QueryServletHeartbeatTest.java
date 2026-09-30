@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,11 +37,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
@@ -64,11 +68,14 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.helpers.RioCompression;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
@@ -80,6 +87,355 @@ class QueryServletHeartbeatTest {
 
 	private static final String QUERY = "select ?s where { values ?s { <urn:s> } }";
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+	@ParameterizedTest
+	@CsvSource({ "evaluate,1,identity", "has-next,1,identity", "evaluate,2,gzip", "has-next,2,zstd" })
+	void publishesParseableProgressWhileEvaluationOrIterationIsBlocked(String blockedStage, int version, String coding)
+			throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		CountDownLatch blocked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicInteger hasNextCalls = new AtomicInteger();
+		ProgressProbeServletOutputStream output = new ProgressProbeServletOutputStream(coding);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+		when(repository.getConnection()).thenReturn(connection);
+		stubTupleQuery(connection, tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		if ("evaluate".equals(blockedStage)) {
+			when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+				blocked.countDown();
+				assertThat(release.await(15, TimeUnit.SECONDS)).isTrue();
+				return new IteratingTupleQueryResult(List.of("s"), List.of(binding("urn:s")));
+			});
+		} else {
+			when(tupleQuery.evaluate()).thenReturn(result);
+			when(result.getBindingNames()).thenReturn(List.of("s"));
+			when(result.hasNext()).thenAnswer(invocation -> {
+				if (hasNextCalls.getAndIncrement() == 0) {
+					return true;
+				}
+				blocked.countDown();
+				assertThat(release.await(15, TimeUnit.SECONDS)).isTrue();
+				return false;
+			});
+			when(result.next()).thenReturn(binding("urn:s"));
+		}
+
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "2" });
+		if (version == 2) {
+			when(request.getHeader("Accept")).thenReturn("application/vnd.rdf4j.workbench-query-v2+ndjson");
+			when(request.getHeader("Accept-Encoding")).thenReturn(coding);
+		}
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread queryThread = Thread.startVirtualThread(() -> {
+			try {
+				servlet.service(request, responseWith(output));
+			} catch (Throwable exception) {
+				failure.set(exception);
+			}
+		});
+		try {
+			assertThat(blocked.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(output.progressRecord.await(5, TimeUnit.SECONDS))
+					.as("progress is a parseable record before release")
+					.isTrue();
+			JsonNode progress = output.progressRecord();
+			assertThat(progress.path("type").asText()).isEqualTo("progress");
+			assertThat(progress.path("values").path("result-evaluated-count").asLong())
+					.isEqualTo("evaluate".equals(blockedStage) ? 0 : 1);
+			assertThat(progress.path("values").path("query-elapsed-ms").asLong()).isGreaterThanOrEqualTo(0);
+			assertThat(progress.path("values").path("query-result-status").asText()).isEqualTo("evaluating");
+			assertThat(output.records()).noneMatch(record -> "end".equals(record.path("type").asText()));
+		} finally {
+			release.countDown();
+			queryThread.join(15000);
+			coordinator.shutdown();
+		}
+
+		assertThat(queryThread.isAlive()).isFalse();
+		assertThat(failure.get()).isNull();
+		List<JsonNode> records = output.records();
+		assertThat(records).anySatisfy(record -> assertThat(record.path("type").asText()).isEqualTo("progress"));
+		JsonNode end = records.get(records.size() - 1);
+		assertThat(end.path("type").asText()).isEqualTo("end");
+		assertThat(end.path("metadata").path("total-result-count").asLong()).isEqualTo(1);
+		assertThat(end.path("metadata").path("query-elapsed-ms").asLong()).isGreaterThanOrEqualTo(0);
+		assertThat(end.path("metadata").path("query-result-status").asText()).isEqualTo("completed");
+	}
+
+	@Test
+	void publishesEachHundredThousandCountMilestoneAfterTheInitialMillionWithATwoRowWindow() throws Exception {
+		int totalRows = 1_300_000;
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger consumedRows = new AtomicInteger();
+		ProgressProbeServletOutputStream output = new ProgressProbeServletOutputStream("identity");
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator, Duration.ofHours(1));
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> consumedRows.get() < totalRows);
+		when(result.next()).thenAnswer(invocation -> binding("urn:s" + consumedRows.incrementAndGet()));
+
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "2" });
+		try {
+			servlet.service(request, responseWith(output));
+		} finally {
+			coordinator.shutdown();
+		}
+
+		List<JsonNode> records = output.records();
+		List<JsonNode> progress = records.stream()
+				.filter(record -> "progress".equals(record.path("type").asText()))
+				.toList();
+		assertThat(progress).extracting(record -> record.path("values").path("result-evaluated-count").asLong())
+				.isSorted()
+				.containsSubsequence(1_100_000L, 1_200_000L, 1_300_000L);
+		assertThat(progress).extracting(record -> record.path("values").path("query-elapsed-ms").asLong())
+				.isSorted();
+		assertThat(consumedRows).hasValue(totalRows);
+		assertThat(records.stream()
+				.filter(record -> "rows".equals(record.path("type").asText()))
+				.mapToInt(record -> record.path("values").size())
+				.sum()).isEqualTo(2);
+		JsonNode end = records.getLast();
+		assertThat(end.path("type").asText()).isEqualTo("end");
+		assertThat(end.path("metadata").path("total-result-count").asLong()).isEqualTo(totalRows);
+		assertThat(end.path("metadata").path("query-result-status").asText()).isEqualTo("completed");
+	}
+
+	@Test
+	void timedProgressDoesNotMoveTheNextCountMilestone() throws Exception {
+		long timedProgressCount = 1_050_000;
+		long countMilestone = 1_100_000;
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger consumedRows = new AtomicInteger();
+		CountDownLatch pausedAtTimedProgressCount = new CountDownLatch(1);
+		CountDownLatch releaseRows = new CountDownLatch(1);
+		ProgressProbeServletOutputStream output = new ProgressProbeServletOutputStream("identity",
+				timedProgressCount);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if (consumedRows.get() == timedProgressCount) {
+				pausedAtTimedProgressCount.countDown();
+				assertThat(releaseRows.await(15, TimeUnit.SECONDS)).isTrue();
+			}
+			return consumedRows.get() < countMilestone;
+		});
+		when(result.next()).thenAnswer(invocation -> {
+			consumedRows.incrementAndGet();
+			return binding("urn:s");
+		});
+
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getHeader("Accept")).thenReturn("application/vnd.rdf4j.workbench-query-v2+ndjson");
+		when(request.getHeader("Accept-Encoding")).thenReturn("identity");
+		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "2" });
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread queryThread = Thread.startVirtualThread(() -> {
+			try {
+				servlet.service(request, responseWith(output));
+			} catch (Throwable exception) {
+				failure.set(exception);
+			}
+		});
+		try {
+			assertThat(pausedAtTimedProgressCount.await(15, TimeUnit.SECONDS)).isTrue();
+			assertThat(output.awaitProgressAt(timedProgressCount, 8, TimeUnit.SECONDS))
+					.as("a time-triggered progress record observes the blocked iterator count")
+					.isTrue();
+			JsonNode timedProgress = output.progressRecordAt(timedProgressCount);
+			assertThat(timedProgress.path("values").path("query-elapsed-ms").asLong()).isGreaterThanOrEqualTo(3_000);
+		} finally {
+			releaseRows.countDown();
+			queryThread.join(15000);
+			coordinator.shutdown();
+		}
+
+		assertThat(queryThread.isAlive()).isFalse();
+		assertThat(failure.get()).isNull();
+		List<JsonNode> records = output.records();
+		List<JsonNode> progress = records.stream()
+				.filter(record -> "progress".equals(record.path("type").asText()))
+				.toList();
+		List<Long> progressCounts = progress.stream()
+				.map(record -> record.path("values").path("result-evaluated-count").asLong())
+				.toList();
+		assertThat(progressCounts).isSorted().containsSubsequence(timedProgressCount, countMilestone);
+		assertThat(progress).extracting(record -> record.path("values").path("query-elapsed-ms").asLong())
+				.isSorted();
+		assertThat(consumedRows).hasValue((int) countMilestone);
+		JsonNode end = records.getLast();
+		assertThat(end.path("type").asText()).isEqualTo("end");
+		assertThat(end.path("metadata").path("total-result-count").asLong()).isEqualTo(countMilestone);
+		assertThat(end.path("metadata").path("query-elapsed-ms").asLong())
+				.isGreaterThanOrEqualTo(progress.getLast().path("values").path("query-elapsed-ms").asLong());
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "tail-iteration", "iterator-close" })
+	void lateTailAndIteratorCloseFailuresDoNotClaimCompletion(String failurePoint) throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		AtomicInteger consumedRows = new AtomicInteger();
+		AtomicInteger hasNextCalls = new AtomicInteger();
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator, Duration.ofHours(1));
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if ("tail-iteration".equals(failurePoint) && hasNextCalls.incrementAndGet() == 3) {
+				throw new QueryEvaluationException("failure while draining the discarded tail");
+			}
+			return consumedRows.get() < 2;
+		});
+		when(result.next()).thenAnswer(invocation -> binding("urn:s" + consumedRows.incrementAndGet()));
+		if ("iterator-close".equals(failurePoint)) {
+			doThrow(new QueryEvaluationException("failure while closing the exhausted iterator"))
+					.when(result)
+					.close();
+		}
+
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "2" });
+		try {
+			servlet.service(request, responseWith(output));
+		} finally {
+			coordinator.shutdown();
+		}
+
+		List<JsonNode> records = output.asString()
+				.lines()
+				.map(String::trim)
+				.filter(line -> !line.isEmpty())
+				.map(JSON_MAPPER::readTree)
+				.toList();
+		assertThat(records).noneMatch(record -> "end".equals(record.path("type").asText()));
+		assertThat(records).noneMatch(record -> record.path("metadata").has("total-result-count"));
+		JsonNode rows = records.stream()
+				.filter(record -> "rows".equals(record.path("type").asText()))
+				.findFirst()
+				.orElseThrow();
+		assertThat(rows.path("values")).hasSize(2);
+		JsonNode error = records.getLast();
+		assertThat(error.path("type").asText()).isEqualTo("error");
+		assertThat(error.path("code").asText()).isEqualTo("incomplete");
+		verify(result).close();
+		verify(connection).close();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "1,identity", "2,gzip", "2,zstd" })
+	void cancelsTheOriginalBrowserQueryDuringSlowLookaheadWithTheSameRemoteRequestId(int version, String coding)
+			throws Exception {
+		String requestId = "full-query-lookahead-cancellation";
+		String repositoryUrl = "http://localhost/repositories/batch-cancellation";
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery originalQuery = mock(TupleQuery.class);
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		CountDownLatch lookaheadEntered = new CountDownLatch(1);
+		CountDownLatch remoteCancelled = new CountDownLatch(1);
+		CountDownLatch releaseLookahead = new CountDownLatch(1);
+		AtomicInteger hasNextCalls = new AtomicInteger();
+		AtomicReference<String> originalRequestId = new AtomicReference<>();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
+		when(repository.getRepositoryURL()).thenReturn(repositoryUrl);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenAnswer(invocation -> {
+			originalRequestId.set(QueryRequestContext.getQueryRequestId());
+			return originalQuery;
+		});
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(originalQuery.evaluate()).thenReturn(result);
+		when(result.getBindingNames()).thenReturn(List.of("s"));
+		when(result.next()).thenReturn(binding("urn:first"));
+		when(result.hasNext()).thenAnswer(invocation -> {
+			if (hasNextCalls.getAndIncrement() == 0) {
+				return true;
+			}
+			lookaheadEntered.countDown();
+			try {
+				assertThat(releaseLookahead.await(5, TimeUnit.SECONDS)).isTrue();
+			} catch (InterruptedException exception) {
+				throw new QueryInterruptedException("cancelled lookahead", exception);
+			}
+			return false;
+		});
+		doAnswer(invocation -> {
+			remoteCancelled.countDown();
+			return null;
+		}).when(repository).cancelQuery(requestId);
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		HttpServletResponse response = responseWith(output);
+		if (version == 2) {
+			when(request.getHeader("Accept")).thenReturn("application/vnd.rdf4j.workbench-query-v2+ndjson");
+			when(request.getHeader("Accept-Encoding")).thenReturn(coding);
+		}
+		when(request.isParameterPresent("query-request-id")).thenReturn(true);
+		when(request.getParameter("query-request-id")).thenReturn(requestId);
+		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "1" });
+		Thread worker = Thread.startVirtualThread(() -> {
+			try {
+				servlet.service(request, response);
+			} catch (Throwable exception) {
+				failure.set(exception);
+			}
+		});
+		try {
+			assertThat(lookaheadEntered.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(originalRequestId.get()).isEqualTo(requestId);
+			assertThat(coordinator.cancel(repositoryUrl, requestId)).isTrue();
+			assertThat(remoteCancelled.await(5, TimeUnit.SECONDS)).isTrue();
+			worker.join(5000);
+			assertThat(worker.isAlive()).isFalse();
+			assertThat(failure.get()).isNull();
+			verify(originalQuery).evaluate();
+			verify(result).close();
+			verify(connection, atLeastOnce()).close();
+			assertThat(decode(output, coding)).doesNotContain("\"type\":\"end\"");
+			if (version == 2) {
+				verify(response).setHeader("Content-Encoding", coding);
+				assertThat(JSON_MAPPER.readTree(decode(output, coding).lines()
+						.filter(line -> !line.isBlank())
+						.findFirst()
+						.orElseThrow()).path("version").asInt()).isEqualTo(2);
+			}
+		} finally {
+			releaseLookahead.countDown();
+			worker.join(5000);
+			coordinator.shutdown();
+		}
+	}
 
 	@Test
 	void generatesAnInternalIdAndCompletesXmlAfterMultipleProbes() throws Exception {
@@ -93,7 +449,7 @@ class QueryServletHeartbeatTest {
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
@@ -157,7 +513,7 @@ class QueryServletHeartbeatTest {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
@@ -198,7 +554,7 @@ class QueryServletHeartbeatTest {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
@@ -284,7 +640,7 @@ class QueryServletHeartbeatTest {
 
 		when(repository.getRepositoryURL()).thenReturn("http://localhost/repositories/test");
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(result);
 		when(result.getBindingNames()).thenReturn(List.of("s"));
@@ -410,6 +766,20 @@ class QueryServletHeartbeatTest {
 	}
 
 	private void assertQueryErrorAfterRows(Throwable failure, boolean remote, String expectedCode) throws Exception {
+		assertQueryErrorAfterRows(failure, remote, expectedCode, 1, "identity");
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "gzip,incomplete", "zstd,timeout" })
+	void compactCodedFailuresAfterRowsKeepATerminalErrorAndCompleteTheFrame(String coding, String code)
+			throws Exception {
+		Throwable failure = "timeout".equals(code) ? new QueryInterruptedException("timed out")
+				: new QueryEvaluationException("upstream response failed after rows");
+		assertQueryErrorAfterRows(failure, false, code, 2, coding);
+	}
+
+	private void assertQueryErrorAfterRows(Throwable failure, boolean remote, String expectedCode, int version,
+			String coding) throws Exception {
 		Repository repository = remote ? mock(HTTPRepository.class) : mock(Repository.class);
 		if (remote) {
 			when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
@@ -423,7 +793,7 @@ class QueryServletHeartbeatTest {
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(result);
 		when(result.getBindingNames()).thenReturn(List.of("s"));
@@ -436,6 +806,10 @@ class QueryServletHeartbeatTest {
 		when(result.next()).thenReturn(binding("urn:streamed"));
 
 		WorkbenchRequest request = pageDataRequest(QUERY);
+		if (version == 2) {
+			when(request.getHeader("Accept")).thenReturn("application/vnd.rdf4j.workbench-query-v2+ndjson");
+			when(request.getHeader("Accept-Encoding")).thenReturn(coding);
+		}
 		when(request.getInt("query-timeout")).thenReturn(1);
 		when(request.getParameter("query-timeout")).thenReturn("1");
 		HttpServletResponse response = responseWith(output);
@@ -443,7 +817,7 @@ class QueryServletHeartbeatTest {
 		try {
 			servlet.service(request, response);
 
-			List<JsonNode> records = output.asString()
+			List<JsonNode> records = decode(output, coding)
 					.lines()
 					.map(String::trim)
 					.filter(line -> !line.isEmpty())
@@ -454,8 +828,15 @@ class QueryServletHeartbeatTest {
 					.findFirst()
 					.orElseThrow();
 			assertThat(rows.path("values")).hasSize(32);
+			assertThat(records.getFirst().path("version").asInt()).isEqualTo(version);
+			if (version == 2) {
+				verify(response).setHeader("Content-Encoding", coding);
+				assertThat(rows.path("values").get(0).get(0))
+						.isEqualTo(JSON_MAPPER.readTree("[0,\"urn:streamed\"]"));
+			}
 			JsonNode terminal = records.get(records.size() - 1);
 			assertThat(terminal.path("type").asText()).isEqualTo("error");
+			assertThat(records).noneMatch(record -> "end".equals(record.path("type").asText()));
 			assertThat(terminal.path("status").asInt()).isEqualTo("timeout".equals(expectedCode)
 					|| "circuit-breaker".equals(expectedCode) ? HttpServletResponse.SC_SERVICE_UNAVAILABLE
 							: HttpServletResponse.SC_BAD_GATEWAY);
@@ -473,6 +854,56 @@ class QueryServletHeartbeatTest {
 		} finally {
 			coordinator.shutdown();
 		}
+	}
+
+	private static String decode(ProbeServletOutputStream output, String coding) throws IOException {
+		InputStream input = new ByteArrayInputStream(output.bytes());
+		if (!"identity".equals(coding)) {
+			RioCompression codec = Stream.of(RioCompression.values())
+					.filter(value -> value.contentEncoding().equals(coding))
+					.findFirst()
+					.orElseThrow();
+			input = codec.decompress(input);
+		}
+		try (InputStream decoded = input) {
+			return new String(decoded.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+		}
+	}
+
+	private static String decodeAvailable(byte[] wireBytes, String coding) {
+		if ("identity".equals(coding)) {
+			return new String(wireBytes, java.nio.charset.StandardCharsets.UTF_8);
+		}
+		ByteArrayOutputStream decodedBytes = new ByteArrayOutputStream();
+		try {
+			RioCompression codec = Stream.of(RioCompression.values())
+					.filter(value -> value.contentEncoding().equals(coding))
+					.findFirst()
+					.orElseThrow();
+			try (InputStream decoded = codec.decompress(new ByteArrayInputStream(wireBytes))) {
+				byte[] buffer = new byte[8192];
+				int length;
+				while ((length = decoded.read(buffer)) >= 0) {
+					decodedBytes.write(buffer, 0, length);
+				}
+			}
+		} catch (IOException | RuntimeException incompleteLivePrefix) {
+			// A progress flush may expose a valid compressed prefix before the final frame trailer is written.
+		}
+		return decodedBytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+	}
+
+	private static List<JsonNode> completeRecords(String decoded) throws IOException {
+		int lastLineFeed = decoded.lastIndexOf('\n');
+		if (lastLineFeed < 0) {
+			return List.of();
+		}
+		return decoded.substring(0, lastLineFeed + 1)
+				.lines()
+				.map(String::trim)
+				.filter(line -> !line.isEmpty())
+				.map(JSON_MAPPER::readTree)
+				.toList();
 	}
 
 	@Test
@@ -605,7 +1036,7 @@ class QueryServletHeartbeatTest {
 				bindings.add(binding("urn:s" + i));
 			}
 			when(repository.getConnection()).thenReturn(connection);
-			when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+			stubTupleQuery(connection, tupleQuery);
 			when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 			when(tupleQuery.evaluate()).thenReturn(pausingResult(bindings, firstBatchReached, releaseRemainingRows));
 			FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
@@ -695,7 +1126,7 @@ class QueryServletHeartbeatTest {
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		when(repository.getRepositoryURL()).thenReturn("https://example.org/repositories/test");
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			try {
@@ -770,7 +1201,7 @@ class QueryServletHeartbeatTest {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
@@ -810,7 +1241,7 @@ class QueryServletHeartbeatTest {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator);
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
 			assertThat(releaseEvaluation.await(5, TimeUnit.SECONDS)).isTrue();
@@ -854,7 +1285,7 @@ class QueryServletHeartbeatTest {
 			return null;
 		}).when(connection).close();
 		when(repository.getConnection()).thenReturn(connection);
-		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+		stubTupleQuery(connection, tupleQuery);
 		when(connection.getNamespaces()).thenAnswer(invocation -> emptyNamespaces());
 		when(tupleQuery.evaluate())
 				.thenAnswer(invocation -> new IteratingTupleQueryResult(List.of("s"), List.of(binding("urn:s"))));
@@ -952,6 +1383,10 @@ class QueryServletHeartbeatTest {
 		return request;
 	}
 
+	private static void stubTupleQuery(RepositoryConnection connection, TupleQuery tupleQuery) {
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+	}
+
 	private static WorkbenchRequest pageDataRequest(String query) throws Exception {
 		WorkbenchRequest request = request(query, null, null);
 		Map<String, Object> attributes = new HashMap<>();
@@ -1011,17 +1446,17 @@ class QueryServletHeartbeatTest {
 		}
 
 		@Override
-		public void write(int value) {
+		public synchronized void write(int value) {
 			delegate.write(value);
 		}
 
 		@Override
-		public void write(byte[] bytes, int offset, int length) {
+		public synchronized void write(byte[] bytes, int offset, int length) {
 			delegate.write(bytes, offset, length);
 		}
 
 		@Override
-		public void flush() throws IOException {
+		public synchronized void flush() throws IOException {
 			flushCount++;
 			flushes.countDown();
 		}
@@ -1035,7 +1470,7 @@ class QueryServletHeartbeatTest {
 		public void setWriteListener(WriteListener writeListener) {
 		}
 
-		private byte[] bytes() {
+		protected synchronized byte[] bytes() {
 			return delegate.toByteArray();
 		}
 
@@ -1043,6 +1478,70 @@ class QueryServletHeartbeatTest {
 			return delegate.toString(java.nio.charset.StandardCharsets.UTF_8);
 		}
 
+	}
+
+	private static final class ProgressProbeServletOutputStream extends ProbeServletOutputStream {
+		private final String coding;
+		private final CountDownLatch progressRecord = new CountDownLatch(1);
+		private final Long awaitedProgressCount;
+		private final CountDownLatch matchingProgressRecord;
+
+		private ProgressProbeServletOutputStream(String coding) {
+			this(coding, null);
+		}
+
+		private ProgressProbeServletOutputStream(String coding, Long awaitedProgressCount) {
+			super(0);
+			this.coding = coding;
+			this.awaitedProgressCount = awaitedProgressCount;
+			matchingProgressRecord = new CountDownLatch(awaitedProgressCount == null ? 0 : 1);
+		}
+
+		@Override
+		public void flush() throws IOException {
+			super.flush();
+			try {
+				List<JsonNode> observed = completeRecords(decodeAvailable(bytes(), coding));
+				if (observed.stream().anyMatch(record -> "progress".equals(record.path("type").asText()))) {
+					progressRecord.countDown();
+				}
+				if (awaitedProgressCount != null && observed.stream()
+						.anyMatch(record -> "progress".equals(record.path("type").asText())
+								&& record.path("values")
+										.path("result-evaluated-count")
+										.asLong() == awaitedProgressCount)) {
+					matchingProgressRecord.countDown();
+				}
+			} catch (RuntimeException incompleteRecord) {
+				// Ignore only an incomplete snapshot; the complete-record latch remains the test oracle.
+			}
+		}
+
+		private boolean awaitProgressAt(long count, long timeout, TimeUnit unit) throws InterruptedException {
+			if (!Long.valueOf(count).equals(awaitedProgressCount)) {
+				throw new IllegalArgumentException("Output stream was not configured for progress count " + count);
+			}
+			return matchingProgressRecord.await(timeout, unit);
+		}
+
+		private JsonNode progressRecord() throws IOException {
+			return completeRecords(decodeAvailable(bytes(), coding)).stream()
+					.filter(record -> "progress".equals(record.path("type").asText()))
+					.findFirst()
+					.orElseThrow();
+		}
+
+		private JsonNode progressRecordAt(long count) throws IOException {
+			return records().stream()
+					.filter(record -> "progress".equals(record.path("type").asText()))
+					.filter(record -> record.path("values").path("result-evaluated-count").asLong() == count)
+					.findFirst()
+					.orElseThrow();
+		}
+
+		private List<JsonNode> records() throws IOException {
+			return completeRecords(decodeAvailable(bytes(), coding));
+		}
 	}
 
 	private static final class FailingFlushServletOutputStream extends ProbeServletOutputStream {

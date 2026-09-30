@@ -404,6 +404,7 @@ class QueryServletFlowCoverageTest {
 		when(request.getParameter("query-name")).thenReturn(queryName);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("20");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "20" });
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("0");
 		when(request.getParameter("overwrite")).thenReturn("false");

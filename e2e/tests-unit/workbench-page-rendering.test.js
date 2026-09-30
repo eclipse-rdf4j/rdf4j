@@ -1019,8 +1019,6 @@ test('query route renders the existing streaming form and result targets', () =>
         'id="query-compare-layout"',
         'id="query-options-toggle"',
         'id="save-query-toggle"',
-        'id="limit_query"',
-        'name="limit_query"',
         'id="query-timeout"',
         'id="infer"',
         'id="query-results"',
@@ -1031,7 +1029,8 @@ test('query route renders the existing streaming form and result targets', () =>
         assert.ok(output.includes(expected) || markup.includes(expected), `query route should include ${expected}`);
     }
     assert.ok(!output.includes('onsubmit='), 'query streaming controller must own form submission');
-    assert.ok(output.includes('All'), 'a zero result limit remains available as unlimited');
+    assert.doesNotMatch(output, /(?:id|name)="limit_query"|Rows Per Page/i,
+        'the query form no longer exposes result page-size controls');
 
     const disclosureToggle = (id) => {
         const marker = markup.indexOf(`id="${id}"`);
@@ -1117,7 +1116,6 @@ test('bootstrap replays a native query execution descriptor exactly once after m
         queryLn: ['SPARQL'],
         ref: ['text'],
         infer: ['true'],
-        limit_query: ['10'],
         'query-timeout': ['60'],
         opaque: ['first', 'second'],
         repeated: ['left', 'right']
@@ -1136,7 +1134,6 @@ test('bootstrap replays a native query execution descriptor exactly once after m
         { name: 'queryLn', type: 'select-one', value: '' },
         { name: 'ref', type: 'hidden', value: '' },
         { name: 'infer', type: 'checkbox', value: 'true', checked: false },
-        { name: 'limit_query', type: 'select-one', value: '' },
         { name: 'query-timeout', type: 'number', value: '' },
         { name: 'save-private', type: 'checkbox', value: 'true', checked: true },
         { name: 'repeated', type: 'hidden', value: 'old-one' },

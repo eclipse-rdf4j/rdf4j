@@ -718,17 +718,17 @@ module workbench {
             const h = runtime.html;
             return h`<form action="create" method="post">
                 <table class="dataentry" data-advanced-label="Advanced settings"><tbody>
-                    <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type"><option value="federate">Federation Store</option></select></td><td></td></tr>
+                    <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type"><option value="federate">Federation Store</option></select></td></tr>
                     <tr><th><label for="id">Repository ID</label></th><td><input id="id" name="Local repository ID" type="text" value="fed" data-field-role="repository-id" /></td><td><span id="recurse-message" class="error" hidden>Federation ID may not match an existing ID.</span></td></tr>
-                    <tr><th><label for="title">Repository title</label></th><td><input id="title" name="Repository title" type="text" value="Federation" data-field-role="repository-title" /></td><td></td></tr>
+                    <tr><th><label for="title">Repository title</label></th><td><input id="title" name="Repository title" type="text" value="Federation" data-field-role="repository-title" /></td></tr>
                     <tr data-field-role="federation-member"><th>Federation members</th><td><div class="workbench-choice-list">
                         ${rows.filter((row: any) => text(row.id) !== 'SYSTEM').map((row: any) => h`<label class="workbench-choice">
                             <input type="checkbox" class="memberID" name="memberID" value=${text(row.id)} data-field-role="federation-member" />
                             <span>${text(row.id)}${text(row.description) ? ' — ' + text(row.description) : ''}</span>
                         </label>`)}
                     </div></td><td><span class="error" id="create-feedback">Select at least two federation members.</span></td></tr>
-                    <tr><td></td><td>${createActions(runtime, false, context)}</td></tr>
                 </tbody></table>
+                ${createActions(runtime, false, context)}
             </form>`;
         }
 
@@ -757,10 +757,10 @@ module workbench {
                 <table class="dataentry" data-advanced-label="Advanced settings"><tbody>
                     <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type">
                         <option value=${text(first.templateType)}>${text(first.templateLabel)}</option>
-                    </select></td><td></td></tr>
+                    </select></td></tr>
                     ${fieldRows}
-                    <tr><td></td><td>${createActions(runtime, true, context)}</td><td></td></tr>
                 </tbody></table>
+                ${createActions(runtime, true, context)}
             </form>`;
         }
 
@@ -783,7 +783,7 @@ module workbench {
                         data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}>
                     ${group.options.map((option: any) => h`<option value=${text(option.value)} ?selected=${text(option.selected) === 'true'}>
                         ${optionLabel(text(option.value))}</option>`)}
-                </select></td><td></td></tr>`;
+                </select></td></tr>`;
             }
             if (type === 'radio') {
                 const ordered = group.options.slice();
@@ -796,18 +796,18 @@ module workbench {
                         data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}
                         ?checked=${text(option.selected) === 'true'} />
                     <span>${optionLabel(text(option.value))}</span></label>`)}
-                </td><td></td></tr>`;
+                </td></tr>`;
             }
             if (type === 'textarea') {
                 return h`<tr><th><label for=${id}>${name}</label></th><td><textarea id=${id} name=${name}
                     rows=${Number(text(row.rows)) || 6} cols=${Number(text(row.cols)) || 70}
                     placeholder=${text(row.placeholder) || runtime.nothing}
                     data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}>${value}</textarea>
-                </td><td></td></tr>`;
+                </td></tr>`;
             }
             return h`<tr><th><label for=${id}>${name}</label></th><td><input type="text" id=${id} name=${name}
                 size=${Number(text(row.size)) || 32} value=${value} placeholder=${text(row.placeholder) || runtime.nothing}
-                data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing} /></td><td></td></tr>`;
+                data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing} /></td></tr>`;
         }
 
         function createActions(runtime: LitRuntime, confirmOverwrite: boolean, context: ViewContext): any {
@@ -1187,9 +1187,10 @@ module workbench {
                 propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[6], groupPages.range));
             }
             const groupedResults = summary.subclassCount || summary.domainCount || summary.rangeCount
-                ? h`<table class="simple workbench-explore-groups"><tbody><tr>
-                    <td>${classGroups}</td><td>${propertyGroups}</td>
-                </tr></tbody></table>` : '';
+                ? h`<div class="workbench-explore-groups">
+                    ${classGroups.some((group: any) => !!group) ? h`<div>${classGroups}</div>` : ''}
+                    ${propertyGroups.some((group: any) => !!group) ? h`<div>${propertyGroups}</div>` : ''}
+                </div>` : '';
             return h`${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
                 ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}${summary.comment ? h`<p>${text(summary.comment)}</p>` : ''}
@@ -1205,7 +1206,7 @@ module workbench {
                     ${workbench.detailDisclosure.render(h, {
                         id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
                         panelId: 'explore-result-options-panel', label: 'Result options',
-                        ownerClass: 'workbench-options'
+                        ownerClass: 'workbench-options workbench-form-subgroup'
                     }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
                             ${limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')}
                         </div><label class="workbench-check" for="explore-show-datatypes">
@@ -1323,19 +1324,17 @@ module workbench {
                                 <input type="hidden" name="ref" value="id" />
                                 <input type="hidden" name="owner" value=${owner} />
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
-                                <input type="hidden" name="limit_query" value=${text(row.rowsPerPage)} />
                                 <input type="hidden" name="query-timeout" value=${queryTimeout} />
                                 <span class="workbench-action workbench-action--primary"><label class="workbench-action-hit-area">
                                     ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span>
                                 </label></span>
                             </form>
-                            <div id=${'saved-query-results-' + index} class="query-results" aria-live="polite"></div>
                             <button type="button" class="saved-query-toggle" id=${urn + '-toggle'} data-query-urn=${urn}
                                 value="Show">Show</button>
                             <form method="post" action="query"><input type="hidden" name="action" value="edit" />
                                 <input type="hidden" name="queryLn" value=${text(row.queryLn)} /><input type="hidden" name="query" value=${queryName} />
                                 <input type="hidden" name="ref" value="id" /><input type="hidden" name="owner" value=${owner} />
-                                <input type="hidden" name="infer" value=${text(row.infer)} /><input type="hidden" name="limit_query" value=${text(row.rowsPerPage)} />
+                                <input type="hidden" name="infer" value=${text(row.infer)} />
                                 <input type="hidden" name="query-timeout" value=${queryTimeout} /><button type="submit">Edit</button>
                             </form>
                             <form method="post" id=${urn} action=${'saved-queries?delete=' + encodeURIComponent(urn)}>
@@ -1343,9 +1342,10 @@ module workbench {
                                     data-query-urn=${urn}>Delete…</button>
                             </form>
                         </div>
+                        <div id=${'saved-query-results-' + index} class="query-results" aria-live="polite"></div>
                         <table class="data" id=${urn + '-metadata'} style="display: none"><tbody><tr>
                             <th>Query Language</th><td>${text(row.queryLn)}</td><th>Include Inferred Statements</th><td>${text(row.infer)}</td>
-                            <th>Rows Per Page</th><td>${text(row.rowsPerPage)}</td><th>Shared</th><td>${text(row.shared)}</td>
+                            <th>Shared</th><td>${text(row.shared)}</td>
                         </tr></tbody></table>
                         <textarea id=${urn + '-text'} style="display: none">${query}</textarea>
                     `;
@@ -1386,7 +1386,7 @@ module workbench {
                 ${workbench.detailDisclosure.render(h, {
                     id: 'export-result-options', toggleId: 'export-result-options-toggle',
                     panelId: 'export-result-options-panel', label: 'Result options',
-                    ownerClass: 'workbench-options'
+                    ownerClass: 'workbench-options workbench-form-subgroup'
                 }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_export">Preview limit</label>
                         ${limitSelect(runtime, 'limit_export', context, previewLimit)}
                         <span id="result-limited">${requested && previewLimit !== '0' && rowCount(model) >= Number(previewLimit)
@@ -1494,7 +1494,7 @@ module workbench {
                     ${workbench.detailDisclosure.render(h, {
                         id: 'add-import-settings', toggleId: 'add-import-settings-toggle',
                         panelId: 'add-import-settings-panel', label: 'Advanced settings',
-                        ownerClass: 'workbench-options'
+                        ownerClass: 'workbench-options workbench-form-subgroup'
                     }, h`<div class="workbench-form-grid">
                             <div class="workbench-field workbench-disclosure__field"><label for="baseURI">Base URI</label>
                                 <input id="baseURI" name="baseURI" type="text" size="48" value=${text(pageValue(model, 'baseURI'))} />
@@ -1608,7 +1608,7 @@ module workbench {
                 </div></div>
                 ${workbench.detailDisclosure.render(h, {
                     id: 'server-auth', toggleId: 'server-auth-toggle', panelId: 'server-auth-panel',
-                    label: 'Advanced settings', ownerClass: 'workbench-options'
+                    label: 'Advanced settings', ownerClass: 'workbench-options workbench-form-subgroup'
                 }, h`<div class="workbench-form-grid">
                         <div class="workbench-field workbench-disclosure__field"><label for="server-user">User</label><input id="server-user" name="server-user"
                             type="text" size="32" value=${text(field(row, 'server-user'))} /></div>
@@ -1777,24 +1777,40 @@ module workbench {
                                 panelClass: 'query-explanation-settings__panel',
                                 panelRole: 'group'
                             }, h`
-                                    <div class="query-explanation-settings__section"><strong>Highlighting</strong>
-                                        <span id="explanation-highlight-mode" role="radiogroup" aria-label="Text explanation highlighting"
-                                            ?hidden=${allHighlightingDisabled}>
-                                            <input id="explanation-highlight-syntax" name="explanation-highlight-mode" type="radio" value="syntax" checked
-                                                ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')} />
-                                            <label for="explanation-highlight-syntax" ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')}>Normal</label>
-                                            <input id="explanation-highlight-hotspot" name="explanation-highlight-mode" type="radio" value="hotspot"
-                                                ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')} />
-                                            <label for="explanation-highlight-hotspot" ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')}>Heatmap</label>
-                                        </span><span id="explanation-hotspot-legend" aria-live="polite"></span>
+                                    <div class="query-explanation-settings__section" ?hidden=${allHighlightingDisabled}>
+                                        <div class="query-explanation-settings__header"><strong>Highlighting</strong></div>
+                                        <div class="query-explanation-settings__highlighting">
+                                            <span id="explanation-highlight-mode" class="query-explanation-highlight-mode" role="radiogroup"
+                                                aria-label="Text explanation highlighting" ?hidden=${allHighlightingDisabled}>
+                                                <label class="workbench-choice" for="explanation-highlight-syntax"
+                                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')}>
+                                                    <input id="explanation-highlight-syntax" name="explanation-highlight-mode" type="radio" value="syntax" checked
+                                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')} />
+                                                    <span>Normal</span>
+                                                </label>
+                                                <label class="workbench-choice" for="explanation-highlight-hotspot"
+                                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')}>
+                                                    <input id="explanation-highlight-hotspot" name="explanation-highlight-mode" type="radio" value="hotspot"
+                                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')} />
+                                                    <span>Heatmap</span>
+                                                </label>
+                                            </span><span id="explanation-hotspot-legend" aria-live="polite"></span>
+                                        </div>
                                     </div>
-                                    <div id="explanation-property-config" class="query-explanation-property-config"
+                                    <div id="explanation-property-config" class="query-explanation-settings__section query-explanation-property-config"
                                         ?hidden=${!propertySelectionEnabled}>
-                                        <strong>Visible properties</strong><span id="explanation-property-count" aria-live="polite"></span>
-                                        <button id="explanation-properties-all" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
-                                        <button id="explanation-properties-none" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
-                                        <div id="explanation-property-options" role="group" aria-label="Visible query plan properties"></div>
-                                        <p>Plan structure always remains visible.</p>
+                                        <div class="query-explanation-property-config__header">
+                                            <div class="query-explanation-property-config__title">
+                                                <strong>Visible properties</strong><span id="explanation-property-count" aria-live="polite"></span>
+                                            </div>
+                                            <div class="query-explanation-property-config__actions">
+                                                <button id="explanation-properties-all" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
+                                                <button id="explanation-properties-none" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
+                                            </div>
+                                        </div>
+                                        <div id="explanation-property-options" class="query-explanation-property-config__options"
+                                            role="group" aria-label="Visible query plan properties"></div>
+                                        <p class="query-explanation-property-config__hint">Plan structure always remains visible.</p>
                                     </div>
                             `)}
                             `}
@@ -1849,14 +1865,11 @@ module workbench {
             const defaultQueryLanguage = text(pageValue(model, 'queryLn') || defaults['default-queryLn']);
             const selectedQueryLanguage = defaultQueryLanguage || (queryFormats.length ? queryFormats[0].value : 'SPARQL');
             const hideQueryLanguageRow = queryFormats.length === 1 && queryFormats[0].value === 'SPARQL';
-            const defaultLimit = text(pageValue(model, 'limit_query') || defaults['default-limit']) || '100';
             const defaultTimeout = text(pageValue(model, 'query-timeout') || defaults['default-query-timeout']) || '60';
             const query = text(pageValue(model, 'query'));
             const explanation = text(pageValue(model, 'explanation'));
             const explanationFormat = text(pageValue(model, 'explanation-format')) || 'text';
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
-            const queryLimits = ['0', '10', '50', '100', '200'];
-            if (queryLimits.indexOf(defaultLimit) < 0) { queryLimits.push(defaultLimit); }
             return h`<div id="query-page" class="query-page"
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
@@ -1957,16 +1970,7 @@ module workbench {
                             panelClass: 'query-disclosure__body query-disclosure__panel',
                             contentClass: 'workbench-disclosure__fields',
                             toggleHidden: !queryFeatureEnabled(context, 'query-options')
-                        }, h`<div class="workbench-disclosure__field"
-                                    ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
-                                    <label for="limit_query">Result limit</label>
-                                    <select id="limit_query" name="limit_query"
-                                        ?hidden=${!queryFeatureEnabled(context, 'result-page-size')}>
-                                        ${queryLimits.map((limit: string) => h`<option value=${limit} ?selected=${limit === defaultLimit}>
-                                            ${limit === '0' ? 'All' : limit}</option>`)}
-                                    </select>
-                                </div>
-                                <div class="workbench-disclosure__field">
+                        }, h`<div class="workbench-disclosure__field">
                                     <label for="query-timeout">Query timeout</label>
                                     <input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
                                         value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} />

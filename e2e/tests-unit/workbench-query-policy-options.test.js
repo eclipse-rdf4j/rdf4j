@@ -8,7 +8,7 @@ const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-d
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
-function queryTemplates(metadata, queryFeatures) {
+function queryTemplates(metadata, queryFeatures, page = {}) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
@@ -24,7 +24,7 @@ function queryTemplates(metadata, queryFeatures) {
         render() {}
     };
     const result = context.workbench.views.pageTemplate({
-        viewId: 'query', vars: [], rows: [], metadata
+        viewId: page.viewId || 'query', vars: page.vars || [], rows: page.rows || [], metadata
     }, {
         basePath: '/workbench', repositoryId: 'repo-1',
         workbench: { defaults: {}, queryFeatures, queryFormats: [] }
@@ -87,4 +87,25 @@ test('query explanation selectors hide unavailable options and select an availab
     assert.equal(optimized[2], true, 'a disabled explanation level must be hidden');
     assert.equal(optimized[3], true, 'a disabled explanation level must be unavailable');
     assert.equal(unoptimized[1], true, 'the legacy preferred supported level becomes the fallback');
+});
+
+test('main query options omit obsolete result page-size preferences', () => {
+    const templates = queryTemplates({ limit_query: 100 }, {});
+    const text = templates.map(template => template.strings.join('')).join('\n');
+    assert.equal(text.includes('id="limit_query"'), false);
+    assert.equal(text.includes('Result limit'), false);
+    assert.ok(text.includes('id="query-timeout"'));
+});
+
+test('saved execution and metadata omit old rows-per-page preferences', () => {
+    const templates = queryTemplates({}, {}, {
+        viewId: 'saved-queries',
+        vars: ['query', 'queryName', 'queryText', 'rowsPerPage'],
+        rows: [[{ kind: 'iri', value: 'urn:query:test' }, { kind: 'literal', value: 'Saved' },
+            { kind: 'literal', value: 'SELECT ?x WHERE {}' }, { kind: 'literal', value: '100' }]]
+    });
+    const text = templates.map(template => template.strings.join('')).join('\n');
+    assert.equal(text.includes('name="limit_query"'), false);
+    assert.equal(text.includes('Rows Per Page'), false);
+    assert.ok(text.includes('data-workbench-query-execution="true"'));
 });

@@ -119,7 +119,7 @@ class SavedQueriesServletTest {
 
 		List<JsonNode> records = response.getBody().lines().map(JSON_MAPPER::readTree).toList();
 		assertThat(records).extracting(record -> record.path("type").asText())
-				.containsExactly("head", "view", "links", "vars", "rows", "end");
+				.containsExactly("head", "view", "vars", "links", "rows", "end");
 		assertThat(records.get(4).path("values").get(0).get(0).path("value").asText()).isEqualTo("team-query");
 	}
 

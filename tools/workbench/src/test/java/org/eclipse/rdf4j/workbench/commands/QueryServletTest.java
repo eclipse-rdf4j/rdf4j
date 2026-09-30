@@ -264,6 +264,32 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void disabledResultPagingRejectsANonzeroBrowserBatchOffset() throws Exception {
+		MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
+		rawRequest.addHeader("Accept", "application/vnd.rdf4j.workbench+ndjson");
+		rawRequest.addParameter("action", "exec");
+		rawRequest.addParameter("query", SHORT_QUERY);
+		rawRequest.addParameter("batch-size", "2");
+		rawRequest.addParameter("batch-offset", "2");
+		WorkbenchRequest request = new WorkbenchRequest(null, rawRequest, Map.of("queryLn", "SPARQL"));
+
+		assertFeatureRequestDenied("result-paging", "exec", false, request);
+	}
+
+	@Test
+	public void disabledResultPagingRejectsANonzeroCompactBrowserBatchOffset() throws Exception {
+		MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
+		rawRequest.addHeader("Accept", "application/vnd.rdf4j.workbench-query-v2+ndjson");
+		rawRequest.addParameter("action", "exec");
+		rawRequest.addParameter("query", SHORT_QUERY);
+		rawRequest.addParameter("batch-size", "2");
+		rawRequest.addParameter("batch-offset", "2");
+		WorkbenchRequest request = new WorkbenchRequest(null, rawRequest, Map.of("queryLn", "SPARQL"));
+
+		assertFeatureRequestDenied("result-paging", "exec", false, request);
+	}
+
+	@Test
 	public void disabledQuerySaveRejectsTheSaveAction() throws Exception {
 		assertFeatureRequestDenied("query-save", "save", true, Map.of());
 	}
@@ -534,6 +560,7 @@ public class QueryServletTest {
 		when(request.getParameter("query-name")).thenReturn("my-query");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("100");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "100" });
 		when(request.getParameter("query-timeout")).thenReturn("17");
 		when(request.getInt("query-timeout")).thenReturn(17);
 		when(request.getParameter("overwrite")).thenReturn("false");
@@ -574,6 +601,7 @@ public class QueryServletTest {
 		when(request.getParameter("query-name")).thenReturn("my-query");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("100");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "100" });
 		when(request.getParameter("query-timeout")).thenReturn("17");
 		when(request.getInt("query-timeout")).thenReturn(17);
 		when(request.getParameter("overwrite")).thenReturn("true");
@@ -611,6 +639,7 @@ public class QueryServletTest {
 		when(request.getParameter("query-name")).thenReturn("my-query");
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("100");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "100" });
 		when(request.getParameter("query-timeout")).thenReturn("");
 		when(request.getParameter("overwrite")).thenReturn("false");
 		when(request.getParameter("save-private")).thenReturn("false");

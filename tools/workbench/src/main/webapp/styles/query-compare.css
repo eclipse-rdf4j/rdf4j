@@ -191,23 +191,27 @@ body.workbench-body.query-compare-mode #navigation.workbench-nav {
 }
 
 body.workbench-body .workbench-page-surface .query-compare-pane__close {
+    display: inline-grid;
+    align-items: center;
+    justify-items: center;
     margin: 0;
+    padding: 0;
 }
 
 .query-compare-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--workbench-control-gap, 8px);
     width: 100%;
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--workbench-form-gap, 12px);
 }
 
 .query-compare-toolbar__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-compare-toolbar[hidden] {
@@ -218,9 +222,9 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.45rem;
+    gap: var(--workbench-control-gap, 8px);
 	min-height: calc(var(--workbench-control-height) - 2px);
-	padding: 0.35rem 0.65rem;
+	padding: 0 var(--workbench-control-inset, 12px);
     border: 0;
     background: transparent;
     color: inherit;
@@ -510,7 +514,7 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--workbench-space-subgroup, 16px);
     padding: 1rem 1.25rem;
 	border-bottom: 1px solid var(--workbench-soft-rule);
 }
@@ -523,7 +527,7 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
 .query-diff-modal__body {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--workbench-space-subgroup, 16px);
     padding: 1rem 1.25rem 1.25rem 1.25rem;
     flex: 1 1 auto;
     min-height: 0;
@@ -533,7 +537,7 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
 .query-diff-section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--workbench-control-gap, 8px);
     min-height: 0;
     overflow: hidden;
 }
@@ -569,7 +573,7 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
 .query-diff-row {
     display: grid;
     grid-template-columns:auto 1fr;
-    gap: 0.75rem;
+    gap: var(--workbench-form-gap, 12px);
     padding: 0.15rem 0.75rem;
     width: max-content;
     min-width: 100%;

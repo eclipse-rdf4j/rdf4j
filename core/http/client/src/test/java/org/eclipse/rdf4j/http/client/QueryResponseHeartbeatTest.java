@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -59,6 +60,96 @@ import org.eclipse.rdf4j.rio.turtle.TurtleWriterFactory;
 import org.junit.jupiter.api.Test;
 
 class QueryResponseHeartbeatTest {
+
+	@Test
+	void serializerProgressContinuesAfterPayloadAndStopsAtCompletion() throws Exception {
+		ByteArrayOutputStream target = new ByteArrayOutputStream();
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(target, Duration.ofMillis(5), () -> {
+		});
+		CountDownLatch progress = new CountDownLatch(2);
+		CountDownLatch payloadReady = new CountDownLatch(1);
+		TupleQueryResultWriter writer = new SPARQLResultsJSONWriterFactory().getWriter(heartbeat.getOutputStream());
+		assertThat(heartbeat.start(writer, () -> {
+			try {
+				assertThat(payloadReady.await(5, TimeUnit.SECONDS)).isTrue();
+				heartbeat.getOutputStream().write('p');
+				progress.countDown();
+			} catch (IOException | InterruptedException failure) {
+				throw new IllegalStateException(failure);
+			}
+		})).isTrue();
+		heartbeat.getOutputStream().write('x');
+		payloadReady.countDown();
+		assertThat(progress.await(5, TimeUnit.SECONDS)).isTrue();
+		heartbeat.complete();
+		assertThat(target.toString()).startsWith("x").contains("pp").doesNotContain(" ");
+		assertThat(heartbeat.isProbing()).isFalse();
+		assertThatThrownBy(() -> heartbeat.getOutputStream().write('p')).isInstanceOf(IOException.class);
+	}
+
+	@Test
+	void completionWaitsForAnInFlightSerializerWithoutInterruptingItsRecord() throws Exception {
+		ByteArrayOutputStream target = new ByteArrayOutputStream();
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(target, Duration.ofMillis(5), () -> {
+		});
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch completing = new CountDownLatch(1);
+		CountDownLatch complete = new CountDownLatch(1);
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		TupleQueryResultWriter writer = new SPARQLResultsJSONWriterFactory().getWriter(heartbeat.getOutputStream());
+		heartbeat.start(writer, () -> {
+			try {
+				heartbeat.getOutputStream().write('[');
+				entered.countDown();
+				assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+				heartbeat.getOutputStream().write(']');
+			} catch (Throwable exception) {
+				failure.set(exception);
+				throw new IllegalStateException(exception);
+			}
+		});
+		assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+		Thread completer = Thread.startVirtualThread(() -> {
+			completing.countDown();
+			try {
+				heartbeat.complete();
+			} catch (Throwable exception) {
+				failure.set(exception);
+			} finally {
+				complete.countDown();
+			}
+		});
+		try {
+			assertThat(completing.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(complete.await(50, TimeUnit.MILLISECONDS)).isFalse();
+		} finally {
+			release.countDown();
+			completer.join(5000);
+		}
+		assertThat(completer.isAlive()).isFalse();
+		assertThat(failure.get()).isNull();
+		assertThat(target.toString()).isEqualTo("[]");
+		assertThat(heartbeat.isProbing()).isFalse();
+	}
+
+	@Test
+	void aSerializerProgressFailureSignalsDisconnectOnceAndStopsScheduling() throws Exception {
+		AtomicInteger callbacks = new AtomicInteger();
+		CountDownLatch disconnected = new CountDownLatch(1);
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(OutputStream.nullOutputStream(),
+				Duration.ofMillis(5), disconnected::countDown);
+		TupleQueryResultWriter writer = new SPARQLResultsJSONWriterFactory().getWriter(heartbeat.getOutputStream());
+		heartbeat.start(writer, () -> {
+			callbacks.incrementAndGet();
+			throw new IllegalStateException("serializer failed");
+		});
+		assertThat(disconnected.await(5, TimeUnit.SECONDS)).isTrue();
+		heartbeat.stop();
+		assertThat(callbacks.get()).isEqualTo(1);
+		assertThat(heartbeat.isProbing()).isFalse();
+		heartbeat.abort();
+	}
 
 	@Test
 	void emitsRepeatedProbesAndStopsBeforeTheFirstPayload() throws Exception {

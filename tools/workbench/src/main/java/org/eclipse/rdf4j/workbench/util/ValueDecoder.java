@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
@@ -107,7 +108,11 @@ class ValueDecoder {
 					throw new BadRequestException("Malformed datatype: " + value);
 				}
 			} else if (rest.charAt(0) == '@') {
-				result = factory.createLiteral(label, rest.substring(1));
+				int directionIndex = rest.indexOf(Literal.BASE_DIR_SEPARATOR);
+				if (directionIndex >= 0) {
+					Literal.BaseDirection.fromString(rest.substring(directionIndex));
+				}
+				result = NTriplesUtil.parseLiteral(value, factory);
 			} else {
 				throw new BadRequestException("Malformed language tag or datatype: " + value);
 			}

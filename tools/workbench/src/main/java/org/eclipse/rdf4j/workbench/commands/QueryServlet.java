@@ -62,11 +62,14 @@ import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.util.QueryBatch;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.QueryStreamCompression;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
+import org.eclipse.rdf4j.workbench.util.WorkbenchQueryProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -277,6 +280,7 @@ public class QueryServlet extends TransformationServlet {
 					return;
 				}
 			} else if (executionRequest) {
+				WorkbenchQueryProtocol.configure(req);
 				if (rejectDisabledFeature(resp, "query-execution")
 						|| rejectDisabledQueryEvaluationOptions(req, resp)
 						|| rejectDisabledResultOptions(req, resp)) {
@@ -342,7 +346,12 @@ public class QueryServlet extends TransformationServlet {
 				|| rejectDisabledParameter(req, resp, INFER, "query-inferred-statements");
 	}
 
-	private boolean rejectDisabledResultOptions(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
+	private boolean rejectDisabledResultOptions(WorkbenchRequest req, HttpServletResponse resp)
+			throws IOException, BadRequestException {
+		if (WorkbenchQueryProtocol.negotiateVersion(req) > 0 && QueryBatch.from(req).getOffset() > 0
+				&& rejectDisabledFeature(resp, "result-paging")) {
+			return true;
+		}
 		if (rejectDisabledParameter(req, resp, LIMIT, "result-page-size")
 				|| rejectDisabledParameter(req, resp, "show-datatypes", "result-show-datatypes")
 				|| rejectDisabledParameter(req, resp, "know_total", "result-totals")
@@ -886,6 +895,9 @@ public class QueryServlet extends TransformationServlet {
 			cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
 			boolean downloadResponse = setContentType(req, resp);
 			out = getResponseOutputStream(req, resp, downloadResponse);
+			if (out == null) {
+				return;
+			}
 			service(req, resp, out, handle, responseHeartbeat);
 			responseCompleted = handle == null || handle.isActive();
 		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
@@ -991,8 +1003,21 @@ public class QueryServlet extends TransformationServlet {
 					}
 				}
 			} finally {
-				if (handle != null) {
-					queryCoordinator.complete(handle);
+				try {
+					if (out instanceof QueryStreamCompression compression) {
+						try {
+							compression.finish();
+						} catch (IOException failure) {
+							if (responseCompleted && !isCancelled(handle)) {
+								throw failure;
+							}
+							LOGGER.debug("Unable to release an unsuccessful query compression stream", failure);
+						}
+					}
+				} finally {
+					if (handle != null) {
+						queryCoordinator.complete(handle);
+					}
 				}
 			}
 		}
@@ -1024,7 +1049,7 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private boolean hasCommittedResponse(QueryResponseHeartbeat responseHeartbeat, HttpServletResponse response) {
-		return responseHeartbeat != null && responseHeartbeat.hasProbed()
+		return responseHeartbeat != null && (responseHeartbeat.hasProbed() || responseHeartbeat.hasPayload())
 				|| response != null && response.isCommitted();
 	}
 
@@ -1043,7 +1068,7 @@ public class QueryServlet extends TransformationServlet {
 			throws IOException {
 		OutputStream out = resp.getOutputStream();
 		if (!downloadResponse) {
-			return out;
+			return WorkbenchQueryProtocol.version(req) > 0 ? QueryStreamCompression.open(req, resp, out) : out;
 		}
 		OutputStream bufferedOutputStream = new BufferedOutputStream(out);
 		if (clientAcceptsGzip(req)) {
@@ -1114,7 +1139,9 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void flushResponseOutputStream(OutputStream out) throws IOException {
-		if (out instanceof GZIPOutputStream) {
+		if (out instanceof QueryStreamCompression compression) {
+			compression.finish();
+		} else if (out instanceof GZIPOutputStream) {
 			((GZIPOutputStream) out).finish();
 		}
 		out.flush();
@@ -1155,6 +1182,7 @@ public class QueryServlet extends TransformationServlet {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
 		} else if ("exec".equals(action)) {
+			WorkbenchQueryProtocol.configure(req);
 			if (rejectDisabledFeature(resp, "query-execution")
 					|| rejectDisabledQueryEvaluationOptions(req, resp)
 					|| rejectDisabledResultOptions(req, resp)) {
@@ -1240,7 +1268,7 @@ public class QueryServlet extends TransformationServlet {
 				final QueryLanguage queryLanguage = QueryLanguage.valueOf(req.getParameter(QUERY_LN));
 				final String queryText = req.getParameter(QUERY);
 				final boolean infer = req.isParameterPresent(INFER) ? Boolean.valueOf(req.getParameter(INFER)) : false;
-				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));
+				final int rowsPerPage = getSavedRowsPerPage(req);
 				final int queryTimeout = req.getInt(QUERY_TIMEOUT);
 				if (existed) {
 					final IRI query = storage.selectSavedQuery(repositoryReference, userName, queryName);
@@ -1256,6 +1284,30 @@ public class QueryServlet extends TransformationServlet {
 		final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 		writer.write(mapper.writeValueAsString(jsonObject));
 		writer.flush();
+	}
+
+	private int getSavedRowsPerPage(WorkbenchRequest req) throws BadRequestException {
+		String[] values = req.getParameterValues(LIMIT);
+		if (values == null || values.length == 0) {
+			return 0;
+		}
+		final int rowsPerPage;
+		try {
+			rowsPerPage = Integer.parseInt(values[values.length - 1]);
+		} catch (NumberFormatException e) {
+			throw new BadRequestException("Invalid value for " + LIMIT, e);
+		}
+		switch (rowsPerPage) {
+		case 0:
+		case 10:
+		case 20:
+		case 50:
+		case 100:
+		case 200:
+			return rowsPerPage;
+		default:
+			throw new BadRequestException("Invalid value for " + LIMIT + ": " + rowsPerPage);
+		}
 	}
 
 	private Literal createOptionalIntegerLiteral(String value) {
@@ -1321,6 +1373,11 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private boolean setContentType(final WorkbenchRequest req, final HttpServletResponse resp) {
+		if (WorkbenchQueryProtocol.version(req) > 0) {
+			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
+			resp.setContentType(WorkbenchQueryProtocol.contentType(req));
+			return false;
+		}
 		String result = "application/xml";
 		String ext = "xml";
 		if (req.isParameterPresent(ACCEPT)) {
@@ -1537,7 +1594,7 @@ public class QueryServlet extends TransformationServlet {
 			if (writerOutput == null) {
 				throw new IOException("Workbench page error has no response output stream");
 			}
-			pageWriter = new WorkbenchPageResultWriter(writerOutput);
+			pageWriter = new WorkbenchPageResultWriter(writerOutput, WorkbenchQueryProtocol.version(req) == 2);
 			req.setAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE, pageWriter);
 		}
 		pageWriter.error(status, code, message == null ? "Workbench request failed" : message);

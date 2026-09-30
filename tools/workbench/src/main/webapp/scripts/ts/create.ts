@@ -69,7 +69,7 @@ workbench.addLoad(function createPageLoaded() {
 		}
 
 		var rowsToMove: HTMLTableRowElement[] = [];
-		for (var i = 1; i < body.rows.length - 1; i++) {
+		for (var i = 1; i < body.rows.length; i++) {
 			var row = body.rows[i];
 			var roleControl = <HTMLElement>row.querySelector('[data-field-role], [data-config-property]');
 			var role = (roleControl && roleControl.getAttribute('data-field-role'))
@@ -95,7 +95,7 @@ workbench.addLoad(function createPageLoaded() {
 			id: 'create-advanced-disclosure', toggleId: 'create-advanced-toggle',
 			panelId: 'create-advanced-panel',
 			label: table.getAttribute('data-advanced-label') || 'Advanced settings',
-			ownerClass: 'workbench-advanced'
+			ownerClass: 'workbench-advanced workbench-form-subgroup'
 		});
 		var advancedFields = document.createElement('div');
 		advancedFields.className = 'workbench-disclosure__fields workbench-advanced-fields';
@@ -134,14 +134,7 @@ workbench.addLoad(function createPageLoaded() {
 			}
 		}
 
-		var actionRow = body.rows[body.rows.length - 1];
-		body.removeChild(actionRow);
 		table.parentNode.insertBefore(disclosure.owner, table.nextSibling);
-		var actionTable = <HTMLTableElement>table.cloneNode(false);
-		var actionBody = document.createElement('tbody');
-		actionBody.appendChild(actionRow);
-		actionTable.appendChild(actionBody);
-		disclosure.owner.parentNode.insertBefore(actionTable, disclosure.owner.nextSibling);
 		workbench.detailDisclosure.bind(disclosure.toggle, disclosure.panel, disclosure.owner);
 	}
 

@@ -65,9 +65,16 @@
 	--workbench-mobile-gutter: 12px;
 	--workbench-control-height: 36px;
 	--workbench-touch-height: 44px;
-	--workbench-control-gap: 8px;
-	--workbench-form-gap: 12px;
-	--workbench-field-gap: 4px;
+	/* Distances express relationships; each layout owner applies its role once. */
+	--workbench-space-association: 4px;
+	--workbench-space-related: 8px;
+	--workbench-space-field: 12px;
+	--workbench-space-subgroup: 16px;
+	--workbench-space-section: 24px;
+	--workbench-control-inset: 12px;
+	--workbench-control-gap: var(--workbench-space-related);
+	--workbench-form-gap: var(--workbench-space-field);
+	--workbench-field-gap: var(--workbench-space-association);
 	--workbench-radius: 10px;
 	--workbench-control-radius: 7px;
 	--workbench-focus: #20576a;
@@ -151,6 +158,7 @@ body.workbench-body form[action="create"] table.dataentry tbody {
 	width: fit-content;
 	max-width: min(100%, 600px);
 	border-spacing: 0;
+	margin: 0;
 }
 
 body.workbench-body form[action="create"] table.dataentry tr {
@@ -161,8 +169,8 @@ body.workbench-body form[action="create"] table.dataentry tr {
 	padding: 0;
 }
 
-body.workbench-body form[action="create"] table.dataentry th,
-body.workbench-body form[action="create"] table.dataentry td {
+body.workbench-body .workbench-page-surface form[action="create"] table.dataentry th,
+body.workbench-body .workbench-page-surface form[action="create"] table.dataentry td {
 	display: block;
 	width: 100%;
 	padding: 0;
@@ -177,26 +185,20 @@ body.workbench-body form[action="create"] table.dataentry th {
 	line-height: 1.35;
 }
 
-body.workbench-body form[action="create"] table.dataentry tr:has(#create) {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin-top: var(--workbench-form-gap);
+body.workbench-body form[action="create"] table.dataentry tr:last-child {
 	margin-bottom: 0;
 }
 
-body.workbench-body form[action="create"] table.dataentry tr:has(#create) td {
-	width: auto;
-}
-
-body.workbench-body form[action="create"] table.dataentry tr:has(#create) td:first-child {
-	display: none;
+body.workbench-body form[action="create"] table.dataentry th > label {
+	display: block;
 }
 
 body.workbench-body form[action="create"] .workbench-advanced {
 	max-width: 600px;
-	margin: var(--workbench-form-gap) 0;
+}
+
+body.workbench-body .workbench-form-subgroup {
+	margin-block-start: var(--workbench-space-subgroup);
 }
 
 body.workbench-body form[action="create"] input[type="text"],
@@ -247,7 +249,7 @@ body.query-result-embedded-body .workbench-disclosure__toggle {
 	min-height: var(--workbench-control-height);
 	max-width: 100%;
 	margin: 0;
-	padding: 0 12px;
+	padding: 0 var(--workbench-control-inset);
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
 	background: var(--workbench-surface);
@@ -280,9 +282,9 @@ body.query-result-embedded-body .workbench-disclosure__panel {
 	width: fit-content;
 	min-width: 0;
 	max-width: min(44rem, calc(100vw - 32px));
-	margin: 8px 0 0;
+	margin: var(--workbench-space-related) 0 0;
 	margin-inline-start: var(--workbench-disclosure-panel-start, 0px);
-	padding: 12px;
+	padding: var(--workbench-control-inset);
 	border: 1px solid var(--workbench-soft-rule);
 	border-radius: var(--workbench-radius);
 	background: var(--workbench-inset);
@@ -318,7 +320,7 @@ body.query-result-embedded-body .workbench-disclosure__content {
 	box-sizing: border-box;
 	display: grid;
 	align-content: start;
-	gap: var(--workbench-field-gap);
+	gap: var(--workbench-form-gap);
 	min-width: 0;
 	max-width: 100%;
 }
@@ -329,7 +331,7 @@ body.query-result-embedded-body .workbench-disclosure__fields {
 	display: flex;
 	flex-flow: row wrap;
 	align-items: end;
-	gap: var(--workbench-field-gap) var(--workbench-control-gap);
+	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
 	min-width: 0;
 	max-width: 100%;
 }
@@ -339,7 +341,7 @@ body.query-result-embedded-body .workbench-disclosure__field {
 	box-sizing: border-box;
 	display: grid;
 	align-content: start;
-	gap: 0.3rem;
+	gap: var(--workbench-field-gap);
 	min-width: 0;
 }
 
@@ -347,6 +349,7 @@ body.workbench-body .workbench-disclosure__field > label,
 body.workbench-body .workbench-disclosure__field > span,
 body.query-result-embedded-body .workbench-disclosure__field > label,
 body.query-result-embedded-body .workbench-disclosure__field > span {
+	display: block;
 	color: var(--workbench-muted);
 	font-size: var(--workbench-label-font-size);
 	font-weight: 600;
@@ -377,7 +380,6 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 	body.query-result-embedded-body .workbench-disclosure__panel {
 		width: min(100%, calc(100vw - 32px));
 		max-width: calc(100vw - 32px);
-		margin-inline-start: 0;
 	}
 
 	body.workbench-body .workbench-disclosure__fields,
@@ -421,6 +423,36 @@ body.workbench-body .query-page .yasqe .CodeMirror-lines,
 body.workbench-body #update-editor .yasqe .CodeMirror-lines,
 body.workbench-body .saved-query-row .yasqe .CodeMirror-lines {
 	padding-right: 3.5rem;
+}
+
+/* The vendor anchors Share to its narrow icon strip. Give that strip the
+ * editor's available width so popup bounds follow resize and fullscreen. */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons {
+	left: 0;
+	text-align: right;
+	pointer-events: none;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons > * {
+	pointer-events: auto;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup {
+	box-sizing: border-box;
+	left: auto !important;
+	right: 0;
+	width: 400px;
+	max-width: 100%;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup textarea {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body .saved-query-row .yasqe .CodeMirror-scroll {
+	min-height: 0;
 }
 
 body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg,
@@ -671,7 +703,7 @@ body.query-result-embedded-body .workbench-action-hit-area {
 	align-items: center;
 	gap: var(--workbench-control-gap);
 	min-height: calc(var(--workbench-control-height) - 2px);
-	padding: 0 12px;
+	padding: 0 var(--workbench-control-inset);
 	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
 	color: inherit;
 	cursor: pointer;
@@ -726,6 +758,49 @@ body.workbench-body #explore-resource-value {
 body.workbench-body #explore-result-count {
 	display: block;
 	margin-top: 2px;
+}
+
+/* Relation topics are layout groups, not intrinsic-width table columns. */
+body.workbench-body .workbench-explore-groups {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--workbench-space-subgroup);
+	min-width: 0;
+	max-width: 100%;
+	margin-bottom: var(--workbench-space-section);
+}
+
+body.workbench-body .workbench-explore-groups > div {
+	display: grid;
+	align-content: start;
+	gap: var(--workbench-space-section);
+	min-width: 0;
+}
+
+body.workbench-body .workbench-explore-groups > div:only-child {
+	grid-column: 1 / -1;
+}
+
+body.workbench-body .workbench-explore-groups section {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-explore-groups h3 {
+	margin: 0 0 var(--workbench-control-gap);
+	white-space: normal;
+}
+
+body.workbench-body .workbench-explore-groups ul {
+	margin: 0;
+	padding-inline-start: var(--workbench-space-section);
+}
+
+@media (max-width: 900px) {
+	body.workbench-body .workbench-explore-groups {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--workbench-space-section);
+	}
 }
 
 body.workbench-body .workbench-page-surface table.simple,
@@ -1394,7 +1469,7 @@ body.workbench-body .workbench-page-surface:has(.workbench-summary-location) {
 body.workbench-body .workbench-form-grid {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(min-content, max-content));
-	gap: var(--workbench-form-gap) 16px;
+	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
 	width: fit-content;
 	max-width: min(100%, 760px);
 }
@@ -1512,6 +1587,7 @@ body.workbench-body .workbench-inline-controls > select {
 
 body.workbench-body .workbench-field > label,
 body.workbench-body .workbench-field > .workbench-label {
+	display: block;
 	color: var(--workbench-ink);
 	font-size: var(--workbench-label-font-size);
 	font-weight: 600;
@@ -1525,12 +1601,24 @@ body.workbench-body .hint {
 }
 
 body.workbench-body .workbench-check {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	min-height: 28px;
 	color: var(--workbench-nav);
 	font-weight: 400;
+}
+
+/* The labeled body owns the standard row; native check/radio glyphs remain
+ * compact and centered within it, including beside inputs and action buttons. */
+body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice),
+body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	min-height: var(--workbench-control-height);
+}
+
+body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice) > input:is([type="checkbox"], [type="radio"]),
+body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) > input:is([type="checkbox"], [type="radio"]) {
+	flex: 0 0 auto;
+	margin: 0;
 }
 
 body.workbench-body .workbench-source-tabs {
@@ -1539,7 +1627,7 @@ body.workbench-body .workbench-source-tabs {
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: var(--workbench-control-gap);
 	width: min(100%, 760px);
-	margin: 0 0 18px;
+	margin: 0 0 var(--workbench-space-subgroup);
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -1600,7 +1688,7 @@ body.workbench-body .workbench-form-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--workbench-control-gap);
-	margin-top: 16px;
+	margin-top: var(--workbench-form-gap);
 }
 
 body.workbench-body #export-results > .workbench-form-actions {
@@ -1648,6 +1736,7 @@ body.workbench-body .workbench-page-surface textarea {
 	box-sizing: border-box;
 	min-height: var(--workbench-control-height);
 	max-width: 100%;
+	margin: 0;
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
 	background: var(--workbench-surface);
@@ -1678,6 +1767,7 @@ body.workbench-body .workbench-page-surface input[type="file"] {
 	height: var(--workbench-control-height);
 	min-height: var(--workbench-control-height);
 	max-width: 100%;
+	margin: 0;
 	padding: 0;
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
@@ -1709,8 +1799,8 @@ body.workbench-body .workbench-page-surface input[type="button"],
 body.workbench-body .workbench-page-surface button {
 	box-sizing: border-box;
 	min-height: var(--workbench-control-height);
-	margin: 0 8px 0 0;
-	padding: 7px 14px;
+	margin: 0;
+	padding: 7px var(--workbench-control-inset);
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
 	background-color: var(--workbench-surface);
@@ -1774,13 +1864,19 @@ body.query-result-embedded-body .workbench-action .workbench-action-label button
 	gap: var(--workbench-control-gap);
 	min-height: calc(var(--workbench-control-height) - 2px);
 	margin: 0;
-	padding: 0.35rem 0.65rem;
+	padding: 0 var(--workbench-control-inset);
 	border: 0;
 	border-radius: 0;
 	background: transparent;
 	background-image: none;
 	color: inherit;
 	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+/* A hit area already owns the inset. Controls without it own their own. */
+body.workbench-body .workbench-action .workbench-action-hit-area .workbench-action-label :is(input, button),
+body.query-result-embedded-body .workbench-action .workbench-action-hit-area .workbench-action-label :is(input, button) {
+	padding-inline: 0;
 }
 
 body.workbench-body .workbench-action .workbench-action-label input:focus,
@@ -1884,6 +1980,7 @@ body.query-result-embedded-body .query-result-embedded textarea {
 	box-sizing: border-box;
 	min-height: var(--workbench-control-height);
 	max-width: 100%;
+	margin: 0;
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
 	background: var(--workbench-surface);
@@ -1901,26 +1998,13 @@ body.query-result-embedded-body .query-result-embedded input[type="button"],
 body.query-result-embedded-body .query-result-embedded input[type="submit"] {
 	box-sizing: border-box;
 	min-height: var(--workbench-control-height);
-	padding: 7px 14px;
+	margin: 0;
+	padding: 7px var(--workbench-control-inset);
 	border: 1px solid var(--workbench-rule);
 	border-radius: var(--workbench-control-radius);
 	background: var(--workbench-surface);
 	color: var(--workbench-nav);
 	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
-}
-
-body.workbench-body form[action="create"] table.dataentry tr:has(#create) td:nth-child(2) {
-	display: flex;
-	flex: 1 1 auto;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 8px;
-	min-width: 0;
-}
-
-body.workbench-body form[action="create"] table.dataentry tr:has(#create) input {
-	float: none !important;
-	margin: 0;
 }
 
 body.workbench-body .workbench-page-surface table.data,
@@ -2033,7 +2117,6 @@ body.workbench-body .workbench-page-surface details.workbench-options > .workben
 }
 
 body.workbench-body form[action="create"] .workbench-advanced-fields {
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), max-content));
 	align-items: start;
 }
 
@@ -2064,7 +2147,7 @@ body.workbench-body form[action="create"] .workbench-advanced__control > textare
 body.workbench-body form[action="create"] .workbench-advanced__control .workbench-choice-list {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px 10px;
+	gap: var(--workbench-control-gap);
 	max-width: 100%;
 }
 
@@ -2100,14 +2183,57 @@ body.workbench-body .workbench-choice-list {
 	gap: 4px;
 }
 
+body.workbench-body .saved-query-row__heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--workbench-control-gap) var(--workbench-space-subgroup);
+	min-width: 0;
+	margin-bottom: var(--workbench-form-gap);
+}
+
+body.workbench-body .saved-query-row__heading > :is(h2, span) {
+	min-width: 0;
+	max-width: 100%;
+	margin: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .saved-query-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+}
+
+body.workbench-body .saved-query-actions > form {
+	margin: 0;
+}
+
+body.workbench-body .saved-query-row > .query-results {
+	margin-top: var(--workbench-space-subgroup);
+}
+
+body.workbench-body .saved-query-row > .query-results:empty {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+}
+
 body.workbench-body .saved-query-row > table.data[id$="-metadata"] {
 	display: block;
 	box-sizing: border-box;
 	width: 100%;
 	max-width: 100%;
-	margin-top: 16px;
+	margin-top: var(--workbench-space-subgroup);
 	border: 0;
 	table-layout: fixed;
+}
+
+body.workbench-body .saved-query-row > .yasqe {
+	margin-block-start: var(--workbench-space-subgroup);
 }
 
 body.workbench-body .saved-query-row > table.data[id$="-metadata"] tbody {
@@ -2277,7 +2403,7 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 
 	body.workbench-body .workbench-form-grid {
 		grid-template-columns: minmax(0, 1fr);
-		gap: 14px;
+		gap: var(--workbench-form-gap);
 	}
 
 	body.workbench-body .workbench-source-tabs {
@@ -2322,6 +2448,11 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 		min-height: calc(var(--workbench-touch-height) - 2px);
 	}
 
+	body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice),
+	body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) {
+		min-height: var(--workbench-touch-height);
+	}
+
 	body.workbench-body .workbench-action .workbench-action-label button,
 	body.query-result-embedded-body .workbench-action .workbench-action-label button,
 	body.workbench-body .workbench-action .workbench-action-label input[type="submit"],
@@ -2329,13 +2460,12 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 	body.query-result-embedded-body .workbench-action .workbench-action-label input[type="submit"],
 	body.query-result-embedded-body .workbench-action .workbench-action-label input[type="button"] {
 		min-height: calc(var(--workbench-touch-height) - 2px);
-		padding: 0.45rem 0.75rem;
 	}
 
 	body.workbench-body .workbench-action-hit-area,
 	body.query-result-embedded-body .workbench-action-hit-area {
 		min-height: calc(var(--workbench-touch-height) - 2px);
-		padding-inline: 12px;
+		padding-inline: var(--workbench-control-inset);
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry,
@@ -2352,22 +2482,41 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry tr {
-		margin-bottom: 14px;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--workbench-field-gap);
+		margin-bottom: var(--workbench-form-gap);
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry th {
-		padding: 0 0 4px;
+		padding: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry th > label {
+		display: block;
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry td {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		justify-items: start;
+		gap: var(--workbench-field-gap);
 		padding: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry td:empty {
+		display: none;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry tr:last-child {
+		margin-bottom: 0;
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry tr:last-child:has(input[type="submit"], input[type="button"], button, .workbench-action) {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
-		margin-top: 8px;
+		gap: var(--workbench-control-gap);
+		margin-top: 0;
 	}
 
 	body.workbench-body .workbench-page-surface table.dataentry tr:last-child:has(input[type="submit"], input[type="button"], button, .workbench-action) td {

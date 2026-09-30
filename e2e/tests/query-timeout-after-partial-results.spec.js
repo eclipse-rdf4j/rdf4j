@@ -63,7 +63,6 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	await page.locator('#query-form').waitFor({ state: 'visible' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
 	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('0');
 	await page.locator('#query-timeout').fill(String(QUERY_TIMEOUT_SECONDS));
 
 	const values = Array.from({ length: VALUES_PER_DIMENSION }, (_, index) => String(index)).join(' ');
@@ -292,7 +291,6 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	await page.locator('#query-form').waitFor({ state: 'visible' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
 	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('0');
 	await page.locator('#query-timeout').fill(String(QUERY_TIMEOUT_SECONDS));
 
 	const subjects = valuesIris('s', GRAPH_VALUES_PER_DIMENSION);

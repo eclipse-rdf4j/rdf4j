@@ -288,7 +288,7 @@ class ExploreServletPageDataTest {
 
 		List<JsonNode> records = records(response);
 		assertThat(records).extracting(record -> record.path("type").asText())
-				.containsExactly("head", "view", "namespaces", "vars", "links", "metadata", "rows", "end");
+				.containsExactly("head", "view", "vars", "namespaces", "links", "metadata", "rows", "end");
 		assertResultTotal(records, 1);
 		assertThat(rows(records)).hasSize(1);
 		JsonNode row = rows(records).getFirst();

@@ -37,7 +37,8 @@ import org.slf4j.LoggerFactory;
  * <p>
  * The heartbeat is deliberately independent of servlet APIs. The output stream returned by {@link #getOutputStream()}
  * serializes heartbeat writes with all ordinary serializer writes, so a heartbeat is never inserted in the middle of a
- * serialized token. The first ordinary payload byte permanently disables heartbeats.
+ * serialized token. The first ordinary payload byte permanently disables whitespace heartbeats. An opt-in serializer
+ * callback can continue reporting progress for that query until stopped.
  * </p>
  * <p>
  * A successful heartbeat commits the response at the transport layer. Callers must therefore configure the response,
@@ -54,6 +55,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	public static final Duration DEFAULT_INTERVAL = Duration.ofSeconds(1);
 
 	private final Object outputLock = new Object();
+	private final Object callbackLock = new Object();
 	private final OutputStream target;
 	private final Duration interval;
 	private final Runnable disconnectAction;
@@ -70,6 +72,8 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	private boolean probed;
 	private boolean invalidated;
 	private FileFormat activeFormat;
+	private Runnable progressCallback;
+	private boolean callbackRunning;
 
 	/**
 	 * Creates a heartbeat using {@link #DEFAULT_INTERVAL}.
@@ -114,8 +118,18 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	 * @return {@code true} if heartbeat probing was started
 	 */
 	public boolean start(QueryResultWriter writer) {
+		return start(writer, null);
+	}
+
+	/**
+	 * Starts a query-scoped periodic serializer callback. Unlike whitespace probes, this callback continues after
+	 * payload starts. It runs outside the byte-output lock: the caller must serialize complete records with its writer.
+	 * Stopping or completing the heartbeat waits for an in-flight callback before permitting terminal output.
+	 */
+	public boolean start(QueryResultWriter writer, Runnable progressCallback) {
 		Objects.requireNonNull(writer, "Query result writer was null");
-		return start(writer.getQueryResultFormat(), writer.getWriterConfig(), writer.getSupportedSettings());
+		return start(writer.getQueryResultFormat(), writer.getWriterConfig(), writer.getSupportedSettings(),
+				progressCallback);
 	}
 
 	/**
@@ -143,6 +157,11 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	 */
 	public boolean start(FileFormat format, WriterConfig writerConfig,
 			Collection<? extends RioSetting<?>> supportedSettings) {
+		return start(format, writerConfig, supportedSettings, null);
+	}
+
+	private boolean start(FileFormat format, WriterConfig writerConfig,
+			Collection<? extends RioSetting<?>> supportedSettings, Runnable progressCallback) {
 		Objects.requireNonNull(format, "Writer format was null");
 		Objects.requireNonNull(writerConfig, "Writer configuration was null");
 		Objects.requireNonNull(supportedSettings, "Supported settings were null");
@@ -166,6 +185,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 
 			probing = true;
 			activeFormat = format;
+			this.progressCallback = progressCallback;
 			thread = Thread.ofVirtual().name("rdf4j-query-response-heartbeat").unstarted(this::runHeartbeats);
 			heartbeatThread = thread;
 			thread.start();
@@ -180,12 +200,17 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 		synchronized (outputLock) {
 			stopProbingLocked();
 		}
+		// Never wait for the serializer while holding its byte-output lock.
+		synchronized (callbackLock) {
+			// A callback already accepted by the scheduler has finished when this lock is acquired.
+		}
 	}
 
 	/**
 	 * Completes a successfully serialized response and stops future heartbeat writes.
 	 */
 	public void complete() throws IOException {
+		stop();
 		IOException failure = null;
 		synchronized (outputLock) {
 			if (terminal) {
@@ -222,6 +247,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	 * </p>
 	 */
 	public void abort() {
+		stop();
 		IOException failure = null;
 		synchronized (outputLock) {
 			stopProbingLocked();
@@ -265,6 +291,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 
 	@Override
 	public void close() throws IOException {
+		stop();
 		IOException invalidationFailure = null;
 		IOException closeFailure = null;
 		boolean dispatchDisconnect = false;
@@ -304,6 +331,9 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	private void runHeartbeats() {
 		try {
 			while (true) {
+				if (!probing) {
+					return;
+				}
 				try {
 					Thread.sleep(interval);
 				} catch (InterruptedException e) {
@@ -311,21 +341,52 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 				}
 
 				boolean dispatchDisconnect = false;
+				Runnable callback;
 				synchronized (outputLock) {
-					if (!probing || closed || payloadStarted) {
+					if (!probing || closed || terminal) {
 						return;
 					}
-					// Mark the response committed before writing: a partially written heartbeat cannot be distinguished
-					// from a
-					// successful write by an OutputStream caller, so later failures must take the conservative path.
-					probed = true;
+					callback = progressCallback;
+					if (callback == null && payloadStarted) {
+						return;
+					}
+					if (callback == null) {
+						// A partially written heartbeat may have committed the response, so later failures must take
+						// the conservative path.
+						probed = true;
+						try {
+							target.write(' ');
+							target.flush();
+						} catch (IOException e) {
+							stopProbingLocked();
+							dispatchDisconnect = true;
+							LOGGER.debug("Query response heartbeat detected a disconnected client", e);
+						}
+					}
+				}
+				if (callback != null) {
 					try {
-						target.write(' ');
-						target.flush();
-					} catch (IOException e) {
-						stopProbingLocked();
+						synchronized (callbackLock) {
+							synchronized (outputLock) {
+								if (!probing || closed || terminal) {
+									return;
+								}
+								callbackRunning = true;
+							}
+							try {
+								callback.run();
+							} finally {
+								synchronized (outputLock) {
+									callbackRunning = false;
+								}
+							}
+						}
+					} catch (RuntimeException failure) {
+						synchronized (outputLock) {
+							stopProbingLocked();
+						}
 						dispatchDisconnect = true;
-						LOGGER.debug("Query response heartbeat detected a disconnected client", e);
+						LOGGER.debug("Query response progress failed", failure);
 					}
 				}
 				if (dispatchDisconnect) {
@@ -345,7 +406,7 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 	private void stopProbingLocked() {
 		probing = false;
 		Thread thread = heartbeatThread;
-		if (thread != null && thread != Thread.currentThread()) {
+		if (thread != null && thread != Thread.currentThread() && !callbackRunning) {
 			thread.interrupt();
 		}
 	}
@@ -358,7 +419,9 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 		IOException failure = null;
 		synchronized (outputLock) {
 			ensureWritableLocked();
-			stopProbingLocked();
+			if (progressCallback == null) {
+				stopProbingLocked();
+			}
 			payloadStarted = true;
 			try {
 				target.write(bytes, offset, length);
@@ -379,7 +442,9 @@ public final class QueryResponseHeartbeat implements AutoCloseable {
 		IOException failure = null;
 		synchronized (outputLock) {
 			ensureWritableLocked();
-			stopProbingLocked();
+			if (progressCallback == null) {
+				stopProbingLocked();
+			}
 			payloadStarted = true;
 			try {
 				target.write(value);

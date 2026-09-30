@@ -145,12 +145,10 @@ test('executes a typed SELECT once and keeps result controls interactive', async
 	expect(pageErrorsSince(monitor, 0)).toEqual([]);
 });
 
-test('streams unlimited results before completion with a bounded table window', async ({ page }, testInfo) => {
+test('streams 20000 query results before completion with a bounded table window', async ({ page }, testInfo) => {
 	test.setTimeout(90000);
 	const monitor = monitorPage(page);
 	await openQueryPage(page, monitor);
-	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('0');
 
 	const rowCount = 20000;
 	const values = Array.from({ length: rowCount }, (_, index) => String(index)).join(' ');
@@ -280,24 +278,41 @@ test('renders graph, empty tuple, and terminal query errors', async ({ page }) =
 	expect(pageErrorsSince(monitor, 0)).toEqual([]);
 });
 
-test('uses terminal count metadata for paging and fullscreen state', async ({ page }) => {
+test('uses terminal batch metadata for Load more and fullscreen state', async ({ page }) => {
 	const monitor = monitorPage(page);
 	await openQueryPage(page, monitor);
-	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('10');
+	await page.evaluate(() => {
+		const batchSize = document.createElement('input');
+		batchSize.type = 'hidden';
+		batchSize.name = 'batch-size';
+		batchSize.value = '10';
+		document.getElementById('query-form').appendChild(batchSize);
+	});
 	const pageValues = Array.from({ length: 11 }, (_, index) =>
 		`<urn:page:item${String(index + 1).padStart(2, '0')}>`).join(' ');
 	await executeAndWait(page, monitor,
 		`SELECT ?item WHERE { VALUES ?item { ${pageValues} } } ORDER BY ?item`);
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(result.locator('table.data tbody tr')).toHaveCount(10);
-	await expect(result.locator('.query-result-status')).toContainText(/Rows 1–10 of 11/i);
-	const next = result.getByRole('button', { name: 'Next page' });
-	await expect(next).toBeVisible();
-	await expect(next).toBeEnabled();
-	await next.click();
+	await expect(result.locator('.query-result-status')).toHaveText('10 results.');
+	const loadMore = result.locator('.query-result-load-more');
+	await expect(loadMore).toBeVisible();
+	await loadMore.click();
+	await expect.poll(() => monitor.executions.length).toBe(2);
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expect(result.locator('table.data tbody')).toContainText('item11');
-	await expect(result.locator('.query-result-status')).toContainText(/Rows 11–11 of 11/i);
+	await expect(result.locator('table.data tbody tr[data-query-row-index]')).toHaveCount(11);
+	await expect(result.locator('.query-result-status')).toHaveText('11 results.');
+	await expect(result.locator('.query-result-navigation__label')).toHaveText('11 loaded rows');
+	await expect(loadMore).toBeHidden();
+	await expect(result.getByRole('button', { name: /Next|Previous/i })).toHaveCount(0);
+	await expect(result.locator('select[name="stream-result-limit"]')).toHaveCount(0);
+	expect(monitor.executions.map(execution => new URLSearchParams(execution.body).get('batch-offset')))
+		.toEqual(['0', '10']);
+	expect(monitor.executions.map(execution => new URLSearchParams(execution.body).get('batch-size')))
+		.toEqual(['10', '10']);
+	expect(monitor.executions.every(execution => new URLSearchParams(execution.body).get('limit_query') === null))
+		.toBe(true);
 
 	const fullscreen = page.locator('#query-results-fullscreen');
 	await expect(fullscreen).toBeVisible();
@@ -309,11 +324,16 @@ test('uses terminal count metadata for paging and fullscreen state', async ({ pa
 	expect(pageErrorsSince(monitor, 0)).toEqual([]);
 });
 
-test('result toolbar controls stay intrinsic and options anchor to their trigger while paging', async ({ page }) => {
+test('result toolbar controls stay intrinsic and options anchor while Load more is available', async ({ page }) => {
 	const monitor = monitorPage(page);
 	await openQueryPage(page, monitor);
-	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('10');
+	await page.evaluate(() => {
+		const batchSize = document.createElement('input');
+		batchSize.type = 'hidden';
+		batchSize.name = 'batch-size';
+		batchSize.value = '10';
+		document.getElementById('query-form').appendChild(batchSize);
+	});
 	const pageValues = Array.from({ length: 11 }, (_, index) =>
 		`<urn:toolbar:item${String(index + 1).padStart(2, '0')}>`).join(' ');
 	await executeAndWait(page, monitor,
@@ -321,10 +341,11 @@ test('result toolbar controls stay intrinsic and options anchor to their trigger
 
 	const result = page.locator('#query-results .query-result-layout');
 	const countLabel = result.locator('.query-result-navigation__label').first();
-	await expect(countLabel).toHaveText('Page 1 of 2');
+	await expect(countLabel).toHaveText('10 loaded rows');
+	await expect(result.locator('.query-result-load-more')).toBeVisible();
 	const toolbar = result.locator('.query-result-toolbar');
-	const downloadToggle = toolbar.locator('button').filter({ hasText: 'Download' });
-	const optionsToggle = toolbar.locator('button').filter({ hasText: 'Options' });
+	const downloadToggle = toolbar.locator('.query-result-download-toggle');
+	const optionsToggle = toolbar.locator('.query-result-options-toggle');
 	for (const toggle of [downloadToggle, optionsToggle]) {
 		const width = await toggle.evaluate(button => button.getBoundingClientRect().width);
 		expect.soft(width, 'toolbar disclosures should use their intrinsic button width').toBeLessThan(180);
@@ -385,11 +406,11 @@ test('result toolbar controls stay intrinsic and options anchor to their trigger
 	expect(mobileGeometry.panelRight).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
 	expect(mobileGeometry.panelLeft + mobileGeometry.anchor).toBeCloseTo(mobileGeometry.triggerCenter, 0);
 
-	const nextPage = result.getByRole('button', { name: 'Next page' });
-	await nextPage.click();
+	await result.locator('.query-result-load-more').click();
 	await expect.poll(() => monitor.executions.length).toBe(2);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
-	await expect(countLabel).toHaveText('Page 2 of 2');
+	await expect(countLabel).toHaveText('11 loaded rows');
+	await expect(result.locator('.query-result-load-more')).toBeHidden();
 	expect(pageErrorsSince(monitor, 0)).toEqual([]);
 });
 

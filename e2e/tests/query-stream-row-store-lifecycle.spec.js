@@ -17,20 +17,33 @@ const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
 	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
 	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const REPOSITORY_ID = 'xslt-migration-root-review';
-const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
-const SUMMARY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/summary`;
 const ROW_STORE_DATABASE = 'rdf4j-workbench-query-results';
 const ROW_STORE_RECOVERY_PREFIX = 'rdf4j.workbench.query-results.pending-disposal.v1:';
 const ROW_COUNT = 20000;
 const SCROLL_ROW_COUNT = 320;
+const QUERY_REPOSITORY_ID = `query-row-lifecycle-query-${process.pid}-${Date.now().toString(36)}`;
+const QUERY_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}`;
+const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}/query`;
+const SUMMARY_URL = `${WORKBENCH_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}/summary`;
 const SCROLL_REPOSITORY_ID = `query-row-lifecycle-scroll-${process.pid}-${Date.now().toString(36)}`;
 const SCROLL_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}`;
 const SCROLL_URL = `${WORKBENCH_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}/contexts`;
 const SCROLL_SUMMARY_URL = `${WORKBENCH_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}/summary`;
 let scrollRepositoryCreated = false;
+let queryRepositoryCreated = false;
 
 test.beforeAll(async ({ request }) => {
+	const existingQueryRepository = await request.get(QUERY_REPOSITORY_URL);
+	if (![400, 404].includes(existingQueryRepository.status())) {
+		throw new Error(`Refusing to use non-absent disposable repository ${QUERY_REPOSITORY_ID}: GET ${existingQueryRepository.status()}`);
+	}
+	const createdQueryRepository = await request.put(QUERY_REPOSITORY_URL, {
+		headers: { 'Content-Type': 'text/turtle' },
+		data: scrollRepositoryConfiguration(QUERY_REPOSITORY_ID)
+	});
+	expect([200, 201, 204]).toContain(createdQueryRepository.status());
+	queryRepositoryCreated = true;
+
 	const existing = await request.get(SCROLL_REPOSITORY_URL);
 	if (![400, 404].includes(existing.status())) {
 		throw new Error(`Refusing to use non-absent disposable repository ${SCROLL_REPOSITORY_ID}: GET ${existing.status()}`);
@@ -50,6 +63,18 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
+	if (queryRepositoryCreated) {
+		const deleted = await request.delete(QUERY_REPOSITORY_URL);
+		expect([200, 204, 400, 404]).toContain(deleted.status());
+		const absent = await request.get(QUERY_REPOSITORY_URL);
+		expect([400, 404]).toContain(absent.status());
+		console.log(`[query-row-store-query-repository-cleanup] ${JSON.stringify({
+			repositoryId: QUERY_REPOSITORY_ID,
+			deleteStatus: deleted.status(),
+			followupStatus: absent.status(),
+			absent: true
+		})}`);
+	}
 	if (scrollRepositoryCreated) {
 		const deleted = await request.delete(SCROLL_REPOSITORY_URL);
 		expect([200, 204, 400, 404]).toContain(deleted.status());
@@ -64,7 +89,7 @@ test.afterAll(async ({ request }) => {
 	}
 });
 
-test('releases unlimited query rows on reload and page navigation', async ({ page }, testInfo) => {
+test('releases batched query rows on reload and page navigation', async ({ page }, testInfo) => {
 	test.setTimeout(120000);
 	const pageErrors = [];
 	const executions = [];
@@ -91,7 +116,7 @@ test('releases unlimited query rows on reload and page navigation', async ({ pag
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
 	const firstPageStorage = await readRowStoreSnapshot(page);
 
-	await runUnlimitedQuery(page);
+	await runBatchedQuery(page);
 	const firstActiveStorage = await readRowStoreSnapshot(page);
 	const firstExecutionStoreId = assertAddedQueryRows(firstPageStorage, firstActiveStorage, ROW_COUNT);
 	const baselineStoreIds = new Set(baselineStorage.storeRecords.map(store => store.id));
@@ -113,15 +138,16 @@ test('releases unlimited query rows on reload and page navigation', async ({ pag
 	let afterReloadStorage;
 	if (reloadPageHide.persisted) {
 		afterReloadStorage = await readRowStoreSnapshot(page);
-		expect(afterReloadStorage.rowRecordCount).toBe(firstActiveStorage.rowRecordCount);
+		expect(afterReloadStorage.logicalRowCount).toBe(firstActiveStorage.logicalRowCount);
+		expect(afterReloadStorage.physicalRowRecordCount).toBe(firstActiveStorage.physicalRowRecordCount);
 	} else {
 		afterReloadStorage = await waitForExecutionStoreReleased(page, baselineStorage,
 			firstPageOwnedStoreIds);
-		expect(afterReloadStorage.orphanRowCount).toBe(baselineStorage.orphanRowCount);
+		expect(afterReloadStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
 		expect(await page.locator('#query-results .query-result-layout').count()).toBe(0);
 	}
 
-	await runUnlimitedQuery(page);
+	await runBatchedQuery(page);
 	const secondActiveStorage = await readRowStoreSnapshot(page);
 	const secondExecutionStoreId = assertAddedQueryRows(afterReloadStorage, secondActiveStorage, ROW_COUNT);
 	const secondResult = await visibleQueryResult(page);
@@ -140,9 +166,10 @@ test('releases unlimited query rows on reload and page navigation', async ({ pag
 		? await readRowStoreSnapshot(page)
 		: await waitForExecutionStoreReleased(page, baselineStorage, secondPageStoreIds);
 	if (queryPageHide.persisted) {
-		expect(afterNavigationStorage.rowRecordCount).toBe(secondActiveStorage.rowRecordCount);
+		expect(afterNavigationStorage.logicalRowCount).toBe(secondActiveStorage.logicalRowCount);
+		expect(afterNavigationStorage.physicalRowRecordCount).toBe(secondActiveStorage.physicalRowRecordCount);
 	} else {
-		expect(afterNavigationStorage.orphanRowCount).toBe(baselineStorage.orphanRowCount);
+		expect(afterNavigationStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
 	}
 	const awayPage = await page.evaluate(() => ({ url: location.href, title: document.title }));
 
@@ -166,11 +193,12 @@ test('releases unlimited query rows on reload and page navigation', async ({ pag
 	if (bfcacheRestored) {
 		expect(returnedPage.queryResultCount, 'a BFCache-restored result view must retain its row store').toBe(1);
 		expect(returnedPage.queryResultStatus).toMatch(/20,?000 results\./);
-		expect(afterBackStorage.rowRecordCount).toBe(secondActiveStorage.rowRecordCount);
+		expect(afterBackStorage.logicalRowCount).toBe(secondActiveStorage.logicalRowCount);
+		expect(afterBackStorage.physicalRowRecordCount).toBe(secondActiveStorage.physicalRowRecordCount);
 	} else {
 		expect(returnedPage.queryResultCount, 'back navigation must not restore the disposed query result view').toBe(0);
 		expect(afterBackStorage.storeRecords.some(store => secondPageStoreIds.includes(store.id))).toBe(false);
-		expect(afterBackStorage.orphanRowCount).toBe(baselineStorage.orphanRowCount);
+		expect(afterBackStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
 	}
 	expect(pageErrors).toEqual([]);
 	expect(executions).toHaveLength(2);
@@ -178,7 +206,8 @@ test('releases unlimited query rows on reload and page navigation', async ({ pag
 
 	const report = {
 		queryUrl: QUERY_URL,
-		sequence: ['query 20000 rows with limit_query=0', 'reload', 'query 20000 rows with limit_query=0',
+		sequence: ['query 20000 rows with default batch-size=1000000', 'reload',
+			'query 20000 rows with default batch-size=1000000',
 			'navigate to Summary', 'browser back'],
 		bfcachePolicy: 'browser default; no launch flags override back-forward cache',
 		baselineStorage,
@@ -215,7 +244,7 @@ test('closing the query tab leaves a durable marker that a fresh same-origin tab
 	await page.locator('#query-form').waitFor({ state: 'visible' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
 	const before = await readRowStoreSnapshot(page);
-	await runUnlimitedQuery(page);
+	await runBatchedQuery(page);
 	const active = await readRowStoreSnapshot(page);
 	const resultStoreId = assertAddedQueryRows(before, active, ROW_COUNT);
 	await page.close();
@@ -238,11 +267,12 @@ test('closing the query tab leaves a durable marker that a fresh same-origin tab
 		}
 		return keys;
 	}, ROW_STORE_RECOVERY_PREFIX);
-	expect(after.orphanRowCount).toBe(0);
+	expect(after.orphanRowRecordCount).toBe(0);
 	expect(pendingMarkers).not.toContain(`${ROW_STORE_RECOVERY_PREFIX}${resultStoreId}`);
 	expect(pageErrors).toEqual([]);
 	const report = { before, active, resultStoreId, after, pendingMarkers, pageErrors,
-		sequence: ['query 20000 rows with limit_query=0', 'close query tab', 'open fresh same-origin tab', 'visit Summary'] };
+		sequence: ['query 20000 rows with default batch-size=1000000', 'close query tab',
+			'open fresh same-origin tab', 'visit Summary'] };
 	console.log(`[query-row-store-close-tab] ${JSON.stringify(report)}`);
 	await testInfo.attach('query-row-store-close-tab.json', {
 		body: Buffer.from(JSON.stringify(report, null, 2)), contentType: 'application/json'
@@ -339,10 +369,7 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 	});
 });
 
-async function runUnlimitedQuery(page) {
-	await page.locator('#query-options-toggle').click();
-	await page.locator('#limit_query').selectOption('0');
-	expect(await page.locator('#limit_query').inputValue()).toBe('0');
+async function runBatchedQuery(page) {
 	const values = Array.from({ length: ROW_COUNT }, (_, index) => String(index)).join(' ');
 	await page.locator('.CodeMirror').first().evaluate((element, query) => {
 		element.CodeMirror.setValue(query);
@@ -366,8 +393,9 @@ function assertAddedQueryRows(before, after, expectedCount) {
 	const addedStores = after.storeRecords.filter(store => !beforeIds.has(store.id));
 	expect(addedStores, 'one query execution should own one added row store').toHaveLength(1);
 	expect(addedStores[0].count).toBe(expectedCount);
-	expect(after.rowRecordCount - before.rowRecordCount).toBe(expectedCount);
-	expect(after.orphanRowCount).toBe(before.orphanRowCount);
+	expect(addedStores[0].physicalRecordCount).toBeGreaterThan(0);
+	expect(after.logicalRowCount - before.logicalRowCount).toBe(expectedCount);
+	expect(after.orphanRowRecordCount).toBe(before.orphanRowRecordCount);
 	return addedStores[0].id;
 }
 
@@ -378,7 +406,10 @@ async function readRowStoreSnapshot(page) {
 		}
 		const databases = await indexedDB.databases();
 		if (!databases.some(database => database.name === databaseName)) {
-			return { databaseExists: false, objectStores: [], storeRecords: [], rowRecordCount: 0, orphanRowCount: 0 };
+			return {
+				databaseExists: false, objectStores: [], storeRecords: [], logicalRowCount: 0,
+				physicalRowRecordCount: 0, orphanRowRecordCount: 0
+			};
 		}
 		const database = await new Promise((resolve, reject) => {
 			const request = indexedDB.open(databaseName);
@@ -388,7 +419,10 @@ async function readRowStoreSnapshot(page) {
 		});
 		const objectStores = Array.from(database.objectStoreNames);
 		if (!objectStores.includes('stores') || !objectStores.includes('rows')) {
-			const snapshot = { databaseExists: true, objectStores, storeRecords: [], rowRecordCount: 0, orphanRowCount: 0 };
+			const snapshot = {
+				databaseExists: true, objectStores, storeRecords: [], logicalRowCount: 0,
+				physicalRowRecordCount: 0, orphanRowRecordCount: 0
+			};
 			database.close();
 			return snapshot;
 		}
@@ -396,20 +430,20 @@ async function readRowStoreSnapshot(page) {
 		const storeRequest = transaction.objectStore('stores').getAll();
 		const rows = transaction.objectStore('rows');
 		const rowCountRequest = rows.count();
-		let perStoreCountPromises = [];
+		let perStoreRecordCountPromises = [];
 		const transactionComplete = new Promise((resolve, reject) => {
 			transaction.oncomplete = resolve;
 			transaction.onerror = () => reject(transaction.error || new Error('Unable to inspect query result rows.'));
 			transaction.onabort = () => reject(transaction.error || new Error('Query result inspection aborted.'));
 		});
-		const [storeRecords, rowRecordCount] = await Promise.all([
+		const [storeRecords, physicalRowRecordCount] = await Promise.all([
 			new Promise((resolve, reject) => {
 				storeRequest.onsuccess = () => {
 					const records = storeRequest.result;
-					perStoreCountPromises = records.map(store => new Promise((resolveCount, rejectCount) => {
+					perStoreRecordCountPromises = records.map(store => new Promise((resolveCount, rejectCount) => {
 						const range = IDBKeyRange.bound([store.id, 0], [store.id, 9007199254740991]);
 						const request = rows.count(range);
-						request.onsuccess = () => resolveCount({ id: store.id, count: request.result });
+						request.onsuccess = () => resolveCount({ id: store.id, physicalRecordCount: request.result });
 						request.onerror = () => rejectCount(request.error || new Error('Unable to count query result rows.'));
 					}));
 					resolve(records);
@@ -421,18 +455,25 @@ async function readRowStoreSnapshot(page) {
 				rowCountRequest.onerror = () => reject(rowCountRequest.error || new Error('Unable to count stored query rows.'));
 			})
 		]);
-		const perStoreCounts = await Promise.all(perStoreCountPromises);
+		const perStoreRecordCounts = await Promise.all(perStoreRecordCountPromises);
 		await transactionComplete;
 		database.close();
-		const normalizedStores = storeRecords.map(store => ({ id: store.id, count: store.count }))
+		const physicalCountByStoreId = new Map(perStoreRecordCounts.map(store => [store.id, store.physicalRecordCount]));
+		const normalizedStores = storeRecords.map(store => ({
+			id: store.id,
+			count: store.count,
+			format: store.format || null,
+			physicalRecordCount: physicalCountByStoreId.get(store.id) || 0
+		}))
 			.sort((left, right) => left.id.localeCompare(right.id));
-		const ownedRows = perStoreCounts.reduce((sum, store) => sum + store.count, 0);
+		const ownedPhysicalRecords = perStoreRecordCounts.reduce((sum, store) => sum + store.physicalRecordCount, 0);
 		return {
 			databaseExists: true,
 			objectStores,
 			storeRecords: normalizedStores,
-			rowRecordCount,
-			orphanRowCount: rowRecordCount - ownedRows
+			logicalRowCount: storeRecords.reduce((sum, store) => sum + store.count, 0),
+			physicalRowRecordCount,
+			orphanRowRecordCount: physicalRowRecordCount - ownedPhysicalRecords
 		};
 	}, ROW_STORE_DATABASE);
 }
@@ -445,11 +486,11 @@ async function waitForExecutionStoreReleased(page, baseline, storeIds) {
 		const retainedExecutionStores = current.storeRecords.filter(store => storeIds.includes(store.id));
 		return {
 			retainedStoreIds: retainedExecutionStores.map(store => store.id),
-			orphanRowCount: current.orphanRowCount
+			orphanRowRecordCount: current.orphanRowRecordCount
 		};
 	}, { timeout: 10000 }).toEqual({
 		retainedStoreIds: [],
-		orphanRowCount: baseline.orphanRowCount
+		orphanRowRecordCount: baseline.orphanRowRecordCount
 	});
 	return latestSnapshot;
 }

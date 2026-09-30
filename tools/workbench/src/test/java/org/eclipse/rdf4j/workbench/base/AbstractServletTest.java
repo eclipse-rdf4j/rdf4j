@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -27,6 +28,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
@@ -138,6 +140,26 @@ class AbstractServletTest {
 		verify(response).setContentType(WorkbenchPageProtocol.CONTENT_TYPE);
 		verify(response).setHeader("Cache-Control", "no-cache, no-store");
 		verify(response).addHeader("Vary", "Accept");
+	}
+
+	@Test
+	void queryCompactAcceptDoesNotPromoteGenericPageWriters() throws Exception {
+		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
+		servlet.init(new TestServletConfig("example", new MockServletContext(), java.util.Map.of()));
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.addHeader(AbstractServlet.ACCEPT,
+				"application/vnd.rdf4j.workbench-query-v2+ndjson," + WorkbenchPageProtocol.ACCEPT);
+		CapturingResponse response = new CapturingResponse();
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		var builder = servlet.exposeGetTupleResultBuilder(request, response, output);
+
+		builder.start("value");
+		builder.result(SimpleValueFactory.getInstance().createIRI("urn:generic-page"));
+		builder.end();
+
+		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+		assertThat(output.toString(StandardCharsets.UTF_8)).contains("\"version\":1", "\"kind\":\"iri\"")
+				.doesNotContain("\"term-encoding\"");
 	}
 
 	@Test

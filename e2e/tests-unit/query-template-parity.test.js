@@ -137,7 +137,7 @@ test('query page preserves configured, fallback, and explicit timeout values', (
     }
 });
 
-test('query-page feature policy hides only configured controls and keeps format and unlimited choices', () => {
+test('query-page feature policy hides configured controls without rendering result page size', () => {
     const page = queryTemplate({
         defaults: { 'default-limit': '0', 'default-queryLn': 'SPARQL', 'default-infer': 'true' },
         queryFormats: ['SPARQL SPARQL 1.1', 'SERQL SeRQL'],
@@ -175,10 +175,9 @@ test('query-page feature policy hides only configured controls and keeps format 
         binding => binding.before.includes('data-result-fullscreen-enabled='), 'result fullscreen policy');
     assert.equal(fullscreen.value, 'false');
 
-    const allOption = page.templates.find(template => template.strings.join('').includes('<option value=')
-        && template.strings.join('').includes('?selected=') && template.values[0] === '0');
-    assert.ok(allOption, 'the unlimited 0 limit remains an available option');
-    assert.equal(allOption.values[1], true, 'configured limit 0 should select unlimited results');
+    const staticMarkup = page.templates.map(template => template.strings.join('')).join('');
+    assert.doesNotMatch(staticMarkup, /(?:id|name)="limit_query"|Rows Per Page/i,
+        'result collection no longer renders a query page-size control');
 
     const languageOptions = page.templates.filter(template => template.strings.join('').includes('<option value=')
         && template.values.some(value => value === 'SPARQL' || value === 'SERQL'))
@@ -325,7 +324,6 @@ test('individual query feature policies hide their matching controls and explana
         ['id="query-diff-trigger"', 'query-diff'],
         ['id="query-compare-swap"', 'query-swap'],
         ['id="rerun-explanation"', 'query-rerun'],
-        ['id="limit_query"', 'result-page-size'],
         ['id="query-sidebar-toggle"', 'editor-sidebar'],
         ['id="query-reset-namespaces"', 'editor-namespaces'],
         ['id="explain-format"', 'explain-format-text'],
@@ -348,6 +346,9 @@ test('individual query feature policies hide their matching controls and explana
     }).map(([selector, feature]) => `${selector} (${feature})`);
 
     assert.deepEqual(missingPolicies, [], 'disabled features must hide their matching query control');
+    const staticMarkup = page.templates.map(template => template.strings.join('')).join('');
+    assert.doesNotMatch(staticMarkup, /(?:id|name)="limit_query"|Rows Per Page/i,
+        'legacy result-page-size policy cannot add a removed page-size field');
     assert.equal(dynamicAttributeValue(page, 'id="query-page"', 'data-editor-fullscreen-enabled'), 'false',
         'editor fullscreen policy is applied to both query editors');
     assert.equal(dynamicAttributeValue(page, 'id="query-results-fullscreen"', 'data-result-fullscreen-enabled'), 'false',
@@ -357,11 +358,14 @@ test('individual query feature policies hide their matching controls and explana
 test('saved query execute and edit preserve stored timeout and default legacy rows to unlimited time', () => {
     for (const [queryTimeout, expected] of [['17', '17'], [undefined, '0']]) {
         const page = savedQueryTemplate(queryTimeout);
+        const staticMarkup = page.templates.map(template => template.strings.join('')).join('');
         const timeoutValues = page.bindings
             .filter(binding => binding.before.includes('name="query-timeout"'))
             .map(binding => binding.value);
         assert.deepEqual(timeoutValues, [expected, expected],
             `both Execute and Edit should preserve the ${expected}-second saved-query timeout`);
+        assert.doesNotMatch(staticMarkup, /(?:id|name)="limit_query"|Rows Per Page/i,
+            'saved query actions no longer render the stored result page size');
     }
 });
 

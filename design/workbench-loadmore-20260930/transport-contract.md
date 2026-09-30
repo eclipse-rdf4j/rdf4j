@@ -1,0 +1,51 @@
+# Query result transport contract
+
+This document records the compact representation approved during the load-more implementation and the revised full-query contract requested on 2026-09-30. Historical gates below preceded that revision; current backend/frontend tests, the full-query >1m acceptance, packaged block-store gate and final six-case mobile disclosure regression are complete. Their preserved RED/GREEN reports and measurements are in `validation.md` and `source-inventory.md`. Root reviewed the real browser compression/cadence comparison and the final mobile screenshots. Existing page/download/API behavior keeps its legacy contract.
+
+## Original query execution and progress
+
+Each browser request prepares and evaluates the original query once, unchanged. `batch-size` bounds emitted rows (default 1,000,000); `batch-offset` only selects an output window by discarding the already loaded prefix in Workbench. Neither parameter adds SPARQL LIMIT or OFFSET. Explicit user clauses, query options and the configured timeout retain their semantics. After emitting its window, Workbench drains the same evaluation to exhaustion. The count includes skipped prefix rows, transmitted rows and the discarded tail.
+
+A `progress` record has `values` containing `result-evaluated-count`, `query-elapsed-ms` and `query-result-status: "evaluating"`. Counts and elapsed milliseconds are nonnegative integers and never regress within one request. Elapsed time uses a monotonic clock. Count milestones are fixed at 1,100,000, 1,200,000 and each following 100,000 results. A time update is also emitted after three seconds since the previous progress metadata; it does not move the next count milestone. The time trigger works while evaluation or its next-result operation waits. Progress is permitted after view selection, including before variables are known. It is a lower bound on processed rows; it does not claim an exact total or completion.
+
+On successful exhaustion and iterator closure, the `end` record supplies exact `total-result-count`, full `query-elapsed-ms`, `query-result-status: "completed"`, output offset/limit/count/next offset and `result-has-more`. Elapsed time is server-side execution/drain time, including output streaming backpressure; it is not isolated CPU time. More rows exist precisely when the total exceeds the emitted window's end. An empty window beyond the total still reports the exact total. Failure, timeout and cancellation never produce a successful end or an exact total for that execution. Load more retains the frozen request and a new cancellation ID, repeats this full unchanged evaluation, and appends only its selected window.
+
+The existing response-heartbeat scheduler provides an opt-in serializer callback for query progress. It invokes the callback outside its byte-output lock; Workbench serializes progress with complete NDJSON record writes. Stopping the callback waits for an in-flight record before terminal output. Initial progress emits only the pending view before variables, leaving namespaces and initial metadata in their normal positions. The last output-window row batch is flushed before tail counting; progress adds no per-row flush. The frontend keeps loaded rows browsable during the drain and shows processed count and elapsed time separately from locally loaded rows.
+
+The browser advertises `application/vnd.rdf4j.workbench-query-v2+ndjson` with quality 1 and the legacy `application/vnd.rdf4j.workbench+ndjson` fallback with quality 0.9. The server chooses the highest nonzero media quality; equal quality prefers v2. Only query execution uses v2. Its first record declares `version: 2` and `term-encoding: "array"`; version 1 retains object terms. Unsupported version/encoding pairs are rejected before domain records are accepted.
+
+## RDF terms
+
+| RDF value | Wire representation |
+| --- | --- |
+| Unbound cell | `null` |
+| IRI | `[0, iri]` |
+| Blank node | `[1, label]` |
+| Typed literal | `[2, lexical, datatype]` |
+| Language literal | `[2, lexical, null, language]` |
+| Directed language literal | `[2, lexical, null, language, "ltr" or "rtl"]` |
+| Triple term | `[3, subject, predicate, object]` |
+
+Tags, exact arities and member types are validated before storage. A triple subject is an IRI, blank node or triple; its predicate is an IRI; its object is a bound RDF term. Direction is permitted only on language literals and must be `ltr` or `rtl`. Ordinary language and typed literals retain their smaller arities. The branch's `Literal.getBaseDirection()` and `NTriplesUtil.append` define the supported directed-literal semantics; display and explore syntax preserves `@ar--rtl`, while HTML retains separate `lang="ar"` and `dir="rtl"` attributes. The legacy v1 writer remains compatible.
+
+Packed rows stay packed in the worker-owned IndexedDB store. The main thread normalizes only the bounded visible window for existing term formatting, accessible rendering and exploration links; it does not retain a second decoded million-row term graph. Blank nodes receive the response's scope after wire validation, including blank nodes inside recursive triple terms. The local packed blank representation adds that scope as its third member; this internal member is forbidden on the wire. Namespace and blank-node scope contexts remain distinct across appended batches.
+
+## Local storage work
+
+The measured storage owner uses `blocks-v1` metadata for new stores in the existing version-1 IndexedDB database and composite key paths. Each physical block starts at its logical row index and holds at most 1,024 opaque packed rows. Variable-sized blocks also observe a conservative 256 KiB storage work/raw-term-volume budget; one oversized row occupies a block alone. The estimate charges each new string three times its UTF-16 length plus primitive, container, key and slot costs, stopping once the row exceeds the budget. It is neither an exact serialized-JSON-byte limit nor a browser-heap cap. JSON escaping and browser overhead differ, and no historical-block or duplicate full-string serialization is added.
+
+Append reads and rewrites only a bounded partial tail that can accept the next row. Read fetches the covering predecessor and forward intersecting blocks, returning only the requested logical slice. Truncate atomically retains a partial prefix block, range-deletes later blocks and updates exact logical metadata. Dispose range-deletes only its own records and metadata. Existing stores without the marker retain their flat row layout and stay usable beside new stores without upgrading another tab's database connection. The wire cadence and exact encoded-record byte cap remain separate from this storage-volume budget. Native complexity, variable-volume and legacy/open-connection regressions passed 30/30 across Chromium, Firefox and WebKit against the packaged assets. The matched 100k network-free worker sample, full 1.201m result-store ownership, and page-model-store limits are recorded in `validation.md`.
+
+## Framing and cadence
+
+NDJSON remains one complete JSON record per UTF-8 line. Header, view, variables, namespaces, metadata and terminal records retain their order. The first row record contains up to 32 rows for progressive display. Later records contain up to 1,024 rows and at most 256 KiB of encoded JSON. A single row larger than the cap is emitted alone, losslessly; it is never truncated or split across records. The byte cap includes JSON escaping and UTF-8 widths, rather than estimating string characters.
+
+Each frontend record callback is awaited, preserving storage backpressure and request cancellation. The successful terminal record follows full original-query exhaustion and supplies the exact total and full elapsed time described above. Failed/cancelled append removes only the uncommitted tail; a retry uses the frozen execution and original continuation offset.
+
+## Compression selection gate
+
+Before this feature, Workbench browser streams used identity. The query-local compression owner now negotiates the measured supported codec; the separate Server filter and downloads remain outside this change. Retained loopback probes compare array and object terms with identity, gzip level 1, zlib-wrapped deflate level 1, Brotli level 0, zstd level 1 and negative zstd fast levels on representative tuple, graph and long-literal streams. Measurements include compressed bytes, encode/decode/normalized parse CPU, record cadence, native browser negotiation and unfinished-frame first-record delivery.
+
+The approved zstd level 1 choice reflects combined delivery size and CPU. Negative levels encode slightly faster but produce materially larger output; no globally fastest or raw-encoder-fastest claim is made. Native HTTP negotiation respects quality values, exclusions and identity fallback; browser JavaScript does not override Accept-Encoding. Responses vary on the relevant Accept and Accept-Encoding headers. HTTP zstd frames are constrained and tested to a window of at most 8 MiB. Gzip level 1 has lower measured CPU than HTTP deflate level 1, with only a 12-byte wrapper difference. At equal quality the owner prefers zstd, gzip, HTTP deflate, then Brotli quality 0; explicit client quality, exclusions and identity preference take precedence. Native progressive decoding passed all 156 supported cases.
+
+The evidence report is `/tmp/rdf4j7-workbench-loadmore-20260930/codec-format-report.md`. The object/v1/identity million-row baseline precedes promotion and is not current-contract evidence. The final timeout-zero run contains 1,201,000 results: it streams the first 1,000,000, reports progress at 1.1m/1.2m, drains the unchanged query to exact total and elapsed time, and Load more reruns that same query with local prefix skip before appending only 201,000 rows. First/middle/final Table and Records browsing triggers no request. The machine-readable phases, native v2/zstd response bytes, owner IDs and snapshots are in `/tmp/rdf4j7-workbench-loadmore-20260930/full-query-reset-table-20260930-140121/`. Native capability comparisons independently verify decoded lexical equality, browser-native negotiation, progressive first-record delivery and final payload hashes.

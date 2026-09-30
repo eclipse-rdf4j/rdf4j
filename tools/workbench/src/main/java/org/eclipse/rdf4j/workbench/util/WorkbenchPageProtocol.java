@@ -38,6 +38,9 @@ public final class WorkbenchPageProtocol {
 	}
 
 	public static boolean requestsPageData(HttpServletRequest request) {
+		if (request.getAttribute(WorkbenchQueryProtocol.VERSION_ATTRIBUTE) instanceof Integer) {
+			return !hasExplicitResultFormat(request) && WorkbenchQueryProtocol.version(request) > 0;
+		}
 		return !hasExplicitResultFormat(request) && accepts(request.getHeader("Accept"), ACCEPT);
 	}
 

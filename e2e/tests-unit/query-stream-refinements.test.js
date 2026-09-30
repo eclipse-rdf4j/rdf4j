@@ -576,13 +576,13 @@ test('tuple, graph, and both boolean results keep Workbench metadata out of visi
     }
 });
 
-test('download limit defaults to All independently of the selected result page size', async () => {
+test('download limit defaults to All independently of the query batch size', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 10,
+        requestedLimit: 1000000,
         rowStore: inMemoryRowStore(),
         workbench: { defaults: { 'default-download-limit': '0' } }
     });
@@ -594,9 +594,11 @@ test('download limit defaults to All independently of the selected result page s
         'result-limit': 10
     } });
 
-    assert.equal(renderer.pageLimitControl.value, '10');
     assert.equal(renderer.downloadLimitControl.value, '0');
     assert.equal(renderer.downloadLimitControl.children.find(option => option.value === '0').textContent, 'All');
+    assert.equal(renderer.root.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false,
+        'the download limit is independent of a removed result page-size control');
+    assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
     renderer.dispose();
 });
 
@@ -667,7 +669,8 @@ test('streamed renderer restores download/options/fullscreen controls and avoids
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 0,
+        requestedLimit: 1000000,
+        batched: true,
         maxDomRows: 20,
         rowStore: inMemoryRowStore()
     });
@@ -678,15 +681,19 @@ test('streamed renderer restores download/options/fullscreen controls and avoids
     assert.ok(renderer.downloadLimitControl);
     assert.ok(renderer.datatypeControl);
 
+    renderer.beginBatch(0);
+    await renderer.accept({ type: 'head', version: 1 });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
     await renderer.accept({ type: 'rows', values: Array.from({ length: 100000 }, (_, index) => [
         { kind: 'literal', value: String(index) }
     ]) });
     await renderer.accept({ type: 'end', metadata: {
-        'total-result-count': 100000,
         'result-offset': 0,
-        'result-limit': 0
+        'result-limit': 1000000,
+        'result-batch-count': 100000,
+        'result-has-more': false,
+        'result-next-offset': 100000
     } });
     assert.equal(renderer.state.rowCount, 100000);
     assert.equal(Array.isArray(renderer.state.rows), false,
@@ -711,8 +718,7 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     executionForm.setAttribute('method', 'post');
     for (const control of [
         { name: 'action', value: 'exec' },
-        { name: 'query', value: 'SELECT ?value WHERE {?s ?p ?value}' },
-        { name: 'limit_query', value: '0' }
+        { name: 'query', value: 'SELECT ?value WHERE {?s ?p ?value}' }
     ]) {
         const input = document.createElement('input');
         input.name = control.name;
@@ -820,35 +826,51 @@ test('query result toolbar toggles expose stable semantic classes', () => {
     renderer.dispose();
 });
 
-test('paging label identifies the current page and total page count', async () => {
+test('result summaries report exact totals and follow explicit batch continuation', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
 
-    for (const page of [
-        { offset: 0, limit: 10, rowCount: 2, totalCount: 2, expected: 'Page 1 of 1' },
-        { offset: 0, limit: 1, rowCount: 1, totalCount: 2, expected: 'Page 1 of 2' },
-        { offset: 1, limit: 1, rowCount: 1, totalCount: 2, expected: 'Page 2 of 2' }
+    for (const batch of [
+        { rowCount: 2, hasMore: true, total: 4, elapsed: 3500,
+            expectedLabel: '2 loaded rows of 4', expectedStatus: '2 loaded rows of 4 results. Complete query: 3500 ms.' },
+        { rowCount: 1, hasMore: false, total: 1, elapsed: 2100,
+            expectedLabel: '1 loaded rows of 1', expectedStatus: '1 loaded rows of 1 results. Complete query: 2100 ms.' }
     ]) {
         const target = document.createElement('section');
         document.body.appendChild(target);
         const renderer = new queryStream.QueryResultRenderer(target, {
-            requestedOffset: page.offset,
-            requestedLimit: page.limit,
-            rowStore: inMemoryRowStore()
+            requestedOffset: 0,
+            requestedLimit: 2,
+            batched: true,
+            rowStore: inMemoryRowStore(),
+            onLoadMore() {}
         });
+        renderer.beginBatch(0);
+        await renderer.accept({ type: 'head', version: 1 });
         await renderer.accept({ type: 'view', id: 'tuple' });
         await renderer.accept({ type: 'vars', values: ['value'] });
-        await renderer.accept({ type: 'rows', values: Array.from({ length: page.rowCount }, (_, index) => [
-            { kind: 'literal', value: String(page.offset + index + 1) }
+        await renderer.accept({ type: 'rows', values: Array.from({ length: batch.rowCount }, (_, index) => [
+            { kind: 'literal', value: String(index + 1) }
         ]) });
         await renderer.accept({ type: 'end', metadata: {
-            'total-result-count': page.totalCount,
-            'result-offset': page.offset,
-            'result-limit': page.limit
+            'total-result-count': batch.total,
+            'result-offset': 0,
+            'result-limit': 2,
+            'result-batch-count': batch.rowCount,
+            'result-has-more': batch.hasMore,
+            'result-next-offset': batch.rowCount,
+            'query-elapsed-ms': batch.elapsed,
+            'query-result-status': 'completed'
         } });
 
-        assert.equal(renderer.countLabel.textContent, page.expected,
-            'paging must use the requested offset and the number of pages, not row count');
+        assert.equal(renderer.countLabel.textContent, batch.expectedLabel,
+            'the summary describes rows loaded in the local result store');
+        assert.equal(renderer.status.textContent, batch.expectedStatus,
+            'the completed summary includes the exact evaluated total and elapsed time');
+        assert.equal(renderer.loadMoreButton.hidden, !batch.hasMore,
+            'continuation visibility comes from explicit batch metadata');
+        assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
+        assert.equal(renderer.root.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false);
         renderer.dispose();
     }
 });
@@ -967,7 +989,7 @@ test('streamed timeout after rows is marked partial without completion-only resu
         target.appendChild(loading);
         document.body.appendChild(target);
         const renderer = new queryStream.QueryResultRenderer(target, {
-            requestedLimit: 0,
+            requestedLimit: 1000000,
             rowStore: inMemoryRowStore()
         });
 
@@ -1055,13 +1077,13 @@ test('streamed timeout after rows is marked partial without completion-only resu
         + `cancelled observation=${JSON.stringify(cancelled)}`);
 });
 
-test('partial Records remain locally navigable while server result paging stays hidden', async () => {
+test('partial Records stay scrollable without paging and keep Load more hidden', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 0,
+        requestedLimit: 1000000,
         initialLayout: 'records',
         maxDomRows: 2,
         rowStore: inMemoryRowStore()
@@ -1082,22 +1104,21 @@ test('partial Records remain locally navigable while server result paging stays 
     });
     renderer.setBusy(false);
 
-    assert.equal(renderer.recordNavigation.hidden, false,
-        'local navigation must remain available to inspect retained partial rows');
-    assert.equal(renderer.recordCountLabel.textContent, 'Partial rows 1–2 of 5 retained');
-    assert.equal(renderer.previousButton.hidden, true,
-        'server-side page requery controls must not imply that partial results are complete');
-    assert.equal(renderer.nextButton.hidden, true,
-        'server-side page requery controls must stay hidden after a partial result');
-    assert.equal(renderer.recordNextButton.disabled, false);
-    renderer.recordNextButton.click();
+    assert.match(renderer.status.textContent, /Incomplete results: 5 rows/);
+    assert.equal(renderer.records.children.length <= 4, true,
+        'partial record markup stays bounded to a small visible window with overscan');
+    assert.equal(renderer.rowPositionControl.hidden, false,
+        'the precise row locator remains available for retained partial results');
+    assert.equal(renderer.loadMoreButton.hidden, true,
+        'an incomplete stream without valid terminal continuation cannot expose Load more');
+    assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false,
+        'partial results do not expose result or record page controls');
+    renderer.rowPositionControl.value = '5';
+    renderer.rowPositionControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
 
-    assert.equal(renderer.recordCountLabel.textContent, 'Partial rows 3–4 of 5 retained');
-    assert.equal(renderer.records.children[0].getAttribute('data-query-record-index'), '2',
-        'the next local Records window must show rows retained after the first window');
-    assert.equal(renderer.recordPreviousButton.disabled, false);
-    assert.equal(renderer.nextButton.hidden, true);
+    assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '4'), true,
+        'the row locator can inspect retained partial rows without page navigation');
     renderer.dispose();
 });
 
@@ -1125,18 +1146,20 @@ test('partial circuit-breaker results preserve a safe server reason without time
     renderer.dispose();
 });
 
-test('result feature policy hides controls without changing unlimited row storage', async () => {
+test('result feature policy hides controls without changing loaded-row storage', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        requestedLimit: 0,
+        requestedLimit: 120,
+        batched: true,
+        onLoadMore() {},
         rowStore: inMemoryRowStore(),
         features: {
             'result-layout': false,
             'result-wrap': false,
-            'result-page-size': false,
+            'result-paging': false,
             'result-show-datatypes': false,
             'result-download': false,
             'result-download-format': false,
@@ -1145,51 +1168,48 @@ test('result feature policy hides controls without changing unlimited row storag
             'result-fullscreen': false
         }
     });
+    renderer.beginBatch(0);
+    await renderer.accept({ type: 'head', version: 1 });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
     await renderer.accept({ type: 'rows', values: Array.from({ length: 120 }, (_, index) => [
         { kind: 'literal', value: String(index) }
     ]) });
-    await renderer.accept({ type: 'end', metadata: { 'total-result-count': 120, 'result-limit': 0 } });
+    await renderer.accept({ type: 'end', metadata: {
+        'result-offset': 0,
+        'result-limit': 120,
+        'result-batch-count': 120,
+        'result-has-more': true,
+        'result-next-offset': 120
+    } });
 
     assert.equal(renderer.state.rowCount, 120);
     assert.equal(renderer.layoutControl.hidden, true);
     assert.equal(renderer.wrapControl.hidden, true);
-    assert.equal(renderer.pageLimitControl.hidden, true);
+    assert.equal(renderer.loadMoreButton.hidden, true,
+        'the result-paging policy hides only the continuation control');
     assert.equal(renderer.datatypeControl.hidden, true);
     assert.equal(renderer.downloadToggle.hidden, true);
     assert.equal(renderer.fullscreenButton.hidden, true);
     assert.equal(renderer.tableBody.children.length <= 82, true);
+    assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
+    assert.equal(renderer.root.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false);
     renderer.dispose();
 });
 
-test('result totals and paging controls honor independent feature policies', async () => {
+test('loaded-row summary and Load more honor independent feature policies', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const cases = [
         {
             feature: 'result-totals',
             totalsHidden: true,
-            previousHidden: false,
-            nextHidden: false
-        },
-        {
-            feature: 'result-page-previous',
-            totalsHidden: false,
-            previousHidden: true,
-            nextHidden: false
-        },
-        {
-            feature: 'result-page-next',
-            totalsHidden: false,
-            previousHidden: false,
-            nextHidden: true
+            loadMoreHidden: false
         },
         {
             feature: 'result-paging',
             totalsHidden: false,
-            previousHidden: true,
-            nextHidden: true
+            loadMoreHidden: true
         }
     ];
 
@@ -1197,29 +1217,34 @@ test('result totals and paging controls honor independent feature policies', asy
         const target = document.createElement('section');
         document.body.appendChild(target);
         const renderer = new queryStream.QueryResultRenderer(target, {
-            requestedOffset: 10,
+            requestedOffset: 0,
             requestedLimit: 10,
+            batched: true,
             rowStore: inMemoryRowStore(),
-            onPageOffset() {},
+            onLoadMore() {},
             features: { [resultCase.feature]: false }
         });
+        renderer.beginBatch(0);
+        await renderer.accept({ type: 'head', version: 1 });
         await renderer.accept({ type: 'view', id: 'tuple' });
         await renderer.accept({ type: 'vars', values: ['value'] });
         await renderer.accept({ type: 'rows', values: Array.from({ length: 10 }, (_, index) => [
             { kind: 'literal', value: String(index) }
         ]) });
         await renderer.accept({ type: 'end', metadata: {
-            'total-result-count': 30,
-            'result-offset': 10,
-            'result-limit': 10
+            'result-offset': 0,
+            'result-limit': 10,
+            'result-batch-count': 10,
+            'result-has-more': true,
+            'result-next-offset': 10
         } });
 
         assert.equal(renderer.countLabel.hidden, resultCase.totalsHidden,
-            `${resultCase.feature} should independently control the count label`);
-        assert.equal(renderer.previousButton.hidden, resultCase.previousHidden,
-            `${resultCase.feature} should independently control Previous page`);
-        assert.equal(renderer.nextButton.hidden, resultCase.nextHidden,
-            `${resultCase.feature} should independently control Next page`);
+            `${resultCase.feature} should independently control the loaded-row label`);
+        assert.equal(renderer.loadMoreButton.hidden, resultCase.loadMoreHidden,
+            `${resultCase.feature} should independently control Load more`);
+        assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
+        assert.equal(renderer.root.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false);
         renderer.dispose();
     }
 });
@@ -1228,9 +1253,8 @@ test('result layout, wrapping, size, datatype, fullscreen, and download-limit po
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const cases = [
-        { feature: 'result-layout', control: 'layoutControl', peers: ['wrapControl', 'pageLimitControl'] },
-        { feature: 'result-wrap', control: 'wrapControl', peers: ['layoutControl', 'pageLimitControl'] },
-        { feature: 'result-page-size', control: 'pageLimitControl', peers: ['layoutControl', 'wrapControl'] },
+        { feature: 'result-layout', control: 'layoutControl', peers: ['wrapControl'] },
+        { feature: 'result-wrap', control: 'wrapControl', peers: ['layoutControl'] },
         { feature: 'result-show-datatypes', control: 'datatypeControl', peers: ['layoutControl', 'wrapControl'] },
         { feature: 'result-fullscreen', control: 'fullscreenButton', peers: ['downloadLimitControl'] },
         { feature: 'result-download-limit', control: 'downloadLimitControl', peers: ['layoutControl', 'fullscreenButton'] }
@@ -1240,9 +1264,6 @@ test('result layout, wrapping, size, datatype, fullscreen, and download-limit po
         const target = document.createElement('section');
         document.body.appendChild(target);
         const renderer = new queryStream.QueryResultRenderer(target, {
-            requestedOffset: 10,
-            requestedLimit: 10,
-            onPageOffset() {},
             rowStore: inMemoryRowStore(),
             features: { [resultCase.feature]: false }
         });
@@ -1261,6 +1282,8 @@ test('result layout, wrapping, size, datatype, fullscreen, and download-limit po
             assert.equal(renderer[peer].hidden, false,
                 `${resultCase.feature} should not hide the independent ${peer} control`);
         }
+        assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false);
+        assert.equal(renderer.root.querySelectorAll('select').some(select => select.name === 'stream-result-limit'), false);
         renderer.dispose();
     }
 });

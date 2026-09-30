@@ -116,9 +116,9 @@ html[data-theme="dark"] .query-form {
 .query-explanation-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 0.45rem;
-    margin: 0 0 0.45rem;
+    align-items: flex-start;
+    gap: var(--workbench-control-gap, 8px);
+    margin: 0 0 var(--workbench-form-gap, 12px);
 }
 
 .query-explanation-copy {
@@ -268,27 +268,25 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     color: var(--query-code-ink);
 }
 
-.query-explanation-settings__section + .query-explanation-settings__section {
-    margin-top: 0.8rem;
-    padding-top: 0.8rem;
-    border-top: 1px solid var(--workbench-soft-rule);
+body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__content {
+    gap: var(--workbench-space-subgroup, 16px);
 }
 
 .query-explanation-settings__header {
-    margin-bottom: 0.55rem;
+    margin-bottom: var(--workbench-form-gap, 12px);
 }
 
 .query-explanation-settings__highlighting {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.55rem;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-highlight-mode {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-highlight-mode input[type='radio'] {
@@ -297,7 +295,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 }
 
 .query-explanation-highlight-mode label {
-    margin-right: 0.55rem;
+    margin-right: 0;
     color: var(--workbench-nav);
     font-size: var(--workbench-control-font-size);
     cursor: pointer;
@@ -327,15 +325,16 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 
 .query-explanation-property-config__header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--workbench-form-gap, 12px) var(--workbench-space-subgroup, 16px);
 }
 
 .query-explanation-property-config__title {
     display: inline-flex;
     align-items: baseline;
-    gap: 0.55rem;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-property-config__count {
@@ -347,14 +346,14 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 
 .query-explanation-property-config__actions {
     display: inline-flex;
-    gap: 0.3rem;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-property-config__actions button {
     box-sizing: border-box;
     margin: 0;
     min-height: var(--workbench-control-height);
-    padding: 0 12px;
+    padding: 0 var(--workbench-control-inset, 12px);
     border: 1px solid var(--workbench-rule);
     border-radius: var(--workbench-control-radius);
     background: var(--workbench-surface);
@@ -376,10 +375,10 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 .query-explanation-property-config__options {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.18rem 0.65rem;
+    gap: var(--workbench-control-gap, 8px) var(--workbench-space-subgroup, 16px);
     max-height: 15rem;
-    margin: 0.65rem -0.3rem 0;
-    padding: 0 0.3rem;
+    margin: var(--workbench-form-gap, 12px) 0 0;
+    padding: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
 }
@@ -388,8 +387,8 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     display: flex;
     align-items: flex-start;
     min-width: 0;
-    gap: 0.38rem;
-    padding: 0.3rem 0.34rem;
+    gap: var(--workbench-control-gap, 8px);
+    padding: var(--workbench-field-gap, 4px);
     border-radius: 0.32rem;
     cursor: pointer;
     font-family: var(--workbench-font);
@@ -409,11 +408,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 }
 
 .query-explanation-property-config__hint {
-    margin: 0.65rem 0 0;
-    padding-top: 0.55rem;
-    border-top: 1px solid var(--workbench-soft-rule);
-    color: var(--query-code-muted);
-    font-size: 0.78em;
+    margin: var(--workbench-field-gap, 4px) 0 0;
 }
 
 @media (max-width: 48rem) {
@@ -633,6 +628,15 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     padding: 0;
     cursor: pointer;
     flex: 0 0 auto;
+}
+
+/* Branch buttons and leaf spacers share one compact indentation column. */
+body.workbench-body .workbench-page-surface .query-json-node__toggle {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
 }
 
 .query-json-node__toggle:hover {
