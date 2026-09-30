@@ -20,8 +20,17 @@ The QEMU durability job must test actual running LMDB transactions as well as it
 - [done] Add causal telemetry and phase regressions.
 - [done] Repair counters and activity claim semantics.
 - [done] Verify focused native and Python contracts.
-- [in_progress] Format follow-up and publish scoped repair.
-- [todo] Monitor final exact-head hosted CI.
+- [done] Format and publish causal follow-up.
+- [todo] Monitor latest exact-head hosted CI.
+- [done] Preserve user-stopped RDFS run evidence.
+- [done] Add failing five-second default test.
+- [done] Update shared default and documentation.
+- [done] Add runtime default coordinator contract.
+- [done] Verify coordinator default and overrides.
+- [done] Run focused config and coordinator tests.
+- [done] Format and publish timeout default repair.
+- [done] Record DataAndShapes stall unresolved.
+- [in_progress] Verify latest exact-head hosted CI.
 - [todo] Resume local ARM64 campaigns if hosted blocked.
 - [todo] Record final CI evidence and disposition.
 

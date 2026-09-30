@@ -106,9 +106,9 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void mapGrowthReadDrainTimeoutDefaultsToThirtySeconds() {
+	void mapGrowthReadDrainTimeoutDefaultsToFiveSeconds() {
 		assertThat(invokeLongGetter(new LmdbStoreConfig(), "getMapGrowthReadDrainTimeoutMillis"))
-				.isEqualTo(30_000L);
+				.isEqualTo(5_000L);
 	}
 
 	@Test
@@ -413,14 +413,14 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(longs = { 0L, 30_000L, 90_000L })
+	@ValueSource(longs = { 0L, 5_000L, 30_000L, 90_000L })
 	void testThatLmdbStoreConfigParseAndExportMapGrowthReadDrainTimeoutMillis(final long timeoutMillis) {
 		testParseAndExportReflectiveLong(
 				MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS,
 				Values.literal(timeoutMillis),
 				"getMapGrowthReadDrainTimeoutMillis",
 				timeoutMillis,
-				timeoutMillis != 30_000L
+				timeoutMillis != 5_000L
 		);
 	}
 

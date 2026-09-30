@@ -48,8 +48,24 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbMapGrowthCoordinatorTest {
+
+	@Test
+	@Timeout(value = 5, unit = TimeUnit.SECONDS)
+	void defaultStoreUsesFiveSecondReadDrainDeadline(@TempDir Path dataDir) throws Exception {
+		assertWarningDeadline(new LmdbStore(dataDir.toFile()), 5_000L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 30_000L, 90_000L })
+	@Timeout(value = 5, unit = TimeUnit.SECONDS)
+	void explicitReadDrainTimeoutControlsWarningDeadline(long timeoutMillis, @TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setMapGrowthReadDrainTimeoutMillis(timeoutMillis);
+		assertWarningDeadline(new LmdbStore(dataDir.toFile(), config), timeoutMillis);
+	}
 
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -722,6 +738,32 @@ class LmdbMapGrowthCoordinatorTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setMapGrowthReadDrainTimeoutMillis(readDrainTimeoutMillis);
 		return new LmdbStore(dataDir.toFile(), config);
+	}
+
+	private static void assertWarningDeadline(LmdbStore store, long expectedTimeoutMillis) throws Exception {
+		store.init();
+		try {
+			LmdbSailStore backing = store.getBackingStore();
+			long before = System.nanoTime();
+			LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(new Object());
+			long after = System.nanoTime();
+			if (expectedTimeoutMillis == 0) {
+				assertNull(warning, "zero must disable the advisory warning");
+				assertFalse(backing.growthAdmissionClosed(), "disabled warning must leave admission open");
+				return;
+			}
+
+			assertTrue(warning != null, "a positive timeout must create an advisory warning");
+			try (warning) {
+				long expectedNanos = TimeUnit.MILLISECONDS.toNanos(expectedTimeoutMillis);
+				assertTrue(warning.deadlineNanos() >= before + expectedNanos,
+						"warning deadline must not be shorter than the configured timeout");
+				assertTrue(warning.deadlineNanos() <= after + expectedNanos,
+						"warning deadline must be measured when the warning starts");
+			}
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	private static boolean completesWithin(Future<?> future, long timeout, TimeUnit unit) throws Exception {
