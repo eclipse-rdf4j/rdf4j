@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Query-local, exact selected view of a borrowed relation. Values remain in the original source; selection runs use
  * logical quad positions and therefore preserve weights, including split fibers. Repeated selections are composed into
@@ -26,6 +28,7 @@ import java.util.Objects;
  * borrows upstream ownership; closing it never closes the upstream source. Readers and the upstream lease must outlive
  * reads.
  */
+@Experimental
 public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 	private final BorrowedFactorBatch batch = new BorrowedFactorBatch(this, 1);
 	private final FactorSelection ranges;

@@ -171,6 +171,7 @@ public final class LmdbNativePageProof {
 		return OutcomeMask.ofBits(outcomes);
 	}
 
+	@Experimental
 	public enum Outcome {
 		TRUE(OutcomeMask.TRUE_BIT),
 		FALSE(OutcomeMask.FALSE_BIT),
@@ -187,6 +188,7 @@ public final class LmdbNativePageProof {
 		}
 	}
 
+	@Experimental
 	public record OutcomeMask(int bits) {
 		public static final int TRUE_BIT = 1;
 		public static final int FALSE_BIT = 1 << 1;

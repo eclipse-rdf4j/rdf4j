@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -48,10 +49,15 @@ public final class ThemeDataSetGenerator {
 		TRAIN,
 		ELECTRICAL_GRID,
 		PHARMA,
+		@Experimental
 		ADAPTIVE_FILTER_PLACEMENT,
+		@Experimental
 		REAL_ESTATE,
+		@Experimental
 		DATA_TRANSFORMATION,
+		@Experimental
 		ANALYTICS,
+		@Experimental
 		EXPLORATION
 	}
 
@@ -112,14 +118,17 @@ public final class ThemeDataSetGenerator {
 		return new PharmaConfig();
 	}
 
+	@Experimental
 	public static AdaptiveFilterPlacementConfig adaptiveFilterPlacementConfig() {
 		return new AdaptiveFilterPlacementConfig();
 	}
 
+	@Experimental
 	public static RealEstateConfig realEstateConfig() {
 		return new RealEstateConfig();
 	}
 
+	@Experimental
 	public static DataTransformationConfig dataTransformationConfig() {
 		return new DataTransformationConfig();
 	}
@@ -1031,10 +1040,12 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	@Experimental
 	public static Model generateAdaptiveFilterPlacement(AdaptiveFilterPlacementConfig config) {
 		return generateModel(handler -> generateAdaptiveFilterPlacement(config, handler));
 	}
 
+	@Experimental
 	public static void generateAdaptiveFilterPlacement(AdaptiveFilterPlacementConfig config, RDFHandler handler) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(handler, "handler");
@@ -1069,10 +1080,12 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	@Experimental
 	public static Model generateRealEstate(RealEstateConfig config) {
 		return generateModel(handler -> generateRealEstate(config, handler));
 	}
 
+	@Experimental
 	public static void generateRealEstate(RealEstateConfig config, RDFHandler handler) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(handler, "handler");
@@ -1225,10 +1238,12 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	@Experimental
 	public static Model generateDataTransformation(DataTransformationConfig config) {
 		return generateModel(handler -> generateDataTransformation(config, handler));
 	}
 
+	@Experimental
 	public static void generateDataTransformation(DataTransformationConfig config, RDFHandler handler) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(handler, "handler");
@@ -1942,6 +1957,7 @@ public final class ThemeDataSetGenerator {
 		}
 	}
 
+	@Experimental
 	public static final class AdaptiveFilterPlacementConfig {
 		private int probeCount = 16_384;
 		private int qualifyingProbeCount = 256;
@@ -1979,6 +1995,7 @@ public final class ThemeDataSetGenerator {
 		}
 	}
 
+	@Experimental
 	public static final class RealEstateConfig {
 		private int districtCount = 150;
 		private int agentCount = 2500;
@@ -2131,6 +2148,7 @@ public final class ThemeDataSetGenerator {
 		}
 	}
 
+	@Experimental
 	public static final class DataTransformationConfig {
 		private int recordCount = 50_000;
 		private double optionalValueProbability = 0.61;

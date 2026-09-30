@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Predicate-major descriptors for exact, immutable, context-unrestricted neighbor relations. One lane belongs to one
  * parent binding; counts are logical quad multiplicities, NOT bytes or distinct-neighbor counts. Values remain in the
@@ -25,6 +27,7 @@ import java.util.Objects;
  * producer-confined and must not be reset while a reader is consuming it. Separate readers have independent decode
  * state. Scalar IDs never contain descriptor handles.
  */
+@Experimental
 public final class BorrowedFactorBatch {
 	public static final byte EMPTY = 0;
 	public static final byte HEAP = 1;
@@ -221,6 +224,7 @@ public final class BorrowedFactorBatch {
 	}
 
 	/** An evaluation/snapshot lease, not one reference count per descriptor. */
+	@Experimental
 	public abstract static class Source implements AutoCloseable {
 		private final Object snapshot;
 		private final boolean extraValidation;
@@ -275,6 +279,7 @@ public final class BorrowedFactorBatch {
 	}
 
 	/** One mutable decoder per consumer. The offset and returned weights are in logical quad rows. */
+	@Experimental
 	public interface Reader extends AutoCloseable {
 		void bind(BorrowedFactorBatch batch, int lane);
 
@@ -290,6 +295,7 @@ public final class BorrowedFactorBatch {
 	 * split an equal-neighbor group; adjacent equal weighted outputs are legal (and preserve the exact multiset).
 	 * Consumers requiring uniqueness must coalesce them.
 	 */
+	@Experimental
 	public static final class Cursor implements AutoCloseable {
 		private BorrowedFactorBatch batch;
 		private final Source source;

@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.zip.CRC32;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.model.Literal;
  * The staged bulk loader uses this codec as well, so changes to the normal writer's physical representation cannot
  * silently diverge from append-loaded stores.
  */
+@Experimental
 @InternalUseOnly
 public final class ValueStoreRecordCodec {
 

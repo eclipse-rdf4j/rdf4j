@@ -12,10 +12,12 @@
 
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Shared count/DISTINCT output boundary for emitted and interpreted kernels. */
+@Experimental
 public final class KernelGroupSink implements AutoCloseable {
 	private static final long[] NO_VALUES = {};
 	private final NativeCountGroupStore store;

@@ -77,6 +77,7 @@ public interface TripleSource extends AvailableStatementOrder {
 	 * Checks whether at least one statement matches the supplied pattern without requiring callers to materialize
 	 * converted bindings. Implementations with native indexes should override this to stop at the first record.
 	 */
+	@Experimental
 	default boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws QueryEvaluationException {
 		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {

@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetCompatibilityIndex;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
  * smallest posting for a bound shared variable and checks the remaining shared bindings without materializing a
  * candidate list.
  */
+@Experimental
 public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSet> implements CooperativeCancellation {
 
 	private final QueryEvaluationStep left;

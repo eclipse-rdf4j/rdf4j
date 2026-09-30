@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -194,6 +195,7 @@ public abstract class RepositoryTest {
 		}
 	}
 
+	@Experimental
 	protected void runGetAllStatementsStressTest() {
 		try (RepositoryConnection conn = testRepository.getConnection()) {
 			conn.add(bob, mbox, mboxBob);

@@ -2,7 +2,7 @@
 
 The SPARQL parser and its supporting AST sources are generated from
 `src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/sparql.jjt`. RDF4J keeps the generated
-sources in Git and carries parser and lexer optimizations as two ordered patches.
+sources in Git and carries parser optimizations, lexer optimizations, and API annotations as ordered patches.
 
 Use the repository management script from the RDF4J root instead of invoking JavaCC or Spotless
 manually:
@@ -76,16 +76,18 @@ The current checked-in Java files are the source of truth for customized generat
 new optimization:
 
 1. Start from a successful `regenerate` or `check` result.
-2. Edit `SyntaxTreeBuilder.java` and/or `SyntaxTreeBuilderTokenManager.java` directly and test the
-   behavior.
+2. Edit a registered patch target directly and test the behavior. The current targets are
+   `SyntaxTreeBuilder.java`, `SyntaxTreeBuilderTokenManager.java`, and `SyntaxTreeBuilderConstants.java`.
 3. Run `python3 scripts/manage-sparql-ast.py record`.
-4. Review both patch files, then run `python3 scripts/manage-sparql-ast.py check`.
+4. Review the patch files, then run `python3 scripts/manage-sparql-ast.py check`.
 
 The patches are deliberately file-scoped:
 
 - `patches/01-optimize-SyntaxTreeBuilder.diff` changes only `SyntaxTreeBuilder.java`.
 - `patches/02-optimize-SyntaxTreeBuilderTokenManager.diff` changes only
   `SyntaxTreeBuilderTokenManager.java`.
+- `patches/03-experimental-SyntaxTreeBuilderConstants.diff` changes only
+  `SyntaxTreeBuilderConstants.java` and preserves experimental token annotations.
 
 Do not hand-edit patch offsets or copy patches from a differently formatted baseline. Make the
 desired Java edit and let `record` serialize it.

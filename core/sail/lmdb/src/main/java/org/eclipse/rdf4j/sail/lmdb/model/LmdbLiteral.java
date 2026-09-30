@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -198,6 +199,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return internalID;
 	}
 
+	@Experimental
 	@Override
 	public long retainedLexicalLength() {
 		return label == null ? -1L : label.length();
@@ -338,6 +340,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 	}
 
+	@Experimental
 	@Override
 	public void init(Resolver resolver) {
 		if (!initialized) {
@@ -351,6 +354,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 	}
 
+	@Experimental
 	@Override
 	public boolean isInitialized() {
 		return initialized;

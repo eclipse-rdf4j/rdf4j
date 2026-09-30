@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
  * deliberately not duplicated. A context-reading consumer lazily resolves the original CSF row through one caller-local
  * {@link ImmutablePagedQuadCsfIndex.RowCursor}.
  */
+@Experimental
 public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
 	private static final long[] NO_NEIGHBORS = {};
 
@@ -244,6 +246,7 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	/** One generated probe site's mutable row binding; all large state remains immutable and base-owned. */
+	@Experimental
 	public final class DecodedBoundRunCursor implements NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor {
 		private final ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor decoded = new ImmutablePagedQuadCsfIndex.SharedPartitionLookup.DecodedRunCursor();
 		private long token;

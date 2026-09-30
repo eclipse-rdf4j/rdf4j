@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
@@ -52,6 +53,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 /**
  * Command-line entry point for the staged LMDB bulk loader.
  */
+@Experimental
 public final class LmdbBulkLoad {
 
 	private static final int SUCCESS = 0;

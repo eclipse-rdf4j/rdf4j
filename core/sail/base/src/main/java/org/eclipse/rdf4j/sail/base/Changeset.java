@@ -65,6 +65,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * Implementations preserve the optimized representation held by the changeset for sinks that can consume it. This
 	 * public type is an internal cross-module contract for Sail implementations, not an application-facing Sail API.
 	 */
+	@Experimental
 	@InternalUseOnly
 	public interface CompactApprovedSet extends Set<Statement> {
 		/**
@@ -497,6 +498,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		approve(Statements.statement(subj, pred, obj, ctx));
 	}
 
+	@Experimental
 	@Override
 	public long approveAll(Iterable<? extends Statement> statements, Resource... contexts) {
 		assert !closed;
@@ -552,6 +554,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		return compact.size();
 	}
 
+	@Experimental
 	protected List<Statement> bufferStatements(Iterable<? extends Statement> statements, int expectedSize,
 			Consumer<Resource> contextConsumer) {
 		ArrayList<Statement> compact = new ArrayList<>(expectedSize);

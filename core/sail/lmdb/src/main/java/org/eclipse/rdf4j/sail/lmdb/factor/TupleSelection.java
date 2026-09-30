@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Query-local selection of complete correlated tuples. A stable-row source retains only row offsets and prefix weights
  * (12 bytes/member); other sources retain logical position ranges. No tuple values are copied. The builder is bound to
@@ -24,6 +26,7 @@ import java.util.Objects;
  * Accepted tuple fragments must arrive in source order. This preserves duplicates, correlation and encounter order
  * within a group; it is not a set or a global distinct operation.
  */
+@Experimental
 public final class TupleSelection {
 	private final int initialCapacity;
 	private BorrowedTupleBatch input;

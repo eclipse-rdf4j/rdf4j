@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /** Public, primitive-only entry points used by generated Janino kernels. */
+@Experimental
 @InternalUseOnly
 public final class LmdbFusedKernelRuntime {
 
@@ -233,6 +235,7 @@ public final class LmdbFusedKernelRuntime {
 		FILTERS_RELOCATED.reset();
 	}
 
+	@Experimental
 	public record Telemetry(long sipTests, long sipRejects, long factorizedRowsAvoided, long filtersRelocated) {
 		public double sipRejectionRatio() {
 			return sipTests == 0 ? 0 : (double) sipRejects / sipTests;

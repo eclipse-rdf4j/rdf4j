@@ -17,6 +17,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
  * The {@code indexFieldSeq} names the index (e.g. {@code "posc"}) whose key space the bounds were planned against;
  * executors must assert they re-derived the same index before applying the bounds.
  */
+@Experimental
 @InternalUseOnly
 public final class LmdbKeyRange {
 

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
 
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
  * reader closes its child readers before its producing cursor. Instances are thread-confined and cannot outlive or
  * advance independently of the current producer prefix.
  */
+@Experimental
 public final class KernelFactorCursor implements AutoCloseable {
 	private final KernelPlan.FactorCursor factors;
 	private final KernelPlan.Cursor rows;

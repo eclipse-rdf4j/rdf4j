@@ -41,6 +41,7 @@ public final class KernelRuntime {
 	 * Optional owner for memory held by a kernel data structure. Implementations admit the requested bytes before the
 	 * structure allocates or publishes them and release bytes after an old backing store is no longer reachable.
 	 */
+	@Experimental
 	public interface MemoryAccount {
 
 		/** Attempts to reserve bytes for an allocation that has not happened yet. */
@@ -62,6 +63,7 @@ public final class KernelRuntime {
 	 * reservation and never closes the query ledger itself; the enclosing query still owns that ledger. Contexts
 	 * created by legacy callers without a ledger remain unbounded and therefore retain the historical behavior.
 	 */
+	@Experimental
 	public static final class AggregateMemory implements MemoryAccount, AutoCloseable {
 		private final LmdbQueryMemoryManager.QueryLedger ledger;
 		private LmdbQueryMemoryManager.Reservation reservation;
@@ -127,6 +129,7 @@ public final class KernelRuntime {
 	}
 
 	/** Stackless signal used when an optional kernel allocation cannot be admitted. */
+	@Experimental
 	public static final class AllocationDeniedException extends RuntimeException {
 		private static final long serialVersionUID = 1L;
 
@@ -673,6 +676,7 @@ public final class KernelRuntime {
 	 * plus head/tail/next chains over a flat payload arena so duplicate keys keep their multiplicity. The generated
 	 * build loop calls {@link #add}; the generated probe loop walks {@link #lookup}/{@link #next}/{@link #payload}.
 	 */
+	@Experimental
 	public static final class LongRowMap {
 
 		private final int keyWidth;
@@ -870,6 +874,7 @@ public final class KernelRuntime {
 		}
 	}
 
+	@Experimental
 	public static final class LongHashSet implements AutoCloseable {
 
 		private static final long SET_OBJECT_BYTES = 96L;
@@ -1095,6 +1100,7 @@ public final class KernelRuntime {
 	 * Open-addressing map from long keys to dense insertion-order ordinals (0, 1, 2, …), with reverse lookup of the key
 	 * for an ordinal. Used for single-column GROUP BY keys.
 	 */
+	@Experimental
 	public static final class LongIntMap implements AutoCloseable {
 
 		private static final long MAP_OBJECT_BYTES = 128L;
@@ -1344,6 +1350,7 @@ public final class KernelRuntime {
 	}
 
 	/** Primitive insertion-ordered pair-to-count map used by structural type-matrix terminals. */
+	@Experimental
 	public static final class LongPairCounts {
 		private long[] firstKeys;
 		private long[] secondKeys;
@@ -1467,6 +1474,7 @@ public final class KernelRuntime {
 	 * Interns fixed-stride packed rows (used for DISTINCT and for multi-column group keys). Rows are stored
 	 * contiguously in insertion order; an open-addressing index maps row content to its ordinal.
 	 */
+	@Experimental
 	public static final class RowSet implements AutoCloseable {
 
 		private static final long ROW_SET_OBJECT_BYTES = 128L;
@@ -1890,6 +1898,7 @@ public final class KernelRuntime {
 	 * intermediate result whose logical row count is the product of the unflat chunk sizes; nothing in this class
 	 * enumerates that product, which is exactly the point.
 	 */
+	@Experimental
 	public static final class ChunkState {
 
 		/** Number of live positions in {@link #selection}. */

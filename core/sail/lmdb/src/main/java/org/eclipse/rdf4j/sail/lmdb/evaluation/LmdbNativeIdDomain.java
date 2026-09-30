@@ -13,12 +13,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
  * Cursor over an unsigned-ascending domain of native value ids. Implementations may borrow immutable storage owned by a
  * retained probe, so every consumer receives and closes its own cursor rather than retaining a materialized array.
  */
+@Experimental
 @InternalUseOnly
 public interface LmdbNativeIdDomain extends AutoCloseable {
 

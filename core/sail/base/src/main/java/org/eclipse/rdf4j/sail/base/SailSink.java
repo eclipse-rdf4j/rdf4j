@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -136,6 +137,7 @@ public interface SailSink extends SailClosable {
 	 *
 	 * @return the number of statements approved after applying an optional context override
 	 */
+	@Experimental
 	default long approveAll(Iterable<? extends Statement> statements, Resource... contexts) throws SailException {
 		long count = 0;
 		for (Statement statement : statements) {

@@ -12,11 +12,14 @@
 
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Pure-shape source generation over the shared packed/borrowed f-tree column contract. No storage owner, native
  * address, query constant, or engine slot enters the compiled shape. Parent ordinals precede their children. This is
  * also usable by non-IR topology consumers.
  */
+@Experimental
 public final class PackedFtreeKernelSource {
 	private PackedFtreeKernelSource() {
 	}

@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Canonical allowlist of boolean LMDB features that are safe to change between queries in a running JVM.
  *
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
  * deliberately absent. A state is sampled when {@link #list()} or {@link #set(String, boolean)} is called; consumers
  * likewise read these properties at query or operator construction boundaries rather than caching them at class load.
  */
+@Experimental
 public final class LmdbRuntimeProperties {
 	private static final String HOT_COUNTERS = "rdf4j.lmdb.hotCounters";
 	private static final String ADJACENCY_SYNOPSIS = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
@@ -322,6 +325,7 @@ public final class LmdbRuntimeProperties {
 	}
 
 	/** Current effective state and presentation metadata for one allowlisted property. */
+	@Experimental
 	public record State(String name, String group, String label, String description, boolean defaultEnabled,
 			boolean enabled, boolean explicitlySet) {
 	}

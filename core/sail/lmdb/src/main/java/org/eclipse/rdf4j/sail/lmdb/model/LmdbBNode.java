@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -83,6 +84,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		return internalID;
 	}
 
+	@Experimental
 	@Override
 	public long retainedLexicalLength() {
 		return initialized ? super.getID().length() : -1L;
@@ -110,6 +112,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		}
 	}
 
+	@Experimental
 	@Override
 	public void init(Resolver resolver) {
 		if (!initialized) {
@@ -122,6 +125,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		}
 	}
 
+	@Experimental
 	@Override
 	public boolean isInitialized() {
 		return initialized;

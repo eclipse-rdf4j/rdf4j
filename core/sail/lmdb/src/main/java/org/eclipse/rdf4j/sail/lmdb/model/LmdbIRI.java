@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 import java.io.ObjectStreamException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.sail.SailException;
@@ -107,6 +108,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		return internalID;
 	}
 
+	@Experimental
 	@Override
 	public long retainedLexicalLength() {
 		return iriString == null ? -1L : iriString.length();
@@ -169,6 +171,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 	}
 
+	@Experimental
 	@Override
 	public void init(Resolver resolver) {
 		if (iriString == null && !initialized) {
@@ -184,6 +187,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 	}
 
+	@Experimental
 	@Override
 	public boolean isInitialized() {
 		return initialized || iriString != null;

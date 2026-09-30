@@ -28,6 +28,7 @@ import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
 import javax.xml.datatype.XMLGregorianCalendar;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -204,6 +205,7 @@ public class QueryEvaluationUtility {
 	 * result. Unresolved function calls are conservative barriers; a pinned function call is repeatable only when its
 	 * captured implementation is an exact known built-in class.
 	 */
+	@Experimental
 	public static boolean isRepeatable(QueryModelNode node) {
 		return snapshotFor(node).isRepeatable(node);
 	}
@@ -213,11 +215,13 @@ public class QueryEvaluationUtility {
 	 * its ancestors only up to the first ancestor already marked by another leaf, keeping propagation linear in the
 	 * number of nodes.
 	 */
+	@Experimental
 	public static QuerySafetySnapshot querySafetySnapshot(QueryModelNode node) {
 		return new QuerySafetySnapshot(node);
 	}
 
 	/** Runs one optimizer or precompile phase against a reusable identity-based query-safety snapshot. */
+	@Experimental
 	public static <T> T withQuerySafetySnapshot(QueryModelNode root, Supplier<T> action) {
 		Objects.requireNonNull(root, "root must not be null");
 		Objects.requireNonNull(action, "action must not be null");
@@ -236,6 +240,7 @@ public class QueryEvaluationUtility {
 	}
 
 	/** Refreshes changed query-model facts in the active phase, if there is one. */
+	@Experimental
 	public static void refreshQuerySafetySnapshot(QueryModelNode changedNode) {
 		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
 		if (active != null && changedNode != null) {
@@ -255,6 +260,7 @@ public class QueryEvaluationUtility {
 	/**
 	 * Pins function implementations and classifies the resulting subtree within one atomic preparation step.
 	 */
+	@Experimental
 	public static boolean isRepeatableWithinPreparation(QueryModelNode node) {
 		return isRepeatable(pinFunctions(node));
 	}
@@ -263,6 +269,7 @@ public class QueryEvaluationUtility {
 	 * Atomically captures every function implementation referenced by a query subtree. Captured calls retain only the
 	 * function instance (or its absence), so later registry replacement cannot invalidate optimizer decisions.
 	 */
+	@Experimental
 	@SuppressWarnings("unchecked")
 	public static <T extends QueryModelNode> T pinFunctions(T node) {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
@@ -287,6 +294,7 @@ public class QueryEvaluationUtility {
 	}
 
 	/** Returns the implementation pinned for this call, or the current registry entry for an unpinned call. */
+	@Experimental
 	public static Optional<Function> resolveFunction(FunctionCall node) {
 		if (node instanceof PinnedFunctionCall) {
 			PinnedFunctionCall pinned = (PinnedFunctionCall) node;
@@ -311,6 +319,7 @@ public class QueryEvaluationUtility {
 	 * implementation, and for third-party functions that declare {@link Function.Determinism#DETERMINISTIC}. A
 	 * {@link Function#mustReturnDifferentResult() must-differ} freshness guarantee dominates any declaration.
 	 */
+	@Experimental
 	public static boolean isRepeatable(Function function) {
 		if (function.mustReturnDifferentResult()) {
 			return false;
@@ -325,6 +334,7 @@ public class QueryEvaluationUtility {
 	 * only functions that are immutable across executions qualify. RDF4J's query-constant NOW is deliberately excluded
 	 * — its per-execution value is handled by a dedicated evaluation path with a fresh scope per execution.
 	 */
+	@Experimental
 	public static boolean isSafeForPlanConstantFolding(Function function) {
 		if (function.mustReturnDifferentResult()) {
 			return false;
@@ -347,6 +357,7 @@ public class QueryEvaluationUtility {
 	 * invocation is an error for the whole query, and unknown tuple-expression extensions are conservatively assumed
 	 * capable of the same.
 	 */
+	@Experimental
 	public static boolean mayRaiseQueryFatalError(QueryModelNode subtree) {
 		return snapshotFor(subtree).mayRaiseQueryFatalError(subtree);
 	}
@@ -358,6 +369,7 @@ public class QueryEvaluationUtility {
 	 * behavior: the formal algebra evaluates each operand, so a discarded operand's non-silent SERVICE failure must
 	 * still surface.
 	 */
+	@Experimental
 	public static boolean canDiscardWithoutEvaluation(QueryModelNode subtree) {
 		return !snapshotFor(subtree).mayRaiseQueryFatalError(subtree);
 	}
@@ -377,6 +389,7 @@ public class QueryEvaluationUtility {
 	 * {@link #usesMappingParameterizedEvaluation(TupleExpr)}). Every conservative rejection is a candidate for later
 	 * refinement, not a semantic claim.
 	 */
+	@Experimental
 	public static boolean permitsBindingInjection(TupleExpr subtree, Set<String> injectedNames) {
 		if (injectedNames.isEmpty()) {
 			return true;
@@ -395,10 +408,12 @@ public class QueryEvaluationUtility {
 	 * evaluation plus compatible-mapping join" is not an equivalent baseline — so physical strategies must keep the
 	 * correlated evaluation path and must never reroute these subtrees through independent-evaluation replay.
 	 */
+	@Experimental
 	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree) {
 		return snapshotFor(subtree).usesMappingParameterizedEvaluation(subtree);
 	}
 
+	@Experimental
 	public static final class QuerySafetySnapshot {
 		private final Map<QueryModelNode, NodeSafetySummary> summaries = new IdentityHashMap<>();
 		private final Map<QueryModelNode, List<QueryModelNode>> childrenByNode = new IdentityHashMap<>();

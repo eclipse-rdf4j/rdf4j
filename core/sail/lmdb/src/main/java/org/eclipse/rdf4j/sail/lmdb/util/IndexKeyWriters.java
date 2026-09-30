@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.util;
 
 import java.nio.ByteBuffer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 
 public final class IndexKeyWriters {
@@ -27,6 +28,7 @@ public final class IndexKeyWriters {
 	public interface KeyWriter {
 		void write(ByteBuffer bb, long subj, long pred, long obj, long context, boolean shouldCache);
 
+		@Experimental
 		default boolean usesUnsignedTupleOrder() {
 			return false;
 		}

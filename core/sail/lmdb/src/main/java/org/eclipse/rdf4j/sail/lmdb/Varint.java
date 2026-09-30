@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.util.SignificantBytesBE;
 import org.lwjgl.system.MemoryUtil;
 
@@ -407,6 +408,7 @@ public final class Varint {
 	 * @param address native address of the first encoded byte
 	 * @return decoded value
 	 */
+	@Experimental
 	public static long readUnsigned(long address) throws IllegalArgumentException {
 		return readUnsigned(address, LmdbUtil.getByte(address) & 0xFF);
 	}
@@ -414,6 +416,7 @@ public final class Varint {
 	/**
 	 * Decodes an unsigned varint directly from native memory when the caller has already loaded the first byte.
 	 */
+	@Experimental
 	public static long readUnsigned(long address, int a0) throws IllegalArgumentException {
 		if (a0 <= 240) {
 			return a0;
@@ -474,6 +477,7 @@ public final class Varint {
 	/**
 	 * Determines length of an encoded varint value by inspecting the first byte as an unsigned int.
 	 */
+	@Experimental
 	public static int firstToLength(int a0) {
 		return FIRST_TO_LENGTH[a0 & 0xFF];
 	}
@@ -481,6 +485,7 @@ public final class Varint {
 	/**
 	 * Determines length of an encoded varint directly from native memory.
 	 */
+	@Experimental
 	public static int lengthAt(long address) {
 		return firstToLength(LmdbUtil.getByte(address) & 0xFF);
 	}

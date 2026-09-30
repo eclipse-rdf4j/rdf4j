@@ -322,6 +322,7 @@ public interface SailConnection extends AutoCloseable {
 	 * @throws SailException         If a statement could not be added, for example because no transaction is active.
 	 * @throws IllegalStateException If the connection has been closed.
 	 */
+	@Experimental
 	default void addStatements(Iterable<? extends Statement> statements, Resource... contexts) throws SailException {
 		for (Statement statement : statements) {
 			if (contexts.length == 0) {

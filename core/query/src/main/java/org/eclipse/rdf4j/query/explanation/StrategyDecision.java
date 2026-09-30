@@ -28,6 +28,7 @@ public record StrategyDecision(String decisionPoint, long capturedAtMillis, Stri
 	}
 
 	/** Null eligibility means the decision requires values produced only during execution. */
+	@Experimental
 	public record Candidate(String strategy, Integer priority, Boolean canAttempt, String decision,
 			String declineReason, String condition) {
 	}

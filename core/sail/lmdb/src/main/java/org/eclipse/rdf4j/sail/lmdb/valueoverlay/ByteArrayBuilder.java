@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class ByteArrayBuilder {
 	private byte[] bytes;
 	private int size;

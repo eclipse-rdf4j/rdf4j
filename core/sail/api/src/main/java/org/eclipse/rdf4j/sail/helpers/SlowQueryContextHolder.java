@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.Query;
 
 public final class SlowQueryContextHolder {
@@ -41,6 +42,7 @@ public final class SlowQueryContextHolder {
 		 * Set via {@link #set(String, Query.QueryType, String)}; individual store implementations decide whether and
 		 * how to honor it. Unrecognized by stores that do not support forced strategies.
 		 */
+		@Experimental
 		public String getForcedExecutionStrategy() {
 			return forcedExecutionStrategy;
 		}
@@ -59,6 +61,7 @@ public final class SlowQueryContextHolder {
 		return set(rawQueryText, queryType, null);
 	}
 
+	@Experimental
 	public static SlowQueryContext set(String rawQueryText, Query.QueryType queryType, String forcedExecutionStrategy) {
 		SlowQueryContext previous = CONTEXT.get();
 		CONTEXT.set(new SlowQueryContext(rawQueryText, queryType, forcedExecutionStrategy));

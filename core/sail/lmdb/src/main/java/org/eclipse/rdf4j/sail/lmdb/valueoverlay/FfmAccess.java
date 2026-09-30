@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
+@Experimental
 public final class FfmAccess {
 	public static final ValueLayout.OfShort SHORT_LE = ValueLayout.JAVA_SHORT_UNALIGNED
 			.withOrder(ByteOrder.LITTLE_ENDIAN);

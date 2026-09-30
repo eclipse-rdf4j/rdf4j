@@ -15,13 +15,17 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Kuzu-style query-local factorized intermediate. A root is stored once. Every following level stores a CSR offset
  * vector from its parent level and dense value/multiplicity vectors. OPTIONAL levels use a validity bitmap instead of
  * manufacturing rows with copied parent bindings. Flattening is deferred until a consumer requires scalar rows.
  */
+@Experimental
 public final class LmdbFactorizedBatch {
 
+	@Experimental
 	public interface RunReader {
 		int bindSize(long key);
 
@@ -32,6 +36,7 @@ public final class LmdbFactorizedBatch {
 		}
 	}
 
+	@Experimental
 	public interface LongPredicate {
 		boolean test(long value);
 	}
@@ -43,6 +48,7 @@ public final class LmdbFactorizedBatch {
 		boolean claim(long bytes);
 	}
 
+	@Experimental
 	public static final class FactorizationRefused extends RuntimeException {
 		private static final long serialVersionUID = 1L;
 
@@ -316,6 +322,7 @@ public final class LmdbFactorizedBatch {
 		return new FlatCursor(this);
 	}
 
+	@Experimental
 	public static final class FlatCursor {
 		private final LmdbFactorizedBatch batch;
 		private int leafOrdinal = -1;
@@ -391,6 +398,7 @@ public final class LmdbFactorizedBatch {
 		return result < 0 || Long.compareUnsigned(result, left) < 0 ? Long.MAX_VALUE : result;
 	}
 
+	@Experimental
 	public static final class Level {
 		private final MemoryAccount memory;
 		private int parentCount;

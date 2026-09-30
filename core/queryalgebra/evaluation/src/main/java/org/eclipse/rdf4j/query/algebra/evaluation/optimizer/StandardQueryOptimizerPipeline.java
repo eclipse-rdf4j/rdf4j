@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -63,6 +64,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	}
 
 	/** Returns the standard safe exact-filter rewrite without exposing its package-private implementation type. */
+	@Experimental
 	@InternalUseOnly
 	public static QueryOptimizer getFilterInValuesOptimizer() {
 		return FILTER_IN_VALUES_OPTIMIZER;

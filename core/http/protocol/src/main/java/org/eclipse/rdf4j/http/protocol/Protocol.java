@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.protocol;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -139,18 +140,21 @@ public abstract class Protocol {
 	 * {@value org.eclipse.rdf4j.http.protocol.Protocol#LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED} all mean "do not
 	 * force anything" — see {@link #isLmdbForcedExecutionStrategyUnset(String)}.
 	 */
+	@Experimental
 	public static final String LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME = "lmdb-forced-strategy";
 
 	/**
 	 * Sentinel value of {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} meaning "use the store's own (adaptive)
 	 * strategy selection", i.e. the behavior when the parameter is absent entirely.
 	 */
+	@Experimental
 	public static final String LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED = "NOT_ACTIVATED";
 
 	/**
 	 * Header required, with value {@code true}, for process-wide LMDB runtime-property mutations. Its non-simple
 	 * request semantics prevent a browser form from issuing the mutation as a cross-site request.
 	 */
+	@Experimental
 	public static final String LMDB_ADMIN_REQUEST_HEADER = "X-RDF4J-Admin-Request";
 
 	/**
@@ -163,6 +167,7 @@ public abstract class Protocol {
 	 * protocol have to agree on it, and neither can see the LMDB module where the same rule is applied to the store's
 	 * own API.
 	 */
+	@Experimental
 	public static boolean isLmdbForcedExecutionStrategyUnset(String value) {
 		return value == null || value.isBlank() || LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED.equals(value);
 	}
@@ -370,6 +375,7 @@ public abstract class Protocol {
 	}
 
 	/** Returns the optional live LMDB property endpoint on an RDF4J Server. */
+	@Experimental
 	public static final String getLmdbRuntimePropertiesLocation(String serverLocation) {
 		return getServerDir(serverLocation) + "system/lmdb/properties";
 	}
@@ -378,6 +384,7 @@ public abstract class Protocol {
 	 * Returns the optional endpoint listing the LMDB query-execution strategies that may be pinned for a single query
 	 * via {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME}.
 	 */
+	@Experimental
 	public static final String getLmdbForceableStrategiesLocation(String serverLocation) {
 		return getServerDir(serverLocation) + "system/lmdb/strategies";
 	}

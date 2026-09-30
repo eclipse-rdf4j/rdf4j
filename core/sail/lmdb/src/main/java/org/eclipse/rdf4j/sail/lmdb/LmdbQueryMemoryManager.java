@@ -15,11 +15,14 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Process-wide byte accounting for query-owned native structures. Each cursor owns a {@link QueryLedger}; closing that
  * ledger releases every remaining reservation. A reservation request never waits for another cursor to release memory:
  * it either reclaims an older registered structure on the requesting thread or refuses immediately.
  */
+@Experimental
 public final class LmdbQueryMemoryManager {
 
 	public static final String GLOBAL_MAX_BYTES_PROPERTY = "rdf4j.lmdb.queryMemory.maxBytes";
@@ -140,6 +143,7 @@ public final class LmdbQueryMemoryManager {
 	 * A structure that can surrender its reservation under pressure. Spill is attempted first; shed is the graceful
 	 * abandon-and-fallback path when spilling is unavailable.
 	 */
+	@Experimental
 	public interface Reclaimable {
 
 		default boolean spill() {
@@ -154,6 +158,7 @@ public final class LmdbQueryMemoryManager {
 	/**
 	 * Per-query sub-ledger. Closing it is the cursor-lifetime leak guard.
 	 */
+	@Experimental
 	public final class QueryLedger implements AutoCloseable {
 
 		private final Set<Reservation> reservations = new LinkedHashSet<>();
@@ -203,6 +208,7 @@ public final class LmdbQueryMemoryManager {
 	/**
 	 * One exact byte claim. Closing is idempotent; a manager reclamation also closes the reservation.
 	 */
+	@Experimental
 	public final class Reservation implements AutoCloseable {
 
 		private final QueryLedger owner;

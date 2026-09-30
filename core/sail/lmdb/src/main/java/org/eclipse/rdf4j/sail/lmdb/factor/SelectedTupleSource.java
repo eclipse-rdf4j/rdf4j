@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Exact query-local selection over a zipped tuple relation. Direct views retain immutable row offsets/weights, not
  * copied payloads or hash links; generic views retain logical bag intervals. Selecting a direct selection captures the
@@ -27,6 +29,7 @@ import java.util.Objects;
  * upstream advancement, or close. Closing this view does not close its upstream owner. All operations are
  * thread-confined, not concurrent reclamation.
  */
+@Experimental
 public final class SelectedTupleSource extends BorrowedTupleBatch.Source {
 	private final BorrowedTupleBatch batch;
 	private final boolean direct;

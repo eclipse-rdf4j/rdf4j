@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
+@Experimental
 @InternalUseOnly
 public final class LmdbStableOrderPlanner {
 
@@ -214,6 +216,7 @@ public final class LmdbStableOrderPlanner {
 		return null;
 	}
 
+	@Experimental
 	@InternalUseOnly
 	public static final class Resolution {
 		private final String visibleBindingName;

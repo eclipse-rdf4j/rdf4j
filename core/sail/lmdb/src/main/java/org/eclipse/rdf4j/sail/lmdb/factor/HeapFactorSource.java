@@ -12,7 +12,10 @@
 
 package org.eclipse.rdf4j.sail.lmdb.factor;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /** Immutable heap-array borrowing; the source keeps the snapshot owner strongly reachable. */
+@Experimental
 public final class HeapFactorSource extends BorrowedFactorBatch.Source {
 	public HeapFactorSource(Object owner) {
 		super(owner);

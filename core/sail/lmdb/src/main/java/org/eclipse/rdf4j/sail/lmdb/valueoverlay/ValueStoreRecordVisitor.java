@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Scoped, lexical-preserving typed access. A visitor never receives a native pointer or mutable decoder buffer. Only
  * requested byte regions are decoded. Kind/reference/header inspection does not reconstruct the label. The callback
@@ -21,20 +23,24 @@ import java.util.Objects;
  * metadata. The caller owns and holds the source lease throughout the callback. This is not Unicode normalization,
  * numeric coercion, or SPARQL value equality. An IRI contains a local name.
  */
+@Experimental
 public final class ValueStoreRecordVisitor {
 	private ValueStoreRecordVisitor() {
 	}
 
+	@Experimental
 	@FunctionalInterface
 	public interface Visitor {
 		void accept(Record record);
 	}
 
 	/** Owned primitive header; it can safely be retained independently of the callback and native owner. */
+	@Experimental
 	public record Header(ValueStoreRecordView.Kind kind, long referenceId, int languageBytes, int direction) {
 	}
 
 	/** Reusable result holder for batch metadata consumers; no per-row Value, String, or record array. */
+	@Experimental
 	public static final class HeaderReader implements Visitor {
 		private ValueStoreRecordView.Kind kind;
 		private long referenceId;
@@ -90,6 +96,7 @@ public final class ValueStoreRecordVisitor {
 		}
 	}
 
+	@Experimental
 	public static final class Record {
 		private RecordByteAccess bytes;
 		private final ValueStoreRecordView.Kind kind;

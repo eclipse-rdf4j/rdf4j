@@ -22,7 +22,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /** Immutable native page builder and bounded-random-access decoder. */
+@Experimental
 public final class PageCodec {
 	public static final int MAGIC = 0x31435646; // "FVC1" in little endian
 	private static final int HEADER_BYTES = 32;
@@ -33,6 +36,7 @@ public final class PageCodec {
 	// Zero residual bits imply a constant-length page: no checkpoints or packed-length tail are stored.
 	private static final int FLAG_LENGTH_FOR = 0x10;
 
+	@Experimental
 	public enum Mode {
 		RAW(0),
 		FRONT(1),
@@ -58,10 +62,12 @@ public final class PageCodec {
 		}
 	}
 
+	@Experimental
 	public record SealedPage(byte[] pageBytes, Mode mode, long uncompressedRecordBytes,
 			long encodedPageBytes) {
 	}
 
+	@Experimental
 	public record DecodedRecord(byte[] bytes, boolean large) {
 	}
 

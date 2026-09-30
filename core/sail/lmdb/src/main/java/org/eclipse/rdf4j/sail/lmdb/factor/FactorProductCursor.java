@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded readers are reused
  * between prefixes; no allocation depends on degree. Each cursor owns its own iterator state, so another consumer can
  * traverse the same environment independently.
  */
+@Experimental
 public final class FactorProductCursor implements AutoCloseable {
 	private final BorrowedFactorBatch[] boundBatches;
 	private final BorrowedFactorBatch.Cursor[] readers;

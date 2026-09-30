@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Bounded primitive-ID selection kernels. Selection words are -1 (accept) or 0 (reject). A null input is a broadcast
  * scalar. Representation dispatch and spatial checks are outside element loops. No RDF value semantics or dictionary
@@ -25,6 +27,7 @@ import java.util.Objects;
  * mask loops without an incubator-module dependency. This is not a promise of SIMD on every JDK/CPU; the ordinary
  * scalar semantics are exact on all targets.
  */
+@Experimental
 public final class KernelIdMasks {
 	private KernelIdMasks() {
 	}

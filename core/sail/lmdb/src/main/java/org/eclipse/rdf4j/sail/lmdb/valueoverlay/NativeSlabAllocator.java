@@ -16,7 +16,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /** Append-only shared-arena slab allocator using a compact slab+offset handle. */
+@Experimental
 public final class NativeSlabAllocator implements AutoCloseable {
 	private static final long OFFSET_MASK = (1L << 48) - 1;
 

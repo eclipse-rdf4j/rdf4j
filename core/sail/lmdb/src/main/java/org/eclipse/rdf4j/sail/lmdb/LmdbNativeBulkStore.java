@@ -16,22 +16,26 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Loader-only owner for the native value and statement stores of a new generation.
  */
+@Experimental
 @InternalUseOnly
 public final class LmdbNativeBulkStore implements AutoCloseable {
 
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
 
+	@Experimental
 	@FunctionalInterface
 	public interface QuadSource {
 		boolean next(long[] quad) throws IOException;
 	}
 
+	@Experimental
 	@FunctionalInterface
 	public interface ContextSource {
 		boolean next(long[] contextAndCount) throws IOException;

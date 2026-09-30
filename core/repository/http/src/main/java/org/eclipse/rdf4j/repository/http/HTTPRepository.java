@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
@@ -220,6 +221,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/** Lists server-global live LMDB features, preserving this repository's credentials and additional headers. */
+	@Experimental
 	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties() throws RepositoryException {
 		if (!isInitialized()) {
 			init();
@@ -232,6 +234,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	@Experimental
 	public List<LmdbForceableStrategy> getLmdbForceableStrategies() throws RepositoryException {
 		if (!isInitialized()) {
 			init();
@@ -244,6 +247,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	}
 
 	/** Updates one server-global live LMDB feature. */
+	@Experimental
 	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled) throws RepositoryException {
 		if (!isInitialized()) {
 			init();

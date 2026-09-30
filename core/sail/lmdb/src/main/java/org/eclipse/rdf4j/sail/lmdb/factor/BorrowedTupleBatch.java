@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Exact borrowed tuple relations. Columns of one tuple are zipped, never independent factors. Descriptors contain
  * stable source references and logical bag counts, not scalar IDs. Physical navigation belongs to the source; a
@@ -26,6 +28,7 @@ import java.util.Objects;
  * closed. This is the tuple counterpart of {@link BorrowedFactorBatch}, not a replacement for its specialized unary
  * loops.
  */
+@Experimental
 public final class BorrowedTupleBatch {
 	private final Source source;
 	private long[] references;
@@ -127,6 +130,7 @@ public final class BorrowedTupleBatch {
 	}
 
 	/** One owner per immutable relation store, not an ownership operation per tuple or descriptor. */
+	@Experimental
 	public abstract static class Source implements AutoCloseable {
 		private final int columns;
 		private final boolean dependentViews;
@@ -185,6 +189,7 @@ public final class BorrowedTupleBatch {
 	 * at most maximum (logical rows); the returned physical row count must be positive before the exact end. Skips and
 	 * backward seeks replay the same relation.
 	 */
+	@Experimental
 	public interface Reader extends AutoCloseable {
 		void bind(long reference, long count);
 
@@ -202,6 +207,7 @@ public final class BorrowedTupleBatch {
 	 * buffers cannot claim this capability. No decode window or payload copy is necessary for an already packed
 	 * hash/merge group. Other sources retain copyRows().
 	 */
+	@Experimental
 	public interface DirectReader extends Reader {
 		boolean nextTuple();
 
@@ -212,6 +218,7 @@ public final class BorrowedTupleBatch {
 		long tupleWeight();
 	}
 
+	@Experimental
 	public static final class Cursor implements AutoCloseable {
 		private final BorrowedTupleBatch batch;
 		private final Source source;

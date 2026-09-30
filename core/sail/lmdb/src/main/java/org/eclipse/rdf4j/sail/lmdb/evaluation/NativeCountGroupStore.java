@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.LongUnaryOperator;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  * peak copy/sort workspace and a conservative allowance for I/O/merge state. It does NOT cover runtime Values retained
  * by the authority, other operators or JVM overhead. Every owning caller must close on failure.
  */
+@Experimental
 public final class NativeCountGroupStore implements AutoCloseable {
 	public static final String MAX_BYTES_PROPERTY = "rdf4j.lmdb.nativeGroup.maxBytes";
 	public static final String ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.boundedGroups";

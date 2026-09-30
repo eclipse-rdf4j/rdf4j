@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 import java.io.ObjectStreamException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -84,6 +85,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		return internalID;
 	}
 
+	@Experimental
 	@Override
 	public long retainedLexicalLength() {
 		if (!initialized) {
@@ -109,6 +111,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		}
 	}
 
+	@Experimental
 	@Override
 	public boolean isInitialized() {
 		return initialized || subject != null;

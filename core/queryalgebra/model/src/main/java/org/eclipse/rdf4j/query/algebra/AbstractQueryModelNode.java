@@ -354,6 +354,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		longMetricsActual.put(metricName, metricValue);
 	}
 
+	@Experimental
 	@Override
 	public long incrementLongMetricActual(String metricName) {
 		if (!isActualMetricCollectionEnabled(metricName)) {
@@ -406,6 +407,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		stringMetricsActual.put(metricName, metricValue);
 	}
 
+	@Experimental
 	@Override
 	public void clearMetricsActual() {
 		resultSizeActual = -1L;
@@ -500,11 +502,13 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		this.runtimeTelemetryEnabled = runtimeTelemetryEnabled;
 	}
 
+	@Experimental
 	@Override
 	public boolean isExecutionSummaryEnabled() {
 		return executionSummaryEnabled;
 	}
 
+	@Experimental
 	@Override
 	public void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
 		this.executionSummaryEnabled = executionSummaryEnabled;

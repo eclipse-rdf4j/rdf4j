@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -153,6 +154,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The smallest explicit (non-AUTO) direct adjacency memory limit.
 	 */
+	@Experimental
 	public static final long DIRECT_ADJACENCY_MIN_EXPLICIT_BYTES = 256L * 1024 * 1024;
 
 	// null means unset: behaves as PREFER but is not exported
@@ -209,30 +211,36 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/** Returns whether this store should select the native LMDB evaluation strategy at construction time. */
+	@Experimental
 	public boolean getNativeEvaluationEnabled() {
 		return nativeEvaluationEnabled;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setNativeEvaluationEnabled(boolean nativeEvaluationEnabled) {
 		this.nativeEvaluationEnabled = nativeEvaluationEnabled;
 		return this;
 	}
 
 	/** Returns whether this store should allocate and maintain the direct-adjacency index. */
+	@Experimental
 	public boolean getDirectAdjacencyEnabled() {
 		return directAdjacencyEnabled;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyEnabled(boolean directAdjacencyEnabled) {
 		this.directAdjacencyEnabled = directAdjacencyEnabled;
 		return this;
 	}
 
 	/** Returns whether this store should initialize the compressed value overlay lifecycle. */
+	@Experimental
 	public boolean getValueOverlayEnabled() {
 		return valueOverlayEnabled;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setValueOverlayEnabled(boolean valueOverlayEnabled) {
 		this.valueOverlayEnabled = valueOverlayEnabled;
 		return this;
@@ -377,10 +385,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * same-family numeric id comparison a raw long compare. Applies at store creation only — existing stores keep
 	 * whatever encoding their {@code store.properties} records (absent = legacy ZigZag) and are never rewritten.
 	 */
+	@Experimental
 	public boolean getOrderedNumericIds() {
 		return orderedNumericIds;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setOrderedNumericIds(boolean orderedNumericIds) {
 		this.orderedNumericIds = orderedNumericIds;
 		return this;
@@ -511,19 +521,23 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	@Experimental
 	public DirectAdjacencyMode getDirectAdjacencyMode() {
 		return directAdjacencyMode != null ? directAdjacencyMode : DirectAdjacencyMode.PREFER;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyMode(DirectAdjacencyMode directAdjacencyMode) {
 		this.directAdjacencyMode = Objects.requireNonNull(directAdjacencyMode, "directAdjacencyMode");
 		return this;
 	}
 
+	@Experimental
 	public DirectAdjacencyCoverage getDirectAdjacencyCoverage() {
 		return directAdjacencyCoverage != null ? directAdjacencyCoverage : DirectAdjacencyCoverage.FULL;
 	}
 
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyCoverage(DirectAdjacencyCoverage directAdjacencyCoverage) {
 		this.directAdjacencyCoverage = Objects.requireNonNull(directAdjacencyCoverage, "directAdjacencyCoverage");
 		return this;
@@ -532,10 +546,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * @return an unmodifiable copy of the selected predicate IRIs; empty for {@link DirectAdjacencyCoverage#FULL}
 	 */
+	@Experimental
 	public Set<IRI> getDirectAdjacencyPredicates() {
 		return Set.copyOf(directAdjacencyPredicates);
 	}
 
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyPredicates(Collection<? extends IRI> predicates) {
 		Objects.requireNonNull(predicates, "predicates");
 		Set<IRI> copy = new LinkedHashSet<>();
@@ -549,11 +565,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * @return the direct adjacency memory limit in bytes; zero means AUTO (50% of the container-aware memory limit)
 	 */
+	@Experimental
 	public long getDirectAdjacencyMaxBytes() {
 		return directAdjacencyMaxBytes;
 	}
 
 	/** Returns the unpublished-delta admission threshold in bytes; zero selects AUTO. */
+	@Experimental
 	public long getDirectAdjacencyBacklogMaxBytes() {
 		return directAdjacencyBacklogMaxBytes;
 	}
@@ -562,6 +580,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * Sets the unpublished-delta admission threshold. An already admitted transaction may finish above this threshold,
 	 * subject to the separate transaction capture and overall adjacency memory limits.
 	 */
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyBacklogMaxBytes(long bytes) {
 		if (bytes < 0) {
 			throw new IllegalArgumentException(
@@ -575,6 +594,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
 	 * of the container-aware memory limit. A positive value below 256 MiB or a negative value is rejected.
 	 */
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyMaxBytes(long directAdjacencyMaxBytes) {
 		if (directAdjacencyMaxBytes < 0) {
 			throw new IllegalArgumentException(
@@ -592,11 +612,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * @return false while direct adjacency is disabled; otherwise, the explicit value when set or {@code true} exactly
 	 *         when the resolved mode is not {@link DirectAdjacencyMode#DISABLED}
 	 */
+	@Experimental
 	public boolean getDirectAdjacencyBuildOnStart() {
 		return directAdjacencyEnabled && (directAdjacencyBuildOnStart != null ? directAdjacencyBuildOnStart
 				: getDirectAdjacencyMode() != DirectAdjacencyMode.DISABLED);
 	}
 
+	@Experimental
 	public LmdbStoreConfig setDirectAdjacencyBuildOnStart(boolean directAdjacencyBuildOnStart) {
 		this.directAdjacencyBuildOnStart = directAdjacencyBuildOnStart;
 		return this;

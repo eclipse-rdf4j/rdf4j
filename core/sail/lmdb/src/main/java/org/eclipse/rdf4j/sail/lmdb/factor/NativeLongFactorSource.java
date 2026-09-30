@@ -17,12 +17,15 @@ import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Borrowed native unsigned-64-bit ID spans. The supplied lease must keep the allocation immutable and address-stable
  * until this source closes; a raw address alone is not a lease. Readers validate a span against the original
  * allocation, never ofAddress/reinterpret. Closing a caller-owned FFM arena early therefore fails safely rather than
  * reading freed memory.
  */
+@Experimental
 public final class NativeLongFactorSource extends BorrowedFactorBatch.Source {
 	private static final ValueLayout.OfLong ID = ValueLayout.JAVA_LONG_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 	private final MemorySegment allocation;

@@ -21,15 +21,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Immutable, memory-only overlay over exact ValueStore records. Owns no RDF Values and mints no dictionary IDs. A
  * sorted streaming builder creates type/affinity pages and compressed ID/locator vectors. Reads require a lease.
  * Missing entries, including reverse-index misses, are UNKNOWN, never proof of absence in the authoritative store.
  */
+@Experimental
 public final class CompressedValueOverlay implements AutoCloseable {
 	public static final int PAGE_ENTRIES = 256;
 	private static final int PAGE_SHIFT = 8, PAGE_MASK = 255;
 
+	@Experimental
 	public record Options(long maxNativeBytes, int reverseSlots, int maxActivePages, int maxPageBytes,
 			int maxRecordBytes, boolean adaptiveTokens, boolean vectorCompression) {
 		public Options {
@@ -62,6 +66,7 @@ public final class CompressedValueOverlay implements AutoCloseable {
 		}
 	}
 
+	@Experimental
 	public record Stats(long records, long skippedLargeRecords, long inputRecordBytes, long pageBytes,
 			long indexBytes, long nativeUsedBytes, long nativeReservedBytes, long pages, long rawPages,
 			long frontPages, long tokenPages, long vectorPages, long reverseIndexedRecords,
@@ -227,6 +232,7 @@ public final class CompressedValueOverlay implements AutoCloseable {
 			allocator.close();
 	}
 
+	@Experimental
 	public static final class Lease implements AutoCloseable {
 		private CompressedValueOverlay owner;
 
@@ -419,6 +425,7 @@ public final class CompressedValueOverlay implements AutoCloseable {
 	}
 
 	/** Sorted by the complete unsigned ID, not by a stripped ordinal. ID tags are never discarded. */
+	@Experimental
 	public static final class Builder implements AutoCloseable {
 		private final Options options;
 		private final int tokenMinRecords;

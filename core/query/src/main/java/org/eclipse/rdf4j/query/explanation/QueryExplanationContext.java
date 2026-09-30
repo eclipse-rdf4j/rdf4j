@@ -16,12 +16,14 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Compilation-scoped explanation request. It is restored even when nested compilation fails. */
+@Experimental
 @InternalUseOnly
 public final class QueryExplanationContext implements AutoCloseable {
 	private static final ThreadLocal<QueryExplanationContext> CURRENT = new ThreadLocal<>();

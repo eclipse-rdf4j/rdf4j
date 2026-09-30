@@ -20,12 +20,14 @@ import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Builds a new LMDB store from an RDF stream with bounded working memory.
  */
+@Experimental
 public final class LmdbBulkLoader {
 
 	static final long MIB = 1024L * 1024L;
@@ -199,6 +201,7 @@ public final class LmdbBulkLoader {
 	/**
 	 * Parser selection for one load.
 	 */
+	@Experimental
 	public enum ParserMode {
 		AUTO,
 		FAST,
@@ -208,6 +211,7 @@ public final class LmdbBulkLoader {
 	/**
 	 * Summary of one completed load.
 	 */
+	@Experimental
 	public record Result(long parsedStatements, long storedStatements, long persistedValues, long inlineValues,
 			long temporaryBytes, long elapsedMillis, long mapGrowthCount) {
 	}
@@ -215,6 +219,7 @@ public final class LmdbBulkLoader {
 	/**
 	 * One path-owned RDF input in a multi-file load.
 	 */
+	@Experimental
 	public record PathInput(Path path, RDFFormat format, String baseUri) {
 
 		public PathInput {
@@ -227,6 +232,7 @@ public final class LmdbBulkLoader {
 	/**
 	 * Validates and captures loader resource limits.
 	 */
+	@Experimental
 	public static final class Builder {
 
 		private final Path target;

@@ -16,6 +16,8 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToLongBiFunction;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Fixed-size concurrent cache with approximate FIFO eviction per hash set. The cache never grows beyond its slot or
  * byte budget; capacity is rounded up to a power-of-two number of slots.
@@ -42,6 +44,7 @@ public class ConcurrentCache<K, V> {
 		this(capacity, Long.MAX_VALUE, (key, value) -> 0L);
 	}
 
+	@Experimental
 	@SuppressWarnings("unchecked")
 	public ConcurrentCache(int capacity, long maxBytes, ToLongBiFunction<? super K, ? super V> weigher) {
 		if (maxBytes < 0) {

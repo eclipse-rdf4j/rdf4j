@@ -64,6 +64,10 @@ PATCH_SPECS = (
         "02-optimize-SyntaxTreeBuilderTokenManager.diff",
         "SyntaxTreeBuilderTokenManager.java",
     ),
+    PatchSpec(
+        "03-experimental-SyntaxTreeBuilderConstants.diff",
+        "SyntaxTreeBuilderConstants.java",
+    ),
 )
 LEGACY_FIRST_PATCH_NAME = "01-optimize-SyntaxTreeBuilder..diff"
 
@@ -725,7 +729,7 @@ class AstManager:
                     )
             if unexpected:
                 raise AstWorkflowError(
-                    "Unexpected custom differences exist outside the two patch targets; "
+                    "Unexpected custom differences exist outside the registered patch targets; "
                     "record refuses to omit them:\n" + "\n".join(unexpected)
                 )
 
@@ -759,7 +763,7 @@ class AstManager:
 
         replace_recorded_patches(self.patch_directory, candidates)
         print(
-            "Recorded two deterministic SPARQL AST patches and verified their exact replay."
+            f"Recorded {len(PATCH_SPECS)} deterministic SPARQL AST patches and verified their exact replay."
         )
 
     @staticmethod

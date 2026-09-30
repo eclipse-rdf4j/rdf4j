@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
  * Bounded primitive target breaker for structural type-matrix kernels. The generated kernel owns traversal and
  * aggregation; this helper only groups target IDs and resolves each distinct target once with the adjacency batch API.
  */
+@Experimental
 public final class TypeMatrixTargetBatch {
 	private static final int CAPACITY = 65_536;
 	private static final int RADIX_BITS = 11;

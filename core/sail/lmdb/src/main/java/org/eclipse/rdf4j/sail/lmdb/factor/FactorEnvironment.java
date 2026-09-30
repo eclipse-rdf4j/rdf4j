@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * A row-local sidecar of independent relations, never dictionary IDs masquerading as pointers. Every dependency is in
  * the accompanying scalar prefix. Columns in a tuple group are explicitly zipped; mutually dependent groups must not be
@@ -24,6 +26,7 @@ import java.util.Objects;
  * Storage is bounded by the slot schema, not degree or product size. Copying copies descriptors, not payload,
  * ownership, or mutable readers. This class and its cursors are thread-confined.
  */
+@Experimental
 public final class FactorEnvironment {
 	private final BorrowedFactorBatch[] batches;
 	private final int[] lanes;

@@ -678,6 +678,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		setStatementsAdded();
 	}
 
+	@Experimental
 	@Override
 	public final void addStatements(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
@@ -1130,6 +1131,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
 
+	@Experimental
 	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
 		long count = 0;

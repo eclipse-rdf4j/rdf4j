@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.common.webapp.system;
 import java.io.IOException;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties.State;
@@ -24,6 +25,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /** Process-wide, fixed-allowlist endpoint for live LMDB boolean features. */
+@Experimental
 public class LmdbRuntimePropertiesController implements Controller {
 
 	private static final String ADMIN_ROLE = "rdf4j-admin";

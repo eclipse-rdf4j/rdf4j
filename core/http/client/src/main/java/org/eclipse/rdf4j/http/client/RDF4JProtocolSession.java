@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -271,6 +272,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	/** Lists the live LMDB feature catalog exposed by this server. */
+	@Experimental
 	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties()
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkServerURL();
@@ -286,6 +288,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	@Experimental
 	public List<LmdbForceableStrategy> getLmdbForceableStrategies()
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkServerURL();
@@ -309,17 +312,20 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * {@link Protocol#LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} and is ignored by servers whose repository is not LMDB
 	 * backed.
 	 */
+	@Experimental
 	public void setForcedLmdbExecutionStrategy(String strategyOrNull) {
 		this.forcedLmdbExecutionStrategy = Protocol.isLmdbForcedExecutionStrategyUnset(strategyOrNull) ? null
 				: strategyOrNull;
 	}
 
 	/** The strategy set by {@link #setForcedLmdbExecutionStrategy(String)}, or {@code null} when none is forced. */
+	@Experimental
 	public String getForcedLmdbExecutionStrategy() {
 		return forcedLmdbExecutionStrategy;
 	}
 
 	/** Updates one allowlisted live LMDB feature on this server. */
+	@Experimental
 	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled)
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkServerURL();

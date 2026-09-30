@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
@@ -24,10 +25,12 @@ import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
  * scalar-register layouts. Each instance is owned by one operator activation; the enclosing context retains the
  * snapshot. Close releases activation state but never closes an adjacency owned by that context.
  */
+@Experimental
 public final class KernelExpansionCursors {
 	private KernelExpansionCursors() {
 	}
 
+	@Experimental
 	public abstract static class Values implements AutoCloseable {
 		protected final KernelCancellation cancellation;
 		protected long value;
@@ -56,6 +59,7 @@ public final class KernelExpansionCursors {
 	}
 
 	/** A partition cursor remains positioned while its downstream continuation is suspended. */
+	@Experimental
 	public static final class Domains extends Values {
 		private NativeLmdbQuerySource.NodeDomainIntersection view;
 		private NativeLmdbQuerySource.NodeDomainIntersection.Cursor cursor;
@@ -94,6 +98,7 @@ public final class KernelExpansionCursors {
 	}
 
 	/** Subject/object DISTINCT with bounded quad staging and demand-driven source opening. */
+	@Experimental
 	public static final class Terms extends Values {
 		private KernelScanner scanner;
 		private final int scan;
@@ -164,6 +169,7 @@ public final class KernelExpansionCursors {
 	 * proportional to edge count. The start of p* is returned before any adjacency lookup. This is reachability, not
 	 * path-counting; graph-context restrictions apply to every traversed edge.
 	 */
+	@Experimental
 	public static final class Path extends Values {
 		private NativeAdjacency adjacency;
 		private KernelRuntime.LongHashSet emitted = new KernelRuntime.LongHashSet();
@@ -256,6 +262,7 @@ public final class KernelExpansionCursors {
 	 * In particular, the first value after a duplicate group is not read again by the next group. Equal runs remain
 	 * factorized as duplicate ranges; row replay never has to multiply those ranges.
 	 */
+	@Experimental
 	public static final class Intersection extends Values {
 		private NativeAdjacency[] views;
 		private long[] handles, positions, sizes, heads, duplicates, digits, keys;

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.collection.factory.api;
 
 import java.util.Iterator;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
 
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  * An index of binding-set rows that can stream candidates for a probe mapping. Each added row is retained, including
  * duplicates. The backing {@link CollectionFactory} owns storage resources and must be closed separately.
  */
+@Experimental
 @InternalUseOnly
 public interface BindingSetCompatibilityIndex extends AutoCloseable {
 

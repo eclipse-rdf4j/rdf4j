@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -35,6 +36,7 @@ public class Buffer implements Function {
 		return GEOF.BUFFER.stringValue();
 	}
 
+	@Experimental
 	@Override
 	public Function.Determinism getDeterminism() {
 		return Function.Determinism.DETERMINISTIC;

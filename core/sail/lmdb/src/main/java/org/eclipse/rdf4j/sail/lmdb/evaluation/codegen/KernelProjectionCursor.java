@@ -38,6 +38,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	public static final int QUAD = 4;
 
 	/** Programs save their produced columns after entry, and restore all enclosing columns before a continuation. */
+	@Experimental
 	public interface Program {
 		boolean enter(int grain, long predicate, KernelAdjacencyCursor cursor);
 
@@ -49,6 +50,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	}
 
 	/** A sequence of independently pinned predicate planes or resolved runs. The view itself remains caller-owned. */
+	@Experimental
 	public interface Source extends AutoCloseable {
 		boolean advance();
 
@@ -72,6 +74,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	 * is worker-confined: a caller must close the current activation before binding another source to it, and must
 	 * finally close the owner when the kernel is discarded or rebound.
 	 */
+	@Experimental
 	@InternalUseOnly
 	public static final class Owner implements AutoCloseable {
 		private final KernelAdjacencyCursor.ReusableRunOwner physical = new KernelAdjacencyCursor.ReusableRunOwner();

@@ -15,12 +15,14 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
+@Experimental
 @InternalUseOnly
 public final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
 

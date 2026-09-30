@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
  * window are retained. Each projection is consumed once, in request order, so mutation/callback failures cannot
  * silently restart an input.
  */
+@Experimental
 public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	private static final int WINDOW = 256;
 	private final int width;

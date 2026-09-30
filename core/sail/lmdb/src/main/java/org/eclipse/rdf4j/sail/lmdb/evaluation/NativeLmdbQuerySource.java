@@ -162,6 +162,7 @@ public interface NativeLmdbQuerySource {
 	 * only after the direct-adjacency decision is final, so telemetry records the iterator that was actually opened,
 	 * never the candidate index advertised during planning.
 	 */
+	@Experimental
 	interface AdjacencyAccessObserver {
 
 		void access(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred, long obj,
@@ -308,6 +309,7 @@ public interface NativeLmdbQuerySource {
 		};
 	}
 
+	@Experimental
 	interface NativeProbe extends java.io.Closeable {
 
 		RecordIterator open(long subj, long pred, long obj, long context) throws IOException;
@@ -458,6 +460,7 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** Exact fixed-predicate root-to-label-pattern projection used by factorized analytical kernels. */
+	@Experimental
 	interface LabelSynopsis {
 
 		/**
@@ -468,6 +471,7 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** Exact root IDs and their all-predicate quad multiplicities for one SOC/OSC plane. */
+	@Experimental
 	interface NodeDomainPresence {
 
 		long cardinality();
@@ -484,6 +488,7 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** Exact root IDs and their all-predicate quad multiplicities for one SOC/OSC plane. */
+	@Experimental
 	interface NodeDomainSynopsis extends NodeDomainPresence {
 
 		@Override
@@ -500,6 +505,7 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/** Allocation-free cursor over every root retained by the synopsis. Ordering is intentionally unspecified. */
+		@Experimental
 		interface RootCursor {
 
 			boolean next();
@@ -511,6 +517,7 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** Snapshot-bound, allocation-free intersection of two unique node domains. */
+	@Experimental
 	interface NodeDomainIntersection {
 
 		/** Physical work units (bitmap words or sparse entries), never statement cardinality. */
@@ -528,6 +535,7 @@ public interface NativeLmdbQuerySource {
 		/** Allocation-free unique-ID cursor for one morsel. */
 		Cursor cursor(int partition);
 
+		@Experimental
 		interface Cursor {
 
 			boolean next();
@@ -537,17 +545,20 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** Build telemetry for a lazily retained datatype summary. */
+	@Experimental
 	interface DatatypeSummaryBuildObserver {
 
 		void literalHeaderBatch(boolean uniformDatatype);
 	}
 
 	/** Exact datatype groups and their all-predicate quad multiplicities for one immutable SOC/OSC root domain. */
+	@Experimental
 	interface DatatypeSummary {
 
 		GroupCursor cursor();
 
 		/** Allocation-free cursor over the retained datatype groups. */
+		@Experimental
 		interface GroupCursor {
 
 			boolean next();
@@ -574,6 +585,7 @@ public interface NativeLmdbQuerySource {
 	 * dynamic {@code (node, predicate)} probe, a node's predicate row — can be read by exactly the same code. A run is
 	 * a run regardless of how its handle was found.
 	 */
+	@Experimental
 	public interface RunView {
 
 		/** Number of incidences in the run. */
@@ -635,6 +647,7 @@ public interface NativeLmdbQuerySource {
 	 * probing falsely depend on an optional structure, and would let a gap in that structure turn into a missing result
 	 * rather than a decline.
 	 */
+	@Experimental
 	interface DynamicAdjacency extends RunView {
 
 		/** The pair has provably no run in this view. */
@@ -659,6 +672,7 @@ public interface NativeLmdbQuerySource {
 	 * than returning a non-positive handle — generated code therefore contains no branch that skips such a predicate,
 	 * which would silently convert corruption into an incomplete answer.
 	 */
+	@Experimental
 	interface NodePredicates extends RunView {
 
 		/** Exact number of distinct roots in this complete visible plane, or -1 when unavailable. */
@@ -667,6 +681,7 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/** One bounded, forward-only enumeration of an exact node-predicate row. */
+		@Experimental
 		interface PredicateRowCursor extends AutoCloseable {
 
 			boolean advance();
@@ -784,6 +799,7 @@ public interface NativeLmdbQuerySource {
 	 * stable for the lifetime of the view and enumerate an unsigned-ascending snapshot superset; a bound plane with no
 	 * visible roots reports a zero key count and can be retired immediately.
 	 */
+	@Experimental
 	interface WildcardAdjacency extends RunView, AutoCloseable {
 
 		int predicateCount();
@@ -884,6 +900,7 @@ public interface NativeLmdbQuerySource {
 	 * Read-only primitive view over one immutable adjacency entry for one fixed predicate and direction (plan 27,
 	 * invariant I7). A successful {@link #find(long)} returns a positive run handle.
 	 */
+	@Experimental
 	interface NativeAdjacency extends RunView, AutoCloseable {
 
 		/** The key has provably no run in this view. */
@@ -962,6 +979,7 @@ public interface NativeLmdbQuerySource {
 		 * Forward-only physical CSF page traversal. Header counts and trait bits do not decode vector payloads; row and
 		 * fiber access remains page-local and allocation-free.
 		 */
+		@Experimental
 		interface AdjacencyPageCursor extends AutoCloseable {
 			/**
 			 * All possible term-kind bits, including the conservative unknown/pointer bits. The pointer representation
@@ -969,6 +987,7 @@ public interface NativeLmdbQuerySource {
 			 */
 			int ALL_TERM_KINDS = (1 << (ValueIds.TERM_KIND_POINTER + 1)) - 1;
 
+			@Experimental
 			enum TermKindColumn {
 				ROW,
 				NEIGHBOR
@@ -1103,6 +1122,7 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/** Fixed-capacity primitive batch of predicate-plane metadata. */
+		@Experimental
 		final class PlaneBatch {
 			private final long[] predicates;
 			private final long[] quadCounts;
@@ -1161,6 +1181,7 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/** Fixed-capacity primitive batch of SOC/OSC roots and their lazy run coordinates. */
+		@Experimental
 		final class RootBatch {
 			public static final int DISTINCT_NEIGHBOR_COUNT_AVAILABLE = 1;
 			public static final int UNIFORM_CONTEXT = 1 << 1;
@@ -1287,6 +1308,7 @@ public interface NativeLmdbQuerySource {
 		 * Fixed-capacity primitive batch of ordered distinct neighbors. Each lane carries the number of accepted
 		 * context rows represented by that fiber. The cursor state is retained in this reusable object between fills.
 		 */
+		@Experimental
 		final class FiberBatch {
 			private static final int DECODE_CAPACITY = 1_024;
 			public static final int EMPTY_ID_TYPE = Integer.MAX_VALUE;
@@ -1484,6 +1506,7 @@ public interface NativeLmdbQuerySource {
 		 * generation and remains valid for the lifetime of the view that supplied it. Implementations return false when
 		 * their packed representation cannot expose a zero-copy slice; callers then retain the exact copy fallback.
 		 */
+		@Experimental
 		final class NeighborSlice {
 			private long[] values;
 			private int offset;
@@ -1522,6 +1545,7 @@ public interface NativeLmdbQuerySource {
 		 * Mutable binding of one logical key to its run. Generated kernels reuse one cursor per probe site so the
 		 * adjacency implementation can retain its row-resolution state across the size and value reads.
 		 */
+		@Experimental
 		interface BoundRunCursor extends AutoCloseable {
 
 			/** Exports stable, exact context-unrestricted relation coordinates, not this cursor's mutable state. */
@@ -1558,6 +1582,7 @@ public interface NativeLmdbQuerySource {
 		 * is deliberately also the run reader: a CSF implementation can copy the row through the page coordinate it
 		 * already has instead of converting that coordinate to a key and immediately searching the same index again.
 		 */
+		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
 			/** Exports the positioned row without discarding/relooking up its physical coordinate. */
 			default boolean borrow(BorrowedFactorBatch target, int lane) {
@@ -2101,6 +2126,7 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/** A revision-valid ordered-integer zone map together with the index whose varying field it describes. */
+	@Experimental
 	record OrderedIntegerDomain(String indexFieldSeq, long minValue, long maxValue) {
 		public OrderedIntegerDomain {
 			Objects.requireNonNull(indexFieldSeq, "indexFieldSeq");
@@ -2122,6 +2148,7 @@ public interface NativeLmdbQuerySource {
 	boolean hasStatementsInSource();
 
 	/** A sibling source over the same committed snapshot, owned by the caller and closed when done. */
+	@Experimental
 	interface ParallelSource extends NativeLmdbQuerySource, java.io.Closeable {
 
 		long UNKNOWN_SNAPSHOT_ID = Long.MIN_VALUE;

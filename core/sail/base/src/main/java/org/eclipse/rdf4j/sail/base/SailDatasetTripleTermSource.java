@@ -19,6 +19,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -60,6 +61,7 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	 * exists to bridge SailDataset to the query evaluator; native stores can use this accessor to detect and activate
 	 * dataset-local execution paths without adding store-specific dependencies to the base module.
 	 */
+	@Experimental
 	public SailDataset getDataset() {
 		return dataset;
 	}
@@ -68,6 +70,7 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	 * Returns whether any dataset layer contains transaction-local statement changes. Physical store order only
 	 * describes the committed snapshot, so store-specific optimizers must not request ordered scans in this state.
 	 */
+	@Experimental
 	public boolean hasPendingStatementChanges() {
 		return hasPendingStatementChanges(dataset, Collections.newSetFromMap(new IdentityHashMap<>()));
 	}
@@ -79,6 +82,7 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	 * activate native execution for normal close-suppression and union wrappers without accidentally bypassing
 	 * transaction semantics.
 	 */
+	@Experimental
 	public <T> List<T> getDatasets(Class<T> type) {
 		ArrayList<T> result = new ArrayList<>(2);
 		boolean complete = collectDatasets(dataset, type, result,
@@ -163,6 +167,7 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 		}
 	}
 
+	@Experimental
 	@Override
 	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws QueryEvaluationException {

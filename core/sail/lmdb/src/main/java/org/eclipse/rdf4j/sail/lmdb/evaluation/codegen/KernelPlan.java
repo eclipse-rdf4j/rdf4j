@@ -55,6 +55,7 @@ public interface KernelPlan extends AutoCloseable {
 		return openFactors();
 	}
 
+	@Experimental
 	interface FactorCursor extends AutoCloseable {
 		boolean next();
 
@@ -84,6 +85,7 @@ public interface KernelPlan extends AutoCloseable {
 		return null;
 	}
 
+	@Experimental
 	interface ProjectionCursor extends AutoCloseable {
 		/**
 		 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before reading input, only
@@ -170,6 +172,7 @@ public interface KernelPlan extends AutoCloseable {
 	void close();
 
 	/** Packed, row-major cursor returned to generated source. */
+	@Experimental
 	interface Cursor extends AutoCloseable {
 
 		/** Writes up to {@code maxRows} rows and returns the number written; zero means exhausted. */

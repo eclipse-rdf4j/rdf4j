@@ -23,6 +23,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,7 @@ import org.slf4j.LoggerFactory;
  * untouched shard and replace only affected row-key ranges. Consequently, an old snapshot retains only the shard
  * versions that differ from the current root, rather than a second complete graph image.
  */
+@Experimental
 @InternalUseOnly
 public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
@@ -62,6 +64,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	private static final Logger log = LoggerFactory.getLogger(ImmutablePagedQuadCsfIndex.class);
 
 	/** Reservation attached to one native shard or one root's Java metadata. */
+	@Experimental
 	@FunctionalInterface
 	public interface MemoryReservation extends AutoCloseable {
 		@Override
@@ -69,6 +72,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Exact reservation callback invoked before any native shard allocation. */
+	@Experimental
 	@FunctionalInterface
 	public interface MemoryBudget {
 		MemoryReservation reserve(long nativeBytes, long modeledJavaBytes);
@@ -79,6 +83,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * {@code (partition, unsigned row coordinate)} and are unique. A non-tombstone row exposes its complete sorted
 	 * {@code (neighbour, raw-context)} sequence; no mutation log is replayed inside the CSF layer.
 	 */
+	@Experimental
 	public interface RowUpdateSource {
 		int size();
 
@@ -95,6 +100,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Diagnostics for one structurally shared rewrite. */
+	@Experimental
 	public record RewriteResult(ImmutablePagedQuadCsfIndex index, int sharedShardCount, int replacedShardCount,
 			int allocatedShardCount, long allocatedNativeBytes, long sharedNativeBytes) {
 	}
@@ -198,6 +204,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				literalDatatypeLookup);
 	}
 
+	@Experimental
 	@FunctionalInterface
 	public interface LiteralDatatypeLookup {
 		LiteralDatatypeLookup NONE = (ids, offset, length, target, targetOffset) -> 0;
@@ -1505,6 +1512,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Immutable exact shard/page allocation plan produced by the first pass. */
+	@Experimental
 	public static final class BuildPlan {
 		private final int predicateCount;
 		private final int[] partitionShardStarts;
@@ -1613,6 +1621,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** One ordered-pass builder. */
+	@Experimental
 	public static final class Builder implements AutoCloseable {
 		private final int predicateCount;
 		private final PartitionAccumulator[] partitions;
@@ -1840,6 +1849,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * Accelerators are owned by the immutable base rather than by a query. Therefore a full partition scan is paid at
 	 * most once per base generation and warm queries do not rebuild the same dictionary on every connection close.
 	 */
+	@Experimental
 	public static final class SharedPartitionLookup implements AutoCloseable {
 
 		private static final int MIN_ANALYSIS_PROBES = 256;
@@ -1992,6 +2002,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		/** Reusable, allocation-free-after-construction view of one row in a decoded neighbor CSR. */
+		@Experimental
 		public static final class DecodedRunCursor {
 			private DecodedNeighbors table;
 			private int ordinal = -1;
@@ -2968,6 +2979,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * repeated unsorted/sparse batches can promote this query-owned partition dictionary. The dictionary is shed on
 	 * memory pressure or {@link #close()}.
 	 */
+	@Experimental
 	public static final class PartitionLookup implements AutoCloseable {
 
 		private static final int MIN_BATCH_PROMOTION_PROBES = 8192;
@@ -3571,6 +3583,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * slack; otherwise a cursor may build one lazily after packed probes have paid its measured break-even cost.
 	 * One-off and sparse probes remain allocation-free.
 	 */
+	@Experimental
 	public static final class LookupCursor implements AutoCloseable {
 
 		private ImmutablePagedQuadCsfIndex owner;
@@ -3791,6 +3804,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	 * page-directory token. The exporter is responsible for retaining the page owner. No lookup or page-directory
 	 * resolution occurs while reading its fibers.
 	 */
+	@Experimental
 	public static final class BorrowedPageReader extends CompactCsfPageReader {
 		private int row;
 		private int nextFiber;
@@ -3843,6 +3857,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Reusable resolved logical row; all methods are allocation-free after construction. */
+	@Experimental
 	public static final class RowCursor extends CompactCsfPageReader {
 		private ImmutablePagedQuadCsfIndex owner;
 		private long localReference;
@@ -4151,6 +4166,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Zero-copy sorted key domain backed by shard/page row-coordinate columns. */
+	@Experimental
 	public static final class KeyDomain {
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int partition;
@@ -4293,6 +4309,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Header-first cursor over immutable physical pages in one predicate plane. */
+	@Experimental
 	public static final class PageCursor extends CompactCsfPageReader {
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int shardEnd;
@@ -4455,6 +4472,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/** Allocation-free-after-construction sequential cursor over one {@link KeyDomain}. */
+	@Experimental
 	public static final class KeyCursor extends CompactCsfPageReader {
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int shardEnd;

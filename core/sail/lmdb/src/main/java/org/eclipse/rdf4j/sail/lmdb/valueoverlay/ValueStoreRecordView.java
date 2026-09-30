@@ -15,13 +15,17 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Owned, exact byte view of the CURRENT ValueStoreRecordCodec format. No String or RDF Value construction. This is
  * lexical access, not numeric coercion, Unicode normalization, or SPARQL value comparison. IRI payloads contain only a
  * local name; namespace identity is a separate dictionary reference. A decoded array is owned by this view, so a
  * retained view does not pin native pages or a transaction.
  */
+@Experimental
 public final class ValueStoreRecordView {
+	@Experimental
 	public enum Kind {
 		IRI,
 		LITERAL,

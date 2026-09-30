@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 import java.util.Arrays;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedTupleBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
  * place, and correlated tuple columns are staged only in bounded windows. No state scales with degree or the
  * represented Cartesian product. The owner remains the caller.
  */
+@Experimental
 public final class KernelFactorCount implements AutoCloseable {
 	public static final long UNSUPPORTED = -1L;
 	private static final int WINDOW = 256;

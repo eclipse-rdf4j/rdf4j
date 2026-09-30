@@ -16,12 +16,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Tier-independent aggregate demand decomposition. Request zero establishes group identities and their first
  * representatives without multiplying bags. Each remaining request contains group bindings plus one argument, not the
  * union of independent aggregate argument domains. Equal demands share one traversal. A negative argument denotes a
  * nullary channel (COUNT(*)).
  */
+@Experimental
 public final class FactorProjectionLayout {
 	private final int[][] columns, channels;
 	private final boolean[] exact;

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.Serializable;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -68,6 +69,7 @@ public interface ValueStoreRevision {
 			return valueStore != null && valueStore.resolveValue(id, value);
 		}
 
+		@Experimental
 		@Override
 		public void resolveValues(LmdbValue[] values, int[] order, int count) {
 			if (valueStore != null) {
@@ -111,6 +113,7 @@ public interface ValueStoreRevision {
 			return false;
 		}
 
+		@Experimental
 		@Override
 		public void resolveValues(LmdbValue[] values, int[] order, int count) {
 			if (valueStore != null) {
@@ -128,6 +131,7 @@ public interface ValueStoreRevision {
 	boolean resolveValue(long id, LmdbValue value);
 
 	/** Resolves a same-revision batch in the caller-supplied order. */
+	@Experimental
 	default void resolveValues(LmdbValue[] values, int[] order, int count) {
 		resolveValuesOneByOne(values, order, count);
 	}

@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
@@ -116,6 +117,7 @@ public final class QueryEvaluator {
 			this.strategyDecisions = List.copyOf(strategyDecisions);
 		}
 
+		@Experimental
 		public List<StrategyDecision> getStrategyDecisions() {
 			return strategyDecisions;
 		}
@@ -151,6 +153,7 @@ public final class QueryEvaluator {
 			this.forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy;
 		}
 
+		@Experimental
 		public String getForcedLmdbExecutionStrategy() {
 			return forcedLmdbExecutionStrategy;
 		}

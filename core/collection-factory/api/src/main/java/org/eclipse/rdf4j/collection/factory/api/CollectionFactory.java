@@ -110,6 +110,7 @@ public interface CollectionFactory extends AutoCloseable {
 	 * @param sharedBindingNames the variable names shared by the two operands
 	 * @return a binding-set compatibility index
 	 */
+	@Experimental
 	@InternalUseOnly
 	default BindingSetCompatibilityIndex createBindingSetCompatibilityIndex(List<String> sharedBindingNames) {
 		return new DefaultBindingSetCompatibilityIndex(createMap(), sharedBindingNames);

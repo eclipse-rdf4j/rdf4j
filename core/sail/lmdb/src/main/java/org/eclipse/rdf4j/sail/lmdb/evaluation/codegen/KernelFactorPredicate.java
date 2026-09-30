@@ -12,6 +12,8 @@
 
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Pure ID guards over a binding prefix and bounded factor windows. Both execution tiers use this contract; it has no
  * dependency on IR classes, Values, dictionaries, or query-plan objects. Dependencies and column positions are in the
@@ -23,6 +25,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
  * evaluation must be total, deterministic and free of observable effects. A consumer may reorder independent guards and
  * evaluate each physical weighted member once.
  */
+@Experimental
 public interface KernelFactorPredicate {
 	int guardCount();
 

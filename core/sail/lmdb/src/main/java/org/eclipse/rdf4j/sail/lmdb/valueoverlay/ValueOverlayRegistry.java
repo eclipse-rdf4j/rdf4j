@@ -23,12 +23,16 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Exact committed-transaction publications: an immutable compressed base plus size-tiered changed-ID runs. A miss is
  * UNKNOWN and must go to the authoritative transaction, never to an older overlay view. Native commit is external;
  * prepare before it, complete only after it succeeds and its ID is verified.
  */
+@Experimental
 public final class ValueOverlayRegistry implements AutoCloseable {
+	@Experimental
 	public record DeltaOptions(long maxNativeBytes, int maxChangedIds, int retainedSnapshots, int maxLevels) {
 		public DeltaOptions {
 			if (maxNativeBytes < 0 || maxChangedIds < 1 || maxChangedIds > (1 << 24)
@@ -50,14 +54,17 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 	}
 
 	/** Null bytes mean deleted or deliberately uncovered. Both shadow earlier records and fall back to LMDB. */
+	@Experimental
 	public record Record(byte[] bytes, boolean reverseVisible) {
 	}
 
+	@Experimental
 	@FunctionalInterface
 	public interface Loader {
 		Record load(long id) throws IOException;
 	}
 
+	@Experimental
 	public record ViewStats(long transactionId, long baseTransactionId, int runs, long changedEntries,
 			long currentDeltaReservedBytes, int retainedSnapshots, long commits, long compactions,
 			long invalidations, String lastRefusal) {
@@ -104,6 +111,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 		return memoryBudget.stats();
 	}
 
+	@Experimental
 	public record MaintenanceStats(boolean scheduled, boolean active, long refusals, long discarded,
 			String lastFailure) {
 	}
@@ -407,6 +415,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 		}
 	}
 
+	@Experimental
 	public static final class Compaction implements AutoCloseable {
 		private final ValueOverlayRegistry registry;
 		private State anchor;
@@ -504,6 +513,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 	}
 
 	/** Writer-confined capture. At preparation the loader reads FINAL state in the same native write transaction. */
+	@Experimental
 	public static final class Mutation implements AutoCloseable {
 		private final ValueOverlayRegistry registry;
 		private State anchor;
@@ -655,6 +665,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 				base.vectorCompression());
 	}
 
+	@Experimental
 	public static final class Prepared implements AutoCloseable {
 		private final ValueOverlayRegistry registry;
 		private final State anchor;
@@ -691,6 +702,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 		}
 	}
 
+	@Experimental
 	public static final class SnapshotLease implements AutoCloseable {
 		private State state;
 

@@ -15,12 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.IOException;
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 
 /**
  * Cursor that emits one representative statement for each matching prefix run.
  */
+@Experimental
 @InternalUseOnly
 public interface LmdbPrefixRunCursor extends AutoCloseable {
 

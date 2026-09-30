@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.common.iteration;
 
 import java.util.NoSuchElementException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+
 /**
  * Abstract superclass for Iterations that wrap other Iterations. The abstract class <var>IterationWrapper</var> itself
  * provides default methods that forward method calls to the wrapped Iteration. Subclasses of
@@ -125,6 +127,7 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> implement
 		wrappedIter.close();
 	}
 
+	@Experimental
 	@Override
 	public boolean requestCancellation() {
 		if (isClosed() || !(wrappedIter instanceof CooperativeCancellation cancellation)) {

@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  * authority dictionary, DISTINCT/group state, comparator caches or I/O buffering. External merging bounds
  * simultaneously open readers and temporary-path state.
  */
+@Experimental
 public final class KernelOrderSink implements AutoCloseable {
 	private final int stride;
 	private final KernelCancellation cancellation;

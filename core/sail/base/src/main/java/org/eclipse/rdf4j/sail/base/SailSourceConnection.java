@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -740,6 +741,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		addStatementInternal(subj, pred, obj, contexts);
 	}
 
+	@Experimental
 	@Override
 	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
@@ -790,6 +792,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
+	@Experimental
 	protected void bulkStatementAdded(Statement statement, Resource... contexts) throws SailException {
 		if (contexts.length == 0) {
 			Resource context = statement.getContext();

@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -652,6 +653,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	 * count, so consecutive differences are usable directly as approximate range sizes. An unknown or empty database
 	 * yields all zeroes.
 	 */
+	@Experimental
 	public long[] estimateEntryRanks(long txnId, String dbName, byte[][] ascendingKeys) throws IOException {
 		long[] ranks = new long[ascendingKeys.length];
 		try (ReadView view = readTransactionById(txnId)) {

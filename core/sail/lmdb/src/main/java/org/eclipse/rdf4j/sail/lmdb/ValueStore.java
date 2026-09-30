@@ -96,6 +96,7 @@ import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
@@ -138,33 +139,39 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
+@Experimental
 @InternalUseOnly
 public class ValueStore extends AbstractValueFactory {
 
+	@Experimental
 	@FunctionalInterface
 	@InternalUseOnly
 	public interface ValueDataReader<T> {
 		T read(long address, int length) throws IOException;
 	}
 
+	@Experimental
 	@FunctionalInterface
 	@InternalUseOnly
 	public interface BulkRecordSource {
 		BulkRecord next() throws IOException;
 	}
 
+	@Experimental
 	@FunctionalInterface
 	@InternalUseOnly
 	public interface BulkLongQuadSource {
 		boolean next(long[] quad) throws IOException;
 	}
 
+	@Experimental
 	@FunctionalInterface
 	@InternalUseOnly
 	public interface BulkHashSource {
 		boolean next(long[] idAndHash) throws IOException;
 	}
 
+	@Experimental
 	@InternalUseOnly
 	public record BulkRecord(byte[] key, byte[] value) {
 
