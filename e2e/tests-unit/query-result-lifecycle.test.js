@@ -12,13 +12,24 @@ const { FakeWindow } = require('./browser-fakes.js');
 function compileQuerySource() {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-source-contract-'));
     const outputPath = path.join(outputDirectory, 'query.js');
+    const sharedTypePath = path.join(outputDirectory, 'query-stream-fullscreen.d.ts');
     const sourcePath = path.resolve(__dirname,
         '../../tools/workbench/src/main/webapp/scripts/ts/query.ts');
+    fs.writeFileSync(sharedTypePath, `declare namespace workbench {
+    module resultFullscreen {
+        function currentTarget(): HTMLElement;
+        function isFullscreen(target?: HTMLElement): boolean;
+        function set(target: HTMLElement, control: HTMLButtonElement, enabled: boolean,
+                restoreFocus?: boolean, callbacks?: any): void;
+        function toggle(target: HTMLElement, control: HTMLButtonElement): void;
+    }
+}`);
     const compilation = spawnSync('tsc', [
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',
         '--outFile', outputPath,
+        sharedTypePath,
         sourcePath
     ], { encoding: 'utf8' });
     assert.equal(compilation.status, 0,

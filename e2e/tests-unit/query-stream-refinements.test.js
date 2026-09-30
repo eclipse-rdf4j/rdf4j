@@ -82,12 +82,86 @@ function loadQueryStreamApi(workbench = {}) {
     });
     vm.runInContext(fs.readFileSync(outputPath, 'utf8'), context, { filename: outputPath });
     context.workbench.queryStream.__testWindow = testWindow;
+    context.workbench.queryStream.__testResultFullscreen = context.workbench.resultFullscreen;
     context.workbench.queryStream.__testSessionValues = sessionValues;
     context.workbench.queryStream.__testLocalValues = localValues;
     context.workbench.queryStream.__testResizeListeners = resizeListeners;
     context.workbench.queryStream.__testDisclosureObservers = disclosureObservers;
     return context.workbench.queryStream;
 }
+
+function createFullscreenFixture(doc = new FakeDocument()) {
+    doc.contains = element => element === doc.body || doc.elements.includes(element);
+    const target = doc.createElement('section');
+    const control = doc.createElement('button');
+    control.setAttribute('data-result-fullscreen-enabled', 'true');
+    for (const element of [target, control]) {
+        element.hasAttribute = name => element.attributes.has(name);
+        element.closest = () => null;
+    }
+    doc.body.appendChild(target);
+    doc.body.appendChild(control);
+    return { doc, target, control };
+}
+
+test('result fullscreen restores the parent control after entry from a focused result iframe', () => {
+    const queryStream = loadQueryStreamApi();
+    const manager = queryStream.__testResultFullscreen;
+    const { doc, target, control } = createFullscreenFixture();
+    const frame = doc.createElement('iframe');
+    doc.body.appendChild(frame);
+    frame.hasAttribute = name => frame.attributes.has(name);
+    frame.closest = () => null;
+
+    frame.focus();
+    assert.equal(doc.activeElement, frame);
+    manager.set(target, control, true, true, { previousFocus: control });
+    assert.equal(doc.activeElement, control, 'entering fullscreen moves focus to its parent control');
+
+    manager.set(target, control, false);
+
+    assert.equal(doc.activeElement, control,
+        'exiting fullscreen restores focus to the parent control instead of the previously focused iframe');
+    assert.equal(doc.body.classList.contains('query-results-fullscreen-active'), false,
+        'fullscreen exit releases the shared body scroll lock');
+});
+
+test('shared fullscreen ownership switches targets, enforces policy, and unlocks on renderer disposal', () => {
+    const queryStream = loadQueryStreamApi();
+    const manager = queryStream.__testResultFullscreen;
+    const first = createFullscreenFixture();
+    const second = createFullscreenFixture(first.doc);
+    const disabled = createFullscreenFixture(first.doc);
+    disabled.control.setAttribute('data-result-fullscreen-enabled', 'false');
+
+    manager.set(disabled.target, disabled.control, true);
+    assert.equal(manager.isFullscreen(disabled.target), false,
+        'a disabled fullscreen policy cannot activate the target');
+    assert.equal(manager.currentTarget(), null);
+
+    manager.set(first.target, first.control, true);
+    assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), true);
+    manager.set(second.target, second.control, true);
+    assert.equal(manager.isFullscreen(first.target), false, 'only the latest result owns fullscreen');
+    assert.equal(manager.isFullscreen(second.target), true);
+    assert.equal(manager.currentTarget(), second.target);
+    assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), true,
+        'switching result owners preserves the shared scroll lock');
+    manager.set(second.target, second.control, false, false);
+    assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), false,
+        'exiting the active owner releases the scroll lock');
+    assert.equal(manager.currentTarget(), null);
+
+    const disposal = createFullscreenFixture();
+    const renderer = new queryStream.QueryResultRenderer(disposal.target, { rowStore: inMemoryRowStore() });
+    manager.set(disposal.target, renderer.fullscreenButton, true);
+    renderer.dispose();
+    assert.equal(manager.isFullscreen(disposal.target), false,
+        'disposing a streamed result exits fullscreen on its owned target');
+    assert.equal(disposal.doc.body.classList.contains('query-results-fullscreen-active'), false,
+        'renderer disposal releases its body scroll lock');
+    assert.equal(manager.currentTarget(), null);
+});
 
 class InMemoryWorker {
     constructor() {
@@ -708,11 +782,20 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     const document = new FakeDocument();
     const target = document.createElement('section');
     target.setAttribute('id', 'query-results');
+    target.setAttribute('aria-labelledby', 'query-results-heading');
+    const legacyHeader = document.createElement('div');
+    legacyHeader.className = 'query-results__header';
+    const legacyHeading = document.createElement('h2');
+    legacyHeading.setAttribute('id', 'query-results-heading');
+    legacyHeading.textContent = 'Query result';
+    legacyHeader.appendChild(legacyHeading);
     const fullscreen = document.createElement('button');
     fullscreen.setAttribute('id', 'query-results-fullscreen');
     fullscreen.setAttribute('data-result-fullscreen-enabled', 'true');
+    fullscreen.hidden = true;
+    legacyHeader.appendChild(fullscreen);
+    target.appendChild(legacyHeader);
     document.body.appendChild(target);
-    document.body.appendChild(fullscreen);
     const executionForm = document.createElement('form');
     executionForm.setAttribute('action', 'query');
     executionForm.setAttribute('method', 'post');
@@ -730,14 +813,25 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     resultFrame.setAttribute('id', 'query-results-frame');
     resultFrame.setAttribute('name', 'query-results-frame');
     document.body.appendChild(resultFrame);
+    let fullscreenToggles = 0;
     const renderer = new queryStream.QueryResultRenderer(target, {
         executionForm,
         rowStore: inMemoryRowStore(),
+        onToggleFullscreen: () => { fullscreenToggles++; },
         workbench: {
             tupleDownloadFormats: ['text/csv CSV', 'application/sparql-results+json SPARQL JSON'],
             defaults: { 'default-Accept': 'text/csv', 'default-download-limit': '17' }
         }
     });
+
+    assert.equal(legacyHeader.hidden, true, 'the streamed title owns the initial result header');
+    const initialHeading = renderer.root.querySelector('h2');
+    assert.ok(initialHeading && initialHeading.getAttribute('id'));
+    assert.equal(target.getAttribute('aria-labelledby'), initialHeading.getAttribute('id'));
+    renderer.setBusy(true);
+    assert.equal(target.getAttribute('aria-busy'), 'true', 'the result region exposes its loading state');
+    renderer.setBusy(false);
+    assert.equal(target.getAttribute('aria-busy'), 'false', 'the result region exposes its settled state');
 
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
@@ -745,9 +839,30 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     await renderer.accept({ type: 'end', metadata: {
         'total-result-count': 1, 'result-offset': 0, 'result-limit': 0
     } });
+    assert.equal(renderer.state.complete, true, 'the toolbar remains owned through completed rendering');
 
-    assert.equal(renderer.fullscreenButton, fullscreen);
-    assert.equal(fullscreen.hidden, false, 'the result view enables the shared shell fullscreen control');
+    assert.notEqual(renderer.fullscreenButton, fullscreen,
+        'the streamed result owns its fullscreen trigger without moving the Lit-owned shell button');
+    assert.equal(legacyHeader.hidden, true, 'the legacy result header is hidden while the renderer owns its toolbar');
+    assert.equal(fullscreen.hidden, true, 'the hidden legacy toolbar cannot expose a second fullscreen trigger');
+    const streamedHeading = renderer.root.querySelector('h2');
+    assert.ok(streamedHeading && streamedHeading.getAttribute('id'),
+        'the renderer supplies an accessible title for its result view');
+    assert.equal(target.getAttribute('aria-labelledby'), streamedHeading.getAttribute('id'),
+        'the result region names the visible streamed title');
+    const visibleHeadings = target.querySelectorAll('h2').filter(heading => {
+        let ancestor = heading;
+        while (ancestor && ancestor !== target.parentNode) {
+            if (ancestor.hidden || ancestor.inert) return false;
+            ancestor = ancestor.parentNode;
+        }
+        return true;
+    });
+    assert.equal(visibleHeadings.length, 1, 'exactly one result title is visible during streaming');
+    assert.equal(visibleHeadings[0], streamedHeading);
+    assert.equal(renderer.fullscreenButton.hidden, false);
+    renderer.fullscreenButton.click();
+    assert.equal(fullscreenToggles, 1, 'the renderer-owned trigger keeps the fullscreen callback');
     assert.equal(renderer.downloadFormatControl.value, 'text/csv');
     assert.equal(renderer.downloadLimitControl.value, '17');
 	renderer.downloadToggle.trigger('click');
@@ -770,6 +885,15 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     assert.equal(Object.prototype.hasOwnProperty.call(download, 'headers'), false,
         'raw result downloads remain browser-native and do not use the stream Accept header');
     renderer.dispose();
+    assert.equal(legacyHeader.hidden, false, 'disposing the renderer restores the legacy result header');
+    assert.equal(target.getAttribute('aria-labelledby'), legacyHeading.getAttribute('id'),
+        'disposing the renderer restores the legacy accessible title');
+    const replacement = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    assert.equal(legacyHeader.hidden, true, 'a replacement stream takes ownership after a result reset');
+    assert.equal(target.getAttribute('aria-labelledby'), replacement.root.querySelector('h2').getAttribute('id'));
+    replacement.dispose();
+    assert.equal(legacyHeader.hidden, false, 'replacement disposal restores the legacy result header');
+    assert.equal(target.getAttribute('aria-labelledby'), legacyHeading.getAttribute('id'));
 });
 
 test('result disclosure panels measure their trigger and stay inside the result mount', async () => {

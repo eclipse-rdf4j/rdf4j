@@ -35,12 +35,9 @@ module workbench {
             return extra ? base + ' ' + extra : base;
         }
 
-        export function render(html: any, options: DetailDisclosureOptions, content: any): any {
+        function renderToggle(html: any, options: DetailDisclosureOptions): any {
             var expanded = !!options.expanded;
-            return html`<div id=${options.id || ''}
-                    class=${classes('workbench-disclosure', options.ownerClass || '')}
-                    data-workbench-detail-disclosure="true" ?hidden=${!!options.hidden}>
-                <button id=${options.toggleId} type="button"
+            return html`<button id=${options.toggleId} type="button"
                     class=${classes('workbench-disclosure__toggle', options.toggleClass || '')}
                     aria-controls=${options.panelId} aria-expanded=${expanded ? 'true' : 'false'}
                     aria-label=${options.accessibleName || options.label} ?hidden=${!!options.toggleHidden}>
@@ -48,14 +45,36 @@ module workbench {
                     <svg class="workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron"
                         data-workbench-icon="chevron" viewBox="0 0 24 24" width="16" height="16"
                         focusable="false" aria-hidden="true"><path d=${chevronPath}></path></svg>
-                </button>
-                <div id=${options.panelId}
+                </button>`;
+        }
+
+        function renderPanel(html: any, options: DetailDisclosureOptions, content: any): any {
+            return html`<div id=${options.panelId}
                     class=${classes('workbench-disclosure__panel', options.panelClass || '')}
                     role=${options.panelRole || 'region'} aria-labelledby=${options.toggleId}
-                    ?hidden=${!expanded}>
+                    ?hidden=${!options.expanded}>
                     <div class=${classes('workbench-disclosure__content', options.contentClass || '')}>${content}</div>
-                </div>
-            </div>`;
+                </div>`;
+        }
+
+        function renderOwner(html: any, options: DetailDisclosureOptions, content: any): any {
+            return html`<div id=${options.id || ''}
+                    class=${classes('workbench-disclosure', options.ownerClass || '')}
+                    data-workbench-detail-disclosure="true" ?hidden=${!!options.hidden}>${content}</div>`;
+        }
+
+        export function render(html: any, options: DetailDisclosureOptions, content: any): any {
+            return renderOwner(html, options,
+                html`${renderToggle(html, options)}${renderPanel(html, options, content)}`);
+        }
+
+        /** Keep triggers in their action group and associated panels in a shared full-width track. */
+        export function renderSeparated(html: any, options: DetailDisclosureOptions,
+                                        content: any): { owner: any; panel: any } {
+            return {
+                owner: renderOwner(html, options, renderToggle(html, options)),
+                panel: renderPanel(html, options, content)
+            };
         }
 
         export function create(doc: any, options: DetailDisclosureOptions): DetailDisclosureElements {

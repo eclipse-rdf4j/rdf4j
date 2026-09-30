@@ -108,7 +108,7 @@
 }
 
 .query-results {
-    margin-top: var(--workbench-space-section, 24px);
+    margin-top: var(--query-result-section-gap, var(--workbench-space-section, 24px));
 }
 
 .query-results[hidden] {
@@ -190,7 +190,9 @@ body.workbench-body .query-page .yasqe .CodeMirror pre {
  * and the page-surface reset live here; layout, header, context, and navigation
  * styling come from workbench-refresh.css. */
 body.workbench-body:has(#query-page),
-body.query-result-embedded-body {
+body.query-result-embedded-body,
+.query-results,
+.query-result-embedded {
     --query-accent: var(--workbench-teal);
     --query-accent-strong: var(--workbench-teal-dark);
     --query-ink: var(--workbench-ink);
@@ -218,10 +220,14 @@ body.workbench-body:has(#query-page) #workbench-page-surface {
     font-family: var(--workbench-font);
 }
 
+.query-page > form,
+.query-results {
+    padding: var(--workbench-card-inset, 24px);
+}
+
 .query-page > form {
     box-sizing: border-box;
     width: 100%;
-    padding: 20px 24px;
     border: 1px solid var(--workbench-soft-rule);
     border-radius: var(--workbench-radius);
     background: var(--query-surface);
@@ -237,55 +243,11 @@ body.workbench-body:has(#query-page) #workbench-page-surface {
 }
 
 .query-actions-toolbar {
-	display: grid;
-	grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-	grid-template-areas: "primary primary spacer save options";
-	align-items: start;
-	column-gap: var(--workbench-control-gap, 8px);
-	row-gap: 0;
 	margin-top: var(--workbench-field-gap, 4px);
-}
-
-.query-actions-toolbar__primary {
-	display: flex;
-	grid-area: primary;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--workbench-control-gap, 8px);
-    min-width: 0;
-}
-
-body.workbench-body .query-page .query-actions-toolbar__primary > * {
-    margin-right: 0;
-}
-
-.query-actions-toolbar > .query-disclosure {
-	display: contents;
-}
-
-.query-actions-toolbar > #save-query-disclosure > #save-query-toggle {
-	grid-area: save;
-}
-
-.query-actions-toolbar > #query-options-disclosure > #query-options-toggle {
-	grid-area: options;
-}
-
-.query-actions-toolbar > .query-disclosure > .query-disclosure__toggle {
-	justify-self: start;
 }
 
 .query-page .query-option {
     white-space: nowrap;
-}
-
-.query-actions-toolbar > .query-disclosure > .query-disclosure__panel {
-	grid-column: 1 / -1;
-	grid-row: auto;
-	width: fit-content;
-	min-height: 0;
-	max-width: 100%;
-	justify-self: start;
 }
 
 .query-page .query-save-disclosure__body #query-name {
@@ -460,8 +422,6 @@ body.workbench-body .query-page #explain-trigger:hover {
 
 .query-results {
     box-sizing: border-box;
-    margin-top: var(--workbench-space-section, 24px);
-    padding: 16px;
     border: 1px solid var(--workbench-soft-rule);
     border-radius: var(--workbench-radius);
     background: var(--query-surface);
@@ -478,10 +438,7 @@ body.workbench-body .query-page #explain-trigger:hover {
 }
 
 .query-results__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--workbench-space-subgroup, 16px);
+    margin-bottom: var(--workbench-control-gap, 8px);
 }
 
 .query-results__header[hidden] {
@@ -489,7 +446,7 @@ body.workbench-body .query-page #explain-trigger:hover {
 }
 
 .query-results__header h2 {
-    margin-bottom: 0.6rem;
+    margin: 0;
 }
 
 .query-results__fullscreen {
@@ -605,33 +562,22 @@ body.query-results-fullscreen-active {
 	box-sizing: border-box;
 	width: 100%;
 	max-width: 100%;
-	padding: 4px;
+	padding: 0;
 	overflow-x: clip;
 	overflow-y: visible;
 }
 
 .query-result-toolbar {
-	display: grid;
 	position: sticky;
 	top: 0;
 	z-index: 3;
-	grid-template-columns: minmax(0, 1fr) auto auto auto;
-	grid-template-areas: "title download options fullscreen";
-	align-items: end;
-	gap: var(--workbench-control-gap, 8px);
 	margin: 0;
 	padding: 0;
 	background: var(--query-surface);
 }
 
-.query-result-toolbar__header,
-.query-result-embedded-header {
-	display: contents;
-}
-
 .query-result-toolbar__header h2,
 .query-result-embedded-header h2 {
-	grid-area: title;
 	min-width: 0;
 	margin: 0;
 	position: sticky;
@@ -646,27 +592,6 @@ body.query-results-fullscreen-active {
 	overflow-wrap: anywhere;
 	white-space: normal;
 	overflow: visible;
-}
-
-.query-result-toolbar__disclosures {
-	display: contents;
-}
-
-@media (min-width: 901px) {
-	.query-result-toolbar:has(> .query-result-toolbar__header[hidden]),
-	.query-result-toolbar:not(:has(:is(#query-result-fullscreen, .query-results__fullscreen):not([hidden]))) {
-		grid-template-columns: minmax(0, 1fr) auto auto;
-		grid-template-areas: "title download options";
-	}
-}
-
-/* The sticky toolbar owns both the trigger row and its active panel. Legacy
- * content-heading margins must not add a second anchor distance. */
-body.workbench-body #content .query-result-toolbar__header > h2,
-body.query-result-embedded-body .query-result-toolbar__header > h2 {
-	position: static;
-	margin: 0;
-	padding: 0;
 }
 
 .query-result-embedded form {
@@ -684,62 +609,14 @@ body.query-result-embedded-body .query-result-toolbar__header > h2 {
 	min-width: 0;
 }
 
-.query-result-embedded .query-result-disclosure > .query-disclosure__toggle {
-	width: auto;
-	min-width: 0;
-}
-
-.query-result-embedded .query-result-download-toggle {
-	grid-area: download;
-}
-
-.query-result-embedded .query-result-options-toggle {
-	grid-area: options;
-}
-
 .query-result-embedded .query-result-download-toggle,
 .query-result-embedded .query-result-options-toggle {
-	justify-self: start;
 	width: fit-content;
 	max-width: 100%;
 }
 
 .query-result-embedded :is(#query-result-fullscreen, .query-results__fullscreen) {
-	grid-area: fullscreen;
 	position: static;
-}
-
-.query-result-embedded .query-result-download-toggle,
-.query-result-embedded .query-result-options-toggle,
-.query-result-embedded :is(#query-result-fullscreen, .query-results__fullscreen) {
-    grid-row: 1;
-}
-
-.query-result-embedded .query-result-disclosure-panels {
-	display: grid;
-	grid-column: 1 / -1;
-	grid-row: auto;
-	grid-template-columns: minmax(0, 1fr);
-	row-gap: 0;
-	width: 100%;
-	min-width: 0;
-	max-width: 100%;
-}
-
-.query-result-toolbar > .query-result-disclosure-panels:not(:has(> :not([hidden]))) {
-	display: none;
-}
-
-body.workbench-body .query-result-toolbar > .query-result-disclosure-panels > .workbench-disclosure__panel,
-body.query-result-embedded-body .query-result-toolbar > .query-result-disclosure-panels > .workbench-disclosure__panel {
-	margin-block-start: 0;
-}
-
-.query-result-embedded .query-result-disclosure-panels > .query-disclosure__panel {
-	grid-column: 1 / -1;
-	width: fit-content;
-	min-width: 0;
-	max-width: 100%;
 }
 
 .query-result-embedded .query-result-disclosure-panels > .query-disclosure__panel > form {
@@ -1061,10 +938,6 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
 }
 
 @media (max-width: 900px) {
-    .query-page > form {
-        padding: 16px;
-    }
-
     .query-page .query-form__row {
         grid-template-columns: minmax(0, 1fr);
         align-items: start;
@@ -1080,171 +953,19 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
         min-width: 0;
     }
 
-    .query-actions-toolbar {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            "primary"
-            "save"
-            "options";
-        column-gap: var(--workbench-control-gap, 8px);
-        row-gap: var(--workbench-control-gap, 8px);
-    }
-
-    .query-actions-toolbar > .query-disclosure {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        column-gap: var(--workbench-control-gap, 8px);
-        row-gap: 0;
-        width: 100%;
-        min-width: 0;
-    }
-
-    .query-actions-toolbar > #save-query-disclosure {
-        grid-area: save;
-    }
-
-    .query-actions-toolbar > #query-options-disclosure {
-        grid-area: options;
-    }
-
-    .query-actions-toolbar > #save-query-disclosure > #save-query-toggle,
-    .query-actions-toolbar > #query-options-disclosure > #query-options-toggle {
-        grid-area: auto;
-    }
-
-    .query-actions-toolbar > .query-disclosure > .query-disclosure__toggle {
-        grid-area: auto;
-    }
-
-    .query-actions-toolbar > .query-disclosure > .query-disclosure__panel {
-        grid-area: auto;
-        width: 100%;
-        max-width: 100%;
-        justify-self: stretch;
-        margin-block-start: 8px;
-        margin-inline-start: 0;
-    }
-
-    .query-actions-toolbar__primary {
-        grid-column: 1 / -1;
-    }
-
     .query-actions-toolbar__primary input {
         flex: 0 1 auto;
         min-width: 0;
-    }
-
-    .query-actions-toolbar > #save-query-disclosure > #save-query-toggle,
-    .query-actions-toolbar > #query-options-disclosure > #query-options-toggle {
-        grid-column: auto;
-    }
-
-    .query-results {
-        padding: 12px;
     }
 
     .query-results__frame {
         max-height: 560px;
     }
 
-    .query-result-embedded {
-        padding: 0;
-    }
-
     .query-result-embedded form {
         display: block;
         width: 100%;
         margin-right: 0;
-    }
-
-    .query-result-toolbar {
-        grid-template-columns: minmax(0, 1fr) auto;
-        grid-template-areas:
-            "title fullscreen"
-            "download options";
-        gap: var(--workbench-control-gap, 8px);
-    }
-
-	.query-result-toolbar:has(> .query-result-toolbar__header[hidden]) {
-		grid-template-areas: "download options";
-	}
-
-	.query-result-embedded .query-result-download-toggle,
-	.query-result-embedded .query-result-options-toggle,
-	.query-result-embedded :is(#query-result-fullscreen, .query-results__fullscreen) {
-		grid-row: auto;
-	}
-
-	@media (max-width: 360px) {
-		.query-result-toolbar {
-			grid-template-areas:
-				"title fullscreen"
-				"download download"
-				"options options";
-		}
-
-		.query-result-toolbar:has(.query-result-download-panel:not([hidden])) {
-			grid-template-areas:
-				"title fullscreen"
-				"download download"
-				"panels panels"
-				"options options";
-		}
-
-		.query-result-toolbar:has(.query-result-options-panel:not([hidden])) {
-			grid-template-areas:
-				"title fullscreen"
-				"download download"
-				"options options"
-				"panels panels";
-		}
-
-		.query-result-toolbar:has(> .query-result-toolbar__header[hidden]) {
-			grid-template-areas:
-				"download download"
-				"options options";
-		}
-
-		.query-result-toolbar:has(> .query-result-toolbar__header[hidden]):has(.query-result-download-panel:not([hidden])) {
-			grid-template-areas:
-				"download download"
-				"panels panels"
-				"options options";
-		}
-
-		.query-result-toolbar:has(> .query-result-toolbar__header[hidden]):has(.query-result-options-panel:not([hidden])) {
-			grid-template-areas:
-				"download download"
-				"options options"
-				"panels panels";
-		}
-
-		.query-result-embedded .query-result-disclosure-panels {
-			grid-area: panels;
-		}
-	}
-
-    .query-result-toolbar__disclosures {
-        display: contents;
-    }
-
-	.query-result-toolbar__disclosures:has(.query-result-disclosure.is-open) {
-		display: contents;
-	}
-
-    .query-result-embedded .query-result-disclosure {
-        display: contents;
-    }
-
-    .query-result-embedded .query-result-disclosure > .query-disclosure__toggle {
-        min-width: 0;
-        width: fit-content;
-        max-width: 100%;
-        justify-self: start;
-    }
-
-    .query-result-embedded .query-result-options-toggle {
-        justify-self: end;
     }
 
     .query-result-embedded .query-result-controls tr:first-child {

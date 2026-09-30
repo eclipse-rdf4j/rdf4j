@@ -509,7 +509,13 @@ function createQueryBrowserHarness(options = {}) {
     if (!context.Diff) {
         harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
     }
+    const injectedQueryPage = options.workbench && options.workbench.queryPage
+        ? Object.assign({}, options.workbench.queryPage) : null;
     harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
+    harness.runScript('tools/workbench/src/main/webapp/scripts/queryStream.js');
+    if (injectedQueryPage) {
+        context.workbench.queryPage = injectedQueryPage;
+    }
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
     harness.runScript(options.queryScriptPath || 'tools/workbench/src/main/webapp/scripts/query.js');

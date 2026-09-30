@@ -33,7 +33,6 @@ var workbench;
         var resultFrameWindowResizeHandler = null;
         var resultPresentationLayout = 'auto';
         var resultPresentationWrap = true;
-        var resultFullscreenPreviousFocus = null;
         var resultLoadingRequested = false;
         var RESULT_FRAME_ID = 'query-results-frame';
         var RESULT_LOADING_ID = 'query-results-loading';
@@ -2620,8 +2619,17 @@ var workbench;
                 }
             }
         }
+        function getResultFullscreenButton(results) {
+            var target = results || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var streamed = target && target.querySelector
+                ? target.querySelector('[data-query-stream-root] .query-results__fullscreen') : null;
+            if (!streamed && target && target.id !== 'query-results') {
+                return target.querySelector ? target.querySelector('.query-results__fullscreen') : null;
+            }
+            return streamed || document.getElementById('query-results-fullscreen');
+        }
         function setResultFullscreenButtonAvailable(available) {
-            var button = document.getElementById('query-results-fullscreen');
+            var button = getResultFullscreenButton();
             if (!button) {
                 return;
             }
@@ -2630,7 +2638,7 @@ var workbench;
             button.disabled = !enabled;
         }
         function isResultFullscreenEnabled() {
-            var button = document.getElementById('query-results-fullscreen');
+            var button = getResultFullscreenButton();
             return !!button && button.getAttribute('data-result-fullscreen-enabled') !== 'false';
         }
         function isQueryRerunEnabled() {
@@ -2646,24 +2654,10 @@ var workbench;
             return !button || button.getAttribute('data-editor-namespaces-enabled') !== 'false';
         }
         function isResultsFullscreen() {
-            var results = document.getElementById('query-results');
-            return !!results && results.getAttribute('data-fullscreen') === 'true';
+            return workbench.resultFullscreen.isFullscreen(workbench.resultFullscreen.currentTarget()
+                || document.getElementById('query-results'));
         }
         query_1.isResultsFullscreen = isResultsFullscreen;
-        function updateResultsFullscreenButton(enabled) {
-            var button = document.getElementById('query-results-fullscreen');
-            if (!button) {
-                return;
-            }
-            var label = enabled ? 'Exit full screen' : 'Full screen';
-            button.setAttribute('aria-label', label);
-            button.setAttribute('title', label);
-            button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-            var labelElement = button.querySelector('.query-results__fullscreen-label');
-            if (labelElement) {
-                labelElement.textContent = label;
-            }
-        }
         function postResultPresentationToFrame() {
             var frame = getResultFrame();
             if (!frame || !frame.contentWindow || typeof frame.contentWindow.postMessage !== 'function') {
@@ -2706,11 +2700,6 @@ var workbench;
             }
         }
         function restoreResultFullscreenFocus(button, frame) {
-            if (resultFullscreenPreviousFocus && document.contains(resultFullscreenPreviousFocus)
-                && !resultFullscreenPreviousFocus.hidden && !resultFullscreenPreviousFocus.hasAttribute('disabled')) {
-                resultFullscreenPreviousFocus.focus();
-                return;
-            }
             if (button && !button.hidden && !button.disabled) {
                 button.focus();
                 return;
@@ -2734,51 +2723,33 @@ var workbench;
             var childHeader = childDocument && childDocument.getElementById('query-result-embedded-header');
             parentHeader.hidden = !!childHeader;
         }
-        function setResultsFullscreen(enabled, restoreFocus) {
+        function setResultsFullscreen(enabled, restoreFocus, target, control) {
             if (restoreFocus === void 0) { restoreFocus = true; }
-            var results = document.getElementById('query-results');
-            if (!results || !document.body) {
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            if (!results) {
                 return;
             }
-            if (enabled && !isResultFullscreenEnabled()) {
-                return;
-            }
-            if (enabled === isResultsFullscreen()) {
-                updateResultsFullscreenButton(enabled);
-                return;
-            }
-            var button = document.getElementById('query-results-fullscreen');
-            if (enabled) {
-                var frame = getResultFrame();
-                if (document.activeElement && document.activeElement !== document.body
-                    && document.activeElement !== frame) {
-                    resultFullscreenPreviousFocus = document.activeElement;
+            var button = control || getResultFullscreenButton(results);
+            var frame = results.id === 'query-results' ? getResultFrame() : null;
+            workbench.resultFullscreen.set(results, button, enabled, restoreFocus, {
+                previousFocus: frame && document.activeElement === frame ? button : undefined,
+                change: function (fullscreen) {
+                    if (results.id === 'query-results') {
+                        if (fullscreen) {
+                            postResultPresentationToFrame();
+                        }
+                        else {
+                            resizeResultFrame(getResultFrame());
+                        }
+                        postResultFullscreenStateToFrame();
+                    }
+                },
+                restoreFocus: function () {
+                    restoreResultFullscreenFocus(button, results.id === 'query-results' ? getResultFrame() : null);
                 }
-                else if (button) {
-                    resultFullscreenPreviousFocus = button;
-                }
-                results.setAttribute('data-fullscreen', 'true');
-                results.classList.add('query-results--fullscreen');
-                document.body.classList.add('query-results-fullscreen-active');
-                updateResultsFullscreenButton(true);
-                postResultPresentationToFrame();
-                postResultFullscreenStateToFrame();
-                if (button) {
-                    button.focus();
-                }
-                return;
-            }
-            results.removeAttribute('data-fullscreen');
-            results.classList.remove('query-results--fullscreen');
-            document.body.classList.remove('query-results-fullscreen-active');
-            updateResultsFullscreenButton(false);
-            resizeResultFrame(getResultFrame());
-            postResultFullscreenStateToFrame();
-            if (restoreFocus) {
-                restoreResultFullscreenFocus(button, getResultFrame());
-            }
-            resultFullscreenPreviousFocus = null;
+            });
         }
+        query_1.setResultsFullscreen = setResultsFullscreen;
         function getResultPresentationState() {
             return { layout: resultPresentationLayout, wrap: resultPresentationWrap };
         }
@@ -3727,12 +3698,14 @@ var workbench;
             setResultStatus('Query cancelled.');
         }
         query_1.cancelQuery = cancelQuery;
-        function toggleResultsFullscreen() {
-            var button = document.getElementById('query-results-fullscreen');
-            if (!button || button.disabled || !isResultFullscreenEnabled()) {
+        function toggleResultsFullscreen(target, control) {
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var button = control || getResultFullscreenButton(results);
+            if (!results || !button || button.disabled
+                || button.getAttribute('data-result-fullscreen-enabled') === 'false') {
                 return;
             }
-            setResultsFullscreen(!isResultsFullscreen());
+            setResultsFullscreen(results.getAttribute('data-fullscreen') !== 'true', true, results, button);
         }
         query_1.toggleResultsFullscreen = toggleResultsFullscreen;
         function runExplain(level, buttonId) {
@@ -4266,7 +4239,10 @@ var workbench;
                 activeQueryRequestId = null;
                 resultPresentationLayout = 'auto';
                 resultPresentationWrap = true;
-                resultFullscreenPreviousFocus = null;
+                var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+                if (fullscreenTarget) {
+                    setResultsFullscreen(false, false, fullscreenTarget);
+                }
                 primaryExplanationPending = false;
                 activeCompareRequestId = 0;
                 activeComparePendingRequests = 0;

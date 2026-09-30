@@ -15,6 +15,128 @@
 
 namespace workbench {
 
+    /** One viewport owner for streamed and legacy result controls on every query route. */
+    export module resultFullscreen {
+
+        export interface Callbacks {
+            previousFocus?: HTMLElement;
+            change?: (enabled: boolean) => void;
+            restoreFocus?: () => void;
+        }
+
+        interface Owner {
+            target: HTMLElement;
+            control: HTMLButtonElement;
+            previousFocus: HTMLElement;
+            callbacks: Callbacks;
+        }
+
+        var owner: Owner = null;
+
+        export function currentTarget(): HTMLElement {
+            return owner && owner.target;
+        }
+
+        export function isFullscreen(target?: HTMLElement): boolean {
+            var result = target || currentTarget();
+            return !!result && result.getAttribute('data-fullscreen') === 'true';
+        }
+
+        function updateControl(control: HTMLButtonElement, enabled: boolean): void {
+            if (!control) {
+                return;
+            }
+            var label = enabled ? 'Exit full screen' : 'Full screen';
+            control.setAttribute('aria-label', label);
+            control.setAttribute('title', label);
+            control.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+            var text = control.querySelector('.query-results__fullscreen-label');
+            if (text) {
+                text.textContent = label;
+            }
+        }
+
+        function canFocus(element: HTMLElement, doc: Document): boolean {
+            return !!element && doc.contains(element) && !element.hidden
+                && !element.hasAttribute('disabled')
+                && !(element.closest && element.closest('[hidden], [inert]'));
+        }
+
+        function focusElement(element: HTMLElement): void {
+            var active = element.ownerDocument.activeElement;
+            // Release child-document focus before transferring it to a different parent control.
+            if (active && active !== element && active.tagName === 'IFRAME'
+                    && typeof (<HTMLElement>active).blur === 'function') {
+                (<HTMLElement>active).blur();
+            }
+            element.focus();
+        }
+
+        export function set(target: HTMLElement, control: HTMLButtonElement, enabled: boolean,
+                            restoreFocus: boolean = true, callbacks?: Callbacks): void {
+            var doc = target && target.ownerDocument;
+            if (!target || !doc || !doc.body) {
+                return;
+            }
+            if (enabled && (!control || control.disabled
+                    || control.getAttribute('data-result-fullscreen-enabled') === 'false')) {
+                return;
+            }
+            if (enabled === isFullscreen(target)) {
+                updateControl(control, enabled);
+                return;
+            }
+            if (enabled) {
+                if (owner && owner.target !== target) {
+                    set(owner.target, owner.control, false, false);
+                }
+                owner = {
+                    target: target,
+                    control: control,
+                    previousFocus: callbacks && callbacks.previousFocus
+                        || (doc.activeElement !== doc.body ? <HTMLElement>doc.activeElement : control),
+                    callbacks: callbacks || {}
+                };
+                target.setAttribute('data-fullscreen', 'true');
+                target.classList.add('query-results--fullscreen');
+                doc.body.classList.add('query-results-fullscreen-active');
+                updateControl(control, true);
+                if (owner.callbacks.change) {
+                    owner.callbacks.change(true);
+                }
+                focusElement(control);
+                return;
+            }
+            var previous = owner && owner.target === target ? owner : null;
+            if (previous) {
+                owner = null;
+            }
+            target.removeAttribute('data-fullscreen');
+            target.classList.remove('query-results--fullscreen');
+            if (!owner || owner.target.ownerDocument !== doc) {
+                doc.body.classList.remove('query-results-fullscreen-active');
+            }
+            updateControl(control, false);
+            var actions = previous ? previous.callbacks : callbacks || {};
+            if (actions.change) {
+                actions.change(false);
+            }
+            if (restoreFocus) {
+                if (previous && canFocus(previous.previousFocus, doc)) {
+                    focusElement(previous.previousFocus);
+                } else if (canFocus(control, doc)) {
+                    focusElement(control);
+                } else if (actions.restoreFocus) {
+                    actions.restoreFocus();
+                }
+            }
+        }
+
+        export function toggle(target: HTMLElement, control: HTMLButtonElement): void {
+            set(target, control, !isFullscreen(target));
+        }
+    }
+
     export module queryStream {
 
         export var ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
@@ -1711,6 +1833,10 @@ namespace workbench {
             private busy = false;
             private renderFramePending = false;
             private continuationBlocked = false;
+            private legacyHeader: any = null;
+            private legacyHeaderHidden = false;
+            private previousLabelledBy: string = null;
+            private resultHeadingId: string;
             private batchContexts: { start: number; end: number; scope: string;
                 namespaces: { prefix: string; name: string }[] }[] = [];
 
@@ -1741,36 +1867,60 @@ namespace workbench {
                 this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
                 target.appendChild(this.root);
 
-                var toolbar = createElement(this.document, 'div', 'query-result-toolbar');
-                var header = createElement(this.document, 'div', 'query-result-toolbar__header');
+                var toolbar = createElement(this.document, 'div', 'query-result-toolbar workbench-action-toolbar');
+                var header = createElement(this.document, 'div',
+                    'query-result-toolbar__header workbench-action-toolbar__primary');
                 var title = createElement(this.document, 'h2');
-                title.textContent = 'Query results';
+                title.textContent = target.id === 'query-results' ? 'Query result' : 'Query results';
+                this.resultHeadingId = this.elementId('query-result-heading');
+                title.setAttribute('id', this.resultHeadingId);
                 header.appendChild(title);
-                header.hidden = target.id === 'query-results';
+                this.previousLabelledBy = target.getAttribute('aria-labelledby');
+                target.setAttribute('aria-labelledby', this.resultHeadingId);
+                this.legacyHeader = target.querySelector ? target.querySelector('.query-results__header') : null;
+                if (this.legacyHeader) {
+                    this.legacyHeaderHidden = this.legacyHeader.hidden;
+                    this.legacyHeader.hidden = true;
+                }
                 var existingFullscreen = this.document.getElementById
                     ? this.document.getElementById('query-results-fullscreen') : null;
-                this.fullscreenButton = existingFullscreen || this.createButton('Full screen', () => {
+                this.fullscreenButton = this.createButton('Full screen', () => {
                     if (this.options.onToggleFullscreen) {
                         this.options.onToggleFullscreen();
                     } else {
                         var query = (workbench as any).query;
                         if (query && typeof query.toggleResultsFullscreen === 'function') {
-                            query.toggleResultsFullscreen();
+                            query.toggleResultsFullscreen(this.target, this.fullscreenButton);
+                        } else {
+                            workbench.resultFullscreen.toggle(this.target, this.fullscreenButton);
                         }
                     }
                 });
-                if (!existingFullscreen) {
-                    this.fullscreenButton.setAttribute('id', this.elementId('query-result-fullscreen'));
-                    this.fullscreenButton.className = 'query-results__fullscreen';
-                    this.fullscreenButton.setAttribute('aria-label', 'Full screen');
-                    this.fullscreenButton.setAttribute('aria-pressed', 'false');
-                    this.fullscreenButton.setAttribute('data-result-fullscreen-enabled', 'true');
-                    header.appendChild(this.fullscreenButton);
-                }
+                this.fullscreenButton.setAttribute('id', this.elementId('query-result-fullscreen'));
+                this.fullscreenButton.className = 'query-results__fullscreen';
+                this.fullscreenButton.setAttribute('aria-label', 'Full screen');
+                this.fullscreenButton.setAttribute('aria-pressed', 'false');
+                this.fullscreenButton.setAttribute('data-result-fullscreen-enabled',
+                    target.id === 'query-results' && existingFullscreen
+                        ? existingFullscreen.getAttribute('data-result-fullscreen-enabled') || 'true' : 'true');
+                this.fullscreenButton.textContent = '';
+                var fullscreenIcon = createSvgElement(this.document, 'svg', 'query-results__fullscreen-icon');
+                fullscreenIcon.setAttribute('viewBox', '0 0 24 24');
+                fullscreenIcon.setAttribute('focusable', 'false');
+                fullscreenIcon.setAttribute('aria-hidden', 'true');
+                var fullscreenPath = createSvgElement(this.document, 'path');
+                fullscreenPath.setAttribute('d', 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5');
+                fullscreenIcon.appendChild(fullscreenPath);
+                this.fullscreenButton.appendChild(fullscreenIcon);
+                var fullscreenLabel = createElement(this.document, 'span', 'query-results__fullscreen-label');
+                fullscreenLabel.textContent = 'Full screen';
+                this.fullscreenButton.appendChild(fullscreenLabel);
                 this.fullscreenButton.hidden = true;
                 toolbar.appendChild(header);
-
-                var disclosures = createElement(this.document, 'div', 'query-result-toolbar__disclosures');
+                var actions = createElement(this.document, 'div', 'workbench-action-toolbar__actions');
+                actions.appendChild(this.fullscreenButton);
+                var disclosures = createElement(this.document, 'div',
+                    'query-result-toolbar__disclosures workbench-action-toolbar__group');
                 var downloadPanelId = this.elementId('query-result-download-panel');
                 var downloadDisclosure = workbench.detailDisclosure.create(this.document, {
                     id: this.elementId('query-result-download-disclosure'),
@@ -1791,11 +1941,12 @@ namespace workbench {
                 });
                 this.optionsToggle = optionsDisclosure.toggle;
                 disclosures.appendChild(optionsDisclosure.owner);
-                toolbar.appendChild(disclosures);
+                actions.appendChild(disclosures);
+                toolbar.appendChild(actions);
                 this.root.appendChild(toolbar);
 
                 var panels = createElement(this.document, 'div',
-                    'query-result-disclosure-panels workbench-disclosure-track');
+                    'query-result-disclosure-panels workbench-action-toolbar__panels workbench-disclosure-track');
                 var downloadPanel = downloadDisclosure.panel;
                 var optionsPanel = optionsDisclosure.panel;
                 panels.appendChild(downloadPanel);
@@ -1840,6 +1991,18 @@ namespace workbench {
                     this.optionsToggle, optionsPanel, optionsDisclosure.owner));
                 panels.appendChild(optionsPanel);
                 toolbar.appendChild(panels);
+                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
+                if (view && view.addEventListener) {
+                    var onFullscreenEscape = (event: KeyboardEvent) => {
+                        if (event.key === 'Escape' && !event.defaultPrevented
+                                && this.target.getAttribute('data-fullscreen') === 'true') {
+                            workbench.resultFullscreen.set(this.target, this.fullscreenButton, false);
+                            event.preventDefault();
+                        }
+                    };
+                    view.addEventListener('keydown', onFullscreenEscape, false);
+                    this.disposers.push(() => view.removeEventListener('keydown', onFullscreenEscape, false));
+                }
 
                 this.status = createElement(this.document, 'div', 'query-result-status');
                 this.status.setAttribute('role', 'status');
@@ -2280,6 +2443,19 @@ namespace workbench {
                 this.records.removeEventListener('scroll', this.onScroll, false);
                 this.disposers.forEach(dispose => dispose());
                 this.disposers = [];
+                if (this.target.getAttribute('data-fullscreen') === 'true') {
+                    workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
+                }
+                if (this.legacyHeader) {
+                    this.legacyHeader.hidden = this.legacyHeaderHidden;
+                }
+                if (this.target.getAttribute('aria-labelledby') === this.resultHeadingId) {
+                    if (this.previousLabelledBy === null) {
+                        this.target.removeAttribute('aria-labelledby');
+                    } else {
+                        this.target.setAttribute('aria-labelledby', this.previousLabelledBy);
+                    }
+                }
                 if (this.root.parentNode === this.target) {
                     this.target.removeChild(this.root);
                 }

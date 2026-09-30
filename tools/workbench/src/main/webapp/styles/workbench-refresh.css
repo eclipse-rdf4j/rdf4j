@@ -71,6 +71,7 @@
 	--workbench-space-field: 12px;
 	--workbench-space-subgroup: 16px;
 	--workbench-space-section: 24px;
+	--workbench-card-inset: var(--workbench-space-section);
 	--workbench-control-inset: 12px;
 	--workbench-control-gap: var(--workbench-space-related);
 	--workbench-form-gap: var(--workbench-space-field);
@@ -223,6 +224,89 @@ body.workbench-body form[action="create"] input[type="submit"] {
 body.workbench-body #workbench-page-surface > form:not([action="create"]):not(:has(#update-editor)) {
 	width: fit-content;
 	max-width: 100%;
+}
+
+/* Cards own their content edge; action rows only own spacing and wrapping. */
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__primary {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+}
+
+body.workbench-body #content .workbench-action-toolbar__primary > h2,
+body.query-result-embedded-body .workbench-action-toolbar__primary > h2 {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	position: static;
+	margin: 0;
+	padding: 0;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__actions {
+	display: contents;
+}
+
+.workbench-action-toolbar__actions > button {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.workbench-action-toolbar__group > .workbench-disclosure {
+	display: contents;
+}
+
+.workbench-action-toolbar__group:not(:has(button:not([hidden]), input:not([hidden]))) {
+	display: none;
+}
+
+.workbench-action-toolbar__panels {
+	display: grid;
+	flex-basis: 100%;
+	grid-template-columns: minmax(0, 1fr);
+	width: 100%;
+	min-width: 0;
+}
+
+.workbench-action-toolbar__panels:not(:has(> :not([hidden]))) {
+	display: none;
+}
+
+.workbench-action-toolbar .workbench-action-toolbar__panels > .workbench-disclosure__panel {
+	grid-row: auto;
+	width: fit-content;
+	max-width: 100%;
+	margin-block-start: 0;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body,
+	body.query-result-embedded-body {
+		--workbench-card-inset: var(--workbench-space-subgroup);
+	}
 }
 
 /* One shared surface, trigger, field layout, anchor, and responsive contract for
@@ -2212,7 +2296,7 @@ body.workbench-body .saved-query-actions > form {
 }
 
 body.workbench-body .saved-query-row > .query-results {
-	margin-top: var(--workbench-space-subgroup);
+	--query-result-section-gap: var(--workbench-space-subgroup);
 }
 
 body.workbench-body .saved-query-row > .query-results:empty {

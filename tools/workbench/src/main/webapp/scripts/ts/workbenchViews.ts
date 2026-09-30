@@ -1870,6 +1870,48 @@ module workbench {
             const explanation = text(pageValue(model, 'explanation'));
             const explanationFormat = text(pageValue(model, 'explanation-format')) || 'text';
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
+            const saveDisclosure = workbench.detailDisclosure.renderSeparated(h, {
+                id: 'save-query-disclosure', toggleId: 'save-query-toggle', panelId: 'save-query-panel',
+                label: 'Save query', ownerClass: 'query-disclosure query-save-disclosure',
+                toggleClass: 'query-disclosure__toggle',
+                panelClass: 'query-disclosure__body query-disclosure__panel query-save-disclosure__body',
+                contentClass: 'workbench-disclosure__fields',
+                toggleHidden: !queryFeatureEnabled(context, 'query-save')
+            }, h`<div class="workbench-disclosure__field query-save-disclosure__name-field">
+                    <label class="query-form__label" for="query-name">Query name</label>
+                    <input id="query-name" name="query-name" type="text" size="32" maxlength="32" value="" />
+                </div>
+                <label class="query-option query-save-disclosure__private"
+                    ?hidden=${!queryFeatureEnabled(context, 'query-private-save')}>
+                    <input id="save-private" name="save-private" type="checkbox" value="true"
+                        ?hidden=${!queryFeatureEnabled(context, 'query-private-save')} />Private</label>
+                <div class="workbench-disclosure__actions query-disclosure__actions">
+                    <input id="save" type="submit" value="Save" disabled
+                        ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
+                </div>`);
+            const optionsDisclosure = workbench.detailDisclosure.renderSeparated(h, {
+                id: 'query-options-disclosure', toggleId: 'query-options-toggle',
+                panelId: 'query-options-panel', label: 'Options',
+                ownerClass: 'query-disclosure query-options-disclosure',
+                toggleClass: 'query-disclosure__toggle',
+                panelClass: 'query-disclosure__body query-disclosure__panel',
+                contentClass: 'workbench-disclosure__fields',
+                toggleHidden: !queryFeatureEnabled(context, 'query-options')
+            }, h`<div class="workbench-disclosure__field">
+                    <label for="query-timeout">Query timeout</label>
+                    <input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
+                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} />
+                </div>
+                <div class="workbench-disclosure__field">
+                    <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
+                        ?checked=${text(defaults['default-infer']) === 'true'}
+                        ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
+                        <span>Include inferred statements</span></label>
+                </div>
+                <div class="workbench-disclosure__actions query-disclosure__actions"><input id="query-reset-namespaces" type="button" value="Clear"
+                    data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
+                    ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
+                    @click=${() => invoke('workbench.query.resetNamespaces')} /></div>`);
             return h`<div id="query-page" class="query-page"
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
@@ -1926,7 +1968,7 @@ module workbench {
                                 error: pageValue(model, 'error-message') }, context)}
                             ${queryPane(runtime, { compare: true }, context)}
                         </div>
-                        <div class="query-actions-toolbar"><div class="query-form__field query-form__field--actions query-actions-toolbar__primary">
+                        <div class="query-actions-toolbar workbench-action-toolbar"><div class="query-form__field query-actions-toolbar__primary workbench-action-toolbar__primary">
                             <button id="exec" class="query-action query-action--primary" type="submit"
                                 ?hidden=${!queryFeatureEnabled(context, 'query-execution')}>${icon(runtime, 'execute')}<span>Execute</span></button>
                             <input id="query-cancel" class="query-cancel" type="button" value="Cancel" aria-hidden="true" disabled
@@ -1943,53 +1985,19 @@ module workbench {
                                     ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
                                     @click=${() => invoke('workbench.query.cancelExplain')} /></span>
                         </div>
-                        ${workbench.detailDisclosure.render(h, {
-                            id: 'save-query-disclosure', toggleId: 'save-query-toggle', panelId: 'save-query-panel',
-                            label: 'Save query', ownerClass: 'query-disclosure query-save-disclosure',
-                            toggleClass: 'query-disclosure__toggle',
-                            panelClass: 'query-disclosure__body query-disclosure__panel query-save-disclosure__body',
-                            contentClass: 'workbench-disclosure__fields',
-                            toggleHidden: !queryFeatureEnabled(context, 'query-save')
-                        }, h`<div class="workbench-disclosure__field query-save-disclosure__name-field">
-                                <label class="query-form__label" for="query-name">Query name</label>
-                                <input id="query-name" name="query-name" type="text" size="32" maxlength="32" value="" />
-                            </div>
-                            <label class="query-option query-save-disclosure__private"
-                                ?hidden=${!queryFeatureEnabled(context, 'query-private-save')}>
-                                <input id="save-private" name="save-private" type="checkbox" value="true"
-                                    ?hidden=${!queryFeatureEnabled(context, 'query-private-save')} />Private</label>
-                            <div class="workbench-disclosure__actions query-disclosure__actions">
-                                <input id="save" type="submit" value="Save" disabled
-                                    ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
-                            </div>`)}
-                        ${workbench.detailDisclosure.render(h, {
-                            id: 'query-options-disclosure', toggleId: 'query-options-toggle',
-                            panelId: 'query-options-panel', label: 'Options',
-                            ownerClass: 'query-disclosure query-options-disclosure',
-                            toggleClass: 'query-disclosure__toggle',
-                            panelClass: 'query-disclosure__body query-disclosure__panel',
-                            contentClass: 'workbench-disclosure__fields',
-                            toggleHidden: !queryFeatureEnabled(context, 'query-options')
-                        }, h`<div class="workbench-disclosure__field">
-                                    <label for="query-timeout">Query timeout</label>
-                                    <input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
-                                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} />
-                                </div>
-                                <div class="workbench-disclosure__field">
-                                    <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
-                                        ?checked=${text(defaults['default-infer']) === 'true'}
-                                        ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
-                                        <span>Include inferred statements</span></label>
-                                </div>
-                            <div class="workbench-disclosure__actions query-disclosure__actions"><input id="query-reset-namespaces" type="button" value="Clear"
-                                data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
-                                ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
-                                @click=${() => invoke('workbench.query.resetNamespaces')} /></div>`)}
+                        <div class="workbench-action-toolbar__actions">
+                            <div class="workbench-action-toolbar__group">${saveDisclosure.owner}${optionsDisclosure.owner}</div>
+                        </div>
+                        <div class="workbench-action-toolbar__panels workbench-disclosure-track">
+                            ${saveDisclosure.panel}${optionsDisclosure.panel}
+                        </div>
                     </div>
                     </div>
                 </form>
                 <section id="query-results" class="query-results" aria-busy="false" hidden aria-labelledby="query-results-heading">
-                    <div class="query-results__header"><h2 id="query-results-heading">Query result</h2>
+                    <div class="query-results__header workbench-action-toolbar">
+                        <div class="workbench-action-toolbar__primary"><h2 id="query-results-heading">Query result</h2></div>
+                        <div class="workbench-action-toolbar__actions">
                         <button id="query-results-fullscreen" class="query-results__fullscreen" type="button"
                             aria-label="Full screen" title="Full screen" hidden aria-pressed="false"
                             data-result-fullscreen-enabled=${queryFeatureEnabled(context, 'result-fullscreen') ? 'true' : 'false'}
@@ -1998,6 +2006,7 @@ module workbench {
                                 <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
                             </svg><span class="query-results__fullscreen-label">Full screen</span>
                         </button>
+                        </div>
                     </div>
                     <div id="query-results-loading" class="query-results__loading" hidden role="status" aria-live="polite">Loading query results...</div>
                     <div id="query-results-status" class="query-results__status" role="status" aria-live="polite"></div>
