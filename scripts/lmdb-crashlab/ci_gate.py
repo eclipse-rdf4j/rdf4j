@@ -6,12 +6,14 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import random
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from run_powercut_campaign import SCENARIOS, validate_cutpoint_witness, validate_recovery_pair
+from running_contract import RUNNING_TRIALS, REQUEST_WINDOW, validate_ready, validate_running_recovery_pair
 
 
 POWER_CUT_SCENARIOS = (
@@ -173,8 +175,94 @@ def validate_powercut_report(report: dict[str, Any], expected_scenario: str) -> 
     return {"scenario": expected_scenario, "outcome": first["outcome"], "stateSha256": first["stateSha256"]}
 
 
+def validate_running_report(report: dict[str, Any], trial: str) -> dict[str, Any]:
+    contract = RUNNING_TRIALS[trial]
+    _require(report.get("result") == "RUNNING_POWER_CUT_RECOVERY_STABLE" and report.get("trial") == trial
+             and report.get("scenario") == trial and report.get("profile") == contract["profile"]
+             and report.get("scenario_contract") == contract, f"{trial} has the wrong running contract")
+    ready = report.get("ready_witness")
+    _require(isinstance(ready, dict), f"{trial} has no finalized continuous readiness witness")
+    validate_ready(ready, trial)
+    bounds = report.get("witness_bounds")
+    _require(isinstance(bounds, dict) and type(bounds.get("returned_generation")) is int
+             and bounds["returned_generation"] >= ready["returned_generation"], f"{trial} lost its ready commit witnesses")
+    cut = report.get("cut_report")
+    _require_device_cut(cut, trial)
+    schedule = report.get("fault_schedule")
+    _require(isinstance(schedule, dict) and cut.get("schedule") == schedule and schedule.get("trial") == trial
+             and schedule.get("seed") == contract["seed"] and schedule.get("fault_kind") == contract["fault_kind"]
+             and schedule.get("request_window") == REQUEST_WINDOW, f"{trial} has the wrong seeded fault schedule")
+    seeded = random.Random(contract["seed"])
+    ordinal = seeded.randint(1, REQUEST_WINDOW)
+    _require(schedule.get("request_ordinal") == ordinal and cut.get("eligible_requests_at_cut") == ordinal,
+             f"{trial} did not interrupt its selected future eligible request")
+    request = cut.get("request")
+    _require(isinstance(request, dict), f"{trial} has no interrupted request")
+    total, completed = request.get("sectors_total"), request.get("sectors_completed")
+    _require(type(total) is int and type(completed) is int and 0 < completed < total
+             and completed == seeded.randint(1, total - 1) and request.get("successful_reply") is False,
+             f"{trial} did not interrupt the selected interior sector without acknowledgment")
+    allowed = ("WRITE",) if contract["fault_kind"] == "write" else ("FLUSH", "FUA")
+    _require(request.get("kind") in allowed and request.get("sector_size") in (512, 4096),
+             f"{trial} interrupted the wrong device operation")
+    _require(type(schedule.get("armed_time_ns")) is int and type(cut.get("actual_cut_time_ns")) is int
+             and cut["actual_cut_time_ns"] >= schedule["armed_time_ns"], f"{trial} has no ordered arm/cut timing")
+    trace = report.get("automatic_cut_trace")
+    _require(isinstance(trace, dict) and trace.get("event") == "AUTOMATIC_CUT"
+             and trace.get("request") == request and trace.get("schedule") == schedule
+             and trace.get("actual_cut_time_ns") == cut["actual_cut_time_ns"], f"{trial} lacks matching CUT trace")
+    activity = cut.get("activity")
+    _require(isinstance(activity, dict) and activity.get("trial") == trial
+             and activity.get("writer_pid") == ready["writer_pid"] and activity.get("phase") == "transaction"
+             and type(activity.get("generation")) is int and activity["generation"] >= ready["returned_generation"]
+             and activity.get("returned_generation") == activity["generation"] - 1,
+             f"{trial} lacks continuous-writer activity recorded at the selected fault")
+    _require(report.get("writer_guest_alive_when_automatic_cut_observed") is True
+             and report.get("continuous_child_exit_observed_before_cut") is False
+             and report.get("writer_guest_reaped_after_cut") is True, f"{trial} did not fence a running guest before reaping")
+    status = report.get("writer_backend_status_before_cut")
+    _require(isinstance(status, dict) and status.get("ignore_flush") is False, f"{trial} ignored FLUSH/FUA")
+    _positive_event_count(report, "writer_nbd_flush_done_count", "writer_nbd_fua_done_count", label=trial)
+    image = report.get("pre_recovery_image")
+    _require(isinstance(image, dict), f"{trial} has no immutable image")
+    image_hash = _require_sha256(image.get("sha256"), trial + " image")
+    _require(report.get("pre_recovery_image_sha256_after_both_recoveries") == image_hash
+             and report.get("pre_recovery_image_sha256_after_run") == image_hash, f"{trial} mutated its crash image")
+    for flag in ("read_only_sources_unchanged", "compiled_artifacts_unchanged", "classpath_artifacts_unchanged",
+                 "input_files_unchanged"):
+        _require(report.get(flag) is True, f"{trial} changed a read-only build/source input")
+    external = report.get("external_witnesses")
+    _require(isinstance(external, dict), f"{trial} has no preserved witnesses")
+    required = ["actual-A-ack-witness.tsv", "actual-A-commit-ack.json", "actual-running-ready.json",
+                "actual-running-activity.json", "actual-automatic-fault-schedule.json"]
+    attempted, returned = bounds.get("attempted_generation"), bounds["returned_generation"]
+    _require(type(attempted) is int and returned <= attempted <= returned + 1, f"{trial} has invalid witness bounds")
+    required += [f"running-{generation}-attempt.tsv" for generation in range(1, attempted + 1)]
+    required += [f"running-{generation}-returned.json" for generation in range(1, returned + 1)]
+    for name in required:
+        _require(isinstance(external.get(name), dict), f"{trial} did not preserve {name}")
+        _require_sha256(external[name].get("sha256"), trial + " " + name)
+    recoveries = []
+    for index in (1, 2):
+        details = report.get(f"recovery_{index}")
+        _require(isinstance(details, dict) and isinstance(details.get("oracle"), dict), f"{trial} lacks recovery {index}")
+        oracle = details["oracle"]
+        _require(oracle.get("recoveryId") == str(index) and oracle.get("scenario") == trial
+                 and oracle.get("publicIndexChecks") == "COMPLETED" and oracle.get("independentWitnessFilesystem") is True
+                 and oracle.get("returned_generation") == returned and oracle.get("attempted_generation") == attempted,
+                 f"{trial} recovery {index} omitted complete independent public checks or witness bounds")
+        recoveries.append(oracle)
+    validate_running_recovery_pair(bounds, *recoveries)
+    _require(report.get("same_outcome_on_both_recoveries") is True
+             and report.get("same_full_state_hash_on_both_recoveries") is True, f"{trial} reports unstable recovery")
+    return {"trial": trial, "profile": contract["profile"], "seed": contract["seed"],
+            "fault_kind": contract["fault_kind"], "generation": recoveries[0]["generation"],
+            "stateSha256": recoveries[0]["stateSha256"]}
+
+
 def validate_campaign_reports(calibration: dict[str, Any], namespace: dict[str, Any],
-                              powercut_reports: Sequence[dict[str, Any]]) -> dict[str, Any]:
+                              powercut_reports: Sequence[dict[str, Any]],
+                              running_reports: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:
     validate_calibration_report(calibration)
     validate_namespace_report(namespace)
     seen: set[str] = set()
@@ -190,10 +278,18 @@ def validate_campaign_reports(calibration: dict[str, Any], namespace: dict[str, 
     missing = set(POWER_CUT_SCENARIOS) - seen
     _require(not missing, "missing required power-cut scenarios: " + ", ".join(sorted(missing)))
     _require(len(powercut_reports) == len(POWER_CUT_SCENARIOS), "unexpected number of power-cut reports")
+    running = {}
+    for report in running_reports:
+        _require(isinstance(report, dict), "running report is not a JSON object")
+        trial = report.get("trial")
+        _require(trial in RUNNING_TRIALS and trial not in running, f"unexpected or duplicate running trial {trial!r}")
+        running[trial] = validate_running_report(report, trial)
+    _require(set(running) == set(RUNNING_TRIALS), "missing required continuous running trials")
     return {
         "calibration": "PASS",
         "namespace": "PUBLIC_ORACLE_PASS",
         "powercuts": [outcomes[scenario] for scenario in POWER_CUT_SCENARIOS],
+        "running": [running[trial] for trial in RUNNING_TRIALS],
         "claim_boundary": "QEMU Linux guest, ext4, and volatile NBD loss only; not physical host power loss",
     }
 
@@ -266,6 +362,8 @@ def main() -> int:
     parser.add_argument("--namespace-report", required=True, type=Path)
     parser.add_argument("--powercut-report", required=True, action="append", type=Path,
                         help="one report for each required scenario; repeat exactly three times")
+    parser.add_argument("--running-report", required=True, action="append", type=Path,
+                        help="one report for each required running profile/fault trial; repeat four times")
     parser.add_argument("--surefire-dir", required=True, type=Path)
     parser.add_argument("--failsafe-dir", required=True, type=Path)
     parser.add_argument("--summary-json", type=Path)
@@ -276,6 +374,7 @@ def main() -> int:
             _read_json(args.calibration_report, "FLUSH/FUA calibration"),
             _read_json(args.namespace_report, "namespace recovery"),
             [_read_json(path, "power-cut") for path in args.powercut_report],
+            [_read_json(path, "running power-cut") for path in args.running_report],
         )
         java_tests = validate_selected_test_reports(args.surefire_dir, args.failsafe_dir)
         summary = {"status": "PASS", "campaigns": campaigns, "java_tests": java_tests}
@@ -294,6 +393,7 @@ def main() -> int:
                     f"{case['scenario']}={case['outcome']}" for case in campaigns["powercuts"]
                 ),
                 "- Selected Surefire and Failsafe classes: all reported zero skipped tests.",
+                "- Continuous trials: both profiles passed WRITE and interior FLUSH/FUA interruption with exact repeated prefix recovery.",
                 "- Boundary: simulated guest/device power loss only; not physical host power loss.",
             ]
             with args.github_step_summary.open("a", encoding="utf-8") as stream:

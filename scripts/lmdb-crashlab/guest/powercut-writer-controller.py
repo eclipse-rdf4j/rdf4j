@@ -9,8 +9,9 @@ import shutil
 import subprocess
 import time
 
-ROOT = Path("/mnt/run-results")
-DATA = Path("/mnt/crash-data/store")
+ROOT = Path(os.environ.get("RDF4J_CRASHLAB_RESULTS_DIR", "/mnt/run-results"))
+DATA = Path(os.environ.get("RDF4J_CRASHLAB_DATA_DIR", "/mnt/crash-data/store"))
+JAVA = os.environ.get("RDF4J_CRASHLAB_JAVA", "/usr/bin/java")
 CLASS_DIR = Path(os.environ["RDF4J_CRASHLAB_CLASS_DIR"])
 CP = str(CLASS_DIR) + ":" + (ROOT / "actual-build-classpath-guest.txt").read_text().strip()
 SCENARIO = (ROOT / "actual-powercut-scenario.txt").read_text(encoding="utf-8").strip()
@@ -24,6 +25,8 @@ EXPECTED_CUTPOINTS = {
     "dictionary-before-triple-commit": "AFTER_DICTIONARY_COMMIT_BEFORE_TRIPLESTORE_COMMIT",
     "commit-returned-before-ack": "AFTER_CONNECTION_COMMIT_RETURNED_BEFORE_B_ACK",
 }
+RUNNING_TRIALS = ("running-normal-preflight-write", "running-normal-preflight-persistence",
+                  "running-journal-replay-write", "running-journal-replay-persistence")
 
 
 def fsync_directory(path):
@@ -100,7 +103,7 @@ def next_event(child, log):
 
 
 def main():
-    if SCENARIO not in EXPECTED_CUTPOINTS:
+    if SCENARIO not in EXPECTED_CUTPOINTS and SCENARIO not in RUNNING_TRIALS:
         raise ValueError("unsupported scenario: " + SCENARIO)
     expected_files = (
         "actual-A-payload-child.tsv", "actual-B-payload-child.tsv",
@@ -119,7 +122,7 @@ def main():
     if (ROOT / "actual-B-acknowledged-witness.tsv").exists():
         raise FileExistsError("B acknowledgment must not exist before the power-cut writer starts")
     with LOG.open("x", encoding="utf-8", buffering=1) as log, EVENTS.open("x", encoding="utf-8"):
-        command = ["/usr/bin/java", "-cp", CP, MAIN_CLASS, str(DATA), SCENARIO]
+        command = [JAVA, "-cp", CP, MAIN_CLASS, str(DATA), SCENARIO]
         log.write("writer_command=" + json.dumps(command) + "\n")
         child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -143,6 +146,13 @@ def main():
                     a_acknowledged = True
                     record("A_ACK_WITNESS_FSYNCED", payload="actual-A-ack-witness.tsv")
                     send(child, "CONTINUE_AFTER_A_ACK")
+                    if SCENARIO in RUNNING_TRIALS:
+                        # No further commands, payload-copy barriers, or per-generation stdout protocol.
+                        for line in child.stdout:
+                            log.write("child=" + line)
+                        code = child.wait()
+                        write_exclusive(ROOT / "actual-running-child-exited.json", {"trial": SCENARIO, "exit": code})
+                        raise RuntimeError("continuous writer exited before its guest was killed: " + str(code))
                 elif event == "B_ATTEMPT_FSYNCED":
                     if not a_acknowledged:
                         raise RuntimeError("B payload appeared before acknowledged A witness")

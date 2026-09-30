@@ -13,6 +13,7 @@ import sys
 from typing import Any
 
 from ci_gate import POWER_CUT_SCENARIOS, validate_campaign_reports
+from running_contract import RUNNING_TRIALS
 from runner_common import require_executable, require_regular_file, write_json_exclusive
 
 
@@ -59,6 +60,10 @@ def build_campaign_plan(args: argparse.Namespace) -> list[CampaignStep]:
     for index, scenario in enumerate(POWER_CUT_SCENARIOS, start=2):
         add(scenario, "run_powercut_campaign.py", "results/actual-powercut-campaign-report.json",
             [*classpath, "--scenario", scenario, "--writer-timeout-seconds", "900",
+             "--recovery-timeout-seconds", "900"], index * 10)
+    for index, trial in enumerate(RUNNING_TRIALS, start=5):
+        add(trial, "run_powercut_campaign.py", "results/actual-powercut-campaign-report.json",
+            [*classpath, "--scenario", trial, "--writer-timeout-seconds", "900",
              "--recovery-timeout-seconds", "900"], index * 10)
     if not 1 <= args.port_base <= 65534 - (len(steps) - 1) * 10:
         raise ValueError("--port-base is outside the range needed for all sequential campaign ports")
@@ -120,6 +125,7 @@ def run_plan(steps: list[CampaignStep], repo_root: Path, output_root: Path) -> d
         summary = validate_campaign_reports(
             reports["calibration"], reports["namespace"],
             [reports[scenario] for scenario in POWER_CUT_SCENARIOS],
+            [reports[trial] for trial in RUNNING_TRIALS],
         )
         summary["runner_order"] = completed
         write_json_exclusive(output_root / "ci-campaign-summary.json", summary)

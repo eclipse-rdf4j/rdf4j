@@ -124,6 +124,15 @@ class WireTests(unittest.TestCase):
     def test_fua_wire_flag(self):
         self.export();self.assertEqual(self.command(1,0,512,b'F'*512,1)[0],0)
         self.d.cut();self.d.reset();self.assertEqual(self.d.read(0,512),b'F'*512)
+    def test_automatic_write_cut_never_sends_success_reply(self):
+        self.export();self.d.arm("write",seed=41,request_window=1)
+        with self.assertRaises(EOFError):self.command(1,0,4096,b'X'*4096)
+        self.assertTrue(self.d.off);self.assertEqual(self.d.counts['cuts'],1)
+    def test_automatic_flush_cut_never_sends_success_reply(self):
+        self.export();self.command(1,0,4096,b'X'*4096)
+        self.d.arm("persistence",seed=41,request_window=1)
+        with self.assertRaises(EOFError):self.command(3)
+        self.assertEqual(self.d.counts['completed_flushes'],0)
     def test_fua_wire_flag_does_not_rescue_other_volatile_write(self):
         self.export()
         self.assertEqual(self.command(1,0,512,b'A'*512)[0],0)

@@ -29,15 +29,23 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.DirectoryStream;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -58,7 +66,7 @@ public final class CrashPowerCutOracleMain {
 	}
 
 	public static void main(String[] args) throws Exception {
-		if (args.length != 4) {
+		if (args.length != 4 && args.length != 5) {
 			throw new IllegalArgumentException(
 					"usage: CrashPowerCutOracleMain <store-directory> <results-directory> <scenario> <recovery-id>");
 		}
@@ -66,6 +74,17 @@ public final class CrashPowerCutOracleMain {
 		Path results = Path.of(args[1]);
 		String scenario = args[2];
 		String recoveryId = args[3];
+		if (CrashPowerCutFixtures.RUNNING_TRIALS.contains(scenario)) {
+			boolean processOnly = args.length == 5 && args[4].equals("--process-only");
+			if (args.length == 5 && !processOnly) {
+				throw new IllegalArgumentException("Unknown oracle option " + args[4]);
+			}
+			runRunningOracle(storeDir, results, scenario, recoveryId, processOnly);
+			return;
+		}
+		if (args.length != 4) {
+			throw new IllegalArgumentException("Precise power-cut recovery requires independent witnesses");
+		}
 		if (!CUTPOINTS.containsKey(scenario) || !List.of("1", "2").contains(recoveryId)) {
 			throw new IllegalArgumentException("unsupported recovery scenario/id: " + scenario + "/" + recoveryId);
 		}
@@ -206,10 +225,162 @@ public final class CrashPowerCutOracleMain {
 		return new ObservedState(all, explicit, inferredOnly, namespaces);
 	}
 
+	private static void runRunningOracle(Path storeDir, Path results, String trial, String recoveryId,
+			boolean processOnly) throws Exception {
+		if (!List.of("1", "2").contains(recoveryId)) {
+			throw new IllegalArgumentException("Unknown recovery ID " + recoveryId);
+		}
+		assertBytesEqual(results.resolve("actual-A-payload-child.tsv"), results.resolve("actual-A-ack-witness.tsv"),
+				"independent baseline acknowledgment");
+		assertTextEquals(serialize(baseline()), results.resolve("actual-A-ack-witness.tsv"), "exact baseline");
+		boolean independent = !Files.getFileStore(storeDir).equals(Files.getFileStore(results));
+		if (!processOnly && !independent) {
+			throw new AssertionError("Running device-loss oracle requires an independent witness filesystem");
+		}
+		Map<Integer, Path> attempts = new TreeMap<>();
+		Map<Integer, Path> returns = new TreeMap<>();
+		Pattern filename = Pattern.compile("running-([1-9][0-9]*)-(attempt\\.tsv|returned\\.json)");
+		try (DirectoryStream<Path> files = Files.newDirectoryStream(results, "running-*")) {
+			for (Path file : files) {
+				if (file.getFileName().toString().endsWith(".tmp")) {
+					continue;
+				}
+				Matcher matcher = filename.matcher(file.getFileName().toString());
+				if (!matcher.matches() || !Files.isRegularFile(file) || Files.isSymbolicLink(file)) {
+					throw new AssertionError("Malformed finalized witness " + file);
+				}
+				int generation = Integer.parseInt(matcher.group(1));
+				Map<Integer, Path> target = matcher.group(2).equals("attempt.tsv") ? attempts : returns;
+				if (target.put(generation, file) != null) {
+					throw new AssertionError("Duplicate generation " + generation);
+				}
+			}
+		}
+		int attempted = attempts.size();
+		int returned = returns.size();
+		if (returned < 2 || attempted < returned || attempted > returned + 1) {
+			throw new AssertionError("Invalid sequential witnessed frontier R=" + returned + " K=" + attempted);
+		}
+		Pattern returnedMarker = Pattern.compile("\\{\\\"trial\\\":\\\"([^\\\"]+)\\\",\\\"generation\\\":([0-9]+),"
+				+ "\\\"commit_returned\\\":true,\\\"payload_sha256\\\":\\\"([0-9a-f]{64})\\\","
+				+ "\\\"spilled_replays\\\":([0-9]+)\\}\\n");
+		for (int generation = 1; generation <= attempted; generation++) {
+			Path attempt = attempts.get(generation);
+			if (attempt == null) {
+				throw new AssertionError("Gap in attempted witnesses at " + generation);
+			}
+			String payload = CrashPowerCutFixtures.serializeRunning(trial, generation);
+			assertTextEquals(payload, attempt, "exact attempted generation " + generation);
+			if (generation <= returned) {
+				Path marker = returns.get(generation);
+				if (marker == null) {
+					throw new AssertionError("Gap in returned witnesses at " + generation);
+				}
+				Matcher parsed = returnedMarker.matcher(Files.readString(marker, StandardCharsets.UTF_8));
+				if (!parsed.matches() || !parsed.group(1).equals(trial)
+						|| Integer.parseInt(parsed.group(2)) != generation || !parsed.group(3).equals(sha256(payload))) {
+					throw new AssertionError("Malformed, foreign, or mismatched returned generation " + generation);
+				}
+			}
+		}
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig().setForceSync(true));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		ObservedState observed;
+		int generation;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			observed = observe(connection);
+			String namespace = observed.namespaces().get("crash-generation");
+			String prefix = "urn:crash:running:generation:";
+			if (namespace == null || !namespace.startsWith(prefix)) {
+				throw new AssertionError("Recovered generation namespace is absent or malformed");
+			}
+			generation = Integer.parseInt(namespace.substring(prefix.length()));
+			if (generation != returned && generation != attempted) {
+				throw new AssertionError("Recovered generation " + generation + " loses acknowledged state or exceeds attempts");
+			}
+			CrashPowerCutFixtures.ExpectedState expected = new CrashPowerCutFixtures.ExpectedState();
+			baseline().forEach(expected::apply);
+			for (int current = 1; current <= generation; current++) {
+				CrashPowerCutFixtures.runningTransaction(trial, current).forEach(expected::apply);
+			}
+			if (!observed.matches(expected)) {
+				throw new AssertionError("Recovered generation is a partial transaction or differs from the exact prefix; "
+						+ "generation=" + generation + ", actual=" + observed.digest() + ", expected=" + expected.digest());
+			}
+			publicIndexChecks(connection, expected, "RUNNING_PREFIX_" + generation);
+			Set<String> expectedAll = expected.all();
+			List<CrashPowerCutFixtures.Operation> witnessedOperations = new ArrayList<>(baseline());
+			for (int current = 1; current <= attempted; current++) {
+				witnessedOperations.addAll(CrashPowerCutFixtures.runningTransaction(trial, current));
+			}
+			Map<PredicateObject, Set<String>> allByObject = new LinkedHashMap<>();
+			Map<PredicateObject, Set<String>> explicitByObject = new LinkedHashMap<>();
+			Map<Resource, Set<String>> allByContext = new LinkedHashMap<>();
+			Map<Resource, Set<String>> explicitByContext = new LinkedHashMap<>();
+			for (CrashPowerCutFixtures.Operation operation : witnessedOperations) {
+					Statement statement = operation.statement();
+					if (statement == null) {
+						continue;
+					}
+					String canonical = CrashPowerCutFixtures.canonicalStatement(statement);
+					PredicateObject key = new PredicateObject(statement.getPredicate(), statement.getObject());
+					allByObject.computeIfAbsent(key, ignored -> new LinkedHashSet<>());
+					explicitByObject.computeIfAbsent(key, ignored -> new LinkedHashSet<>());
+					allByContext.computeIfAbsent(statement.getContext(), ignored -> new LinkedHashSet<>());
+					explicitByContext.computeIfAbsent(statement.getContext(), ignored -> new LinkedHashSet<>());
+					if (expectedAll.contains(canonical)) {
+						allByObject.get(key).add(canonical);
+						allByContext.get(statement.getContext()).add(canonical);
+					}
+					if (expected.explicit.contains(canonical)) {
+						explicitByObject.get(key).add(canonical);
+						explicitByContext.get(statement.getContext()).add(canonical);
+					}
+					for (boolean includeInferred : List.of(false, true)) {
+						boolean present = (includeInferred ? expectedAll : expected.explicit).contains(canonical);
+						if (connection.hasStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+								includeInferred, statement.getContext()) != present) {
+							throw new AssertionError("Running explicit/inferred exact lookup disagrees for " + canonical);
+						}
+					}
+			}
+			for (boolean includeInferred : List.of(false, true)) {
+				Map<PredicateObject, Set<String>> byObject = includeInferred ? allByObject : explicitByObject;
+				for (Map.Entry<PredicateObject, Set<String>> entry : byObject.entrySet()) {
+					PredicateObject key = entry.getKey();
+					if (!readStatements(connection, includeInferred, null, key.predicate(), key.object()).equals(entry.getValue())) {
+						throw new AssertionError("Predicate/object index differs from the complete witnessed prefix");
+					}
+				}
+				Map<Resource, Set<String>> byContext = includeInferred ? allByContext : explicitByContext;
+				for (Map.Entry<Resource, Set<String>> entry : byContext.entrySet()) {
+					if (!readStatements(connection, includeInferred, null, null, null, entry.getKey()).equals(entry.getValue())) {
+						throw new AssertionError("Context lookup differs from the complete witnessed prefix");
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+		String json = "{\"recoveryId\":\"" + recoveryId + "\",\"scenario\":\"" + trial + "\",\"generation\":"
+				+ generation + ",\"outcome\":\"RUNNING_PREFIX_" + generation + "\",\"stateSha256\":\""
+				+ observed.digest() + "\",\"returned_generation\":" + returned + ",\"attempted_generation\":" + attempted
+				+ ",\"independentWitnessFilesystem\":" + independent + ",\"publicIndexChecks\":\"COMPLETED\"}\n";
+		writeForced(results.resolve("actual-recovery-" + recoveryId + "-oracle.json"), json);
+		System.out.println("POWER_CUT_RECOVERY=PASS");
+		System.out.println("RECOVERED_OUTCOME=RUNNING_PREFIX_" + generation);
+	}
+
 	private static Set<String> readStatements(RepositoryConnection connection, boolean includeInferred)
 			throws Exception {
+		return readStatements(connection, includeInferred, null, null, null);
+	}
+
+	private static Set<String> readStatements(RepositoryConnection connection, boolean includeInferred,
+			Resource subject, IRI predicate, Value object, Resource... contexts) throws Exception {
 		Set<String> statements = new LinkedHashSet<>();
-		try (RepositoryResult<Statement> results = connection.getStatements(null, null, null, includeInferred)) {
+		try (RepositoryResult<Statement> results = connection.getStatements(subject, predicate, object, includeInferred, contexts)) {
 			while (results.hasNext()) {
 				String statement = CrashPowerCutFixtures.canonicalStatement(results.next());
 				if (!statements.add(statement)) {
@@ -218,6 +389,9 @@ public final class CrashPowerCutOracleMain {
 			}
 		}
 		return statements;
+	}
+
+	private record PredicateObject(IRI predicate, Value object) {
 	}
 
 	private static void publicIndexChecks(RepositoryConnection connection,

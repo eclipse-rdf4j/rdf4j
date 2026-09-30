@@ -10,7 +10,11 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import time
 from typing import Any
+
+from running_contract import (RUNNING_TRIALS, REQUEST_WINDOW, read_running_witnesses,
+                              validate_ready, validate_running_recovery_pair)
 
 from runner_common import (
     add_seed_iso_builder_argument,
@@ -83,6 +87,8 @@ PRESERVED_WITNESS_NAMES = (
 
 
 def scenario_contract(scenario: str) -> dict[str, Any]:
+    if scenario in RUNNING_TRIALS:
+        return RUNNING_TRIALS[scenario]
     try:
         return SCENARIOS[scenario]
     except KeyError as error:
@@ -118,7 +124,7 @@ def validate_recovery_pair(scenario: str, first: dict[str, Any], second: dict[st
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", choices=tuple(SCENARIOS), required=True,
+    parser.add_argument("--scenario", choices=(*SCENARIOS, *RUNNING_TRIALS), required=True,
                         help="deterministic cut point and its allowed transaction outcome")
     parser.add_argument("--scratch-root", required=True, type=Path,
                         help="new, non-existing directory for images, witnesses, and logs")
@@ -145,7 +151,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memory-mib", type=int, default=4096)
     parser.add_argument("--writer-timeout-seconds", type=int, default=480)
     parser.add_argument("--recovery-timeout-seconds", type=int, default=480)
-    parser.add_argument("--cut-seed", type=int, default=20260927)
+    parser.add_argument("--cut-seed", type=int, help="default: fixed trial seed, or 20260927 for precise cuts")
+    parser.add_argument("--request-window", type=int, default=REQUEST_WINDOW,
+                        help="seed selects one of the next N eligible multi-sector requests (running trials)")
     return parser.parse_args()
 
 
@@ -177,6 +185,10 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("guest must have at least one CPU and 1024 MiB RAM")
     if args.writer_timeout_seconds < 1 or args.recovery_timeout_seconds < 1:
         raise ValueError("guest timeouts must be positive")
+    if not 1 <= args.request_window <= 65536:
+        raise ValueError("request window must be between 1 and 65536")
+    if args.cut_seed is None:
+        args.cut_seed = contract.get("seed", 20260927)
     return inputs
 
 
@@ -239,6 +251,7 @@ def prepare_guest_inputs(root: Path, inputs: dict[str, Any], args: argparse.Name
     ]
     sources = [
         inputs["backend"], SCRIPT_DIR / "run_powercut_campaign.py", SCRIPT_DIR / "runner_common.py",
+        SCRIPT_DIR / "running_contract.py",
         GUEST_DIR / "CrashPowerCutFixtures.java", GUEST_DIR / "CrashPowerCutWriterMain.java",
         GUEST_DIR / "CrashPowerCutOracleMain.java", GUEST_DIR / "powercut-writer-controller.py",
         GUEST_DIR / "boot-powercut-writer.sh", GUEST_DIR / "boot-powercut-recovery.sh",
@@ -381,25 +394,53 @@ def main() -> int:
             vars_file=paths["writer_vars"], port=args.port_base, seed=paths["writer_seed"],
             serial=paths["results"] / "actual-writer-serial.log", results=paths["results"])
         writer_guest = launch_guest(writer_command, paths["results"], "powercut-writer")
+        running = args.scenario in RUNNING_TRIALS
         marker = wait_for_path(
             writer_guest,
-            (paths["results"] / "actual-cutpoint-witness.json",
+            (paths["results"] / ("actual-running-ready.json" if running else "actual-cutpoint-witness.json"),
              paths["results"] / "actual-powercut-writer-failed",
              paths["results"] / "actual-powercut-writer-setup-failed"),
             args.writer_timeout_seconds)
-        if marker.name != "actual-cutpoint-witness.json":
+        if marker.name != ("actual-running-ready.json" if running else "actual-cutpoint-witness.json"):
             detail = marker.read_text(encoding="utf-8", errors="replace")
             raise RuntimeError(f"writer guest failed before the requested cutpoint: {detail}")
         cut_witness = json.loads(marker.read_text(encoding="utf-8"))
-        validate_cutpoint_witness(args.scenario, cut_witness,
-                                  b_acknowledged=(paths["results"] / "actual-B-acknowledged-witness.tsv").exists())
+        if running:
+            validate_ready(cut_witness, args.scenario)
+        else:
+            validate_cutpoint_witness(args.scenario, cut_witness,
+                                      b_acknowledged=(paths["results"] / "actual-B-acknowledged-witness.tsv").exists())
         writer_status = backend_control(Path(sys.executable), inputs["backend"], writer_control, "status")
         write_json_exclusive(paths["results"] / "actual-writer-backend-status-before-cut.json", writer_status)
-        cut = fence_nbd_then_stop_guest(
-            writer_guest,
-            lambda: backend_control(Path(sys.executable), inputs["backend"], writer_control,
-                                    "cut", "--survival", "drop", "--seed", str(args.cut_seed)),
-        )
+        if running:
+            if writer_guest.poll() is not None or (paths["results"] / "actual-running-child-exited.json").exists():
+                raise RuntimeError("continuous writer exited before automatic fault arming")
+            schedule = backend_control(Path(sys.executable), inputs["backend"], writer_control, "arm",
+                                       "--fault-kind", contract["fault_kind"], "--seed", str(args.cut_seed),
+                                       "--request-window", str(args.request_window),
+                                       "--activity-dir", str(paths["results"]), "--trial", args.scenario)
+            write_json_exclusive(paths["results"] / "actual-automatic-fault-schedule.json", schedule)
+            deadline = time.monotonic() + args.writer_timeout_seconds
+            while True:
+                status = backend_control(Path(sys.executable), inputs["backend"], writer_control, "status")
+                if status.get("automatic_cut") is not None:
+                    cut = status["automatic_cut"]
+                    if writer_guest.poll() is not None:
+                        raise RuntimeError("writer guest exited before the automatic device cut was observed")
+                    break
+                if writer_guest.poll() is not None or (paths["results"] / "actual-powercut-writer-failed").exists():
+                    raise RuntimeError("continuous writer exited before its selected automatic device fault")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("no qualifying data I/O reached the selected automatic fault")
+                time.sleep(0.1)
+            stop_process(writer_guest, signal.SIGKILL)
+            bounds = read_running_witnesses(paths["results"], args.scenario)
+        else:
+            cut = fence_nbd_then_stop_guest(
+                writer_guest,
+                lambda: backend_control(Path(sys.executable), inputs["backend"], writer_control,
+                                        "cut", "--survival", "drop", "--seed", str(args.cut_seed)),
+            )
         writer_guest = None
         write_json_exclusive(paths["results"] / "actual-nbd-device-cut.json", cut)
         if not cut.get("off") or cut.get("survival") != "drop" or cut.get("kept_sectors") != 0:
@@ -409,7 +450,12 @@ def main() -> int:
         preserved_dir.mkdir()
         preserved = copy_and_hash(paths["image"], preserved_dir / "data.raw")
         preserved_witnesses: dict[str, Any] = {}
-        for name in PRESERVED_WITNESS_NAMES:
+        witness_names = list(PRESERVED_WITNESS_NAMES)
+        if running:
+            witness_names += ["actual-running-ready.json", "actual-running-activity.json",
+                              "actual-automatic-fault-schedule.json"]
+            witness_names += [path.name for path in paths["results"].glob("running-*") if not path.name.endswith(".tmp")]
+        for name in witness_names:
             source = paths["results"] / name
             if source.is_file():
                 preserved_witnesses[name] = copy_and_hash(source, preserved_dir / name)
@@ -421,7 +467,10 @@ def main() -> int:
 
         first, first_details = run_recovery(1, preserved_dir / "data.raw", inputs, args, paths)
         second, second_details = run_recovery(2, preserved_dir / "data.raw", inputs, args, paths)
-        validate_recovery_pair(args.scenario, first, second)
+        if running:
+            validate_running_recovery_pair(bounds, first, second)
+        else:
+            validate_recovery_pair(args.scenario, first, second)
         preserved_hash_after = sha256_file(preserved_dir / "data.raw")
         if preserved_hash_after != immutable_hash:
             raise RuntimeError("a recovery run modified the immutable preserved NBD image")
@@ -431,7 +480,7 @@ def main() -> int:
         report = {
             "result": "POWER_CUT_RECOVERY_STABLE",
             "scenario": args.scenario,
-            "scenario_description": contract["description"],
+            "scenario_description": contract.get("description", "continuous sequential mixed transactions with an automatic interior I/O fault"),
             "scenario_contract": contract,
             "cutpoint_witness": cut_witness,
             "cut_report": cut,
@@ -450,6 +499,17 @@ def main() -> int:
             "exact_build_manifest": str(paths["results"] / "actual-current-build-manifest.json"),
             "boundary": "QEMU Linux guest, ext4, and volatile virtual NBD device-loss behavior only; not physical host power loss",
         }
+        if running:
+            report.pop("cutpoint_witness")
+            report.pop("B_acknowledged")
+            automatic_events = [event for event in writer_events if event.get("event") == "AUTOMATIC_CUT"]
+            if len(automatic_events) != 1 or automatic_events[0].get("request") != cut["request"]:
+                raise RuntimeError("continuous trial lacks exactly one matching automatic device CUT trace")
+            report.update(result="RUNNING_POWER_CUT_RECOVERY_STABLE", trial=args.scenario,
+                          profile=contract["profile"], ready_witness=cut_witness, witness_bounds=bounds,
+                          fault_schedule=schedule, automatic_cut_trace=automatic_events[0],
+                          writer_guest_alive_when_automatic_cut_observed=True,
+                          continuous_child_exit_observed_before_cut=False, writer_guest_reaped_after_cut=True)
     except BaseException as error:
         failure = error
     finally:

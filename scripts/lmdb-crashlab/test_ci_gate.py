@@ -1,5 +1,6 @@
 import json
 import re
+import random
 import subprocess
 import tempfile
 import unittest
@@ -9,11 +10,12 @@ from ci_gate import (
     FAILSAFE_IT_CLASSES,
     POWER_CUT_SCENARIOS,
     SUREFIRE_TEST_CLASSES,
-    validate_campaign_reports,
+    validate_campaign_reports as validate_all_campaign_reports,
     validate_selected_test_reports,
 )
 from run_ci_campaigns import build_campaign_plan
 from run_powercut_campaign import SCENARIOS
+from running_contract import RUNNING_TRIALS, REQUEST_WINDOW
 
 
 def calibration_report():
@@ -64,6 +66,7 @@ def powercut_report(scenario):
         "publicIndexChecks": "COMPLETED",
         "recoveryId": recovery_id,
     }
+
     return {
         "result": "POWER_CUT_RECOVERY_STABLE",
         "scenario": scenario,
@@ -98,6 +101,48 @@ def powercut_report(scenario):
         "B_acknowledged": False,
     }
 
+def running_report(trial):
+    contract = RUNNING_TRIALS[trial]
+    seed = random.Random(contract["seed"])
+    schedule = {"trial": trial, "seed": contract["seed"], "fault_kind": contract["fault_kind"],
+                "request_window": REQUEST_WINDOW, "request_ordinal": seed.randint(1, REQUEST_WINDOW),
+                "armed_time_ns": 10}
+    request = {"kind": "WRITE" if contract["fault_kind"] == "write" else "FLUSH", "sectors_total": 8,
+               "sectors_completed": seed.randint(1, 7), "sector_size": 512, "successful_reply": False}
+    activity = {"trial": trial, "generation": 3, "returned_generation": 2, "writer_pid": 123, "phase": "transaction"}
+    cut = {"off": True, "survival": "drop", "kept_sectors": 0, "schedule": schedule, "request": request,
+           "eligible_requests_at_cut": schedule["request_ordinal"], "actual_cut_time_ns": 20, "activity": activity}
+    witnesses = ["actual-A-ack-witness.tsv", "actual-A-commit-ack.json", "actual-running-ready.json",
+                 "actual-running-activity.json", "actual-automatic-fault-schedule.json"]
+    witnesses += [f"running-{index}-attempt.tsv" for index in range(1, 4)]
+    witnesses += [f"running-{index}-returned.json" for index in range(1, 3)]
+    oracle = lambda index: {"recoveryId": str(index), "scenario": trial, "generation": 3,
+                            "stateSha256": "a" * 64, "returned_generation": 2, "attempted_generation": 3,
+                            "publicIndexChecks": "COMPLETED", "independentWitnessFilesystem": True}
+    return {"result": "RUNNING_POWER_CUT_RECOVERY_STABLE", "scenario": trial, "trial": trial,
+            "scenario_contract": contract, "profile": contract["profile"],
+            "ready_witness": {"trial": trial, "profile": contract["profile"], "returned_generation": 2,
+                              "writer_pid": 123, "force_sync": True, "generation_controller_releases": 0,
+                              "spilled_replays": 1 if contract["profile"] == "journal-replay" else 0},
+            "witness_bounds": {"returned_generation": 2, "attempted_generation": 3},
+            "fault_schedule": schedule, "cut_report": cut, "automatic_cut_trace": {"event": "AUTOMATIC_CUT", **cut},
+            "writer_guest_alive_when_automatic_cut_observed": True, "continuous_child_exit_observed_before_cut": False,
+            "writer_guest_reaped_after_cut": True, "writer_backend_status_before_cut": {"ignore_flush": False},
+            "writer_nbd_flush_done_count": 2, "writer_nbd_fua_done_count": 0,
+            "pre_recovery_image": {"sha256": "b" * 64}, "pre_recovery_image_sha256_after_both_recoveries": "b" * 64,
+            "pre_recovery_image_sha256_after_run": "b" * 64,
+            "external_witnesses": {name: {"sha256": "c" * 64} for name in witnesses},
+            "recovery_1": {"oracle": oracle(1)}, "recovery_2": {"oracle": oracle(2)},
+            "same_outcome_on_both_recoveries": True, "same_full_state_hash_on_both_recoveries": True,
+            "read_only_sources_unchanged": True, "compiled_artifacts_unchanged": True,
+            "classpath_artifacts_unchanged": True, "input_files_unchanged": True}
+
+
+def validate_campaign_reports(calibration, namespace, precise, running=None):
+    return validate_all_campaign_reports(calibration, namespace, precise,
+                                         [running_report(trial) for trial in RUNNING_TRIALS] if running is None else running)
+
+
 
 class CiGateTests(unittest.TestCase):
     def setUp(self):
@@ -126,7 +171,7 @@ class CiGateTests(unittest.TestCase):
             port_base=23000,
         )
         plan = build_campaign_plan(args)
-        self.assertEqual([step.name for step in plan], ["calibration", "namespace", *POWER_CUT_SCENARIOS])
+        self.assertEqual([step.name for step in plan], ["calibration", "namespace", *POWER_CUT_SCENARIOS, *RUNNING_TRIALS])
         for step in plan:
             self.assertIn("--machine", step.command)
             self.assertEqual(step.command[step.command.index("--machine") + 1], "q35")
@@ -144,6 +189,31 @@ class CiGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_campaign_reports(calibration_report(), namespace_report(),
                                       self.reports + [self.reports[0]])
+
+    def test_running_matrix_requires_every_distinct_profile_fault_and_seed(self):
+        reports = [running_report(trial) for trial in RUNNING_TRIALS]
+        validate_campaign_reports(calibration_report(), namespace_report(), self.reports, reports)
+        for invalid in ([], reports[:-1], reports + [reports[0]]):
+            with self.assertRaises(ValueError):
+                validate_campaign_reports(calibration_report(), namespace_report(), self.reports, invalid)
+        for change in (lambda report: report.update(profile="wrong"),
+                       lambda report: report["ready_witness"].update(returned_generation=1),
+                       lambda report: report["fault_schedule"].update(seed=99),
+                       lambda report: report["cut_report"]["request"].update(sectors_completed=0),
+                       lambda report: report["cut_report"]["request"].update(successful_reply=True),
+                       lambda report: report["cut_report"].update(activity=None),
+                       lambda report: report["recovery_1"]["oracle"].update(generation=1),
+                       lambda report: report["recovery_2"]["oracle"].update(stateSha256="d" * 64),
+                       lambda report: report["recovery_2"]["oracle"].update(independentWitnessFilesystem=False)):
+            mutated = [running_report(trial) for trial in RUNNING_TRIALS]
+            change(mutated[0])
+            with self.assertRaises(ValueError):
+                validate_campaign_reports(calibration_report(), namespace_report(), self.reports, mutated)
+        replay = running_report("running-journal-replay-write")
+        replay["ready_witness"]["spilled_replays"] = 0
+        with self.assertRaises(ValueError):
+            from ci_gate import validate_running_report
+            validate_running_report(replay, replay["trial"])
 
     def test_failed_or_incomplete_calibration_is_rejected(self):
         report = calibration_report()
@@ -258,7 +328,7 @@ class CiGateTests(unittest.TestCase):
         self.assertIn("if: always()", source)
         self.assertNotIn("paths:", source)
         self.assertNotIn("continue-on-error:", source)
-        for scenario in POWER_CUT_SCENARIOS:
+        for scenario in (*POWER_CUT_SCENARIOS, *RUNNING_TRIALS):
             self.assertIn(scenario, source)
         for test_class in (*SUREFIRE_TEST_CLASSES, *FAILSAFE_IT_CLASSES):
             self.assertIn(test_class, source)

@@ -136,6 +136,11 @@ jobs:
           printf '\n' >> "$CRASHLAB_ROOT/host-classpath.txt"
           grep -q 'lwjgl-lmdb-[^:]*-natives-linux.jar' "$CRASHLAB_ROOT/host-classpath.txt"
 
+      - name: Verify actual paused and continuous guest writers
+        run: >-
+          python3 scripts/lmdb-crashlab/test_guest_writer_cutpoints.py
+          --host-classpath-file "$CRASHLAB_ROOT/host-classpath.txt" -v
+
       - name: Provision disposable Ubuntu x86_64 Java 25 guest
         run: |
           bash scripts/lmdb-crashlab/provision-linux-guest.sh \
@@ -170,6 +175,10 @@ jobs:
             --powercut-report "$CRASHLAB_ROOT/campaigns/mixed-replay-before-native-commit/results/actual-powercut-campaign-report.json" \
             --powercut-report "$CRASHLAB_ROOT/campaigns/dictionary-before-triple-commit/results/actual-powercut-campaign-report.json" \
             --powercut-report "$CRASHLAB_ROOT/campaigns/commit-returned-before-ack/results/actual-powercut-campaign-report.json" \
+            --running-report "$CRASHLAB_ROOT/campaigns/running-normal-preflight-write/results/actual-powercut-campaign-report.json" \
+            --running-report "$CRASHLAB_ROOT/campaigns/running-normal-preflight-persistence/results/actual-powercut-campaign-report.json" \
+            --running-report "$CRASHLAB_ROOT/campaigns/running-journal-replay-write/results/actual-powercut-campaign-report.json" \
+            --running-report "$CRASHLAB_ROOT/campaigns/running-journal-replay-persistence/results/actual-powercut-campaign-report.json" \
             --surefire-dir core/sail/lmdb/target/surefire-reports \
             --failsafe-dir core/sail/lmdb/target/failsafe-reports \
             --summary-json "$CRASHLAB_ROOT/campaigns/ci-gate-summary.json" \

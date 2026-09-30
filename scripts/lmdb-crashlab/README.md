@@ -21,10 +21,9 @@ cd scripts/lmdb-crashlab
 ./run-tests.sh
 ```
 
-The exact default unittest command is
-`python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign test_ci_gate`.
-It currently runs 50 tests, including report rejection controls for missing,
-skipped, failed, duplicate, wrong-scenario, and incomplete evidence.
+The canonical script lists the complete Python selection, including automatic
+running faults and witness-frontier contracts. Report rejection controls cover
+missing, skipped, failed, duplicate, wrong-scenario, and incomplete evidence.
 
 The wire tests bind a localhost TCP port. They need a platform that permits
 loopback sockets; the RDF4J test process itself does not need Python.
@@ -160,8 +159,8 @@ captures available udev device data, rules mentioning KVM, and udev journal
 entries. Missing or unusable KVM fails the job rather than falling back to
 slow TCG or skipping the guest tier. It provisions an Ubuntu
 x86_64 Java 25 guest with OVMF and runs the actual Linux guest FLUSH/FUA
-calibration, acknowledged namespace-only commit, and all three checked-in
-transaction cut campaigns. Each cut campaign reopens the same preserved image
+calibration, acknowledged namespace-only commit, all three precise transaction
+cuts, and four continuous transaction trials. Each cut campaign reopens the same preserved image
 twice and compares the full public-oracle outcome and state hash. The job also
 runs the crashlab Python tests and explicitly selects the Java test classes
 below; a report validator fails if any selected class is missing, ran zero
@@ -169,6 +168,79 @@ tests, failed, errored, or skipped a test. The artifact step always retains
 diagnostic logs, NBD traces, guest serial output, campaign reports, and Maven
 test reports without changing the job result; regenerable OS images and
 overlays are excluded.
+
+### Continuous transaction matrix
+
+Every CI run requires these distinct trials and seeds:
+
+| Trial | Writer profile | Interrupted device request | Seed |
+| --- | --- | --- | --- |
+| `running-normal-preflight-write` | normal capacity estimates | WRITE | 2026093001 |
+| `running-normal-preflight-persistence` | normal capacity estimates | FLUSH or FUA | 2026093002 |
+| `running-journal-replay-write` | native map-full journal fallback | WRITE | 2026093003 |
+| `running-journal-replay-persistence` | native map-full journal fallback | FLUSH or FUA | 2026093004 |
+
+After the independent baseline acknowledgment, the Java writer commits numbered
+mixed transactions continuously with `forceSync=true`. Each transaction changes
+unique explicit and inferred RDF, named/default contexts, nested quoted terms,
+deletion/readdition, promotion, and namespaces. The writer publishes an exact
+attempted payload before mutation and a returned-commit witness after the
+connection commit returns, before its next attempt. Each witness is forced to a
+temporary file, atomically renamed, and its directory forced. Temporary files
+are ignored; malformed finals, foreign trials, gaps, and payload/hash mismatches
+fail recovery. There are no controller releases or deliberate pause hooks after
+continuous execution begins.
+
+The device fault is armed only after two finalized returned generations. Replay
+trials also require a genuine spilled journal and completed native replay in
+the same generation. A separate observer records journal spill; the replay
+hook increments a counter without filesystem forcing or waiting under the
+native lock. This proves replay was exercised before the cut and does not claim
+interruption inside replay.
+
+The seeded schedule chooses one of the next eight eligible multi-sector
+requests, then an interior sector boundary. WRITE faults admit at least one
+sector and fewer than all sectors before dropping volatile data. Persistence
+faults destage at least one sector and fewer than all sectors of a FLUSH/FUA
+request before cutting. The interrupted request receives no successful reply;
+completed FLUSH/FUA guarantees remain intact. Reports retain the selected
+request, physical sector offset, progress, actual fence time, and observed
+continuous-writer activity. The request can include ext4 background I/O; the
+report does not attribute a particular Java instruction or LMDB subphase.
+
+After fencing and stopping the guest, finalized returned generation R and
+attempted generation K must satisfy `R <= K <= R+1`. Recovery must equal the
+entire state of prefix R or K, including intentional changes to earlier data.
+An interrupted returned-marker publication may leave K fully committed and
+unobserved; losing any finalized returned generation or recovering a partial
+transaction fails. A namespace identifies the candidate generation but is
+insufficient alone: the oracle compares complete explicit/inferred RDF and
+namespace state, quoted values, contexts, and public index/SPARQL results.
+Two independently reopened copies must produce identical generation and state
+hash; the preserved source image remains unchanged.
+
+Run one continuous QEMU trial with `run_powercut_campaign.py --scenario` set to
+one of the names above and the same required image/classpath/firmware arguments
+as a precise campaign. Exploratory runs can supply `--cut-seed` and
+`--request-window` (1–65536); the mandatory CI gate requires the matrix defaults.
+An absent qualifying request or early writer exit fails rather than skipping
+coverage. All images, witnesses, schedules, and device traces are retained in
+the existing curated CI artifact layout.
+
+The actual native guest test runner also exercises all four writer identities,
+multiple generations without controller releases, repeated exact recovery,
+an interrupted marker frontier, and public-API corruption controls:
+
+```sh
+python3 scripts/lmdb-crashlab/test_guest_writer_cutpoints.py \
+  --host-classpath-file /absolute/path/to/exact-test-classpath.txt -v
+```
+
+These local tests kill the writer process and use the oracle's explicit
+`--process-only` mode to allow one host filesystem. Their reports cannot pass
+the QEMU gate, which requires an independent witness filesystem. They establish
+process-death/native oracle coverage; hosted Linux/ext4/NBD acceptance remains
+a separate required execution.
 
 The required Java selection is `LmdbCrashRecoveryTest`,
 `LmdbStoreFlushReproductionTest`, `TripleStoreAutoGrowTest`,

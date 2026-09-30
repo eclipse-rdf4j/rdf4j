@@ -11,6 +11,26 @@ from package_ci_artifact import package_ci_evidence
 
 
 class CiArtifactPackageTests(unittest.TestCase):
+    def test_all_running_trials_preserve_images_exact_payloads_schedules_and_cut_traces(self):
+        from running_contract import RUNNING_TRIALS
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "crashlab"
+            output = Path(temporary) / "upload"
+            for trial in RUNNING_TRIALS:
+                results = root / "campaigns" / trial / "results"
+                preserved = results / "pre-recovery-image"
+                preserved.mkdir(parents=True)
+                (preserved / "data.raw").write_bytes(bytes(4096))
+                for name in ("running-1-attempt.tsv", "running-1-returned.json", "actual-running-ready.json",
+                             "actual-automatic-fault-schedule.json", "actual-writer-nbd-events.jsonl"):
+                    (results / name).write_text(trial + "\n")
+            manifest = package_ci_evidence(root, output)
+            self.assertEqual(len(manifest["crash_images"]), 4)
+            for trial in RUNNING_TRIALS:
+                for name in ("running-1-attempt.tsv", "running-1-returned.json", "actual-running-ready.json",
+                             "actual-automatic-fault-schedule.json", "actual-writer-nbd-events.jsonl"):
+                    self.assertEqual((output / "campaigns" / trial / "results" / name).read_text(), trial + "\n")
+
     def test_compact_package_keeps_crash_image_and_witness_but_excludes_working_disks(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "crashlab"

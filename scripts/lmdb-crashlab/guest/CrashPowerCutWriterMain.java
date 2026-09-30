@@ -28,20 +28,24 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /** Same-package guest writer with deterministic pauses around LMDB publication boundaries. */
 public final class CrashPowerCutWriterMain {
-	private static final Path RESULTS = Path.of("/mnt/run-results");
+	private static final Path RESULTS = Path.of(System.getenv().getOrDefault("RDF4J_CRASHLAB_RESULTS_DIR",
+			"/mnt/run-results"));
 	private static final String MIXED_REPLAY_BEFORE_NATIVE_COMMIT = "mixed-replay-before-native-commit";
 	private static final String DICTIONARY_BEFORE_TRIPLE_COMMIT = "dictionary-before-triple-commit";
 	private static final String COMMIT_RETURNED_BEFORE_ACK = "commit-returned-before-ack";
@@ -55,6 +59,10 @@ public final class CrashPowerCutWriterMain {
 		}
 		Path storeDir = Path.of(args[0]);
 		String scenario = args[1];
+		if (CrashPowerCutFixtures.RUNNING_TRIALS.contains(scenario)) {
+			runContinuous(storeDir, scenario);
+			return;
+		}
 		if (!List.of(MIXED_REPLAY_BEFORE_NATIVE_COMMIT, DICTIONARY_BEFORE_TRIPLE_COMMIT,
 				COMMIT_RETURNED_BEFORE_ACK)
 				.contains(scenario)) {
@@ -133,6 +141,138 @@ public final class CrashPowerCutWriterMain {
 		}
 	}
 
+	/** Witness publication is independent of the simulated disk and never waits for controller release. */
+	private static void publishAtomic(Path path, String value, boolean replace) throws IOException {
+		Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+		writeForced(temporary, value);
+		if (!replace && Files.exists(path)) {
+			throw new IOException("Refusing existing finalized witness " + path);
+		}
+		if (replace) {
+			Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+		} else {
+			Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE);
+		}
+		try (FileChannel directory = FileChannel.open(path.getParent(), StandardOpenOption.READ)) {
+			directory.force(true);
+		}
+	}
+
+	private static void runContinuous(Path storeDir, String trial) throws Exception {
+		String profile = CrashPowerCutFixtures.runningProfile(trial);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setTripleDBSize(4096L * 10).setAutoGrow(true);
+		StreamingLmdbStore store = new StreamingLmdbStore(storeDir.toFile(), config, profile);
+		store.init();
+		try {
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				apply(connection, baseline());
+				connection.commit();
+			}
+			writeForced(RESULTS.resolve("actual-A-payload-child.tsv"), serialize(baseline()));
+			System.out.println("CRASHLAB:A_COMMIT_RETURNED");
+			System.out.flush();
+			awaitController(new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)),
+					"CONTINUE_AFTER_A_ACK");
+			store.startSpillObserver();
+			int spilledReplays = 0;
+			boolean ready = false;
+			for (int generation = 1; ; generation = Math.incrementExact(generation)) {
+				String payload = CrashPowerCutFixtures.serializeRunning(trial, generation);
+				publishAtomic(RESULTS.resolve("running-" + generation + "-attempt.tsv"), payload, false);
+				store.generation.set(generation);
+				publishAtomic(RESULTS.resolve("actual-running-activity.json"), "{\"trial\":\"" + trial
+						+ "\",\"generation\":" + generation + ",\"returned_generation\":" + (generation - 1)
+						+ ",\"writer_pid\":" + ProcessHandle.current().pid() + ",\"phase\":\"transaction\"}\n", true);
+				int replayBefore = store.replays.get();
+				try (SailConnection connection = store.getConnection()) {
+					connection.begin(IsolationLevels.SNAPSHOT);
+					apply(connection, CrashPowerCutFixtures.runningTransaction(trial, generation));
+					connection.commit();
+				}
+				if (store.replays.get() > replayBefore && store.spilledGeneration.get() == generation) {
+					spilledReplays++;
+				}
+				if (store.observerFailure.get() != null) {
+					throw new IOException("Unable to observe replay journal spill", store.observerFailure.get());
+				}
+				publishAtomic(RESULTS.resolve("running-" + generation + "-returned.json"), "{\"trial\":\"" + trial
+						+ "\",\"generation\":" + generation + ",\"commit_returned\":true,\"payload_sha256\":\""
+						+ CrashPowerCutFixtures.sha256(payload) + "\",\"spilled_replays\":" + spilledReplays + "}\n", false);
+				if (!ready && generation >= 2 && (!profile.equals("journal-replay") || spilledReplays > 0)) {
+					publishAtomic(RESULTS.resolve("actual-running-ready.json"), "{\"trial\":\"" + trial
+							+ "\",\"profile\":\"" + profile + "\",\"returned_generation\":" + generation
+							+ ",\"writer_pid\":" + ProcessHandle.current().pid() + ",\"force_sync\":true,"
+							+ "\"generation_controller_releases\":0,\"spilled_replays\":" + spilledReplays + "}\n", false);
+					ready = true;
+				}
+			}
+		} finally {
+			store.observing.set(false);
+			store.shutDown();
+		}
+	}
+
+	private static final class StreamingLmdbStore extends LmdbStore {
+		private final String profile;
+		private final AtomicInteger generation = new AtomicInteger();
+		private final AtomicInteger replays = new AtomicInteger();
+		private final AtomicInteger spilledGeneration = new AtomicInteger();
+		private final AtomicBoolean observing = new AtomicBoolean(true);
+		private final AtomicReference<IOException> observerFailure = new AtomicReference<>();
+		private Path tripleDirectory;
+
+		private StreamingLmdbStore(File dataDir, LmdbStoreConfig config, String profile) {
+			super(dataDir, config);
+			this.profile = profile;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, ValueStore::new,
+					(dir, storeProperties, storeConfig, valueStore) -> {
+						tripleDirectory = dir.toPath();
+						return new TripleStore(dir, storeProperties, storeConfig, valueStore) {
+							@Override
+							long estimateWriteBytes(SailSource.WritePreflight preflight) {
+								return profile.equals("journal-replay") ? 0L : super.estimateWriteBytes(preflight);
+							}
+
+							@Override
+							protected void afterMapGrowthReplay() {
+								replays.incrementAndGet();
+							}
+						};
+					});
+		}
+
+		private void startSpillObserver() {
+			Thread observer = new Thread(() -> {
+				while (observing.get()) {
+					int current = generation.get();
+					try (DirectoryStream<Path> files = Files.newDirectoryStream(tripleDirectory, "txn-replay-*.bin")) {
+						for (Path file : files) {
+							if (Files.isRegularFile(file) && !Files.isSymbolicLink(file) && current == generation.get()) {
+								spilledGeneration.set(current);
+							}
+						}
+						Thread.sleep(1);
+					} catch (IOException e) {
+						observerFailure.compareAndSet(null, e);
+						observing.set(false);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						return;
+					}
+				}
+			}, "crashlab-spill-observer");
+			observer.setDaemon(true);
+			observer.start();
+		}
+	}
+
 	private static final class PausingLmdbStore extends LmdbStore {
 		private final String scenario;
 		private final AtomicBoolean armed = new AtomicBoolean();
@@ -201,6 +341,15 @@ public final class CrashPowerCutWriterMain {
 			this.tripleStoreDirectory = dir.toPath();
 			this.scenario = scenario;
 			this.armed = armed;
+		}
+
+		@Override
+		long estimateWriteBytes(SailSource.WritePreflight preflight) {
+			if (scenario.equals(MIXED_REPLAY_BEFORE_NATIVE_COMMIT)) {
+				// Exercise the native MAP_FULL replay boundary instead of whole-write preflight.
+				return 0L;
+			}
+			return super.estimateWriteBytes(preflight);
 		}
 
 		@Override

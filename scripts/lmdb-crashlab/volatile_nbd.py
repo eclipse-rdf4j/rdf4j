@@ -92,6 +92,8 @@ class Disk:
         self.counts = dict(reads=0, writes=0, flushes=0, fua=0, destaged=0, cuts=0,
                            write_bytes=0, completed_flushes=0)
         self.log = open(log_path, "a", buffering=1) if log_path else None
+        self.armed_fault = None
+        self.automatic_cut = None
         self.event("OPEN", image=str(path), size=self.size, sector=sector,
                    cache_limit_mib=max_cache_mib, ignore_flush=ignore_flush)
 
@@ -124,7 +126,14 @@ class Disk:
     def _destage(self, offsets: Iterable[int], kind: str) -> None:
         # Release the lock between sectors. A cut may interrupt a multi-sector
         # WRITE/FUA/FLUSH. A successful FLUSH still guarantees its whole prefix.
-        for off in offsets:
+        offsets = list(offsets)
+        with self.lock:
+            self.check()
+            offsets = [off for off in offsets if off in self.dirty]
+            request = dict(kind="FLUSH" if kind == "FLUSH_PERSISTED" else "FUA", offset=0,
+                           length=len(offsets) * self.sector, sectors_total=len(offsets), fua=kind == "FUA_DONE")
+            boundary = self._fault_request("persistence", request) if kind in ("FLUSH_PERSISTED", "FUA_DONE") else None
+        for completed, off in enumerate(offsets, start=1):
             with self.lock:
                 self.check()
                 b = self.dirty.get(off)
@@ -132,6 +141,8 @@ class Disk:
                     pwrite_all(self.fd, b, off)
                     del self.dirty[off]
                     self.counts["destaged"] += 1
+                if completed == boundary:
+                    self._automatic_power_loss(request, completed, off)
             if self.delay:
                 time.sleep(self.delay)
         with self.lock:
@@ -145,8 +156,13 @@ class Disk:
             self.counts["writes"] += 1
             self.counts["write_bytes"] += len(data)
             self.counts["fua"] += int(fua)
+            request = dict(kind="WRITE", offset=offset, length=len(data),
+                           sectors_total=len(data) // self.sector, fua=fua)
+            boundary = self._fault_request("write", request)
             for i in range(0, len(data), self.sector):
                 self.dirty[offset + i] = data[i:i + self.sector]
+                if i // self.sector + 1 == boundary:
+                    self._automatic_power_loss(request, i // self.sector + 1, offset + i)
             self.event("WRITE", offset=offset, length=len(data), fua=fua,
                        sha256=hashlib.sha256(data).hexdigest())
             overflow = max(0, len(self.dirty) - self.max_sectors)
@@ -179,6 +195,7 @@ class Disk:
             if self.off:
                 raise ValueError("disk already off")
             self.off = True  # I/O fence is first, never flush as part of guest shutdown.
+            fenced_time_ns = time.time_ns()
             rng = random.Random(seed) if seed is not None else self.rng
             before = len(self.dirty)
             kept = []
@@ -191,7 +208,7 @@ class Disk:
             # cannot rescue discarded guest writes; it preserves the evidence.
             sync_file(self.fd)
             self.counts["cuts"] += 1
-            report = dict(off=True, survival=survival, probability=probability, seed=seed,
+            report = dict(off=True, survival=survival, probability=probability, seed=seed, fenced_time_ns=fenced_time_ns,
                           dirty_before=before, kept_sectors=len(kept), kept_offsets=kept,
                           **self.counts)
             self.event("CUT", **report)
@@ -213,7 +230,68 @@ class Disk:
     def status(self) -> dict:
         with self.lock:
             return dict(off=self.off, size=self.size, sector=self.sector,
-                        dirty_sectors=len(self.dirty), ignore_flush=self.ignore_flush, **self.counts)
+                        dirty_sectors=len(self.dirty), ignore_flush=self.ignore_flush,
+                        armed_fault=self.armed_fault, automatic_cut=self.automatic_cut, **self.counts)
+
+    def arm(self, fault_kind: str, seed: int, request_window: int = 8,
+            activity_dir: str | None = None, trial: str | None = None) -> dict:
+        """Select future eligible I/O; never interrupt or weaken a completed sync."""
+        if fault_kind not in ("write", "persistence") or type(seed) is not int or type(request_window) is not int \
+                or not 1 <= request_window <= 65536:
+            raise ValueError("invalid automatic fault schedule")
+        with self.lock:
+            self.check()
+            if self.armed_fault is not None or self.ignore_flush:
+                raise ValueError("fault already armed or backend ignores durability requests")
+            if activity_dir is not None:
+                from running_contract import validate_ready
+                directory = Path(activity_dir)
+                if not directory.is_dir() or directory.is_symlink():
+                    raise ValueError("unsafe running activity directory")
+                ready = json.loads((directory / "actual-running-ready.json").read_text())
+                validate_ready(ready, trial)
+                if (directory / "actual-running-child-exited.json").exists():
+                    raise ValueError("continuous child exited before fault arming")
+            self.fault_rng = random.Random(seed)
+            self.armed_fault = dict(fault_kind=fault_kind, seed=seed, request_window=request_window,
+                                   request_ordinal=self.fault_rng.randint(1, request_window), eligible_seen=0,
+                                   armed_time_ns=time.time_ns(), armed_counts=dict(self.counts),
+                                   activity_dir=activity_dir, trial=trial, fired=False)
+            self.fault_schedule = dict(self.armed_fault)
+            self.event("FAULT_ARMED", **self.armed_fault)
+            return dict(self.armed_fault)
+
+    def _fault_request(self, fault_kind: str, request: dict) -> int | None:
+        fault = self.armed_fault
+        if fault is None or fault["fired"] or fault_kind != fault["fault_kind"] or request["sectors_total"] < 2:
+            return None
+        fault["eligible_seen"] += 1
+        if fault["eligible_seen"] != fault["request_ordinal"]:
+            return None
+        return self.fault_rng.randint(1, request["sectors_total"] - 1)
+
+    def _automatic_power_loss(self, request: dict, completed: int, sector_offset: int) -> None:
+        fault = self.armed_fault
+        activity = None
+        if fault["activity_dir"] is not None:
+            directory = Path(fault["activity_dir"])
+            if (directory / "actual-running-child-exited.json").exists():
+                raise ValueError("continuous writer exited before the selected I/O fault")
+            activity = json.loads((directory / "actual-running-activity.json").read_text())
+            if activity.get("trial") != fault["trial"] or activity.get("generation", 0) < 2:
+                raise ValueError("selected I/O has no matching continuous-writer activity")
+        fault["fired"] = True
+        interrupted = dict(**request, sectors_completed=completed, last_sector_offset=sector_offset,
+                           sector_size=self.sector, successful_reply=False)
+        cut = self.cut("drop", seed=fault["seed"])
+        self.automatic_cut = dict(**cut, schedule=self.fault_schedule, eligible_requests_at_cut=fault["eligible_seen"],
+                                  request=interrupted,
+                                  activity=activity, actual_cut_time_ns=cut["fenced_time_ns"])
+        self.event("AUTOMATIC_CUT", **self.automatic_cut)
+        if self.log:
+            self.log.flush()
+            os.fsync(self.log.fileno())
+        raise PowerLost()
 
     def close(self) -> None:
         # Deliberately DO NOT flush volatile data.
@@ -354,6 +432,9 @@ class ControlHandler(socketserver.StreamRequestHandler):
                 reply = srv.disk.cut(req.get("survival", "drop"),
                                      float(req.get("probability", 0.5)), req.get("seed"))
                 srv.disconnect_all()
+            elif action == "arm":
+                reply = srv.disk.arm(req["fault_kind"], req["seed"], req.get("request_window", 8),
+                                     req.get("activity_dir"), req.get("trial"))
             elif action == "reset":
                 # A reconnecting old VM must not write into the recovered image.
                 # Caller must first kill the VM; this also checks live connections.
@@ -399,14 +480,20 @@ def main() -> None:
     serve.add_argument("--ignore-flush", action="store_true", help="LYING-DISK NEGATIVE CONTROL ONLY")
     ctl = sub.add_parser("ctl")
     ctl.add_argument("--control", required=True)
-    ctl.add_argument("action", choices=("status","cut","reset"))
+    ctl.add_argument("action", choices=("status","cut","reset","arm"))
     ctl.add_argument("--survival", choices=("drop","random","all"), default="drop")
     ctl.add_argument("--probability", type=float, default=.5)
     ctl.add_argument("--seed", type=int, default=1)
+    ctl.add_argument("--fault-kind", choices=("write", "persistence"))
+    ctl.add_argument("--request-window", type=int, default=8)
+    ctl.add_argument("--activity-dir")
+    ctl.add_argument("--trial")
     a = ap.parse_args()
     if a.command == "ctl":
         print(json.dumps(control(a.control, dict(action=a.action, survival=a.survival,
-                                                probability=a.probability, seed=a.seed)), indent=2))
+                                                probability=a.probability, seed=a.seed, fault_kind=a.fault_kind,
+                                                request_window=a.request_window, activity_dir=a.activity_dir,
+                                                trial=a.trial)), indent=2))
         return
     if a.control.exists():
         raise SystemExit("Control socket exists; refusing to replace an existing backend.")

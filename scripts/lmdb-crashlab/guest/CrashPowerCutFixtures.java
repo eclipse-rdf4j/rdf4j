@@ -45,6 +45,8 @@ final class CrashPowerCutFixtures {
 	static final int LARGE_ADDITION_COUNT = 20_000;
 	static final int SMALL_ADDITION_COUNT = 64;
 	static final String PAYLOAD_HEADER = "# RDF4J-POWER-CUT-PAYLOAD-V1";
+	static final List<String> RUNNING_TRIALS = List.of("running-normal-preflight-write",
+			"running-normal-preflight-persistence", "running-journal-replay-write", "running-journal-replay-persistence");
 
 	static final Statement A_REMOVE_AND_READD = VF.createStatement(
 			VF.createIRI("urn:crash:powercut:A:remove-readd"), PREDICATE, VF.createLiteral("remove then re-add"));
@@ -96,6 +98,53 @@ final class CrashPowerCutFixtures {
 	static Statement firstGeneratedStatement() {
 		return VF.createStatement(VF.createIRI("urn:crash:powercut:B:subject:0"), PREDICATE,
 				VF.createLiteral("urn:crash:powercut:B:object:0"));
+	}
+
+	static String runningProfile(String trial) {
+		if (!RUNNING_TRIALS.contains(trial)) {
+			throw new IllegalArgumentException("Unknown running trial: " + trial);
+		}
+		return trial.startsWith("running-journal-replay-") ? "journal-replay" : "normal-preflight";
+	}
+
+	static List<Operation> runningTransaction(String trial, int generation) {
+		if (generation < 1) {
+			throw new IllegalArgumentException("Generation must be positive");
+		}
+		int count = runningProfile(trial).equals("journal-replay") ? LARGE_ADDITION_COUNT : 256;
+		List<Operation> operations = new ArrayList<>(count + 12);
+		operations.add(Operation.statement("DELETE_EXPLICIT", A_DELETE));
+		operations.add(Operation.statement("DELETE_EXPLICIT", A_REMOVE_AND_READD));
+		operations.add(Operation.statement("ADD_EXPLICIT", A_REMOVE_AND_READD));
+		operations.add(Operation.statement("PROMOTE_INFERRED_TO_EXPLICIT", A_PROMOTED));
+		if (generation > 1) {
+			operations.add(Operation.statement("DELETE_EXPLICIT", generationStatement(generation - 1, "delete")));
+			operations.add(Operation.statement("PROMOTE_INFERRED_TO_EXPLICIT", generationStatement(generation - 1, "inferred")));
+		}
+		operations.add(Operation.statement("ADD_EXPLICIT", generationStatement(generation, "delete")));
+		operations.add(Operation.statement("ADD_INFERRED", generationStatement(generation, "inferred")));
+		TripleTerm inner = VF.createTripleTerm(VF.createIRI("urn:crash:running:quoted:" + generation), PREDICATE,
+				VF.createLiteral("quoted generation " + generation));
+		operations.add(Operation.statement("ADD_EXPLICIT", VF.createStatement(inner.getSubject(), QUOTED_PREDICATE,
+				VF.createTripleTerm(inner.getSubject(), QUOTED_PREDICATE, inner), GRAPH)));
+		operations.add(Operation.namespace("crash", "urn:crash:running:namespace:" + generation));
+		operations.add(Operation.namespace("crash-generation", "urn:crash:running:generation:" + generation));
+		for (int i = 0; i < count; i++) {
+			Statement statement = VF.createStatement(VF.createIRI("urn:crash:running:" + generation + ":subject:" + i),
+					PREDICATE, VF.createLiteral("running generation " + generation + " value " + i), i % 2 == 0 ? null : GRAPH);
+			operations.add(Operation.statement(i % 3 == 0 ? "ADD_INFERRED" : "ADD_EXPLICIT", statement));
+		}
+		return List.copyOf(operations);
+	}
+
+	static Statement generationStatement(int generation, String role) {
+		return VF.createStatement(VF.createIRI("urn:crash:running:" + generation + ":" + role), PREDICATE,
+				VF.createLiteral("generation " + generation + " " + role), GRAPH);
+	}
+
+	static String serializeRunning(String trial, int generation) {
+		return "# RDF4J-RUNNING-PAYLOAD-V1\t" + trial + "\t" + generation + "\n"
+				+ serialize(runningTransaction(trial, generation));
 	}
 
 	static String serialize(List<Operation> operations) {
