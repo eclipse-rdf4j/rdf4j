@@ -265,21 +265,14 @@ class ValueStore extends AbstractValueFactory {
 		this.inlineLiterals = config.getInlineLiterals();
 		try {
 			open();
-		} catch (IOException | RuntimeException | Error e) {
-			closeAfterFailedInitialization(e);
-			throw e;
-		}
-
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
-		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
-		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-		setNewRevision();
-
-		try {
+			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
+			valueCache = new LmdbValue[cacheSize];
+			valueCacheId = new long[cacheSize];
+			valueCacheMask = cacheSize - 1;
+			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
+			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+			setNewRevision();
 			initializeStore(config);
 		} catch (IOException | RuntimeException | Error e) {
 			closeAfterFailedInitialization(e);
@@ -501,11 +494,8 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private void rebuildReferenceCountsIfNeeded() throws IOException {
 		while (true) {
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_txn_begin(env, NULL, 0, pp));
-				long txn = pp.get(0);
-				try {
+			try {
+				LmdbUtil.writeTransaction(env, (stack, txn) -> {
 					MDBVal marker = MDBVal.calloc(stack);
 					marker.mv_data(stack.bytes(REF_COUNTS_VERSION_KEY));
 					MDBVal data = MDBVal.calloc(stack);
@@ -513,27 +503,27 @@ class ValueStore extends AbstractValueFactory {
 						if (data.mv_data().compareTo(ByteBuffer.wrap(REF_COUNTS_VERSION)) != 0) {
 							throw new IOException("Unsupported LMDB reference-count version");
 						}
-						return;
+						return null;
 					}
 
-					checkRebuildResult(mdb_drop(txn, refCountsDbi, false));
+					E(mdb_drop(txn, refCountsDbi, false));
 					rebuildReferenceCounts(stack, txn);
 					data.mv_data(stack.bytes(REF_COUNTS_VERSION));
-					checkRebuildResult(mdb_put(txn, refCountsDbi, marker, data, 0));
-					long commitTxn = txn;
-					txn = 0;
-					checkRebuildResult(mdb_txn_commit(commitTxn));
-					txnManager.reset();
-					return;
-				} catch (ReferenceCountMapFullException e) {
-					if (!autoGrow) {
-						throw e;
-					}
-				} finally {
-					if (txn != 0) {
-						mdb_txn_abort(txn);
-					}
+					E(mdb_put(txn, refCountsDbi, marker, data, 0));
+					return null;
+				});
+				txnManager.reset();
+				return;
+			} catch (LmdbUtil.LmdbException e) {
+				if (e.errorCode != MDB_MAP_FULL) {
+					throw e;
 				}
+				if (!autoGrow) {
+					throw new IOException(
+							"MDB_MAP_FULL: Insufficient space to rebuild LMDB reference counts atomically", e);
+				}
+			} finally {
+				refCountsTxCache.clear();
 			}
 
 			// resizeMap commits an active writer, so grow only after the whole failed rebuild has been aborted.
@@ -610,20 +600,13 @@ class ValueStore extends AbstractValueFactory {
 
 	private void addRebuiltReference(MemoryStack stack, long txn, long termsCursor, long sourceId, long targetId)
 			throws IOException {
-		MDBVal key = MDBVal.calloc(stack);
-		key.mv_data(id2data(idBuffer(stack), targetId).flip());
-		MDBVal data = MDBVal.calloc(stack);
 		if (targetId != 0 && !ValueIds.isInlined(targetId) && !isActiveStoredId(stack, txn, termsCursor, targetId)) {
 			throw new IOException("Cannot rebuild LMDB reference counts: value " + sourceId
 					+ " references missing or retired value " + targetId);
 		}
-		long count = E(mdb_get(txn, refCountsDbi, key, data)) == MDB_SUCCESS
-				? Varint.readUnsigned(data.mv_data()) + 1
-				: 1;
-		ByteBuffer countBuffer = stack.malloc(Long.BYTES + 1);
-		Varint.writeUnsigned(countBuffer, count);
-		data.mv_data(countBuffer.flip());
-		checkRebuildResult(mdb_put(txn, refCountsDbi, key, data, 0));
+		incrementRefCount(stack, txn, targetId);
+		updateRefCounts(stack, txn);
+		refCountsTxCache.clear();
 	}
 
 	private void validatePendingRetirements(MemoryStack stack, long txn, long termsCursor) throws IOException {
@@ -705,21 +688,6 @@ class ValueStore extends AbstractValueFactory {
 		tripleTermSpocIndex.toKey(keyBuffer, quad[0], quad[1], quad[2], quad[3]);
 		key.mv_data(keyBuffer.flip());
 		return E(mdb_get(txn, tripleTermSpocIndex.getDB(true), key, MDBVal.calloc(stack))) == MDB_SUCCESS;
-	}
-
-	private static void checkRebuildResult(int rc) throws IOException {
-		if (rc == MDB_MAP_FULL) {
-			throw new ReferenceCountMapFullException();
-		}
-		E(rc);
-	}
-
-	private static final class ReferenceCountMapFullException extends IOException {
-		private static final long serialVersionUID = 1L;
-
-		private ReferenceCountMapFullException() {
-			super("MDB_MAP_FULL: Insufficient space to rebuild LMDB reference counts atomically");
-		}
 	}
 
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
@@ -1226,7 +1194,7 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) {
+	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) throws IOException {
 		// literals have a datatype id and URIs have a namespace id
 		if (data[0] == LITERAL_VALUE || data[0] == URI_VALUE) {
 			// skip type marker
@@ -1235,52 +1203,35 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					idVal.mv_data(id2data(idBuffer(stack), id).flip());
-					long newCount = 1;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
-				}
-			} else {
-				return v + 1;
-			}
-		});
+	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
+		changeRefCount(stack, writeTxn, id, 1);
 	}
 
-	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		return refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
-					Varint.writeUnsigned(idBb, id);
-					idVal.mv_data(idBb.flip());
-					long newCount = 0;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
+	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
+		return changeRefCount(stack, writeTxn, id, -1) == 0;
+	}
+
+	private long changeRefCount(MemoryStack stack, long txn, long id, long change) throws IOException {
+		Long count = refCountsTxCache.get(id);
+		// A missing persisted count decrements to zero; a cached count is always authoritative.
+		long updated = change > 0 ? change : 0;
+		if (count != null) {
+			updated = count + change;
+		} else {
+			try {
+				stack.push();
+				MDBVal key = MDBVal.calloc(stack);
+				key.mv_data(id2data(idBuffer(stack), id).flip());
+				MDBVal data = MDBVal.calloc(stack);
+				if (E(mdb_get(txn, refCountsDbi, key, data)) == MDB_SUCCESS) {
+					updated = Varint.readUnsigned(data.mv_data()) + change;
 				}
-			} else {
-				return v - 1;
+			} finally {
+				stack.pop();
 			}
-		}) == 0;
+		}
+		refCountsTxCache.put(id, updated);
+		return updated;
 	}
 
 	private boolean hasReferences(long txn, long id, MDBVal key, MDBVal data) throws IOException {
@@ -1298,9 +1249,7 @@ class ValueStore extends AbstractValueFactory {
 			for (Map.Entry<Long, Long> entry : refCountsTxCache.entrySet()) {
 				long count = entry.getValue();
 				idBb.clear();
-				idBb.put(ID_KEY);
-				Varint.writeUnsigned(idBb, entry.getKey());
-				idVal.mv_data(idBb.flip());
+				idVal.mv_data(id2data(idBb, entry.getKey()).flip());
 				if (count <= 0) {
 					// delete count entry
 					E(mdb_del(writeTxn, refCountsDbi, idVal, null));

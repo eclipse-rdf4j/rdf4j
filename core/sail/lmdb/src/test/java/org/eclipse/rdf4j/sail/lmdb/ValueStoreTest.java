@@ -345,6 +345,28 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void testMissingCountThenNewReferenceInSameTransaction() throws Exception {
+		IRI datatype = Values.iri("urn:refcount:missing-then-cached");
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(Values.literal("first literal", datatype));
+		valueStore.commit();
+		long datatypeId = valueStore.getId(datatype);
+		replaceLegacyRefCount(datatypeId, 0);
+
+		valueStore.startTransaction(true);
+		Set<Long> nextIds = new HashSet<>();
+		valueStore.gcIds(Collections.singleton(firstId), nextIds);
+		assertEquals("A missing persisted count decrements to zero", Collections.singleton(datatypeId), nextIds);
+		valueStore.storeValue(Values.literal("second literal", datatype));
+		valueStore.gcIds(nextIds, new HashSet<>());
+		valueStore.commit();
+		assertEquals(1L, persistedRefCount(datatypeId));
+		valueStore.close();
+		valueStore = createValueStore();
+		assertEquals("The new cached reference protects the queued component", datatypeId, valueStore.getId(datatype));
+	}
+
+	@Test
 	public void testRolledBackReferencesDoNotChangeCommittedCounts() throws Exception {
 		IRI datatype = Values.iri("urn:refcount:rollback-datatype");
 		valueStore.startTransaction(true);
