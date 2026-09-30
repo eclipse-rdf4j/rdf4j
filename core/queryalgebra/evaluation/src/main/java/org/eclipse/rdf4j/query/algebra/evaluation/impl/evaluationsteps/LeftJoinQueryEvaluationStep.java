@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -44,12 +45,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryEvaluationStep right = JoinMetricsTracking
 				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
 						runtimeTelemetryTrackingActive);
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
-			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
-			String[] joinAttributes = leftBindingNames.stream()
-					.filter(rightBindingNames::contains)
-					.toArray(String[]::new);
+		if (TupleExprs.containsSubquery(leftJoin.getRightArg())
+				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg())) {
+			if (leftJoin.hasCondition()) {
+				// HashJoinIteration cannot apply a join condition, so a conditional left join takes the
+				// dedicated isolation iterator instead of silently dropping the condition.
+				QueryValueEvaluationStep isolatedCondition = new ScopedQueryValueEvaluationStep(
+						leftJoin.getBindingNames(), strategy.precompile(leftJoin.getCondition(), context));
+				leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
+				return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context);
+			}
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 		}
 

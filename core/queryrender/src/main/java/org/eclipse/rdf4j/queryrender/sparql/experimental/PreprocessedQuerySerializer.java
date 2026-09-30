@@ -453,7 +453,11 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	@Override
 	public void meet(BindingSetAssignment node) throws RuntimeException {
 
-		List<String> bindingNames = new ArrayList<>(node.getBindingNames());
+		// Prefer the declared VALUES header: derived binding names omit columns that are UNDEF in
+		// every row (and are empty for a zero-row VALUES), which would drop them from the output.
+		List<String> bindingNames = new ArrayList<>(node.getDeclaredBindingNames().isEmpty()
+				? node.getBindingNames()
+				: node.getDeclaredBindingNames());
 
 		builder.append("VALUES (");
 		for (String var : bindingNames) {

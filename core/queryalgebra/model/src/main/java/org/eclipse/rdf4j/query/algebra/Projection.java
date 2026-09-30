@@ -136,6 +136,14 @@ public class Projection extends UnaryTupleOperator {
 		this.projectionContext = projectionContext;
 	}
 
+	/**
+	 * Whether this projection is a subquery scope boundary. The SPARQL parser sets this accurately: {@code true} for
+	 * nested {@code { SELECT ... }} sub-selects, {@code false} for the top-level projection and for internal
+	 * projections that optimizers introduce as TRANSPARENT (correlated) nodes. Evaluation strategy decisions such as
+	 * hash-join isolation (via {@code TupleExprs.containsSubquery}) honour this flag, so code that programmatically
+	 * embeds a parsed top-level projection as a join operand — turning it INTO a subquery — must call
+	 * {@link #setSubquery(boolean) setSubquery(true)} to get subquery isolation semantics.
+	 */
 	public boolean isSubquery() {
 		return subquery;
 	}

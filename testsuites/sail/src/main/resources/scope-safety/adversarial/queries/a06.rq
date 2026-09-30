@@ -1,0 +1,9 @@
+# Both EXISTS levels correlate, but ?local must remain unavailable to the outer BIND.
+SELECT ?x ?status WHERE {
+  VALUES ?x { <urn:a> <urn:c> }
+  FILTER EXISTS {
+    ?x <urn:value> ?local .
+    FILTER EXISTS { VALUES ?local { "1" } }
+  }
+  BIND(COALESCE(?local, "hidden") AS ?status)
+}
