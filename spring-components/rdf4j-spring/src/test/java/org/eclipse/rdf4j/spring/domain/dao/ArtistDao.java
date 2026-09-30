@@ -16,12 +16,17 @@ import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_FIRST_NAME;
 import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_ID;
 import static org.eclipse.rdf4j.spring.domain.model.Artist.ARTIST_LAST_NAME;
 
+import java.util.Map;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
+import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQueryBuilder;
+import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinDefaultQueryFactory;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.EX;
@@ -40,6 +45,18 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 		super(rdf4JTemplate);
 	}
 
+	private static final JoinDefaultQueryFactory PAINTING_IDS_BY_ARTIST = JoinQueryBuilder.of(EX.creatorOf)
+			.sourceEntityConstraints(artist -> artist.isA(EX.Artist))
+			.targetEntityConstraints(painting -> painting.isA(EX.Painting))
+			.leftOuterJoin()
+			.buildFactory();
+
+	public Set<IRI> getPaintingsIdsOfArtist(IRI artistId) {
+		return PAINTING_IDS_BY_ARTIST.get(getRdf4JTemplate())
+				.withSourceEntityId(artistId)
+				.asTargetEntityIdSet();
+	}
+
 	@Override
 	protected void populateIdBindings(MutableBindings bindingsBuilder, IRI iri) {
 		bindingsBuilder.add(ARTIST_ID, iri);
@@ -50,11 +67,6 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 		bindingsBuilder
 				.add(ARTIST_FIRST_NAME, artist.getFirstName())
 				.add(ARTIST_LAST_NAME, artist.getLastName());
-	}
-
-	@Override
-	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
-		return null;
 	}
 
 	@Override
