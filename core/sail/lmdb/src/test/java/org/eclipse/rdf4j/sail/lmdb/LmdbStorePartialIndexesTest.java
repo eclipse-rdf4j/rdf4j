@@ -18,6 +18,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -29,6 +30,38 @@ class LmdbStorePartialIndexesTest {
 
 	@TempDir
 	File dir;
+
+	@Test
+	void contextSubjectIndexSupportsGraphQueriesAndRemoval() {
+		var vf = SimpleValueFactory.getInstance();
+		IRI s = vf.createIRI("urn:test:s");
+		IRI p = vf.createIRI("urn:test:p");
+		IRI o = vf.createIRI("urn:test:o");
+		IRI graph = vf.createIRI("urn:test:graph");
+		SailRepository repo = open("cs,scpo");
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(s, p, o);
+				connection.add(s, p, o, graph);
+				connection.add(o, p, s, graph);
+				connection.commit();
+				assertEquals(1, connection.size((Resource) null));
+				assertEquals(2, connection.size(graph));
+				assertEquals(1, Iterations.asList(connection.getStatements(null, null, null, false,
+						(Resource) null)).size());
+				try (var result = connection.prepareTupleQuery(
+						"SELECT ?s ?p ?o WHERE { GRAPH <urn:test:graph> { ?s ?p ?o } }").evaluate()) {
+					assertEquals(2, Iterations.asList(result).size());
+				}
+				connection.remove((Resource) null, null, null, graph);
+				assertEquals(0, connection.size(graph));
+				assertEquals(1, connection.size((Resource) null));
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
 
 	@Test
 	void enablingPartialIndexesBackfillsExistingRepository() {

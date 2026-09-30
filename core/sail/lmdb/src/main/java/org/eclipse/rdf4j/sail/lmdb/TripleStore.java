@@ -200,8 +200,8 @@ class TripleStore implements Closeable {
 			env = pp.get(0);
 		}
 
-		// Contexts, 24 full indexes and two auxiliary pair indexes, each explicit and inferred.
-		E(mdb_env_set_maxdbs(env, 1 + 52));
+		// Contexts, 24 full indexes and all auxiliary pair indexes, each explicit and inferred.
+		E(mdb_env_set_maxdbs(env, 1 + 2 * (24 + PartialIndex.SUPPORTED_FIELDS.size())));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -356,9 +356,9 @@ class TripleStore implements Closeable {
 
 	private void initPartialIndexes(Set<String> previous, Set<String> requested) throws IOException {
 		List<PartialIndex> added = new ArrayList<>();
-		for (String fields : List.of("sp", "op")) {
+		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
 			TripleIndex counterpart = null;
-			String fullFields = fields.equals("sp") ? "psoc" : "posc";
+			String fullFields = PartialIndex.counterpartFields(fields);
 			for (TripleIndex full : indexes) {
 				if (full.toString().equals(fullFields)) {
 					counterpart = full;
@@ -666,17 +666,17 @@ class TripleStore implements Closeable {
 			throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
 		int indexScore = index.getPatternScore(subj, pred, obj, context);
-		PartialIndex bestPartial = bestPartialIndex(subj, pred, obj, indexScore);
+		PartialIndex bestPartial = bestPartialIndex(subj, pred, obj, context, indexScore);
 		if (bestPartial != null) {
 			return bestPartial.iterator(txn, subj, pred, obj, context, explicit);
 		}
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, indexScore);
 	}
 
-	private PartialIndex bestPartialIndex(long subj, long pred, long obj, int fullScore) {
+	private PartialIndex bestPartialIndex(long subj, long pred, long obj, long context, int fullScore) {
 		PartialIndex bestPartial = null;
 		for (PartialIndex partial : partialIndexes) {
-			int score = partial.score(subj, pred, obj);
+			int score = partial.score(subj, pred, obj, context);
 			if (score > fullScore) {
 				bestPartial = partial;
 				fullScore = score;
@@ -1186,10 +1186,10 @@ class TripleStore implements Closeable {
 			}
 			accessPaths.add(new IndexAccessPath(new String(fieldSequence), prefixScore, prefixComponentMask));
 		}
-		PartialIndex partial = bestPartialIndex(subj, pred, obj, bestFullScore);
+		PartialIndex partial = bestPartialIndex(subj, pred, obj, context, bestFullScore);
 		if (partial != null) {
 			String fields = partial.fields();
-			int prefixLength = partial.score(subj, pred, obj);
+			int prefixLength = partial.score(subj, pred, obj, context);
 			int prefixMask = 0;
 			for (int i = 0; i < prefixLength; i++) {
 				prefixMask |= 1 << toEstimatorComponent(fields.charAt(i)).ordinal();

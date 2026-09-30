@@ -29,6 +29,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -38,21 +39,53 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * Auxiliary distinct SP or OP pairs, stored in two-field chunks with an ordered-varint anchor key and delta-encoded
+ * Auxiliary distinct SP, OP or CS pairs, stored in two-field chunks with an ordered-varint anchor key and delta-encoded
  * values. Complete statements live exclusively in the full counterpart. Explicit and inferred support are independent.
  * Legacy empty-value pair records are valid singleton chunks.
  */
 final class PartialIndex {
+
+	static final List<String> SUPPORTED_FIELDS = List.of("sp", "op", "cs");
+
+	static String counterpartFields(String fields) {
+		return switch (fields) {
+		case "sp" -> "psoc";
+		case "op" -> "posc";
+		case "cs" -> "scpo";
+		default -> throw new IllegalArgumentException("Unknown partial index: " + fields);
+		};
+	}
+
+	private static int fieldIndex(char field) {
+		return switch (field) {
+		case 's' -> TripleIndex.SUBJ_IDX;
+		case 'p' -> TripleIndex.PRED_IDX;
+		case 'o' -> TripleIndex.OBJ_IDX;
+		case 'c' -> TripleIndex.CONTEXT_IDX;
+		default -> throw new IllegalArgumentException("Unknown index field: " + field);
+		};
+	}
+
+	private static long fieldValue(int field, long s, long p, long o, long c) {
+		return switch (field) {
+		case TripleIndex.SUBJ_IDX -> s;
+		case TripleIndex.PRED_IDX -> p;
+		case TripleIndex.OBJ_IDX -> o;
+		case TripleIndex.CONTEXT_IDX -> c;
+		default -> throw new IllegalArgumentException("Unknown field index: " + field);
+		};
+	}
 
 	private static final int PAIR_LENGTH = 2;
 	private static final int SPLIT_POINT = 0;
 	private static final int MAX_KEY_LENGTH = PAIR_LENGTH * (Long.BYTES + 1);
 	private static final int VALUE_BUFFER_SIZE = 4096;
 
-	record Pair(long first, long predicate) {
+	record Pair(long first, long second) {
 	}
 
 	private final String fields;
+	private final int firstField, secondField;
 	private final long env;
 	private final int explicitDbi;
 	private final int inferredDbi;
@@ -60,6 +93,8 @@ final class PartialIndex {
 
 	PartialIndex(String fields, long env, long txn, TripleIndex counterpart) throws IOException {
 		this.fields = fields;
+		this.firstField = fieldIndex(fields.charAt(0));
+		this.secondField = fieldIndex(fields.charAt(1));
 		this.env = env;
 		this.counterpart = counterpart;
 		explicitDbi = openDatabaseWithTxn(txn, name(true), MDB_CREATE);
@@ -78,13 +113,13 @@ final class PartialIndex {
 		return explicit ? explicitDbi : inferredDbi;
 	}
 
-	int score(long s, long p, long o) {
-		return (fields.equals("sp") ? s : o) < 0 ? 0 : p < 0 ? 1 : 2;
+	int score(long s, long p, long o, long c) {
+		return fieldValue(firstField, s, p, o, c) < 0 ? 0
+				: fieldValue(secondField, s, p, o, c) < 0 ? 1 : 2;
 	}
 
 	Pair project(long[] quad) {
-		return new Pair(quad[fields.equals("sp") ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX],
-				quad[TripleIndex.PRED_IDX]);
+		return new Pair(quad[firstField], quad[secondField]);
 	}
 
 	void add(long txn, Pair pair, boolean explicit) throws IOException {
@@ -106,7 +141,7 @@ final class PartialIndex {
 			try {
 				MDBVal key = MDBVal.malloc(stack);
 				MDBVal value = MDBVal.malloc(stack);
-				long[] tuple = { pair.first(), pair.predicate() };
+				long[] tuple = { pair.first(), pair.second() };
 				ByteBuffer keyScratch = stack.malloc(MAX_KEY_LENGTH);
 				ByteBuffer valueScratch = stack.malloc(VALUE_BUFFER_SIZE);
 				if (insert) {
@@ -123,7 +158,7 @@ final class PartialIndex {
 	private static MDBVal key(MemoryStack stack, Pair pair) {
 		ByteBuffer bytes = stack.malloc(MAX_KEY_LENGTH);
 		Varint.writeUnsigned(bytes, pair.first());
-		Varint.writeUnsigned(bytes, pair.predicate());
+		Varint.writeUnsigned(bytes, pair.second());
 		return MDBVal.malloc(stack).mv_data(bytes.flip());
 	}
 
@@ -134,7 +169,8 @@ final class PartialIndex {
 			E(mdb_cursor_open(txn, counterpart.getDB(explicit), handle));
 			long cursor = handle.get(0);
 			try {
-				long[] min = { pair.predicate(), pair.first(), 0, 0 };
+				// Every counterpart starts with the pair's fields in reverse order.
+				long[] min = { pair.second(), pair.first(), 0, 0 };
 				ByteBuffer bytes = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 				for (long field : min) {
 					Varint.writeUnsigned(bytes, field);
@@ -156,7 +192,7 @@ final class PartialIndex {
 					input.seek(min);
 					long[] tuple = input.next();
 					if (tuple != null) {
-						return tuple[0] == pair.predicate() && tuple[1] == pair.first();
+						return tuple[0] == pair.second() && tuple[1] == pair.first();
 					}
 					rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));
 				}
@@ -183,9 +219,9 @@ final class PartialIndex {
 
 	private final class ResolvingIterator implements RecordIterator {
 		private final Txn txn;
-		private final long s, p, o, c, first;
+		private final long s, p, o, c, first, second;
 		private final boolean explicit;
-		private long lastPredicate = -1;
+		private long lastSecond = -1;
 		private RecordIterator child;
 		private boolean closed;
 		private long scanned, matched, filtered;
@@ -197,7 +233,8 @@ final class PartialIndex {
 			this.p = p;
 			this.o = o;
 			this.c = c;
-			this.first = fields.equals("sp") ? s : o;
+			this.first = fieldValue(firstField, s, p, o, c);
+			this.second = fieldValue(secondField, s, p, o, c);
 			this.explicit = explicit;
 		}
 
@@ -220,13 +257,17 @@ final class PartialIndex {
 						}
 						closeChild();
 					}
-					long predicate = nextPredicate();
-					if (predicate < 0) {
+					long nextSecond = nextSecond();
+					if (nextSecond < 0) {
 						close();
 						return null;
 					}
-					child = new LmdbRecordIterator(counterpart, counterpart.getPatternScore(s, predicate, o, c),
-							s, predicate, o, c, explicit, txn);
+					long[] pattern = { s, p, o, c };
+					pattern[firstField] = first;
+					pattern[secondField] = nextSecond;
+					child = new LmdbRecordIterator(counterpart,
+							counterpart.getPatternScore(pattern[0], pattern[1], pattern[2], pattern[3]),
+							pattern[0], pattern[1], pattern[2], pattern[3], explicit, txn);
 				}
 				return null;
 			} catch (IOException | RuntimeException e) {
@@ -235,7 +276,7 @@ final class PartialIndex {
 			}
 		}
 
-		private long nextPredicate() throws IOException {
+		private long nextSecond() throws IOException {
 			long stamp;
 			try {
 				stamp = txn.lockManager().readLock();
@@ -244,16 +285,16 @@ final class PartialIndex {
 				throw new IOException(e);
 			}
 			try (MemoryStack stack = stackPush()) {
-				if (p >= 0 && lastPredicate >= 0) {
+				if (second >= 0 && lastSecond >= 0) {
 					return -1;
 				}
 				PointerBuffer handle = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn.get(), db(explicit), handle));
 				long cursor = handle.get(0);
 				try {
-					long lowerPredicate = lastPredicate >= 0 ? lastPredicate : Math.max(p, 0);
-					long[] min = { first, lowerPredicate };
-					MDBVal key = key(stack, new Pair(first, lowerPredicate));
+					long lowerSecond = lastSecond >= 0 ? lastSecond : Math.max(second, 0);
+					long[] min = { first, lowerSecond };
+					MDBVal key = key(stack, new Pair(first, lowerSecond));
 					MDBVal data = MDBVal.malloc(stack);
 					int rc = E(mdb_cursor_get(cursor, key, data, MDB_SET_RANGE));
 					// The lower bound may be inside the preceding chunk rather than at an anchor.
@@ -270,12 +311,12 @@ final class PartialIndex {
 						input.seek(min);
 						long[] pair;
 						while ((pair = input.next()) != null) {
-							if (pair[0] != first || (p >= 0 && p != pair[1])) {
+							if (pair[0] != first || (second >= 0 && second != pair[1])) {
 								return -1;
 							}
-							if (pair[1] > lastPredicate) {
-								lastPredicate = pair[1];
-								return lastPredicate;
+							if (pair[1] > lastSecond) {
+								lastSecond = pair[1];
+								return lastSecond;
 							}
 						}
 						rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));

@@ -111,8 +111,8 @@ class TripleIndex {
 	/** Statement indexes may include auxiliary pairs, provided their resolving full index is present. */
 	static Set<String> parseStatementIndexSpecList(String indexSpecStr) throws SailException {
 		Set<String> specs = parseIndexSpecList(indexSpecStr, true);
-		for (String partial : List.of("sp", "op")) {
-			String counterpart = partial.equals("sp") ? "psoc" : "posc";
+		for (String partial : PartialIndex.SUPPORTED_FIELDS) {
+			String counterpart = PartialIndex.counterpartFields(partial);
 			if (specs.contains(partial) && !specs.contains(counterpart)) {
 				throw new SailException("Partial index '" + partial + "' requires full index '" + counterpart + "'");
 			}
@@ -128,7 +128,7 @@ class TripleIndex {
 				String index = tok.nextToken().toLowerCase();
 
 				// sanity checks
-				boolean partial = allowPartial && (index.equals("sp") || index.equals("op"));
+				boolean partial = allowPartial && PartialIndex.SUPPORTED_FIELDS.contains(index);
 				if (!partial && (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
 						|| index.indexOf('o') == -1 || index.indexOf('c') == -1)) {
 					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);

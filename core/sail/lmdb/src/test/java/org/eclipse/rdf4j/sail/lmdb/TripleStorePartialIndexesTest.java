@@ -49,6 +49,141 @@ class TripleStorePartialIndexesTest {
 	File dir;
 
 	@Test
+	void contextSubjectPairsResolveAndPreserveSupport() throws Exception {
+		try (TripleStore store = open("CS,SCPO")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(11, 44, 55, 0, true);
+			store.storeTriple(11, 22, 33, 66, true);
+			store.storeTriple(77, 22, 33, 66, true);
+			store.commit();
+			for (long context : new long[] { 0, 66 }) {
+				try (Txn txn = store.getTxnManager().createReadTxn();
+						RecordIterator it = store.getTriples(txn, -1, -1, -1, context, true)) {
+					assertEquals("cs", it.getIndexName());
+				}
+				assertEquals(2, rows(store, -1, -1, -1, context, true).size());
+			}
+			assertEquals(3, pairs(store, "cs", true));
+			assertEquals(Set.of("[11, 44, 55, 0]"), rows(store, -1, 44, 55, 0, true));
+			assertEquals(Set.of(), rows(store, -1, -1, -1, 65, true));
+			remove(store, 11, 22, 33, 0, true);
+			assertEquals(3, pairs(store, "cs", true));
+			remove(store, -1, -1, -1, 0, true);
+			assertEquals(2, pairs(store, "cs", true));
+			assertEquals(2, rows(store, -1, -1, -1, 66, true).size());
+		}
+	}
+
+	@Test
+	void contextSubjectChunksResolveAllBindingsAndStatementKinds() throws Exception {
+		List<long[]> quads = new ArrayList<>();
+		try (TripleStore store = open("cs,scpo")) {
+			store.startTransaction();
+			for (int i = 0; i < 300; i++) {
+				long[] quad = { 1000 + (i * 17) % 65, 2000 + i % 7, 3000 + i % 11,
+						i % 2 == 0 ? 0 : 4000 };
+				if (store.storeTriple(quad[0], quad[1], quad[2], quad[3], true)) {
+					quads.add(quad);
+				}
+			}
+			store.storeTriple(11, 22, 33, 0, false);
+			store.storeTriple(11, 44, 55, 0, false);
+			store.commit();
+			assertEquals(130, pairs(store, "cs", true));
+			assertTrue(store.getLmdbStats().get("cscs").entries() < 130);
+			for (long context : new long[] { 0, 4000 }) {
+				for (int mask = 0; mask < 16; mask++) {
+					long[] pattern = { (mask & 1) != 0 ? 1000 : -1, (mask & 2) != 0 ? 2000 : -1,
+							(mask & 4) != 0 ? 3000 : -1, (mask & 8) != 0 ? context : -1 };
+					Set<String> expected = new HashSet<>();
+					for (long[] quad : quads) {
+						boolean matches = true;
+						for (int field = 0; field < 4; field++) {
+							matches &= pattern[field] < 0 || pattern[field] == quad[field];
+						}
+						if (matches) {
+							expected.add(Arrays.toString(quad));
+						}
+					}
+					assertEquals(expected, rows(store, pattern[0], pattern[1], pattern[2], pattern[3], true),
+							"binding mask " + mask + ", context " + context);
+				}
+			}
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.commit();
+			assertEquals(1, pairs(store, "cs", false));
+			assertEquals(Set.of("[11, 44, 55, 0]"), rows(store, -1, -1, -1, 0, false));
+			store.startTransaction();
+			store.storeTriple(11, 44, 55, 0, true);
+			store.rollback();
+			assertEquals(1, pairs(store, "cs", false));
+			store.startTransaction();
+			store.storeTriple(11, 44, 55, 0, true);
+			store.commit();
+			assertEquals(0, pairs(store, "cs", false));
+			remove(store, -1, -1, -1, 0, true);
+			assertEquals(65, pairs(store, "cs", true));
+			remove(store, -1, -1, -1, -1, true);
+			assertEquals(0, store.getLmdbStats().get("cscs").entries());
+		}
+	}
+
+	@Test
+	void contextSubjectReindexAndOptimizerPaths() throws Exception {
+		try (TripleStore store = open("spoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(44, 22, 33, 55, false);
+			store.commit();
+		}
+		for (String indexes : new String[] { "cs,scpo", null }) {
+			try (TripleStore store = open(indexes)) {
+				assertEquals(1, pairs(store, "cs", true));
+				assertEquals(1, pairs(store, "cs", false));
+				assertEquals(Set.of("[11, 22, 33, 0]"), rows(store, -1, -1, -1, 0, true));
+				assertEquals(Set.of("[44, 22, 33, 55]"), rows(store, -1, -1, -1, 55, false));
+				assertTrue(store.indexAccessPaths(1 << Component.C.ordinal())
+						.stream()
+						.anyMatch(path -> path.indexFieldSequence().equals("cs") && path.requiresResolution()
+								&& path.prefixComponentMask() == 1 << Component.C.ordinal()));
+				try (Txn txn = store.getTxnManager().createReadTxn();
+						RecordIterator it = store.getTriples(txn, 11, -1, -1, 0, true)) {
+					assertEquals("scpo", it.getIndexName());
+				}
+			}
+		}
+		try (TripleStore store = open("scpo")) {
+			assertFalse(store.getLmdbStats().containsKey("cscs"));
+			assertEquals(1, rows(store, -1, -1, -1, 0, true).size());
+		}
+		try (TripleStore store = open("cs,scpo")) {
+			assertEquals(1, pairs(store, "cs", true));
+		}
+	}
+
+	@Test
+	void allFullAndPartialIndexesFitDatabaseCapacity() throws Exception {
+		String indexes = "spoc,spco,sopc,socp,scpo,scop,psoc,psco,posc,pocs,pcso,pcos,"
+				+ "ospc,oscp,opsc,opcs,ocsp,ocps,cspo,csop,cpso,cpos,cosp,cops,sp,op,cs";
+		try (TripleStore store = open(indexes)) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(44, 22, 33, 55, false);
+			store.commit();
+			for (String fields : List.of("sp", "op", "cs")) {
+				assertEquals(1, pairs(store, fields, true));
+				assertEquals(1, pairs(store, fields, false));
+			}
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					RecordIterator it = store.getTriples(txn, -1, -1, -1, 0, true)) {
+				assertEquals(4, it.getIndexName().length(), "full context-first indexes win ties");
+			}
+		}
+	}
+
+	@Test
 	void partialPairsAreChunkedAndSurviveMutationAndReopen() throws Exception {
 		try (TripleStore store = open("sp,op,psoc,posc")) {
 			store.startTransaction();
@@ -210,7 +345,7 @@ class TripleStorePartialIndexesTest {
 
 	@Test
 	void alignedWritesAndMapGrowthPreserveDistinctPairs() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc,sp,op").setTripleDBSize(512 * 1024);
+		LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc,scpo,sp,op,cs").setTripleDBSize(512 * 1024);
 		try (TripleStore store = new TripleStore(dir, config, null)) {
 			store.startTransaction();
 			int count = 15000;
@@ -226,6 +361,7 @@ class TripleStorePartialIndexesTest {
 			assertEquals(count, added.size());
 			assertEquals(count, pairs(store, "sp", true));
 			assertEquals(2, pairs(store, "op", true));
+			assertEquals(count, pairs(store, "cs", true));
 			assertEquals(count / 2, rows(store, -1, -1, 3000, -1, true).size());
 			store.startTransaction();
 			assertFalse(store.storeTriple(s[0], p[0], o[0], c[0], true));
@@ -233,6 +369,7 @@ class TripleStorePartialIndexesTest {
 			remove(store, -1, -1, 3000, -1, true);
 			assertEquals(count / 2, pairs(store, "sp", true));
 			assertEquals(1, pairs(store, "op", true));
+			assertEquals(count / 2, pairs(store, "cs", true));
 		}
 	}
 
@@ -269,10 +406,11 @@ class TripleStorePartialIndexesTest {
 		properties = new StoreProperties(dir);
 		properties.load();
 		try (TripleStore store = new TripleStore(dir, properties,
-				new LmdbStoreConfig("sp,op,psoc,posc").setTripleDBSize(512 * 1024), null)) {
+				new LmdbStoreConfig("sp,op,cs,psoc,posc,scpo").setTripleDBSize(512 * 1024), null)) {
 			assertEquals(count, rows(store, -1, -1, -1, -1, true).size());
 			assertEquals(count, pairs(store, "sp", true));
 			assertEquals(count, pairs(store, "op", true));
+			assertEquals(count, pairs(store, "cs", true));
 			assertEquals(1, rows(store, 1000 + count - 1, -1, -1, -1, true).size());
 			assertEquals(1, rows(store, -1, -1, 3000 + count - 1, -1, true).size());
 		}
@@ -314,6 +452,8 @@ class TripleStorePartialIndexesTest {
 	void missingCounterpartsAreRejected() {
 		assertThrows(SailException.class, () -> open("sp,posc"));
 		assertThrows(SailException.class, () -> open("op,psoc"));
+		assertThrows(SailException.class, () -> open("cs,spoc"));
+		assertThrows(SailException.class, () -> TripleIndex.parseIndexSpecList("cs"));
 		assertThrows(SailException.class, () -> TripleIndex.parseIndexSpecList("sp"));
 	}
 
@@ -365,7 +505,7 @@ class TripleStorePartialIndexesTest {
 				RecordIterator it = store.getTriples(txn, s, p, o, c, explicit)) {
 			long[] quad;
 			while ((quad = it.next()) != null) {
-				rows.add(Arrays.toString(quad));
+				assertTrue(rows.add(Arrays.toString(quad)), "duplicate resolved statement");
 			}
 		}
 		return rows;
