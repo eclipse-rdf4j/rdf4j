@@ -402,7 +402,7 @@ class LmdbGrowthCapacityTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L);
-		assertEquals(5_000L, config.getMapGrowthReadDrainTimeoutMillis());
+		assertEquals(30_000L, config.getMapGrowthReadDrainTimeoutMillis());
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -437,7 +437,7 @@ class LmdbGrowthCapacityTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L);
-		assertEquals(5_000L, config.getMapGrowthReadDrainTimeoutMillis());
+		assertEquals(30_000L, config.getMapGrowthReadDrainTimeoutMillis());
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();

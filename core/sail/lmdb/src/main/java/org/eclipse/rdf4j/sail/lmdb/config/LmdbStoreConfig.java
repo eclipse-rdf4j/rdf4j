@@ -63,7 +63,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
-	public static final long MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = 5_000L;
+	public static final long MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = 30_000L;
 
 	public static final int READ_ONLY_REPLAY_MAX_RETRIES = 3;
 

@@ -30,9 +30,15 @@ The QEMU durability job must test actual running LMDB transactions as well as it
 - [done] Run focused config and coordinator tests.
 - [done] Format and publish timeout default repair.
 - [done] Record DataAndShapes stall unresolved.
-- [in_progress] Verify latest exact-head hosted CI.
+- [todo] Verify latest exact-head hosted CI.
 - [todo] Resume local ARM64 campaigns if hosted blocked.
 - [todo] Record final CI evidence and disposition.
+- [done] Add failing thirty-second timeout test.
+- [done] Restore shared timeout and expectations.
+- [done] Size SHACL LMDB fixture maps.
+- [done] Add bounded fixture lifecycle smoke.
+- [done] Prove direct fixtures do not grow maps.
+- [in_progress] Format, review, commit and push.
 
 ## Surprises & Discoveries
 
@@ -45,6 +51,8 @@ The QEMU durability job must test actual running LMDB transactions as well as it
   Evidence: `logs/ci-6073-job-109798032840/job-109798032840-full.log` and the extracted campaign artifact.
 - Observation: whole-write capacity preflight avoids the native map-full journal replay path. The in-module `LmdbCrashRecoveryTest.PausingTripleStore` was adapted to select that path with a zero estimate; the external guest writer was not. Increasing transaction size would make the test depend on estimates rather than its intended path.
   Evidence: the actual guest/controller regression failed with `native commit returned before the requested pre-publication cut`; its pre-fix report is `logs/ci-6073-job-109798032840/pre-fix-mixed-replay-red.log`. The guest-only selection override makes all three actual cutpoint tests pass.
+- Observation: restored the shared read-drain default to 30,000 ms and sized both multithreaded SHACL LMDB fixture maps to 128 MiB. A bounded 32-value lifecycle smoke exercised each fixture and confirmed native 128 MiB capacities, zero resize counters, and zero growth episodes. The repeated RDFS `testDataAndShapes` run remained incomplete after 18+ minutes; thread dumps show map-growth read-admission waiting while the RDFS exclusive write lock is held. No whole-workload no-growth claim is established.
+  Evidence: `logs/ci-6073-job-109798032840/map-growth-timeout-30s-shacl-capacity/bounded-smoke-reports/TEST-org.eclipse.rdf4j.sail.shacl.MapGrowthCheckingLmdbStoreFixtureTest.xml`, `interrupted-failsafe-reports/failsafe-summary.xml`, `it-current-thread-dump.txt`, `it-current-thread-dump-2.txt`, and `it-vmmap.txt`.
 - Observation: the existing canonical Python suite needs local loopback/socket permission in this sandbox. Its authorized rerun passed 75 tests in 8.374 seconds.
   Evidence: `logs/ci-6073-job-109798032840/python-harness-suite-escalated.log`.
 

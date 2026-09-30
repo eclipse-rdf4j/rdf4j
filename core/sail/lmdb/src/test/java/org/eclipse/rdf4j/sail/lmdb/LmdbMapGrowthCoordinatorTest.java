@@ -55,12 +55,12 @@ class LmdbMapGrowthCoordinatorTest {
 
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
-	void defaultStoreUsesFiveSecondReadDrainDeadline(@TempDir Path dataDir) throws Exception {
-		assertWarningDeadline(new LmdbStore(dataDir.toFile()), 5_000L);
+	void defaultStoreUsesThirtySecondReadDrainDeadline(@TempDir Path dataDir) throws Exception {
+		assertWarningDeadline(new LmdbStore(dataDir.toFile()), 30_000L);
 	}
 
 	@ParameterizedTest
-	@ValueSource(longs = { 0L, 30_000L, 90_000L })
+	@ValueSource(longs = { 0L, 5_000L, 30_000L, 90_000L })
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
 	void explicitReadDrainTimeoutControlsWarningDeadline(long timeoutMillis, @TempDir Path dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setMapGrowthReadDrainTimeoutMillis(timeoutMillis);

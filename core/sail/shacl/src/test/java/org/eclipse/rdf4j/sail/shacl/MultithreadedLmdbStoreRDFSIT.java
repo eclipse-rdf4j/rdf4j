@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.MapGrowthCheckingLmdbStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
@@ -92,7 +92,7 @@ public class MultithreadedLmdbStoreRDFSIT extends MultithreadedTest {
 
 	@Override
 	NotifyingSail getBaseSail() {
-		NotifyingSail notifyingSail = new LmdbStore(file);
+		NotifyingSail notifyingSail = new MapGrowthCheckingLmdbStore(file);
 		notifyingSail = new SchemaCachingRDFSInferencer(notifyingSail);
 		try (NotifyingSailConnection connection = notifyingSail.getConnection()) {
 			connection.begin(IsolationLevels.NONE);

@@ -84,7 +84,7 @@ complete TripleStore replay or proactive dictionary growth when tracked; an unex
 error can still fail that tracked transaction. When tracking was omitted, the whole-transaction retry above applies.
 Configure the
 coordination window with
-`LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `5000` milliseconds) and eligible read retries with
+`LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `30000` milliseconds) and eligible read retries with
 `LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`). The timeout covers the warning, preflight, and drain
 episode when a warning remains active through preflight; if the warning expires while the write is still being buffered,
 admission reopens until a later preflight starts a new episode if growth coordination is still needed. Setting the timeout
