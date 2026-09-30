@@ -112,6 +112,66 @@ class TracingRepositoryTest {
 	}
 
 	@Test
+	void captureQueryParametersDisabled_recordsNoParameters() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }");
+			query.setBinding("p", RDF.TYPE);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_PARAMETERS)).isNull();
+	}
+
+	@Test
+	void captureQueryParametersEnabled_recordsBoundBindings() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureQueryParameters(true)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }");
+			query.setBinding("p", RDF.TYPE);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_PARAMETERS))
+				.isEqualTo("p=<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>");
+	}
+
+	@Test
+	void captureQueryParametersEnabled_noBindings_recordsNoParameters() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureQueryParameters(true)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }");
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_PARAMETERS)).isNull();
+	}
+
+	@Test
 	void graphQuery_detectsConstructAndDescribe() {
 		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
 

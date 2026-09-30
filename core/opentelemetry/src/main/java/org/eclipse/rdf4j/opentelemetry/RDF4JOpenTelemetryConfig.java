@@ -58,6 +58,18 @@ public final class RDF4JOpenTelemetryConfig {
 	public static final int DEFAULT_MAX_QUERY_TEXT_LENGTH = 1000;
 
 	/**
+	 * System property used to configure the {@link Builder#captureQueryParameters(boolean)} default, e.g. for
+	 * deployments that cannot set it programmatically (such as the RDF4J Server).
+	 */
+	public static final String CAPTURE_QUERY_PARAMETERS_PROPERTY = "org.eclipse.rdf4j.opentelemetry.captureQueryParameters";
+
+	/**
+	 * The default value of {@link Builder#captureQueryParameters(boolean)}, used unless overridden by the
+	 * {@value #CAPTURE_QUERY_PARAMETERS_PROPERTY} system property.
+	 */
+	public static final boolean DEFAULT_CAPTURE_QUERY_PARAMETERS = false;
+
+	/**
 	 * System property used to configure the {@link Builder#dbSystemName(String)} default, e.g. for deployments that
 	 * cannot set it programmatically (such as the RDF4J Server).
 	 */
@@ -75,6 +87,7 @@ public final class RDF4JOpenTelemetryConfig {
 	private final String instrumentationScopeVersion;
 	private final boolean captureQueryText;
 	private final int maxQueryTextLength;
+	private final boolean captureQueryParameters;
 	private final String dbSystemName;
 
 	private RDF4JOpenTelemetryConfig(Builder builder) {
@@ -83,6 +96,7 @@ public final class RDF4JOpenTelemetryConfig {
 		this.instrumentationScopeVersion = builder.instrumentationScopeVersion;
 		this.captureQueryText = builder.captureQueryText;
 		this.maxQueryTextLength = builder.maxQueryTextLength;
+		this.captureQueryParameters = builder.captureQueryParameters;
 		this.dbSystemName = builder.dbSystemName;
 	}
 
@@ -124,6 +138,15 @@ public final class RDF4JOpenTelemetryConfig {
 	}
 
 	/**
+	 * @return whether the bindings known to a prepared query/update at evaluation time (see
+	 *         {@link org.eclipse.rdf4j.query.Operation#getBindings()}) are recorded as a {@code db.query.parameters}
+	 *         span attribute. Disabled by default, since parameter values may contain sensitive data.
+	 */
+	public boolean isCaptureQueryParameters() {
+		return captureQueryParameters;
+	}
+
+	/**
 	 * @return the value recorded for the {@code db.system.name} span attribute by the
 	 *         {@code org.eclipse.rdf4j.opentelemetry.repository} instrumentation. Defaults to
 	 *         {@value #DEFAULT_DB_SYSTEM_NAME}.
@@ -153,6 +176,7 @@ public final class RDF4JOpenTelemetryConfig {
 		private boolean captureQueryText = Boolean.getBoolean(CAPTURE_QUERY_TEXT_PROPERTY);
 		private int maxQueryTextLength = Integer.getInteger(MAX_QUERY_TEXT_LENGTH_PROPERTY,
 				DEFAULT_MAX_QUERY_TEXT_LENGTH);
+		private boolean captureQueryParameters = Boolean.getBoolean(CAPTURE_QUERY_PARAMETERS_PROPERTY);
 		private String dbSystemName = System.getProperty(DB_SYSTEM_NAME_PROPERTY, DEFAULT_DB_SYSTEM_NAME);
 
 		private Builder() {
@@ -218,6 +242,19 @@ public final class RDF4JOpenTelemetryConfig {
 				throw new IllegalArgumentException("maxQueryTextLength must not be negative");
 			}
 			this.maxQueryTextLength = maxQueryTextLength;
+			return this;
+		}
+
+		/**
+		 * Enables or disables recording the bindings known to a prepared query/update at evaluation time (see
+		 * {@link org.eclipse.rdf4j.query.Operation#getBindings()}) as a {@code db.query.parameters} span attribute.
+		 * Disabled by default, unless overridden by the {@value #CAPTURE_QUERY_PARAMETERS_PROPERTY} system property.
+		 *
+		 * @param captureQueryParameters {@code true} to record (truncated) query parameters
+		 * @return this builder
+		 */
+		public Builder captureQueryParameters(boolean captureQueryParameters) {
+			this.captureQueryParameters = captureQueryParameters;
 			return this;
 		}
 

@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.opentelemetry.repository;
 
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -28,7 +27,6 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
-import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
@@ -180,13 +178,6 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 	}
 
 	private static String termOrVariable(Value term, String variableName) {
-		if (term == null) {
-			return "?" + variableName;
-		}
-		if (term instanceof BNode) {
-			// QueryStringUtil doesn't support BNodes (not expressible in SPARQL syntax)
-			return term.toString();
-		}
-		return QueryStringUtil.valueToString(term);
+		return term != null ? TracingOperation.valueToString(term) : "?" + variableName;
 	}
 }

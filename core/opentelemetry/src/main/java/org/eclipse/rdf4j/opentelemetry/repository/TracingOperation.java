@@ -10,11 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.opentelemetry.repository;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.opentelemetry.RDF4JOpenTelemetryConfig;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
+import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
@@ -65,7 +68,37 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 					truncate(operationString, config.getMaxQueryTextLength()));
 		}
 
+		if (config.isCaptureQueryParameters()) {
+			BindingSet bindings = getBindings();
+			if (bindings != null && !bindings.isEmpty()) {
+				span.setAttribute(DbOtelAttributes.DB_QUERY_PARAMETERS,
+						truncate(toParameterString(bindings), config.getMaxQueryTextLength()));
+			}
+		}
+
 		return span;
+	}
+
+	private static String toParameterString(BindingSet bindings) {
+		StringBuilder parameters = new StringBuilder();
+		for (Binding binding : bindings) {
+			if (parameters.length() > 0) {
+				parameters.append(", ");
+			}
+			parameters.append(binding.getName()).append('=').append(valueToString(binding.getValue()));
+		}
+		return parameters.toString();
+	}
+
+	/**
+	 * Converts a {@link Value} to a query-string-like representation, e.g. for use in {@code db.query.parameters}/
+	 * {@code db.query.text}-style attributes. {@link BNode}s are rendered as-is since SPARQL syntax can't express them.
+	 */
+	static String valueToString(Value value) {
+		if (value instanceof BNode) {
+			return value.toString();
+		}
+		return QueryStringUtil.valueToString(value);
 	}
 
 	/**

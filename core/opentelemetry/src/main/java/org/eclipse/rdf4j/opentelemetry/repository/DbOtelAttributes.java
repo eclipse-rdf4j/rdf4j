@@ -43,6 +43,13 @@ public final class DbOtelAttributes {
 	 */
 	public static final AttributeKey<String> DB_QUERY_TEXT = AttributeKey.stringKey("db.query.text");
 
+	/**
+	 * The bindings known to a prepared query/update at evaluation time (see
+	 * {@link org.eclipse.rdf4j.query.Operation#getBindings()}), rendered as {@code name=value} pairs. Only recorded
+	 * when explicitly enabled via {@link RDF4JOpenTelemetryConfig.Builder#captureQueryParameters(boolean)}.
+	 */
+	public static final AttributeKey<String> DB_QUERY_PARAMETERS = AttributeKey.stringKey("db.query.parameters");
+
 	/** A low-cardinality summary of the operation; equal to the span name. */
 	public static final AttributeKey<String> DB_QUERY_SUMMARY = AttributeKey.stringKey("db.query.summary");
 
