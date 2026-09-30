@@ -1045,7 +1045,7 @@ class LmdbSailStore implements SailStore {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
 							} else {
-								Thread.yield();
+								Thread.onSpinWait();
 							}
 						}
 					}
