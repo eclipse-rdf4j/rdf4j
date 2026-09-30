@@ -12,17 +12,23 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
@@ -36,8 +42,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
-/** Verifies that type-matrix worker transactions outlive every worker using them, including interrupted drains. */
+/** Verifies type-matrix initial work ownership and source lifetime, including interrupted drains. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeParallelTypeMatrixDrainTest {
 
@@ -79,35 +87,11 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		TypeMatrixSource quick = new TypeMatrixSource(null, null, quickWorkerFinished);
 		TypeMatrixOwner owner = new TypeMatrixOwner(slow, quick);
 
-		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
-		layout.freeze(List.of());
-		BindingSet base = EmptyBindingSet.getInstance();
-		NativeGroupIteration emitter = new NativeGroupIteration(owner, SlotPlan.singleton(), layout, new int[0],
-				new AggregateSpec[] { AggregateSpec.star("count") }, false, base, null, null, false, null);
-		RowState row = new RowState(owner, layout, base);
-		assertThat(emitter.initialize(row)).isTrue();
-
-		TypeMatrixAggregate terminal = new TypeMatrixAggregate(0, false, 0, 1);
-		Kernel kernel = new Kernel(0, List.of(), terminal);
-		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
-				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
-				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
-				List.of())
-						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-								new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
-		LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
-		LmdbNativeKernelBindings.BoundDomains domains = new LmdbNativeKernelBindings.BoundDomains(new long[0][],
-				new int[0], new int[0]);
-		TypeMatrixContext matrix = new TypeMatrixContext(TypeMatrixSource.ADJACENCY, null, null,
-				new NativeLmdbQuerySource.NativeAdjacency[0], new long[0]);
-
 		AtomicReference<List<BindingSet>> result = new AtomicReference<>();
 		AtomicReference<Throwable> queryFailure = new AtomicReference<>();
 		Thread query = new Thread(() -> {
 			try {
-				result.set(LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
-						new NativeLmdbQuerySource.NativeAdjacency[0], null, null,
-						new TypeMatrixContext[] { matrix }, domains, SlotPlan.singleton(), row, emitter, null,
+				result.set(evaluate(owner, TypeMatrixSource.ADJACENCY, null,
 						ignored -> new EmptyTypeMatrixKernel()));
 			} catch (Throwable problem) {
 				queryFailure.set(problem);
@@ -136,6 +120,169 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		assertThat(quick.closeCalls).isOne();
 	}
 
+	@ParameterizedTest(name = "slow worker={0}, roots={1}, configured workers={2}")
+	@CsvSource({ "0,2,2", "1,2,2", "0,16,2", "1,16,2", "0,2,4", "1,2,4" })
+	void readyWorkerRetainsItsInitialMorselWhilePeerStealsRemainingWork(int slowWorker, int roots,
+			int configuredWorkers)
+			throws Exception {
+		System.setProperty("rdf4j.lmdb.parallel.threads", Integer.toString(configuredWorkers));
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", Integer.toString(configuredWorkers));
+		CountDownLatch slowWorkerEntered = new CountDownLatch(1);
+		CountDownLatch releaseSlowWorker = new CountDownLatch(1);
+		CountDownLatch quickWorkerFinished = new CountDownLatch(1);
+		NativeLmdbQuerySource.NativeAdjacency adjacency = new TypeMatrixAdjacency(roots);
+		TypeMatrixSource slow = new TypeMatrixSource(slowWorkerEntered, releaseSlowWorker, null,
+				new TypeMatrixAdjacency(roots));
+		TypeMatrixSource quick = new TypeMatrixSource(null, null, quickWorkerFinished, new TypeMatrixAdjacency(roots));
+		TypeMatrixOwner owner = slowWorker == 0 ? new TypeMatrixOwner(slow, quick) : new TypeMatrixOwner(quick, slow);
+		Group target = new Group();
+		target.setRuntimeTelemetryEnabled(true);
+		ConcurrentLinkedQueue<TypeMatrixContext> windows = new ConcurrentLinkedQueue<>();
+		AtomicReference<List<BindingSet>> result = new AtomicReference<>();
+		AtomicReference<Throwable> queryFailure = new AtomicReference<>();
+		Thread query = new Thread(() -> {
+			try {
+				result.set(evaluate(owner, adjacency, target, ignored -> new RecordingTypeMatrixKernel(windows)));
+			} catch (Throwable problem) {
+				queryFailure.set(problem);
+			}
+		}, "type-matrix-initial-morsel-test");
+
+		query.start();
+		try {
+			assertThat(slowWorkerEntered.await(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(quickWorkerFinished.await(10L, TimeUnit.SECONDS))
+					.as("the peer must finish all stealable work while the ready worker opens its source")
+					.isTrue();
+		} finally {
+			releaseSlowWorker.countDown();
+			query.join(TimeUnit.SECONDS.toMillis(10L));
+		}
+
+		assertThat(query.isAlive()).isFalse();
+		assertThat(queryFailure.get()).isNull();
+		assertThat(result.get()).isEmpty();
+		int[] visits = new int[roots];
+		long slowPhysicalWork = 0L;
+		long quickPhysicalWork = 0L;
+		for (TypeMatrixContext window : windows) {
+			if (window.sourceTypes == slow.adjacency) {
+				slowPhysicalWork += window.sourceToOrdinal - window.sourceFromOrdinal;
+			} else {
+				assertThat(window.sourceTypes).isSameAs(quick.adjacency);
+				quickPhysicalWork += window.sourceToOrdinal - window.sourceFromOrdinal;
+			}
+			for (long root = window.sourceFromOrdinal; root < window.sourceToOrdinal; root++) {
+				visits[Math.toIntExact(root)]++;
+			}
+		}
+		assertThat(visits).containsOnly(1);
+		assertThat(slowPhysicalWork).as("the delayed worker must execute its retained root window").isPositive();
+		assertThat(quickPhysicalWork).as("the peer must execute its own and stealable root windows").isPositive();
+		assertThat(target.getLongMetricActual("nativeIrParallelWorkersStartedActual")).isEqualTo(2L);
+		assertThat(target.getLongMetricActual("nativeIrParallelWorkersWithNonZeroWorkActual"))
+				.as("a ready worker must retain physical work when its peer drains the stealable queues")
+				.isEqualTo(2L);
+		if (roots > 2) {
+			assertThat(target.getLongMetricActual("nativeIrParallelStealsActual")).isPositive();
+		}
+		assertThat(slow.closedWhileWorkerActive).isFalse();
+		assertThat(quick.closedWhileWorkerActive).isFalse();
+		assertThat(slow.closeCalls).isOne();
+		assertThat(quick.closeCalls).isOne();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0", "1" })
+	void smallRootDomainDeclinesBeforeOpeningParallelSources(int roots) {
+		TypeMatrixOwner owner = new TypeMatrixOwner();
+		ConcurrentLinkedQueue<TypeMatrixContext> windows = new ConcurrentLinkedQueue<>();
+		assertThat(evaluate(owner, new TypeMatrixAdjacency(roots), null,
+				ignored -> new RecordingTypeMatrixKernel(windows))).isNull();
+		assertThat(windows).isEmpty();
+		assertThat(owner.openCalls).isZero();
+	}
+
+	@Test
+	void aggregateWorkersOverlapInsideOwnedTypeMatrixKernelWork() {
+		OverlapRun run = evaluateOverlap(false);
+		assertOverlapContract(run);
+	}
+
+	@Test
+	void serializedTypeMatrixKernelWorkDoesNotSatisfyOverlapContract() {
+		OverlapRun run = evaluateOverlap(true);
+		assertThat(run.physicalPeak).as("the negative control serializes actual runBound work").isOne();
+		assertThatThrownBy(() -> assertOverlapContract(run))
+				.as("the same overlap assertion must reject serialized runBound work")
+				.isInstanceOf(AssertionError.class)
+				.hasMessageContaining("actual type-matrix kernel work must overlap");
+	}
+
+	private static void assertOverlapContract(OverlapRun run) {
+		assertThat(run.physicalPeak).as("actual type-matrix kernel work must overlap").isGreaterThanOrEqualTo(2);
+		assertThat(run.target.getLongMetricActual("nativeIrParallelPeakActiveWorkersActual")).isEqualTo(2L);
+		assertThat(run.target.getLongMetricActual("nativeIrParallelWorkerOverlapNanosActual")).isPositive();
+	}
+
+	private static OverlapRun evaluateOverlap(boolean serializePhysicalWork) {
+		// Repository queries prove rows and route selection. Rendezvous inside supported kernel work proves
+		// overlap without requiring a finite real-store query to win an operating-system scheduling race.
+		TypeMatrixWork work = new TypeMatrixWork(serializePhysicalWork);
+		TypeMatrixSource first = new TypeMatrixSource(null, null, null, new TypeMatrixAdjacency(16));
+		TypeMatrixSource second = new TypeMatrixSource(null, null, null, new TypeMatrixAdjacency(16));
+		Group target = new Group();
+		target.setRuntimeTelemetryEnabled(true);
+		assertThat(evaluate(new TypeMatrixOwner(first, second), new TypeMatrixAdjacency(16), target,
+				ignored -> new RecordingTypeMatrixKernel(work))).isEmpty();
+		int[] visits = new int[16];
+		for (TypeMatrixContext window : work.windows) {
+			for (long root = window.sourceFromOrdinal; root < window.sourceToOrdinal; root++) {
+				visits[Math.toIntExact(root)]++;
+			}
+		}
+		assertThat(visits).containsOnly(1);
+		assertThat(target.getLongMetricActual("nativeIrParallelWorkersStartedActual")).isEqualTo(2L);
+		assertThat(target.getLongMetricActual("nativeIrParallelWorkersWithNonZeroWorkActual")).isEqualTo(2L);
+		assertThat(target.getLongMetricActual("nativeIrParallelPeakActiveWorkersActual")).isBetween(1L, 2L);
+		assertThat(first.closedWhileWorkerActive).isFalse();
+		assertThat(second.closedWhileWorkerActive).isFalse();
+		assertThat(first.closeCalls).isOne();
+		assertThat(second.closeCalls).isOne();
+		return new OverlapRun(target, work.peakActive.get());
+	}
+
+	private record OverlapRun(Group target, int physicalPeak) {
+	}
+
+	private static List<BindingSet> evaluate(TypeMatrixOwner owner, NativeLmdbQuerySource.NativeAdjacency adjacency,
+			TupleExpr target, Function<Kernel, JaninoKernel> kernelFactory) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		BindingSet base = EmptyBindingSet.getInstance();
+		NativeGroupIteration emitter = new NativeGroupIteration(owner, SlotPlan.singleton(), layout, new int[0],
+				new AggregateSpec[] { AggregateSpec.star("count") }, false, base, null, null, false, null);
+		RowState row = new RowState(owner, layout, base);
+		assertThat(emitter.initialize(row)).isTrue();
+
+		TypeMatrixAggregate terminal = new TypeMatrixAggregate(0, false, 0, 1);
+		Kernel kernel = new Kernel(0, List.of(), terminal);
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
+				List.of())
+						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+								new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
+		LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
+		LmdbNativeKernelBindings.BoundDomains domains = new LmdbNativeKernelBindings.BoundDomains(new long[0][],
+				new int[0], new int[0]);
+		TypeMatrixContext matrix = new TypeMatrixContext(adjacency, null, null,
+				new NativeLmdbQuerySource.NativeAdjacency[0], new long[0]);
+		return LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
+				new NativeLmdbQuerySource.NativeAdjacency[0], null, null,
+				new TypeMatrixContext[] { matrix }, domains, SlotPlan.singleton(), row, emitter, target, kernelFactory);
+	}
+
 	private static void restore(String property, String value) {
 		if (value == null) {
 			System.clearProperty(property);
@@ -159,8 +306,83 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		}
 	}
 
+	private static final class RecordingTypeMatrixKernel implements JaninoKernel {
+		private final ConcurrentLinkedQueue<TypeMatrixContext> windows;
+		private final TypeMatrixWork work;
+		private TypeMatrixContext matrix;
+		private boolean firstWindow = true;
+
+		private RecordingTypeMatrixKernel(ConcurrentLinkedQueue<TypeMatrixContext> windows) {
+			this.windows = windows;
+			work = null;
+		}
+
+		private RecordingTypeMatrixKernel(TypeMatrixWork work) {
+			windows = work.windows;
+			this.work = work;
+		}
+
+		@Override
+		public void bind(KernelContext context) {
+			matrix = context.typeMatrices[0];
+		}
+
+		@Override
+		public void runBound() {
+			if (work == null) {
+				windows.add(matrix);
+			} else {
+				work.run(matrix, firstWindow);
+				firstWindow = false;
+			}
+		}
+
+		@Override
+		public int fill(long[] rowBuffer, int maxRows) {
+			return 0;
+		}
+	}
+
+	private static final class TypeMatrixWork {
+		private final ConcurrentLinkedQueue<TypeMatrixContext> windows = new ConcurrentLinkedQueue<>();
+		private final CountDownLatch rendezvous = new CountDownLatch(2);
+		private final AtomicInteger active = new AtomicInteger();
+		private final AtomicInteger peakActive = new AtomicInteger();
+		private final Object serializedWork = new Object();
+		private final boolean serializePhysicalWork;
+
+		private TypeMatrixWork(boolean serializePhysicalWork) {
+			this.serializePhysicalWork = serializePhysicalWork;
+		}
+
+		private void run(TypeMatrixContext matrix, boolean firstWindow) {
+			if (serializePhysicalWork) {
+				synchronized (serializedWork) {
+					runPhysicalWork(matrix, false);
+				}
+			} else {
+				runPhysicalWork(matrix, firstWindow);
+			}
+		}
+
+		private void runPhysicalWork(TypeMatrixContext matrix, boolean rendezvousWithPeer) {
+			int concurrent = active.incrementAndGet();
+			peakActive.accumulateAndGet(concurrent, Math::max);
+			try {
+				if (rendezvousWithPeer) {
+					rendezvous.countDown();
+					TypeMatrixSource.await(rendezvous);
+				}
+				windows.add(matrix);
+			} finally {
+				active.decrementAndGet();
+			}
+		}
+	}
+
 	private static final class TypeMatrixOwner extends TypeMatrixSource {
 		private final NativeLmdbQuerySource.ParallelSource[] workers;
+		private int openCalls;
 
 		private TypeMatrixOwner(NativeLmdbQuerySource.ParallelSource... workers) {
 			super(null, null, null);
@@ -169,6 +391,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 
 		@Override
 		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) {
+			openCalls++;
 			if (count != workers.length) {
 				throw new AssertionError("expected " + workers.length + " workers, got " + count);
 			}
@@ -177,47 +400,8 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 	}
 
 	private static class TypeMatrixSource implements NativeLmdbQuerySource.ParallelSource {
-		private static final NativeLmdbQuerySource.NativeAdjacency ADJACENCY = new NativeLmdbQuerySource.NativeAdjacency() {
-			@Override
-			public long find(long key) {
-				return key + 1L;
-			}
-
-			@Override
-			public long size(long runHandle) {
-				return 0L;
-			}
-
-			@Override
-			public long neighborAt(long runHandle, long runOffset) {
-				throw new IndexOutOfBoundsException();
-			}
-
-			@Override
-			public long contextAt(long runHandle, long runOffset) {
-				throw new IndexOutOfBoundsException();
-			}
-
-			@Override
-			public boolean runsNeighborOrdered() {
-				return true;
-			}
-
-			@Override
-			public boolean supportsKeyEnumeration() {
-				return true;
-			}
-
-			@Override
-			public long keyCount() {
-				return 2L;
-			}
-
-			@Override
-			public long keyAt(long keyOrdinal) {
-				return keyOrdinal + 1L;
-			}
-		};
+		private static final NativeLmdbQuerySource.NativeAdjacency ADJACENCY = new TypeMatrixAdjacency(2L);
+		private final NativeLmdbQuerySource.NativeAdjacency adjacency;
 
 		private final CountDownLatch entered;
 		private final CountDownLatch release;
@@ -229,9 +413,15 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		private int closeCalls;
 
 		private TypeMatrixSource(CountDownLatch entered, CountDownLatch release, CountDownLatch finished) {
+			this(entered, release, finished, ADJACENCY);
+		}
+
+		private TypeMatrixSource(CountDownLatch entered, CountDownLatch release, CountDownLatch finished,
+				NativeLmdbQuerySource.NativeAdjacency adjacency) {
 			this.entered = entered;
 			this.release = release;
 			this.finished = finished;
+			this.adjacency = adjacency;
 		}
 
 		@Override
@@ -248,7 +438,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 						entered.countDown();
 						await(release);
 					}
-					return ADJACENCY;
+					return adjacency;
 				}
 
 				@Override
@@ -317,6 +507,54 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 				Thread.currentThread().interrupt();
 				throw new AssertionError("interrupted awaiting type-matrix test coordination", problem);
 			}
+		}
+	}
+
+	private static final class TypeMatrixAdjacency implements NativeLmdbQuerySource.NativeAdjacency {
+		private final long roots;
+
+		private TypeMatrixAdjacency(long roots) {
+			this.roots = roots;
+		}
+
+		@Override
+		public long find(long key) {
+			return key + 1L;
+		}
+
+		@Override
+		public long size(long runHandle) {
+			return 0L;
+		}
+
+		@Override
+		public long neighborAt(long runHandle, long runOffset) {
+			throw new IndexOutOfBoundsException();
+		}
+
+		@Override
+		public long contextAt(long runHandle, long runOffset) {
+			throw new IndexOutOfBoundsException();
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return true;
+		}
+
+		@Override
+		public boolean supportsKeyEnumeration() {
+			return true;
+		}
+
+		@Override
+		public long keyCount() {
+			return roots;
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			return keyOrdinal + 1L;
 		}
 	}
 }

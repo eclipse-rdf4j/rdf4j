@@ -430,7 +430,9 @@ public class LmdbTypeMatrixTest {
 					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate")
 					.matches("(?s).*nativeIrParallelPartitionCountActual=(?:[2-9]|[1-9][0-9]+).*")
 					.matches("(?s).*nativeIrParallelWorkersStartedActual=(?:[2-9]|[1-9][0-9]+).*")
-					.matches("(?s).*nativeIrParallelPeakActiveWorkersActual=(?:[2-9]|[1-9][0-9]+).*")
+					// The scheduler may finish finite work before its peer enters runActive. Supported kernel
+					// fixtures prove actual overlap separately; this query must report the honest one-to-two bound.
+					.matches("(?s).*nativeIrParallelPeakActiveWorkersActual=[12](?![0-9]).*")
 					.matches("(?s).*nativeIrParallelWorkersWithNonZeroWorkActual=(?:[2-9]|[1-9][0-9]+).*")
 					.contains("nativeIrParallelMorselsPerWorkerActual=")
 					.contains("nativeIrParallelRowsPerWorkerActual=");
