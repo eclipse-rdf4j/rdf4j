@@ -13,7 +13,7 @@ Tracing support is provided by the `rdf4j-opentelemetry` module, and is entirely
 
 The module provides two independent instrumentation areas:
 
-- Repository-level tracing (package `org.eclipse.rdf4j.opentelemetry.repository`): one span per SPARQL query/update evaluated through a `RepositoryConnection`, and one span per `getStatements(...)`/`hasStatement(...)` call, following the [OpenTelemetry database client semantic conventions](https://opentelemetry.io/docs/specs/semconv/database/database-spans/) (`db.system.name`, `db.operation.name`, `db.namespace`, `db.query.text`, `db.query.parameters`, `db.response.returned_rows`, ...). This is backend-agnostic: it works identically for a local SAIL-backed repository, a remote `HTTPRepository`/`SPARQLRepository`, or a federation. `db.operation.name` is one of `SELECT`, `CONSTRUCT`, `DESCRIBE`, `ASK`, `UPDATE`, `GET_STATEMENTS`, or `HAS_STATEMENT`.
+- Repository-level tracing (package `org.eclipse.rdf4j.opentelemetry.repository`): one span per SPARQL query/update evaluated through a `RepositoryConnection`, one span per `getStatements(...)`/`hasStatement(...)` call, and (opt-in, see below) one span per `add(...)`/`remove(...)`/`clear(...)` call, following the [OpenTelemetry database client semantic conventions](https://opentelemetry.io/docs/specs/semconv/database/database-spans/) (`db.system.name`, `db.operation.name`, `db.namespace`, `db.query.text`, `db.query.parameters`, `db.response.returned_rows`, `db.response.affected_rows`, ...). This is backend-agnostic: it works identically for a local SAIL-backed repository, a remote `HTTPRepository`/`SPARQLRepository`, or a federation. `db.operation.name` is one of `SELECT`, `CONSTRUCT`, `DESCRIBE`, `ASK`, `UPDATE`, `GET_STATEMENTS`, `HAS_STATEMENT`, `ADD`, `REMOVE`, or `CLEAR`.
 - Outbound HTTP tracing (package `org.eclipse.rdf4j.opentelemetry.http`): one span per physical SPARQL Protocol HTTP request, following the OpenTelemetry HTTP client semantic conventions. Only applicable to `SPARQLRepository`/`HTTPRepository`.
 
 For most use cases, repository-level tracing is the more useful of the two, since it works regardless of the repository's backend and composes cleanly with a repository obtained from a `RepositoryManager`. This is also the area exposed by the `OpenTelemetrySupport` facade described below.
@@ -56,6 +56,8 @@ Repository traced = OpenTelemetrySupport.instrument(repository, "my-repo", confi
 | `captureQueryText(boolean)`        | `org.eclipse.rdf4j.opentelemetry.captureQueryText`           | `false`  | Records the (possibly truncated) query/update text, or requested triple pattern, as the `db.query.text` span attribute. Disabled by default, since this can be large and may contain sensitive literal values. |
 | `maxQueryTextLength(int)`          | `org.eclipse.rdf4j.opentelemetry.maxQueryTextLength`          | `1000`   | Maximum number of characters recorded for the `db.query.text`/`db.query.parameters` attributes, when either capture option is enabled. |
 | `captureQueryParameters(boolean)`  | `org.eclipse.rdf4j.opentelemetry.captureQueryParameters`      | `false`  | Records the bindings known to a prepared query/update at evaluation time (see `Operation.getBindings()`) as the (possibly truncated) `db.query.parameters` span attribute, e.g. `p=<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>`. Disabled by default, since parameter values may contain sensitive data. Only applicable to prepared `Query`/`Update` spans, not `GET_STATEMENTS`/`HAS_STATEMENT` (which have no bindings). Nothing is recorded if no bindings are set. |
+| `captureWriteOperations(boolean)`  | `org.eclipse.rdf4j.opentelemetry.captureWriteOperations`      | `false`  | Records `add`/`remove`/`clear` calls as `ADD`/`REMOVE`/`CLEAR` spans. Disabled by default: unlike reads, write tracing isn't free to enable, and most applications don't need per-write spans. |
+| `captureWriteCount(boolean)`       | `org.eclipse.rdf4j.opentelemetry.captureWriteCount`           | `false`  | Records the number of statements written/removed as the `db.response.affected_rows` span attribute, for the write operations where this is determinable without extra overhead (see below). Only takes effect when `captureWriteOperations` is also enabled. |
 | `dbSystemName(String)`             | `org.eclipse.rdf4j.opentelemetry.dbSystemName`                | `rdf4j`  | The `db.system.name` span attribute recorded for repository-level spans.                     |
 
 The system properties are read once, as the default value used unless overridden programmatically via the corresponding builder method - this lets deployments that cannot set up an `RDF4JOpenTelemetryConfig` directly (such as RDF4J Server, see below) still configure this behaviour.
@@ -69,6 +71,27 @@ For `GET_STATEMENTS`/`HAS_STATEMENT` spans, `db.query.text` (when `captureQueryT
 ```
 
 Unbound arguments (`null` subject/predicate/object, or no context given) are rendered as a `?subj`/`?pred`/`?obj`/`?context` variable; bound terms use the same SPARQL-syntax string representation as `db.query.parameters` below.
+
+### Write operations (`add`/`remove`/`clear`)
+
+Tracing write operations is a separate opt-in from read tracing, since it covers every statement mutation on a `RepositoryConnection` and is more likely to add measurable overhead on write-heavy workloads. Enable it with `captureWriteOperations(true)`:
+
+```java
+RDF4JOpenTelemetryConfig config = RDF4JOpenTelemetryConfig.builder()
+        .captureWriteOperations(true)
+        .captureWriteCount(true)
+        .build();
+```
+
+`db.response.affected_rows` (gated separately by `captureWriteCount`) is only recorded where the number of affected statements is known without extra cost:
+
+| Call                                                              | Count recorded?                                                                 |
+|---------------------------------------------------------------------|----------------------------------------------------------------------------------|
+| `add`/`remove` of a single `Statement`, or `add(Resource, IRI, Value, Resource...)` | Yes - one per context given, or one if none.                       |
+| `add`/`remove` of an `Iterable<? extends Statement>` or `CloseableIteration<? extends Statement>` | Yes - the number of statements pulled through the (otherwise unmodified) input. For `remove`, this is the number of statements *submitted* to the operation, which may exceed the number actually removed if some did not exist in the store. |
+| `remove(Resource, IRI, Value, Resource...)` (pattern-based removal, like `getStatements`) | No - an unknown number of matching statements may be removed; determining the count would require an extra read. |
+| `clear(Resource...)`                                               | No - same reason as pattern-based removal.                                      |
+| `add(File/InputStream/Reader/URL, ...)` (RDF document loading)     | No - not determinable without intercepting the RDF parser pipeline.             |
 
 ## Instrumenting every repository from a RepositoryManager
 

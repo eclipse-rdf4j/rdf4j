@@ -30,7 +30,7 @@ public final class DbOtelAttributes {
 
 	/**
 	 * The kind of operation: {@code SELECT}, {@code CONSTRUCT}, {@code DESCRIBE}, {@code ASK}, {@code UPDATE},
-	 * {@code GET_STATEMENTS}, or {@code HAS_STATEMENT}.
+	 * {@code GET_STATEMENTS}, {@code HAS_STATEMENT}, {@code ADD}, {@code REMOVE}, or {@code CLEAR}.
 	 */
 	public static final AttributeKey<String> DB_OPERATION_NAME = AttributeKey.stringKey("db.operation.name");
 
@@ -56,6 +56,16 @@ public final class DbOtelAttributes {
 	/** The number of rows/statements returned by a tuple or graph query, set when the result is closed. */
 	public static final AttributeKey<Long> DB_RESPONSE_RETURNED_ROWS = AttributeKey
 			.longKey("db.response.returned_rows");
+
+	/**
+	 * The number of statements written or submitted for removal by an {@code ADD}/{@code REMOVE} span. Only recorded
+	 * when explicitly enabled via {@link RDF4JOpenTelemetryConfig.Builder#captureWriteCount(boolean)}, and only for the
+	 * write operations where this is determinable without extra overhead. For removal by an
+	 * {@code Iterable}/{@code CloseableIteration}, this is the number of statements submitted to the operation, which
+	 * may exceed the number actually removed if some did not exist in the store.
+	 */
+	public static final AttributeKey<Long> DB_RESPONSE_AFFECTED_ROWS = AttributeKey
+			.longKey("db.response.affected_rows");
 
 	/** The fully-qualified class name of the exception, set on failure. */
 	public static final AttributeKey<String> ERROR_TYPE = AttributeKey.stringKey("error.type");

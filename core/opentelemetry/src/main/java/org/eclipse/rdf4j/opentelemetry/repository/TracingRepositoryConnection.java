@@ -10,6 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.opentelemetry.repository;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.net.URL;
+import java.util.function.LongSupplier;
+
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -27,6 +35,8 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
@@ -34,9 +44,9 @@ import io.opentelemetry.context.Scope;
 
 /**
  * A {@link RepositoryConnection} that wraps every prepared {@link Query}/{@link Update} so that its evaluation is
- * recorded as an OpenTelemetry span, and that also traces {@code getStatements}/{@code hasStatement} calls directly,
- * following the OpenTelemetry database client semantic conventions. See
- * {@link org.eclipse.rdf4j.opentelemetry.repository} for the full attribute list.
+ * recorded as an OpenTelemetry span, and that also traces {@code getStatements}/{@code hasStatement} calls and
+ * {@code add}/{@code remove}/{@code clear} calls directly, following the OpenTelemetry database client semantic
+ * conventions. See {@link org.eclipse.rdf4j.opentelemetry.repository} for the full attribute list.
  * <p>
  * Instances are usually obtained via {@link TracingRepository}; this constructor is available for advanced/custom
  * wiring.
@@ -179,5 +189,172 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	private static String termOrVariable(Value term, String variableName) {
 		return term != null ? TracingOperation.valueToString(term) : "?" + variableName;
+	}
+
+	@Override
+	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+		traceWrite("ADD", () -> super.add(subject, predicate, object, contexts), () -> contextCount(contexts));
+	}
+
+	@Override
+	public void add(Statement st, Resource... contexts) throws RepositoryException {
+		traceWrite("ADD", () -> super.add(st, contexts), () -> contextCount(contexts));
+	}
+
+	@Override
+	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
+		if (!config.isCaptureWriteOperations() || !config.isCaptureWriteCount()) {
+			traceWrite("ADD", () -> super.add(statements, contexts), null);
+			return;
+		}
+		CountingIterable<? extends Statement> counted = new CountingIterable<>(statements);
+		traceWrite("ADD", () -> super.add(counted, contexts), counted::getCount);
+	}
+
+	@Override
+	public void add(CloseableIteration<? extends Statement> statementIter, Resource... contexts)
+			throws RepositoryException {
+		if (!config.isCaptureWriteOperations() || !config.isCaptureWriteCount()) {
+			traceWrite("ADD", () -> super.add(statementIter, contexts), null);
+			return;
+		}
+		CountingCloseableIteration<? extends Statement> counted = new CountingCloseableIteration<>(statementIter);
+		traceWrite("ADD", () -> super.add(counted, contexts), counted::getCount);
+	}
+
+	@Override
+	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		traceWriteIO("ADD", () -> super.add(file, baseURI, dataFormat, contexts));
+	}
+
+	@Override
+	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		traceWriteIO("ADD", () -> super.add(in, baseURI, dataFormat, contexts));
+	}
+
+	@Override
+	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		traceWriteIO("ADD", () -> super.add(reader, baseURI, dataFormat, contexts));
+	}
+
+	@Override
+	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+			throws IOException, RDFParseException, RepositoryException {
+		traceWriteIO("ADD", () -> super.add(url, baseURI, dataFormat, contexts));
+	}
+
+	@Override
+	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts)
+			throws RepositoryException {
+		// subject/predicate/object may be null (wildcard pattern removal), so the number of statements actually
+		// removed isn't known without an extra read
+		traceWrite("REMOVE", () -> super.remove(subject, predicate, object, contexts), null);
+	}
+
+	@Override
+	public void remove(Statement st, Resource... contexts) throws RepositoryException {
+		traceWrite("REMOVE", () -> super.remove(st, contexts), () -> contextCount(contexts));
+	}
+
+	@Override
+	public void remove(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
+		if (!config.isCaptureWriteOperations() || !config.isCaptureWriteCount()) {
+			traceWrite("REMOVE", () -> super.remove(statements, contexts), null);
+			return;
+		}
+		CountingIterable<? extends Statement> counted = new CountingIterable<>(statements);
+		traceWrite("REMOVE", () -> super.remove(counted, contexts), counted::getCount);
+	}
+
+	@Override
+	public void remove(CloseableIteration<? extends Statement> statementIter, Resource... contexts)
+			throws RepositoryException {
+		if (!config.isCaptureWriteOperations() || !config.isCaptureWriteCount()) {
+			traceWrite("REMOVE", () -> super.remove(statementIter, contexts), null);
+			return;
+		}
+		CountingCloseableIteration<? extends Statement> counted = new CountingCloseableIteration<>(statementIter);
+		traceWrite("REMOVE", () -> super.remove(counted, contexts), counted::getCount);
+	}
+
+	@Override
+	public void clear(Resource... contexts) throws RepositoryException {
+		// clears every matching statement; the number removed isn't known without an extra read
+		traceWrite("CLEAR", () -> super.clear(contexts), null);
+	}
+
+	/**
+	 * @return the number of statements a single-statement {@code add}/{@code remove} call affects: one per context, or
+	 *         one if no context is given (added/removed without a context).
+	 */
+	private static long contextCount(Resource... contexts) {
+		return Math.max(1, contexts.length);
+	}
+
+	/**
+	 * Runs a write action, traced as an {@code ADD}/{@code REMOVE}/{@code CLEAR} span when
+	 * {@link RDF4JOpenTelemetryConfig#isCaptureWriteOperations()} is enabled. When disabled, {@code action} runs
+	 * directly with no tracing overhead.
+	 *
+	 * @param lazyCount supplies the number of statements affected, recorded as {@code db.response.affected_rows} when
+	 *                  {@link RDF4JOpenTelemetryConfig#isCaptureWriteCount()} is also enabled; {@code null} if not
+	 *                  determinable for this operation. Evaluated only after {@code action} completes successfully.
+	 */
+	private void traceWrite(String operationName, WriteAction action, LongSupplier lazyCount)
+			throws RepositoryException {
+		if (!config.isCaptureWriteOperations()) {
+			action.run();
+			return;
+		}
+		Span span = TracingOperation.startSpan(tracer, config, repositoryId, operationName);
+		try (Scope scope = span.makeCurrent()) {
+			action.run();
+			if (config.isCaptureWriteCount() && lazyCount != null) {
+				span.setAttribute(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS, lazyCount.getAsLong());
+			}
+		} catch (RuntimeException e) {
+			TracingOperation.recordException(e, span);
+			throw e;
+		} finally {
+			span.end();
+		}
+	}
+
+	/**
+	 * Like {@link #traceWrite(String, WriteAction, LongSupplier)}, for the RDF-document-based {@code add} overloads,
+	 * which can also throw {@link IOException}. The number of statements written isn't determinable for these without
+	 * intercepting the parser pipeline, so no count is ever recorded.
+	 */
+	private void traceWriteIO(String operationName, IOWriteAction action)
+			throws IOException, RDFParseException, RepositoryException {
+		if (!config.isCaptureWriteOperations()) {
+			action.run();
+			return;
+		}
+		Span span = TracingOperation.startSpan(tracer, config, repositoryId, operationName);
+		try (Scope scope = span.makeCurrent()) {
+			action.run();
+		} catch (RuntimeException e) {
+			TracingOperation.recordException(e, span);
+			throw e;
+		} catch (IOException e) {
+			TracingOperation.recordException(e, span);
+			throw e;
+		} finally {
+			span.end();
+		}
+	}
+
+	@FunctionalInterface
+	private interface WriteAction {
+		void run() throws RepositoryException;
+	}
+
+	@FunctionalInterface
+	private interface IOWriteAction {
+		void run() throws IOException, RDFParseException, RepositoryException;
 	}
 }

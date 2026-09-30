@@ -70,6 +70,30 @@ public final class RDF4JOpenTelemetryConfig {
 	public static final boolean DEFAULT_CAPTURE_QUERY_PARAMETERS = false;
 
 	/**
+	 * System property used to configure the {@link Builder#captureWriteOperations(boolean)} default, e.g. for
+	 * deployments that cannot set it programmatically (such as the RDF4J Server).
+	 */
+	public static final String CAPTURE_WRITE_OPERATIONS_PROPERTY = "org.eclipse.rdf4j.opentelemetry.captureWriteOperations";
+
+	/**
+	 * The default value of {@link Builder#captureWriteOperations(boolean)}, used unless overridden by the
+	 * {@value #CAPTURE_WRITE_OPERATIONS_PROPERTY} system property.
+	 */
+	public static final boolean DEFAULT_CAPTURE_WRITE_OPERATIONS = false;
+
+	/**
+	 * System property used to configure the {@link Builder#captureWriteCount(boolean)} default, e.g. for deployments
+	 * that cannot set it programmatically (such as the RDF4J Server).
+	 */
+	public static final String CAPTURE_WRITE_COUNT_PROPERTY = "org.eclipse.rdf4j.opentelemetry.captureWriteCount";
+
+	/**
+	 * The default value of {@link Builder#captureWriteCount(boolean)}, used unless overridden by the
+	 * {@value #CAPTURE_WRITE_COUNT_PROPERTY} system property.
+	 */
+	public static final boolean DEFAULT_CAPTURE_WRITE_COUNT = false;
+
+	/**
 	 * System property used to configure the {@link Builder#dbSystemName(String)} default, e.g. for deployments that
 	 * cannot set it programmatically (such as the RDF4J Server).
 	 */
@@ -88,6 +112,8 @@ public final class RDF4JOpenTelemetryConfig {
 	private final boolean captureQueryText;
 	private final int maxQueryTextLength;
 	private final boolean captureQueryParameters;
+	private final boolean captureWriteOperations;
+	private final boolean captureWriteCount;
 	private final String dbSystemName;
 
 	private RDF4JOpenTelemetryConfig(Builder builder) {
@@ -97,6 +123,8 @@ public final class RDF4JOpenTelemetryConfig {
 		this.captureQueryText = builder.captureQueryText;
 		this.maxQueryTextLength = builder.maxQueryTextLength;
 		this.captureQueryParameters = builder.captureQueryParameters;
+		this.captureWriteOperations = builder.captureWriteOperations;
+		this.captureWriteCount = builder.captureWriteCount;
 		this.dbSystemName = builder.dbSystemName;
 	}
 
@@ -147,6 +175,25 @@ public final class RDF4JOpenTelemetryConfig {
 	}
 
 	/**
+	 * @return whether {@code add}/{@code remove}/{@code clear} calls on a {@code RepositoryConnection} are recorded as
+	 *         {@code ADD}/{@code REMOVE}/{@code CLEAR} spans. Disabled by default.
+	 */
+	public boolean isCaptureWriteOperations() {
+		return captureWriteOperations;
+	}
+
+	/**
+	 * @return whether the number of statements written/removed is recorded as the {@code db.response.affected_rows}
+	 *         span attribute, for the write operations where this is determinable without extra overhead (e.g. a single
+	 *         statement, or an {@code Iterable}/{@code CloseableIteration} of statements; not for pattern-based removal
+	 *         or {@code clear()}, nor for RDF-document-based {@code add}). Only takes effect when
+	 *         {@link #isCaptureWriteOperations()} is also {@code true}.
+	 */
+	public boolean isCaptureWriteCount() {
+		return captureWriteCount;
+	}
+
+	/**
 	 * @return the value recorded for the {@code db.system.name} span attribute by the
 	 *         {@code org.eclipse.rdf4j.opentelemetry.repository} instrumentation. Defaults to
 	 *         {@value #DEFAULT_DB_SYSTEM_NAME}.
@@ -177,6 +224,8 @@ public final class RDF4JOpenTelemetryConfig {
 		private int maxQueryTextLength = Integer.getInteger(MAX_QUERY_TEXT_LENGTH_PROPERTY,
 				DEFAULT_MAX_QUERY_TEXT_LENGTH);
 		private boolean captureQueryParameters = Boolean.getBoolean(CAPTURE_QUERY_PARAMETERS_PROPERTY);
+		private boolean captureWriteOperations = Boolean.getBoolean(CAPTURE_WRITE_OPERATIONS_PROPERTY);
+		private boolean captureWriteCount = Boolean.getBoolean(CAPTURE_WRITE_COUNT_PROPERTY);
 		private String dbSystemName = System.getProperty(DB_SYSTEM_NAME_PROPERTY, DEFAULT_DB_SYSTEM_NAME);
 
 		private Builder() {
@@ -255,6 +304,33 @@ public final class RDF4JOpenTelemetryConfig {
 		 */
 		public Builder captureQueryParameters(boolean captureQueryParameters) {
 			this.captureQueryParameters = captureQueryParameters;
+			return this;
+		}
+
+		/**
+		 * Enables or disables recording {@code add}/{@code remove}/{@code clear} calls on a
+		 * {@code RepositoryConnection} as {@code ADD}/{@code REMOVE}/{@code CLEAR} spans. Disabled by default, unless
+		 * overridden by the {@value #CAPTURE_WRITE_OPERATIONS_PROPERTY} system property.
+		 *
+		 * @param captureWriteOperations {@code true} to trace write operations
+		 * @return this builder
+		 */
+		public Builder captureWriteOperations(boolean captureWriteOperations) {
+			this.captureWriteOperations = captureWriteOperations;
+			return this;
+		}
+
+		/**
+		 * Enables or disables recording the number of statements written/removed as the
+		 * {@code db.response.affected_rows} span attribute, for write operations where this is determinable without
+		 * extra overhead. Disabled by default, unless overridden by the {@value #CAPTURE_WRITE_COUNT_PROPERTY} system
+		 * property. Only takes effect when {@link #captureWriteOperations(boolean)} is also enabled.
+		 *
+		 * @param captureWriteCount {@code true} to record the affected-statement count
+		 * @return this builder
+		 */
+		public Builder captureWriteCount(boolean captureWriteCount) {
+			this.captureWriteCount = captureWriteCount;
 			return this;
 		}
 

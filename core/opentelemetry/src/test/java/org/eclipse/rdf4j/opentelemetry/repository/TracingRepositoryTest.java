@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -279,6 +280,125 @@ class TracingRepositoryTest {
 		assertThat(span.getName()).isEqualTo("HAS_STATEMENT test-repo");
 		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("HAS_STATEMENT");
 		assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.UNSET);
+	}
+
+	@Test
+	void writeOperationsDisabledByDefault_recordsNoSpan() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.add(vf.createIRI("urn:s3"), RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		assertThat(otelTesting.getSpans()).isEmpty();
+	}
+
+	@Test
+	void addSingleStatement_recordsSpanWithCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.captureWriteCount(true)
+				.build());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.add(vf.createIRI("urn:s3"), RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getName()).isEqualTo("ADD test-repo");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("ADD");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isEqualTo(1L);
+	}
+
+	@Test
+	void addWriteEnabled_countDisabled_recordsNoCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.build());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.add(vf.createIRI("urn:s3"), RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isNull();
+	}
+
+	@Test
+	void addIterableOfStatements_recordsSpanWithCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.captureWriteCount(true)
+				.build());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.add(List.of(
+					vf.createStatement(vf.createIRI("urn:s3"), RDF.TYPE, RDFS.RESOURCE),
+					vf.createStatement(vf.createIRI("urn:s4"), RDF.TYPE, RDFS.RESOURCE)));
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("ADD");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isEqualTo(2L);
+	}
+
+	@Test
+	void removeSingleStatement_recordsSpanWithCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.captureWriteCount(true)
+				.build());
+		ValueFactory vf = plainRepository.getValueFactory();
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.remove(vf.createStatement(vf.createIRI("urn:s"), RDF.TYPE, RDFS.RESOURCE));
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("REMOVE");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isEqualTo(1L);
+	}
+
+	@Test
+	void removeByPattern_recordsSpanWithoutCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.captureWriteCount(true)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.remove((Resource) null, RDF.TYPE, RDFS.RESOURCE);
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("REMOVE");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isNull();
+	}
+
+	@Test
+	void clearRepository_recordsSpanWithoutCount() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureWriteOperations(true)
+				.captureWriteCount(true)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			conn.clear();
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_OPERATION_NAME)).isEqualTo("CLEAR");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS)).isNull();
 	}
 
 	@Test
