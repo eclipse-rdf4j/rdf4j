@@ -202,11 +202,12 @@ async function reveals(page, info, route) {
 	const triggers = await page.locator('#workbench-page-surface button[aria-controls][aria-expanded]').evaluateAll(elements =>
 		elements.map(element => ({ id: element.id, panel: element.getAttribute('aria-controls') })).filter(element => element.id));
 	for (const trigger of triggers) {
-		const button = page.locator(`#${trigger.id}`);
+		// Ids such as saved-query URNs contain ':', which a #id selector cannot hold.
+		const button = page.locator(`[id="${trigger.id}"]`);
 		if (!await button.isVisible()) continue;
 		if (await button.getAttribute('aria-expanded') === 'true') await button.click();
 		await button.click(); await expect(button).toHaveAttribute('aria-expanded', 'true');
-		await expect(page.locator(`#${trigger.panel}`)).toBeVisible();
+		await expect(page.locator(`[id="${trigger.panel}"]`)).toBeVisible();
 		await capture(page, info, route, `open-${trigger.id}`);
 		await button.click(); await expect(button).toHaveAttribute('aria-expanded', 'false'); await settled(page);
 	}

@@ -2041,6 +2041,7 @@ module workbench {
                 .filter((candidate: string) => candidate && available(candidate))[0]
                 || (graphFormats.length ? graphFormats[0].value : 'application/n-quads');
             const timeout = text(meta(model, 'export-timeout')) || '43200';
+            const safari = isSafari();
             const requested = text(meta(model, 'statement-preview-requested')) === 'true';
             const previewLimit = text(meta(model, 'statement-preview-limit')) || '100';
             return h`<form id="export-form" class="workbench-island workbench-form-card" action="export">
@@ -2048,9 +2049,15 @@ module workbench {
                     <div class="workbench-field"><label for="Accept">Download format</label>
                         <select id="Accept" name="Accept">${graphFormats.map((format: any) => h`<option value=${format.value} ?selected=${format.value === defaultFormat}>${format.label}</option>`)}</select>
                     </div>
-                    <div class="workbench-field"><label for="compression">Compression</label><select id="compression" name="compression">
+                    <div class="workbench-field"><label for="compression">Compression</label><select id="compression" name="compression"
+                            aria-describedby=${safari ? 'export-compression-help' : runtime.nothing} @change=${(event: any) => {
+                                const help = event.currentTarget.ownerDocument.getElementById('export-compression-help');
+                                if (help) { help.hidden = event.currentTarget.value === 'none'; }
+                            }}>
                         <option value="none">None</option><option value="gzip" selected>Gzip</option><option value="zip">Zip</option>
-                    </select></div>
+                    </select>${safari ? h`<p id="export-compression-help" class="workbench-field__help">Safari expands .gz and .zip
+                        downloads after saving them. To keep the compressed file, turn off <em>Open “safe” files after
+                        downloading</em> in Safari Settings › General.</p>` : ''}</div>
                     <div class="workbench-field"><label for="timeout">Timeout</label>
                         <div class="workbench-input-unit"><input id="timeout" name="timeout" type="number" min="0" step="1" required
                             value=${timeout} aria-describedby="export-timeout-unit export-timeout-help"
@@ -2085,6 +2092,12 @@ module workbench {
                 ${rowCount(model) ? table(runtime, model, context, { linkTerms: true })
                     : h`<p class="workbench-empty" role="status">${requested ? 'No results to display.' : 'Choose Retrieve statements to preview repository data.'}</p>`}
             </section>`;
+        }
+
+        /** Safari (not another browser built on WebKit's user agent string), which expands downloaded archives. */
+        function isSafari(): boolean {
+            const agent = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+            return /Safari\//.test(agent) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|OPR\/|Android/.test(agent);
         }
 
         /** A time limit in seconds as people say it: "12 hours", "1 minute 30 seconds", "No limit" for 0. */
