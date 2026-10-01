@@ -27,7 +27,6 @@
 	--workbench-warning-surface: #fff6e0;
 	--workbench-warning-rule: #e9c46a;
 	--workbench-success: #28734b;
-	--workbench-logo-plate: #ffffff;
 	--workbench-heatmap-low: #def3fb;
 	--workbench-heatmap-high: #73c4e2;
 	--workbench-heatmap-ink: #14242b;
@@ -1586,6 +1585,7 @@ body.workbench-body .workbench-popover__footer a:hover {
 	}
 
 	body.workbench-body .workbench-contextbar .workbench-brand img.product,
+	html[data-theme="dark"] body.workbench-body .workbench-contextbar .workbench-brand img.product,
 	body.workbench-body .workbench-switcher__key,
 	body.workbench-body .workbench-switcher__title {
 		display: none;
@@ -3372,7 +3372,6 @@ html[data-theme="dark"] {
 	--workbench-warning-rule: #6b5420;
 	--workbench-success: #72d5a2;
 	--workbench-focus: #73c4e2;
-	--workbench-logo-plate: #ffffff;
 	--workbench-code-keyword: #73c4e2;
 	--workbench-code-variable: #c1b3ff;
 	--workbench-code-string: #94d6a2;
@@ -3428,11 +3427,14 @@ html[data-theme="dark"] body.query-result-embedded-body .query-result-embedded {
 	color: var(--workbench-body);
 }
 
-html[data-theme="dark"] body.workbench-body .workbench-brand {
-	box-sizing: border-box;
-	padding: 5px 7px;
-	border-radius: 6px;
-	background: var(--workbench-logo-plate);
+/* Brand artwork per theme (M2.5): the dark variants draw the lettering in the dark-theme ink. */
+body.workbench-body .workbench-brand img.workbench-brand__dark,
+html[data-theme="dark"] body.workbench-body .workbench-brand img.workbench-brand__light {
+	display: none;
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-brand img.workbench-brand__dark {
+	display: inline-block;
 }
 
 body.workbench-body .workbench-theme-control select,

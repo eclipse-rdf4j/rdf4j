@@ -35,8 +35,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 09:40Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
 - [x] (2026-10-01 10:40Z) M2.3 A compact context bar with switchers (mockups 01 and 04).
 - [x] (2026-10-01 11:45Z) M2.4 Regroup the menu and make it sticky.
-- [ ] M2.5 (in progress) Dark-mode logo.
-- [ ] M2.6 Page titles.
+- [x] (2026-10-01 12:00Z) M2.5 Dark-mode logo (`design/workbench-app-shell-plan-20260930/make-dark-logos.cjs` recolored 2,026 and 2,213 pixels).
+- [ ] M2.6 (in progress) Page titles.
 - [ ] M2.7 An in-shell "not found" page (mockup 13).
 - [ ] M2.8 A compact mobile header and a menu sheet (mockup 14).
 - [ ] M3.1 Cmd/Ctrl+Enter runs the query.

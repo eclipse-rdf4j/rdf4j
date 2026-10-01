@@ -121,3 +121,20 @@ test('menu groups are labeled the same way, with Query first', async ({ page }) 
 	expect(groups[0].items).toContain('Graphs');
 	expect(groups[3].items).toEqual(['Information']);
 });
+
+test('dark mode shows the light-ink logo without a white plate', async ({ browser }) => {
+	const context = await browser.newContext({ colorScheme: 'dark', viewport: { width: 1440, height: 900 } });
+	const page = await context.newPage();
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
+	const brand = await page.locator('#logo').evaluate((element) => {
+		const visible = Array.from(element.querySelectorAll('img')).filter((image) => image.getClientRects().length > 0);
+		return {
+			sources: visible.map((image) => image.getAttribute('src')),
+			background: getComputedStyle(element).backgroundColor
+		};
+	});
+	await context.close();
+	expect(brand.sources.some((source) => source.endsWith('/images/logo-dark.png')), JSON.stringify(brand)).toBe(true);
+	expect(brand.sources.every((source) => source.endsWith('-dark.png')), JSON.stringify(brand)).toBe(true);
+	expect(brand.background).toBe('rgba(0, 0, 0, 0)');
+});

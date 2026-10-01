@@ -58,7 +58,7 @@ test('mobile header omits the theme selector and keeps server context reachable'
 	}
 });
 
-test('dark navigation indicators stay readable and the mobile logo plate fits its artwork', async ({ page }) => {
+test('dark navigation indicators stay readable and the mobile logo fits its artwork', async ({ page }) => {
 	await page.emulateMedia({ colorScheme: 'dark' });
 	for (const width of [390, 320]) {
 		const routePage = await page.context().newPage();
@@ -70,8 +70,11 @@ test('dark navigation indicators stay readable and the mobile logo plate fits it
 		const display = await routePage.evaluate(() => {
 			const label = document.querySelector('#navigation .workbench-nav-group__label');
 			const brand = document.querySelector('#logo');
-			const logo = brand.querySelector('img:not(.product)').getBoundingClientRect();
-			const product = brand.querySelector('img.product').getBoundingClientRect();
+			const visible = selector => Array.from(brand.querySelectorAll(selector))
+				.find(image => image.getClientRects().length > 0);
+			const logo = visible('img:not(.product)').getBoundingClientRect();
+			const productImage = visible('img.product');
+			const product = productImage ? productImage.getBoundingClientRect() : { width: 0 };
 			const brandBounds = brand.getBoundingClientRect();
 			return {
 				labelColor: getComputedStyle(label).color,

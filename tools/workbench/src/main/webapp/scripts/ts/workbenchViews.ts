@@ -584,8 +584,10 @@ module workbench {
             const server = state.server;
             return h`<header id="workbench-contextbar" class="workbench-contextbar">
                 <a id="logo" class="workbench-brand" href=${urlFor(context, 'repositories')} aria-label="RDF4J Workbench home">
-                    <img src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
-                    <img class="product" src=${context.basePath + '/images/product.png'} alt="workbench" />
+                    <img class="workbench-brand__light" src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
+                    <img class="product workbench-brand__light" src=${context.basePath + '/images/product.png'} alt="workbench" />
+                    <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.png'} alt="rdf4j" />
+                    <img class="product workbench-brand__dark" src=${context.basePath + '/images/product-dark.png'} alt="workbench" />
                 </a>
                 <div class="workbench-switcher" data-workbench-switcher="server">
                     <button id="workbench-server-switcher" class="workbench-switcher__button" type="button"
