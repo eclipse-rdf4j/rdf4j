@@ -240,3 +240,58 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
     assert.equal(primaryEditor.refreshCount > 0, true);
     assert.equal(compareEditor.refreshCount > 0, true);
 });
+
+// Plan task M11.1: the graph renderer is loaded on the first DOT explanation, not with the Query page.
+test('a DOT explanation loads the graph renderer first and then draws the graph', async () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const testing = harness.context.workbench.query.testing;
+    const svg = harness.registerElement('svg', {});
+    const loads = [];
+    let finishLoad;
+    harness.context.workbench.app = {
+        loadScripts(names) {
+            loads.push(names);
+            return new Promise((resolve) => { finishLoad = resolve; });
+        }
+    };
+    testing.setInternalState({
+        queryPageState: pageState(
+            readyState(explanation({ responseFormat: 'dot', requestedFormat: 'dot', view: 'dotRendering', rawContent: 'digraph{}' })),
+            { kind: 'empty' }
+        )
+    });
+
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    assert.deepEqual(JSON.parse(JSON.stringify(loads)), [['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js']]);
+    assert.match(harness.getHtml('query-explanation-dot-view'), /Loading graph renderer…/);
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    assert.equal(loads.length, 1, 'a second request for the same graph waits for the same load');
+    harness.context.svgPanZoom = () => ({ destroy() {} });
+    harness.context.Viz = function Viz() {
+        this.renderSVGElement = () => Promise.resolve(svg);
+    };
+    finishLoad();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(harness.document.getElementById('query-explanation-dot-view').children[0], svg);
+});
+
+test('a graph renderer that cannot be loaded is reported in the explanation', async () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const testing = harness.context.workbench.query.testing;
+    harness.context.workbench.app = { loadScripts: () => Promise.reject(new Error('offline')) };
+    testing.setInternalState({
+        queryPageState: pageState(
+            readyState(explanation({ responseFormat: 'dot', requestedFormat: 'dot', view: 'dotRendering', rawContent: 'digraph{}' })),
+            { kind: 'empty' }
+        )
+    });
+
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.match(harness.getHtml('query-explanation-dot-view'), /Graphviz visualizer script not loaded/);
+});

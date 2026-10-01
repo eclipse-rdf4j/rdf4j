@@ -129,8 +129,8 @@ test('the built-in definitions carry the script lists the pages load today', () 
     const workbench = loadWorkbench();
     const routes = workbench.routes;
     assert.deepEqual(Array.from(routes.get('query').scripts({ vars: [] })), ['queryStream.js', 'codemirror.4.5.0.min.js',
-        'yasqe.min.js', 'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
-        'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js']);
+        'yasqe.min.js', 'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js',
+        'paging.js', 'query.js'], 'the graph renderer is loaded only for DOT explanations (M11.1)');
     assert.deepEqual(Array.from(routes.get('explore').baseScripts()), ['paging.js', 'explore.js']);
     assert.deepEqual(Array.from(routes.get('contexts').scripts({ vars: ['context'] })), []);
     assert.deepEqual(Array.from(routes.get('create').baseScripts()), ['create.js']);

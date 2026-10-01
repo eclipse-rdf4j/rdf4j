@@ -197,9 +197,11 @@ var workbench;
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
         register(staticRoute('saved-queries', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'], routeMount(scriptMount('savedQueries'))));
         register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'], routeMount(scriptMount('update'))));
+        // The graph renderer (viz.js, full.render.js, svg-pan-zoom) is loaded by query.ts when a DOT explanation is
+        // shown (M11.1).
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
-            'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
-            'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js'], routeMount(mountQuery)));
+            'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
+            'query.js'], routeMount(mountQuery)));
         var createRoute = {
             viewId: 'create',
             routerReady: true,

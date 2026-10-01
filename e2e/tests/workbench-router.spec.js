@@ -407,3 +407,26 @@ test('Edit on Saved queries opens the Query page with the saved text, without lo
 	expect(documents).toEqual([]);
 	await expect(page.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
 });
+
+// Plan task M11.1: the graph renderer loads only for a DOT explanation.
+test('the Query page loads the graph renderer only when a DOT explanation is shown', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const renderer = [];
+	page.on('request', (request) => {
+		if (request.url().endsWith('/full.render.js')) {
+			renderer.push(request.url());
+		}
+	});
+	await openRoute(page, 'query');
+	expect(renderer).toEqual([]);
+
+	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 5'));
+	await page.locator('#explain-format').evaluate((select) => {
+		select.value = 'dot';
+		select.dispatchEvent(new Event('change', { bubbles: true }));
+	});
+	await page.locator('#explain-trigger').click();
+
+	await expect(page.locator('#query-explanation-dot-view svg').first()).toBeVisible({ timeout: 15000 });
+	expect(renderer).toHaveLength(1);
+});

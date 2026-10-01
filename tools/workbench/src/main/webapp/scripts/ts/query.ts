@@ -40,6 +40,8 @@ module workbench {
         var RESULT_LOADING_ID = 'query-results-loading';
         var RESULT_STATUS_ID = 'query-results-status';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
+        /** Loaded only for DOT explanations (M11.1). */
+        var GRAPH_RENDERER_SCRIPTS = ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js'];
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
@@ -1772,7 +1774,8 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
-        function renderDotView(paneKey: string, explanationText: string, format: string) {
+        /** rendererLoaded: the graph renderer was already asked for once, so a missing one is reported, not loaded again. */
+        function renderDotView(paneKey: string, explanationText: string, format: string, rendererLoaded?: boolean) {
             var paneState = getPaneState(paneKey);
             var dotView = $('#' + paneState.dotViewId);
             if (format === 'dot') {
@@ -1792,6 +1795,19 @@ module workbench {
                     return;
                 }
                 pendingDotRenderKeys[paneKey] = explanationContentKey;
+                var app: any = (<any>workbench).app;
+                if (typeof Viz === 'undefined' && !rendererLoaded && app && typeof app.loadScripts === 'function') {
+                    // The graph renderer (about 2 MB) is loaded with the first DOT explanation (M11.1).
+                    dotView.html('<div>Loading graph renderer…</div>').show();
+                    var renderAfterLoad = function() {
+                        if (pendingDotRenderKeys[paneKey] === explanationContentKey) {
+                            pendingDotRenderKeys[paneKey] = '';
+                            renderDotView(paneKey, explanationText, format, true);
+                        }
+                    };
+                    app.loadScripts(GRAPH_RENDERER_SCRIPTS).then(renderAfterLoad, renderAfterLoad);
+                    return;
+                }
                 dotView.html('<div>Rendering DOT graph...</div>').show();
                 if (typeof Viz === 'undefined') {
                     dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');

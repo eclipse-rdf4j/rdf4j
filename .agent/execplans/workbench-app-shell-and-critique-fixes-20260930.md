@@ -71,11 +71,17 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 21:10Z) M9.2 Leaving while a query is running.
 - [x] (2026-10-01 21:27Z) M10.1 Submit forms without reloading the document.
 - [x] (2026-10-01 21:36Z) M10.2 Saved-query Edit opens the Query page in place.
-- [ ] M11.1 (in progress) Load the graph renderer only when needed.
-- [ ] M11.2 Prefetch route code.
+- [x] (2026-10-01 22:02Z) M11.1 Load the graph renderer only when needed.
+- [ ] M11.2 (in progress) Prefetch route code.
 - [ ] M11.3 Keep the Query route alive.
 - [ ] M12.1 Migrate tests that assumed full page loads.
 - [ ] M12.2 Final review and retrospective.
+- [ ] M13.1 The menu starts at the top (user request).
+- [ ] M13.2 Clear counts asynchronously, with a 5 second budget (user request).
+- [ ] M13.3 Summary counts asynchronously, with a short budget (user request).
+- [ ] M13.4 Query results stay visible per repository and tab (user request).
+- [ ] M13.5 Queries keep running in the background (user request).
+- [ ] M13.6 Review every warning for alignment and padding (user request).
 
 ## Surprises & Discoveries
 
@@ -338,6 +344,11 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Decision (M10.2): Edit goes through the generic form path of M10.1 instead of a `data-workbench-query-edit` attribute and an in-memory `initialPost`. Staging the Edit form's parameters would have put the saved query's name (`query=<name>`, `ref=id`) into the editor, not its text; the server already resolves the text when Edit is posted. Two server bugs made that path fail, and they also broke the native Edit (HTTP 500): the Edit form sends no `limit_query`, which `QueryServlet` turned into an integer literal (`Label may not be null`), and `WorkbenchViewRegistry.pageRequestViewId()` left the `view` record out of every Query action's page data, although Edit answers with the Query page. Edit now accepts a missing limit (the page uses its default) and its page data names the `query` view; `QueryServletEditPageDataTest` covers both. On the client, the Query page model's row is read (`prepareInitialRows`) so the editor shows the text, and a form answer from another page than the one shown is pushed (only the same page answered again, like a rejected Namespaces save, replaces the entry).
   Rationale: the server already knew how to answer Edit; fixing that answer kept one way to submit forms.
   Date/Author: 2026-10-01 / implementer.
+- Decision (user request, 2026-10-01, during M11.1): the user asked for six additions (quoted at the start of Milestone M13), which are added as M13 after M12. The request to let queries run in the background reverses M9.2 for navigation inside the Workbench: M13.5 keeps a running query alive when the Query page is left in the page and still cancels it when the tab is left, on Cancel, and when a newer query runs in the same repository.
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M11.1): the Query route no longer lists `viz/viz.js`, `viz/full.render.js` and `svg-pan-zoom.min.js`; `renderDotView()` loads them with `workbench.app.loadScripts()` (exported in M8.1) the first time a DOT explanation is drawn, shows "Loading graph renderer…" meanwhile, and draws the graph afterwards. It asks for the scripts once per drawing: the first version asked again whenever the load failed, which spun forever in the unit test of a failed load (caught by the suite hanging; the retry is gone and a failed load shows "Graphviz visualizer script not loaded.").
+  Rationale: almost 2 MB less on every Query visit; DOT explanations are rare.
+  Date/Author: 2026-10-02 / implementer.
 - Decision (M6.6): Delete starts with "Choose a repository" (empty, disabled) selected unless `?id=<id>` names one, and its button ("Delete repository…") stays disabled until a repository is chosen. Every deletion now asks for the typed id in `confirmDialog` ("Delete repository <id>?"); a proxied repository adds its warning to the same dialog. The safety check and the POST are unchanged. The dialog's input carries `data-workbench-confirm-text`, which the unit harness uses to type the text before confirming.
 
 ## Outcomes & Retrospective
@@ -995,6 +1006,34 @@ Acceptance: `npm run test:unit`, `npm run test:unit:coverage` (100% for the list
 #### Task M12.2: final review and retrospective
 
 Capture every route with `capture-routes.cjs` in `desktop-light,desktop-dark,tablet-light,mobile-light` and compare with the mockups; list any intentional deviations in `Decision Log`. Walk through the acceptance scenario in `Validation and Acceptance` by hand, with keyboard only once. Write the `Outcomes & Retrospective` entry.
+
+### Milestone M13: user requests of 2026-10-01
+
+Requested by the user during M11.1: "add to the end of your plan to look through all warnings to check alignment and padding etc, also add query result persistence so that navigating back to the query page keeps the results visible (per repo, per browser tab/window) and also allow queries to run in the background so that users can click around, and also for the clear page count the statements async and also have a timeout of 5 seconds, the summary page should also have an async count with a fairly short timeout, and also the main menu on the left has a small gap at the top where the menu will scroll up to when scrolling the page which shouldnt be the case since the menu should start as scrolled to the top". These tasks come after M12 and follow the same working rules (test first, full suite at the end of the milestone).
+
+#### Task M13.1: the menu starts at the top
+
+What is wrong: on wide screens the left menu (`#workbench-navigation-disclosure`, sticky) first renders a small gap above its first group; when the page scrolls, the menu moves up into that gap and only then sticks. What to build: find the offset (the sticky `top`, a margin or padding above the first group, or the context bar's height used as the sticky offset) and make the menu's resting position and its stuck position the same, so it does not move when the page starts to scroll. Test first (browser, Chromium/Firefox/WebKit, 1440 x 900, a long page such as Types of a seeded repository): record the menu's `getBoundingClientRect().top` before scrolling and after scrolling 50, 200 and 1,000 px; all must be equal (within 1 px), and its first link must be fully visible.
+
+#### Task M13.2: Clear counts asynchronously, with a 5 second budget
+
+What to build: the Clear page renders its graph list at once, without waiting for statement counts (today `ClearServlet` waits up to 2 seconds before it answers). Add a `counts=true` request to `ClearServlet`, like Types and Graphs in M5.2: repository size, default graph and each named graph counted on their own connection, with a budget of 5,000 ms, after which unfinished counts are answered as empty (shown as "—") and `counts-timed-out=true` is set. The page shows "Counting…" in the options until the counts arrive, then updates in place; the dialog text uses the count when it is known. Test first: a Java page-data test with a slow store (counts arrive after the page, and a count slower than 5 seconds is reported as timed out) and a browser test that the Clear page shows its graphs before the counts.
+
+#### Task M13.3: Summary counts asynchronously, with a short budget
+
+What to build: the Summary page renders at once; its Statements and Named graphs counts are requested with `counts=true` after the page is shown, with a budget of 2,000 ms (the same as Types and Graphs), and shown as "—" when they do not arrive in time. Test first: a Java page-data test for `SummaryServlet` with a slow store and a browser test that Summary shows the repository card before the counts.
+
+#### Task M13.4: query results stay visible per repository and tab
+
+What to build: going back to the Query page (by the menu, a link or Back) shows the last results of that repository in that browser tab, with the editor text and the settings they were run with, without running the query again. Keep, per repository, the execution snapshot (query text and settings), the row store id and the renderer's display state (scroll position, layout, page) in `sessionStorage` (one entry per repository; `sessionStorage` is per tab and per window), and keep the row store itself (the worker's IndexedDB store is not released while the entry refers to it; a reload or a newer execution in the same repository releases the old one; closing the tab leaves the existing recovery marker, so the next tab reclaims it). This builds on M11.3 (the kept-alive Query route): when the kept route belongs to another repository, the results are restored from the stored entry instead. Test first (browser): run a query in repository A, open Summary, open Query again: the same rows are shown and no execution request is sent; run a different query in repository B, go back to repository A's Query page: A's rows are shown; a second tab opened on A's Query page shows no results.
+
+#### Task M13.5: queries keep running in the background
+
+This reverses part of M9.2: leaving the Query page inside the Workbench no longer cancels a running query. What to build: when the Query route is left while a query runs, its execution controller keeps streaming into the row store (the route is kept alive, M11.3, or the controller is detached from its renderer and attached again on return); the menu's Query item shows that a query is running (a small spinner and "Query running" for screen readers) and that it finished ("Results ready"). Returning to the Query page shows the results so far, or the finished result. The query is still cancelled when the tab is left (`pagehide`, the keepalive request of M9.2), when the user presses Cancel, and when a new query is executed in the same repository. Test first (browser): delay the stream response, execute, open Summary, wait, expect no `cancel-query` request and the Query item's running state, return to Query and expect the rows; the M9.2 leave test is changed to `pagehide` only.
+
+#### Task M13.6: review every warning for alignment and padding
+
+What to build: list every warning shown in the Workbench (warning callouts such as the SYSTEM repository note, Clear's "There is no undo", Export's named-graph merge warning and its Safari note, the proxied-repository warning in the Delete dialog, field-level warnings, and the warning and error states of the result and explanation areas) and check each against the callout component of M1: icon alignment with the first line of text, padding, spacing to the surrounding fields and cards, text width, and dark mode. Fix what differs at the component level where possible. Test first: a browser spec that opens every page and state that shows a warning and checks, for each `.workbench-callout`, that the icon's vertical center is within 2 px of the first text line's center, that the padding matches the component tokens, and that the callout does not overflow its card; capture screenshots of each for the final review.
 
 ## Concrete Steps
 
