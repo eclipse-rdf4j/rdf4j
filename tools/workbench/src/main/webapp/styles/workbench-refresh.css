@@ -2125,6 +2125,7 @@ body.query-result-embedded-body .query-result-embedded table.data th {
 	font-size: var(--workbench-control-font-size);
 	font-weight: 600;
 	text-align: left;
+	text-transform: none;
 }
 
 body.workbench-body .workbench-page-surface table.data img {
