@@ -603,6 +603,11 @@ body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg.yasqe_smallsc
 	display: none !important;
 }
 
+/* A full-screen editor covers the sticky context bar (z-index 30) and the menu; yasqe.min.css uses 9. */
+body.workbench-body .yasqe .CodeMirror-fullscreen {
+	z-index: 1000;
+}
+
 body.workbench-body .query-page .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
 body.workbench-body #update-editor .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
 body.workbench-body .saved-query-row .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn {
@@ -830,7 +835,9 @@ body.query-result-embedded-body .workbench-action--ghost:hover {
 	cursor: not-allowed;
 }
 
-@media (pointer: coarse), (max-width: 600px) {
+/* Same breakpoint as the touch-height inputs and selects (max-width: 900px), so a button and the
+ * fields in its row keep one height. */
+@media (pointer: coarse), (max-width: 900px) {
 	:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action {
 		height: var(--workbench-touch-height);
 		min-height: var(--workbench-touch-height);
@@ -2236,21 +2243,27 @@ body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
 	max-width: 100%;
 }
 
-body.workbench-body .workbench-form-card .workbench-field > :is(input:not([type]), input[type="text"], input[type="url"], input[type="number"], input[type="password"], textarea, select) {
+/* Option panels (disclosure fields) keep controls sized to their role, such as a short limit select. */
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > :is(input:not([type]), input[type="text"], input[type="url"], input[type="number"], input[type="password"], textarea, select) {
 	box-sizing: border-box;
 	align-self: stretch;
 	width: 100%;
 	max-width: 100%;
 }
 
-body.workbench-body .workbench-form-card .workbench-field > .workbench-select-control {
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > .workbench-select-control {
 	display: block;
 	align-self: stretch;
 	width: 100%;
 }
 
-body.workbench-body .workbench-form-card .workbench-field > .workbench-select-control > select {
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > .workbench-select-control > select {
 	width: 100%;
+}
+
+/* Long example IRIs and literals wrap inside the card instead of widening it. */
+body.workbench-body .workbench-form-card :is(tt, code) {
+	overflow-wrap: anywhere;
 }
 
 body.workbench-body #export-form .workbench-form-grid {

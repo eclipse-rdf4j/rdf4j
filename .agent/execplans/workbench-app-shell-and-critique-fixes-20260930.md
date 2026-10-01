@@ -39,11 +39,11 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 06:03Z) M2.6 Page titles.
 - [x] (2026-10-01 06:10Z) M2.7 An in-shell "not found" page (mockup 13).
 - [x] (2026-10-01 06:18Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
-- [ ] M2.9 (in progress) (added after the end-of-M2 suite run) Fix the regressions that run found and update the specs that assert removed designs.
+- [x] (2026-10-01 09:57Z) M2.9 (added after the end-of-M2 suite run) Fix the regressions that run found and update the specs that assert removed designs.
 - [x] (2026-10-01 06:27Z) M3.1 Cmd/Ctrl+Enter runs the query.
 - [x] (2026-10-01 06:41Z) M3.2 The editor grows with its content, can be resized, and results come into view (the 12-visible-rows check moved to M4.2; see the Decision Log).
 - [x] (2026-10-01 09:30Z) M3.3 Results and Explanation become tabs of one card; the Execute row never moves (controls of the active tab sit in the first row of its panel; see the Decision Log).
-- [ ] M3.4 Clear names, units, and no silent "Clear".
+- [ ] M3.4 (in progress) Clear names, units, and no silent "Clear".
 - [ ] M3.5 One status line and designed result states (mockup 02).
 - [x] (2026-10-01 06:41Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
 - [ ] M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
@@ -165,6 +165,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Observation (M3.3): with the Config disclosure rendered inline in the Explanation toolbar, opening it made its group taller and wider, so the action group (Copy, Download, Compare, Explain again) dropped to the middle of the panel (`workbench-spacing-system.spec.js` S8: Copy moved from y=545 to y=657 at 1440px). Config now uses `workbench.detailDisclosure.renderSeparated`: the toggle stays in the toolbar and the panel opens in `.query-explanation-settings-track` below the toolbar row, the same pattern as Save query and Options; the outside-click handler in `query.ts` also treats clicks inside `#explanation-settings-panel` as inside. S8's "peers at or above the Config row" assertion encoded the old order (Copy before Config); it now asserts that opening Config moves no peer.
   Evidence: S8 and S9 pass in Chromium, Firefox and WebKit.
 - Observation (M3.3 affected-spec run on Chromium, 160 tests in 18 spec files): 97 failed, 1 skipped, 62 passed; by test name every failure is in the M0 baseline or the end-of-M2 list except three, all resolved (the "flat hierarchy" spec now measures the card border on `#query-output`; S8 above; "compare navigation follows the responsive menu" timed out once under load and passes on rerun). `workbench.spec.js` and `server.spec.js` hard-code `localhost:8080` and fail in this environment.
+- Observation (M2.9): of the 19 tests that newly failed after M2, two pass on the M3.3 build without changes ("one responsive code font token" and "route and creation controls 1440 dark", which had timed out). The real regressions and their causes: (1) YASQE's full-screen editor has `z-index: 9` in `yasqe.min.css`, below the sticky context bar (30), so the bar covered the editor's top edge and intercepted clicks on its "normal size" and share buttons (three specs); the full-screen editor now has `z-index: 1000`. (2) The M1.6 rule that stretches every control in a form card also stretched selects inside option panels (`#limit_export` 302px); disclosure fields are now excluded. (3) The Remove page's example `"Hello"^^<http://bar.com/foo>` could not wrap and overflowed the card by 34px at 320px; `tt` and `code` in form cards wrap anywhere. (4) Inputs and selects switch to the 44px touch height at `max-width: 900px`, but the M1.3 button component switched at 600px, so between 601px and 900px a Download button was 8px shorter than the selects in its row (S13); the component now uses the same breakpoint. Specs that asserted removed designs were updated: capitalized result headers (and the 900px viewports that relied on their width), 720px form cards, collapsible menu groups and the fallback menu, and the Add validation error as a `.error` element instead of an error callout.
+  Evidence: the M2.9 RED and GREEN entries in `initial-evidence.txt`.
 - Observation (M2.8): the sidebar container `#workbench-navigation-disclosure` is now a plain `<nav>` (no summary, no `open` state); below 900px it is hidden and the same policy menu renders a second time inside the modal `<dialog id="workbench-menu-sheet">` (ids prefixed `workbench-sheet-nav-` so they stay unique; the menu entries are computed once per shell render so the "menu unavailable" error logs once). Only one copy is ever visible, so the accessibility tree has one menu. `query.ts` compare mode only manipulates the old disclosure when a `details#workbench-navigation-disclosure` exists. Specs that opened the old "Menu" summary now open the sheet with `#workbench-menu-button`.
   Evidence: `workbench-shell.spec.js` "on a phone the header is one compact bar and the menu opens as a sheet" (title top 72px at 390 and 320 wide).
 
@@ -258,6 +260,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Decision (M3.3, user direction 2026-10-01): the look of the query explanation must not change. It keeps the code theme that matches the query editor (surface, border, monospace ink, syntax colors) and the pipes that connect the plan nodes. Any later task that moves or restyles the explanation must keep `workbench-query-workflow.spec.js` "the explanation keeps its code theme and the pipes that connect plan nodes" green.
   Rationale: explicit user requirement.
   Date/Author: 2026-10-01 / user.
+
+- Decision (M2.9): the button component's touch size (44px high, icon buttons 44px wide) applies at `(pointer: coarse), (max-width: 900px)`, the breakpoint the inputs, selects and the mobile header already use.
+  Rationale: one control height per row; 600px left buttons 8px shorter than the fields next to them on tablets.
+  Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective
 

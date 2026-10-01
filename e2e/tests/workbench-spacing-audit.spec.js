@@ -427,7 +427,10 @@ for (const width of [1440, 768, 320]) for (const theme of ['light', 'dark']) {
 for (const width of [1440, 320]) for (const theme of ['light', 'dark']) {
 	test(`conditional renderer controls ${width} ${theme}`, async ({ page }, info) => {
 		await open(page, 'information', { width, theme }); await renderFixture(page, 'information', {});
-		await expect(page.locator('#navigation .workbench-nav-group__disclosure')).toHaveCount(4);
+		// Without menu metadata the shell renders no menu (the fallback menu was removed, and menu groups are
+		// never disclosures: plan workbench-app-shell-and-critique-fixes-20260930, M2.1 and M2.4).
+		await expect(page.locator('#navigation .workbench-nav-group')).toHaveCount(0);
+		await expect(page.locator('#navigation .workbench-nav-group__disclosure')).toHaveCount(0);
 		await navigation(page, info, 'absent-menu-fallback');
 		await renderFixture(page, 'information', { menu: [] });
 		await capture(page, info, 'navigation', 'empty-menu-policy', 'actual renderer with explicit empty menu');

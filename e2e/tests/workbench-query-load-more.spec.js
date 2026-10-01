@@ -473,7 +473,8 @@ test('Auto accounts for unwrapped variable headers when applying column minima',
 		contentType: 'application/json'
 	});
 	console.log('[unwrapped-variable-header-geometry] ' + JSON.stringify(geometry));
-	expect(geometry.cells[0].textTransform).toBe('capitalize');
+	// Variable headers are shown exactly as written (plan workbench-app-shell-and-critique-fixes-20260930, M1.1).
+	expect(geometry.cells[0].textTransform).toBe('none');
 	if (testInfo.project.name === 'webkit' && geometry.cells.some((cell, index) =>
 		geometry.textBounds[index].right > cell.right + 1)) {
 		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'long-header-webkit-current.png') });
@@ -482,7 +483,9 @@ test('Auto accounts for unwrapped variable headers when applying column minima',
 	const initialRequiredWidths = geometry.requiredWidths;
 	const datatype = result.locator('input[name="show-datatypes"]');
 	if (await datatype.isChecked()) {
-		const datatypeValue = result.locator('tbody tr[data-query-row-index="0"] td').first();
+		// The first value cell of whichever layout Auto chose (Records when the header minima do not fit).
+		const datatypeValue = result.locator(geometry.effectiveLayout === 'table'
+			? 'tbody tr[data-query-row-index="0"] td' : '.query-result-record dd').first();
 		const formattedValue = await datatypeValue.textContent();
 		await datatype.uncheck();
 		await expect(datatypeValue).not.toHaveText(formattedValue);
@@ -491,32 +494,9 @@ test('Auto accounts for unwrapped variable headers when applying column minima',
 		expect(geometry.requiredWidths).toEqual(initialRequiredWidths,
 			'datatype display changes must not change the unwrapped header minimum');
 	}
-	const rawMinimumTotal = geometry.requiredWidths.reduce((total, width) => total + width, 0);
-	const renderedMinimumTotal = geometry.cells.reduce((total, cell, index) => total
-		+ Math.max(cell.minimumContentWidth, geometry.textBounds[index].width) + cell.padding + 2, 0);
-	expect(renderedMinimumTotal).toBeGreaterThan(rawMinimumTotal + 0.1,
-		'the lowercase leading w must expand when CSS capitalizes the variable header');
-	const viewportOffset = await result.evaluate(root => window.innerWidth - root.clientWidth);
-	const boundaryViewport = Math.ceil(rawMinimumTotal + viewportOffset);
-	const boundaryRootWidth = boundaryViewport - viewportOffset;
-	expect(boundaryRootWidth).toBeGreaterThanOrEqual(rawMinimumTotal - 0.1,
-		'the boundary viewport should fit the raw-text minimum');
-	expect(boundaryRootWidth).toBeLessThan(renderedMinimumTotal,
-		'the boundary viewport should not fit the CSS-rendered header minimum');
-	await page.setViewportSize({ width: boundaryViewport, height: 900 });
-	await expect(result).toHaveAttribute('data-effective-layout', 'records');
-	const actualBoundary = await result.evaluate(root => ({
-		viewportWidth: window.innerWidth,
-		rootWidth: root.clientWidth,
-		effectiveLayout: root.getAttribute('data-effective-layout')
-	}));
-	console.log('[capitalized-header-boundary] ' + JSON.stringify({
-		expectedBoundary: { rawMinimumTotal, renderedMinimumTotal, boundaryViewport, boundaryRootWidth },
-		actual: actualBoundary
-	}));
-	expect(actualBoundary.rootWidth).toBe(boundaryRootWidth,
-		'the browser viewport must land at the measured CSS-rendered column boundary');
-	await page.setViewportSize({ width: 900, height: 900 });
+	// Without the old capitalized headers the minimum sum is about 846px, just over the 842px a 900px viewport
+	// leaves; a wide desktop viewport fits the table again.
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await expect(result).toHaveAttribute('data-effective-layout', 'table');
 	geometry = await readGeometry();
 	verifyGeometry(geometry);
@@ -566,7 +546,7 @@ test('Auto accounts for unwrapped variable headers when applying column minima',
 	await expect(result).toHaveAttribute('data-effective-layout', 'records');
 	geometry = await readGeometry();
 	verifyGeometry(geometry);
-	await page.setViewportSize({ width: 900, height: 900 });
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await expect(result).toHaveAttribute('data-effective-layout', 'table');
 	geometry = await readGeometry();
 	verifyGeometry(geometry);

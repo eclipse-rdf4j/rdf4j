@@ -95,8 +95,10 @@ test('native Add validation renders its inline page model once', async ({ page }
 	const responseHtml = await validationResponse.text();
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'add');
 	await expect(page.locator('#add-source-tabs')).toBeVisible();
-	await expect(page.locator('#workbench-app [role="alert"].error').first()).toBeVisible();
-	await expect(page.locator('#workbench-app [role="alert"].error').first()).not.toHaveText('');
+	// Page errors render as error callouts (plan workbench-app-shell-and-critique-fixes-20260930, M1.7).
+	const validationError = page.locator('#workbench-app .workbench-callout--error[role="alert"]').first();
+	await expect(validationError).toBeVisible();
+	await expect(validationError).not.toHaveText('');
 
 	const postCount = addRequests.filter(request => request.method === 'POST').length;
 	const dataGetCountAfterSubmit = addRequests.filter(request => request.method === 'GET'

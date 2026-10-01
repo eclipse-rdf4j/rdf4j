@@ -103,5 +103,6 @@ test('creation actions use compact labels-above-fields geometry', async ({ page 
     });
     expect(geometry.width).toBeLessThanOrEqual(760);
     expect(geometry.actionWidth).toBeLessThan(240);
-    expect(geometry.maxWidth).toContain('720');
+    // Form cards are 760px wide (plan workbench-app-shell-and-critique-fixes-20260930, M1.5).
+    expect(geometry.maxWidth).toContain('760');
 });
