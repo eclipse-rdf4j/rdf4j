@@ -848,11 +848,6 @@ var workbench;
             });
             return targetWindow[litPromiseKey];
         }
-        /** The scripts a view loads for its model; the lists live in the route definitions (M7.1). */
-        function routeScripts(viewId, model) {
-            var definition = workbench.routes.get(viewId);
-            return definition ? definition.scripts(model) : [];
-        }
         function installLegacyHelpers(basePath, dependencies) {
             var windowObject = typeof window !== 'undefined' ? window : null;
             var promises = [];
@@ -870,10 +865,11 @@ var workbench;
             }
             return Promise.all(promises).then(function () { });
         }
+        /** Load, in order, the scripts a view needs for its model; the lists live in the route definitions (M7.1). */
         function installRouteRuntime(basePath, viewId, model, dependencies) {
-            var route = routeScripts(viewId, model);
+            var definition = workbench.routes.get(viewId);
             var sequence = Promise.resolve();
-            route.forEach(function (name) {
+            (definition ? definition.scripts(model) : []).forEach(function (name) {
                 sequence = sequence.then(function () { return loadClassicScript(scriptUrl(basePath, name), dependencies); });
             });
             return sequence;

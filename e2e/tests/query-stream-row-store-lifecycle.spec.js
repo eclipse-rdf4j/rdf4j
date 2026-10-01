@@ -12,6 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
 	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
@@ -371,6 +372,85 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 	await testInfo.attach('query-row-store-data-bfcache.json', {
 		body: Buffer.from(JSON.stringify(report, null, 2)), contentType: 'application/json'
 	});
+});
+
+// Plan task M12.1: the same lifecycles when the page changes without loading a document (the router, M8). Leaving a
+// route disposes it, which releases its row store; the Query page is kept alive instead (M11.3) and releases its
+// result when a newer query runs.
+
+test('leaving a data route in the page releases its row store, and Back rebuilds it at the same rows', async ({ page }) => {
+	test.setTimeout(120000);
+	const pageErrors = [];
+	page.on('pageerror', error => pageErrors.push(error.message));
+	await installPageLifecycleRecorder(page);
+	await page.goto(SCROLL_URL, { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'contexts');
+	const table = page.locator('#contexts-results table[data-workbench-row-table="true"]');
+	await table.waitFor({ state: 'visible' });
+	await expect.poll(async () => (await readRowStoreSnapshot(page)).storeRecords
+		.some(store => store.count === SCROLL_ROW_COUNT)).toBe(true);
+	const baselineStorage = await readRowStoreSnapshot(page);
+	const routeStoreIds = baselineStorage.storeRecords.filter(store => store.count === SCROLL_ROW_COUNT)
+		.map(store => store.id);
+	expect(routeStoreIds).toHaveLength(1);
+	await expect.poll(async () => {
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+		return Number(await table.locator('tbody tr[data-workbench-row-index]').first()
+			.getAttribute('data-workbench-row-index'));
+	}).toBeGreaterThan(100);
+	const firstVisibleRow = () => page.evaluate(() => {
+		const rows = Array.from(document.querySelectorAll('#contexts-results tr[data-workbench-row-index]'));
+		const shown = rows.find(row => row.getBoundingClientRect().top >= 80);
+		return shown ? Number(shown.getAttribute('data-workbench-row-index')) : null;
+	});
+	const left = await firstVisibleRow();
+	const documents = [];
+	page.on('request', request => {
+		if (request.resourceType() === 'document' && request.frame() === page.mainFrame()) {
+			documents.push(request.url());
+		}
+	});
+
+	await page.locator('#navigation').getByRole('link', { name: 'Summary', exact: true }).click();
+	await waitForRoute(page, 'summary', { url: SCROLL_SUMMARY_URL });
+	const released = await waitForExecutionStoreReleased(page, baselineStorage, routeStoreIds);
+	expect(released.storeRecords.some(store => store.count === SCROLL_ROW_COUNT)).toBe(false);
+
+	await page.goBack();
+	await waitForRoute(page, 'contexts', { url: SCROLL_URL });
+	await expect.poll(async () => (await readRowStoreSnapshot(page)).storeRecords
+		.filter(store => store.count === SCROLL_ROW_COUNT && !routeStoreIds.includes(store.id)).length).toBe(1);
+	await expect.poll(firstVisibleRow).toBe(left);
+	expect(documents, 'the route changes without loading a document').toEqual([]);
+	expect((await readLifecycleState(page)).pagehide, 'the document is never hidden').toEqual([]);
+	expect(pageErrors).toEqual([]);
+});
+
+test('a query result kept while another page is shown is released when a newer query runs', async ({ page }) => {
+	test.setTimeout(180000);
+	const pageErrors = [];
+	page.on('pageerror', error => pageErrors.push(error.message));
+	await installPageLifecycleRecorder(page);
+	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'query');
+	const before = await readRowStoreSnapshot(page);
+	await runBatchedQuery(page);
+	const firstStorage = await readRowStoreSnapshot(page);
+	const firstStoreId = assertAddedQueryRows(before, firstStorage, ROW_COUNT);
+
+	await page.locator('#navigation').getByRole('link', { name: 'Summary', exact: true }).click();
+	await waitForRoute(page, 'summary', { url: SUMMARY_URL });
+	expect((await readRowStoreSnapshot(page)).storeRecords.map(store => store.id),
+		'the kept Query page keeps its rows').toContain(firstStoreId);
+	await page.goBack();
+	await waitForRoute(page, 'query', { url: QUERY_URL });
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/);
+
+	await runBatchedQuery(page);
+	const secondStorage = await waitForExecutionStoreReleased(page, before, [firstStoreId]);
+	assertAddedQueryRows(before, secondStorage, ROW_COUNT);
+	expect((await readLifecycleState(page)).pagehide, 'the document is never hidden').toEqual([]);
+	expect(pageErrors).toEqual([]);
 });
 
 async function runBatchedQuery(page) {

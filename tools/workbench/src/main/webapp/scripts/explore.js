@@ -9,37 +9,10 @@ var workbench;
     var explore;
     (function (explore_1) {
         /**
-         * Route mount (plan task M7.2): fill the resource summary and the row count, drop repeated list items and
-         * bind the datatype toggle, all inside the outlet. The returned function unbinds the toggle.
+         * Route mount (plan task M7.2): fill the resource summary and the row count and bind the datatype toggle, all
+         * inside the outlet. The view leaves out repeated list items (M12.1). The returned function unbinds the toggle.
          */
         function mount(outlet) {
-            function removeDuplicates(self) {
-                function textContent(element) {
-                    return $.trim(element.innerText || element.textContent);
-                }
-                // Only the explored resource's lists on the page surface; the shell's menus and popovers are not touched.
-                var surface = outlet.querySelector('#workbench-page-surface');
-                var lists = surface ? surface.getElementsByTagName('ul') : [];
-                for (var i = lists.length - 1; i + 1; i--) {
-                    var items = lists[i].getElementsByTagName('li');
-                    if (items.length == 0) {
-                        continue;
-                    }
-                    for (var j = items.length - 1; j; j--) {
-                        var text = textContent(items[j]);
-                        if (items[j].innerHTML == items[j - 1].innerHTML || text == self) {
-                            items[j].parentNode.removeChild(items[j]);
-                        }
-                    }
-                    text = textContent(items[0]);
-                    if (text == self) {
-                        items[0].parentNode.removeChild(items[0]);
-                    }
-                    if (items.length == 0) {
-                        lists[i].parentNode.parentNode.removeChild(lists[i].parentNode);
-                    }
-                }
-            }
             function syncExplorePaginationVisibility() {
                 var pagination = outlet.querySelector('#explore-pagination');
                 if (!pagination) {
@@ -83,15 +56,20 @@ var workbench;
             var explore = 'explore';
             workbench.paging.correctButtons(explore);
             var rvalue = resource.val();
+            var summary = outlet.querySelector('#explore-resource-summary');
+            var resourceValue = outlet.querySelector('#explore-resource-value');
+            var resultCount = outlet.querySelector('#explore-result-count');
+            // The view leaves these spans empty for this script, even when it renders a new page in place.
+            if (resourceValue) {
+                resourceValue.textContent = rvalue || '';
+            }
+            if (resultCount) {
+                resultCount.textContent = '';
+            }
             if (rvalue) {
-                var summary = outlet.querySelector('#explore-resource-summary');
-                var resourceValue = outlet.querySelector('#explore-resource-value');
-                var resultCount = outlet.querySelector('#explore-result-count');
                 if (summary && resourceValue && resultCount) {
-                    resourceValue.textContent = rvalue;
                     summary.removeAttribute('hidden');
                 }
-                removeDuplicates(rvalue);
                 var limit = workbench.paging.getLimit(explore);
                 // Modify title to reflect total_result_count cookie
                 var total_result_count = workbench.paging.getTotalResultCount();

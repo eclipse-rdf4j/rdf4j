@@ -1,5 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -299,10 +300,8 @@ test('preview actions stay separate and empty result messages belong after table
 	expect.soft(emptyGap).toBeGreaterThanOrEqual(8);
 	await captureState(page, 'export-preview-empty-1440.png');
 
-	await Promise.all([
-		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		page.locator('#export-preview-form button[type="submit"]').click()
-	]);
+	await page.locator('#export-preview-form button[type="submit"]').click();
+	await waitForRoute(page, 'export', { url: (url) => url.searchParams.get('action') === 'preview' });
 	await expect(page.locator('#export-results table.data tbody tr')).toHaveCount(2);
 	const populatedGap = await exportContentGap(page);
 	console.log(`EXPORT_POPULATED_ACTION_GAP ${populatedGap}`);

@@ -611,3 +611,39 @@ test('Explore groups rows by the role the resource plays and shows prefixed name
     assert.deepEqual(outgoingHeaders, ['Predicate', 'Object'], 'no Graph column when every row shares one graph');
     assert.match(markup, /<h2[^>]*>Item label<\/h2>/, 'the label of the explored resource is the heading');
 });
+
+// Plan task M12.1: Explore pages are rendered again in place by the router, so the view (not explore.ts editing the
+// rendered DOM) leaves out repeated values and the explored resource itself.
+test('Explore lists each class and type once and leaves out the explored resource', () => {
+    const { workbench } = loadWorkbench();
+    const iri = value => ({ kind: 'iri', value });
+    const ex = 'http://example.org/';
+    const rdf = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
+    const rows = [
+        [iri(ex + 'Sub'), iri(rdfs + 'subClassOf'), iri(ex + 'Class'), iri(ex + 'g1')],
+        [iri(ex + 'Sub'), iri(rdfs + 'subClassOf'), iri(ex + 'Class'), iri(ex + 'g2')],
+        [iri(ex + 'Class'), iri(rdfs + 'subClassOf'), iri(ex + 'Super'), iri(ex + 'g1')],
+        [iri(ex + 'Class'), iri(rdf + 'type'), iri(rdfs + 'Class'), iri(ex + 'g1')],
+        [iri(ex + 'Class'), iri(rdf + 'type'), iri(rdfs + 'Class'), iri(ex + 'g2')]
+    ];
+    const model = modelFor('explore', rows);
+    model.vars = ['subject', 'predicate', 'object', 'context'];
+    model.namespaceMap = { 'ex:': ex, 'rdfs:': rdfs };
+    model.metadata = { resource: 'ex:Class', 'explore-resource': '<' + ex + 'Class>', 'total-result-count': rows.length };
+    const mount = {};
+    workbench.views.render(mount, model, context, runtime());
+    const markup = flatten(routeTemplate(workbench, mount));
+    const section = (key) => {
+        const start = markup.indexOf(`data-workbench-explore-group=${key}`);
+        assert.ok(start >= 0, `the ${key} group is rendered`);
+        return markup.substring(start, markup.indexOf('</section>', start));
+    };
+    const links = (part, term) => part.split('explore?resource=' + encodeURIComponent(term)).length - 1;
+
+    assert.equal(links(section('subClasses'), '<' + ex + 'Sub>'), 1, 'a sub class stated in two graphs is listed once');
+    assert.equal(links(section('superClasses'), '<' + ex + 'Super>'), 1);
+    assert.equal(links(section('superClasses'), '<' + ex + 'Class>'), 0, 'the explored class is not its own super class');
+    const card = markup.substring(markup.indexOf('explore-resource-card__types'));
+    assert.equal(links(card.substring(0, card.indexOf('</ul>')), '<' + rdfs + 'Class>'), 1, 'each type is shown once');
+});

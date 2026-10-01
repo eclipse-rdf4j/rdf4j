@@ -147,8 +147,12 @@ function loadRouter(options) {
         }
         [Symbol.iterator]() { return this.entries[Symbol.iterator](); }
     }
-    const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, document, workbench,
-        FormData: FakeFormData,
+    const consoleErrors = [];
+    const recordingConsole = Object.assign(Object.create(console), {
+        error: (...args) => consoleErrors.push(args)
+    });
+    const context = vm.createContext({ console: recordingConsole, URL, URLSearchParams, Promise, window, document,
+        workbench, FormData: FakeFormData,
         setTimeout, clearTimeout, AbortController: settings.noAbortController ? undefined : AbortController });
     for (const filename of ['workbenchRoutes.js', 'workbenchRouter.js']) {
         const absolutePath = path.join(scripts, filename);
@@ -229,6 +233,7 @@ function loadRouter(options) {
     };
     return {
         window, document, workbench, router: workbench.router, outlet, mount, log, disposed, model, register,
+        consoleErrors,
         session, fetched, loadModelCalls, focused, heading,
         status: elements['workbench-route-status'],
         answer(url, loaded) { pending(base + url).resolve(loaded); return settle(); },
@@ -450,15 +455,19 @@ test('a navigation abandoned by an abort commits nothing', async () => {
     assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the old page is usable again');
 });
 
-test('an unexpected failure falls back to a full page load', async () => {
+test('an unexpected failure is reported and falls back to a full page load', async () => {
     const harness = loadRouter();
     harness.start();
 
     const navigation = harness.router.navigate(base + 'types', { history: 'push' });
-    await harness.fail('types', new Error('boom'));
+    const failure = new Error('boom');
+    await harness.fail('types', failure);
 
     assert.equal(await navigation, 'fallback');
     assert.deepEqual(harness.window.assigned, [base + 'types']);
+    // A page that cannot be shown in place is a bug (M12.1 found one in Explore); the console says why it reloaded.
+    assert.equal(harness.consoleErrors.length, 1);
+    assert.equal(harness.consoleErrors[0][harness.consoleErrors[0].length - 1], failure);
 });
 
 test('a failure after the model loaded releases the model before falling back', async () => {

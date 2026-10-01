@@ -76,7 +76,8 @@ test('tuple page prefers query params and updates result headings', () => {
     assert.equal(harness.document.getElementById('title_heading').innerHTML, 'Results (6-12 of 12)');
 });
 
-test('explore page trims duplicates, restores limits, and renders ranges', () => {
+// Repeated list items are left out by the view since M12.1 (the router renders Explore pages again in place).
+test('explore page leaves its lists to the view, restores limits, and renders ranges', () => {
     const harness = createExploreBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa&offset=2'
     });
@@ -92,7 +93,7 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     const surface = harness.registerElement('div', { id: 'workbench-page-surface' });
     surface.appendChild(firstListWrapper);
     harness.document.body.appendChild(surface);
-    // The shell's (initially empty) repository list must not be touched or break duplicate removal.
+    // The shell's (initially empty) repository list must not be touched.
     const popover = harness.registerElement('div', { id: 'workbench-repository-popover' });
     const shellList = harness.registerElement('ul', { id: 'workbench-repository-options' });
     popover.appendChild(shellList);
@@ -104,12 +105,42 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
 
     assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
     assert.equal(harness.document.getElementById('limit_explore').value, '4');
-    assert.equal(firstList.getElementsByTagName('li').length, 1);
+    assert.equal(firstList.getElementsByTagName('li').length, 3, 'rendered lists are not edited');
     assert.equal(shellList.parentNode, popover, 'shell lists outside the page surface stay mounted');
     assert.equal(harness.heading.textContent, 'Explore');
     assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
     assert.equal(harness.document.getElementById('explore-result-count').textContent, 'Rows 3–6 of 9');
     assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
+});
+
+test('explore page without a resource empties the summary a previous page filled', () => {
+    const harness = createExploreBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'
+    });
+    const resourceValue = harness.document.getElementById('explore-resource-value');
+    const resultCount = harness.document.getElementById('explore-result-count');
+    resourceValue.textContent = 'http://example.com/a';
+    resultCount.textContent = 'Rows 1–4 of 9';
+
+    harness.loadExploreScript();
+    harness.workbench.explore.mount(harness.document.body);
+
+    assert.equal(resourceValue.textContent, '');
+    assert.equal(resultCount.textContent, '');
+    assert.equal(harness.summary.hidden, true);
+});
+
+test('explore page whose summary has no spans still restores the resource', () => {
+    const harness = createExploreBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa',
+        withoutSummarySpans: true
+    });
+
+    harness.loadExploreScript();
+    harness.workbench.explore.mount(harness.document.body);
+
+    assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
+    assert.equal(harness.summary.hidden, true, 'without its spans the summary stays hidden');
 });
 
 test('paging helpers cover url, query, and cookie branches', () => {

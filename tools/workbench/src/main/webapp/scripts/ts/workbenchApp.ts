@@ -904,12 +904,6 @@ module workbench {
             return targetWindow[litPromiseKey];
         }
 
-        /** The scripts a view loads for its model; the lists live in the route definitions (M7.1). */
-        function routeScripts(viewId: string, model: PageModel): string[] {
-            const definition = routes.get(viewId);
-            return definition ? definition.scripts(model) : [];
-        }
-
         function installLegacyHelpers(basePath: string, dependencies: any): Promise<void> {
             const windowObject: any = typeof window !== 'undefined' ? window : null;
             const promises: Promise<void>[] = [];
@@ -927,11 +921,12 @@ module workbench {
             return Promise.all(promises).then((): void => {});
         }
 
+        /** Load, in order, the scripts a view needs for its model; the lists live in the route definitions (M7.1). */
         function installRouteRuntime(basePath: string, viewId: string, model: PageModel,
                                      dependencies: any): Promise<void> {
-            const route = routeScripts(viewId, model);
+            const definition = routes.get(viewId);
             let sequence = Promise.resolve();
-            route.forEach((name) => {
+            (definition ? definition.scripts(model) : []).forEach((name) => {
                 sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
             });
             return sequence;

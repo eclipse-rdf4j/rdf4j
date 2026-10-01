@@ -12,6 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -455,6 +456,7 @@ test('compare mode collapses and restores navigation without reserving an empty 
 	const restoredNavigationPath = await restoredNavigationLink.evaluate(link => new URL(link.href).pathname);
 	await restoredNavigationLink.click();
 	await expect.poll(() => new URL(page.url()).pathname).toBe(restoredNavigationPath);
+	await waitForRoute(page, restoredNavigationPath.split('/').pop());
 });
 
 test('dark compare keeps a collapsed navigation disclosure out of both panes', async ({ page }) => {
@@ -642,12 +644,14 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 	await expect(summaryLink).toBeVisible();
 	await summaryLink.click();
 	await expect(page).toHaveURL(/\/summary$/);
+	await waitForRoute(page, 'summary');
 	await expect(navigationDisclosure).toBeHidden();
 	await page.locator('#workbench-menu-button').click();
 	const queryLink = page.locator('#workbench-menu-sheet').getByRole('link', { name: 'Query', exact: true });
 	await expect(queryLink).toBeVisible();
 	await queryLink.click();
 	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/query$`));
+	await waitForRoute(page, 'query');
 });
 
 test('compare navigation follows the responsive menu after crossing its breakpoint', async ({ page }) => {
@@ -670,6 +674,7 @@ test('compare navigation follows the responsive menu after crossing its breakpoi
 	await captureResponsiveCompareState(page, 'compare-restored-desktop-after-resize-1440.png');
 	await desktopNavigationLink.click();
 	await expect(page).toHaveURL(/\/summary$/);
+	await waitForRoute(page, 'summary');
 
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
@@ -688,6 +693,7 @@ test('compare navigation follows the responsive menu after crossing its breakpoi
 	await expect(mobileNavigationLink).toBeVisible();
 	await mobileNavigationLink.click();
 	await expect(page).toHaveURL(/\/summary$/);
+	await waitForRoute(page, 'summary');
 });
 
 test('coarse-pointer compare actions remain touch-sized at tablet widths', async ({ browser }) => {

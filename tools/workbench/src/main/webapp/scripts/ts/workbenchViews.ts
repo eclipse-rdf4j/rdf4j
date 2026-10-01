@@ -1567,7 +1567,7 @@ module workbench {
             const key = exploreResourceKey(model) || resource;
             const isIri = /^<[^<]/.test(key);
             const comment = summary.comment ? text(summary.comment) : '';
-            const types = summary.types || [];
+            const types = distinctExploreValues(model, summary.types || []);
             const copy = () => {
                 const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
                 if (clipboard && typeof clipboard.writeText === 'function') {
@@ -1819,11 +1819,26 @@ module workbench {
             </section>`;
         }
 
+        /** Values in list order without repeats (a statement in several graphs) and without the explored resource. */
+        function distinctExploreValues(model: PageModel, values: any[]): any[] {
+            const explored = exploreResourceKey(model);
+            const seen: { [key: string]: boolean } = Object.create(null);
+            return values.filter((value: any) => {
+                const key = ntriples(value);
+                if (key === explored || seen[key]) {
+                    return false;
+                }
+                seen[key] = true;
+                return true;
+            });
+        }
+
         function exploreGroupContent(runtime: LitRuntime, model: PageModel, context: ViewContext,
                                      definition: any, page: any): any {
             const h = runtime.html;
             return h`<h3>${definition.title}</h3>
-                <ul>${page.items.map((value: any) => h`<li>${renderTerm(runtime, value, context, true)}</li>`)}</ul>
+                <ul>${distinctExploreValues(model, page.items)
+                    .map((value: any) => h`<li>${renderTerm(runtime, value, context, true)}</li>`)}</ul>
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
                     <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>
@@ -1877,6 +1892,8 @@ module workbench {
             const roles = summary.roles;
             const groupedRows = roles ? exploreRoles.reduce((sum: number, role: any) => sum + roles[role.key].length, 0) : 0;
             const grouped = !!roles && !!total && groupedRows === total;
+            // explore.ts writes the resource and the row range into the summary's spans, so they hold no template
+            // values: the router renders the next Explore page in place, and Lit must find its own nodes there (M12.1).
             return h`<form id="explore-form" class="workbench-island explore-form" action="explore">
                     <input id="workbench-total-result-count" type="hidden"
                         value=${text(pageValue(model, 'total-result-count'))} />
@@ -1896,7 +1913,7 @@ module workbench {
                 ${resource || exploreResourceKey(model)
                     ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model)) : ''}
                 <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
-                    <span id="explore-resource-value" hidden>${resource}</span><span id="explore-result-count">${total}</span>
+                    <span id="explore-resource-value" hidden></span><span id="explore-result-count"></span>
                 </p>
                 <section id="explore-results" class="workbench-island workbench-responsive-records">
                     ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, roles)

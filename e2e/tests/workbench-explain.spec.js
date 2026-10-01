@@ -1,5 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
     'http://localhost:8080/rdf4j-workbench').replace(/\/+$/, '');
@@ -54,7 +55,8 @@ async function insertChainData(page) {
 }`);
     });
     await page.getByRole('button', { name: 'Execute' }).click();
-    await page.waitForLoadState('networkidle');
+    // The update is posted from the page, which then shows Summary (plan task M10.1).
+    await waitForRoute(page, 'summary', { url: /\/summary$/ });
 }
 
 async function waitForExplanation(page) {

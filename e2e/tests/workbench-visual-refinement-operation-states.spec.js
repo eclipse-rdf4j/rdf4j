@@ -12,6 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -71,6 +72,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#text').fill('<urn:visual:added> <urn:visual:value> "Added" .');
 	await page.locator('#add-upload-actions input[type="submit"]').click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+	await waitForRoute(page, 'summary');
 	await capture(page, 'add-success-summary-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/add`);
@@ -91,6 +93,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	await setCodeMirror(page, 'INSERT DATA { <urn:visual:updated> <urn:visual:value> "Updated" }');
 	await page.locator('#update-form input[type="submit"]').click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+	await waitForRoute(page, 'summary');
 	await capture(page, 'update-success-summary-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/update`);
@@ -111,6 +114,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#remove-form button[type="submit"]').click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+	await waitForRoute(page, 'summary');
 	await capture(page, 'remove-success-summary-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/clear`);
@@ -121,6 +125,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#clear-form button[type="submit"]').click();
 	await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+	await waitForRoute(page, 'summary');
 	await capture(page, 'clear-named-graph-success-summary-1440.png');
 	const size = await request.get(`${REPOSITORY_URL}/size`);
 	expect(size.ok()).toBeTruthy();
@@ -198,6 +203,7 @@ test('covers task-fixture operation states without touching user repositories', 
 	await deleteDialog.getByRole('textbox').fill(DELETE_REPOSITORY_ID);
 	await deleteDialog.getByRole('button', { name: 'Delete repository' }).click();
 	await expect(page).toHaveURL(/\/rdf4j-workbench\/repositories\/NONE\/repositories(?:[?#]|$)/);
+	await waitForRoute(page, 'repositories');
 	await expect.poll(async () => {
 		const status = (await request.get(DELETE_REPOSITORY_URL)).status();
 		return status === 400 || status === 404;

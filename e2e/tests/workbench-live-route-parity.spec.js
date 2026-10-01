@@ -12,6 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,7 +30,7 @@ const PAGE_ROUTES = [
 	{ name: 'repositories', view: 'repositories', path: 'repositories/NONE/repositories', landmark: 'table' },
 	{ name: 'create picker', view: 'create', path: 'repositories/NONE/create', landmark: '#create-type-form' },
 	{ name: 'delete', view: 'delete', path: 'repositories/NONE/delete', landmark: '#id' },
-	{ name: 'summary', view: 'summary', path: `repositories/${REPOSITORY_ID}/summary`, landmark: 'table' },
+	{ name: 'summary', view: 'summary', path: `repositories/${REPOSITORY_ID}/summary`, landmark: '#workbench-summary dl' },
 	{ name: 'namespaces', view: 'namespaces', path: `repositories/${REPOSITORY_ID}/namespaces`, landmark: 'table' },
 	{ name: 'contexts', view: 'contexts', path: `repositories/${REPOSITORY_ID}/contexts`, landmark: 'table' },
 	{ name: 'types', view: 'types', path: `repositories/${REPOSITORY_ID}/types`, landmark: 'table' },
@@ -226,6 +227,7 @@ async function inspectRoute(page, route, options = {}, diagnostics = { pageError
 	if (!navigationError) {
 		try {
 			await page.locator('#workbench-page-surface').waitFor({ state: 'visible', timeout: 12_000 });
+			await waitForRoute(page, route.view, { timeout: 12_000 });
 			await page.waitForLoadState('networkidle', { timeout: 12_000 });
 		} catch (error) {
 			surfaceError = error instanceof Error ? error.message : String(error);
@@ -445,9 +447,9 @@ async function exerciseExportPreview(page, evidence) {
 		return requestEvent.url().includes('/repositories/' + REPOSITORY_ID + '/export')
 			&& requestEvent.headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson');
 	}, { timeout: 30_000 });
-	const navigationPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30_000 });
 	await page.getByRole('button', { name: 'Show preview' }).click();
-	await navigationPromise;
+	// The preview is a GET form that the router shows in the page; its URL gains the form's fields.
+	await waitForRoute(page, 'export', { url: (url) => url.search.length > 0, timeout: 30_000 });
 	const pageModelResponse = await pageModelResponsePromise;
 	await expect(page.locator('#export-results')).toBeVisible();
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'export');
@@ -588,6 +590,7 @@ async function exerciseMutations(page, request, evidence) {
 		await page.locator('#text').fill(addedTriple);
 		await page.locator('#add-upload-actions input[type="submit"]').click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+		await waitForRoute(page, 'summary');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before + 1 };
 	});
@@ -598,6 +601,7 @@ async function exerciseMutations(page, request, evidence) {
 		await setQuery(page, 'INSERT DATA { <urn:route-parity:updated> <urn:route-parity:name> "Updated" }');
 		await page.locator('#update-form input[type="submit"]').click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+		await waitForRoute(page, 'summary');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before + 1 };
 	});
@@ -611,6 +615,7 @@ async function exerciseMutations(page, request, evidence) {
 		await page.locator('#remove-form button[type="submit"]').click();
 		await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+		await waitForRoute(page, 'summary');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 1 };
 	});
@@ -624,6 +629,7 @@ async function exerciseMutations(page, request, evidence) {
 		await page.locator('#clear-form button[type="submit"]').click();
 		await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
+		await waitForRoute(page, 'summary');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 2 };
 	});
@@ -637,6 +643,7 @@ async function exerciseMutations(page, request, evidence) {
 		await deleteDialog.getByRole('textbox').fill(REPOSITORY_ID);
 		await deleteDialog.getByRole('button', { name: 'Delete repository' }).click();
 		await expect(page).toHaveURL(/\/rdf4j-workbench\/repositories\/NONE\/repositories(?:[?#]|$)/);
+		await waitForRoute(page, 'repositories');
 		const deleteStatus = (await request.get(REPOSITORY_URL)).status();
 		if (deleteStatus === 400 || deleteStatus === 404) {
 			repositoryCreated = false;

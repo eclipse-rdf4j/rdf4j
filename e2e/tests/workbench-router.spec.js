@@ -18,7 +18,8 @@ const {
 	deleteRepository,
 	repositoryPageUrl,
 	serverBaseUrl,
-	uniqueRepositoryId
+	uniqueRepositoryId,
+	waitForRoute
 } = require('./workbench-test-helpers.js');
 
 const REPOSITORY_ID = uniqueRepositoryId('workbench-router');
@@ -501,4 +502,67 @@ test('Back to the Query page shows the results where they were left, without run
 	expect(await page.locator('#workbench-kept-alive > *').count()).toBe(0);
 	expect(await page.locator('.CodeMirror').count()).toBe(1);
 	expect(executions).toEqual([]);
+});
+
+test('Explore links and the Explore form change the page without loading a document', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const pageErrors = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	const type = '<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>';
+	await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${encodeURIComponent(type)}`);
+	await waitForRoute(page, 'explore');
+	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–/);
+	const documents = recordDocumentRequests(page);
+
+	// Another resource from the results (each page shows the explored resource's statements).
+	const link = page.locator('#explore-results a[href*="explore?resource="]')
+		.filter({ hasNotText: 'rdf:type' }).first();
+	const target = new URL(await link.getAttribute('href'), page.url()).searchParams.get('resource');
+	await link.click();
+	await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('resource') === target });
+	await expect(page.locator('#resource')).toHaveValue(target);
+	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–/);
+
+	// The form, with another result limit.
+	await page.locator('#explore-result-options-toggle').click();
+	await page.locator('#limit_explore').selectOption('10');
+	await page.locator('#resource').fill(type);
+	await page.locator('#resource').press('Enter');
+	await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('limit_explore') === '10' });
+	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–10\b/);
+
+	expect(documents).toEqual([]);
+	expect(pageErrors).toEqual([]);
+});
+
+test('deleting a saved query shows the remaining ones without loading a document', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const pageErrors = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
+	const names = [`router-delete-a-${Date.now()}`, `router-delete-b-${Date.now()}`];
+	await openRoute(page, 'query');
+	for (const name of names) {
+		await page.locator('.CodeMirror').first().evaluate((element, value) => element.CodeMirror.setValue(value),
+			`SELECT ?s WHERE { ?s ?p "${name}" }`);
+		if (!(await page.locator('#query-name').isVisible())) {
+			await page.locator('#save-query-toggle').press('Enter');
+		}
+		await page.locator('#query-name').fill(name);
+		await page.evaluate(() => window.workbench.query.handleNameChange());
+		await page.locator('#save').click();
+		await expect(page.locator('#save-feedback')).toContainText('Query saved.');
+	}
+	await openRoute(page, 'saved-queries');
+	const documents = recordDocumentRequests(page);
+	const row = (name) => page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: name }) });
+
+	await row(names[0]).locator('.saved-query-delete').click();
+	await page.getByRole('dialog', { name: 'Delete saved query?' }).getByRole('button', { name: 'Delete' }).click();
+
+	await waitForRoute(page, 'saved-queries', { url: /\/saved-queries\?delete=/ });
+	await expect(row(names[0])).toHaveCount(0);
+	await expect(row(names[1])).toHaveCount(1);
+	await expect(row(names[1])).toBeVisible();
+	expect(documents).toEqual([]);
+	expect(pageErrors).toEqual([]);
 });

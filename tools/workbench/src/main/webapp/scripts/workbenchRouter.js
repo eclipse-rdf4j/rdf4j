@@ -501,6 +501,8 @@ var workbench;
                 if (error && error.name === 'AbortError') {
                     return 'abandoned';
                 }
+                // Showing a page in place should not fail, so say why the browser loads it instead (M12.1).
+                console.error('The Workbench could not show ' + target.href + ' in place; loading it instead.', error);
                 // A form's answer cannot be posted again; the browser loads the page it led to instead.
                 windowObject.location.assign(model && model.finalUrl || target.href);
                 return 'fallback';

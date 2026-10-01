@@ -118,6 +118,21 @@ async function runQuery(page, query) {
     }, null, { timeout: 30000 });
 }
 
+/**
+ * Waits until the page shows a view. Links and forms change the page without loading a document, so wait for this
+ * instead of a navigation. The router marks the outlet with the view id, and as ready once the view's scripts have
+ * mounted it; the URL changes in the same step, so pass options.url (a string, RegExp or predicate, as for
+ * page.waitForURL) when the page already shows the same view, for example the next step of a form.
+ */
+async function waitForRoute(page, viewId, options = {}) {
+    const timeout = options.timeout || 15000;
+    if (options.url) {
+        await page.waitForURL(options.url, { timeout, waitUntil: 'commit' });
+    }
+    await page.locator(`#workbench-outlet[data-workbench-route="${viewId}"][data-workbench-route-ready="true"]`)
+        .waitFor({ state: 'attached', timeout });
+}
+
 async function deleteRepository(request, baseUrl, repositoryId) {
     const repositoryUrl = `${baseUrl.replace(/\/+$/, '')}/repositories/${encodeURIComponent(repositoryId)}`;
     const deleted = await request.delete(repositoryUrl).catch(() => null);
@@ -136,5 +151,6 @@ module.exports = {
     setQueryEditor,
     typeIntoCodeMirror,
     uniqueRepositoryId,
+    waitForRoute,
     workbenchBaseUrl
 };

@@ -12,6 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -207,10 +208,12 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 	const bnodeHref = await bnodeLink.getAttribute('href');
 	const bnodeResource = new URL(bnodeHref, page.url()).searchParams.get('resource');
 	expect(bnodeResource).toBe(bnodeText);
+	const graphExploreUrl = page.url();
 	await bnodeLink.click();
 	await expectExploreRows(page, 2);
 	await expect(page.locator('#resource')).toHaveValue(bnodeResource);
-	await page.goBack({ waitUntil: 'domcontentloaded' });
+	await page.goBack();
+	await waitForRoute(page, 'explore', { url: graphExploreUrl });
 	await expectExploreRows(page, 8);
 
 	const literalLink = page.locator('#explore-results td[data-label="Object"] a')
@@ -259,7 +262,8 @@ test('invalid and empty resources render useful states and browser Back recovers
 	await capture(page, 'explore-invalid-resource-error', health, { errorText });
 
 	const recoveryHealth = monitorPage(page);
-	await page.goBack({ waitUntil: 'domcontentloaded' });
+	await page.goBack();
+	await waitForRoute(page, 'contexts', { url: contextsUrl });
 	await expect(page).toHaveURL(contextsUrl);
 	const graphLink = page.locator('#contexts-results table.data a').filter({ hasText: CONTEXT_IRI }).first();
 	await graphLink.click();
@@ -308,9 +312,8 @@ test('finite Explore pages retain the true total through the final window', asyn
 		lastVisibleIndex: Math.max(...indices)
 	});
 
-	let navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
 	await page.locator('#nextX').click();
-	await navigation;
+	await waitForRoute(page, 'explore', { url: /(?:\?|&)offset=100(?:&|$)/ });
 	await expect(page).toHaveURL(/(?:\?|&)offset=100(?:&|$)/);
 	await expect(page.locator('#explore-result-count')).toHaveText('Rows 101–200 of 300');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
@@ -327,9 +330,8 @@ test('finite Explore pages retain the true total through the final window', asyn
 		lastVisibleIndex: Math.max(...indices)
 	});
 
-	navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
 	await page.locator('#nextX').click();
-	await navigation;
+	await waitForRoute(page, 'explore', { url: /(?:\?|&)offset=200(?:&|$)/ });
 	await expect(page).toHaveURL(/(?:\?|&)offset=200(?:&|$)/);
 	await expect(page.locator('#explore-result-count')).toHaveText('Rows 201–300 of 300');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
@@ -410,9 +412,8 @@ test('All results stay virtualized while desktop and mobile scrolling reaches la
 		await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 		await assertOptionsPreserved();
 
-		const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded' });
 		await resourceInput.press('Enter');
-		await navigation;
+		await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('limit_explore') === '0' });
 		expect(new URL(page.url()).searchParams.get('limit_explore')).toBe('0');
 
 		await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);

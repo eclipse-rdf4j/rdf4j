@@ -11,6 +11,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
@@ -154,9 +155,8 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await page.locator('#Accept').selectOption('application/n-quads');
 	const previewResponsePromise = page.waitForResponse(response => response.request().url().includes(`/repositories/${REPOSITORY_ID}/export`)
 		&& response.request().headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson'), { timeout: 20_000 });
-	const previewNavigationPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20_000 });
 	await page.getByRole('button', { name: 'Show preview' }).click();
-	await previewNavigationPromise;
+	await waitForRoute(page, 'export', { url: (url) => url.searchParams.get('action') === 'preview', timeout: 20_000 });
 	const previewResponse = await previewResponsePromise;
 	await expect(page.locator('#export-results')).toBeVisible();
 	const previewState = {

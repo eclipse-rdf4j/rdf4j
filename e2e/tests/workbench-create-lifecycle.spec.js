@@ -1,5 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { waitForRoute } = require('./workbench-test-helpers');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
 	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
@@ -40,10 +41,8 @@ test('creates a Memory repository after Next without a page error', async ({ pag
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create`, { waitUntil: 'networkidle' });
 	await expect(page.locator('#create-type-form #type')).toBeVisible({ timeout: 15_000 });
 	await page.locator('#type').selectOption('memory');
-	await Promise.all([
-		page.waitForNavigation({ waitUntil: 'networkidle' }),
-		page.locator('form[action="create"] input[type="submit"][name="next"]').click()
-	]);
+	await page.locator('form[action="create"] input[type="submit"][name="next"]').click();
+	await waitForRoute(page, 'create', { url: /\/create\?/ });
 
 	const form = page.locator('form[action="create"]');
 	await expect(form).toBeVisible();
@@ -55,6 +54,7 @@ test('creates a Memory repository after Next without a page error', async ({ pag
 	await form.locator('#create').click();
 
 	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary(?:[?#]|$)`));
+	await waitForRoute(page, 'summary');
 	const repository = await request.get(`${REPOSITORY_URL}/size`);
 	expect(repository.status(), 'the repository size endpoint should be reachable after creation').toBe(200);
 	expect(await repository.text()).toBe('0');
