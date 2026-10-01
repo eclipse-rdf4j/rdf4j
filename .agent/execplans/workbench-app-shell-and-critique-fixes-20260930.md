@@ -56,8 +56,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 15:47Z) M5.4 Summary and Information (mockup 12, left).
 - [x] (2026-10-01 15:47Z) M5.5 Add RDF and Export.
 - [x] (2026-10-01 15:47Z) M5.6 Saved queries details.
-- [ ] M6.1 (in progress) Show server-side errors on Clear, Remove and Update.
-- [ ] M6.2 A confirmation dialog component.
+- [x] (2026-10-01 15:51Z) M6.1 Show server-side errors on Clear, Remove and Update.
+- [ ] M6.2 (in progress) A confirmation dialog component.
 - [ ] M6.3 Namespaces (mockup 07).
 - [ ] M6.4 Clear (mockup 08).
 - [ ] M6.5 Remove with a live match count (mockup 09, left).
@@ -177,6 +177,7 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Observation (M5.2): every full re-render rebuilt the DOM it should have updated. `tsc` compiles the views to ES5, where each evaluation of a tagged template calls `__makeTemplateObject(...)` and creates a new strings array, and Lit identifies a template by that array. The symptom on Types was the "Scripting is not enabled" notice reappearing (it is hidden by an inline style set once at load) and text typed into the filter disappearing when the counts arrived. The fix is in `scripts/workbench-lit-html.mjs`: its `html` reuses one strings array per distinct template text, so renders now update in place on every page (red: `workbench-browsing.spec.js` "Counts that arrive later update the Types page in place" lost the typed filter text).
 - Observation (M5.3): once renders updated rows in place (M5.2), a windowed route list jumped to its end on the first wheel step (Chromium and Firefox; on Types a 400 px wheel moved the page to about 2,300 px). The row window reuses its row elements for other rows as it moves, and the browser's scroll anchoring held a reused row in place while the spacer above it grew. Windowed route tables and lists now have `overflow-anchor: none` (red: `workbench-browsing.spec.js` "A long windowed list scrolls by the distance the wheel moves"). The M3 build does not jump but, in Firefox at phone width, never moves its window past the first rows. Clicking right after a scroll can still land on a row element that the next window render gives to another row; the browsing spec waits for the window to settle before it clicks.
 - Observation (M5, full suite): the page model's ordinary (non-compact) rows dropped a literal's base direction, which only the compact rows carried, so Explore showed `"مرحبا"@ar` for `"مرحبا"@ar--rtl` and its links named a different literal. `WorkbenchPageResultWriter.term()` now writes `direction` (red: `WorkbenchPageResultWriterTest.ordinaryRowsKeepTheBaseDirectionOfLanguageLiterals`). The same run showed that two older checks still expected Explore's flat table (M5.1 groups rows by role and writes prefixed names), and that the repository list's actions cell lacked the `data-label` the M4.4 record check expects for every header.
+- Observation (M6.1): the suspicion was right. Submitting Remove with every field empty answered with the "No values" `error-message` row, but `prepareInitialRows()` did not read rows for Remove, so the page showed nothing (red: `workbench-destructive-actions.spec.js` "Remove with every field empty ..."). Clear, Remove and Update now read all their rows; Clear and Remove already rendered `error-message` as an error callout, and Update now does too (the callout keeps the id `updateString.errors`).
 
 ## Decision Log
 

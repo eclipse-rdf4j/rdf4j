@@ -639,6 +639,9 @@ module workbench {
             if (model.viewId === 'create' || model.viewId === 'add') {
                 // These rows describe form fields and select choices, not a data result table.
                 count = model.rowCount;
+            } else if (model.viewId === 'clear' || model.viewId === 'remove' || model.viewId === 'update') {
+                // A rejected request answers with an error-message row, and Clear and Remove list graphs (M6.1).
+                count = model.rowCount;
             } else if (model.viewId === 'summary' || model.viewId === 'information' || model.viewId === 'server') {
                 count = Math.min(1, model.rowCount);
             } else if (model.viewId === 'info' && !model.metadata.workbench) {

@@ -2111,3 +2111,19 @@ test('an unknown repository renders the in-shell not-found view with the server 
     assert.match(markup, /data-workbench-nav-href/, 'the shell keeps the server menu');
     assert.match(markup, /Go to repositories/);
 });
+
+test('Clear, Remove and Update read their rows so a server error reaches the page (M6.1)', async () => {
+    const workbench = loadWorkbench();
+    for (const viewId of ['clear', 'remove', 'update']) {
+        const rows = [['No values', '', '', '', '']];
+        const model = {
+            viewId, vars: ['error-message', 'subj', 'pred', 'obj', 'context'], rows: [], rowStart: 0, rowCount: 1,
+            metadata: {}, rowStore: { read: async (start, count) => rows.slice(start, start + count) }
+        };
+        await workbench.app.prepareInitialRows(model);
+        assert.deepEqual(model.rows, rows, viewId);
+        const markup = flattenTemplateMarkup(workbench.views.pageTemplate(model,
+            { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+        assert.match(markup, /workbench-callout--error[\s\S]*No values/, viewId);
+    }
+});

@@ -2237,11 +2237,12 @@ module workbench {
                             if (!globalWorkbench.update.doSubmit()) { event.preventDefault(); }
                         }
                     }}>
+                ${error ? callout(runtime, 'error', error, undefined, 'updateString.errors')
+                    : h`<span id="updateString.errors" class="error" role="alert"></span>`}
                 <div id="update-editor" class="workbench-field"><label for="update">SPARQL Update</label>
                     <textarea id="update" name="update" rows="16" cols="80">${query}</textarea>
                     <div id="update-editor-resize" class="query-editor-resize" role="separator"
                         aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div>
-                    <span id="updateString.errors" class="error" role="alert">${error}</span>
                 </div>
                 <div id="update-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
                     <label class="workbench-action-hit-area">${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span></label>

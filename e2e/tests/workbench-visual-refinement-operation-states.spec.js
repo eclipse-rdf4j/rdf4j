@@ -102,8 +102,8 @@ test('covers task-fixture operation states without touching user repositories', 
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/remove`);
 	await page.locator('#remove-form input[type="submit"]').click();
-	await expect(page.locator('#remove-form').locator('xpath=preceding-sibling::p[contains(@class,"error")]'))
-		.toBeVisible();
+	// The server's rejection is an error callout in the form (plan task M6.1).
+	await expect(page.locator('#remove-form .workbench-callout--error')).toContainText('No values');
 	await capture(page, 'remove-empty-request-error-1440.png');
 	await page.locator('#subj').fill('<urn:visual:alice>');
 	await page.locator('#pred').fill('<urn:visual:name>');
