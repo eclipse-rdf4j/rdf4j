@@ -27,8 +27,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
 - [x] (2026-10-01 06:45Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
 - [x] (2026-10-01 07:05Z) M1.4 One heading scale and a key/value component.
-- [ ] M1.5 (in progress) One content width and flatter containers.
-- [ ] M1.6 One form layout.
+- [x] (2026-10-01 07:30Z) M1.5 One content width and flatter containers (the Remove and Clear warnings now sit inside their form card).
+- [ ] M1.6 (in progress) One form layout.
 - [ ] M1.7 Callouts.
 - [ ] M1.8 Visible editor overlay icons and formatted numbers.
 - [ ] M2.1 One navigation model everywhere.

@@ -714,7 +714,7 @@ module workbench {
                     && model.vars.indexOf('id') >= 0) {
                 return federateForm(runtime, rows, context);
             }
-            return h`<form id="create-type-form" action="create" method="get" class="workbench-island">
+            return h`<form id="create-type-form" action="create" method="get" class="workbench-island workbench-form-card">
                 <div class="workbench-field"><label for="type">Repository type</label>
                     <select id="type" name="type">
                         ${rows.map((row: any) => h`<option value=${text(row.type)}>${text(row.label)}</option>`)}
@@ -730,7 +730,7 @@ module workbench {
 
         function federateForm(runtime: LitRuntime, rows: any[], context: ViewContext): any {
             const h = runtime.html;
-            return h`<form action="create" method="post">
+            return h`<form action="create" method="post" class="workbench-form-card">
                 <table class="dataentry" data-advanced-label="Advanced settings"><tbody>
                     <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type"><option value="federate">Federation Store</option></select></td></tr>
                     <tr><th><label for="id">Repository ID</label></th><td><input id="id" name="Local repository ID" type="text" value="fed" data-field-role="repository-id" /></td><td><span id="recurse-message" class="error" hidden>Federation ID may not match an existing ID.</span></td></tr>
@@ -767,7 +767,7 @@ module workbench {
                 group.options.push(row);
             });
             const fieldRows = groups.map((group: any) => renderTemplateField(runtime, group));
-            return h`<form action="create" method="post">
+            return h`<form action="create" method="post" class="workbench-form-card">
                 <table class="dataentry" data-advanced-label="Advanced settings"><tbody>
                     <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type">
                         <option value=${text(first.templateType)}>${text(first.templateLabel)}</option>
@@ -877,7 +877,7 @@ module workbench {
             const selectedId = text(model.metadata.selectedRepositoryId || pageValue(model, 'id'));
             const selectedRepository = model.metadata.selectedRepository;
             const selectedVisible = options.some((row: any) => text(row.id) === selectedId);
-            return h`<form id="delete-form" class="workbench-island" action="delete" method="post"
+            return h`<form id="delete-form" class="workbench-island workbench-form-card" action="delete" method="post"
                     @submit=${(event: Event) => {
                         const globalWindow: any = typeof window !== 'undefined' ? window : null;
                         if (globalWindow && typeof globalWindow.checkIsSafeToDelete === 'function') {
@@ -1207,7 +1207,7 @@ module workbench {
                 </div>` : '';
             return h`${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
-                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}${summary.comment ? h`<p>${text(summary.comment)}</p>` : ''}
+                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}${summary.comment ? h`<p class="workbench-prose">${text(summary.comment)}</p>` : ''}
                 <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
                     <span id="explore-resource-value">${resource}</span><span id="explore-result-count">${total}</span>
                 </p>
@@ -1384,7 +1384,7 @@ module workbench {
             const timeout = text(meta(model, 'export-timeout')) || '43200';
             const requested = text(meta(model, 'statement-preview-requested')) === 'true';
             const previewLimit = text(meta(model, 'statement-preview-limit')) || '100';
-            return h`<form id="export-form" class="workbench-island" action="export">
+            return h`<form id="export-form" class="workbench-island workbench-form-card" action="export">
                 <div class="workbench-form-grid">
                     <div class="workbench-field"><label for="Accept">Download format</label>
                         <select id="Accept" name="Accept">${graphFormats.map((format: any) => h`<option value=${format.value} ?selected=${format.value === defaultFormat}>${format.label}</option>`)}</select>
@@ -1474,7 +1474,7 @@ module workbench {
             const error = text(pageValue(model, 'error-message'));
             return h`${error ? h`<p class="error" role="alert">${error}</p>` : ''}
                 ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
-                <form method="post" action="add" enctype="multipart/form-data">
+                <form method="post" action="add" enctype="multipart/form-data" class="workbench-form-card">
                     <fieldset id="add-source-tabs" class="workbench-source-tabs"><legend>Source</legend>
                         ${[['file', 'File'], ['url', 'URL'], ['text', 'Text']].map((entry: string[]) => h`<label for=${'source-' + entry[0]}>
                             ${icon(runtime, 'source-' + (entry[0] === 'text' ? 'text' : entry[0]))}
@@ -1540,7 +1540,8 @@ module workbench {
 
         function removePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            return h`${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
+            return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove">
+                ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
                 <p id="remove-warning" class="WARN" role="alert">Only statements matching the supplied values will be removed. An empty form is rejected.</p>
                 <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>
                 <details id="remove-examples" class="workbench-options"><summary>Examples${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
@@ -1548,7 +1549,6 @@ module workbench {
                         <li>Literal: <tt>"Hello"</tt>, <tt>"Hello"@en</tt>, or <tt>"Hello"^^&lt;http://bar.com/foo&gt;</tt></li></ul>
                 </details>
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
-                <form id="remove-form" class="workbench-island" method="post" action="remove">
                     <table class="dataentry"><tbody>
                         ${[['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map((entry: string[]) => h`<tr>
                             <th><label for=${entry[0]}>${entry[1]}</label></th><td>${entry[2] === 'textarea'
@@ -1564,10 +1564,10 @@ module workbench {
 
         function clearPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            return h`${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
+            return h`<form id="clear-form" class="workbench-island workbench-form-card" method="post" action="clear">
+                ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
                 <p id="clear-warning" class="WARN" role="alert">Clearing without a context removes every statement in this repository.</p>
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
-                <form id="clear-form" class="workbench-island" method="post" action="clear">
                     <table class="dataentry"><tbody>
                         <tr><th><label for="context">Context</label></th><td><input id="context" name="context" size="48" type="text" value=${text(pageValue(model, 'context'))} /></td><td></td></tr>
                         <tr><td></td><td><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
@@ -1609,7 +1609,7 @@ module workbench {
             const row = firstRecord(model);
             const info = workbenchData(context);
             const server = text(field(row, 'server') || info.server || info.location);
-            return h`<form id="server-form" action="server" method="post"
+            return h`<form id="server-form" class="workbench-form-card" action="server" method="post"
                     @submit=${(event: Event) => {
                         const globalWindow: any = typeof window !== 'undefined' ? window : null;
                         if (globalWindow && typeof globalWindow.changeServer === 'function') {

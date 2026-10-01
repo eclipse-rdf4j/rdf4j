@@ -101,11 +101,17 @@ body.workbench-body #workbench-page-surface:has(> #saved-queries) {
 	box-shadow: none;
 }
 
+/* One content width (M1.5): the surface is capped at --workbench-content-max and every card fills it;
+ * form pages cap their form card at 760px with .workbench-form-card. */
+body.workbench-body #workbench-page-surface {
+	max-width: var(--workbench-content-max, 1200px);
+}
+
 body.workbench-body #workbench-page-surface > form,
 body.workbench-body #workbench-page-surface > .workbench-island,
 body.workbench-body #workbench-page-surface > #saved-queries {
 	box-sizing: border-box;
-	width: min(100%, 960px);
+	width: 100%;
 	margin: 0 0 24px;
 	padding: 20px;
 	border: 1px solid var(--workbench-soft-rule);
@@ -143,15 +149,16 @@ body.workbench-body #saved-queries > .saved-queries-empty a {
 	font-weight: 600;
 }
 
-body.workbench-body #workbench-page-surface > form[action="create"] {
-	width: fit-content;
-	max-width: min(100%, 720px);
+body.workbench-body #workbench-page-surface > .workbench-form-card {
+	max-width: 760px;
+}
+
+body.workbench-body .workbench-prose {
+	max-width: 72ch;
 }
 
 body.workbench-body #workbench-page-surface > details.workbench-options {
 	box-sizing: border-box;
-	width: fit-content;
-	max-width: min(100%, 760px);
 	padding: 0;
 }
 
@@ -221,11 +228,6 @@ body.workbench-body form[action="create"] input[type="button"],
 body.workbench-body form[action="create"] input[type="submit"] {
 	width: auto;
 	min-width: 0;
-}
-
-body.workbench-body #workbench-page-surface > form:not([action="create"]):not(:has(#update-editor)) {
-	width: fit-content;
-	max-width: 100%;
 }
 
 /* Cards own their content edge; action rows only own spacing and wrapping. */
@@ -1078,12 +1080,13 @@ body.workbench-body .workbench-responsive-records {
 	min-width: 0;
 }
 
+/* Empty states sit directly in their card: no inset box (M1.5, mockup 02). */
 body.workbench-body .workbench-empty {
 	margin: 0;
-	padding: 28px 16px;
-	border: 1px solid var(--workbench-soft-rule);
-	border-radius: var(--workbench-radius);
-	background: var(--workbench-inset);
+	padding: 24px 16px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
 	color: var(--workbench-muted);
 	font-size: 14px;
 	text-align: center;
@@ -1755,11 +1758,6 @@ body.workbench-body .workbench-form-grid {
 	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
 	width: fit-content;
 	max-width: min(100%, 760px);
-}
-
-body.workbench-body #workbench-page-surface > form#export-form[action="export"] {
-	width: min(100%, 600px);
-	max-width: 100%;
 }
 
 body.workbench-body #export-form .workbench-form-grid {

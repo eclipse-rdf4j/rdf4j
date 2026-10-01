@@ -16,6 +16,7 @@ const {
 	createSeededRepository,
 	deleteRepository,
 	openQueryPage,
+	repositoryPageUrl,
 	runQuery,
 	serverBaseUrl,
 	uniqueRepositoryId
@@ -58,4 +59,52 @@ test('query page actions share one button height and one secondary border', asyn
 	expect(new Set(heights).size, JSON.stringify(metrics)).toBe(1);
 	const secondaryBorders = metrics.slice(1).map((metric) => metric.border);
 	expect(new Set(secondaryBorders).size, JSON.stringify(metrics)).toBe(1);
+});
+
+/** Returns the first visible card (bordered, filled box) inside the page surface and the surface's width. */
+async function firstCardGeometry(page) {
+	return page.evaluate(() => {
+		const surface = document.querySelector('#workbench-page-surface');
+		const isCard = (element) => {
+			const style = getComputedStyle(element);
+			const rect = element.getBoundingClientRect();
+			const filled = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent';
+			return rect.width > 0 && rect.height > 0 && filled
+				&& (parseFloat(style.borderTopWidth) > 0 || style.boxShadow !== 'none');
+		};
+		const candidates = Array.from(surface.querySelectorAll('*')).filter(isCard);
+		const card = candidates[0];
+		const rect = card.getBoundingClientRect();
+		const surfaceRect = surface.getBoundingClientRect();
+		return {
+			card: card.tagName.toLowerCase() + (card.id ? '#' + card.id : '') + '.' + Array.from(card.classList).join('.'),
+			left: rect.left, right: rect.right, width: rect.width, surfaceWidth: surfaceRect.width
+		};
+	});
+}
+
+test('browsing pages share one content width and form pages share one form width', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const product1 = encodeURIComponent('<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/Product1>');
+	const browsing = ['summary', 'namespaces', 'types', 'query', 'explore?resource=' + product1];
+	const rights = [];
+	for (const view of browsing) {
+		await page.goto(repositoryPageUrl(REPOSITORY_ID, view), { waitUntil: 'networkidle' });
+		await page.locator('#workbench-page-surface').waitFor();
+		rights.push({ view, ...(await firstCardGeometry(page)) });
+	}
+	const firstRight = rights[0].right;
+	for (const geometry of rights) {
+		expect(Math.abs(geometry.right - firstRight), JSON.stringify(rights)).toBeLessThanOrEqual(1);
+	}
+	const forms = [`${REPOSITORY_ID}/add`, `${REPOSITORY_ID}/remove`, `${REPOSITORY_ID}/clear`,
+		`${REPOSITORY_ID}/export`, 'NONE/create', 'NONE/delete', 'NONE/server'];
+	for (const path of forms) {
+		const [repositoryId, view] = path.split('/');
+		await page.goto(repositoryPageUrl(repositoryId, view), { waitUntil: 'networkidle' });
+		await page.locator('#workbench-page-surface').waitFor();
+		const geometry = await firstCardGeometry(page);
+		expect(Math.abs(geometry.width - Math.min(760, geometry.surfaceWidth)), path + ' ' + JSON.stringify(geometry))
+			.toBeLessThanOrEqual(1);
+	}
 });
