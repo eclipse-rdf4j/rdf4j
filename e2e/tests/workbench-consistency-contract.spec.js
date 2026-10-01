@@ -232,8 +232,9 @@ test('Add Source is a keyboard-operable, equal-width segmented radio group on mo
 	expect(geometry[1].width).toBeCloseTo(geometry[2].width, 0);
 	for (const segment of geometry) {
 		expect(segment.height).toBeGreaterThanOrEqual(44);
-		expect(segment.radius).toBe('7px');
 	}
+	// The segments join into one control with rounded outer corners (plan task M5.5, mockup 10).
+	expect(geometry.map(segment => segment.radius)).toEqual(['7px 0px 0px 7px', '0px', '0px 7px 7px 0px']);
 	expect(geometry[0].background).not.toBe(geometry[1].background);
 	await page.locator('#source-file').focus();
 	await page.keyboard.press('ArrowRight');
@@ -334,11 +335,12 @@ test('Saved Query actions use the two-column mobile grid and wrapping metadata',
 	await expect(row.locator('.workbench-action').nth(3).locator('.workbench-action-icon path').first())
 		.toHaveAttribute('d', /10a2\.1 2\.1 0 0 0-3-3l-10 10/);
 	await row.locator('.saved-query-toggle').click();
-	const metadata = row.locator('table.data[id$="-metadata"]');
+	// The details are a key/value list (plan task M5.6).
+	const metadata = row.locator('[id$="-metadata"]');
 	await expect(metadata).toBeVisible();
-	const metadataGeometry = await metadata.evaluate(table => {
-		const firstRow = table.querySelector('tbody tr').getBoundingClientRect();
-		const bounds = table.getBoundingClientRect();
+	const metadataGeometry = await metadata.evaluate(details => {
+		const firstRow = details.querySelector('.workbench-kv__row').getBoundingClientRect();
+		const bounds = details.getBoundingClientRect();
 		return { tableWidth: bounds.width, rowWidth: firstRow.width, rowRight: firstRow.right, tableRight: bounds.right };
 	});
 	expect(metadataGeometry.rowWidth).toBeGreaterThanOrEqual(metadataGeometry.tableWidth - 1);
@@ -346,7 +348,7 @@ test('Saved Query actions use the two-column mobile grid and wrapping metadata',
 	const pageMetrics = await page.evaluate(() => ({
 		viewport: document.documentElement.clientWidth,
 		content: document.documentElement.scrollWidth,
-		marginTop: parseFloat(getComputedStyle(document.querySelector('.saved-query-row table.data')).marginTop)
+		marginTop: parseFloat(getComputedStyle(document.querySelector('.saved-query-row .saved-query-metadata')).marginTop)
 	}));
 	expect(pageMetrics.content).toBeLessThanOrEqual(pageMetrics.viewport);
 	expect(pageMetrics.marginTop).toBeGreaterThanOrEqual(16);
@@ -554,34 +556,19 @@ test('saved query metadata exposes separators between all label and value pairs'
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/saved-queries`);
 	const row = page.locator('.saved-query-row').filter({ hasText: queryName });
 	await row.locator('.saved-query-toggle').click();
-	const metadata = await row.locator('table.data[id$="-metadata"]').evaluate(table => {
-		const cells = Array.from(table.querySelectorAll('tr:first-child > *'));
-		return {
-			rowCount: table.querySelectorAll('tr').length,
-			cells: cells.map(cell => ({
-				tag: cell.tagName,
-				borderBottomWidth: getComputedStyle(cell).borderBottomWidth,
-				borderBottomStyle: getComputedStyle(cell).borderBottomStyle,
-				borderBottomColor: getComputedStyle(cell).borderBottomColor
-			}))
-		};
+	// The details are a key/value list (plan task M5.6): every row but the last has a separator.
+	const rows = await row.locator('[id$="-metadata"] .workbench-kv__row').evaluateAll(items => items.map(item => ({
+		borderBottomWidth: getComputedStyle(item).borderBottomWidth,
+		borderBottomStyle: getComputedStyle(item).borderBottomStyle,
+		borderBottomColor: getComputedStyle(item).borderBottomColor
+	})));
+	expect(rows).toHaveLength(2);
+	expect(rows[0]).toMatchObject({
+		borderBottomWidth: '1px',
+		borderBottomStyle: 'solid',
+		borderBottomColor: 'rgb(227, 236, 239)'
 	});
-	// This template emits four label/value pairs in one table row; the mobile grid lays
-	// those cells into four visual rows, so separators belong to the first three pairs.
-	expect(metadata.rowCount).toBe(1);
-	expect(metadata.cells).toHaveLength(8);
-	for (let pair = 0; pair < 3; pair++) {
-		for (const cell of metadata.cells.slice(pair * 2, pair * 2 + 2)) {
-			expect(cell).toMatchObject({
-				borderBottomWidth: '1px',
-				borderBottomStyle: 'solid',
-				borderBottomColor: 'rgb(227, 236, 239)'
-			});
-		}
-	}
-	for (const cell of metadata.cells.slice(-2)) {
-		expect(cell.borderBottomWidth).toBe('0px');
-	}
+	expect(rows[1].borderBottomWidth).toBe('0px');
 });
 
 test('query and update editors and explanations use one responsive code font token', async ({ page }) => {

@@ -75,9 +75,10 @@ test('native Add validation renders its inline page model once', async ({ page }
 	expect(isolationOptions.length, 'the Memory repository reports its supported isolation options').toBeGreaterThan(1);
 	expect(isolationOptions.slice(1).every(option => option.value && option.label && option.label !== option.value),
 		'Add should render human-readable labels for supported isolation values').toBe(true);
-	expect(await page.locator('#overrideContext').isChecked()).toBe(false);
-	expect(await page.locator('#context').isDisabled()).toBe(true);
-	expect(await page.locator('#context-help').textContent()).toContain('embedded contexts are preserved');
+	// The target graph starts empty and editable; empty keeps the graphs named in the data (plan task M5.5).
+	expect(await page.locator('#context').isDisabled()).toBe(false);
+	expect(await page.locator('#context').inputValue()).toBe('');
+	expect(await page.locator('#context-help').textContent()).toContain('keep the graphs named in the data');
 
 	const dataGetCountBeforeSubmit = addRequests.filter(request => request.method === 'GET'
 		&& request.accept.includes('application/vnd.rdf4j.workbench+ndjson')).length;

@@ -63,7 +63,8 @@ var workbench;
         menu: 'M4 6h16M4 12h16M4 18h16',
         user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
         search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
-        sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0'
+        sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
+        more: 'M6 12h.01M12 12h.01M18 12h.01'
     };
     function actionIconPath(name) {
         return actionIconCatalog[name] || actionIconCatalog.add;
@@ -181,7 +182,7 @@ var workbench;
             create: 'New Repository',
             delete: 'Delete Repository',
             namespaces: 'Namespaces In Repository',
-            contexts: 'Contexts In Repository',
+            contexts: 'Graphs',
             types: 'Types In Repository',
             explore: 'Explore',
             query: 'Query Repository',
@@ -585,7 +586,7 @@ var workbench;
         }
         function table(runtime, model, context, options) {
             var h = runtime.html;
-            var columns = model.vars || [];
+            var columns = options && options.columns || model.vars || [];
             var allRows = records(model);
             var total = rowCount(model);
             var emptyText = options && options.emptyText ? options.emptyText : 'No results to display.';
@@ -596,12 +597,13 @@ var workbench;
                 }
                 regions.renderTableRows = function () { return runtime.render(tableRows(runtime, model, context, options, records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody); };
             }
-            return h(__makeTemplateObject(["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"], ["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"]), model.rowStore && total ? 'true' : runtime.nothing, columns.length ? h(__makeTemplateObject(["<thead><tr>", "</tr></thead>"], ["<thead><tr>", "</tr></thead>"]), columns.map(function (name) { return h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), columnLabel(name, options)); })) : '', regions ? regions.tableBody
+            return h(__makeTemplateObject(["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"], ["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"]), model.rowStore && total ? 'true' : runtime.nothing, columns.length ? h(__makeTemplateObject(["<thead><tr>", "</tr></thead>"], ["<thead><tr>", "</tr></thead>"]), columns.map(function (name) { return options && options.header
+                ? options.header(name) : h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), columnLabel(name, options)); })) : '', regions ? regions.tableBody
                 : h(__makeTemplateObject(["<tbody>", "</tbody>"], ["<tbody>", "</tbody>"]), tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)));
         }
         function tableRows(runtime, model, context, options, allRows, start, total, emptyText) {
             var h = runtime.html;
-            var columns = model.vars || [];
+            var columns = options && options.columns || model.vars || [];
             var rowHeightValue = rowHeight(model);
             if (!total && !allRows.length) {
                 return h(__makeTemplateObject(["<tr class=\"workbench-empty-row\"><td role=\"status\" colspan=", ">", "</td></tr>"], ["<tr class=\"workbench-empty-row\"><td role=\"status\" colspan=", ">", "</td></tr>"]), Math.max(1, columns.length), emptyText);
@@ -613,7 +615,7 @@ var workbench;
                 ? model.rowTopSpacer : Math.max(0, start) * rowHeightValue;
             var after = typeof model.rowBottomSpacer === 'number'
                 ? model.rowBottomSpacer : Math.max(0, total - start - allRows.length) * rowHeightValue;
-            return h(__makeTemplateObject(["", "\n                ", "\n                ", ""], ["", "\n                ", "\n                ", ""]), before ? h(__makeTemplateObject(["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"], ["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"]), Math.max(1, columns.length), 'height:' + before + 'px;padding:0;border:0') : '', allRows.map(function (record, relativeIndex) { return h(__makeTemplateObject(["<tr data-workbench-row-index=", ">\n                    ", "\n                </tr>"], ["<tr data-workbench-row-index=", ">\n                    ", "\n                </tr>"]), start + relativeIndex, columns.map(function (name) {
+            return h(__makeTemplateObject(["", "\n                ", "\n                ", "\n                ", ""], ["", "\n                ", "\n                ", "\n                ", ""]), before ? h(__makeTemplateObject(["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"], ["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"]), Math.max(1, columns.length), 'height:' + before + 'px;padding:0;border:0') : '', allRows.map(function (record, relativeIndex) { return h(__makeTemplateObject(["<tr data-workbench-row-index=", ">\n                    ", "\n                </tr>"], ["<tr data-workbench-row-index=", ">\n                    ", "\n                </tr>"]), start + relativeIndex, options && options.cells ? options.cells(record, start + relativeIndex) : columns.map(function (name) {
                 var cell = record[name];
                 if (options && options.status && (name === 'readable' || name === 'writeable')) {
                     var status_1 = name === 'readable' ? 'readable' : 'writeable';
@@ -625,7 +627,7 @@ var workbench;
                     return h(__makeTemplateObject(["<td data-label=", "><a href=", ">", "</a></td>"], ["<td data-label=", "><a href=", ">", "</a></td>"]), columnLabel(name, options), href, id);
                 }
                 return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), columnLabel(name, options), renderTerm(runtime, cell, context, !!(options && options.linkTerms)));
-            })); }), after ? h(__makeTemplateObject(["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"], ["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"]), Math.max(1, columns.length), 'height:' + after + 'px;padding:0;border:0') : '');
+            })); }), after ? h(__makeTemplateObject(["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"], ["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"]), Math.max(1, columns.length), 'height:' + after + 'px;padding:0;border:0') : '', options && options.trailing ? options.trailing() : '');
         }
         function renderTerm(runtime, value, context, link) {
             var h = runtime.html;
@@ -680,19 +682,24 @@ var workbench;
             return id
                 ? h(__makeTemplateObject(["<section id=", " class=", ">", "</section>"], ["<section id=", " class=", ">", "</section>"]), id, sectionClass, content) : h(__makeTemplateObject(["<section class=", ">", "</section>"], ["<section class=", ">", "</section>"]), sectionClass, content);
         }
+        /** Summary (M5.4, mockup 12): one card with Repository and Size sections and the configuration disclosure. */
         function summaryPage(runtime, model, context) {
             var h = runtime.html;
             var row = firstRecord(model);
             var config = text(meta(model, 'config-model-turtle', 'config-model'));
-            return h(__makeTemplateObject(["", "\n                ", "\n                ", ""], ["", "\n                ", "\n                ", ""]), simpleSection(runtime, 'Repository Location', [
-                ['Repository ID', field(row, 'id')],
-                ['Repository title', field(row, 'description')],
-                ['Repository location', field(row, 'location')],
-                ['Server', field(row, 'server')]
-            ], 'workbench-summary-location'), simpleSection(runtime, 'Repository Size', [
-                ['Repository size', formatCount(field(row, 'size'), context)],
-                ['Named contexts', field(row, 'contexts')]
-            ], 'workbench-summary-size'), config ? h(__makeTemplateObject(["<section class=\"workbench-island workbench-summary-config\">\n                    <details id=\"summary-config-model\" class=\"workbench-options\">\n                        <summary>Config Model", "</summary>\n                        <pre role=\"region\">", "</pre>\n                    </details>\n                </section>"], ["<section class=\"workbench-island workbench-summary-config\">\n                    <details id=\"summary-config-model\" class=\"workbench-options\">\n                        <summary>Config Model", "</summary>\n                        <pre role=\"region\">", "</pre>\n                    </details>\n                </section>"]), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), config) : '');
+            var code = function (value) {
+                var content = text(value);
+                return content ? h(__makeTemplateObject(["<code>", "</code>"], ["<code>", "</code>"]), content) : '';
+            };
+            return h(__makeTemplateObject(["<section id=\"workbench-summary\" class=\"workbench-island workbench-summary\">\n                <h2>Repository</h2>\n                ", "\n                <h2>Size</h2>\n                ", "\n                ", "\n            </section>"], ["<section id=\"workbench-summary\" class=\"workbench-island workbench-summary\">\n                <h2>Repository</h2>\n                ", "\n                <h2>Size</h2>\n                ", "\n                ", "\n            </section>"]), keyValueList(runtime, [
+                ['ID', code(field(row, 'id'))],
+                ['Title', field(row, 'description')],
+                ['Location', code(field(row, 'location'))],
+                ['Server', code(field(row, 'server'))]
+            ]), keyValueList(runtime, [
+                ['Statements', formatCount(field(row, 'size'), context)],
+                ['Named graphs', formatCount(field(row, 'contexts'), context)]
+            ]), config ? h(__makeTemplateObject(["<details id=\"summary-config-model\" class=\"workbench-options workbench-summary-config\">\n                    <summary>Configuration (Turtle)", "</summary>\n                    <pre role=\"region\">", "</pre>\n                </details>"], ["<details id=\"summary-config-model\" class=\"workbench-options workbench-summary-config\">\n                    <summary>Configuration (Turtle)", "</summary>\n                    <pre role=\"region\">", "</pre>\n                </details>"]), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), config) : '');
         }
         function informationPage(runtime, model) {
             var row = firstRecord(model);
@@ -704,9 +711,28 @@ var workbench;
                 ['Memory used', field(row, 'memory-used')], ['Maximum memory', field(row, 'maximum-memory')]
             ], 'workbench-information-section', 'information-memory', false));
         }
+        function repositoryUrl(context, id, route) {
+            return (context.basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(id) + '/' + route;
+        }
+        /** One repository row (M5.3, mockup 12): Id link, Title, Access badges and an actions menu. */
+        function repositoryCells(runtime, context, record, index) {
+            var h = runtime.html;
+            var id = text(record.id);
+            var access = [
+                record.readable === true || text(record.readable) === 'true' ? 'Read' : '',
+                record.writeable === true || text(record.writeable) === 'true' ? 'Write' : ''
+            ].filter(function (label) { return !!label; });
+            var menuId = 'repository-actions-' + index;
+            var item = function (route, iconName, label) { return h(__makeTemplateObject(["<li><a href=\"", "\">", "", "</a></li>"], ["<li><a href=\"", "\">", "", "</a></li>"]), repositoryUrl(context, id, route), icon(runtime, iconName), label); };
+            return h(__makeTemplateObject(["<td data-label=\"Id\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"], ["<td data-label=\"Id\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"]), repositoryUrl(context, id, 'summary'), id, text(record.location), text(record.description), access.length
+                ? access.map(function (label, position) { return h(__makeTemplateObject(["", "<span class=\"workbench-badge\">", "</span>"], ["", "<span class=\"workbench-badge\">", "</span>"]), position ? ' ' : '', label); })
+                : h(__makeTemplateObject(["<span class=\"workbench-access-none\">None</span>"], ["<span class=\"workbench-access-none\">None</span>"])), 'Actions for ' + id, menuId, icon(runtime, 'more'), menuId, item('query', 'query', 'Query'), item('explore', 'explore', 'Explore'), item('summary', 'summary', 'Summary'), urlFor(context, 'delete') + '?id=' + encodeURIComponent(id), icon(runtime, 'delete'));
+        }
         function repositoriesPage(runtime, model, context) {
             var h = runtime.html;
-            return h(__makeTemplateObject(["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records\">\n                ", "\n            </section>"], ["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records\">\n                ", "\n            </section>"]), rowCount(model) ? table(runtime, model, context, { status: true, repository: true })
+            var header = function (name) { return name === 'actions'
+                ? h(__makeTemplateObject(["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"], ["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"])) : h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), { id: 'Id', title: 'Title', access: 'Access' }[name]); };
+            return h(__makeTemplateObject(["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action\" href=\"", "\">", "<span>Create</span></a>\n                </div>\n                ", "\n            </section>"], ["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action\" href=\"", "\">", "<span>Create</span></a>\n                </div>\n                ", "\n            </section>"]), formatCount(String(rowCount(model)), context), urlFor(context, 'create'), icon(runtime, 'create'), rowCount(model) ? table(runtime, model, context, { columns: ['id', 'title', 'access', 'actions'], header: header, cells: function (record, index) { return repositoryCells(runtime, context, record, index); } })
                 : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">No repositories are available.</p>"], ["<p class=\"workbench-empty\" role=\"status\">No repositories are available.</p>"])));
         }
         function createPage(runtime, model, context) {
@@ -857,10 +883,83 @@ var workbench;
                 }
             }, table(runtime, model, context, { emptyText: 'No results to display.' }));
         }
-        function recordBrowsePage(runtime, model, context) {
+        /** Types and Graphs (M5.2, mockup 06): what each list shows and the column its counts fill in. */
+        var browseLists = {
+            types: { title: 'Types', noun: 'types', column: 'type', label: 'Type',
+                count: 'instances', countLabel: 'Instances', resort: true },
+            contexts: { title: 'Graphs', noun: 'graphs', column: 'context', label: 'Graph',
+                count: 'statements', countLabel: 'Statements', actions: true }
+        };
+        function browseCounts(model) {
+            var holder = model;
+            if (!holder.browseCounts) {
+                holder.browseCounts = { state: model.rowCount > 0 ? 'pending' : 'none', listed: model.rowCount, values: {} };
+            }
+            return holder.browseCounts;
+        }
+        function browseNameCell(runtime, model, list, term) {
+            var h = runtime.html;
+            if (!term) {
+                return h(__makeTemplateObject(["<td data-label=", ">Default graph</td>"], ["<td data-label=", ">Default graph</td>"]), list.label);
+            }
+            if (typeof term !== 'object' || !term.kind) {
+                return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), list.label, text(term));
+            }
+            var stream = workbench.queryStream;
+            var full = termText(term);
+            var prefixed = list.column === 'type' && term.kind === 'iri' ? stream.abbreviateIri(term.value, exploreNamespaces(model)) : '';
+            var label = prefixed && prefixed.charAt(0) !== '<' ? prefixed : full;
+            return h(__makeTemplateObject(["<td data-label=", "><a href=\"", "\"\n                title=", ">", "</a></td>"], ["<td data-label=", "><a href=\"", "\"\n                title=", ">", "</a></td>"]), list.label, 'explore?resource=' + encodeURIComponent(stream.exploreResource(term)), full, label);
+        }
+        function browseCountCell(runtime, list, counts, value, context) {
+            var h = runtime.html;
+            if (value !== null && typeof value !== 'undefined') {
+                return h(__makeTemplateObject(["<td class=\"workbench-count-cell\" data-label=", ">", "</td>"], ["<td class=\"workbench-count-cell\" data-label=", ">", "</td>"]), list.countLabel, formatCount(value, context));
+            }
+            if (counts.state === 'pending') {
+                return h(__makeTemplateObject(["<td class=\"workbench-count-cell\" data-label=", " aria-busy=\"true\"><span\n                    title=\"Counting\u2026\">\u2026</span></td>"], ["<td class=\"workbench-count-cell\" data-label=", " aria-busy=\"true\"><span\n                    title=\"Counting\u2026\">\u2026</span></td>"]), list.countLabel);
+            }
+            var reason = counts.state === 'timed-out' ? 'Counting took longer than two seconds' : 'No count is available';
+            return h(__makeTemplateObject(["<td class=\"workbench-count-cell\" data-label=", "><span title=", ">\u2014</span></td>"], ["<td class=\"workbench-count-cell\" data-label=", "><span title=", ">\u2014</span></td>"]), list.countLabel, reason);
+        }
+        function browseActionsCell(runtime, term) {
+            var h = runtime.html;
+            if (!term || typeof term !== 'object' || !term.kind) {
+                return h(__makeTemplateObject(["<td class=\"workbench-row-actions\" data-label=\"Actions\"></td>"], ["<td class=\"workbench-row-actions\" data-label=\"Actions\"></td>"]));
+            }
+            var key = encodeURIComponent(ntriples(term));
+            var name = termText(term);
+            return h(__makeTemplateObject(["<td class=\"workbench-row-actions\" data-label=\"Actions\"><a class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                    href=\"", "\" aria-label=\"", "\" title=\"Explore\">", "</a><a\n                    class=\"workbench-action workbench-action--ghost workbench-action--icon\" href=\"", "\"\n                    aria-label=\"", "\" title=\"Clear graph\u2026\">", "</a></td>"], ["<td class=\"workbench-row-actions\" data-label=\"Actions\"><a class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                    href=\"", "\" aria-label=\"", "\" title=\"Explore\">", "</a><a\n                    class=\"workbench-action workbench-action--ghost workbench-action--icon\" href=\"", "\"\n                    aria-label=\"", "\" title=\"Clear graph\u2026\">", "</a></td>"]), 'explore?resource=' + key, 'Explore ' + name, icon(runtime, 'explore'), 'clear?context=' + key, 'Clear graph ' + name + '…', icon(runtime, 'clear'));
+        }
+        function browseListPage(runtime, model, context) {
             var h = runtime.html;
             var route = model.viewId;
-            return h(__makeTemplateObject(["<section id=", " class=\"workbench-island workbench-responsive-records\">\n                ", "\n            </section>"], ["<section id=", " class=\"workbench-island workbench-responsive-records\">\n                ", "\n            </section>"]), route + '-results', table(runtime, model, context, { emptyText: 'No results to display.', linkTerms: true }));
+            var list = browseLists[route];
+            var counts = browseCounts(model);
+            var filter = text(pageValue(model, 'filter'));
+            var byCount = list.resort && counts.state === 'done';
+            var columns = [list.column, list.count].concat(list.actions ? ['actions'] : []);
+            var header = function (name) {
+                if (name === 'actions') {
+                    return h(__makeTemplateObject(["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"], ["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"]));
+                }
+                var sort = name === list.column && !byCount ? 'ascending'
+                    : name === list.count && byCount ? 'descending' : runtime.nothing;
+                return name === list.count
+                    ? h(__makeTemplateObject(["<th scope=\"col\" class=\"workbench-count-column\" aria-sort=\"", "\">", "</th>"], ["<th scope=\"col\" class=\"workbench-count-column\" aria-sort=\"", "\">", "</th>"]), sort, list.countLabel) : h(__makeTemplateObject(["<th scope=\"col\" aria-sort=\"", "\">", "</th>"], ["<th scope=\"col\" aria-sort=\"", "\">", "</th>"]), sort, list.label);
+            };
+            // The server names the listed column (type or context); the counts add a second one.
+            var nameColumn = model.vars && model.vars.length ? model.vars[0] : list.column;
+            var cells = function (record) {
+                var term = record[nameColumn];
+                var value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
+                return h(__makeTemplateObject(["", "", "", ""], ["", "", "", ""]), browseNameCell(runtime, model, list, term), browseCountCell(runtime, list, counts, value, context), list.actions ? browseActionsCell(runtime, term) : '');
+            };
+            // The default graph has no name, so it is listed only without a filter (the server omits it too).
+            var trailing = list.actions && !filter ? function () { return h(__makeTemplateObject(["<tr class=\"workbench-browse-default-row\">", "", "", "</tr>"], ["<tr class=\"workbench-browse-default-row\">", "", "", "</tr>"]), browseNameCell(runtime, model, list, null), browseCountCell(runtime, list, counts, counts.values[''], context), browseActionsCell(runtime, null)); } : null;
+            var inputId = route + '-filter';
+            return h(__makeTemplateObject(["", "<section id=", "\n                    class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>", "</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <form class=\"workbench-browse-card__filter\" action=", " method=\"get\" role=\"search\">\n                        <label class=\"workbench-visually-hidden\" for=\"", "\">", "</label>\n                        <div class=\"workbench-search-field\">", "<input\n                            type=\"text\" id=\"", "\" name=\"filter\" value=", " placeholder=", "\n                            autocomplete=\"off\" spellcheck=\"false\" /></div>\n                    </form>\n                </div>\n                ", "\n            </section>"], ["", "<section id=", "\n                    class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>", "</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <form class=\"workbench-browse-card__filter\" action=", " method=\"get\" role=\"search\">\n                        <label class=\"workbench-visually-hidden\" for=\"", "\">", "</label>\n                        <div class=\"workbench-search-field\">", "<input\n                            type=\"text\" id=\"", "\" name=\"filter\" value=", " placeholder=", "\n                            autocomplete=\"off\" spellcheck=\"false\" /></div>\n                    </form>\n                </div>\n                ", "\n            </section>"]), errorCallout(runtime, model), route + '-results', list.title, formatCount(String(counts.listed), context), route, inputId, 'Filter ' + list.noun, icon(runtime, 'search', 'workbench-search-field__icon'), inputId, filter, 'Filter ' + list.noun, table(runtime, model, context, { columns: columns, header: header, cells: cells, trailing: trailing, emptyText: filter ? 'No ' + list.noun + ' match this filter.'
+                    : route === 'contexts' ? 'No named graphs.' : 'No types.' }));
         }
         var explorePageSize = 40;
         var rdfsNamespace = 'http://www.w3.org/2000/01/rdf-schema#';
@@ -1291,6 +1390,13 @@ var workbench;
                 ? 'height:' + model.rowTopSpacer + 'px' : 'display:none', rows, model.rowBottomSpacer
                 ? 'height:' + model.rowBottomSpacer + 'px' : 'display:none');
         }
+        /** Saved query details (M5.6): Yes/No values; the query language only when it is not SPARQL. */
+        function savedQueryDetails(row) {
+            var yesNo = function (value) { return text(value) === 'true' ? 'Yes' : 'No'; };
+            var language = text(row.queryLn);
+            var details = language && language.toUpperCase() !== 'SPARQL' ? [['Query language', language]] : [];
+            return details.concat([['Include inferred statements', yesNo(row.infer)], ['Shared', yesNo(row.shared)]]);
+        }
         function savedQueryContent(runtime, row, index) {
             var h = runtime.html;
             var urn = text(row.query);
@@ -1299,7 +1405,7 @@ var workbench;
             var query = text(row.queryText || row.query);
             var queryTimeout = text(row.queryTimeout).trim() || '0';
             var formId = 'saved-query-exec-' + index;
-            return h(__makeTemplateObject(["\n                        <div class=\"saved-query-row__heading\"><h2>", "</h2><span>", "</span></div>\n                        <div class=\"saved-query-actions\">\n                            <form method=\"post\" action=\"query\" id=", "\n                                data-workbench-query-execution=\"true\"\n                                data-workbench-results-target=", ">\n                                <input type=\"hidden\" name=\"action\" value=\"exec\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " />\n                                <input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" />\n                                <input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " />\n                                <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">\n                                    ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Execute\" /></span>\n                                </label></span>\n                            </form>\n                            <button type=\"button\" class=\"saved-query-toggle workbench-action workbench-action--secondary\" id=", " data-query-urn=", "\n                                value=\"Show\">Show</button>\n                            <form method=\"post\" action=\"query\"><input type=\"hidden\" name=\"action\" value=\"edit\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " /><input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" /><input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " /><button class=\"workbench-action workbench-action--secondary\" type=\"submit\">Edit</button>\n                            </form>\n                            <form method=\"post\" id=", " action=", ">\n                                <button type=\"button\" class=\"saved-query-delete workbench-action workbench-action--danger-outline\" data-query-owner=", " data-query-name=", "\n                                    data-query-urn=", ">Delete\u2026</button>\n                            </form>\n                        </div>\n                        <div id=", " class=\"query-results\" aria-live=\"polite\"></div>\n                        <table class=\"data\" id=", " style=\"display: none\"><tbody><tr>\n                            <th>Query Language</th><td>", "</td><th>Include Inferred Statements</th><td>", "</td>\n                            <th>Shared</th><td>", "</td>\n                        </tr></tbody></table>\n                        <textarea id=", " style=\"display: none\">", "</textarea>\n                    "], ["\n                        <div class=\"saved-query-row__heading\"><h2>", "</h2><span>", "</span></div>\n                        <div class=\"saved-query-actions\">\n                            <form method=\"post\" action=\"query\" id=", "\n                                data-workbench-query-execution=\"true\"\n                                data-workbench-results-target=", ">\n                                <input type=\"hidden\" name=\"action\" value=\"exec\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " />\n                                <input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" />\n                                <input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " />\n                                <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">\n                                    ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Execute\" /></span>\n                                </label></span>\n                            </form>\n                            <button type=\"button\" class=\"saved-query-toggle workbench-action workbench-action--secondary\" id=", " data-query-urn=", "\n                                value=\"Show\">Show</button>\n                            <form method=\"post\" action=\"query\"><input type=\"hidden\" name=\"action\" value=\"edit\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " /><input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" /><input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " /><button class=\"workbench-action workbench-action--secondary\" type=\"submit\">Edit</button>\n                            </form>\n                            <form method=\"post\" id=", " action=", ">\n                                <button type=\"button\" class=\"saved-query-delete workbench-action workbench-action--danger-outline\" data-query-owner=", " data-query-name=", "\n                                    data-query-urn=", ">Delete\u2026</button>\n                            </form>\n                        </div>\n                        <div id=", " class=\"query-results\" aria-live=\"polite\"></div>\n                        <table class=\"data\" id=", " style=\"display: none\"><tbody><tr>\n                            <th>Query Language</th><td>", "</td><th>Include Inferred Statements</th><td>", "</td>\n                            <th>Shared</th><td>", "</td>\n                        </tr></tbody></table>\n                        <textarea id=", " style=\"display: none\">", "</textarea>\n                    "]), queryName, owner, formId, 'saved-query-results-' + index, text(row.queryLn), queryName, owner, text(row.infer), queryTimeout, icon(runtime, 'execute'), urn + '-toggle', urn, text(row.queryLn), queryName, owner, text(row.infer), queryTimeout, urn, 'saved-queries?delete=' + encodeURIComponent(urn), owner, queryName, urn, 'saved-query-results-' + index, urn + '-metadata', text(row.queryLn), text(row.infer), text(row.shared), urn + '-text', query);
+            return h(__makeTemplateObject(["\n                        <div class=\"saved-query-row__heading\"><h2>", "</h2><span>", "</span></div>\n                        <div class=\"saved-query-actions\">\n                            <form method=\"post\" action=\"query\" id=", "\n                                data-workbench-query-execution=\"true\"\n                                data-workbench-results-target=", ">\n                                <input type=\"hidden\" name=\"action\" value=\"exec\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " />\n                                <input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" />\n                                <input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " />\n                                <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">\n                                    ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Execute\" /></span>\n                                </label></span>\n                            </form>\n                            <button type=\"button\" class=\"saved-query-toggle workbench-action workbench-action--secondary\" id=", " data-query-urn=", "\n                                aria-expanded=\"false\" aria-controls=", ">Show details</button>\n                            <form method=\"post\" action=\"query\"><input type=\"hidden\" name=\"action\" value=\"edit\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " /><input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" /><input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " /><button class=\"workbench-action workbench-action--secondary\" type=\"submit\">Edit</button>\n                            </form>\n                            <form method=\"post\" id=", " action=", ">\n                                <button type=\"button\" class=\"saved-query-delete workbench-action workbench-action--danger-outline\" data-query-owner=", " data-query-name=", "\n                                    data-query-urn=", ">Delete\u2026</button>\n                            </form>\n                        </div>\n                        <div id=", " class=\"query-results\" aria-live=\"polite\"></div>\n                        <div class=\"saved-query-metadata\" id=", " style=\"display: none\">", "</div>\n                        <textarea id=", " style=\"display: none\">", "</textarea>\n                    "], ["\n                        <div class=\"saved-query-row__heading\"><h2>", "</h2><span>", "</span></div>\n                        <div class=\"saved-query-actions\">\n                            <form method=\"post\" action=\"query\" id=", "\n                                data-workbench-query-execution=\"true\"\n                                data-workbench-results-target=", ">\n                                <input type=\"hidden\" name=\"action\" value=\"exec\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " />\n                                <input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" />\n                                <input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " />\n                                <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">\n                                    ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Execute\" /></span>\n                                </label></span>\n                            </form>\n                            <button type=\"button\" class=\"saved-query-toggle workbench-action workbench-action--secondary\" id=", " data-query-urn=", "\n                                aria-expanded=\"false\" aria-controls=", ">Show details</button>\n                            <form method=\"post\" action=\"query\"><input type=\"hidden\" name=\"action\" value=\"edit\" />\n                                <input type=\"hidden\" name=\"queryLn\" value=", " /><input type=\"hidden\" name=\"query\" value=", " />\n                                <input type=\"hidden\" name=\"ref\" value=\"id\" /><input type=\"hidden\" name=\"owner\" value=", " />\n                                <input type=\"hidden\" name=\"infer\" value=", " />\n                                <input type=\"hidden\" name=\"query-timeout\" value=", " /><button class=\"workbench-action workbench-action--secondary\" type=\"submit\">Edit</button>\n                            </form>\n                            <form method=\"post\" id=", " action=", ">\n                                <button type=\"button\" class=\"saved-query-delete workbench-action workbench-action--danger-outline\" data-query-owner=", " data-query-name=", "\n                                    data-query-urn=", ">Delete\u2026</button>\n                            </form>\n                        </div>\n                        <div id=", " class=\"query-results\" aria-live=\"polite\"></div>\n                        <div class=\"saved-query-metadata\" id=", " style=\"display: none\">", "</div>\n                        <textarea id=", " style=\"display: none\">", "</textarea>\n                    "]), queryName, owner, formId, 'saved-query-results-' + index, text(row.queryLn), queryName, owner, text(row.infer), queryTimeout, icon(runtime, 'execute'), urn + '-toggle', urn, urn + '-metadata', text(row.queryLn), queryName, owner, text(row.infer), queryTimeout, urn, 'saved-queries?delete=' + encodeURIComponent(urn), owner, queryName, urn, 'saved-query-results-' + index, urn + '-metadata', keyValueList(runtime, savedQueryDetails(row)), urn + '-text', query);
         }
         function exportPage(runtime, model, context) {
             var h = runtime.html;
@@ -1320,7 +1426,12 @@ var workbench;
             var timeout = text(meta(model, 'export-timeout')) || '43200';
             var requested = text(meta(model, 'statement-preview-requested')) === 'true';
             var previewLimit = text(meta(model, 'statement-preview-limit')) || '100';
-            return h(__makeTemplateObject(["<form id=\"export-form\" class=\"workbench-island workbench-form-card\" action=\"export\">\n                <div class=\"workbench-form-grid\">\n                    <div class=\"workbench-field\"><label for=\"Accept\">Download format</label>\n                        <select id=\"Accept\" name=\"Accept\">", "</select>\n                    </div>\n                    <div class=\"workbench-field\"><label for=\"compression\">Compression</label><select id=\"compression\" name=\"compression\">\n                        <option value=\"none\">None</option><option value=\"gzip\" selected>Gzip</option><option value=\"zip\">Zip</option>\n                    </select></div>\n                    <div class=\"workbench-field\"><label for=\"timeout\">Export timeout (seconds)</label>\n                        <input id=\"timeout\" name=\"timeout\" type=\"number\" min=\"0\" step=\"1\" required value=", " />\n                        <span class=\"hint\">Maximum time allowed for the export operation. Use 0 for no timeout.</span>\n                    </div>\n                </div>\n                ", "\n                <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                    <span class=\"workbench-action-hit-area\"><span class=\"workbench-action-label\">\n                        <button type=\"submit\" name=\"action\" value=\"download\" aria-label=\"Download\">\n                            ", "<span>Download</span>\n                        </button>\n                    </span></span>\n                </span></div>\n            </form>\n            <section id=\"export-results\" class=\"workbench-island workbench-responsive-records\">\n                <p class=\"workbench-page-meta\">Statement preview</p>\n                <div class=\"workbench-form-actions\"><button class=\"workbench-action workbench-action--secondary\" type=\"submit\" form=\"export-form\" name=\"action\" value=\"preview\">Retrieve statements</button></div>\n                ", "\n            </section>"], ["<form id=\"export-form\" class=\"workbench-island workbench-form-card\" action=\"export\">\n                <div class=\"workbench-form-grid\">\n                    <div class=\"workbench-field\"><label for=\"Accept\">Download format</label>\n                        <select id=\"Accept\" name=\"Accept\">", "</select>\n                    </div>\n                    <div class=\"workbench-field\"><label for=\"compression\">Compression</label><select id=\"compression\" name=\"compression\">\n                        <option value=\"none\">None</option><option value=\"gzip\" selected>Gzip</option><option value=\"zip\">Zip</option>\n                    </select></div>\n                    <div class=\"workbench-field\"><label for=\"timeout\">Export timeout (seconds)</label>\n                        <input id=\"timeout\" name=\"timeout\" type=\"number\" min=\"0\" step=\"1\" required value=", " />\n                        <span class=\"hint\">Maximum time allowed for the export operation. Use 0 for no timeout.</span>\n                    </div>\n                </div>\n                ", "\n                <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                    <span class=\"workbench-action-hit-area\"><span class=\"workbench-action-label\">\n                        <button type=\"submit\" name=\"action\" value=\"download\" aria-label=\"Download\">\n                            ", "<span>Download</span>\n                        </button>\n                    </span></span>\n                </span></div>\n            </form>\n            <section id=\"export-results\" class=\"workbench-island workbench-responsive-records\">\n                <p class=\"workbench-page-meta\">Statement preview</p>\n                <div class=\"workbench-form-actions\"><button class=\"workbench-action workbench-action--secondary\" type=\"submit\" form=\"export-form\" name=\"action\" value=\"preview\">Retrieve statements</button></div>\n                ", "\n            </section>"]), graphFormats.map(function (format) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), format.value, format.value === defaultFormat, format.label); }), timeout, workbench.detailDisclosure.render(h, {
+            return h(__makeTemplateObject(["<form id=\"export-form\" class=\"workbench-island workbench-form-card\" action=\"export\">\n                <div class=\"workbench-form-grid\">\n                    <div class=\"workbench-field\"><label for=\"Accept\">Download format</label>\n                        <select id=\"Accept\" name=\"Accept\">", "</select>\n                    </div>\n                    <div class=\"workbench-field\"><label for=\"compression\">Compression</label><select id=\"compression\" name=\"compression\">\n                        <option value=\"none\">None</option><option value=\"gzip\" selected>Gzip</option><option value=\"zip\">Zip</option>\n                    </select></div>\n                    <div class=\"workbench-field\"><label for=\"timeout\">Timeout</label>\n                        <div class=\"workbench-input-unit\"><input id=\"timeout\" name=\"timeout\" type=\"number\" min=\"0\" step=\"1\" required\n                            value=", " aria-describedby=\"export-timeout-unit export-timeout-help\"\n                            @input=", " /><span id=\"export-timeout-unit\" class=\"workbench-input-unit__suffix\">seconds</span></div>\n                        <p id=\"export-timeout-help\" class=\"workbench-field__help\" aria-live=\"polite\">", "</p>\n                    </div>\n                </div>\n                ", "\n                <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                    <span class=\"workbench-action-hit-area\"><span class=\"workbench-action-label\">\n                        <button type=\"submit\" name=\"action\" value=\"download\" aria-label=\"Download\">\n                            ", "<span>Download</span>\n                        </button>\n                    </span></span>\n                </span></div>\n            </form>\n            <section id=\"export-results\" class=\"workbench-island workbench-responsive-records\">\n                <h2>Statement preview</h2>\n                <div class=\"workbench-form-actions\"><button class=\"workbench-action workbench-action--secondary\" type=\"submit\" form=\"export-form\" name=\"action\" value=\"preview\">Retrieve statements</button></div>\n                ", "\n            </section>"], ["<form id=\"export-form\" class=\"workbench-island workbench-form-card\" action=\"export\">\n                <div class=\"workbench-form-grid\">\n                    <div class=\"workbench-field\"><label for=\"Accept\">Download format</label>\n                        <select id=\"Accept\" name=\"Accept\">", "</select>\n                    </div>\n                    <div class=\"workbench-field\"><label for=\"compression\">Compression</label><select id=\"compression\" name=\"compression\">\n                        <option value=\"none\">None</option><option value=\"gzip\" selected>Gzip</option><option value=\"zip\">Zip</option>\n                    </select></div>\n                    <div class=\"workbench-field\"><label for=\"timeout\">Timeout</label>\n                        <div class=\"workbench-input-unit\"><input id=\"timeout\" name=\"timeout\" type=\"number\" min=\"0\" step=\"1\" required\n                            value=", " aria-describedby=\"export-timeout-unit export-timeout-help\"\n                            @input=", " /><span id=\"export-timeout-unit\" class=\"workbench-input-unit__suffix\">seconds</span></div>\n                        <p id=\"export-timeout-help\" class=\"workbench-field__help\" aria-live=\"polite\">", "</p>\n                    </div>\n                </div>\n                ", "\n                <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                    <span class=\"workbench-action-hit-area\"><span class=\"workbench-action-label\">\n                        <button type=\"submit\" name=\"action\" value=\"download\" aria-label=\"Download\">\n                            ", "<span>Download</span>\n                        </button>\n                    </span></span>\n                </span></div>\n            </form>\n            <section id=\"export-results\" class=\"workbench-island workbench-responsive-records\">\n                <h2>Statement preview</h2>\n                <div class=\"workbench-form-actions\"><button class=\"workbench-action workbench-action--secondary\" type=\"submit\" form=\"export-form\" name=\"action\" value=\"preview\">Retrieve statements</button></div>\n                ", "\n            </section>"]), graphFormats.map(function (format) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), format.value, format.value === defaultFormat, format.label); }), timeout, function (event) {
+                var help = event.target.ownerDocument.getElementById('export-timeout-help');
+                if (help) {
+                    help.textContent = durationLabel(event.target.value);
+                }
+            }, durationLabel(timeout), workbench.detailDisclosure.render(h, {
                 id: 'export-result-options', toggleId: 'export-result-options-toggle',
                 panelId: 'export-result-options-panel', label: 'Result options',
                 ownerClass: 'workbench-options workbench-form-subgroup'
@@ -1328,6 +1439,26 @@ var workbench;
                 ? 'The preview is limited to the selected number of statements.' : '')), icon(runtime, 'download'), rowCount(model) ? table(runtime, model, context, { linkTerms: true })
                 : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">", "</p>"], ["<p class=\"workbench-empty\" role=\"status\">", "</p>"]), requested ? 'No results to display.' : 'Choose Retrieve statements to preview repository data.'));
         }
+        /** A time limit in seconds as people say it: "12 hours", "1 minute 30 seconds", "No limit" for 0. */
+        function durationLabel(value) {
+            var seconds = Math.floor(Number(text(value)));
+            if (!isFinite(seconds) || seconds < 0 || text(value).trim() === '') {
+                return '';
+            }
+            if (seconds === 0) {
+                return 'No limit';
+            }
+            var parts = [];
+            [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']].reduce(function (rest, unit) {
+                var count = Math.floor(rest / unit[0]);
+                if (count) {
+                    parts.push(count + ' ' + unit[1] + (count === 1 ? '' : 's'));
+                }
+                return rest - count * unit[0];
+            }, seconds);
+            return parts.join(' ');
+        }
+        views.durationLabel = durationLabel;
         function formatOptions(values) {
             if (!Array.isArray(values)) {
                 return [];
@@ -1369,6 +1500,40 @@ var workbench;
                 return cookie.substring(cookie.indexOf('=') + 1);
             }
         }
+        /** The Add RDF file field (M5.5, mockup 10): a dropped file becomes the file input's selection. */
+        function addDropZone(runtime) {
+            var h = runtime.html;
+            var active = 'add-drop-zone--active';
+            var fileInput = function (zone) { return zone.querySelector('#file'); };
+            return h(__makeTemplateObject(["<div id=\"add-drop-zone\" class=\"add-drop-zone\"\n                    @dragover=", "\n                    @dragleave=", "\n                    @drop=", "\n                    @click=", ">\n                <span class=\"add-drop-zone__prompt\">", "<span>Drop an RDF file here or <label for=\"file\"\n                    class=\"add-drop-zone__choose\">choose a file</label></span></span>\n                <span id=\"add-drop-zone-formats\" class=\"add-drop-zone__formats\">Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD and more; gzip, zip and tar accepted</span>\n                <span class=\"add-drop-zone__file\" aria-live=\"polite\"></span>\n                <input type=\"file\" id=\"file\" name=\"content\" class=\"workbench-visually-hidden\" aria-describedby=\"add-drop-zone-formats\"\n                    @change=", " />\n            </div>"], ["<div id=\"add-drop-zone\" class=\"add-drop-zone\"\n                    @dragover=", "\n                    @dragleave=", "\n                    @drop=", "\n                    @click=", ">\n                <span class=\"add-drop-zone__prompt\">", "<span>Drop an RDF file here or <label for=\"file\"\n                    class=\"add-drop-zone__choose\">choose a file</label></span></span>\n                <span id=\"add-drop-zone-formats\" class=\"add-drop-zone__formats\">Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD and more; gzip, zip and tar accepted</span>\n                <span class=\"add-drop-zone__file\" aria-live=\"polite\"></span>\n                <input type=\"file\" id=\"file\" name=\"content\" class=\"workbench-visually-hidden\" aria-describedby=\"add-drop-zone-formats\"\n                    @change=", " />\n            </div>"]), function (event) {
+                event.preventDefault();
+                event.currentTarget.classList.add(active);
+            }, function (event) {
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                    event.currentTarget.classList.remove(active);
+                }
+            }, function (event) {
+                event.preventDefault();
+                var zone = event.currentTarget;
+                zone.classList.remove(active);
+                var input = fileInput(zone);
+                var files = event.dataTransfer && event.dataTransfer.files;
+                if (input && !input.disabled && files && files.length) {
+                    input.files = files;
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }, function (event) {
+                var input = fileInput(event.currentTarget);
+                if (input && !input.disabled && !event.target.closest('label, input')) {
+                    input.click();
+                }
+            }, icon(runtime, 'upload'), function (event) {
+                var input = event.target;
+                var name = input.closest('.add-drop-zone').querySelector('.add-drop-zone__file');
+                name.textContent = input.files && input.files.length ? input.files[0].name : '';
+                invoke('workbench.add.enabledInput', 'file');
+            });
+        }
         function addPage(runtime, model, context) {
             var h = runtime.html;
             var rows = records(model);
@@ -1378,11 +1543,11 @@ var workbench;
             var isolationOptions = rows.filter(function (row) { return field(row, 'isolation-level-option'); });
             var selectedIsolation = text(pageValue(model, 'transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'));
             var error = text(pageValue(model, 'error-message'));
-            return h(__makeTemplateObject(["", "\n                ", "\n                <form method=\"post\" action=\"add\" enctype=\"multipart/form-data\" class=\"workbench-form-card\">\n                    <fieldset id=\"add-source-tabs\" class=\"workbench-source-tabs\"><legend>Source</legend>\n                        ", "\n                    </fieldset>\n                    <div class=\"workbench-form-grid add-source-fields\">\n                        <div id=\"add-source-file-panel\" class=\"workbench-field add-source-panel\" data-source=\"file\">\n                            <label for=\"file\">RDF file</label><input type=\"file\" id=\"file\" name=\"content\"\n                                @change=", " />\n                            <div class=\"hint\">Select an RDF document from your computer.</div>\n                        </div>\n                        <div id=\"add-source-url-panel\" class=\"workbench-field add-source-panel\" data-source=\"url\" hidden>\n                            <label for=\"url\">RDF URL</label><input id=\"url\" name=\"url\" type=\"text\" size=\"48\" disabled\n                                @change=", " />\n                        </div>\n                        <div id=\"add-source-text-panel\" class=\"workbench-field add-source-panel\" data-source=\"text\" hidden>\n                            <label for=\"text\">RDF text</label><textarea id=\"text\" name=\"content\" rows=\"6\" cols=\"70\" disabled></textarea>\n                        </div>\n                        <div class=\"workbench-field add-source-format\"><label for=\"Content-Type\">Data format</label>\n                            <div class=\"workbench-select-control\"><select id=\"Content-Type\" name=\"Content-Type\">\n                                <option id=\"autodetect\" value=\"autodetect\" selected>(autodetect)</option>\n                                ", "\n                            </select>", "</div>\n                        </div>\n                    </div>\n                    ", "\n                    <div id=\"add-upload-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                        <label class=\"workbench-action-hit-area\">", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Upload\" /></span></label>\n                    </span></div>\n                </form>"], ["", "\n                ", "\n                <form method=\"post\" action=\"add\" enctype=\"multipart/form-data\" class=\"workbench-form-card\">\n                    <fieldset id=\"add-source-tabs\" class=\"workbench-source-tabs\"><legend>Source</legend>\n                        ", "\n                    </fieldset>\n                    <div class=\"workbench-form-grid add-source-fields\">\n                        <div id=\"add-source-file-panel\" class=\"workbench-field add-source-panel\" data-source=\"file\">\n                            <label for=\"file\">RDF file</label><input type=\"file\" id=\"file\" name=\"content\"\n                                @change=", " />\n                            <div class=\"hint\">Select an RDF document from your computer.</div>\n                        </div>\n                        <div id=\"add-source-url-panel\" class=\"workbench-field add-source-panel\" data-source=\"url\" hidden>\n                            <label for=\"url\">RDF URL</label><input id=\"url\" name=\"url\" type=\"text\" size=\"48\" disabled\n                                @change=", " />\n                        </div>\n                        <div id=\"add-source-text-panel\" class=\"workbench-field add-source-panel\" data-source=\"text\" hidden>\n                            <label for=\"text\">RDF text</label><textarea id=\"text\" name=\"content\" rows=\"6\" cols=\"70\" disabled></textarea>\n                        </div>\n                        <div class=\"workbench-field add-source-format\"><label for=\"Content-Type\">Data format</label>\n                            <div class=\"workbench-select-control\"><select id=\"Content-Type\" name=\"Content-Type\">\n                                <option id=\"autodetect\" value=\"autodetect\" selected>(autodetect)</option>\n                                ", "\n                            </select>", "</div>\n                        </div>\n                    </div>\n                    ", "\n                    <div id=\"add-upload-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                        <label class=\"workbench-action-hit-area\">", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Upload\" /></span></label>\n                    </span></div>\n                </form>"]), error ? callout(runtime, 'error', error) : '', systemRepositoryCallout(runtime, context), [['file', 'File'], ['url', 'URL'], ['text', 'Text']].map(function (entry) { return h(__makeTemplateObject(["<label for=", ">\n                            ", "\n                            <input type=\"radio\" id=", " name=\"source\"\n                                value=", "\n                                ?checked=", "\n                                @change=", " />\n                            <span>", "</span>\n                        </label>"], ["<label for=", ">\n                            ", "\n                            <input type=\"radio\" id=", " name=\"source\"\n                                value=", "\n                                ?checked=", "\n                                @change=", " />\n                            <span>", "</span>\n                        </label>"]), 'source-' + entry[0], icon(runtime, 'source-' + (entry[0] === 'text' ? 'text' : entry[0])), 'source-' + entry[0], entry[0] === 'text' ? 'contents' : entry[0], entry[0] === 'file', function () { return invoke('workbench.add.enabledInput', entry[0]); }, entry[1]); }), function () { return invoke('workbench.add.enabledInput', 'file'); }, function () { return invoke('workbench.add.enabledInput', 'url'); }, formats.map(function (format) { return h(__makeTemplateObject(["<option value=", ">", "</option>"], ["<option value=", ">", "</option>"]), format.value, format.label); }), icon(runtime, 'chevron', 'workbench-select-chevron'), workbench.detailDisclosure.render(h, {
+            return h(__makeTemplateObject(["", "\n                ", "\n                <form method=\"post\" action=\"add\" enctype=\"multipart/form-data\" class=\"workbench-form-card\">\n                    <fieldset id=\"add-source-tabs\" class=\"workbench-source-tabs\"><legend>Source</legend>\n                        ", "\n                    </fieldset>\n                    <div class=\"workbench-field-stack add-source-fields\">\n                        <div id=\"add-source-file-panel\" class=\"workbench-field add-source-panel\" data-source=\"file\">\n                            <label for=\"file\">RDF file</label>", "\n                        </div>\n                        <div id=\"add-source-url-panel\" class=\"workbench-field add-source-panel\" data-source=\"url\" hidden>\n                            <label for=\"url\">RDF URL</label><input id=\"url\" name=\"url\" type=\"text\" size=\"48\" disabled\n                                @change=", " />\n                        </div>\n                        <div id=\"add-source-text-panel\" class=\"workbench-field add-source-panel\" data-source=\"text\" hidden>\n                            <label for=\"text\">RDF text</label><textarea id=\"text\" name=\"content\" rows=\"6\" cols=\"70\" disabled></textarea>\n                        </div>\n                    </div>\n                    <div class=\"workbench-form-grid add-target-fields\">\n                        <div class=\"workbench-field add-source-format\"><label for=\"Content-Type\">Data format</label>\n                            <div class=\"workbench-select-control\"><select id=\"Content-Type\" name=\"Content-Type\">\n                                <option id=\"autodetect\" value=\"autodetect\" selected>Detect from file name</option>\n                                ", "\n                            </select>", "</div>\n                        </div>\n                        <div class=\"workbench-field add-target-graph\"><label for=\"context\">Target graph</label>\n                            <input id=\"context\" name=\"context\" type=\"text\" size=\"48\" placeholder=\"Default graph\"\n                                aria-describedby=\"context-help\" value=", " />\n                            <p id=\"context-help\" class=\"workbench-field__help\">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI puts every statement in that graph.</p>\n                        </div>\n                    </div>\n                    ", "\n                    <div id=\"add-upload-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                        <label class=\"workbench-action-hit-area\">", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Upload\" /></span></label>\n                    </span></div>\n                </form>"], ["", "\n                ", "\n                <form method=\"post\" action=\"add\" enctype=\"multipart/form-data\" class=\"workbench-form-card\">\n                    <fieldset id=\"add-source-tabs\" class=\"workbench-source-tabs\"><legend>Source</legend>\n                        ", "\n                    </fieldset>\n                    <div class=\"workbench-field-stack add-source-fields\">\n                        <div id=\"add-source-file-panel\" class=\"workbench-field add-source-panel\" data-source=\"file\">\n                            <label for=\"file\">RDF file</label>", "\n                        </div>\n                        <div id=\"add-source-url-panel\" class=\"workbench-field add-source-panel\" data-source=\"url\" hidden>\n                            <label for=\"url\">RDF URL</label><input id=\"url\" name=\"url\" type=\"text\" size=\"48\" disabled\n                                @change=", " />\n                        </div>\n                        <div id=\"add-source-text-panel\" class=\"workbench-field add-source-panel\" data-source=\"text\" hidden>\n                            <label for=\"text\">RDF text</label><textarea id=\"text\" name=\"content\" rows=\"6\" cols=\"70\" disabled></textarea>\n                        </div>\n                    </div>\n                    <div class=\"workbench-form-grid add-target-fields\">\n                        <div class=\"workbench-field add-source-format\"><label for=\"Content-Type\">Data format</label>\n                            <div class=\"workbench-select-control\"><select id=\"Content-Type\" name=\"Content-Type\">\n                                <option id=\"autodetect\" value=\"autodetect\" selected>Detect from file name</option>\n                                ", "\n                            </select>", "</div>\n                        </div>\n                        <div class=\"workbench-field add-target-graph\"><label for=\"context\">Target graph</label>\n                            <input id=\"context\" name=\"context\" type=\"text\" size=\"48\" placeholder=\"Default graph\"\n                                aria-describedby=\"context-help\" value=", " />\n                            <p id=\"context-help\" class=\"workbench-field__help\">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI puts every statement in that graph.</p>\n                        </div>\n                    </div>\n                    ", "\n                    <div id=\"add-upload-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--primary\">\n                        <label class=\"workbench-action-hit-area\">", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Upload\" /></span></label>\n                    </span></div>\n                </form>"]), error ? callout(runtime, 'error', error) : '', systemRepositoryCallout(runtime, context), [['file', 'File'], ['url', 'URL'], ['text', 'Text']].map(function (entry) { return h(__makeTemplateObject(["<label for=", ">\n                            ", "\n                            <input type=\"radio\" id=", " name=\"source\"\n                                value=", "\n                                ?checked=", "\n                                @change=", " />\n                            <span>", "</span>\n                        </label>"], ["<label for=", ">\n                            ", "\n                            <input type=\"radio\" id=", " name=\"source\"\n                                value=", "\n                                ?checked=", "\n                                @change=", " />\n                            <span>", "</span>\n                        </label>"]), 'source-' + entry[0], icon(runtime, 'source-' + (entry[0] === 'text' ? 'text' : entry[0])), 'source-' + entry[0], entry[0] === 'text' ? 'contents' : entry[0], entry[0] === 'file', function () { return invoke('workbench.add.enabledInput', entry[0]); }, entry[1]); }), addDropZone(runtime), function () { return invoke('workbench.add.enabledInput', 'url'); }, formats.map(function (format) { return h(__makeTemplateObject(["<option value=", ">", "</option>"], ["<option value=", ">", "</option>"]), format.value, format.label); }), icon(runtime, 'chevron', 'workbench-select-chevron'), text(pageValue(model, 'context')), workbench.detailDisclosure.render(h, {
                 id: 'add-import-settings', toggleId: 'add-import-settings-toggle',
                 panelId: 'add-import-settings-panel', label: 'Advanced settings',
                 ownerClass: 'workbench-options workbench-form-subgroup'
-            }, h(__makeTemplateObject(["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" value=", " />\n                                <label class=\"workbench-check\" for=\"overrideContext\"><input type=\"checkbox\" id=\"overrideContext\" name=\"overrideContext\"\n                                    ?checked=", " @change=", " />\n                                    <span>Override parsed contexts with this context</span></label>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"context\">Context</label>\n                                <input id=\"context\" name=\"context\" type=\"text\" size=\"48\" aria-describedby=\"context-help\"\n                                    value=", " ?disabled=", " />\n                                <p id=\"context-help\" class=\"workbench-help\">RDF context may be an IRI, blank node, or the default graph. With override off, embedded contexts are preserved; contextless data uses the default graph. Base URI resolves relative RDF identifiers; it does not choose a graph context.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"], ["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" value=", " />\n                                <label class=\"workbench-check\" for=\"overrideContext\"><input type=\"checkbox\" id=\"overrideContext\" name=\"overrideContext\"\n                                    ?checked=", " @change=", " />\n                                    <span>Override parsed contexts with this context</span></label>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"context\">Context</label>\n                                <input id=\"context\" name=\"context\" type=\"text\" size=\"48\" aria-describedby=\"context-help\"\n                                    value=", " ?disabled=", " />\n                                <p id=\"context-help\" class=\"workbench-help\">RDF context may be an IRI, blank node, or the default graph. With override off, embedded contexts are preserved; contextless data uses the default graph. Base URI resolves relative RDF identifiers; it does not choose a graph context.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"]), text(pageValue(model, 'baseURI')), !!text(pageValue(model, 'context')), function () { return invoke('workbench.add.handleContextOverride'); }, text(pageValue(model, 'context')), !text(pageValue(model, 'context')), !selectedIsolation, isolationOptions.map(function (row) { return h(__makeTemplateObject(["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"], ["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"]), text(row['isolation-level-option']), text(row['isolation-level-option']) === selectedIsolation, text(row['isolation-level-option-label']) || text(row['isolation-level-option'])); }))), icon(runtime, 'upload'));
+            }, h(__makeTemplateObject(["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" aria-describedby=\"baseURI-help\"\n                                    value=", " />\n                                <p id=\"baseURI-help\" class=\"workbench-field__help\">Resolves relative IRIs in the data; it does not choose a graph.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"], ["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" aria-describedby=\"baseURI-help\"\n                                    value=", " />\n                                <p id=\"baseURI-help\" class=\"workbench-field__help\">Resolves relative IRIs in the data; it does not choose a graph.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"]), text(pageValue(model, 'baseURI')), !selectedIsolation, isolationOptions.map(function (row) { return h(__makeTemplateObject(["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"], ["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"]), text(row['isolation-level-option']), text(row['isolation-level-option']) === selectedIsolation, text(row['isolation-level-option-label']) || text(row['isolation-level-option'])); }))), icon(runtime, 'upload'));
         }
         function removePage(runtime, model, context) {
             var h = runtime.html;
@@ -1615,7 +1780,7 @@ var workbench;
                 case 'delete': return deletePage(runtime, model);
                 case 'namespaces': return namespacesPage(runtime, model, context);
                 case 'contexts':
-                case 'types': return recordBrowsePage(runtime, model, context);
+                case 'types': return browseListPage(runtime, model, context);
                 case 'explore': return explorePage(runtime, model, context);
                 case 'query': return runtime.html(__makeTemplateObject(["<div id=\"query-page-content\">", "</div>"], ["<div id=\"query-page-content\">", "</div>"]), queryPage(runtime, model, context));
                 case 'saved-queries': return savedQueriesPage(runtime, model, context);
@@ -2055,11 +2220,26 @@ var workbench;
                     button.__rdf4jWorkbenchExploreBound = true;
                 });
             }
+            var rowMenuDisposers = [];
+            /** Row action menus (repository list): popovers bound once per rendered row element. */
+            var bindRowMenus = function () {
+                var popover = workbench.popover;
+                if (!popover || typeof popover.bind !== 'function') {
+                    return;
+                }
+                elements('[data-workbench-row-menu]').forEach(function (button) {
+                    var panel = button.nextElementSibling;
+                    if (panel && button.getAttribute('data-workbench-popover-bound') !== 'true') {
+                        rowMenuDisposers.push(popover.bind(button, panel));
+                    }
+                });
+            };
             var renderCurrent = function () {
                 render(mount, model, context, runtime);
                 bindExecutionForms();
                 bindPickerControls();
                 bindExploreControls();
+                bindRowMenus();
             };
             var renderCurrentRows = function () {
                 var regions = rowRegionsByMount.get(regionKey);
@@ -2072,7 +2252,25 @@ var workbench;
                     }
                 }
                 bindExecutionForms();
+                bindRowMenus();
             };
+            /** A click anywhere on a repository row that is not on a control opens it through its Id link. */
+            var onRepositoryRowClick = function (event) {
+                var target = event.target;
+                if (!target || !target.closest || target.closest('a, button, input, select, textarea, label, .workbench-popover')) {
+                    return;
+                }
+                var selection = targetWindow.getSelection ? targetWindow.getSelection() : null;
+                if (selection && String(selection).length) {
+                    return;
+                }
+                var row = target.closest('tr');
+                var link = row ? row.querySelector('a.workbench-repository-link') : null;
+                if (link) {
+                    link.click();
+                }
+            };
+            var repositoryRows = model.viewId === 'repositories' ? elements('#repositories-results')[0] : null;
             var bindPickerControls = function () {
                 elements('[data-workbench-window-action]').forEach(function (button) {
                     if (button.__rdf4jWorkbenchWindowBound || !button.addEventListener) {
@@ -2164,6 +2362,56 @@ var workbench;
                 }
                 return refreshRows();
             };
+            /** Types and Graphs: request the counts once the list is on screen (M5.2). */
+            var loadBrowseCounts = function () {
+                var list = browseLists[model.viewId];
+                var app = workbench.app;
+                var counts = list ? browseCounts(model) : null;
+                var href = targetWindow.location && targetWindow.location.href;
+                if (!counts || counts.state !== 'pending' || !href || !app || typeof app.loadModel !== 'function') {
+                    return;
+                }
+                var url = new URL(String(href));
+                url.searchParams.set('counts', 'true');
+                app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString()).then(function (answer) {
+                    var timedOut = answer.metadata && text(answer.metadata['counts-timed-out']) === 'true';
+                    if (disposed || timedOut) {
+                        answer.rowStore.dispose();
+                        if (!disposed) {
+                            counts.state = 'timed-out';
+                            renderCurrent();
+                        }
+                        return undefined;
+                    }
+                    if (list.resort) {
+                        // The answer is already in count order: show its rows in place of the name-ordered ones.
+                        var previous = model.rowStore;
+                        model.vars = answer.vars;
+                        model.rowStore = answer.rowStore;
+                        model.rowCount = answer.rowCount;
+                        counts.state = 'done';
+                        previous.dispose();
+                        return refreshRows(false).then(function () { if (!disposed) {
+                            renderCurrent();
+                        } });
+                    }
+                    return answer.rowStore.read(0, answer.rowCount).then(function (rows) {
+                        answer.rowStore.dispose();
+                        rows.forEach(function (row) {
+                            counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                        });
+                        counts.state = 'done';
+                        if (!disposed) {
+                            renderCurrent();
+                        }
+                    });
+                }).then(null, function () {
+                    counts.state = 'failed';
+                    if (!disposed) {
+                        renderCurrent();
+                    }
+                });
+            };
             var onScroll = function () { return refresh(); };
             var onResize = function () { return refresh(); };
             var initialPicker = hasPicker && model.rowCount > 0
@@ -2185,6 +2433,10 @@ var workbench;
             }).then(function () {
                 bindPickerControls();
                 bindExploreControls();
+                loadBrowseCounts();
+                if (repositoryRows && repositoryRows.addEventListener) {
+                    repositoryRows.addEventListener('click', onRepositoryRowClick);
+                }
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
@@ -2194,6 +2446,11 @@ var workbench;
                     generation++;
                     groupGeneration++;
                     disposeExecutionForms();
+                    rowMenuDisposers.forEach(function (dispose) { return dispose(); });
+                    rowMenuDisposers = [];
+                    if (repositoryRows && repositoryRows.removeEventListener) {
+                        repositoryRows.removeEventListener('click', onRepositoryRowClick);
+                    }
                     var regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) {
                         rowRegionsByMount.delete(regionKey);

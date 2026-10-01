@@ -634,7 +634,7 @@ test('Explore preserves its persisted datatype option and reports a result-limit
     assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
 });
 
-test('Add template preserves isolation options and the disabled context-override default', () => {
+test('Add template preserves isolation options and offers an editable target graph', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
@@ -657,15 +657,12 @@ test('Add template preserves isolation options and the disabled context-override
         'Add should submit the isolation setting under the servlet parameter name');
     assert.ok(markup.includes('value=READ_COMMITTED') && markup.includes('Read committed'));
     assert.ok(markup.includes('value=SNAPSHOT') && markup.includes('Snapshot'));
-    assert.ok(markup.includes('Override parsed contexts with this context'));
-    assert.ok(markup.includes('id="context-help"') && markup.includes('embedded contexts are preserved'));
-    assert.ok(markup.includes('id="overrideContext"') && markup.includes('?checked=false'),
-        'context override should be off when no context is supplied');
-    assert.ok(markup.includes('id="context"') && markup.includes('?disabled=true'),
-        'the context input should start disabled when context override is off');
-    assert.ok(markup.includes('RDF context may be an IRI, blank node, or the default graph.'));
-    assert.ok(markup.includes('With override off, embedded contexts are preserved; contextless data uses the default graph.'));
-    assert.ok(markup.includes('Base URI resolves relative RDF identifiers; it does not choose a graph context.'));
+    // Plan task M5.5: the context is the "Target graph" next to Data format; empty keeps the data's own graphs.
+    assert.ok(markup.includes('<label for="context">Target graph</label>'));
+    assert.ok(markup.includes('placeholder="Default graph"'));
+    assert.ok(!markup.includes('id="overrideContext"'), 'an empty target graph replaces the override checkbox');
+    assert.ok(markup.includes('id="context-help"') && markup.includes('keep the graphs named in the data'));
+    assert.ok(markup.includes('it does not choose a graph'), 'Base URI explains that it does not choose a graph');
 
     const availableIsolationOptions = flattenTemplateMarkup(workbench.views.pageTemplate({
         ...model,
@@ -687,9 +684,8 @@ test('Add template preserves isolation options and the disabled context-override
     assert.ok(availableIsolationOptions.includes('id="baseURI"')
         && availableIsolationOptions.includes('value=https://example.org/base'));
     assert.ok(availableIsolationOptions.includes('id="context"')
-        && availableIsolationOptions.includes('?disabled=true')
-        && !availableIsolationOptions.includes('id="context" name="context" type="text" size=48 aria-describedby="context-help" value=https://example.org/base'),
-    'the base URI must not prefill or enable the context override');
+        && !/id="context"[^>]*value=https:\/\/example\.org\/base/.test(availableIsolationOptions),
+    'the base URI must not prefill the target graph');
 });
 
 test('Summary template renders the effective config model in a closed disclosure', () => {
@@ -706,7 +702,7 @@ test('Summary template renders the effective config model in a closed disclosure
     }, { basePath: '/workbench', repositoryId: 'memory', workbench: {} }, runtime));
 
     assert.ok(output.includes('id="summary-config-model"'), 'Summary should expose its config-model disclosure');
-    assert.ok(output.includes('Config Model'), 'Summary should retain the disclosure label');
+    assert.ok(output.includes('Configuration (Turtle)'), 'Summary labels the disclosure by its content (M5.4)');
     assert.ok(output.includes('<pre role="region">'), 'configuration text should render in the disclosure body');
     assert.ok(output.includes('@prefix config:') && output.includes('config:rep.type "openrdf:SailRepository"'),
         'the effective Turtle model should remain available as rendered text');
@@ -767,7 +763,7 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
     const routes = [
         ['summary', { vars: ['id', 'description', 'location', 'server', 'size', 'contexts'],
             rows: [['repo-1', 'Example repository', 'memory', 'http://example.test', '12', '2']],
-            expected: ['Repository Location', 'Example repository', 'Repository Size'] }],
+            expected: ['<h2>Repository</h2>', 'Example repository', '<h2>Size</h2>'] }],
         ['information', { vars: ['version', 'os', 'jvm', 'user', 'memory-used', 'maximum-memory'],
             rows: [['5.0', 'Linux', 'OpenJDK', 'rdf4j', '128 MB', '1 GB']],
             expected: ['workbench-information', 'information-application', 'information-runtime',
@@ -1902,7 +1898,8 @@ test('page tables label their columns for people instead of showing raw variable
         rows: [[true, true, 'repo-1', 'Repository one', 'http://example.test/repositories/repo-1']],
         rowCount: 1, metadata: {}
     }, context, runtime);
-    assert.deepEqual(headings(repositories), ['Readable', 'Writeable', 'Id', 'Description', 'Location']);
+    // The repository list (M5.3) shows Id, Title and Access; Location moved to the Title cell's tooltip.
+    assert.deepEqual(headings(repositories), ['Id', 'Title', 'Access']);
     const explore = workbench.views.pageTemplate({
         viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
         rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
@@ -1931,6 +1928,30 @@ test('summary and information render key/value lists instead of simple tables', 
     assert.match(information, /<dl class="workbench-kv"/);
     assert.doesNotMatch(information, /table class="simple"/);
     assert.doesNotMatch(information, /<th>[^<]*:<\/th>/);
+});
+
+test('Summary is one card with Repository and Size sections and the configuration disclosure (M5.4)', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const locales = [];
+    workbench.format = { count(value, locale) { locales.push(locale); return new Intl.NumberFormat(locale).format(Number(value)); } };
+    const context = { basePath: '/workbench', repositoryId: 'bsbm', workbench: {}, locale: 'en-US' };
+    const summary = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'summary', vars: ['id', 'description', 'location', 'server', 'size', 'contexts'],
+        rows: [['bsbm', 'BSBM demo (memory)', 'http://127.0.0.1:18090/rdf4j-server/repositories/bsbm',
+            'http://127.0.0.1:18090/rdf4j-server', '43685', '2']],
+        rowCount: 1, metadata: { 'config-model-turtle': '@prefix config: <tag:rdf4j.org,2023:config/> .' }
+    }, context, runtime));
+    const surface = summary.slice(summary.indexOf('id="workbench-page-surface"'));
+    assert.equal((surface.match(/class="?workbench-island\b/g) || []).length, 1, 'Summary is one card');
+    assert.deepEqual(Array.from(surface.matchAll(/<h2>([^<]*)<\/h2>/g), (match) => match[1]), ['Repository', 'Size']);
+    assert.match(surface, /<dt>Statements<\/dt><dd>43,685<\/dd>/);
+    assert.match(surface, /<dt>Named graphs<\/dt><dd>2<\/dd>/);
+    assert.match(surface, /<dt>ID<\/dt><dd><code>bsbm<\/code><\/dd>/);
+    assert.match(surface, /<dt>Location<\/dt><dd><code>http:\/\/127\.0\.0\.1:18090\/rdf4j-server\/repositories\/bsbm<\/code><\/dd>/);
+    assert.ok(locales.length > 0 && locales.every((locale) => locale === 'en-US'), 'counts use the view locale');
+    assert.match(surface, /<summary>Configuration \(Turtle\)/);
+    assert.doesNotMatch(surface, /Config Model/);
 });
 
 test('Remove and Clear warn with a warning callout', () => {

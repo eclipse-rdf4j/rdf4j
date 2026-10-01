@@ -328,10 +328,14 @@ for (const viewId of ['contexts', 'types', 'explore', 'export']) {
         model.vars = ['value'];
         workbench.views.render(mount, model, context, runtime());
         const links = exploreLinks(mount.template);
-        assert.equal(links.length, terms.length);
+        // Graphs rows also carry an Explore action next to the linked name (plan task M5.2).
+        const perRow = viewId === 'contexts' ? 2 : 1;
+        assert.equal(links.length, terms.length * perRow);
         terms.forEach(([term, expected], index) => {
-            const decoded = new URL(links[index], 'https://workbench.test/').searchParams.get('resource');
-            assert.equal(decoded, expected, `${viewId} must preserve ${term.kind} RDF syntax`);
+            for (let copy = 0; copy < perRow; copy++) {
+                const decoded = new URL(links[index * perRow + copy], 'https://workbench.test/').searchParams.get('resource');
+                assert.equal(decoded, expected, `${viewId} must preserve ${term.kind} RDF syntax`);
+            }
         });
     });
 }
@@ -550,9 +554,10 @@ for (const viewId of ['repositories', 'contexts']) {
         assert.ok(body, 'the table body must remain an independently owned row root');
         const markup = flatten(body.template);
         if (viewId === 'repositories') {
-            assert.ok(markup.includes(`href=../repository-${model.rowStart}/summary`));
-            assert.match(markup, /workbench-status-icon--readable/);
-            assert.match(markup, /workbench-status-icon--negative/);
+            assert.ok(markup.includes(`href="/rdf4j-workbench/repositories/repository-${model.rowStart}/summary"`));
+            // Access is text (M5.3): only the access that applies is listed.
+            assert.match(markup, /<span class="workbench-badge">Read<\/span>/);
+            assert.doesNotMatch(markup, />Write</);
         } else {
             const resource = `<urn:context:${model.rowStart}>`;
             assert.ok(markup.includes('explore?resource=' + encodeURIComponent(resource)),

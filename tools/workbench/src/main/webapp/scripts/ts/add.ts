@@ -9,10 +9,6 @@ module workbench {
 
     export module add {
 
-        export function handleContextOverride() {
-            $('#context').prop('disabled', !$('#overrideContext').prop('checked'));
-        }
-
         export function enabledInput(selected: string) {
             var istext = (selected == 'text');
             $('#add-source-file-panel').prop('hidden', selected != 'file');
@@ -56,5 +52,4 @@ module workbench {
 workbench.addLoad(function addPageLoaded() {
     var selected = $("input[name='source']:checked").val() || 'file';
     workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
-    workbench.add.handleContextOverride();
 });

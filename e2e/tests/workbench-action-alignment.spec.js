@@ -531,12 +531,13 @@ test('saved query fullscreen enters and exits on its own result target', async (
 	await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('query-results__fullscreen')))
 		.toBe(true);
 	const savedSourceToggle = row.locator('.saved-query-toggle');
-	await expect(savedSourceToggle).toHaveAttribute('value', 'Show');
+	// The toggle is a disclosure button whose text says what it does next (plan task M5.6).
+	await expect(savedSourceToggle).toHaveText('Show details');
 	await savedSourceToggle.click();
-	await expect(savedSourceToggle).toHaveAttribute('value', 'Hide');
+	await expect(savedSourceToggle).toHaveText('Hide details');
 	await expect(results).toBeVisible();
 	await savedSourceToggle.click();
-	await expect(savedSourceToggle).toHaveAttribute('value', 'Show');
+	await expect(savedSourceToggle).toHaveText('Show details');
 	await expect(results).toBeVisible();
 	for (const width of [1280, 390, 320]) {
 		await page.setViewportSize({ width, height: 1000 });

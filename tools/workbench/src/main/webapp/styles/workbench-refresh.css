@@ -633,6 +633,79 @@ body.workbench-body .add-source-panel[hidden] {
 	display: none !important;
 }
 
+/* Add RDF drop zone (M5.5, mockup 10): the file input is visually hidden inside it. */
+body.workbench-body .add-drop-zone {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: 100%;
+	min-height: 88px;
+	padding: 16px;
+	border: 1px dashed var(--workbench-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	text-align: center;
+	cursor: pointer;
+}
+
+body.workbench-body .add-drop-zone.add-drop-zone--active {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-selected);
+}
+
+body.workbench-body .add-drop-zone:has(input:focus-visible) {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+body.workbench-body .add-drop-zone__prompt {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+body.workbench-body .add-drop-zone label.add-drop-zone__choose {
+	display: inline;
+	margin: 0;
+	color: var(--workbench-primary);
+	font-size: inherit;
+	font-weight: inherit;
+	cursor: pointer;
+}
+
+body.workbench-body .add-drop-zone label.add-drop-zone__choose:hover {
+	text-decoration: underline;
+}
+
+body.workbench-body .add-drop-zone__formats {
+	color: var(--workbench-muted);
+	font-size: 12px;
+}
+
+body.workbench-body .add-drop-zone__file {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .add-drop-zone__file:empty {
+	display: none;
+}
+
+body.workbench-body .add-source-fields + .add-target-fields {
+	margin-top: var(--workbench-form-gap);
+}
+
+body.workbench-body #export-results > h2 {
+	margin: 0 0 12px;
+}
+
 body.workbench-body .workbench-action,
 body.query-result-embedded-body .workbench-action {
 	box-sizing: border-box;
@@ -1108,6 +1181,12 @@ body.workbench-body .workbench-status-icon--negative {
 
 body.workbench-body .workbench-responsive-records {
 	min-width: 0;
+}
+
+/* Windowed route lists reuse their row elements for other rows as the window moves, so no row may be the
+ * browser's scroll anchor: anchoring would hold a reused row in place and push the page toward the end. */
+body.workbench-body :is(table[data-workbench-row-table="true"], [data-workbench-row-list="true"]) {
+	overflow-anchor: none;
 }
 
 /* Empty states sit directly in their card: no inset box (M1.5, mockup 02). */
@@ -2218,7 +2297,7 @@ body.workbench-body #workbench-information > section > h2 {
 	font-weight: 600;
 }
 
-body.workbench-body .workbench-page-surface:has(.workbench-summary-location) {
+body.workbench-body .workbench-page-surface:has(.workbench-summary) {
 	padding: 0;
 	border: 0;
 	background: transparent;
@@ -2408,16 +2487,33 @@ body.query-result-embedded-body .query-result-embedded :is(.query-result-check, 
 	margin: 0;
 }
 
-body.workbench-body .workbench-source-tabs {
+/* The source choice is a segmented control without a fieldset box (M5.5, mockup 10); the page-surface fieldset
+ * rule would otherwise draw one. */
+body.workbench-body .workbench-page-surface fieldset.workbench-source-tabs {
 	box-sizing: border-box;
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: var(--workbench-control-gap);
-	width: min(100%, 760px);
+	gap: 0;
+	width: 100%;
 	margin: 0 0 var(--workbench-space-subgroup);
 	padding: 0;
 	border: 0;
+	border-radius: 0;
 	background: transparent;
+}
+
+body.workbench-body .workbench-source-tabs label + label {
+	border-left-width: 0;
+}
+
+body.workbench-body .workbench-source-tabs label:not(:last-of-type) {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+body.workbench-body .workbench-source-tabs label:not(:first-of-type) {
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
 }
 
 body.workbench-body .workbench-source-tabs legend {
@@ -2443,14 +2539,16 @@ body.workbench-body .workbench-source-tabs label {
 	border-radius: var(--workbench-control-radius);
 	background: var(--workbench-surface);
 	color: var(--workbench-nav);
-	font-weight: 600;
+	font-weight: 500;
 	cursor: pointer;
 }
 
+/* Selected segment (M5.5, mockup 10): selected fill, a 3px primary underline and ink text. */
 body.workbench-body .workbench-source-tabs label:has(input:checked) {
-	border-color: var(--workbench-teal);
-	background: var(--workbench-inset);
-	color: var(--workbench-teal-dark);
+	background: var(--workbench-selected);
+	box-shadow: inset 0 -3px 0 var(--workbench-primary);
+	color: var(--workbench-ink);
+	font-weight: 600;
 }
 
 body.workbench-body .workbench-source-tabs label:has(input:focus-visible) {
@@ -2499,6 +2597,18 @@ body.workbench-body .workbench-page-surface .WARN {
 	color: var(--workbench-nav);
 	font-weight: 600;
 	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-summary > h2 {
+	margin: 0 0 8px;
+}
+
+body.workbench-body .workbench-summary > .workbench-kv + h2 {
+	margin-top: var(--workbench-space-section);
+}
+
+body.workbench-body .workbench-summary > .workbench-summary-config {
+	margin-top: var(--workbench-space-section);
 }
 
 body.workbench-body .workbench-page-surface .workbench-summary-config pre {
@@ -2700,6 +2810,176 @@ body.workbench-body .explore-group__title {
 	align-items: baseline;
 	gap: 8px;
 	margin: 0 0 8px;
+}
+
+/* Types and Graphs (M5.2, mockup 06): a card header with title, count and filter; counts are right-aligned. */
+body.workbench-body .workbench-browse-card__header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 0 0 16px;
+}
+
+body.workbench-body .workbench-browse-card__header > h2 {
+	margin: 0;
+}
+
+/* The count's auto margin pushes the filter or the Create action to the end of the header. */
+body.workbench-body .workbench-browse-card__count {
+	margin-right: auto;
+	min-width: 1.5em;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.5;
+	text-align: center;
+}
+
+body.workbench-body .workbench-browse-card__filter {
+	flex: 0 1 280px;
+	min-width: 0;
+	margin: 0;
+}
+
+body.workbench-body .workbench-browse-card table.data td {
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-browse-card table.data :is(th.workbench-count-column, td.workbench-count-cell) {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-count-cell[aria-busy="true"] {
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-browse-card table.data th[aria-sort="descending"]::after {
+	content: "\25BE";
+	margin-left: 4px;
+	font-size: 10px;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-row-actions {
+	width: 1%;
+	padding-top: 4px;
+	padding-bottom: 4px;
+	text-align: right;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-row-actions > .workbench-action + .workbench-action {
+	margin-left: 4px;
+}
+
+/* Repository list (M5.3, mockup 12): the whole row opens the repository; actions live in a small menu. */
+body.workbench-body .workbench-action-icon--more {
+	stroke-width: 3;
+}
+
+body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] {
+	cursor: pointer;
+}
+
+body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index]:hover > td {
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-repository-link {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 999px;
+	color: var(--workbench-success);
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-access-none {
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-row-menu {
+	position: relative;
+	display: inline-block;
+}
+
+body.workbench-body .workbench-popover.workbench-row-menu__panel {
+	width: auto;
+	min-width: 180px;
+	padding: 4px;
+	text-align: left;
+	cursor: auto;
+}
+
+body.workbench-body .workbench-popover__menu {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .workbench-popover__menu a,
+body.workbench-body .workbench-popover__menu a:link,
+body.workbench-body .workbench-popover__menu a:visited {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-popover__menu a:hover,
+body.workbench-body .workbench-popover__menu a:focus-visible {
+	background: var(--workbench-inset);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-popover__menu a.workbench-popover__danger {
+	color: var(--workbench-danger);
+}
+
+/* Record layout on phones: the filter takes the full width and the row actions sit on their own line. */
+@media (max-width: 600px) {
+	body.workbench-body .workbench-browse-card__filter {
+		flex-basis: 100%;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-count-cell {
+		text-align: left;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 4px;
+		width: 100%;
+		padding: 4px 0 0;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions::before {
+		display: none;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions:empty {
+		display: none;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions > .workbench-action + .workbench-action {
+		margin-left: 0;
+	}
 }
 
 body.workbench-body .explore-group__count {
@@ -3243,57 +3523,15 @@ body.workbench-body .saved-query-row > .query-results:empty {
 	box-shadow: none;
 }
 
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] {
-	display: block;
+body.workbench-body .saved-query-row > .saved-query-metadata {
 	box-sizing: border-box;
 	width: 100%;
 	max-width: 100%;
 	margin-top: var(--workbench-space-subgroup);
-	border: 0;
-	table-layout: fixed;
 }
 
 body.workbench-body .saved-query-row > .yasqe {
 	margin-block-start: var(--workbench-space-subgroup);
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] tbody {
-	display: block;
-	width: 100%;
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] tr {
-	box-sizing: border-box;
-	display: grid;
-	grid-template-columns: minmax(10rem, 160px) minmax(0, 1fr);
-	width: 100%;
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] th,
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] td {
-	min-width: 0;
-	padding: 8px 10px;
-	border: 0;
-	border-bottom: 1px solid var(--workbench-soft-rule);
-	background: transparent;
-	text-align: left;
-	vertical-align: top;
-	overflow-wrap: anywhere;
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] th {
-	color: var(--workbench-muted);
-	font-weight: 600;
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] th:not(:last-of-type),
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:not(:last-of-type) {
-	border-bottom: 1px solid var(--workbench-soft-rule);
-}
-
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] th:last-of-type,
-body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-type {
-	border-bottom: 0;
 }
 
 @media (max-width: 900px) {
@@ -3610,55 +3848,6 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 	body.workbench-body .saved-query-row > table:first-child input[type="button"],
 	body.workbench-body .saved-query-row > table:first-child input[type="submit"] {
 	min-height: calc(var(--workbench-touch-height) - 2px);
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] {
-	display: block;
-	box-sizing: border-box;
-	width: 100%;
-	max-width: 100%;
-	overflow: visible;
-	table-layout: fixed;
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] tbody,
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] tr {
-	box-sizing: border-box;
-	width: 100%;
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] tbody {
-		display: block;
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] tr {
-		display: grid;
-		grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] th,
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] td {
-	display: block;
-	box-sizing: border-box;
-	width: auto;
-	min-width: 0;
-	padding: 8px;
-	overflow-wrap: anywhere;
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] th {
-		background: transparent;
-		color: var(--workbench-muted);
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] th:not(:last-of-type),
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:not(:last-of-type) {
-		border-bottom: 1px solid var(--workbench-soft-rule);
-	}
-
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] th:last-of-type,
-	body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-type {
-		border-bottom: 0;
 	}
 
 	body.workbench-body .workbench-page-surface details.workbench-options > summary,

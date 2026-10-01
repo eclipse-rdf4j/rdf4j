@@ -55,16 +55,15 @@ module workbench {
         }
         
         
+        /** Show or hide a saved query's details; the button says which one it will do next. */
         export function toggle(urn: string) {
             toggleElement(urn, '-metadata');
             toggleYasqe(urn);
-            
+
             var toggle = document.getElementById(urn + '-toggle');
-            var attr = 'value';
-            var show = 'Show';
-            var text = toggle.getAttribute(attr) == show ? 'Hide' : show;
-            toggle.setAttribute(attr, text);
-            
+            var expanded = toggle.getAttribute('aria-expanded') != 'true';
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            toggle.textContent = expanded ? 'Hide details' : 'Show details';
         }
     }
 }

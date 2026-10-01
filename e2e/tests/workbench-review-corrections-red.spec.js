@@ -164,11 +164,13 @@ test('workbench action and data typography uses the shared readable scale', asyn
 	expect(actionFont).toBeGreaterThanOrEqual(14);
 });
 
-test('repository status cells use accessible outline icons', async ({ page }) => {
+test('repository access cells use text badges', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 900 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#repositories-results table.data tbody tr')).not.toHaveCount(0);
-	await expect(page.locator('#repositories-results .workbench-status-icon')).not.toHaveCount(0);
+	// Plan task M5.3 replaced the eye and pencil icons (the pencil read as "Edit") with "Read" and "Write" badges.
+	await expect(page.locator('#repositories-results .workbench-badge')).not.toHaveCount(0);
+	await expect(page.locator('#repositories-results .workbench-status-icon')).toHaveCount(0);
 	await expect(page.locator('#repositories-results img[src*="affirmative"], #repositories-results img[src*="negative"]')).toHaveCount(0);
 });
 
@@ -305,7 +307,7 @@ test('saved query details remain readable as labelled pairs on mobile', async ({
 	const toggle = page.locator('.saved-query-toggle').first();
 	await toggle.waitFor({ state: 'visible' });
 	await toggle.click();
-	const metadata = page.locator('.saved-query-row table[id$="-metadata"]').first();
+	const metadata = page.locator('.saved-query-row [id$="-metadata"]').first();
 	await expect(metadata).toBeVisible();
 	const geometry = await metadata.evaluate(element => {
 		const rect = element.getBoundingClientRect();
@@ -313,8 +315,8 @@ test('saved query details remain readable as labelled pairs on mobile', async ({
 			width: rect.width,
 			clientWidth: element.clientWidth,
 			scrollWidth: element.scrollWidth,
-			labels: Array.from(element.querySelectorAll('th')).map(cell => cell.getBoundingClientRect().width),
-			values: Array.from(element.querySelectorAll('td')).map(cell => cell.getBoundingClientRect().width)
+			labels: Array.from(element.querySelectorAll('dt')).map(cell => cell.getBoundingClientRect().width),
+			values: Array.from(element.querySelectorAll('dd')).map(cell => cell.getBoundingClientRect().width)
 		};
 	});
 	expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);

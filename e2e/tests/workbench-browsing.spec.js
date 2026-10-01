@@ -17,7 +17,8 @@ const {
 	deleteRepository,
 	repositoryPageUrl,
 	serverBaseUrl,
-	uniqueRepositoryId
+	uniqueRepositoryId,
+	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
 // Milestone M5 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: readable browsing pages.
@@ -27,7 +28,7 @@ const PRODUCT1 = '<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/data
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async ({ request }) => {
-	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID);
+	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID, { graphs: ['bsbm', 'spl'] });
 });
 
 test.afterAll(async ({ request }) => {
@@ -47,4 +48,230 @@ test('Explore shows the resource card and groups rows by the role of the resourc
 	await page.locator('#explore-result-options-toggle').click();
 	await page.locator('label[for="explore-show-datatypes"]').click();
 	await expect.poll(() => dateCell.innerText()).not.toContain('xsd:date');
+});
+
+/** The numbers in a column of count cells, once none of them is pending. */
+async function settledCounts(cells) {
+	await expect.poll(async () => {
+		const texts = await cells.allInnerTexts();
+		return texts.length > 0 && texts.every((text) => /^\d[\d,]*$/.test(text.trim()));
+	}).toBe(true);
+	return (await cells.allInnerTexts()).map((text) => Number(text.replace(/,/g, '')));
+}
+
+test('Types are sorted by instance count and filtered from the card header', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'domcontentloaded' });
+	const card = page.locator('#types-results');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Types');
+	await expect(card.locator('thead th')).toHaveText(['Type', 'Instances']);
+	const rows = card.locator('tbody tr[data-workbench-row-index]');
+	const counts = await settledCounts(rows.locator('td.workbench-count-cell'));
+	expect(counts.length).toBeGreaterThan(2);
+	expect(counts).toEqual([...counts].sort((left, right) => right - left));
+	await expect(card.locator('thead th').nth(1)).toHaveAttribute('aria-sort', 'descending');
+	await expect(rows.first().locator('td').first()).toHaveText(/^[\w-]+:[\w-]+$/);
+
+	await card.locator('#types-filter').fill('PRODUCTTYPE');
+	await card.locator('#types-filter').press('Enter');
+	await expect(page).toHaveURL(/[?&]filter=PRODUCTTYPE/);
+	await expect(page.locator('#types-filter')).toHaveValue('PRODUCTTYPE');
+	const hrefs = await page.locator('#types-results tbody tr[data-workbench-row-index] td:first-child a')
+		.evaluateAll((links) => links.map((link) => decodeURIComponent(link.getAttribute('href'))));
+	expect(hrefs.length).toBeGreaterThan(0);
+	for (const href of hrefs) {
+		expect(href.toLowerCase()).toContain('producttype');
+	}
+});
+
+test('Counts that arrive later update the Types page in place', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	let releaseCounts;
+	const countsHeld = new Promise((resolve) => { releaseCounts = resolve; });
+	await page.route(/\/types\?(?:.*&)?counts=true/, async (route) => {
+		await countsHeld;
+		await route.continue();
+	});
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'domcontentloaded' });
+	const firstCount = page.locator('#types-results tbody td.workbench-count-cell').first();
+	await expect(firstCount).toHaveText('…');
+	await expect(page.locator('#noscript-message')).toBeHidden();
+	const filter = page.locator('#types-filter');
+	await filter.fill('offer');
+	const typedInto = await filter.elementHandle();
+	releaseCounts();
+	await expect(firstCount).toHaveText(/^\d[\d,]*$/);
+	await expect(filter).toHaveValue('offer');
+	expect(await typedInto.evaluate((element) => element.isConnected), 'the filter field is the one typed into').toBe(true);
+	await expect(page.locator('#noscript-message')).toBeHidden();
+});
+
+test('A long windowed list scrolls by the distance the wheel moves', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'networkidle' });
+	await expect(page.locator('#types-results tbody td.workbench-count-cell').first()).toHaveText(/^\d/);
+	const positions = [];
+	for (let step = 1; step <= 3; step++) {
+		await page.mouse.wheel(0, 400);
+		await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(0);
+		await page.waitForTimeout(300);
+		positions.push(await page.evaluate(() => Math.round(window.scrollY)));
+	}
+	expect(positions.map((position) => Math.round(position / 100) * 100)).toEqual([400, 800, 1200]);
+});
+
+test('Graphs list statements per graph, the default graph last, and Explore and Clear actions', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'contexts'), { waitUntil: 'domcontentloaded' });
+	await expect(page.locator('#title_heading')).toHaveText('Graphs');
+	const card = page.locator('#contexts-results');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Graphs');
+	await expect(card.locator('.workbench-browse-card__count')).toHaveText('2');
+	await expect(card.locator('thead th')).toHaveText(['Graph', 'Statements', 'Actions']);
+	const rows = card.locator('tbody tr:not(.workbench-virtual-spacer)');
+	await expect(rows.locator('td:first-child')).toHaveText(
+		['http://example.org/graph/bsbm', 'http://example.org/graph/spl', 'Default graph']);
+	const counts = await settledCounts(rows.locator('td.workbench-count-cell'));
+	expect(counts[0]).toBeGreaterThan(counts[1]);
+	expect(counts[2]).toBe(0);
+	const bsbm = encodeURIComponent('<http://example.org/graph/bsbm>');
+	await expect(rows.first().getByRole('link', { name: 'Explore http://example.org/graph/bsbm' }))
+		.toHaveAttribute('href', `explore?resource=${bsbm}`);
+	await expect(rows.first().getByRole('link', { name: 'Clear graph http://example.org/graph/bsbm…' }))
+		.toHaveAttribute('href', `clear?context=${bsbm}`);
+	await expect(rows.last().getByRole('link')).toHaveCount(0);
+});
+
+/** The repository list row of a repository, scrolling the windowed list until it is rendered. */
+async function repositoryRow(page, repositoryId) {
+	const row = page.locator('#repositories-results tbody tr')
+		.filter({ has: page.locator('a.workbench-repository-link', { hasText: new RegExp(`^${repositoryId}$`) }) });
+	for (let attempt = 0; attempt < 40 && !(await row.count()); attempt++) {
+		await page.mouse.wheel(0, 600);
+		await page.waitForTimeout(100);
+	}
+	// Scrolling re-renders the row window, which reuses row elements; act on the row once the window has settled.
+	await row.scrollIntoViewIfNeeded();
+	await page.waitForTimeout(300);
+	return row;
+}
+
+test('Repository rows open their summary, list access as text and offer actions', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
+	const card = page.locator('#repositories-results');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Repositories');
+	await expect(card.getByRole('link', { name: 'Create' })).toHaveAttribute('href', /\/repositories\/NONE\/create$/);
+	await expect(card.locator('thead th')).toHaveText(['Id', 'Title', 'Access', 'Actions']);
+	const row = await repositoryRow(page, REPOSITORY_ID);
+	await expect(row.locator('td').nth(1)).toHaveText('Workbench seeded fixture');
+	await expect(row.locator('td').nth(2)).toHaveText('Read Write');
+	await expect(row.locator('td').nth(1)).toHaveAttribute('title', new RegExp(`/repositories/${REPOSITORY_ID}$`));
+
+	await row.getByRole('button', { name: `Actions for ${REPOSITORY_ID}` }).click();
+	const menu = row.locator('.workbench-row-menu__panel');
+	await expect(menu).toBeVisible();
+	await expect(menu.getByRole('link')).toHaveText(['Query', 'Explore', 'Summary', 'Delete…']);
+	await expect(menu.getByRole('link', { name: 'Delete…' }))
+		.toHaveAttribute('href', new RegExp(`/repositories/NONE/delete\\?id=${REPOSITORY_ID}$`));
+	await page.keyboard.press('Escape');
+	await expect(menu).toBeHidden();
+
+	await row.locator('td').nth(1).click();
+	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary$`));
+});
+
+test('Repository records on phones use the labels Id, Title and Access', async ({ page }) => {
+	// The actions cell also carries its column label; its label is not shown in the record layout.
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
+	const row = await repositoryRow(page, REPOSITORY_ID);
+	const labels = await row.locator('td[data-label]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-label')));
+	expect(labels).toEqual(['Id', 'Title', 'Access', 'Actions']);
+});
+
+/** The number of statements in the test repository, read through the server's REST API. */
+async function repositorySize(request) {
+	const response = await request.get(`${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}/size`);
+	return Number(await response.text());
+}
+
+test('Add RDF marks the chosen source and uploads a dropped file into the target graph field\'s default', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'add'), { waitUntil: 'domcontentloaded' });
+	const selected = page.locator('#add-source-tabs label:has(input:checked)');
+	await expect(selected).toHaveText('File');
+	const colors = await selected.evaluate((label) => {
+		const probe = document.createElement('span');
+		probe.style.backgroundColor = 'var(--workbench-selected)';
+		label.appendChild(probe);
+		const token = getComputedStyle(probe).backgroundColor;
+		probe.remove();
+		return { background: getComputedStyle(label).backgroundColor, token };
+	});
+	expect(colors.background).toBe(colors.token);
+	await expect(page.locator('#Content-Type option[value="autodetect"]')).toHaveText('Detect from file name');
+	await expect(page.locator('label[for="context"]')).toHaveText('Target graph');
+	await expect(page.locator('#context')).toBeEnabled();
+	await expect(page.locator('#context')).toHaveAttribute('placeholder', 'Default graph');
+
+	const before = await repositorySize(request);
+	const dataTransfer = await page.evaluateHandle(() => {
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(['<urn:drop:s> <urn:drop:p> "dropped" .\n'], 'dropped.ttl', { type: 'text/turtle' }));
+		return transfer;
+	});
+	await page.locator('#add-drop-zone').dispatchEvent('dragover', { dataTransfer });
+	await expect(page.locator('#add-drop-zone')).toHaveClass(/add-drop-zone--active/);
+	await page.locator('#add-drop-zone').dispatchEvent('drop', { dataTransfer });
+	await expect(page.locator('#add-drop-zone')).not.toHaveClass(/add-drop-zone--active/);
+	expect(await page.locator('#file').evaluate((input) => input.files.length)).toBe(1);
+	await expect(page.locator('#add-drop-zone')).toContainText('dropped.ttl');
+	await page.locator('#add-upload-actions input[type="submit"]').click();
+	await expect(page).toHaveURL(/\/summary$/);
+	expect(await repositorySize(request)).toBe(before + 1);
+});
+
+test('Export states its timeout in seconds with a readable duration and titles the preview', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'domcontentloaded' });
+	await expect(page.locator('label[for="timeout"]')).toHaveText('Timeout');
+	await expect(page.locator('#timeout')).toHaveValue('43200');
+	await expect(page.locator('#export-timeout-unit')).toHaveText('seconds');
+	await expect(page.locator('#export-timeout-help')).toHaveText('12 hours');
+	await page.locator('#timeout').fill('90');
+	await expect(page.locator('#export-timeout-help')).toHaveText('1 minute 30 seconds');
+	await page.locator('#timeout').fill('0');
+	await expect(page.locator('#export-timeout-help')).toHaveText('No limit');
+	await expect(page.locator('#export-results h2')).toHaveText('Statement preview');
+});
+
+test('Saved query details open from a disclosure button and read Yes or No', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const queryName = `browsing-details-${Date.now()}`;
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'), { waitUntil: 'domcontentloaded' });
+	const editor = page.locator('.CodeMirror').first();
+	await editor.waitFor();
+	await editor.evaluate((element) => element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o } LIMIT 1'));
+	await page.locator('#save-query-toggle').press('Enter');
+	await page.locator('#query-name').fill(queryName);
+	await page.evaluate(() => window.workbench.query.handleNameChange());
+	await page.locator('#save').click();
+	await expect(page.locator('#save-feedback')).toContainText('Query saved.');
+
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'saved-queries'), { waitUntil: 'domcontentloaded' });
+	const row = page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) });
+	const toggle = row.locator('.saved-query-toggle');
+	await expect(toggle).toHaveText('Show details');
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await toggle.click();
+	await expect(toggle).toHaveText('Hide details');
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	const details = row.locator('[id$="-metadata"]');
+	await expect(details).toBeVisible();
+	await expect(details.locator('dt')).toHaveText(['Include inferred statements', 'Shared']);
+	await expect(details.locator('dd').first()).toHaveText(/^(Yes|No)$/);
+	await toggle.click();
+	await expect(toggle).toHaveText('Show details');
+	await expect(details).toBeHidden();
 });

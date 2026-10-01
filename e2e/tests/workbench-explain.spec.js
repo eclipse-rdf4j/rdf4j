@@ -34,7 +34,7 @@ async function createLmdbRepo(page) {
     await page.getByText('Next').click();
     await page.waitForSelector('#create');
     await page.locator('#create').click();
-    await expect(page.getByText('Repository Location')).toHaveText('Repository Location');
+    await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
 }
 
 async function insertChainData(page) {

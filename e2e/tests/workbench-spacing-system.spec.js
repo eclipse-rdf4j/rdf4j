@@ -280,7 +280,8 @@ test('S4 form subgroups and actions have one spacing owner', async ({ page }, in
 	for (const variant of VARIANTS) {
 		for (const [route, content, owner, trigger, actions] of [
 			['NONE/server', '#server-form > .workbench-form-grid', '#server-auth', '#server-auth-toggle', '#server-change-actions'],
-			['add', '.add-source-fields', '#add-import-settings', '#add-import-settings-toggle', '#add-upload-actions'],
+			// Add RDF ends its fields with the Data format and Target graph row (plan task M5.5).
+			['add', '.add-target-fields', '#add-import-settings', '#add-import-settings-toggle', '#add-upload-actions'],
 			['export', '#export-form > .workbench-form-grid', '#export-result-options', '#export-result-options-toggle', '#export-form > .workbench-form-actions']
 		]) {
 			await open(page, route, variant);
@@ -764,7 +765,7 @@ test('S5 compact JSON branches match leaf spacers and retain keyboard focus', as
 test('S6 saved metadata is a separate subgroup from source', async ({ page, request }, info) => {
 	for (const variant of ROW_VARIANTS) {
 		const card = await saveOwnedQuery(page, 'metadata', variant);
-		const metadata = card.locator('table[id$="-metadata"]'), source = card.locator('.CodeMirror');
+		const metadata = card.locator('[id$="-metadata"]'), source = card.locator('.CodeMirror');
 		const measurements = [];
 		for (const state of ['show', 'reopen', 'executed']) {
 			await card.locator('.saved-query-toggle').scrollIntoViewIfNeeded(); await settled(page);

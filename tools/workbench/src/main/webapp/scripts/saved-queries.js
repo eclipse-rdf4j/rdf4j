@@ -51,14 +51,14 @@ var workbench;
                 yasqeInstances[urn].refresh();
             }
         }
+        /** Show or hide a saved query's details; the button says which one it will do next. */
         function toggle(urn) {
             toggleElement(urn, '-metadata');
             toggleYasqe(urn);
             var toggle = document.getElementById(urn + '-toggle');
-            var attr = 'value';
-            var show = 'Show';
-            var text = toggle.getAttribute(attr) == show ? 'Hide' : show;
-            toggle.setAttribute(attr, text);
+            var expanded = toggle.getAttribute('aria-expanded') != 'true';
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            toggle.textContent = expanded ? 'Hide details' : 'Show details';
         }
         savedQueries.toggle = toggle;
     })(savedQueries = workbench.savedQueries || (workbench.savedQueries = {}));

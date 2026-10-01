@@ -29,8 +29,8 @@ async function createRepo(page) {
     await page.getByText('Next').click();
 
     await page.getByText('Create').click();
-    let titleHeading = await page.getByText('Repository Location');
-    await expect(titleHeading).toHaveText('Repository Location')
+    // The Summary card's first section is "Repository" (plan task M5.4).
+    await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
 
 }
 
@@ -123,8 +123,8 @@ test('Create repo', async ({page}) => {
     await page.getByText('Next').click();
 
     await page.getByText('Create').click();
-    let titleHeading = await page.getByText('Repository Location');
-    await expect(titleHeading).toHaveText('Repository Location')
+    // The Summary card's first section is "Repository" (plan task M5.4).
+    await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
 
 });
 

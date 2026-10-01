@@ -79,9 +79,9 @@ test('saved queries delete permissions and toggle behavior cover both branches',
         id: 'urn:query-metadata',
         style: { display: 'none' }
     });
-    const toggle = harness.registerElement('input', {
+    const toggle = harness.registerElement('button', {
         id: 'urn:query-toggle',
-        attributes: { value: 'Show' }
+        attributes: { 'aria-expanded': 'false' }
     });
     const textarea = harness.registerElement('textarea', {
         id: 'urn:query-text',
@@ -123,12 +123,14 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(metadata.style.display, '');
     assert.equal(textarea.value, 'SELECT * WHERE {?s ?p ?o}');
     assert.equal(yasqe.state.instance.refreshCount, 1);
-    assert.equal(toggle.getAttribute('value'), 'Hide');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(toggle.textContent, 'Hide details');
 
     harness.context.workbench.savedQueries.toggle('urn:query');
     assert.equal(textarea.style.display, 'none');
     assert.equal(yasqe.state.instance.closed, true);
-    assert.equal(toggle.getAttribute('value'), 'Show');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(toggle.textContent, 'Show details');
 });
 
 test('saved query controls bind inert data attributes to static handlers', () => {
@@ -142,12 +144,12 @@ test('saved query controls bind inert data attributes to static handlers', () =>
         id: 'urn:query-metadata',
         style: { display: 'none' }
     });
-    const toggle = harness.registerElement('input', {
+    const toggle = harness.registerElement('button', {
         id: 'urn:query-toggle',
         className: 'saved-query-toggle',
         attributes: {
             'data-query-urn': 'urn:query',
-            value: 'Show'
+            'aria-expanded': 'false'
         }
     });
     const textarea = harness.registerElement('textarea', {
@@ -180,7 +182,7 @@ test('saved query controls bind inert data attributes to static handlers', () =>
 
     toggle.click();
     assert.equal(metadata.style.display, '');
-    assert.equal(toggle.getAttribute('value'), 'Hide');
+    assert.equal(toggle.textContent, 'Hide details');
     assert.equal(yasqe.state.instance.refreshCount, 1);
 });
 

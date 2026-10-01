@@ -49,7 +49,8 @@ module workbench {
         menu: 'M4 6h16M4 12h16M4 18h16',
         user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
         search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
-        sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0'
+        sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
+        more: 'M6 12h.01M12 12h.01M18 12h.01'
     };
 
     function actionIconPath(name: string): string {
@@ -199,7 +200,7 @@ module workbench {
             create: 'New Repository',
             delete: 'Delete Repository',
             namespaces: 'Namespaces In Repository',
-            contexts: 'Contexts In Repository',
+            contexts: 'Graphs',
             types: 'Types In Repository',
             explore: 'Explore',
             query: 'Query Repository',
@@ -778,7 +779,7 @@ module workbench {
         function table(runtime: LitRuntime, model: PageModel, context: ViewContext,
                        options?: any): any {
             const h = runtime.html;
-            const columns = model.vars || [];
+            const columns = options && options.columns || model.vars || [];
             const allRows = records(model);
             const total = rowCount(model);
             const emptyText = options && options.emptyText ? options.emptyText : 'No results to display.';
@@ -789,7 +790,8 @@ module workbench {
                     records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody);
             }
             return h`<table class="data" data-workbench-row-table=${model.rowStore && total ? 'true' : runtime.nothing}>
-                ${columns.length ? h`<thead><tr>${columns.map((name: string) => h`<th scope="col">${columnLabel(name, options)}</th>`)}</tr></thead>` : ''}
+                ${columns.length ? h`<thead><tr>${columns.map((name: string) => options && options.header
+                    ? options.header(name) : h`<th scope="col">${columnLabel(name, options)}</th>`)}</tr></thead>` : ''}
                 ${regions ? regions.tableBody
                     : h`<tbody>${tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)}</tbody>`}
             </table>`;
@@ -798,7 +800,7 @@ module workbench {
         function tableRows(runtime: LitRuntime, model: PageModel, context: ViewContext,
                            options: any, allRows: any[], start: number, total: number, emptyText: string): any {
             const h = runtime.html;
-            const columns = model.vars || [];
+            const columns = options && options.columns || model.vars || [];
             const rowHeightValue = rowHeight(model);
             if (!total && !allRows.length) {
                 return h`<tr class="workbench-empty-row"><td role="status" colspan=${Math.max(1, columns.length)}>${emptyText}</td></tr>`;
@@ -813,7 +815,7 @@ module workbench {
             return h`${before ? h`<tr class="workbench-virtual-spacer" aria-hidden="true"><td colspan=${Math.max(1, columns.length)}
                     style=${'height:' + before + 'px;padding:0;border:0'}></td></tr>` : ''}
                 ${allRows.map((record: any, relativeIndex: number) => h`<tr data-workbench-row-index=${start + relativeIndex}>
-                    ${columns.map((name: string) => {
+                    ${options && options.cells ? options.cells(record, start + relativeIndex) : columns.map((name: string) => {
                         const cell = record[name];
                         if (options && options.status && (name === 'readable' || name === 'writeable')) {
                             const status = name === 'readable' ? 'readable' : 'writeable';
@@ -830,7 +832,8 @@ module workbench {
                     })}
                 </tr>`)}
                 ${after ? h`<tr class="workbench-virtual-spacer" aria-hidden="true"><td colspan=${Math.max(1, columns.length)}
-                    style=${'height:' + after + 'px;padding:0;border:0'}></td></tr>` : ''}`;
+                    style=${'height:' + after + 'px;padding:0;border:0'}></td></tr>` : ''}
+                ${options && options.trailing ? options.trailing() : ''}`;
         }
 
         function renderTerm(runtime: LitRuntime, value: any, context: ViewContext, link: boolean): any {
@@ -899,26 +902,33 @@ module workbench {
                 : h`<section class=${sectionClass}>${content}</section>`;
         }
 
+        /** Summary (M5.4, mockup 12): one card with Repository and Size sections and the configuration disclosure. */
         function summaryPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const row = firstRecord(model);
             const config = text(meta(model, 'config-model-turtle', 'config-model'));
-            return h`${simpleSection(runtime, 'Repository Location', [
-                    ['Repository ID', field(row, 'id')],
-                    ['Repository title', field(row, 'description')],
-                    ['Repository location', field(row, 'location')],
-                    ['Server', field(row, 'server')]
-                ], 'workbench-summary-location')}
-                ${simpleSection(runtime, 'Repository Size', [
-                    ['Repository size', formatCount(field(row, 'size'), context)],
-                    ['Named contexts', field(row, 'contexts')]
-                ], 'workbench-summary-size')}
-                ${config ? h`<section class="workbench-island workbench-summary-config">
-                    <details id="summary-config-model" class="workbench-options">
-                        <summary>Config Model${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
-                        <pre role="region">${config}</pre>
-                    </details>
-                </section>` : ''}`;
+            const code = (value: any) => {
+                const content = text(value);
+                return content ? h`<code>${content}</code>` : '';
+            };
+            return h`<section id="workbench-summary" class="workbench-island workbench-summary">
+                <h2>Repository</h2>
+                ${keyValueList(runtime, [
+                    ['ID', code(field(row, 'id'))],
+                    ['Title', field(row, 'description')],
+                    ['Location', code(field(row, 'location'))],
+                    ['Server', code(field(row, 'server'))]
+                ])}
+                <h2>Size</h2>
+                ${keyValueList(runtime, [
+                    ['Statements', formatCount(field(row, 'size'), context)],
+                    ['Named graphs', formatCount(field(row, 'contexts'), context)]
+                ])}
+                ${config ? h`<details id="summary-config-model" class="workbench-options workbench-summary-config">
+                    <summary>Configuration (Turtle)${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
+                    <pre role="region">${config}</pre>
+                </details>` : ''}
+            </section>`;
         }
 
         function informationPage(runtime: LitRuntime, model: PageModel): any {
@@ -936,10 +946,53 @@ module workbench {
             </div>`;
         }
 
+        function repositoryUrl(context: ViewContext, id: string, route: string): string {
+            return (context.basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(id) + '/' + route;
+        }
+
+        /** One repository row (M5.3, mockup 12): Id link, Title, Access badges and an actions menu. */
+        function repositoryCells(runtime: LitRuntime, context: ViewContext, record: any, index: number): any {
+            const h = runtime.html;
+            const id = text(record.id);
+            const access = [
+                record.readable === true || text(record.readable) === 'true' ? 'Read' : '',
+                record.writeable === true || text(record.writeable) === 'true' ? 'Write' : ''
+            ].filter((label) => !!label);
+            const menuId = 'repository-actions-' + index;
+            const item = (route: string, iconName: string, label: string) => h`<li><a href="${repositoryUrl(context, id, route)}">${
+                icon(runtime, iconName)}${label}</a></li>`;
+            return h`<td data-label="Id"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
+                <td data-label="Title" title="${text(record.location)}">${text(record.description)}</td>
+                <td data-label="Access"><span class="workbench-badges">${access.length
+                    ? access.map((label, position) => h`${position ? ' ' : ''}<span class="workbench-badge">${label}</span>`)
+                    : h`<span class="workbench-access-none">None</span>`}</span></td>
+                <td class="workbench-row-actions" data-label="Actions"><div class="workbench-row-menu">
+                    <button type="button" class="workbench-action workbench-action--ghost workbench-action--icon"
+                        aria-label="${'Actions for ' + id}" title="Actions" aria-expanded="false" aria-controls="${menuId}"
+                        data-workbench-row-menu="true">${icon(runtime, 'more')}</button>
+                    <div id="${menuId}" class="workbench-popover workbench-popover--end workbench-row-menu__panel" hidden>
+                        <ul class="workbench-popover__menu">
+                            ${item('query', 'query', 'Query')}${item('explore', 'explore', 'Explore')}${item('summary', 'summary', 'Summary')}
+                            <li><a class="workbench-popover__danger" href="${urlFor(context, 'delete') + '?id=' + encodeURIComponent(id)}">${
+                                icon(runtime, 'delete')}Delete…</a></li>
+                        </ul>
+                    </div>
+                </div></td>`;
+        }
+
         function repositoriesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            return h`<section id="repositories-results" class="workbench-island workbench-responsive-records">
-                ${rowCount(model) ? table(runtime, model, context, { status: true, repository: true })
+            const header = (name: string) => name === 'actions'
+                ? h`<th scope="col"><span class="workbench-visually-hidden">Actions</span></th>`
+                : h`<th scope="col">${({ id: 'Id', title: 'Title', access: 'Access' } as any)[name]}</th>`;
+            return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card">
+                <div class="workbench-browse-card__header">
+                    <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
+                    <a class="workbench-action workbench-action--primary workbench-browse-card__action" href="${urlFor(context, 'create')}">${
+                        icon(runtime, 'create')}<span>Create</span></a>
+                </div>
+                ${rowCount(model) ? table(runtime, model, context, { columns: ['id', 'title', 'access', 'actions'], header,
+                    cells: (record: any, index: number) => repositoryCells(runtime, context, record, index) })
                     : h`<p class="workbench-empty" role="status">No repositories are available.</p>`}
             </section>`;
         }
@@ -1194,12 +1247,121 @@ module workbench {
                 </section>`;
         }
 
-        function recordBrowsePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
+        /** Types and Graphs (M5.2, mockup 06): what each list shows and the column its counts fill in. */
+        const browseLists: { [viewId: string]: any } = {
+            types: { title: 'Types', noun: 'types', column: 'type', label: 'Type',
+                count: 'instances', countLabel: 'Instances', resort: true },
+            contexts: { title: 'Graphs', noun: 'graphs', column: 'context', label: 'Graph',
+                count: 'statements', countLabel: 'Statements', actions: true }
+        };
+
+        /**
+         * Counts load after the list renders: 'pending', then 'done', 'timed-out' or 'failed' ('none' for an empty
+         * list). Types adopt the count-ordered rows; Graphs keep their rows and look counts up by N-Triples key, where
+         * '' is the default graph.
+         */
+        interface BrowseCounts {
+            state: string;
+            listed: number;
+            values: { [key: string]: any };
+        }
+
+        function browseCounts(model: PageModel): BrowseCounts {
+            const holder: any = model;
+            if (!holder.browseCounts) {
+                holder.browseCounts = { state: model.rowCount > 0 ? 'pending' : 'none', listed: model.rowCount, values: {} };
+            }
+            return holder.browseCounts;
+        }
+
+        function browseNameCell(runtime: LitRuntime, model: PageModel, list: any, term: any): any {
+            const h = runtime.html;
+            if (!term) {
+                return h`<td data-label=${list.label}>Default graph</td>`;
+            }
+            if (typeof term !== 'object' || !term.kind) {
+                return h`<td data-label=${list.label}>${text(term)}</td>`;
+            }
+            const stream = workbench.queryStream as any;
+            const full = termText(term);
+            const prefixed = list.column === 'type' && term.kind === 'iri' ? stream.abbreviateIri(term.value, exploreNamespaces(model)) : '';
+            const label = prefixed && prefixed.charAt(0) !== '<' ? prefixed : full;
+            return h`<td data-label=${list.label}><a href="${'explore?resource=' + encodeURIComponent(stream.exploreResource(term))}"
+                title=${full}>${label}</a></td>`;
+        }
+
+        function browseCountCell(runtime: LitRuntime, list: any, counts: BrowseCounts, value: any,
+                                 context: ViewContext): any {
+            const h = runtime.html;
+            if (value !== null && typeof value !== 'undefined') {
+                return h`<td class="workbench-count-cell" data-label=${list.countLabel}>${formatCount(value, context)}</td>`;
+            }
+            if (counts.state === 'pending') {
+                return h`<td class="workbench-count-cell" data-label=${list.countLabel} aria-busy="true"><span
+                    title="Counting…">…</span></td>`;
+            }
+            const reason = counts.state === 'timed-out' ? 'Counting took longer than two seconds' : 'No count is available';
+            return h`<td class="workbench-count-cell" data-label=${list.countLabel}><span title=${reason}>—</span></td>`;
+        }
+
+        function browseActionsCell(runtime: LitRuntime, term: any): any {
+            const h = runtime.html;
+            if (!term || typeof term !== 'object' || !term.kind) {
+                return h`<td class="workbench-row-actions" data-label="Actions"></td>`;
+            }
+            const key = encodeURIComponent(ntriples(term));
+            const name = termText(term);
+            return h`<td class="workbench-row-actions" data-label="Actions"><a class="workbench-action workbench-action--ghost workbench-action--icon"
+                    href="${'explore?resource=' + key}" aria-label="${'Explore ' + name}" title="Explore">${icon(runtime, 'explore')}</a><a
+                    class="workbench-action workbench-action--ghost workbench-action--icon" href="${'clear?context=' + key}"
+                    aria-label="${'Clear graph ' + name + '…'}" title="Clear graph…">${icon(runtime, 'clear')}</a></td>`;
+        }
+
+        function browseListPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const route = model.viewId;
-            return h`<section id=${route + '-results'} class="workbench-island workbench-responsive-records">
-                ${table(runtime, model, context,
-                    { emptyText: 'No results to display.', linkTerms: true })}
+            const list = browseLists[route];
+            const counts = browseCounts(model);
+            const filter = text(pageValue(model, 'filter'));
+            const byCount = list.resort && counts.state === 'done';
+            const columns = [list.column, list.count].concat(list.actions ? ['actions'] : []);
+            const header = (name: string) => {
+                if (name === 'actions') {
+                    return h`<th scope="col"><span class="workbench-visually-hidden">Actions</span></th>`;
+                }
+                const sort = name === list.column && !byCount ? 'ascending'
+                    : name === list.count && byCount ? 'descending' : runtime.nothing;
+                return name === list.count
+                    ? h`<th scope="col" class="workbench-count-column" aria-sort="${sort}">${list.countLabel}</th>`
+                    : h`<th scope="col" aria-sort="${sort}">${list.label}</th>`;
+            };
+            // The server names the listed column (type or context); the counts add a second one.
+            const nameColumn = model.vars && model.vars.length ? model.vars[0] : list.column;
+            const cells = (record: any) => {
+                const term = record[nameColumn];
+                const value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
+                return h`${browseNameCell(runtime, model, list, term)}${browseCountCell(runtime, list, counts, value, context)}${
+                    list.actions ? browseActionsCell(runtime, term) : ''}`;
+            };
+            // The default graph has no name, so it is listed only without a filter (the server omits it too).
+            const trailing = list.actions && !filter ? () => h`<tr class="workbench-browse-default-row">${
+                browseNameCell(runtime, model, list, null)}${browseCountCell(runtime, list, counts, counts.values[''], context)}${
+                browseActionsCell(runtime, null)}</tr>` : null;
+            const inputId = route + '-filter';
+            return h`${errorCallout(runtime, model)}<section id=${route + '-results'}
+                    class="workbench-island workbench-responsive-records workbench-browse-card">
+                <div class="workbench-browse-card__header">
+                    <h2>${list.title}</h2><span class="workbench-browse-card__count">${formatCount(String(counts.listed), context)}</span>
+                    <form class="workbench-browse-card__filter" action=${route} method="get" role="search">
+                        <label class="workbench-visually-hidden" for="${inputId}">${'Filter ' + list.noun}</label>
+                        <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input
+                            type="text" id="${inputId}" name="filter" value=${filter} placeholder=${'Filter ' + list.noun}
+                            autocomplete="off" spellcheck="false" /></div>
+                    </form>
+                </div>
+                ${table(runtime, model, context, { columns, header, cells, trailing,
+                    emptyText: filter ? 'No ' + list.noun + ' match this filter.'
+                        : route === 'contexts' ? 'No named graphs.' : 'No types.' })}
             </section>`;
         }
 
@@ -1724,6 +1886,14 @@ module workbench {
                     ? 'height:' + model.rowBottomSpacer + 'px' : 'display:none'} aria-hidden="true"></div>`;
         }
 
+        /** Saved query details (M5.6): Yes/No values; the query language only when it is not SPARQL. */
+        function savedQueryDetails(row: any): [string, any][] {
+            const yesNo = (value: any) => text(value) === 'true' ? 'Yes' : 'No';
+            const language = text(row.queryLn);
+            const details: [string, any][] = language && language.toUpperCase() !== 'SPARQL' ? [['Query language', language]] : [];
+            return details.concat([['Include inferred statements', yesNo(row.infer)], ['Shared', yesNo(row.shared)]]);
+        }
+
         function savedQueryContent(runtime: LitRuntime, row: any, index: number): any {
             const h = runtime.html;
             const urn = text(row.query);
@@ -1750,7 +1920,7 @@ module workbench {
                                 </label></span>
                             </form>
                             <button type="button" class="saved-query-toggle workbench-action workbench-action--secondary" id=${urn + '-toggle'} data-query-urn=${urn}
-                                value="Show">Show</button>
+                                aria-expanded="false" aria-controls=${urn + '-metadata'}>Show details</button>
                             <form method="post" action="query"><input type="hidden" name="action" value="edit" />
                                 <input type="hidden" name="queryLn" value=${text(row.queryLn)} /><input type="hidden" name="query" value=${queryName} />
                                 <input type="hidden" name="ref" value="id" /><input type="hidden" name="owner" value=${owner} />
@@ -1763,10 +1933,8 @@ module workbench {
                             </form>
                         </div>
                         <div id=${'saved-query-results-' + index} class="query-results" aria-live="polite"></div>
-                        <table class="data" id=${urn + '-metadata'} style="display: none"><tbody><tr>
-                            <th>Query Language</th><td>${text(row.queryLn)}</td><th>Include Inferred Statements</th><td>${text(row.infer)}</td>
-                            <th>Shared</th><td>${text(row.shared)}</td>
-                        </tr></tbody></table>
+                        <div class="saved-query-metadata" id=${urn + '-metadata'} style="display: none">${keyValueList(runtime,
+                            savedQueryDetails(row))}</div>
                         <textarea id=${urn + '-text'} style="display: none">${query}</textarea>
                     `;
         }
@@ -1798,9 +1966,14 @@ module workbench {
                     <div class="workbench-field"><label for="compression">Compression</label><select id="compression" name="compression">
                         <option value="none">None</option><option value="gzip" selected>Gzip</option><option value="zip">Zip</option>
                     </select></div>
-                    <div class="workbench-field"><label for="timeout">Export timeout (seconds)</label>
-                        <input id="timeout" name="timeout" type="number" min="0" step="1" required value=${timeout} />
-                        <span class="hint">Maximum time allowed for the export operation. Use 0 for no timeout.</span>
+                    <div class="workbench-field"><label for="timeout">Timeout</label>
+                        <div class="workbench-input-unit"><input id="timeout" name="timeout" type="number" min="0" step="1" required
+                            value=${timeout} aria-describedby="export-timeout-unit export-timeout-help"
+                            @input=${(event: any) => {
+                                const help = event.target.ownerDocument.getElementById('export-timeout-help');
+                                if (help) { help.textContent = durationLabel(event.target.value); }
+                            }} /><span id="export-timeout-unit" class="workbench-input-unit__suffix">seconds</span></div>
+                        <p id="export-timeout-help" class="workbench-field__help" aria-live="polite">${durationLabel(timeout)}</p>
                     </div>
                 </div>
                 ${workbench.detailDisclosure.render(h, {
@@ -1822,11 +1995,29 @@ module workbench {
                 </span></div>
             </form>
             <section id="export-results" class="workbench-island workbench-responsive-records">
-                <p class="workbench-page-meta">Statement preview</p>
+                <h2>Statement preview</h2>
                 <div class="workbench-form-actions"><button class="workbench-action workbench-action--secondary" type="submit" form="export-form" name="action" value="preview">Retrieve statements</button></div>
                 ${rowCount(model) ? table(runtime, model, context, { linkTerms: true })
                     : h`<p class="workbench-empty" role="status">${requested ? 'No results to display.' : 'Choose Retrieve statements to preview repository data.'}</p>`}
             </section>`;
+        }
+
+        /** A time limit in seconds as people say it: "12 hours", "1 minute 30 seconds", "No limit" for 0. */
+        export function durationLabel(value: any): string {
+            const seconds = Math.floor(Number(text(value)));
+            if (!isFinite(seconds) || seconds < 0 || text(value).trim() === '') {
+                return '';
+            }
+            if (seconds === 0) {
+                return 'No limit';
+            }
+            const parts: string[] = [];
+            [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']].reduce((rest: number, unit: any[]) => {
+                const count = Math.floor(rest / unit[0]);
+                if (count) { parts.push(count + ' ' + unit[1] + (count === 1 ? '' : 's')); }
+                return rest - count * unit[0];
+            }, seconds);
+            return parts.join(' ');
         }
 
         function formatOptions(values: any): any[] {
@@ -1869,6 +2060,52 @@ module workbench {
             }
         }
 
+        /** The Add RDF file field (M5.5, mockup 10): a dropped file becomes the file input's selection. */
+        function addDropZone(runtime: LitRuntime): any {
+            const h = runtime.html;
+            const active = 'add-drop-zone--active';
+            const fileInput = (zone: any) => zone.querySelector('#file');
+            return h`<div id="add-drop-zone" class="add-drop-zone"
+                    @dragover=${(event: any) => {
+                        event.preventDefault();
+                        event.currentTarget.classList.add(active);
+                    }}
+                    @dragleave=${(event: any) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                            event.currentTarget.classList.remove(active);
+                        }
+                    }}
+                    @drop=${(event: any) => {
+                        event.preventDefault();
+                        const zone = event.currentTarget;
+                        zone.classList.remove(active);
+                        const input = fileInput(zone);
+                        const files = event.dataTransfer && event.dataTransfer.files;
+                        if (input && !input.disabled && files && files.length) {
+                            input.files = files;
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }}
+                    @click=${(event: any) => {
+                        const input = fileInput(event.currentTarget);
+                        if (input && !input.disabled && !event.target.closest('label, input')) {
+                            input.click();
+                        }
+                    }}>
+                <span class="add-drop-zone__prompt">${icon(runtime, 'upload')}<span>Drop an RDF file here or <label for="file"
+                    class="add-drop-zone__choose">choose a file</label></span></span>
+                <span id="add-drop-zone-formats" class="add-drop-zone__formats">Turtle, TriG, N-Triples, N-Quads, RDF/XML, JSON-LD and more; gzip, zip and tar accepted</span>
+                <span class="add-drop-zone__file" aria-live="polite"></span>
+                <input type="file" id="file" name="content" class="workbench-visually-hidden" aria-describedby="add-drop-zone-formats"
+                    @change=${(event: any) => {
+                        const input = event.target;
+                        const name = input.closest('.add-drop-zone').querySelector('.add-drop-zone__file');
+                        name.textContent = input.files && input.files.length ? input.files[0].name : '';
+                        invoke('workbench.add.enabledInput', 'file');
+                    }} />
+            </div>`;
+        }
+
         function addPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const rows = records(model);
@@ -1891,11 +2128,9 @@ module workbench {
                             <span>${entry[1]}</span>
                         </label>`)}
                     </fieldset>
-                    <div class="workbench-form-grid add-source-fields">
+                    <div class="workbench-field-stack add-source-fields">
                         <div id="add-source-file-panel" class="workbench-field add-source-panel" data-source="file">
-                            <label for="file">RDF file</label><input type="file" id="file" name="content"
-                                @change=${() => invoke('workbench.add.enabledInput', 'file')} />
-                            <div class="hint">Select an RDF document from your computer.</div>
+                            <label for="file">RDF file</label>${addDropZone(runtime)}
                         </div>
                         <div id="add-source-url-panel" class="workbench-field add-source-panel" data-source="url" hidden>
                             <label for="url">RDF URL</label><input id="url" name="url" type="text" size="48" disabled
@@ -1904,11 +2139,18 @@ module workbench {
                         <div id="add-source-text-panel" class="workbench-field add-source-panel" data-source="text" hidden>
                             <label for="text">RDF text</label><textarea id="text" name="content" rows="6" cols="70" disabled></textarea>
                         </div>
+                    </div>
+                    <div class="workbench-form-grid add-target-fields">
                         <div class="workbench-field add-source-format"><label for="Content-Type">Data format</label>
                             <div class="workbench-select-control"><select id="Content-Type" name="Content-Type">
-                                <option id="autodetect" value="autodetect" selected>(autodetect)</option>
+                                <option id="autodetect" value="autodetect" selected>Detect from file name</option>
                                 ${formats.map((format: any) => h`<option value=${format.value}>${format.label}</option>`)}
                             </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
+                        </div>
+                        <div class="workbench-field add-target-graph"><label for="context">Target graph</label>
+                            <input id="context" name="context" type="text" size="48" placeholder="Default graph"
+                                aria-describedby="context-help" value=${text(pageValue(model, 'context'))} />
+                            <p id="context-help" class="workbench-field__help">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI puts every statement in that graph.</p>
                         </div>
                     </div>
                     ${workbench.detailDisclosure.render(h, {
@@ -1917,15 +2159,9 @@ module workbench {
                         ownerClass: 'workbench-options workbench-form-subgroup'
                     }, h`<div class="workbench-form-grid">
                             <div class="workbench-field workbench-disclosure__field"><label for="baseURI">Base URI</label>
-                                <input id="baseURI" name="baseURI" type="text" size="48" value=${text(pageValue(model, 'baseURI'))} />
-                                <label class="workbench-check" for="overrideContext"><input type="checkbox" id="overrideContext" name="overrideContext"
-                                    ?checked=${!!text(pageValue(model, 'context'))} @change=${() => invoke('workbench.add.handleContextOverride')} />
-                                    <span>Override parsed contexts with this context</span></label>
-                            </div>
-                            <div class="workbench-field workbench-disclosure__field"><label for="context">Context</label>
-                                <input id="context" name="context" type="text" size="48" aria-describedby="context-help"
-                                    value=${text(pageValue(model, 'context'))} ?disabled=${!text(pageValue(model, 'context'))} />
-                                <p id="context-help" class="workbench-help">RDF context may be an IRI, blank node, or the default graph. With override off, embedded contexts are preserved; contextless data uses the default graph. Base URI resolves relative RDF identifiers; it does not choose a graph context.</p>
+                                <input id="baseURI" name="baseURI" type="text" size="48" aria-describedby="baseURI-help"
+                                    value=${text(pageValue(model, 'baseURI'))} />
+                                <p id="baseURI-help" class="workbench-field__help">Resolves relative IRIs in the data; it does not choose a graph.</p>
                             </div>
                             <div class="workbench-field workbench-disclosure__field"><label for="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">Isolation level</label>
                                 <select id="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel"
@@ -2541,7 +2777,7 @@ module workbench {
                 case 'delete': return deletePage(runtime, model);
                 case 'namespaces': return namespacesPage(runtime, model, context);
                 case 'contexts':
-                case 'types': return recordBrowsePage(runtime, model, context);
+                case 'types': return browseListPage(runtime, model, context);
                 case 'explore': return explorePage(runtime, model, context);
                 case 'query': return runtime.html`<div id="query-page-content">${queryPage(runtime, model, context)}</div>`;
                 case 'saved-queries': return savedQueriesPage(runtime, model, context);
@@ -2962,11 +3198,25 @@ module workbench {
                 });
             }
 
+            let rowMenuDisposers: Array<() => void> = [];
+            /** Row action menus (repository list): popovers bound once per rendered row element. */
+            const bindRowMenus = () => {
+                const popover: any = (workbench as any).popover;
+                if (!popover || typeof popover.bind !== 'function') { return; }
+                elements('[data-workbench-row-menu]').forEach((button: any) => {
+                    const panel = button.nextElementSibling;
+                    if (panel && button.getAttribute('data-workbench-popover-bound') !== 'true') {
+                        rowMenuDisposers.push(popover.bind(button, panel));
+                    }
+                });
+            };
+
             const renderCurrent = () => {
                 render(mount, model, context, runtime);
                 bindExecutionForms();
                 bindPickerControls();
                 bindExploreControls();
+                bindRowMenus();
             };
 
             const renderCurrentRows = () => {
@@ -2976,7 +3226,22 @@ module workbench {
                     if (regions.renderSavedRows) { regions.renderSavedRows(); }
                 }
                 bindExecutionForms();
+                bindRowMenus();
             };
+
+            /** A click anywhere on a repository row that is not on a control opens it through its Id link. */
+            const onRepositoryRowClick = (event: any) => {
+                const target = event.target;
+                if (!target || !target.closest || target.closest('a, button, input, select, textarea, label, .workbench-popover')) {
+                    return;
+                }
+                const selection = targetWindow.getSelection ? targetWindow.getSelection() : null;
+                if (selection && String(selection).length) { return; }
+                const row = target.closest('tr');
+                const link = row ? row.querySelector('a.workbench-repository-link') : null;
+                if (link) { link.click(); }
+            };
+            const repositoryRows = model.viewId === 'repositories' ? elements('#repositories-results')[0] : null;
 
             const bindPickerControls = () => {
                 elements('[data-workbench-window-action]').forEach((button: any) => {
@@ -3052,6 +3317,49 @@ module workbench {
                 return refreshRows();
             };
 
+            /** Types and Graphs: request the counts once the list is on screen (M5.2). */
+            const loadBrowseCounts = (): void => {
+                const list = browseLists[model.viewId];
+                const app: any = (workbench as any).app;
+                const counts = list ? browseCounts(model) : null;
+                const href = targetWindow.location && targetWindow.location.href;
+                if (!counts || counts.state !== 'pending' || !href || !app || typeof app.loadModel !== 'function') { return; }
+                const url = new URL(String(href));
+                url.searchParams.set('counts', 'true');
+                app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString()).then((answer: PageModel) => {
+                    const timedOut = answer.metadata && text(answer.metadata['counts-timed-out']) === 'true';
+                    if (disposed || timedOut) {
+                        answer.rowStore.dispose();
+                        if (!disposed) {
+                            counts.state = 'timed-out';
+                            renderCurrent();
+                        }
+                        return undefined;
+                    }
+                    if (list.resort) {
+                        // The answer is already in count order: show its rows in place of the name-ordered ones.
+                        const previous = model.rowStore;
+                        model.vars = answer.vars;
+                        model.rowStore = answer.rowStore;
+                        model.rowCount = answer.rowCount;
+                        counts.state = 'done';
+                        previous.dispose();
+                        return refreshRows(false).then(() => { if (!disposed) { renderCurrent(); } });
+                    }
+                    return answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
+                        answer.rowStore.dispose();
+                        rows.forEach((row: any[]) => {
+                            counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                        });
+                        counts.state = 'done';
+                        if (!disposed) { renderCurrent(); }
+                    });
+                }).then(null, () => {
+                    counts.state = 'failed';
+                    if (!disposed) { renderCurrent(); }
+                });
+            };
+
             const onScroll = () => refresh();
             const onResize = () => refresh();
             const initialPicker = hasPicker && model.rowCount > 0
@@ -3071,6 +3379,10 @@ module workbench {
             }).then(() => {
                 bindPickerControls();
                 bindExploreControls();
+                loadBrowseCounts();
+                if (repositoryRows && repositoryRows.addEventListener) {
+                    repositoryRows.addEventListener('click', onRepositoryRowClick);
+                }
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
@@ -3080,6 +3392,11 @@ module workbench {
                     generation++;
                     groupGeneration++;
                     disposeExecutionForms();
+                    rowMenuDisposers.forEach((dispose) => dispose());
+                    rowMenuDisposers = [];
+                    if (repositoryRows && repositoryRows.removeEventListener) {
+                        repositoryRows.removeEventListener('click', onRepositoryRowClick);
+                    }
                     const regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) { rowRegionsByMount.delete(regionKey); }
                     if (hasRows && targetWindow.removeEventListener) {

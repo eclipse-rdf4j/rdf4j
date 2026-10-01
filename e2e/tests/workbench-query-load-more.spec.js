@@ -1586,9 +1586,16 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 		await expect(explorePage.locator('#resource')).toHaveValue(exploreResources[index]);
 		const exploreRow = explorePage.locator('#explore-results table.data tbody tr');
 		await expect(exploreRow).toHaveCount(1);
-		await expect(exploreRow.locator('td[data-label="Subject"]')).toContainText('urn:load:item');
-		await expect(exploreRow.locator('td[data-label="Predicate"]')).toContainText('urn:load:directed-predicate');
-		await expect(exploreRow.locator('td[data-label="Object"]')).toHaveText('مرحبا');
+		// Explore groups rows by the resource's role and writes IRIs as prefixed names (plan task M5.1): the
+		// subject's statement is Outgoing (Predicate, Object) and the literal's is Incoming (Subject, Predicate).
+		await expect(exploreRow.locator('td[data-label="Predicate"]')).toContainText('ex:directed-predicate');
+		if (index === 0) {
+			const object = exploreRow.locator('td[data-label="Object"]');
+			await expect(object.locator('a')).toHaveText('مرحبا');
+			await expect(object.locator('.rdf-language')).toHaveText('@ar--rtl');
+		} else {
+			await expect(exploreRow.locator('td[data-label="Subject"]')).toContainText('ex:item');
+		}
 		expect(exploreErrors).toEqual([]);
 		await explorePage.close();
 	}

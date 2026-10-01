@@ -512,8 +512,8 @@ test.describe('Workbench configuration and option sizing', () => {
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
 		await page.locator('#baseURI').fill('https://example.org/base/');
-		await expect(page.locator('#overrideContext')).not.toBeChecked();
-		await expect(page.locator('#context')).toBeDisabled();
+		// An empty "Target graph" keeps the graphs named in the data (plan task M5.5 removed the override checkbox).
+		await expect(page.locator('#context')).toBeEnabled();
 		await expect(page.locator('#context')).toHaveValue('');
 		await page.locator('#Content-Type').selectOption('application/trig');
 		await page.locator('#text').fill([
@@ -539,8 +539,6 @@ test.describe('Workbench configuration and option sizing', () => {
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
 		await page.locator('#baseURI').fill('https://example.org/other/');
-		await page.locator('#overrideContext').check();
-		await expect(page.locator('#context')).toBeEnabled();
 		await page.locator('#context').fill('<http://example.org/override>');
 		await page.locator('#Content-Type').selectOption('application/trig');
 		await page.locator('#text').fill([

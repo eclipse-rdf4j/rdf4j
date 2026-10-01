@@ -7,10 +7,6 @@ var workbench;
 (function (workbench) {
     var add;
     (function (add) {
-        function handleContextOverride() {
-            $('#context').prop('disabled', !$('#overrideContext').prop('checked'));
-        }
-        add.handleContextOverride = handleContextOverride;
         function enabledInput(selected) {
             var istext = (selected == 'text');
             $('#add-source-file-panel').prop('hidden', selected != 'file');
@@ -54,6 +50,5 @@ var workbench;
 workbench.addLoad(function addPageLoaded() {
     var selected = $("input[name='source']:checked").val() || 'file';
     workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
-    workbench.add.handleContextOverride();
 });
 //# sourceMappingURL=add.js.map
