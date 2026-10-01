@@ -631,8 +631,11 @@ async function exerciseMutations(page, request, evidence) {
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/delete`, { waitUntil: 'domcontentloaded' });
 		await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'delete');
 		await page.locator('#id').selectOption(REPOSITORY_ID);
-		page.once('dialog', dialog => dialog.accept());
-		await page.locator('#delete-actions input[type="submit"]').click();
+		// Deleting asks for the typed repository id in a dialog (plan task M6.6).
+		await page.locator('#delete-actions button[type="submit"]').click();
+		const deleteDialog = page.getByRole('dialog', { name: `Delete repository ${REPOSITORY_ID}?` });
+		await deleteDialog.getByRole('textbox').fill(REPOSITORY_ID);
+		await deleteDialog.getByRole('button', { name: 'Delete repository' }).click();
 		await expect(page).toHaveURL(/\/rdf4j-workbench\/repositories\/NONE\/repositories(?:[?#]|$)/);
 		const deleteStatus = (await request.get(REPOSITORY_URL)).status();
 		if (deleteStatus === 400 || deleteStatus === 404) {

@@ -17,7 +17,8 @@ const {
 	deleteRepository,
 	repositoryPageUrl,
 	serverBaseUrl,
-	uniqueRepositoryId
+	uniqueRepositoryId,
+	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
 // Milestone M6 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: safe destructive actions.
@@ -77,6 +78,42 @@ test('Deleting a saved query asks in a dialog that works with the keyboard alone
 	await expect(dialog.getByRole('button', { name: 'Delete' })).toBeFocused();
 	await page.keyboard.press('Enter');
 	await expect(page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) })).toHaveCount(0);
+});
+
+test('Delete repository waits for a chosen repository and its typed id', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const doomed = uniqueRepositoryId('workbench-delete-me');
+	await createSeededRepository(request, serverBaseUrl(), doomed, { graphs: [] });
+	try {
+		await page.goto(`${workbenchBaseUrl()}/repositories/NONE/delete`, { waitUntil: 'domcontentloaded' });
+		const select = page.locator('#delete-form select#id');
+		const action = page.locator('#delete-form button[type="submit"]');
+		await expect(select.locator('option').first()).toHaveText('Choose a repository');
+		await expect(select).toHaveValue('');
+		await expect(action).toBeDisabled();
+		await select.selectOption({ index: 1 });
+		await expect(action).toBeEnabled();
+
+		await page.goto(`${workbenchBaseUrl()}/repositories/NONE/delete?id=${encodeURIComponent(doomed)}`,
+			{ waitUntil: 'domcontentloaded' });
+		await expect(select).toHaveValue(doomed);
+		await expect(action).toHaveText('Delete repository…');
+		await action.click();
+		const dialog = page.getByRole('dialog', { name: `Delete repository ${doomed}?` });
+		const confirm = dialog.getByRole('button', { name: 'Delete repository' });
+		await expect(confirm).toBeDisabled();
+		await dialog.getByRole('button', { name: 'Cancel' }).click();
+		expect((await request.get(`${serverBaseUrl()}/repositories/${doomed}/size`)).ok()).toBe(true);
+
+		await action.click();
+		await dialog.getByRole('textbox').fill(doomed);
+		await expect(confirm).toBeEnabled();
+		await confirm.click();
+		await expect(page).toHaveURL(/\/repositories\/NONE\/repositories(?:[?#]|$)/);
+		expect((await request.get(`${serverBaseUrl()}/repositories/${doomed}/size`)).ok()).toBe(false);
+	} finally {
+		await deleteRepository(request, serverBaseUrl(), doomed).catch(() => {});
+	}
 });
 
 /** The repository's namespace for a prefix, read through the server's REST API ('' when it has none). */

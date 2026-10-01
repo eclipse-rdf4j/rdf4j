@@ -280,6 +280,7 @@ var workbench;
                 input.type = 'text';
                 input.setAttribute('autocomplete', 'off');
                 input.setAttribute('spellcheck', 'false');
+                input.setAttribute('data-workbench-confirm-text', options.requireText);
                 field.appendChild(label);
                 field.appendChild(input);
                 dialog.appendChild(field);

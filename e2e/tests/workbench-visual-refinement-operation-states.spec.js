@@ -188,12 +188,15 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#id').selectOption(DELETE_REPOSITORY_ID);
 	await page.route(url => url.pathname.endsWith('/delete') && url.searchParams.has('checkSafe'), route =>
 		route.fulfill({ status: 503, contentType: 'text/plain', body: 'fixture safety-check failure' }));
-	await page.locator('#delete-actions input[type="submit"]').click();
+	await page.locator('#delete-actions button[type="submit"]').click();
 	await expect(page.locator('#delete-feedback')).toContainText('problem with the server');
 	await capture(page, 'delete-safety-check-error-1440.png');
 	await page.unrouteAll();
-	page.on('dialog', dialog => dialog.accept());
-	await page.locator('#delete-actions input[type="submit"]').click();
+	// Deleting asks for the typed repository id in a dialog (plan task M6.6).
+	await page.locator('#delete-actions button[type="submit"]').click();
+	const deleteDialog = page.getByRole('dialog', { name: `Delete repository ${DELETE_REPOSITORY_ID}?` });
+	await deleteDialog.getByRole('textbox').fill(DELETE_REPOSITORY_ID);
+	await deleteDialog.getByRole('button', { name: 'Delete repository' }).click();
 	await expect(page).toHaveURL(/\/rdf4j-workbench\/repositories\/NONE\/repositories(?:[?#]|$)/);
 	await expect.poll(async () => {
 		const status = (await request.get(DELETE_REPOSITORY_URL)).status();

@@ -10,7 +10,10 @@ test.beforeEach(async ({page}, testInfo) => {
 
     if (optionExists) {
         await page.locator("#id").selectOption("testrepo1");
-        await page.getByRole('button', {name: 'Delete'}).click();
+        // Deleting asks for the typed repository id in a dialog (plan task M6.6).
+        await page.locator('#delete-actions button[type="submit"]').click();
+        await page.getByRole('dialog').getByRole('textbox').fill('testrepo1');
+        await page.getByRole('dialog').getByRole('button', {name: 'Delete repository'}).click();
         await page.getByText("List of Repositories").click();
     }
 });

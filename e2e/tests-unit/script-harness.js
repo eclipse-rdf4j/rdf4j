@@ -142,6 +142,12 @@ function createScriptHarness(options = {}) {
                     confirms.push(element.textContent);
                     const answer = getNextConfirmResponse();
                     Promise.resolve().then(() => {
+                        const typed = element.querySelectorAll('input').filter((input) =>
+                            input.getAttribute('data-workbench-confirm-text') !== null)[0];
+                        if (answer && typed) {
+                            typed.value = typed.getAttribute('data-workbench-confirm-text');
+                            typed.trigger('input');
+                        }
                         const buttons = element.querySelectorAll('button');
                         (answer ? buttons[buttons.length - 1] : buttons[0]).click();
                     });

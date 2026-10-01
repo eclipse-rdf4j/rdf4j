@@ -37,13 +37,17 @@ function checkIsSafeToDelete(event: JQueryEventObject) {
 				success : function(data) {
 					feedback.text('');
 					var form = <HTMLFormElement>$(event.target).closest('form').get(0);
-					var confirmed: Promise<boolean> = data.safe ? Promise.resolve(true) : workbench.confirmDialog.open({
-						title: 'Delete a proxied repository?',
-						body: 'Another repository proxies this one and stops working once it is deleted.',
+					var body = 'This permanently deletes ' + id + ' and all of its statements.';
+					if (!data.safe) {
+						body += ' Another repository proxies this one and stops working once it is deleted.';
+					}
+					workbench.confirmDialog.open({
+						title: 'Delete repository ' + id + '?',
+						body: body,
 						confirmLabel: 'Delete repository',
-						danger: true
-					});
-					confirmed.then(function(submit: boolean) {
+						danger: true,
+						requireText: String(id)
+					}).then(function(submit: boolean) {
 						if (submit && form) {
 							form.submit();
 						}

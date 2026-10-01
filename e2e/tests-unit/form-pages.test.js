@@ -262,13 +262,15 @@ test('delete page reports timeout and successful unsafe-delete confirmation', as
     harness.ajaxRequests[1].resolve({ safe: false });
     await settle();
     assert.equal(form.submitCount, 1);
-    assert.match(harness.confirms[0], /Delete a proxied repository\?/);
+    // Every deletion asks for the typed id (plan task M6.6); a proxied repository adds a warning.
+    assert.match(harness.confirms[0], /Delete repository repo-1\?/);
+    assert.match(harness.confirms[0], /proxies this one/);
     assert.equal(feedback.textContent, '');
 });
 
-test('delete page submits a safe repository without asking and keeps a cancelled one (M6.2)', async () => {
+test('delete page asks for the typed id for every repository and keeps a cancelled one (M6.6)', async () => {
     const harness = createFormBrowserHarness({
-        confirmResponses: [false]
+        confirmResponses: [true, false]
     });
     const form = harness.registerElement('form', { id: 'delete-form' });
     const button = harness.registerElement('button', { id: 'delete-button' });
@@ -284,13 +286,14 @@ test('delete page submits a safe repository without asking and keeps a cancelled
     harness.context.checkIsSafeToDelete(event);
     harness.ajaxRequests[0].resolve({ safe: true });
     await settle();
-    assert.equal(form.submitCount, 1);
-    assert.equal(harness.confirms.length, 0, 'a repository nothing proxies needs no extra question');
+    assert.equal(form.submitCount, 1, 'typing the id and confirming deletes the repository');
+    assert.match(harness.confirms[0], /Type repo-1 to confirm/);
+    assert.doesNotMatch(harness.confirms[0], /proxies this one/, 'a repository nothing proxies gets no proxy warning');
 
     harness.context.checkIsSafeToDelete(event);
     harness.ajaxRequests[1].resolve({ safe: false });
     await settle();
-    assert.equal(harness.confirms.length, 1);
+    assert.equal(harness.confirms.length, 2);
     assert.equal(form.submitCount, 1, 'Cancel keeps the repository');
 });
 

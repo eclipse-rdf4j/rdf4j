@@ -845,13 +845,20 @@ var workbench;
             }
             return h(__makeTemplateObject(["<div class=\"workbench-form-actions workbench-window-controls\" role=\"group\" aria-label=", ">\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"previous\"\n                    ?disabled=", ">Previous</button>\n                <span role=\"status\">Showing ", "\u2013", " of ", " ", "</span>\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"next\"\n                    ?disabled=", ">Next</button>\n            </div>"], ["<div class=\"workbench-form-actions workbench-window-controls\" role=\"group\" aria-label=", ">\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"previous\"\n                    ?disabled=", ">Previous</button>\n                <span role=\"status\">Showing ", "\u2013", " of ", " ", "</span>\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"next\"\n                    ?disabled=", ">Next</button>\n            </div>"]), label + ' pages', name, start === 0, start + 1, end, total, label, name, end >= total);
         }
-        function deletePage(runtime, model) {
+        /**
+         * Delete repository (M6.6, mockup 09): nothing is chosen until the user picks a repository or arrives with
+         * `?id=<id>`, the button stays disabled until then, and delete.ts confirms with the typed id.
+         */
+        function deletePage(runtime, model, context) {
             var h = runtime.html;
             var options = recordsFromRows(model, model.pickerRows || []).filter(function (row) { return text(row.id) !== 'SYSTEM'; });
-            var selectedId = text(model.metadata.selectedRepositoryId || pageValue(model, 'id'));
+            if (typeof model.metadata.selectedRepositoryId !== 'string') {
+                model.metadata.selectedRepositoryId = locationParameter('id');
+            }
+            var selectedId = text(model.metadata.selectedRepositoryId);
             var selectedRepository = model.metadata.selectedRepository;
             var selectedVisible = options.some(function (row) { return text(row.id) === selectedId; });
-            return h(__makeTemplateObject(["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" ?selected=", "></option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\">\n                    <label class=\"workbench-action-hit-area\">", "\n                        <span class=\"workbench-action-label\"><input type=\"submit\" value=\"Delete\" /></span>\n                    </label></span>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"], ["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" ?selected=", "></option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\">\n                    <label class=\"workbench-action-hit-area\">", "\n                        <span class=\"workbench-action-label\"><input type=\"submit\" value=\"Delete\" /></span>\n                    </label></span>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"]), function (event) {
+            return h(__makeTemplateObject(["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"], ["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"]), function (event) {
                 var globalWindow = typeof window !== 'undefined' ? window : null;
                 if (globalWindow && typeof globalWindow.checkIsSafeToDelete === 'function') {
                     globalWindow.checkIsSafeToDelete(event);
@@ -860,8 +867,13 @@ var workbench;
                 var selected = options.filter(function (row) { return text(row.id) === event.target.value; })[0];
                 model.metadata.selectedRepositoryId = event.target.value;
                 model.metadata.selectedRepository = selected || null;
-            }, !selectedId, selectedId && !selectedVisible && selectedRepository
-                ? h(__makeTemplateObject(["<option value=", " selected>", " \u2014 ", "</option>"], ["<option value=", " selected>", " \u2014 ", "</option>"]), selectedId, text(selectedRepository.id), text(selectedRepository.description)) : '', options.map(function (row) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"], ["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"]), text(row.id), text(row.id) === selectedId, text(row.id), text(row.description)); }), pickerWindow(runtime, model, 'repositories', 'repositories'), icon(runtime, 'delete'));
+                var outlet = event.target.closest('.workbench-outlet');
+                if (outlet) {
+                    render(outlet, model, context, runtime);
+                }
+            }, !selectedId, selectedId && !selectedVisible
+                ? h(__makeTemplateObject(["<option value=", " selected>", "</option>"], ["<option value=", " selected>", "</option>"]), selectedId, selectedRepository
+                    ? text(selectedRepository.id) + ' — ' + text(selectedRepository.description) : selectedId) : '', options.map(function (row) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"], ["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"]), text(row.id), text(row.id) === selectedId, text(row.id), text(row.description)); }), pickerWindow(runtime, model, 'repositories', 'repositories'), !selectedId, icon(runtime, 'delete'));
         }
         function namespaceEditor(model) {
             var holder = model;
@@ -2092,7 +2104,7 @@ var workbench;
                 case 'information': return informationPage(runtime, model);
                 case 'repositories': return repositoriesPage(runtime, model, context);
                 case 'create': return createPage(runtime, model, context);
-                case 'delete': return deletePage(runtime, model);
+                case 'delete': return deletePage(runtime, model, context);
                 case 'namespaces': return namespacesPage(runtime, model, context);
                 case 'contexts':
                 case 'types': return browseListPage(runtime, model, context);

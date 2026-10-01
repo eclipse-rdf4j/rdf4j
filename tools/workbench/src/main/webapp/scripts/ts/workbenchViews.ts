@@ -1166,10 +1166,17 @@ module workbench {
             </div>`;
         }
 
-        function deletePage(runtime: LitRuntime, model: PageModel): any {
+        /**
+         * Delete repository (M6.6, mockup 09): nothing is chosen until the user picks a repository or arrives with
+         * `?id=<id>`, the button stays disabled until then, and delete.ts confirms with the typed id.
+         */
+        function deletePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const options = recordsFromRows(model, model.pickerRows || []).filter((row: any) => text(row.id) !== 'SYSTEM');
-            const selectedId = text(model.metadata.selectedRepositoryId || pageValue(model, 'id'));
+            if (typeof model.metadata.selectedRepositoryId !== 'string') {
+                model.metadata.selectedRepositoryId = locationParameter('id');
+            }
+            const selectedId = text(model.metadata.selectedRepositoryId);
             const selectedRepository = model.metadata.selectedRepository;
             const selectedVisible = options.some((row: any) => text(row.id) === selectedId);
             return h`<form id="delete-form" class="workbench-island workbench-form-card" action="delete" method="post"
@@ -1184,18 +1191,20 @@ module workbench {
                         const selected = options.filter((row: any) => text(row.id) === event.target.value)[0];
                         model.metadata.selectedRepositoryId = event.target.value;
                         model.metadata.selectedRepository = selected || null;
-                    }}><option value="" ?selected=${!selectedId}></option>
-                        ${selectedId && !selectedVisible && selectedRepository
-                            ? h`<option value=${selectedId} selected>${text(selectedRepository.id)} — ${text(selectedRepository.description)}</option>` : ''}
+                        const outlet = event.target.closest('.workbench-outlet');
+                        if (outlet) { render(outlet, model, context, runtime); }
+                    }}><option value="" disabled ?selected=${!selectedId}>Choose a repository</option>
+                        ${selectedId && !selectedVisible
+                            ? h`<option value=${selectedId} selected>${selectedRepository
+                                ? text(selectedRepository.id) + ' — ' + text(selectedRepository.description) : selectedId}</option>` : ''}
                         ${options.map((row: any) => h`<option value=${text(row.id)} ?selected=${text(row.id) === selectedId}>
                             ${text(row.id)} — ${text(row.description)}</option>`)}
                     </select>
                     ${pickerWindow(runtime, model, 'repositories', 'repositories')}
                 </div>
-                <div id="delete-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline">
-                    <label class="workbench-action-hit-area">${icon(runtime, 'delete')}
-                        <span class="workbench-action-label"><input type="submit" value="Delete" /></span>
-                    </label></span>
+                <div id="delete-actions" class="workbench-form-actions"><button type="submit"
+                        class="workbench-action workbench-action--danger-outline" ?disabled=${!selectedId}>${
+                        icon(runtime, 'delete')}<span>Delete repository…</span></button>
                 </div><span id="delete-feedback" class="error" role="alert"></span>
             </form>`;
         }
@@ -3142,7 +3151,7 @@ module workbench {
                 case 'information': return informationPage(runtime, model);
                 case 'repositories': return repositoriesPage(runtime, model, context);
                 case 'create': return createPage(runtime, model, context);
-                case 'delete': return deletePage(runtime, model);
+                case 'delete': return deletePage(runtime, model, context);
                 case 'namespaces': return namespacesPage(runtime, model, context);
                 case 'contexts':
                 case 'types': return browseListPage(runtime, model, context);
