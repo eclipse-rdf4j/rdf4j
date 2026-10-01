@@ -796,3 +796,51 @@ test('editor shortcuts click Execute, Explain and Save and never use the YASQE e
         assert.deepEqual(clicks.slice(4), ['explain-compare-trigger', 'explain-compare-trigger']);
     }
 });
+
+test('Explain shows the output card on its Explanation tab and hides the explanation empty state', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1'] });
+    harness.runPageLoad();
+    const { queryOutput, resultsTab, explanationTab, resultsPanel, explanationPanel, explanationEmpty } = harness.output;
+    assert.equal(queryOutput.hidden, true);
+
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    assert.equal(queryOutput.hidden, false);
+    assert.equal(explanationTab.getAttribute('aria-selected'), 'true');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'false');
+    assert.equal(explanationPanel.hidden, false);
+    assert.equal(resultsPanel.hidden, true);
+    assert.equal(explanationEmpty.hidden, true, 'a loading explanation replaces the empty state');
+
+    harness.context.workbench.query.showOutputTab('results');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'true');
+    assert.equal(resultsPanel.hidden, false);
+    assert.equal(explanationPanel.hidden, true);
+    harness.context.workbench.query.showOutputTab('missing');
+    assert.equal(resultsTab.getAttribute('aria-selected'), 'true', 'an unknown tab leaves the selection alone');
+});
+
+test('the Results tab badge follows the result summary events', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const { queryOutput, resultsCount } = harness.output;
+    const summary = (detail) => queryOutput.trigger('workbench:query-result-summary', { detail });
+
+    summary({ rows: true, rowCount: 7, total: null, complete: false, error: false });
+    assert.equal(resultsCount.hidden, false);
+    assert.equal(resultsCount.textContent, '7');
+    summary({ rows: true, rowCount: 7, total: 25, complete: true, error: false });
+    assert.equal(resultsCount.textContent, '25');
+    summary({ rows: false, rowCount: 0, total: null, complete: true, error: true });
+    assert.equal(resultsCount.hidden, true);
+    assert.equal(resultsCount.textContent, '');
+    harness.context.workbench.query.updateResultsBadge(null);
+    assert.equal(resultsCount.hidden, true);
+});
+
+test('the output card helpers do nothing on a page without the card', () => {
+    const harness = createQueryBrowserHarness({ outputCard: false });
+    harness.runPageLoad();
+    harness.context.workbench.query.showOutputTab('explanation');
+    harness.context.workbench.query.updateResultsBadge({ rows: true, rowCount: 1, total: 1 });
+    assert.equal(harness.document.getElementById('query-output'), null);
+});

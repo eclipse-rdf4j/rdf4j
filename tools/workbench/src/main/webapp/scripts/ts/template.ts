@@ -208,6 +208,72 @@ module workbench {
      * Anchored popover panels opened by a button (the context bar switchers). Only one popover is
      * open at a time; Escape or a click outside closes it and Escape returns focus to its button.
      */
+    /** Accessible tabs: one selected tab in the Tab order, arrow keys move between tabs, panels follow. */
+    export module tabs {
+        function tabsOf(tablist: HTMLElement): HTMLElement[] {
+            return Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'))
+                .filter(function(tab: HTMLElement) {
+                    return !tab.hidden;
+                });
+        }
+
+        /** Select a tab, show its panel and hide the panels of the other tabs in the same list. */
+        export function select(tab: HTMLElement, focus?: boolean): void {
+            var tablist = tab && tab.closest ? tab.closest('[role="tablist"]') : null;
+            if (!tablist) {
+                return;
+            }
+            var doc = tab.ownerDocument;
+            Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]')).forEach(function(other: HTMLElement) {
+                var selected = other === tab;
+                other.setAttribute('aria-selected', selected ? 'true' : 'false');
+                other.tabIndex = selected ? 0 : -1;
+                var panel = doc.getElementById(other.getAttribute('aria-controls') || '');
+                if (panel) {
+                    panel.hidden = !selected;
+                }
+            });
+            if (focus) {
+                tab.focus();
+            }
+        }
+
+        export function bind(tablist: HTMLElement): void {
+            if (!tablist || tablist.getAttribute('data-workbench-tabs') === 'bound') {
+                return;
+            }
+            tablist.setAttribute('data-workbench-tabs', 'bound');
+            tablist.addEventListener('click', function(event: Event) {
+                var tab = <HTMLElement>(<HTMLElement>event.target).closest('[role="tab"]');
+                if (tab && tablist.contains(tab)) {
+                    select(tab);
+                }
+            });
+            tablist.addEventListener('keydown', function(event: KeyboardEvent) {
+                var available = tabsOf(tablist);
+                var current = available.indexOf(<HTMLElement>(<HTMLElement>event.target).closest('[role="tab"]'));
+                if (current < 0) {
+                    return;
+                }
+                var next = -1;
+                if (event.key === 'ArrowRight') {
+                    next = (current + 1) % available.length;
+                } else if (event.key === 'ArrowLeft') {
+                    next = (current - 1 + available.length) % available.length;
+                } else if (event.key === 'Home') {
+                    next = 0;
+                } else if (event.key === 'End') {
+                    next = available.length - 1;
+                }
+                if (next < 0) {
+                    return;
+                }
+                event.preventDefault();
+                select(available[next], true);
+            });
+        }
+    }
+
     export module popover {
         var closeOpenPopover: (returnFocus: boolean) => void = null;
 

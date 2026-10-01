@@ -1,4 +1,6 @@
-.query-form {
+/* The explanation keeps the editor's code theme in the output card below the form (M3.3). */
+.query-form,
+.query-output {
     --query-code-surface: var(--workbench-editor-surface);
     --query-code-surface-hover: var(--workbench-editor-gutter);
     --query-code-selection: var(--workbench-editor-selection-focused);
@@ -30,7 +32,8 @@
     --query-json-null: var(--workbench-code-meta);
 }
 
-html[data-theme="dark"] .query-form {
+html[data-theme="dark"] .query-form,
+html[data-theme="dark"] .query-output {
     --query-code-surface: var(--workbench-surface);
     --query-code-surface-hover: var(--workbench-inset);
     --query-code-selection: var(--workbench-inset);
@@ -62,13 +65,92 @@ html[data-theme="dark"] .query-form {
     --query-json-null: var(--workbench-muted);
 }
 
-#query-explanation-row,
-#query-explanation-row-compare {
-    margin-top: 1.2em;
+/* Explanation tab panel (M3.3): one toolbar, then one column per explained query. In compare mode the
+ * two columns share their rows so the headers, status lines and plans line up. */
+.query-explanation-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--workbench-space-subgroup, 16px);
+    align-items: start;
+}
+
+.query-explanation-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    min-width: 0;
+}
+
+.query-explanation-column[hidden] {
+    display: none;
+}
+
+.query-explanation-column__header {
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--workbench-control-gap, 8px);
+    min-height: var(--workbench-control-height);
+    margin-bottom: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-column__label {
+    color: var(--workbench-ink);
+    font-weight: 600;
+}
+
+body:not(.query-compare-mode) .query-explanation-column__header {
+    display: none;
+}
+
+.query-explanation-column > .query-explanation-status {
+    grid-row: 2;
+}
+
+.query-explanation-column > .query-explanation-surface {
+    grid-row: 3;
+    min-width: 0;
+}
+
+body.query-compare-mode .query-explanation-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto;
+    row-gap: 0;
+}
+
+@supports (grid-template-rows: subgrid) {
+    body.query-compare-mode .query-explanation-column {
+        grid-row: 1 / span 3;
+        grid-template-rows: subgrid;
+    }
+}
+
+@media (max-width: 900px) {
+    body.query-compare-mode .query-explanation-columns {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+    }
+
+    body.query-compare-mode .query-explanation-column {
+        grid-row: auto;
+        grid-template-rows: none;
+    }
+}
+
+body.query-compare-mode #copy-explanation {
+    display: none;
+}
+
+.query-explanation-panel__empty {
+    margin-top: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-controls-row-class {
-    margin-top: var(--workbench-control-gap, 8px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-explanation-controls-row-class .query-form__field--controls {
@@ -116,9 +198,24 @@ html[data-theme="dark"] .query-form {
 .query-explanation-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
+    justify-content: space-between;
     gap: var(--workbench-control-gap, 8px);
-    margin: 0 0 var(--workbench-form-gap, 12px);
+    margin: 0 0 var(--workbench-space-subgroup, 16px);
+}
+
+.query-explanation-toolbar__settings,
+.query-explanation-toolbar #primary-explain-settings,
+.query-explanation-toolbar #primary-explain-settings > .query-form__field--controls-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-toolbar .query-compare-toolbar {
+    width: auto;
+    margin: 0;
 }
 
 .query-explanation-copy {

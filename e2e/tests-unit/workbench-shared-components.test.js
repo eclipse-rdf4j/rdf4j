@@ -133,3 +133,75 @@ test('editorSizing restores a stored height and survives unavailable storage', (
     missing.handle.trigger('keydown', { key: 'Escape' });
     assert.equal(missing.handle.getAttribute('aria-valuenow') ?? null, null);
 });
+
+function tabsFixture() {
+    const harness = createFormBrowserHarness();
+    harness.loadScripts([]);
+    const { registerElement, document } = harness;
+    const list = registerElement('div', { attributes: { role: 'tablist' } });
+    const names = ['first', 'second', 'third', 'fourth'];
+    const tabs = names.map((name, index) => registerElement('button', { id: 'tab-' + name, attributes: {
+        role: 'tab', 'aria-selected': index === 0 ? 'true' : 'false', 'aria-controls': 'panel-' + name } }));
+    const panels = names.map((name, index) => registerElement('div', { id: 'panel-' + name, hidden: index !== 0 }));
+    tabs[2].hidden = true;
+    tabs[3].attributes.delete('aria-controls');
+    tabs.forEach(tab => list.appendChild(tab));
+    document.body.appendChild(list);
+    panels.forEach(panel => document.body.appendChild(panel));
+    return { harness, tabs: harness.context.workbench.tabs, list, tab: tabs, panel: panels, document };
+}
+
+function key(list, target, name) {
+    return list.trigger('keydown', { key: name, target }).defaultPrevented;
+}
+
+test('tabs.select shows the chosen panel and keeps only the selected tab in the Tab order', () => {
+    const { tabs, tab, panel, document } = tabsFixture();
+    tabs.select(tab[1], true);
+    assert.deepEqual(tab.map(element => element.getAttribute('aria-selected')), ['false', 'true', 'false', 'false']);
+    assert.deepEqual(tab.map(element => element.tabIndex), [-1, 0, -1, -1]);
+    assert.deepEqual(panel.map(element => element.hidden), [true, false, true, true]);
+    assert.equal(document.activeElement, tab[1]);
+
+    tabs.select(tab[3]);
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true');
+    assert.equal(panel[1].hidden, true, 'a tab without a panel still hides the others');
+    assert.equal(document.activeElement, tab[1], 'select does not move focus unless asked');
+
+    tabs.select(null);
+    const loose = document.createElement('button');
+    tabs.select(loose);
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true');
+});
+
+test('tabs.bind selects on click and moves with arrow, Home and End keys over visible tabs', () => {
+    const { tabs, list, tab, document } = tabsFixture();
+    tabs.bind(null);
+    tabs.bind(list);
+    tabs.bind(list);
+    assert.equal(list.getAttribute('data-workbench-tabs'), 'bound');
+
+    list.trigger('click', { target: tab[1] });
+    assert.equal(tab[1].getAttribute('aria-selected'), 'true');
+    list.trigger('click', { target: list });
+    assert.equal(tab[1].getAttribute('aria-selected'), 'true');
+    const outside = document.createElement('button');
+    outside.setAttribute('role', 'tab');
+    list.trigger('click', { target: outside });
+    assert.equal(tab[1].getAttribute('aria-selected'), 'true', 'a tab of another list is ignored');
+
+    assert.equal(key(list, tab[1], 'ArrowRight'), true);
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true', 'hidden tabs are skipped');
+    assert.equal(document.activeElement, tab[3]);
+    key(list, tab[3], 'ArrowRight');
+    assert.equal(tab[0].getAttribute('aria-selected'), 'true', 'the last tab wraps to the first');
+    key(list, tab[0], 'ArrowLeft');
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true', 'the first tab wraps to the last');
+    key(list, tab[3], 'Home');
+    assert.equal(tab[0].getAttribute('aria-selected'), 'true');
+    key(list, tab[0], 'End');
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true');
+    assert.equal(key(list, tab[3], 'Enter'), false);
+    assert.equal(key(list, list, 'ArrowRight'), false);
+    assert.equal(tab[3].getAttribute('aria-selected'), 'true');
+});

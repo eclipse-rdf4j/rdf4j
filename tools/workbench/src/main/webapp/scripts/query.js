@@ -2060,13 +2060,16 @@ var workbench;
             }
             var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
             workbench.setElementExpanded(row, visible, true);
+            if (paneKey === 'primary') {
+                $('.query-explanation-panel__empty').prop('hidden', visible);
+            }
         }
         function syncDiffModalPresentation(open) {
             if (open === diffModalBackgroundLocked) {
                 return;
             }
             var body = document.body;
-            var backgroundElements = Array.prototype.slice.call(document.querySelectorAll('#query-page > form, #query-page > #query-results'));
+            var backgroundElements = Array.prototype.slice.call(document.querySelectorAll('#query-page > form, #query-page > #query-output'));
             if (open) {
                 diffModalPreviousBodyOverflow = body ? body.style.overflow : '';
                 diffModalBackgroundState = backgroundElements.map(function (element) {
@@ -3715,6 +3718,30 @@ var workbench;
             setResultsFullscreen(results.getAttribute('data-fullscreen') !== 'true', true, results, button);
         }
         query_1.toggleResultsFullscreen = toggleResultsFullscreen;
+        /** Show the output card below the editor and select its 'results' or 'explanation' tab. */
+        function showOutputTab(name) {
+            var card = document.getElementById('query-output');
+            var tab = document.getElementById('query-output-tab-' + name);
+            if (!card || !tab) {
+                return;
+            }
+            card.hidden = false;
+            workbench.tabs.select(tab);
+        }
+        query_1.showOutputTab = showOutputTab;
+        /** Badge the Results tab with the number of rows, from the renderer's result summary. */
+        function updateResultsBadge(summary) {
+            var badge = document.getElementById('query-results-count');
+            if (!badge) {
+                return;
+            }
+            var visible = !!summary && !!summary.rows;
+            badge.hidden = !visible;
+            badge.textContent = visible
+                ? workbench.format.count(summary.total !== null && summary.total !== undefined ? summary.total : summary.rowCount)
+                : '';
+        }
+        query_1.updateResultsBadge = updateResultsBadge;
         function runExplain(level, buttonId) {
             if (buttonId === 'rerun-explanation' && !isQueryRerunEnabled()) {
                 return;
@@ -3729,6 +3756,7 @@ var workbench;
                 return;
             }
             $('#explain-level').val(effectiveLevel);
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', buttonId);
             savePaneQuery('primary');
             activeExplainRequestId += 1;
@@ -3776,6 +3804,7 @@ var workbench;
             savePaneQuery('primary');
             savePaneQuery('compare');
             var triggerButtonId = buttonId || 'explain-compare-trigger';
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', triggerButtonId);
             captureExplainButtonViewportTop('compare', triggerButtonId);
             var nextGroupId = activeCompareRequestId + 1;
@@ -4471,6 +4500,13 @@ workbench.addLoad(function queryPageLoaded() {
     workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
     workbench.query.initializeExplanationView();
     workbench.query.initializeCompareUi();
+    workbench.tabs.bind(document.querySelector('#query-output [role="tablist"]'));
+    var queryOutput = document.getElementById('query-output');
+    if (queryOutput) {
+        queryOutput.addEventListener('workbench:query-result-summary', function (event) {
+            workbench.query.updateResultsBadge(event.detail);
+        });
+    }
     // Add click handlers identifying the clicked element in a hidden 'action'
     // form field.
     var addHandler = function (id, callback) {

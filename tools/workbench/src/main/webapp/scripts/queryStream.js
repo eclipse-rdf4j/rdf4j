@@ -1714,6 +1714,7 @@ var workbench;
                 this.continuationBlocked = false;
                 this.legacyHeader = null;
                 this.legacyHeaderHidden = false;
+                this.publishedSummary = '';
                 this.previousLabelledBy = null;
                 this.batchContexts = [];
                 this.options = options || {};
@@ -2365,6 +2366,27 @@ var workbench;
                 wrapper.appendChild(control);
                 return wrapper;
             };
+            /** Tell the surrounding page how many rows the result has, for example to badge a Results tab. */
+            QueryResultRenderer.prototype.publishSummary = function (state, isRows) {
+                var view = this.document && this.document.defaultView;
+                if (!view || typeof view.CustomEvent !== 'function' || typeof this.target.dispatchEvent !== 'function') {
+                    return;
+                }
+                var total = state.terminalMetadata ? state.terminalMetadata['total-result-count'] : undefined;
+                var detail = {
+                    rows: isRows && !state.error,
+                    rowCount: state.rowCount,
+                    total: state.complete && Number.isSafeInteger(total) ? total : null,
+                    complete: !!state.complete,
+                    error: !!state.error
+                };
+                var key = JSON.stringify(detail);
+                if (key === this.publishedSummary) {
+                    return;
+                }
+                this.publishedSummary = key;
+                this.target.dispatchEvent(new view.CustomEvent('workbench:query-result-summary', { bubbles: true, detail: detail }));
+            };
             QueryResultRenderer.prototype.setControlHidden = function (control, hidden) {
                 if (!control) {
                     return;
@@ -2704,6 +2726,7 @@ var workbench;
                 this.countLabel.textContent = state.error || !isRows ? '' : state.rowCount + ' loaded rows'
                     + (state.complete && Number.isSafeInteger(state.terminalMetadata['total-result-count'])
                         ? ' of ' + state.terminalMetadata['total-result-count'] : '');
+                this.publishSummary(state, isRows);
                 return rendered.then(function () {
                     if (_this.disposed || generation !== _this.renderGeneration) {
                         return;
@@ -3624,21 +3647,39 @@ var workbench;
          */
         function revealResults(target) {
             var view = target && target.ownerDocument && target.ownerDocument.defaultView;
-            if (!view || typeof target.scrollIntoView !== 'function' || typeof target.getBoundingClientRect !== 'function') {
+            var card = target && typeof target.closest === 'function' && target.closest('.query-output') || target;
+            if (!view || typeof card.scrollIntoView !== 'function' || typeof card.getBoundingClientRect !== 'function') {
                 return;
             }
             var reveal = function () {
-                if (target.getBoundingClientRect().top <= view.innerHeight * 0.4) {
+                if (card.getBoundingClientRect().top <= view.innerHeight * 0.4) {
                     return;
                 }
                 var reducedMotion = !!(view.matchMedia && view.matchMedia('(prefers-reduced-motion: reduce)').matches);
-                target.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+                card.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
             };
             if (typeof view.requestAnimationFrame === 'function') {
                 view.requestAnimationFrame(reveal);
             }
             else {
                 reveal();
+            }
+        }
+        /** Show the output card around a result target and select the tab whose panel holds it. */
+        function showResultTab(target) {
+            if (!target || typeof target.closest !== 'function') {
+                return;
+            }
+            var card = target.closest('.query-output');
+            if (card) {
+                card.hidden = false;
+            }
+            var panel = target.closest('[role="tabpanel"]');
+            var tabs = workbench.tabs;
+            var tab = panel && panel.id && target.ownerDocument
+                ? target.ownerDocument.querySelector('[role="tab"][aria-controls="' + panel.id + '"]') : null;
+            if (tab && tabs && typeof tabs.select === 'function') {
+                tabs.select(tab);
             }
         }
         function createExecutionController(form, target, options) {
@@ -3823,6 +3864,7 @@ var workbench;
                     onCancel: function () { return cancel(true); }
                 });
                 target.hidden = false;
+                showResultTab(target);
                 revealPending = true;
                 if (!controlValue(form, 'query').trim()) {
                     renderer.fail('Enter a query to see results.');

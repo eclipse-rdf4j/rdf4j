@@ -312,6 +312,15 @@ class FakeElement {
         this.ownerDocument.activeElement = this;
     }
 
+    contains(node) {
+        for (let current = node; current; current = current.parentNode) {
+            if (current === this) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     appendChild(child) {
         const normalizedChild = typeof child === 'string'
             ? createTextNode(this.ownerDocument, child)

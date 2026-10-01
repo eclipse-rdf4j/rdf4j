@@ -49,7 +49,7 @@
 }
 
 .query-editor-header .query-form__label {
-    margin: 0;
+    margin: 0 auto 0 0;
 }
 
 .query-form__label:after {
@@ -105,6 +105,13 @@
 
 .query-cancel--visible {
     display: inline-block;
+}
+
+/* Cancel buttons appear only while their request runs (their --visible class). The button component
+ * sets display on every .workbench-action button, so restate the resting state at a higher specificity. */
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"]).workbench-action.query-cancel:not(.query-cancel--visible),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"]).workbench-action.query-explain-cancel:not(.query-explain-cancel--visible) {
+    display: none;
 }
 
 .query-results {
@@ -222,8 +229,108 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror[data-wor
 }
 
 /* Results come into view under the sticky context bar after an execution starts. */
-.query-results {
+.query-results,
+.query-output {
     scroll-margin-top: calc(var(--workbench-contextbar-height, 56px) + 16px);
+}
+
+/* Output card (M3.3): Results and Explanation are tabs of one card below the editor card, so running
+ * or explaining a query never moves the editor's action row. */
+.query-output {
+    box-sizing: border-box;
+    margin-top: var(--workbench-space-section, 24px);
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--workbench-surface);
+    box-shadow: var(--workbench-shadow);
+}
+
+.query-output[hidden],
+.query-output__panel[hidden],
+.query-output__badge[hidden],
+.query-output__empty[hidden] {
+    display: none;
+}
+
+.query-output__tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0 calc(var(--workbench-card-inset, 24px) - 12px);
+    border-bottom: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: 0 0 -1px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab:hover {
+    background: transparent;
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab[aria-selected="true"] {
+    border-bottom-color: var(--workbench-teal);
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: -4px;
+    border-radius: var(--workbench-control-radius);
+}
+
+.query-output__badge {
+    min-width: 1.5em;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--workbench-inset);
+    color: var(--workbench-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.query-output__panel {
+    padding: var(--workbench-card-inset, 24px);
+}
+
+.query-output__panel:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: -2px;
+}
+
+.query-output__empty {
+    margin: 0;
+    color: var(--workbench-muted);
+}
+
+#query-results:not([hidden]) ~ .query-results-panel__empty {
+    display: none;
+}
+
+/* Inside the card the result is the Results panel's content, not a second card; full screen still
+ * lifts it out as its own surface. */
+.query-output .query-results:not([data-fullscreen="true"]):not(.query-results--fullscreen) {
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror,

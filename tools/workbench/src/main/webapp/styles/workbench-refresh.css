@@ -2445,6 +2445,8 @@ body.workbench-body .workbench-source-tabs label:has(input:focus-visible) {
 	outline-offset: 2px;
 }
 
+/* Text that only assistive technology reads, such as the label of an icon-only button. */
+.workbench-visually-hidden,
 body.workbench-body .workbench-source-tabs input[type="radio"] {
 	position: absolute;
 	width: 1px;

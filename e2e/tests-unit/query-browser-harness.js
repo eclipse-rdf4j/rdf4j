@@ -208,7 +208,34 @@ function createQueryBrowserHarness(options = {}) {
     document.body.appendChild(noScriptMessage);
     document.body.appendChild(selectedUser);
     document.body.appendChild(queryFormContainer);
-    document.body.appendChild(queryResults);
+    // The output card below the form: Results and Explanation tabs (M3.3).
+    const queryOutputElements = {};
+    if (options.outputCard === false) {
+        document.body.appendChild(queryResults);
+    } else {
+        const queryOutput = registerElement('section', { id: 'query-output', className: 'query-output', hidden: true });
+        const tablist = registerElement('div', { attributes: { role: 'tablist' } });
+        const resultsTab = registerElement('button', { id: 'query-output-tab-results', attributes: {
+            role: 'tab', 'aria-selected': 'true', 'aria-controls': 'query-results-panel' } });
+        const resultsCount = registerElement('span', { id: 'query-results-count', hidden: true });
+        resultsTab.appendChild(resultsCount);
+        const explanationTab = registerElement('button', { id: 'query-output-tab-explanation', attributes: {
+            role: 'tab', 'aria-selected': 'false', 'aria-controls': 'query-explanation-panel' } });
+        tablist.appendChild(resultsTab);
+        tablist.appendChild(explanationTab);
+        const resultsPanel = registerElement('div', { id: 'query-results-panel', attributes: { role: 'tabpanel' } });
+        resultsPanel.appendChild(queryResults);
+        const explanationPanel = registerElement('div', { id: 'query-explanation-panel', hidden: true,
+            attributes: { role: 'tabpanel' } });
+        const explanationEmpty = registerElement('p', { className: 'query-output__empty query-explanation-panel__empty' });
+        explanationPanel.appendChild(explanationEmpty);
+        queryOutput.appendChild(tablist);
+        queryOutput.appendChild(resultsPanel);
+        queryOutput.appendChild(explanationPanel);
+        document.body.appendChild(queryOutput);
+        Object.assign(queryOutputElements, { queryOutput, tablist, resultsTab, resultsCount, explanationTab,
+            resultsPanel, explanationPanel, explanationEmpty });
+    }
 
     const form = registerElement('form', {
         attributes: {
@@ -533,6 +560,7 @@ function createQueryBrowserHarness(options = {}) {
     explanationHighlightHotspot.onclick = () => context.workbench.query.setExplanationHighlightMode('hotspot');
 
     return Object.assign({}, harness, {
+        output: queryOutputElements,
         createdBlobs,
         getJSONRequests,
         pendingGetJSONRequests,

@@ -101,10 +101,10 @@ test('the query editor grows with its content between six lines and half the vie
 	expect(tall).toBeLessThanOrEqual(452);
 });
 
-test('running a query brings a low result card up under the context bar', async ({ page }) => {
+test('running a query brings a low output card up under the context bar', async ({ page }) => {
 	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
 	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 400');
-	const before = await page.locator('#query-results').evaluate(element => {
+	const before = await page.locator('#query-output').evaluate(element => {
 		element.hidden = false;
 		const top = element.getBoundingClientRect().top;
 		element.hidden = true;
@@ -113,9 +113,9 @@ test('running a query brings a low result card up under the context bar', async 
 	expect(before).toBeGreaterThan(900 * 0.4);
 	await page.locator('#exec').click();
 	await page.locator('#query-results table.data tbody tr[data-query-row-index]').first().waitFor();
-	await expect.poll(() => page.locator('#query-results').evaluate(element => Math.round(element.getBoundingClientRect().top)),
+	await expect.poll(() => page.locator('#query-output').evaluate(element => Math.round(element.getBoundingClientRect().top)),
 		{ timeout: 5000 }).toBeLessThanOrEqual(56 + 16 + 2);
-	const top = await page.locator('#query-results').evaluate(element => element.getBoundingClientRect().top);
+	const top = await page.locator('#query-output').evaluate(element => element.getBoundingClientRect().top);
 	expect(top).toBeGreaterThanOrEqual(56);
 });
 
@@ -168,4 +168,79 @@ test('the editor resize handle sets a height that survives a reload', async ({ p
 	const automatic = await page.locator('.query-page .CodeMirror').first().evaluate(element => element.getBoundingClientRect().height);
 	expect(automatic).toBeLessThan(reloaded);
 	await page.evaluate(() => localStorage.removeItem('rdf4j.workbench.editor-height.v1'));
+});
+
+test('Explain shows the plan in an Explanation tab without moving the Execute row', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+	const before = await page.locator('#exec').boundingBox();
+	await page.locator('#explain-trigger').click();
+	await page.waitForFunction(() => {
+		const explanation = document.querySelector('#query-explanation');
+		const text = explanation && explanation.textContent.trim();
+		return !!text && text !== 'Loading explanation...';
+	});
+	const after = await page.locator('#exec').boundingBox();
+	expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+	expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
+	const panel = page.locator('[role="tabpanel"]:has(#query-explanation)');
+	await expect(panel).toBeVisible();
+	const tab = page.getByRole('tab', { name: 'Explanation' });
+	await expect(tab).toHaveAttribute('aria-selected', 'true');
+	await page.locator('#exec').click();
+	await expect(page.getByRole('tab', { name: /^Results/ })).toHaveAttribute('aria-selected', 'true');
+	await expect(page.locator('[role="tabpanel"]:has(#query-results-heading), #query-results[role="tabpanel"]')).toBeVisible();
+	await page.getByRole('tab', { name: /^Results/ }).focus();
+	await page.keyboard.press('ArrowRight');
+	await expect(tab).toBeFocused();
+	await expect(tab).toHaveAttribute('aria-selected', 'true');
+	await expect(panel).toBeVisible();
+});
+
+test('Cancel buttons stay out of sight until their request runs', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+	await expect(page.locator('#query-cancel')).toBeHidden();
+	await page.locator('#explain-trigger').click();
+	await page.waitForFunction(() => {
+		const explanation = document.querySelector('#query-explanation');
+		const text = explanation && explanation.textContent.trim();
+		return !!text && text !== 'Loading explanation...';
+	});
+	await expect(page.locator('#rerun-explanation')).toBeVisible();
+	await expect(page.locator('#rerun-explanation-cancel')).toBeHidden();
+	await expect(page.locator('#query-cancel')).toBeHidden();
+});
+
+test('the explanation keeps its code theme and the pipes that connect plan nodes', async ({ browser }) => {
+	const query = 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nSELECT ?s ?label WHERE {\n'
+		+ '  ?s rdfs:label ?label .\n  ?s a ?type .\n  OPTIONAL { ?s rdfs:comment ?c }\n} LIMIT 10';
+	for (const colorScheme of ['light', 'dark']) {
+		const context = await browser.newContext({ colorScheme });
+		const page = await context.newPage();
+		await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+		await setQueryEditor(page, query);
+		await page.locator('#explain-trigger').click();
+		await expect(page.locator('#query-explanation .query-explanation-token--connector').first()).toBeVisible();
+		const look = await page.evaluate(() => {
+			const plan = document.querySelector('#query-explanation');
+			const style = getComputedStyle(plan);
+			const connectors = Array.from(plan.querySelectorAll('.query-explanation-token--connector'));
+			return {
+				background: style.backgroundColor,
+				border: `${style.borderTopWidth} ${style.borderTopStyle}`,
+				font: style.fontFamily,
+				editorFont: getComputedStyle(document.querySelector('.query-page .CodeMirror')).fontFamily,
+				pipes: connectors.map(connector => connector.textContent).join(''),
+				connectorColor: connectors.length ? getComputedStyle(connectors[0]).color : '',
+				ink: style.color
+			};
+		});
+		await context.close();
+		expect(look.background, `${colorScheme}: ${JSON.stringify(look)}`).not.toBe('rgba(0, 0, 0, 0)');
+		expect(look.border, colorScheme).toBe('1px solid');
+		expect(look.font, colorScheme).toBe(look.editorFont);
+		expect(look.pipes, colorScheme).toMatch(/[│├└]/);
+		expect(look.connectorColor, `${colorScheme}: connectors use their own muted color`).not.toBe(look.ink);
+	}
 });

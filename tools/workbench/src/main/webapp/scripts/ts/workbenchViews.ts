@@ -1933,13 +1933,93 @@ module workbench {
             ]);
         }
 
+        /** Menu toggle shown at the start of the primary editor while compare mode hides the navigation. */
+        function compareSidebarToggle(runtime: LitRuntime, context: ViewContext): any {
+            const h = runtime.html;
+            return h`<span id="query-sidebar-toggle-action" class="query-sidebar-toggle-action workbench-action workbench-action--secondary"
+                    data-workbench-action="menu"><span class="workbench-action-label">
+                    <button id="query-sidebar-toggle" class="query-sidebar-toggle" type="button"
+                        aria-hidden="true" aria-expanded="false" aria-controls="navigation" tabindex="-1"
+                        data-show-label="Show navigation" data-hide-label="Hide navigation"
+                        ?hidden=${!queryFeatureEnabled(context, 'editor-sidebar')}
+                        @click=${() => invoke('workbench.query.toggleCompareSidebar')}>
+                        <span id="query-sidebar-toggle-icon" class="query-sidebar-toggle__icon" aria-hidden="true">
+                            ${icon(runtime, 'menu', 'query-sidebar-toggle__svg')}
+                        </span>
+                    </button></span></span>`;
+        }
+
+        /** Editor column of the query form; the explanation lives in the output card below the action row. */
         function queryPane(runtime: LitRuntime, options: any, context: ViewContext): any {
             const h = runtime.html;
             const compare = !!options.compare;
             const queryId = compare ? 'query-compare' : 'query';
             const suffix = compare ? '-compare' : '';
-            const explanation = compare ? '' : text(options.explanation);
             const paneId = compare ? 'query-compare-pane' : 'query-primary-pane';
+            return h`<section id=${paneId} class=${compare
+                    ? 'query-compare-pane query-compare-pane--secondary'
+                    : 'query-compare-pane query-compare-pane--primary'}>
+                <div class="query-form__row query-form__row--stacked">
+                    <div class="query-editor-header">${compare ? '' : compareSidebarToggle(runtime, context)}<label
+                        class="query-form__label" for=${queryId}>${compare ? 'Compare query' : 'Query'}</label>
+                        ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                            aria-label="Close comparison" title="Close comparison"
+                            @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}</div>
+                    <div class="query-form__field">${compare
+                        ? h`<textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>`
+                        : h`<textarea id="query" name="query" rows="16" cols="80" wrap="soft">${text(options.query)}</textarea>`}
+                        <div id=${compare ? 'query-compare-editor-resize' : 'query-editor-resize'} class="query-editor-resize"
+                            role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div></div>
+                </div>
+                <div class="query-form__row"><span class="query-form__label query-form__label--blank"></span>
+                    <div class="query-form__field"><span id=${'queryString.errors' + suffix} class="error">${compare ? '' : text(options.error)}</span></div>
+                </div>
+            </section>`;
+        }
+
+        /** One explanation column: its status line and the text, DOT and JSON views. */
+        function explanationColumn(runtime: LitRuntime, compare: boolean, explanation: string, selectedFormat: string,
+                                   context: ViewContext): any {
+            const h = runtime.html;
+            const suffix = compare ? '-compare' : '';
+            return h`<div id=${'query-explanation-row' + suffix} class="query-explanation-column"
+                    ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
+                    style=${compare || !explanation ? 'display:none;' : ''}>
+                <div class="query-explanation-column__header">
+                    <span class="query-explanation-column__label">${compare ? 'Compare query' : 'Query'}</span>
+                    ${compare
+                        ? h`<button id="copy-explanation-compare" class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                            aria-label="Copy compare explanation" title="Copy compare explanation"
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>${icon(runtime, 'copy')}<span
+                            class="workbench-visually-hidden">Copy compare explanation</span></button>`
+                        : h`<button id="query-compare-copy" class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                            aria-label="Copy query explanation" title="Copy query explanation"
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>${icon(runtime, 'copy')}<span
+                            class="workbench-visually-hidden">Copy query explanation</span></button>`}
+                </div>
+                <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
+                <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
+                    class="query-explanation-overlay" aria-hidden="true"></div>
+                    ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
+                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`
+                        : h`<pre id="query-explanation" data-format=${selectedFormat}
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`}
+                    ${compare ? h`<div id="query-explanation-dot-view-compare"
+                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`
+                        : h`<div id="query-explanation-dot-view"
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`}
+                    ${compare ? h`<div id="query-explanation-json-view-compare"
+                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-json')}></div>`
+                        : h`<div id="query-explanation-json-view"
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-json')}></div>`}
+                </div>
+            </div>`;
+        }
+
+        /** Explanation tab panel: one toolbar for the plan settings and actions, then one or two plan columns. */
+        function explanationPanel(runtime: LitRuntime, options: any, context: ViewContext): any {
+            const h = runtime.html;
+            const explanation = text(options.explanation);
             const explainFormats = [
                 { value: 'text', label: 'Text', feature: 'explain-format-text' },
                 { value: 'dot', label: 'DOT', feature: 'explain-format-dot' },
@@ -2006,39 +2086,16 @@ module workbench {
                             : h`<option value=${level.value} ?hidden=${true} ?disabled=${true} ?selected=${false}>Timed</option>`;
                 }
             };
-            return h`<section id=${paneId} class=${compare
-                    ? 'query-compare-pane query-compare-pane--secondary'
-                    : 'query-compare-pane query-compare-pane--primary'}>
-                <div class="query-form__row query-form__row--stacked">
-                    <div class="query-editor-header"><label class="query-form__label" for=${queryId}>${compare ? 'Compare query' : 'Query'}</label>
-                        ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close workbench-action workbench-action--ghost workbench-action--icon" type="button"
-                            aria-label="Close comparison" title="Close comparison"
-                            @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}</div>
-                    <div class="query-form__field">${compare
-                        ? h`<textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>`
-                        : h`<textarea id="query" name="query" rows="16" cols="80" wrap="soft">${text(options.query)}</textarea>`}
-                        <div id=${compare ? 'query-compare-editor-resize' : 'query-editor-resize'} class="query-editor-resize"
-                            role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div></div>
-                </div>
-                <div class="query-form__row"><span class="query-form__label query-form__label--blank"></span>
-                    <div class="query-form__field"><span id=${'queryString.errors' + suffix} class="error">${compare ? '' : text(options.error)}</span></div>
-                </div>
-                <div id=${'query-explanation-row' + suffix} class="query-form__row query-form__row--stacked"
-                    ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
-                    style=${!compare && !explanation ? 'display:none;' : ''}>
-                    <span class="query-form__label">Query explanation</span><div class="query-form__field">
-                        <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
-                        <div class="query-explanation-toolbar">
-                            ${compare ? h`<button id="copy-explanation-compare" class="query-explanation-copy workbench-action workbench-action--secondary"
-                                type="button" ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy explanation</button>`
-                                : h`<button id="copy-explanation" class="query-explanation-copy workbench-action workbench-action--secondary"
-                                    type="button" ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy explanation</button>`}
-                            ${compare ? '' : h`<select id="explain-format" name="explain-format"
-                                ?hidden=${allExplainFormatsDisabled}>
-                                ${explainFormats.map(formatOption)}
-                            </select><select id="explain-level" ?hidden=${allExplainLevelsDisabled}>
-                                ${explainLevels.map(levelOption)}
-                            </select>
+            return h`<div id="query-explanation-panel" class="query-output__panel query-explanation-panel" role="tabpanel"
+                    aria-labelledby="query-output-tab-explanation" tabindex="0" ?hidden=${!explanation}>
+                <div class="query-explanation-toolbar workbench-action-toolbar">
+                    <div class="query-explanation-toolbar__settings">
+                        <select id="explain-level" aria-label="Plan level" ?hidden=${allExplainLevelsDisabled}>
+                            ${explainLevels.map(levelOption)}
+                        </select><select id="explain-format" name="explain-format" aria-label="Plan format"
+                            ?hidden=${allExplainFormatsDisabled}>
+                            ${explainFormats.map(formatOption)}
+                        </select>
                             ${workbench.detailDisclosure.render(h, {
                                 id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
                                 panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
@@ -2082,48 +2139,59 @@ module workbench {
                                         <p class="query-explanation-property-config__hint">Plan structure always remains visible.</p>
                                     </div>
                             `)}
-                            `}
-                        </div>
-                        <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
-                            class="query-explanation-overlay" aria-hidden="true"></div>
-                            ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`
-                                : h`<pre id="query-explanation" data-format=${selectedFormat}
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`}
-                            ${compare ? h`<div id="query-explanation-dot-view-compare"
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`
-                                : h`<div id="query-explanation-dot-view"
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`}
-                            ${compare ? h`<div id="query-explanation-json-view-compare"
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-view-json')}></div>`
-                                : h`<div id="query-explanation-json-view"
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-view-json')}></div>`}
-                        </div>
-                        ${compare ? '' : h`<div id="query-explanation-controls-row" class="query-explanation-controls-row-class"
-                            ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
-                            style=${!explanation ? 'display:none;' : ''}>
-                            <span id="primary-explain-settings" class="query-form__field--controls-group">
-                                <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
-                                    <button id="rerun-explanation" class="workbench-action workbench-action--secondary" type="button"
-                                        ?hidden=${!queryFeatureEnabled(context, 'query-rerun')}
-                                        data-query-rerun-enabled=${queryFeatureEnabled(context, 'query-rerun') ? 'true' : 'false'}
-                                        @click=${() => invoke('workbench.query.runExplain', null, 'rerun-explanation')}>Explain again</button>
-                                    <span id="rerun-explanation-spinner" class="query-explain-spinner" aria-hidden="true"></span>
-                                    <button id="rerun-explanation-cancel" class="query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
-                                        ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                        @click=${() => invoke('workbench.query.cancelExplain')}>Cancel</button>
-                                </span>
-                                <span id="primary-explain-utility-controls" class="query-form__field--controls-group">
-                                    <button id="download-explanation" class="workbench-action workbench-action--secondary" type="button" ?disabled=${!explanation}
-                                        ?hidden=${!queryFeatureEnabled(context, 'explain-download')}>Download explanation</button>
-                                    <button id="compare-toggle" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}
-                                        @click=${() => invoke('workbench.query.toggleCompareMode')}>Compare</button>
-                                </span>
+                    </div>
+                    <div id="query-explanation-controls-row" class="query-explanation-controls-row-class query-explanation-toolbar__actions"
+                        ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
+                        style=${!explanation ? 'display:none;' : ''}>
+                        <span id="primary-explain-settings" class="query-form__field--controls-group">
+                            <span id="primary-explain-utility-controls" class="query-form__field--controls-group">
+                                <button id="copy-explanation" class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                                    aria-label="Copy explanation" title="Copy explanation"
+                                    ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>${icon(runtime, 'copy')}<span
+                                    class="workbench-visually-hidden">Copy explanation</span></button>
+                                <button id="download-explanation" class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                                    aria-label="Download explanation" title="Download explanation" ?disabled=${!explanation}
+                                    ?hidden=${!queryFeatureEnabled(context, 'explain-download')}>${icon(runtime, 'download')}<span
+                                    class="workbench-visually-hidden">Download explanation</span></button>
+                                <button id="compare-toggle" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}
+                                    @click=${() => invoke('workbench.query.toggleCompareMode')}>${icon(runtime, 'compare')}<span>Compare</span></button>
                             </span>
-                        </div>`}
+                            <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
+                                <button id="rerun-explanation" class="workbench-action workbench-action--secondary" type="button"
+                                    ?hidden=${!queryFeatureEnabled(context, 'query-rerun')}
+                                    data-query-rerun-enabled=${queryFeatureEnabled(context, 'query-rerun') ? 'true' : 'false'}
+                                    @click=${() => invoke('workbench.query.runExplain', null, 'rerun-explanation')}>Explain again</button>
+                                <span id="rerun-explanation-spinner" class="query-explain-spinner" aria-hidden="true"></span>
+                                <button id="rerun-explanation-cancel" class="query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
+                                    ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
+                                    @click=${() => invoke('workbench.query.cancelExplain')}>Cancel</button>
+                            </span>
+                        </span>
+                    </div>
+                    <div id="query-compare-toolbar" class="query-compare-toolbar" hidden>
+                        <button id="query-compare-swap" class="workbench-action workbench-action--secondary" type="button"
+                            ?hidden=${!queryFeatureEnabled(context, 'query-swap')}>${icon(runtime, 'swap')}<span>Swap</span></button>
+                        <div id="query-compare-controls" class="query-compare-toolbar__actions">
+                            <button id="query-diff-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button" disabled
+                                ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
+                                @click=${() => invoke('workbench.query.openDiffModal')}>
+                                <span id="query-diff-trigger-icon" class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
+                            <button id="explain-compare-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button"
+                                data-query-refresh-enabled=${queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false'}
+                                ?hidden=${!queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context)}
+                                @click=${() => invoke('workbench.query.runCompareExplain')}>Refresh explanations</button>
+                            <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
+                                ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}>
+                                <span id="explain-compare-cancel-icon" class="query-compare-action__svg--cancel" aria-hidden="true">×</span>Cancel</button>
+                        </div>
                     </div>
                 </div>
-            </section>`;
+                <div class="query-explanation-columns">
+                    ${explanationColumn(runtime, false, explanation, selectedFormat, context)}
+                    ${explanationColumn(runtime, true, '', selectedFormat, context)}
+                </div>
+                <p class="query-output__empty query-explanation-panel__empty" ?hidden=${!!explanation}>Choose Explain to see how the repository plans this query.</p>
+            </div>`;
         }
 
         function queryPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -2201,40 +2269,9 @@ module workbench {
                                     : h`<option value="${selectedQueryLanguage}" selected>${selectedQueryLanguage}</option>`}
                             </select></div>
                         </div>
-                        <div id="query-compare-toolbar" class="query-compare-toolbar" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}>
-                            <span id="query-sidebar-toggle-action" class="workbench-action workbench-action--secondary"
-                                data-workbench-action="menu"><span class="workbench-action-label">
-                                <button id="query-sidebar-toggle" class="query-sidebar-toggle" type="button"
-                                    aria-hidden="true" aria-expanded="false" aria-controls="navigation" tabindex="-1"
-                                    data-show-label="Show navigation" data-hide-label="Hide navigation"
-                                    ?hidden=${!queryFeatureEnabled(context, 'editor-sidebar')}
-                                    @click=${() => invoke('workbench.query.toggleCompareSidebar')}>
-                                    <span id="query-sidebar-toggle-icon" class="query-sidebar-toggle__icon" aria-hidden="true">
-                                        ${icon(runtime, 'menu', 'query-sidebar-toggle__svg')}
-                                    </span>
-                                </button></span></span>
-                            <button id="query-compare-copy" class="workbench-action workbench-action--secondary" type="button"
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy</button>
-                            <button id="query-compare-swap" class="workbench-action workbench-action--secondary" type="button"
-                                ?hidden=${!queryFeatureEnabled(context, 'query-swap')}>Swap</button>
-                            <div id="query-compare-controls" class="query-compare-toolbar__actions">
-                                <button id="explain-compare-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button"
-                                    data-query-refresh-enabled=${queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false'}
-                                    ?hidden=${!queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context)}
-                                    @click=${() => invoke('workbench.query.runCompareExplain')}>Refresh explanations</button>
-                                <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}>
-                                    <span id="explain-compare-cancel-icon" class="query-compare-action__svg--cancel" aria-hidden="true">×</span>Cancel</button>
-                                <button id="query-diff-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button" disabled
-                                    ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
-                                    @click=${() => invoke('workbench.query.openDiffModal')}>
-                                    <span id="query-diff-trigger-icon" class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
-                            </div>
-                        </div>
                         <div id="query-compare-layout" class="query-compare-layout"
                             ?hidden=${!queryFeatureEnabled(context, 'query-compare')}>
-                            ${queryPane(runtime, { query, explanation, explanationFormat, explanationLevel,
-                                error: pageValue(model, 'error-message') }, context)}
+                            ${queryPane(runtime, { query, error: pageValue(model, 'error-message') }, context)}
                             ${queryPane(runtime, { compare: true }, context)}
                         </div>
                         <div class="query-actions-toolbar workbench-action-toolbar"><div class="query-form__field query-actions-toolbar__primary workbench-action-toolbar__primary">
@@ -2265,24 +2302,41 @@ module workbench {
                     </div>
                     </div>
                 </form>
-                <section id="query-results" class="query-results" aria-busy="false" hidden aria-labelledby="query-results-heading">
-                    <div class="query-results__header workbench-action-toolbar">
-                        <div class="workbench-action-toolbar__primary"><h2 id="query-results-heading">Query result</h2></div>
-                        <div class="workbench-action-toolbar__actions">
-                        <button id="query-results-fullscreen" class="query-results__fullscreen workbench-action workbench-action--secondary" type="button"
-                            aria-label="Full screen" title="Full screen" hidden aria-pressed="false"
-                            data-result-fullscreen-enabled=${queryFeatureEnabled(context, 'result-fullscreen') ? 'true' : 'false'}
-                            @click=${() => invoke('workbench.query.toggleResultsFullscreen')}>
-                            <svg class="query-results__fullscreen-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                                <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
-                            </svg><span class="query-results__fullscreen-label">Full screen</span>
-                        </button>
-                        </div>
+                <section id="query-output" class="query-output workbench-island" aria-label="Query output" ?hidden=${!explanation}>
+                    <div class="query-output__tabs" role="tablist" aria-label="Query output">
+                        <button id="query-output-tab-results" class="query-output__tab" type="button" role="tab"
+                            aria-selected=${explanation ? 'false' : 'true'} aria-controls="query-results-panel"
+                            tabindex=${explanation ? '-1' : '0'}><span>Results</span><span
+                            id="query-results-count" class="query-output__badge" hidden></span></button>
+                        <button id="query-output-tab-explanation" class="query-output__tab" type="button" role="tab"
+                            aria-selected=${explanation ? 'true' : 'false'} aria-controls="query-explanation-panel"
+                            tabindex=${explanation ? '0' : '-1'}
+                            ?hidden=${!queryExplainEnabled(context)}>Explanation</button>
                     </div>
-                    <div id="query-results-loading" class="query-results__loading" hidden role="status" aria-live="polite">Loading query results...</div>
-                    <div id="query-results-status" class="query-results__status" role="status" aria-live="polite"></div>
-                    <iframe id="query-results-frame" name="query-results-frame" class="query-results__frame"
-                        title="Query results" hidden></iframe>
+                    <div id="query-results-panel" class="query-output__panel query-results-panel" role="tabpanel"
+                        aria-labelledby="query-output-tab-results" ?hidden=${!!explanation}>
+                        <section id="query-results" class="query-results" aria-busy="false" hidden aria-labelledby="query-results-heading">
+                            <div class="query-results__header workbench-action-toolbar">
+                                <div class="workbench-action-toolbar__primary"><h2 id="query-results-heading">Query result</h2></div>
+                                <div class="workbench-action-toolbar__actions">
+                                <button id="query-results-fullscreen" class="query-results__fullscreen workbench-action workbench-action--secondary" type="button"
+                                    aria-label="Full screen" title="Full screen" hidden aria-pressed="false"
+                                    data-result-fullscreen-enabled=${queryFeatureEnabled(context, 'result-fullscreen') ? 'true' : 'false'}
+                                    @click=${() => invoke('workbench.query.toggleResultsFullscreen')}>
+                                    <svg class="query-results__fullscreen-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
+                                    </svg><span class="query-results__fullscreen-label">Full screen</span>
+                                </button>
+                                </div>
+                            </div>
+                            <div id="query-results-loading" class="query-results__loading" hidden role="status" aria-live="polite">Loading query results...</div>
+                            <div id="query-results-status" class="query-results__status" role="status" aria-live="polite"></div>
+                            <iframe id="query-results-frame" name="query-results-frame" class="query-results__frame"
+                                title="Query results" hidden></iframe>
+                        </section>
+                        <p class="query-output__empty query-results-panel__empty">Choose Execute to see the results here.</p>
+                    </div>
+                    ${explanationPanel(runtime, { explanation, explanationFormat, explanationLevel }, context)}
                 </section>
                 <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
                     <div class="query-diff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="query-diff-modal-title">
