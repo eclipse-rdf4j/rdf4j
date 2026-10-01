@@ -162,7 +162,7 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 		await expect.poll(() => page.evaluate(() => window.__queryProgressFixture.requestCount)).toBe(1);
 		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'true');
 		await expect(result.locator('.query-result-status'))
-			.toHaveText('2 loaded rows; 1000000 processed. 3000 ms elapsed…');
+			.toHaveText('Receiving… 2 rows · 1,000,000 processed · 3,000 ms elapsed');
 		await expect(result.locator('tbody tr[data-query-row-index]')).toHaveCount(2);
 		await expect(result.locator('tbody')).toContainText('loaded-zero');
 		await expect(result.locator('tbody')).toContainText('loaded-one');
@@ -180,8 +180,8 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 
 		await page.evaluate(() => window.__queryProgressFixture.complete());
 		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
-		await expect(result.locator('.query-result-status'))
-			.toHaveText('2 loaded rows of 1200000 results. Complete query: 4200 ms.');
+		await expect(result.locator('.query-result-status')).toHaveText('1,200,000 rows · complete in 4,200 ms');
+		await expect(result.locator('.query-result-navigation__label')).toHaveText('2 of 1,200,000 loaded');
 		await expect(result.locator('.query-result-load-more')).toBeVisible();
 		expect(await page.evaluate(() => window.__queryProgressFixture.requestCount)).toBe(1);
 		expect(errors).toEqual([]);
@@ -280,10 +280,16 @@ test('table width sampling uses available rows and resets for empty results and 
 		await expectCompletedRows(result.locator('.query-result-status'), expectedRows, expectedRows);
 		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 		const layout = result.locator('select[name="result-layout"]');
-		if (!await layout.isVisible()) {
-			await options.click();
+		if (expectedRows === 0) {
+			// An empty result offers no Display controls (task M3.5); the Table choice carries over.
+			await expect(options).toBeHidden();
+			await expect(result).toHaveAttribute('data-layout', 'table');
+		} else {
+			if (!await layout.isVisible()) {
+				await options.click();
+			}
+			await layout.selectOption('table');
 		}
-		await layout.selectOption('table');
 		await expect(result.locator('thead th')).toHaveCount(expectedHeaders.length);
 		await expect(result.locator('thead th').allTextContents()).resolves.toEqual(expectedHeaders);
 		return result.locator('colgroup col').evaluateAll(columns => columns.map(column =>
@@ -892,7 +898,7 @@ test('main query Load more appends batches, freezes the query, and keeps the vir
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
 	await expect(result.getByRole('button', { name: /Next|Previous/i })).toHaveCount(0);
 	await expect(result.locator('select[name="stream-result-limit"]')).toHaveCount(0);
-	await expect(result.locator('.query-result-navigation__label')).toHaveText('205 loaded rows of 205');
+	await expect(result.locator('.query-result-navigation__label')).toBeHidden();
 
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
@@ -940,7 +946,7 @@ test('Load more respects exact batch boundaries and explicit SPARQL LIMIT and OF
 	await expectCompletedRows(result.locator('.query-result-status'), 8, 8);
 	await expect(result.locator('tbody tr[data-query-row-index]')).toHaveCount(8);
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
-	await expect(result.locator('.query-result-navigation__label')).toHaveText('8 loaded rows of 8');
+	await expect(result.locator('.query-result-navigation__label')).toBeHidden();
 
 	const slicedQuery = `${valuesQuery(16)} LIMIT 5 OFFSET 7`;
 	await setEditor(page, slicedQuery);
@@ -1740,9 +1746,17 @@ async function executeAndWaitForLoadMore(page, monitor, query, expectedRequestCo
 	await expect(page.locator('#query-results .query-result-load-more')).toBeVisible();
 }
 
+/** The status line names the total (task M3.5); the loaded-of label appears only while rows remain to load. */
 async function expectCompletedRows(status, loadedRows, totalRows) {
+	const count = value => Number(value).toLocaleString('en-US');
 	await expect(status).toHaveText(new RegExp(
-		`^${loadedRows} loaded rows of ${totalRows} results\\. Complete query: \\d+ ms\\.$`));
+		`^${count(totalRows)} rows? · complete in [\\d,]+ ms$`));
+	const label = status.locator('xpath=..').locator('.query-result-navigation__label');
+	if (loadedRows < totalRows) {
+		await expect(label).toHaveText(`${count(loadedRows)} of ${count(totalRows)} loaded`);
+	} else {
+		await expect(label).toBeHidden();
+	}
 }
 
 async function scrollToResultEnd(scrollport, page) {
@@ -1823,7 +1837,10 @@ async function readResultScrollProgress(scrollport) {
 		const result = element.closest('.query-result-layout');
 		const table = element.querySelector('table[aria-rowcount]');
 		const status = result?.querySelector('.query-result-status')?.textContent || '';
-		const loadedRows = Number(status.match(/^(\d+) loaded rows/)?.[1] || 0);
+		const label = result?.querySelector('.query-result-navigation__label');
+		const labelText = label && !label.hidden ? label.textContent : '';
+		const loadedRows = Number((labelText.match(/^([\d,]+) (?:of [\d,]+ )?loaded/)?.[1]
+			|| status.match(/^([\d,]+) rows?\b/)?.[1] || '0').replace(/,/g, ''));
 		const totalRows = table ? Math.max(0, Number(table.getAttribute('aria-rowcount')) - 1) : loadedRows;
 		const indexName = isRecords ? 'data-query-record-index' : 'data-query-row-index';
 		const rowSelector = isRecords ? '[data-query-record-index]' : 'tr[data-query-row-index]';

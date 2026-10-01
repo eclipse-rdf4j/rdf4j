@@ -44,9 +44,9 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 06:41Z) M3.2 The editor grows with its content, can be resized, and results come into view (the 12-visible-rows check moved to M4.2; see the Decision Log).
 - [x] (2026-10-01 09:30Z) M3.3 Results and Explanation become tabs of one card; the Execute row never moves (controls of the active tab sit in the first row of its panel; see the Decision Log).
 - [x] (2026-10-01 10:15Z) M3.4 Clear names, units, and no silent "Clear".
-- [ ] M3.5 (in progress) One status line and designed result states (mockup 02).
+- [x] (2026-10-01 10:37Z) M3.5 One status line and designed result states (mockup 02).
 - [x] (2026-10-01 06:41Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
-- [ ] M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
+- [ ] M4.1 (in progress) Results scroll with the page, with a pinned header; full screen fills the screen.
 - [ ] M4.2 Column sizing without mid-word breaks.
 - [ ] M4.3 Literal, IRI and heading rendering.
 - [ ] M4.4 Mobile records do not clip and use the same labels.
@@ -267,11 +267,17 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Rationale: one control height per row; 600px left buttons 8px shorter than the fields next to them on tablets.
   Date/Author: 2026-10-01 / implementer.
 
+- Decision (M3.5): status wording beyond the plan's examples: a complete result without timing reads "N rows · complete"; a Yes/No answer reads "Answer · complete in X ms"; while rows stream with server progress the line keeps the progress numbers ("Receiving… 2 rows · 1,000,000 processed · 3,000 ms elapsed") because they are the only sign of life for a slow query that has not produced rows yet. The total in "N rows" is the server's exact `total-result-count` when present. The loaded-of label ("1,000 of 12,345 loaded", or "10 loaded" when the total is unknown) shows only while more rows exist than are loaded. Full screen, Display and Download are hidden whenever no rows are on screen (a failure without retained rows, an empty result, a Yes/No answer); after a timeout or a failed Load more the retained rows keep them, which is a narrowing of "fail() hides Full screen and Display" so partial results stay readable. Error callouts: a parser message with a position is titled "Syntax error on line L, column C"; other unclassified failures are titled "The query failed"; timeouts, cancellations, server stops, incomplete streams and failed Load more keep their message without a title (their wording was already designed); an empty query is an info callout. The renderer reports a parser position with a bubbling `workbench:query-error-location` event (`reveal` true when "Go to line" is pressed), and `query.ts` marks the editor line (`query-editor-error-marker` in the `gutterErrorBar` gutter, `query-editor-error-line` background) until the next edit. In the output card the renderer's "Query result" heading is visually hidden (it still names the region and returns in full screen), which resolves the M3.3 note.
+  Rationale: follows mockup 02 while keeping existing information and readable partial results.
+  Date/Author: 2026-10-01 / implementer.
+
 ## Outcomes & Retrospective
 
 At the end of each milestone, add a short paragraph here: what was delivered, which acceptance checks passed, what was deferred, and what you would do differently.
 
 M1 (2026-10-01): the shell no longer links `styles/default/screen.css`; result headings show variable names as written; one button component (primary, secondary, ghost, danger, danger-outline, icon) replaces the per-id rules on the Query page and in the result renderer; one heading scale; key/value lists replace `table.simple` on Summary and Information; browsing cards share one width (surface capped at 1200px) and form cards are 760px; Remove and Clear use stacked fields; callouts (info, warning, error) replace the gray notes and page error paragraphs; the editor overlay icons are visible 28px ghost buttons; `workbench.format.count` formats the repository size. `e2e/tests/workbench-design-system.spec.js` (5 tests) passes; the unit suite has only the 4 failures recorded in the baseline. Lesson: a computed-style probe that injects the retired stylesheet into the page is a much faster way to find what the redesign silently inherited than comparing screenshots.
+
+M3 (2026-10-01): the query page keeps the user's place. Cmd/Ctrl+Enter runs queries and updates; editors grow with their content and keep a resized height; results and explanations are tabs of one output card below the editor, so the Execute row never moves; "Query settings" and "Display" replace the two "Options"; the timeout states its unit; "Insert prefixes" replaces the destructive "Clear"; the status line, empty state, Yes/No answer and syntax-error callout follow mockup 02, and a server syntax error marks its editor line. The end-of-M2 suite run surfaced regressions from M1 and M2 (fixed in the added task M2.9), and the M3.3 run found that moving the explanation out of the form dropped its code theme, which the user then made an explicit requirement. `workbench-query-workflow.spec.js` (14 tests) passes in Chromium, Firefox and WebKit; the unit suite has only the 4 baseline failures; coverage of `query.js` rose from 83.90% to 84.79%. Deferred: the "12 rows visible" check (M4.2). Lesson: run the full browser suite at the end of every milestone, not only the specs a task names; the cheap targeted runs missed regressions in neighboring specs for a whole milestone.
 
 ## Context and Orientation
 

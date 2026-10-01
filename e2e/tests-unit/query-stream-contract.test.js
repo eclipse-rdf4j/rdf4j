@@ -792,11 +792,11 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
         });
         form.trigger('submit');
         for (let attempt = 0; attempt < 30
-                && (worker.rows.length !== 1 || !/1 result(?:s)?\./.test(target.textContent)); attempt += 1) {
+                && (worker.rows.length !== 1 || !/1 row · complete/.test(target.textContent)); attempt += 1) {
             await new Promise(resolve => setImmediate(resolve));
         }
         assert.equal(worker.rows.length, 1, 'the query should store its streamed row before pagehide');
-        assert.match(target.textContent, /1 result(?:s)?\./, 'the query should reach its terminal view before pagehide');
+        assert.match(target.textContent, /1 row · complete/, 'the query should reach its terminal view before pagehide');
         assert.equal(target.querySelectorAll('.query-result-layout').length, 1);
         return { queryStream, window, worker, target, dispose };
     }

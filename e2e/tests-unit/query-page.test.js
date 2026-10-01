@@ -837,3 +837,28 @@ test('Insert prefixes does nothing when the editor-namespaces policy is off', ()
     harness.context.workbench.query.insertPrefixes();
     assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE { ?s ?p ?o }');
 });
+
+test('a server syntax error marks its editor line until the next edit and Go to line moves the cursor', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT *\nWHERE { ?s ?p ?o');
+    const editor = harness.yasqeState.instances.query;
+    const { queryOutput } = harness.output;
+
+    queryOutput.trigger('workbench:query-error-location', { detail: { line: 2, column: 18, reveal: false } });
+    assert.equal(editor.gutterMarkers['1:gutterErrorBar'].className, 'query-editor-error-marker');
+    assert.equal(editor.lineClasses['1:background'], 'query-editor-error-line');
+    assert.equal(editor.cursor, null, 'showing the error does not move the cursor');
+
+    queryOutput.trigger('workbench:query-error-location', { detail: { line: 9, column: 3, reveal: true } });
+    assert.deepEqual([editor.cursor.line, editor.cursor.ch], [1, 2], 'a line past the end is clamped to the last line');
+    assert.equal(editor.focused, true);
+    assert.equal(editor.scrolledIntoView, 1);
+
+    editor.triggerChange();
+    assert.equal(editor.gutterMarkers['1:gutterErrorBar'], null, 'the next edit clears the marker');
+    assert.equal(editor.lineClasses['1:background'], undefined);
+    harness.context.workbench.query.clearQueryErrorLocation();
+    harness.context.workbench.query.showQueryErrorLocation(0, 1, true);
+    assert.equal(editor.lineClasses['-1:background'], undefined, 'line numbers start at 1');
+});

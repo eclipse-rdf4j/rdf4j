@@ -263,3 +263,41 @@ test('Insert prefixes adds the repository namespaces once, at the top of the edi
 	await expect(page.locator('label[for="query-timeout"]')).toHaveText('Timeout');
 	await expect(page.locator('#query-timeout-field')).toContainText('seconds');
 });
+
+test('a syntax error points at its line in a callout and in the editor gutter', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o');
+	const response = page.waitForResponse(candidate => candidate.request().method() === 'POST'
+		&& new URL(candidate.url()).pathname.endsWith(`/repositories/${REPOSITORY_ID}/query`));
+	await page.locator('#exec').click();
+	await response;
+	const callout = page.locator('#query-results .query-result-error');
+	await expect(callout).toBeVisible();
+	const details = await callout.locator('.query-result-error__details pre').textContent();
+	const position = /line (\d+), column (\d+)/i.exec(details);
+	expect(position, details).not.toBeNull();
+	await expect(callout.locator('.workbench-callout__title'))
+		.toHaveText(`Syntax error on line ${position[1]}, column ${position[2]}`);
+	const lineIndex = Number(position[1]) - 1;
+	await expect(page.locator('.query-page .CodeMirror .query-editor-error-marker')).toHaveCount(1);
+	await callout.getByRole('button', { name: `Go to line ${position[1]}` }).click();
+	const cursor = await page.locator('.query-page .CodeMirror').first()
+		.evaluate(element => element.CodeMirror.getDoc().getCursor());
+	expect(cursor.line).toBe(lineIndex);
+	await page.keyboard.type(' ');
+	await expect(page.locator('.query-page .CodeMirror .query-editor-error-marker')).toHaveCount(0);
+});
+
+test('an empty result and a Yes/No answer show designed states', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s <urn:none> ?o }');
+	await page.locator('#exec').click();
+	await expect(page.locator('#query-results .query-result-empty')).toBeVisible();
+	await expect(page.locator('#query-results .query-result-empty__title')).toHaveText('No results');
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^0 rows · complete in [\d,]+ ms$/);
+	await setQueryEditor(page, 'ASK { ?s ?p ?o }');
+	await page.locator('#exec').click();
+	await expect(page.locator('#query-results .query-result-boolean__value')).toHaveText('Yes');
+	await expect(page.locator('#query-results .query-result-toolbar .query-results__fullscreen')).toBeHidden();
+	await expect(page.locator('#query-results .query-result-options-toggle')).toBeHidden();
+});

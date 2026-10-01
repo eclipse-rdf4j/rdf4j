@@ -165,9 +165,9 @@ test('renderer separates loaded rows from processed progress and commits exact t
 
     assert.equal(renderer.state.rowCount, 2);
     assert.equal(renderer.state.complete, false);
-    assert.match(renderer.countLabel.textContent, /2 loaded rows/i);
+    assert.match(renderer.status.textContent, /^Receiving… 2 rows/, 'loaded rows are counted in the status line');
     assert.match(renderer.root.textContent, /10.*processed/i);
-    assert.match(renderer.root.textContent, /(?:3000\s?ms|3(?:\.0+)?\s?(?:s|seconds?))/i);
+    assert.match(renderer.root.textContent, /(?:3,?000\s?ms|3(?:\.0+)?\s?(?:s|seconds?))/i);
     assert.equal(renderer.loadMoreButton.disabled, true,
         'continuation remains unavailable until full evaluation reaches its terminal record');
 
@@ -178,7 +178,7 @@ test('renderer separates loaded rows from processed progress and commits exact t
     assert.equal(renderer.state.terminalMetadata['total-result-count'], 12);
     assert.match(renderer.root.textContent, /2.*loaded/i);
     assert.match(renderer.root.textContent, /12/);
-    assert.match(renderer.root.textContent, /(?:4500\s?ms|4\.5\s?(?:s|seconds?))/i);
+    assert.match(renderer.root.textContent, /(?:4,?500\s?ms|4\.5\s?(?:s|seconds?))/i);
     assert.equal(renderer.loadMoreButton.disabled, false);
     assert.equal(renderer.loadMoreButton.hidden, false);
 

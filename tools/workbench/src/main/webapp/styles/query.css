@@ -899,7 +899,7 @@ body.query-results-fullscreen-active {
     max-width: 100%;
 }
 
-.query-result-layout > .ERROR {
+.query-result-layout > .ERROR:not(.workbench-callout) {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
@@ -1049,7 +1049,7 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     margin-right: 0.5rem;
 }
 
-.query-result-embedded .ERROR {
+.query-result-embedded .ERROR:not(.workbench-callout) {
     box-sizing: border-box;
     margin: 0.5rem 0;
     padding: 0.75rem;
@@ -1059,6 +1059,159 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     color: var(--workbench-danger);
     font-size: var(--workbench-body-font-size);
     line-height: 1.5;
+}
+
+/* In the output card the Results tab names the result; its heading stays for assistive technology and
+ * returns in full screen (M3.5, mockup 02). */
+.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Result states (M3.5, mockup 02): the error callout, the empty result and the Yes/No answer. */
+.query-result-error {
+    margin: 12px 0;
+}
+
+.query-result-error[hidden] {
+    display: none;
+}
+
+.query-result-error .workbench-callout__title,
+.query-result-error .query-result-error__message {
+    display: block;
+}
+
+.query-result-error .query-result-error__message {
+    white-space: pre-wrap;
+}
+
+.query-result-error__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--workbench-control-gap, 8px);
+    margin-top: 10px;
+}
+
+.query-result-error__details {
+    margin-top: 10px;
+    color: var(--workbench-muted);
+}
+
+.query-result-error__details > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.query-result-error__details > pre {
+    max-height: 16rem;
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    overflow: auto;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--workbench-surface);
+    color: var(--workbench-ink);
+    font-family: var(--workbench-code-font);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.query-result-empty {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.query-result-empty[hidden] {
+    display: none;
+}
+
+.query-result-empty__icon {
+    width: 28px;
+    height: 28px;
+    margin-bottom: 4px;
+    fill: none;
+    stroke: var(--workbench-muted);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+}
+
+.query-result-empty__title {
+    margin: 0;
+    color: var(--workbench-ink);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.query-result-empty__text {
+    max-width: 48ch;
+    margin: 0;
+    color: var(--workbench-muted);
+}
+
+.query-result-embedded .queryResult.query-result-boolean {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 12px 0;
+    padding: 20px;
+    font-size: var(--workbench-body-font-size);
+}
+
+.query-result-boolean__badge {
+    display: inline-grid;
+    flex: 0 0 44px;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--workbench-success) 16%, transparent);
+}
+
+.query-result-boolean--negative .query-result-boolean__badge {
+    background: color-mix(in srgb, var(--workbench-danger) 14%, transparent);
+}
+
+.query-result-boolean__copy {
+    display: grid;
+    gap: 2px;
+}
+
+.query-result-boolean__value {
+    color: var(--workbench-ink);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.query-result-boolean__text {
+    color: var(--workbench-muted);
+}
+
+/* The editor line a server parser error points at; the next edit clears it. */
+.query-page .query-editor-error-line {
+    background: var(--workbench-danger-surface);
+}
+
+.query-page .query-editor-error-marker {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin: 6px 0 0 2px;
+    border-radius: 50%;
+    background: var(--workbench-danger);
 }
 
 @media (max-width: 900px) {

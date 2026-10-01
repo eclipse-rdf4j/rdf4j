@@ -78,8 +78,30 @@ function createYasqeStub(registerElement) {
                     setValue(value) {
                         textarea.value = value;
                     },
+                    gutterMarkers: {},
+                    lineClasses: {},
+                    cursor: null,
+                    scrolledIntoView: 0,
+                    setGutterMarker(line, gutter, element) {
+                        instance.gutterMarkers[line + ':' + gutter] = element;
+                    },
+                    addLineClass(line, where, className) {
+                        instance.lineClasses[line + ':' + where] = className;
+                    },
+                    removeLineClass(line, where) {
+                        delete instance.lineClasses[line + ':' + where];
+                    },
+                    scrollIntoView() {
+                        instance.scrolledIntoView += 1;
+                    },
                     getDoc() {
                         return {
+                            lineCount() {
+                                return (textarea.value || '').split('\n').length;
+                            },
+                            setCursor(position) {
+                                instance.cursor = { line: position.line, ch: position.ch };
+                            },
                             replaceRange(text, from, to) {
                                 // The script runs in another VM realm, so compare fields, not objects.
                                 assert.deepEqual([from.line, from.ch, to.line, to.ch], [0, 0, 0, 0],

@@ -1690,6 +1690,38 @@ namespace workbench {
             return typeof label === 'string' && label.length > 0 ? label : value ? 'Yes' : 'No';
         }
 
+        /** A bubbling event from a result target; a plain object stands in where CustomEvent is missing. */
+        function dispatchResultEvent(target: any, type: string, detail: any): void {
+            if (!target || typeof target.dispatchEvent !== 'function') {
+                return;
+            }
+            var view = target.ownerDocument && target.ownerDocument.defaultView;
+            target.dispatchEvent(view && typeof view.CustomEvent === 'function'
+                ? new view.CustomEvent(type, { bubbles: true, detail: detail })
+                : { type: type, bubbles: true, detail: detail });
+        }
+
+        function formatCount(value: number): string {
+            var format = (<any>workbench).format;
+            return format && typeof format.count === 'function' ? format.count(value) : String(value);
+        }
+
+        function rowsText(count: number): string {
+            return formatCount(count) + (count === 1 ? ' row' : ' rows');
+        }
+
+        /** The position in a parser message such as 'Encountered "<EOF>" at line 1, column 27.' */
+        function errorLocation(message: string): { line: number; column: number } {
+            var match = /\bline (\d+), column (\d+)/i.exec(message || '');
+            return match ? { line: Number(match[1]), column: Number(match[2]) } : null;
+        }
+
+        function firstSentence(message: string): string {
+            var text = String(message || '').trim();
+            var match = /^[\s\S]*?\.(?=\s|$)/.exec(text);
+            return (match ? match[0] : text.split('\n')[0]).trim();
+        }
+
         function clearChildren(element: any) {
             while (element && element.children && element.children.length > 0) {
                 element.removeChild(element.children[0]);
@@ -1855,6 +1887,8 @@ namespace workbench {
             readonly tableWrap: any;
             readonly status: any;
             readonly countLabel: any;
+            private emptyResult: any;
+            private reportedErrorLocation = '';
             readonly cancelButton: any;
             readonly loadMoreButton: any;
             readonly downloadToggle: any;
@@ -2119,7 +2153,8 @@ namespace workbench {
                 this.booleanResult = createElement(this.document, 'div', 'queryResult');
                 this.booleanResult.hidden = true;
                 this.root.appendChild(this.booleanResult);
-                this.errorResult = createElement(this.document, 'pre', 'ERROR');
+                this.errorResult = createElement(this.document, 'div',
+                    'ERROR query-result-error workbench-callout workbench-callout--error');
                 this.errorResult.setAttribute('role', 'alert');
                 this.errorResult.hidden = true;
                 this.root.appendChild(this.errorResult);
@@ -2138,6 +2173,8 @@ namespace workbench {
                 this.table.appendChild(this.tableBody);
                 this.tableWrap.appendChild(this.table);
                 this.root.appendChild(this.tableWrap);
+                this.emptyResult = this.createEmptyState();
+                this.root.appendChild(this.emptyResult);
                 this.records = createElement(this.document, 'div', 'query-result-records');
                 this.records.setAttribute('id', this.elementId('query-result-records'));
                 this.records.hidden = true;
@@ -2428,13 +2465,19 @@ namespace workbench {
                     message: message || this.state.error && this.state.error.message || 'Unable to load query results.'
                 };
                 this.state.complete = this.appendFailure && this.committedComplete;
-                this.errorResult.textContent = this.errorMessageForDisplay();
+                this.renderError();
                 this.errorResult.hidden = false;
                 this.status.textContent = this.errorStatusText();
                 this.countLabel.hidden = true;
                 this.countLabel.textContent = '';
                 this.loadMoreButton.hidden = !this.canLoadMore();
                 this.downloadToggle.hidden = !this.appendFailure;
+                // Full screen and Display only make sense while result rows stay on screen.
+                var rowsRemain = this.appendFailure || this.state.rowCount > 0;
+                this.fullscreenButton.hidden = this.fullscreenButton.hidden || !rowsRemain;
+                this.optionsToggle.hidden = this.optionsToggle.hidden || !rowsRemain;
+                this.emptyResult.hidden = true;
+                this.publishSummary(this.state, this.state.view === 'tuple' || this.state.view === 'graph');
                 var downloadButton = this.root.querySelector
                     ? this.root.querySelector('.query-result-download-button') : null;
                 if (downloadButton) {
@@ -2443,6 +2486,97 @@ namespace workbench {
                         downloadButton.parentNode.hidden = !this.appendFailure;
                     }
                 }
+            }
+
+            /**
+             * The error callout: a parser message with a position gets the title "Syntax error on line L, column C",
+             * its first sentence, a "Go to line L" button and the full message under "Parser details"; other
+             * unclassified failures get the title "The query failed"; timeouts, cancellations, server stops and
+             * incomplete streams keep their message alone.
+             */
+            private renderError(): void {
+                var error = this.state.error;
+                var message = this.errorMessageForDisplay();
+                var classified = this.appendFailure || !error
+                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query'].indexOf(error.code) >= 0
+                    || message !== error.message;
+                var location = classified ? null : errorLocation(message);
+                this.errorResult.textContent = '';
+                clearChildren(this.errorResult);
+                this.errorResult.className = 'ERROR query-result-error workbench-callout '
+                    + (error && error.code === 'empty-query' ? 'workbench-callout--info' : 'workbench-callout--error');
+                var icon = createSvgElement(this.document, 'svg', 'workbench-callout__icon');
+                icon.setAttribute('viewBox', '0 0 24 24');
+                icon.setAttribute('width', '18');
+                icon.setAttribute('height', '18');
+                icon.setAttribute('focusable', 'false');
+                icon.setAttribute('aria-hidden', 'true');
+                var iconPath = createSvgElement(this.document, 'path');
+                iconPath.setAttribute('d', error && error.code === 'empty-query'
+                    ? 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 7v5m0-8h.01'
+                    : 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 8v5m0 3h.01');
+                icon.appendChild(iconPath);
+                this.errorResult.appendChild(icon);
+                var body = createElement(this.document, 'div', 'workbench-callout__body');
+                this.errorResult.appendChild(body);
+                if (!classified) {
+                    var title = createElement(this.document, 'strong', 'workbench-callout__title');
+                    title.textContent = location
+                        ? 'Syntax error on line ' + location.line + ', column ' + location.column
+                        : 'The query failed';
+                    body.appendChild(title);
+                }
+                var text = createElement(this.document, 'span', 'query-result-error__message');
+                text.textContent = location ? firstSentence(message) : message;
+                body.appendChild(text);
+                if (!location) {
+                    this.reportedErrorLocation = '';
+                    return;
+                }
+                var actions = createElement(this.document, 'div', 'query-result-error__actions');
+                var goTo = this.createButton('Go to line ' + location.line, () => {
+                    dispatchResultEvent(this.target, 'workbench:query-error-location',
+                        { line: location.line, column: location.column, reveal: true });
+                });
+                goTo.className = 'query-result-error__goto workbench-action workbench-action--secondary';
+                actions.appendChild(goTo);
+                body.appendChild(actions);
+                var details = createElement(this.document, 'details', 'query-result-error__details');
+                var summary = createElement(this.document, 'summary');
+                summary.textContent = 'Parser details';
+                details.appendChild(summary);
+                var full = createElement(this.document, 'pre');
+                full.textContent = message;
+                details.appendChild(full);
+                body.appendChild(details);
+                var key = location.line + ':' + location.column + ':' + message;
+                if (key !== this.reportedErrorLocation) {
+                    this.reportedErrorLocation = key;
+                    dispatchResultEvent(this.target, 'workbench:query-error-location',
+                        { line: location.line, column: location.column, reveal: false });
+                }
+            }
+
+            private createEmptyState(): any {
+                var empty = createElement(this.document, 'div', 'query-result-empty');
+                empty.hidden = true;
+                var icon = createSvgElement(this.document, 'svg', 'query-result-empty__icon');
+                icon.setAttribute('viewBox', '0 0 24 24');
+                icon.setAttribute('width', '28');
+                icon.setAttribute('height', '28');
+                icon.setAttribute('focusable', 'false');
+                icon.setAttribute('aria-hidden', 'true');
+                var path = createSvgElement(this.document, 'path');
+                path.setAttribute('d', 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5');
+                icon.appendChild(path);
+                empty.appendChild(icon);
+                var title = createElement(this.document, 'p', 'query-result-empty__title');
+                title.textContent = 'No results';
+                empty.appendChild(title);
+                var text = createElement(this.document, 'p', 'query-result-empty__text');
+                text.textContent = 'The query matched no solutions. Check the prefixes and the graph, or remove filters.';
+                empty.appendChild(text);
+                return empty;
             }
 
             private errorMessageForDisplay(): string {
@@ -2495,25 +2629,33 @@ namespace workbench {
                 var label = booleanResultLabel(this.options.workbench, value);
                 clearChildren(this.booleanResult);
                 var status = value ? 'positive' : 'negative';
+                this.booleanResult.className = 'queryResult query-result-boolean query-result-boolean--' + status;
+                var badge = createElement(this.document, 'span', 'query-result-boolean__badge');
                 var icon = createSvgElement(this.document, 'svg',
                     'workbench-status-icon workbench-status-icon--' + status);
                 icon.setAttribute('viewBox', '0 0 24 24');
-                icon.setAttribute('width', '16');
-                icon.setAttribute('height', '16');
+                icon.setAttribute('width', '20');
+                icon.setAttribute('height', '20');
                 icon.setAttribute('role', 'img');
                 icon.setAttribute('aria-label', label);
                 icon.setAttribute('focusable', 'false');
-                icon.style.marginRight = '0.5rem';
                 var title = createSvgElement(this.document, 'title');
                 title.textContent = label;
                 icon.appendChild(title);
                 var path = createSvgElement(this.document, 'path');
                 path.setAttribute('d', value ? 'm5 12 4 4L19 6' : 'm7 7 10 10m0-10L7 17');
                 icon.appendChild(path);
-                this.booleanResult.appendChild(icon);
-                var text = createElement(this.document, 'span');
+                badge.appendChild(icon);
+                this.booleanResult.appendChild(badge);
+                var copy = createElement(this.document, 'div', 'query-result-boolean__copy');
+                var text = createElement(this.document, 'span', 'query-result-boolean__value');
                 text.textContent = label;
-                this.booleanResult.appendChild(text);
+                copy.appendChild(text);
+                var explanation = createElement(this.document, 'span', 'query-result-boolean__text');
+                explanation.textContent = value
+                    ? 'At least one solution matches this pattern.' : 'No solution matches this pattern.';
+                copy.appendChild(explanation);
+                this.booleanResult.appendChild(copy);
             }
 
             dispose() {
@@ -2611,10 +2753,6 @@ namespace workbench {
 
             /** Tell the surrounding page how many rows the result has, for example to badge a Results tab. */
             private publishSummary(state: any, isRows: boolean): void {
-                var view = this.document && this.document.defaultView;
-                if (!view || typeof view.CustomEvent !== 'function' || typeof this.target.dispatchEvent !== 'function') {
-                    return;
-                }
                 var total = state.terminalMetadata ? state.terminalMetadata['total-result-count'] : undefined;
                 var detail = {
                     rows: isRows && !state.error,
@@ -2628,8 +2766,7 @@ namespace workbench {
                     return;
                 }
                 this.publishedSummary = key;
-                this.target.dispatchEvent(new view.CustomEvent('workbench:query-result-summary',
-                    { bubbles: true, detail: detail }));
+                dispatchResultEvent(this.target, 'workbench:query-result-summary', detail);
             }
 
             private setControlHidden(control: any, hidden: boolean) {
@@ -2908,10 +3045,13 @@ namespace workbench {
                 this.errorResult.hidden = !state.error;
                 this.loadMoreButton.hidden = !isRows || !this.canLoadMore();
                 this.loadMoreButton.disabled = this.busy;
-                this.fullscreenButton.hidden = !state.view || state.view === 'error'
-                    || !this.featureEnabled('result-fullscreen')
+                // No rows to show: a failure without retained rows, or a complete empty result.
+                var rowsHidden = state.rowCount === 0 && (!!state.error && !this.appendFailure || state.complete);
+                this.fullscreenButton.hidden = !state.view || state.view === 'error' || state.view === 'boolean'
+                    || rowsHidden || !this.featureEnabled('result-fullscreen')
                     || this.fullscreenButton.getAttribute('data-result-fullscreen-enabled') === 'false';
-                this.downloadToggle.hidden = (!!state.error && !this.appendFailure) || !isRows || !downloadControlsVisible;
+                this.downloadToggle.hidden = (!!state.error && !this.appendFailure) || !isRows || rowsHidden
+                    || !downloadControlsVisible;
                 var downloadButton = this.root.querySelector
                     ? this.root.querySelector('.query-result-download-button') : null;
                 if (downloadButton) {
@@ -2920,12 +3060,18 @@ namespace workbench {
                         downloadButton.parentNode.hidden = downloadButton.hidden;
                     }
                 }
-                this.optionsToggle.hidden = !isRows
+                this.optionsToggle.hidden = !isRows || rowsHidden
                     || !(layoutEnabled || wrapEnabled || datatypeEnabled);
-                this.countLabel.hidden = !!state.error || !this.featureEnabled('result-totals');
+                var total = state.terminalMetadata ? state.terminalMetadata['total-result-count'] : undefined;
+                // The loaded-of label appears only while more rows exist than are loaded (Load more is pending).
+                var partiallyLoaded = isRows && state.complete
+                    && (Number.isSafeInteger(total) ? state.rowCount < total
+                        : state.terminalMetadata['result-has-more'] === true);
+                this.countLabel.hidden = !!state.error || !partiallyLoaded || !this.featureEnabled('result-totals');
+                this.emptyResult.hidden = !isRows || !state.complete || !!state.error || state.rowCount > 0;
                 this.table.setAttribute('aria-rowcount', String(state.rowCount + 1));
                 if (state.error) {
-                    this.errorResult.textContent = this.errorMessageForDisplay();
+                    this.renderError();
                 }
                 if (state.view === 'boolean' && typeof state.booleanValue === 'boolean' && !state.error) {
                     this.renderBooleanResult(state.booleanValue);
@@ -2947,33 +3093,31 @@ namespace workbench {
                         return undefined;
                     });
                 }
+                var elapsed = state.terminalMetadata ? state.terminalMetadata['query-elapsed-ms'] : undefined;
+                var completion = typeof elapsed === 'number' ? ' · complete in ' + formatCount(elapsed) + ' ms' : ' · complete';
                 if (state.error) {
                     this.status.textContent = this.errorStatusText();
-                } else if (state.complete && isRows && typeof state.terminalMetadata['query-elapsed-ms'] === 'number') {
-                    this.status.textContent = state.rowCount + ' loaded rows of '
-                        + state.terminalMetadata['total-result-count'] + ' results. Complete query: '
-                        + state.terminalMetadata['query-elapsed-ms'] + ' ms.';
-                } else if (state.complete && isRows && state.rowCount === 0) {
-                    this.status.textContent = 'No results.';
+                } else if (state.complete && isRows && typeof elapsed === 'number') {
+                    this.status.textContent = rowsText(Number.isSafeInteger(total) ? total : state.rowCount) + completion;
                 } else if (state.complete && isRows && !this.options.batched && paging.limit > 0 && paging.rowCount > 0) {
                     this.status.textContent = 'Rows ' + paging.firstRow + '–' + paging.lastRow
                         + ' of ' + paging.totalCount + '.';
                 } else if (state.complete && isRows) {
-                    this.status.textContent = state.rowCount + (state.rowCount === 1 ? ' result.' : ' results.');
+                    this.status.textContent = rowsText(state.rowCount) + completion;
                 } else if (state.view === 'boolean' && state.complete) {
-                    this.status.textContent = 'Boolean result.'
-                        + (typeof state.terminalMetadata['query-elapsed-ms'] === 'number'
-                            ? ' Complete query: ' + state.terminalMetadata['query-elapsed-ms'] + ' ms.' : '');
+                    this.status.textContent = 'Answer' + completion;
+                } else if (!state.complete && state.view === 'boolean') {
+                    this.status.textContent = 'Receiving…';
                 } else if (!state.complete && typeof state.progress['query-elapsed-ms'] === 'number') {
-                    this.status.textContent = state.rowCount + ' loaded rows; '
-                        + state.progress['result-evaluated-count'] + ' processed. '
-                        + state.progress['query-elapsed-ms'] + ' ms elapsed…';
+                    this.status.textContent = 'Receiving… ' + rowsText(state.rowCount) + ' · '
+                        + formatCount(state.progress['result-evaluated-count']) + ' processed · '
+                        + formatCount(state.progress['query-elapsed-ms']) + ' ms elapsed';
                 } else if (!state.complete) {
-                    this.status.textContent = state.rowCount + ' rows received…';
+                    this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);
                 }
-                this.countLabel.textContent = state.error || !isRows ? '' : state.rowCount + ' loaded rows'
-                    + (state.complete && Number.isSafeInteger(state.terminalMetadata['total-result-count'])
-                        ? ' of ' + state.terminalMetadata['total-result-count'] : '');
+                this.countLabel.textContent = !partiallyLoaded ? ''
+                    : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
+                        : formatCount(state.rowCount) + ' loaded';
                 this.publishSummary(state, isRows);
                 return rendered.then(() => {
                     if (this.disposed || generation !== this.renderGeneration) {
@@ -4180,7 +4324,7 @@ namespace workbench {
                 showResultTab(target);
                 revealPending = true;
                 if (!controlValue(form, 'query').trim()) {
-                    renderer.fail('Enter a query to see results.');
+                    renderer.fail('Enter a query to see results.', 'empty-query');
                     revealOnce();
                     return false;
                 }

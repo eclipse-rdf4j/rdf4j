@@ -1164,9 +1164,9 @@ test('result summaries report exact totals and follow explicit batch continuatio
 
     for (const batch of [
         { rowCount: 2, hasMore: true, total: 4, elapsed: 3500,
-            expectedLabel: '2 loaded rows of 4', expectedStatus: '2 loaded rows of 4 results. Complete query: 3500 ms.' },
+            expectedLabel: '2 of 4 loaded', expectedStatus: '4 rows · complete in 3,500 ms' },
         { rowCount: 1, hasMore: false, total: 1, elapsed: 2100,
-            expectedLabel: '1 loaded rows of 1', expectedStatus: '1 loaded rows of 1 results. Complete query: 2100 ms.' }
+            expectedLabel: '', expectedStatus: '1 row · complete in 2,100 ms' }
     ]) {
         const target = document.createElement('section');
         document.body.appendChild(target);
@@ -1207,7 +1207,7 @@ test('result summaries report exact totals and follow explicit batch continuatio
     }
 });
 
-test('boolean results preserve their fullscreen-only legacy toolbar', async () => {
+test('boolean results render their answer without result toolbar actions', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
@@ -1224,8 +1224,8 @@ test('boolean results preserve their fullscreen-only legacy toolbar', async () =
     assert.equal(renderer.booleanResult.querySelector('svg').getAttribute('class'),
         'workbench-status-icon workbench-status-icon--positive');
     assert.equal(renderer.booleanResult.querySelector('svg').getAttribute('aria-label'), 'Yes');
-    assert.equal(renderer.booleanResult.children[1].textContent, 'Yes');
-    assert.equal(renderer.fullscreenButton.hidden, false);
+    assert.equal(renderer.booleanResult.querySelector('.query-result-boolean__value').textContent, 'Yes');
+    assert.equal(renderer.fullscreenButton.hidden, true, 'a Yes/No answer has nothing to show full screen');
     assert.equal(renderer.downloadToggle.hidden, true);
     assert.equal(renderer.optionsToggle.hidden, true);
     renderer.dispose();
@@ -1241,7 +1241,7 @@ test('boolean results preserve their fullscreen-only legacy toolbar', async () =
     await localized.accept({ type: 'end' });
     assert.equal(localized.booleanResult.querySelector('svg').getAttribute('class'),
         'workbench-status-icon workbench-status-icon--negative');
-    assert.equal(localized.booleanResult.children[1].textContent, 'Non',
+    assert.equal(localized.booleanResult.querySelector('.query-result-boolean__value').textContent, 'Non',
         'labels supplied by a typed route model must take precedence over default messages');
     localized.dispose();
 });
@@ -1287,7 +1287,7 @@ test('empty tuple and streamed error results retain distinct accessible states',
     await emptyRenderer.accept({ type: 'end', metadata: { 'total-result-count': 0 } });
 
     assert.equal(emptyRenderer.status.getAttribute('role'), 'status');
-    assert.equal(emptyRenderer.status.textContent, 'No results.');
+    assert.equal(emptyRenderer.status.textContent, '0 rows · complete');
     assert.equal(emptyTarget.querySelectorAll('[data-query-row-index]').length, 0);
     emptyRenderer.dispose();
 
@@ -1301,7 +1301,8 @@ test('empty tuple and streamed error results retain distinct accessible states',
 
     const alert = errorTarget.querySelector('[role="alert"]');
     assert.ok(alert);
-    assert.equal(alert.textContent, 'Malformed query');
+    assert.equal(alert.querySelector('.workbench-callout__title').textContent, 'The query failed');
+    assert.equal(alert.querySelector('.query-result-error__message').textContent, 'Malformed query');
     assert.equal(errorRenderer.status.textContent, 'Query failed.');
     errorRenderer.dispose();
 });
@@ -1631,7 +1632,9 @@ test('download disclosure remains available for format or limit controls when do
     });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
-    await renderer.accept({ type: 'end', metadata: { 'total-result-count': 0 } });
+    // One row: an empty result has no download controls at all (task M3.5).
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'row' }]] });
+    await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
 
     assert.equal(renderer.downloadToggle.hidden, false,
         'legacy download controls remain reachable while format or limit settings are enabled');
@@ -1705,4 +1708,141 @@ test('query result download and options controls use the shared icon adapter', (
 		{ text: 'Download', name: 'download', accessibleName: 'Download' }
 	], 'the Download action should keep its download icon');
     renderer.dispose();
+});
+
+// Task M3.5 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: one status line and
+// designed result states.
+async function renderTuple(queryStream, document, rowCount, metadata, options = {}) {
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, Object.assign({ rowStore: inMemoryRowStore() }, options));
+    await renderer.accept({ type: 'view', id: 'query-result-tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    if (rowCount) {
+        await renderer.accept({ type: 'rows', values: Array.from({ length: rowCount }, (_unused, index) => [
+            { kind: 'literal', value: 'v' + index }
+        ]) });
+    }
+    if (metadata) {
+        await renderer.accept({ type: 'end', metadata: Object.assign({ 'query-result-status': 'completed' }, metadata) });
+    }
+    return { target, renderer };
+}
+
+test('the status line reads the row count and completion time', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const streaming = await renderTuple(queryStream, document, 12, null);
+    assert.equal(streaming.renderer.status.textContent, 'Receiving… 12 rows');
+    assert.equal(streaming.renderer.countLabel.hidden, true, 'no loaded-of label while the stream runs');
+    streaming.renderer.dispose();
+
+    const complete = await renderTuple(queryStream, document, 400,
+        { 'total-result-count': 400, 'query-elapsed-ms': 31 });
+    assert.equal(complete.renderer.status.textContent, '400 rows · complete in 31 ms');
+    assert.equal(complete.renderer.countLabel.hidden, true, 'every row is loaded, so there is no loaded-of label');
+    complete.renderer.dispose();
+
+    const one = await renderTuple(queryStream, document, 1, { 'total-result-count': 1, 'query-elapsed-ms': 2 });
+    assert.equal(one.renderer.status.textContent, '1 row · complete in 2 ms');
+    one.renderer.dispose();
+});
+
+test('an empty result shows a designed empty state under the header row', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const { target, renderer } = await renderTuple(queryStream, document, 0,
+        { 'total-result-count': 0, 'query-elapsed-ms': 4 });
+    const empty = target.querySelector('.query-result-empty');
+    assert.ok(empty, 'an empty-state element exists');
+    assert.equal(empty.hidden, false);
+    assert.equal(empty.querySelector('.query-result-empty__title').textContent, 'No results');
+    assert.equal(empty.querySelector('.query-result-empty__text').textContent,
+        'The query matched no solutions. Check the prefixes and the graph, or remove filters.');
+    assert.equal(renderer.status.textContent, '0 rows · complete in 4 ms');
+    assert.deepEqual([renderer.fullscreenButton.hidden, renderer.optionsToggle.hidden, renderer.downloadToggle.hidden],
+        [true, true, true], 'an empty result has nothing to show full screen, display or download');
+    renderer.dispose();
+
+    const filled = await renderTuple(queryStream, document, 2, { 'total-result-count': 2, 'query-elapsed-ms': 4 });
+    assert.equal(filled.target.querySelector('.query-result-empty').hidden, true);
+    filled.renderer.dispose();
+});
+
+test('a boolean answer is a large state without Full screen, Display or Download', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'boolean' });
+    await renderer.accept({ type: 'boolean', value: true });
+    await renderer.accept({ type: 'end', metadata: { 'query-elapsed-ms': 5, 'query-result-status': 'completed' } });
+    assert.equal(renderer.status.textContent, 'Answer · complete in 5 ms');
+    assert.equal(renderer.fullscreenButton.hidden, true);
+    assert.equal(renderer.optionsToggle.hidden, true);
+    assert.equal(renderer.downloadToggle.hidden, true);
+    assert.equal(renderer.booleanResult.querySelector('.query-result-boolean__value').textContent, 'Yes');
+    assert.equal(renderer.booleanResult.querySelector('.query-result-boolean__text').textContent,
+        'At least one solution matches this pattern.');
+    renderer.dispose();
+
+    const noTarget = document.createElement('section');
+    document.body.appendChild(noTarget);
+    const no = new queryStream.QueryResultRenderer(noTarget, { rowStore: inMemoryRowStore() });
+    await no.accept({ type: 'view', id: 'boolean' });
+    await no.accept({ type: 'boolean', value: false });
+    await no.accept({ type: 'end' });
+    assert.equal(no.booleanResult.querySelector('.query-result-boolean__text').textContent,
+        'No solution matches this pattern.');
+    no.dispose();
+});
+
+test('a failure without rows hides Full screen and Display', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const { renderer } = await renderTuple(queryStream, document, 0, null);
+    const summaries = [];
+    renderer.target.addEventListener('workbench:query-result-summary', event => summaries.push(event.detail));
+    await renderer.accept({ type: 'error', status: 500, message: 'Repository unavailable' });
+    assert.equal(summaries[summaries.length - 1].error, true, 'the Results badge learns about the failure');
+    assert.equal(renderer.fullscreenButton.hidden, true);
+    assert.equal(renderer.optionsToggle.hidden, true);
+    assert.equal(renderer.downloadToggle.hidden, true);
+    renderer.dispose();
+});
+
+test('a syntax error becomes a callout that points at the line and keeps the parser details', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const events = [];
+    target.addEventListener('workbench:query-error-location', event => events.push(event.detail));
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    const message = 'Encountered "<EOF>" at line 1, column 27.\nWas expecting one of:\n    "{" ...';
+    await renderer.accept({ type: 'view', id: 'query-result-error' });
+    await renderer.accept({ type: 'error', status: 400, message });
+
+    const alert = target.querySelector('[role="alert"]');
+    assert.equal(alert.querySelector('.workbench-callout__title').textContent, 'Syntax error on line 1, column 27');
+    assert.equal(alert.querySelector('.query-result-error__message').textContent,
+        'Encountered "<EOF>" at line 1, column 27.');
+    assert.equal(alert.querySelector('.query-result-error__details pre').textContent, message);
+    const goTo = alert.querySelector('.query-result-error__goto');
+    assert.equal(goTo.textContent, 'Go to line 1');
+    goTo.click();
+    assert.deepEqual(events.map(detail => [detail.line, detail.column, detail.reveal]), [[1, 27, false], [1, 27, true]],
+        'the renderer reports the location when it shows the error and again when Go to line is pressed');
+    renderer.dispose();
+
+    const genericTarget = document.createElement('section');
+    document.body.appendChild(genericTarget);
+    const generic = new queryStream.QueryResultRenderer(genericTarget, { rowStore: inMemoryRowStore() });
+    await generic.accept({ type: 'view', id: 'query-result-error' });
+    await generic.accept({ type: 'error', status: 500, message: 'Repository unavailable' });
+    const genericAlert = genericTarget.querySelector('[role="alert"]');
+    assert.equal(genericAlert.querySelector('.workbench-callout__title').textContent, 'The query failed');
+    assert.equal(genericAlert.querySelector('.query-result-error__goto'), null);
+    generic.dispose();
 });

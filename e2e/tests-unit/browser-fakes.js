@@ -312,6 +312,17 @@ class FakeElement {
         this.ownerDocument.activeElement = this;
     }
 
+    /** Calls this element's listeners, then its ancestors' when the event bubbles. */
+    dispatchEvent(event) {
+        const normalizedEvent = Object.assign({ target: this }, event);
+        for (let current = this; current; current = normalizedEvent.bubbles ? current.parentNode : null) {
+            normalizedEvent.currentTarget = current;
+            ((current.eventHandlers && current.eventHandlers.get(normalizedEvent.type)) || []).slice()
+                .forEach(handler => handler.call(current, normalizedEvent));
+        }
+        return true;
+    }
+
     contains(node) {
         for (let current = node; current; current = current.parentNode) {
             if (current === this) {

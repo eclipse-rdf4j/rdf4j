@@ -3717,6 +3717,42 @@ var workbench;
             setResultsFullscreen(results.getAttribute('data-fullscreen') !== 'true', true, results, button);
         }
         query_1.toggleResultsFullscreen = toggleResultsFullscreen;
+        var serverErrorLine = null;
+        /**
+         * Mark the editor line that a server parser error points at (gutter marker and line background); with
+         * reveal, also put the cursor there. The next edit clears the mark.
+         */
+        function showQueryErrorLocation(line, column, reveal) {
+            if (!yasqe || !(line >= 1)) {
+                return;
+            }
+            clearQueryErrorLocation();
+            var doc = yasqe.getDoc();
+            var index = Math.min(line - 1, Math.max(0, doc.lineCount() - 1));
+            var marker = document.createElement('span');
+            marker.className = 'query-editor-error-marker';
+            marker.title = 'The server reported a syntax error on this line';
+            yasqe.setGutterMarker(index, 'gutterErrorBar', marker);
+            yasqe.addLineClass(index, 'background', 'query-editor-error-line');
+            serverErrorLine = index;
+            if (reveal) {
+                yasqe.focus();
+                doc.setCursor({ line: index, ch: Math.max(0, column - 1) });
+                yasqe.scrollIntoView(null, 80);
+            }
+        }
+        query_1.showQueryErrorLocation = showQueryErrorLocation;
+        function clearQueryErrorLocation() {
+            if (serverErrorLine === null) {
+                return;
+            }
+            if (yasqe) {
+                yasqe.setGutterMarker(serverErrorLine, 'gutterErrorBar', null);
+                yasqe.removeLineClass(serverErrorLine, 'background', 'query-editor-error-line');
+            }
+            serverErrorLine = null;
+        }
+        query_1.clearQueryErrorLocation = clearQueryErrorLocation;
         /** Show the output card below the editor and select its 'results' or 'explanation' tab. */
         function showOutputTab(name) {
             var card = document.getElementById('query-output');
@@ -4052,6 +4088,7 @@ var workbench;
                 }
                 else {
                     persistPrimaryQueryEditorValue(paneEditor);
+                    clearQueryErrorLocation();
                 }
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
@@ -4498,6 +4535,10 @@ workbench.addLoad(function queryPageLoaded() {
     if (queryOutput) {
         queryOutput.addEventListener('workbench:query-result-summary', function (event) {
             workbench.query.updateResultsBadge(event.detail);
+        });
+        queryOutput.addEventListener('workbench:query-error-location', function (event) {
+            var location = event.detail || {};
+            workbench.query.showQueryErrorLocation(location.line, location.column, !!location.reveal);
         });
     }
     // Add click handlers identifying the clicked element in a hidden 'action'

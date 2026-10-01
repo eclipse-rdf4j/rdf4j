@@ -2714,7 +2714,7 @@ body.query-result-embedded-body .workbench-action--danger-outline .workbench-act
 }
 
 body.workbench-body .workbench-page-surface .error,
-body.workbench-body .workbench-page-surface .ERROR {
+body.workbench-body .workbench-page-surface .ERROR:not(.workbench-callout) {
 	box-sizing: border-box;
 	display: block;
 	max-width: 100%;
@@ -2729,7 +2729,7 @@ body.workbench-body .workbench-page-surface .ERROR {
 }
 
 body.workbench-body .workbench-page-surface .error:empty,
-body.workbench-body .workbench-page-surface .ERROR:empty {
+body.workbench-body .workbench-page-surface .ERROR:not(.workbench-callout):empty {
 	display: none;
 	margin: 0;
 	padding: 0;

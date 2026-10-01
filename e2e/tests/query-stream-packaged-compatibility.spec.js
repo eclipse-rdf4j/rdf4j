@@ -294,7 +294,7 @@ test('uses terminal batch metadata for Load more and fullscreen state', async ({
 		`SELECT ?item WHERE { VALUES ?item { ${pageValues} } } ORDER BY ?item`);
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(result.locator('table.data tbody tr')).toHaveCount(10);
-	await expect(result.locator('.query-result-status')).toHaveText('10 results.');
+	await expect(result.locator('.query-result-status')).toHaveText(/^1[01] rows · complete/);
 	const loadMore = result.locator('.query-result-load-more');
 	await expect(loadMore).toBeVisible();
 	await loadMore.click();
@@ -302,8 +302,9 @@ test('uses terminal batch metadata for Load more and fullscreen state', async ({
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expect(result.locator('table.data tbody')).toContainText('item11');
 	await expect(result.locator('table.data tbody tr[data-query-row-index]')).toHaveCount(11);
-	await expect(result.locator('.query-result-status')).toHaveText('11 results.');
-	await expect(result.locator('.query-result-navigation__label')).toHaveText('11 loaded rows');
+	await expect(result.locator('.query-result-status')).toHaveText(/^11 rows · complete/);
+	// The loaded-of label only appears while rows remain to load (task M3.5).
+	await expect(result.locator('.query-result-navigation__label')).toBeHidden();
 	await expect(loadMore).toBeHidden();
 	await expect(result.getByRole('button', { name: /Next|Previous/i })).toHaveCount(0);
 	await expect(result.locator('select[name="stream-result-limit"]')).toHaveCount(0);
@@ -341,7 +342,7 @@ test('result toolbar controls stay intrinsic and options anchor while Load more 
 
 	const result = page.locator('#query-results .query-result-layout');
 	const countLabel = result.locator('.query-result-navigation__label').first();
-	await expect(countLabel).toHaveText('10 loaded rows');
+	await expect(countLabel).toHaveText(/^10 (?:of 11 )?loaded$/);
 	await expect(result.locator('.query-result-load-more')).toBeVisible();
 	const toolbar = result.locator('.query-result-toolbar');
 	const downloadToggle = toolbar.locator('.query-result-download-toggle');
@@ -409,7 +410,7 @@ test('result toolbar controls stay intrinsic and options anchor while Load more 
 	await result.locator('.query-result-load-more').click();
 	await expect.poll(() => monitor.executions.length).toBe(2);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
-	await expect(countLabel).toHaveText('11 loaded rows');
+	await expect(countLabel).toBeHidden();
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
 	expect(pageErrorsSince(monitor, 0)).toEqual([]);
 });
