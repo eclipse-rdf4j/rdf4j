@@ -155,6 +155,8 @@ module workbench {
             rowRegions?: RowRegions;
             /** Locale for number formatting; the browser locale when omitted. */
             locale?: string;
+            /** The repository id of a URL whose repository does not exist (repository-not-found). */
+            missingRepositoryId?: string;
         }
 
         // The outer template owns each region's Node; a separate Lit root owns its contents.
@@ -290,8 +292,32 @@ module workbench {
             return all.length ? all[0] : {};
         }
 
+        function isRepositoryNotFound(model: PageModel): boolean {
+            return !!model.error && model.error.code === 'repository-not-found';
+        }
+
         function routeTitle(model: PageModel): string {
+            if (isRepositoryNotFound(model)) {
+                return 'Repository not found';
+            }
             return text(meta(model, 'title')) || titles[model.viewId] || 'RDF4J Workbench';
+        }
+
+        /** In-shell page for an unknown repository (mockup 13). */
+        function repositoryNotFoundPage(runtime: LitRuntime, context: ViewContext): any {
+            const h = runtime.html;
+            const server = contextBarState(context).server;
+            const id = context.missingRepositoryId || '';
+            return h`<section id="repository-not-found" class="workbench-island workbench-not-found" aria-labelledby="repository-not-found-title">
+                ${icon(runtime, 'repository', 'workbench-not-found__icon')}
+                <h2 id="repository-not-found-title">Repository not found</h2>
+                <p>The server${server ? h` at <code>${hostAndPort(server)}</code>` : ''} has no repository with id
+                    <code>${id}</code>. It may have been deleted or renamed.</p>
+                <div class="workbench-form-actions workbench-not-found__actions">
+                    <a class="workbench-action workbench-action--primary" href=${urlFor(context, 'repositories')}>Go to repositories</a>
+                    <a class="workbench-action workbench-action--secondary" href=${urlFor(context, 'server')}>Change server</a>
+                </div>
+            </section>`;
         }
 
         function urlFor(context: ViewContext, route: string): string {
@@ -673,6 +699,8 @@ module workbench {
         export interface ShellState {
             viewId: string;
             context: ViewContext;
+            /** Overrides the document title (for example on the repository-not-found page). */
+            title?: string;
         }
 
         /** Persistent shell around the outlet; `outlet` is the outlet node or, without a DOM, its template. */
@@ -2232,6 +2260,9 @@ module workbench {
         }
 
         function routeBody(model: PageModel, context: ViewContext, runtime: LitRuntime): any {
+            if (isRepositoryNotFound(model)) {
+                return repositoryNotFoundPage(runtime, context);
+            }
             switch (model.viewId) {
                 case 'summary': return summaryPage(runtime, model, context);
                 case 'information': return informationPage(runtime, model);
@@ -2491,7 +2522,7 @@ module workbench {
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
             const document: any = (appMount as any).ownerDocument;
             if (document && 'title' in document) {
-                document.title = documentTitle(shellState.viewId, shellState.context.repositoryId);
+                document.title = shellState.title || documentTitle(shellState.viewId, shellState.context.repositoryId);
             }
             return outlet;
         }
@@ -2513,7 +2544,8 @@ module workbench {
                 renderOutlet(mount, model, context, runtime);
                 return mount;
             }
-            const outlet = renderShell(mount, { viewId: model.viewId, context }, runtime);
+            const outlet = renderShell(mount, { viewId: model.viewId, context,
+                title: isRepositoryNotFound(model) ? 'Repository not found — RDF4J Workbench' : undefined }, runtime);
             if (outlet) {
                 renderOutlet(outlet, model, context, runtime);
                 return mount;

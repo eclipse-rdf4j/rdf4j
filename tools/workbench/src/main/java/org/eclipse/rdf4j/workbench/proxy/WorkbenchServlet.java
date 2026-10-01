@@ -257,6 +257,44 @@ public class WorkbenchServlet extends AbstractServlet {
 		response.flushBuffer();
 	}
 
+	/**
+	 * Answers an unknown repository with 404: a page model ending in a {@code repository-not-found} error record for
+	 * page-data requests, the HTML shell carrying that model for browser navigations, and plain text otherwise.
+	 */
+	private void writeRepositoryNotFound(String repoID, HttpServletRequest request, HttpServletResponse response)
+			throws IOException {
+		String message = "No such repository: " + repoID;
+		response.setHeader("Cache-Control", "no-cache, no-store");
+		response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+		boolean pageData = WorkbenchPageProtocol.requestsPageData(request);
+		boolean navigation = WorkbenchPageProtocol.requestsHtmlNavigation(request);
+		if (!pageData && !navigation) {
+			response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+			response.setContentType(TEXT_PLAIN);
+			response.getWriter().write(message);
+			return;
+		}
+		ByteArrayOutputStream modelData = new ByteArrayOutputStream();
+		String viewId = pageViewId(request);
+		try {
+			WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(modelData);
+			pageWriter.view(viewId);
+			pageWriter.error(HttpServletResponse.SC_NOT_FOUND, "repository-not-found", message);
+		} catch (QueryResultHandlerException e) {
+			throw new IOException(e);
+		}
+		if (navigation) {
+			WorkbenchHtmlShell.writeInitialPageModel(request, response, config, viewId, modelData.toByteArray());
+			response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+			return;
+		}
+		WorkbenchPageProtocol.configureDynamicPageResponse(response);
+		response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		response.setContentType(WorkbenchPageProtocol.CONTENT_TYPE);
+		modelData.writeTo(response.getOutputStream());
+		response.flushBuffer();
+	}
+
 	private String pageViewId(HttpServletRequest request) {
 		Object requestViewId = request.getAttribute(WorkbenchPageProtocol.PAGE_VIEW_ID_ATTRIBUTE);
 		if (requestViewId instanceof String viewId && !viewId.isBlank()) {
@@ -286,8 +324,8 @@ public class WorkbenchServlet extends AbstractServlet {
 			if (repository == null) {
 				final String noId = config.getInitParameter(NO_REPOSITORY);
 				if (noId == null || !noId.equals(repoID)) {
-					resp.setHeader("Cache-Control", "no-cache, no-store");
-					throw new BadRequestException("No such repository: " + repoID);
+					writeRepositoryNotFound(repoID, req, resp);
+					return;
 				}
 			}
 			final ProxyRepositoryServlet createdServlet = createProxyRepositoryServlet();

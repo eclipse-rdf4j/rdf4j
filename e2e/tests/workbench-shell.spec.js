@@ -145,3 +145,15 @@ test('the browser tab names the page and repository', async ({ page }) => {
 	await page.goto(repositoryPageUrl('NONE', 'repositories'), { waitUntil: 'networkidle' });
 	await expect(page).toHaveTitle('Repositories — RDF4J Workbench');
 });
+
+test('an unknown repository shows a not-found page inside the shell with status 404', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const response = await page.goto(repositoryPageUrl('nope-' + REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
+	expect(response.status()).toBe(404);
+	await expect(page.locator('#workbench-outlet h1')).toHaveText('Repository not found');
+	await expect(page.locator('#repository-not-found')).toContainText('nope-' + REPOSITORY_ID);
+	await expect(page.locator('#workbench-contextbar')).toBeVisible();
+	await expect(page.locator('#navigation a[data-workbench-nav-href$="/repositories/NONE/repositories"]')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Go to repositories' })).toBeVisible();
+	await expect(page).toHaveTitle('Repository not found — RDF4J Workbench');
+});

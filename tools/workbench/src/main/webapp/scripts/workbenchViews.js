@@ -261,8 +261,21 @@ var workbench;
             var all = records(model);
             return all.length ? all[0] : {};
         }
+        function isRepositoryNotFound(model) {
+            return !!model.error && model.error.code === 'repository-not-found';
+        }
         function routeTitle(model) {
+            if (isRepositoryNotFound(model)) {
+                return 'Repository not found';
+            }
             return text(meta(model, 'title')) || titles[model.viewId] || 'RDF4J Workbench';
+        }
+        /** In-shell page for an unknown repository (mockup 13). */
+        function repositoryNotFoundPage(runtime, context) {
+            var h = runtime.html;
+            var server = contextBarState(context).server;
+            var id = context.missingRepositoryId || '';
+            return h(__makeTemplateObject(["<section id=\"repository-not-found\" class=\"workbench-island workbench-not-found\" aria-labelledby=\"repository-not-found-title\">\n                ", "\n                <h2 id=\"repository-not-found-title\">Repository not found</h2>\n                <p>The server", " has no repository with id\n                    <code>", "</code>. It may have been deleted or renamed.</p>\n                <div class=\"workbench-form-actions workbench-not-found__actions\">\n                    <a class=\"workbench-action workbench-action--primary\" href=", ">Go to repositories</a>\n                    <a class=\"workbench-action workbench-action--secondary\" href=", ">Change server</a>\n                </div>\n            </section>"], ["<section id=\"repository-not-found\" class=\"workbench-island workbench-not-found\" aria-labelledby=\"repository-not-found-title\">\n                ", "\n                <h2 id=\"repository-not-found-title\">Repository not found</h2>\n                <p>The server", " has no repository with id\n                    <code>", "</code>. It may have been deleted or renamed.</p>\n                <div class=\"workbench-form-actions workbench-not-found__actions\">\n                    <a class=\"workbench-action workbench-action--primary\" href=", ">Go to repositories</a>\n                    <a class=\"workbench-action workbench-action--secondary\" href=", ">Change server</a>\n                </div>\n            </section>"]), icon(runtime, 'repository', 'workbench-not-found__icon'), server ? h(__makeTemplateObject([" at <code>", "</code>"], [" at <code>", "</code>"]), hostAndPort(server)) : '', id, urlFor(context, 'repositories'), urlFor(context, 'server'));
         }
         function urlFor(context, route) {
             var base = (context.basePath || '').replace(/\/+$/, '');
@@ -1418,6 +1431,9 @@ var workbench;
                 : h(__makeTemplateObject(["<option value=\"", "\" selected>", "</option>"], ["<option value=\"", "\" selected>", "</option>"]), selectedQueryLanguage, selectedQueryLanguage), !queryFeatureEnabled(context, 'query-compare'), !queryFeatureEnabled(context, 'editor-sidebar'), function () { return invoke('workbench.query.toggleCompareSidebar'); }, icon(runtime, 'menu', 'query-sidebar-toggle__svg'), !queryFeatureEnabled(context, 'explain-copy'), !queryFeatureEnabled(context, 'query-swap'), queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false', !queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context), function () { return invoke('workbench.query.runCompareExplain'); }, !queryFeatureEnabled(context, 'explain-cancel'), !queryFeatureEnabled(context, 'query-diff'), function () { return invoke('workbench.query.openDiffModal'); }, !queryFeatureEnabled(context, 'query-compare'), queryPane(runtime, { query: query, explanation: explanation, explanationFormat: explanationFormat, explanationLevel: explanationLevel, error: pageValue(model, 'error-message') }, context), queryPane(runtime, { compare: true }, context), !queryFeatureEnabled(context, 'query-execution'), icon(runtime, 'execute'), !queryFeatureEnabled(context, 'query-cancel'), function () { return invoke('workbench.query.cancelQuery'); }, !queryExplainEnabled(context), function () { return invoke('workbench.query.runExplain', null, 'explain-trigger'); }, icon(runtime, 'explain'), !queryFeatureEnabled(context, 'explain-cancel'), !queryFeatureEnabled(context, 'explain-cancel'), function () { return invoke('workbench.query.cancelExplain'); }, saveDisclosure.owner, optionsDisclosure.owner, saveDisclosure.panel, optionsDisclosure.panel, queryFeatureEnabled(context, 'result-fullscreen') ? 'true' : 'false', function () { return invoke('workbench.query.toggleResultsFullscreen'); }, function () { return invoke('workbench.query.closeDiffModal'); });
         }
         function routeBody(model, context, runtime) {
+            if (isRepositoryNotFound(model)) {
+                return repositoryNotFoundPage(runtime, context);
+            }
             switch (model.viewId) {
                 case 'summary': return summaryPage(runtime, model, context);
                 case 'information': return informationPage(runtime, model);
@@ -1681,7 +1697,7 @@ var workbench;
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
             var document = appMount.ownerDocument;
             if (document && 'title' in document) {
-                document.title = documentTitle(shellState.viewId, shellState.context.repositoryId);
+                document.title = shellState.title || documentTitle(shellState.viewId, shellState.context.repositoryId);
             }
             return outlet;
         }
@@ -1701,7 +1717,7 @@ var workbench;
                 renderOutlet(mount, model, context, runtime);
                 return mount;
             }
-            var outlet = renderShell(mount, { viewId: model.viewId, context: context }, runtime);
+            var outlet = renderShell(mount, { viewId: model.viewId, context: context, title: isRepositoryNotFound(model) ? 'Repository not found — RDF4J Workbench' : undefined }, runtime);
             if (outlet) {
                 renderOutlet(outlet, model, context, runtime);
                 return mount;

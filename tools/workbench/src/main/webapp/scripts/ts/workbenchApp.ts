@@ -26,6 +26,8 @@ module workbench {
         boolean?: boolean;
         linked?: { [key: string]: any };
         workbench?: any;
+        /** Set when the page model ends in an error record after its view, for example repository-not-found. */
+        error?: { status: number; code: string; message: string };
     }
 
     export interface LitRuntime {
@@ -461,10 +463,24 @@ module workbench {
                 case 'error':
                     state.error = new Error(record.message || ('Workbench page request failed'
                         + (record.status ? ' (' + record.status + ')' : '')));
+                    if (state.haveView) {
+                        model.error = {
+                            status: typeof record.status === 'number' ? record.status : 0,
+                            code: typeof record.code === 'string' ? record.code : '',
+                            message: state.error.message
+                        };
+                    }
                     return Promise.resolve();
                 default:
                     throw invalid('unsupported event type ' + record.type);
             }
+        }
+
+        /** True when an error response still carries a page model (NDJSON page protocol body). */
+        function isPageProtocolResponse(response: any): boolean {
+            const headers = response && response.headers;
+            const type = headers && typeof headers.get === 'function' ? String(headers.get('content-type') || '') : '';
+            return type.toLowerCase().indexOf(ACCEPT) === 0;
         }
 
         /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
@@ -480,7 +496,7 @@ module workbench {
                     headers: { Accept: ACCEPT },
                     credentials: 'same-origin'
                 }).then((response: any) => {
-                    if (!response || response.ok === false) {
+                    if (!response || response.ok === false && !isPageProtocolResponse(response)) {
                         const status = response && response.status ? ' (' + response.status + ')' : '';
                         throw new Error('Unable to load Workbench page data' + status);
                     }
@@ -488,6 +504,14 @@ module workbench {
                         onRecord: (record: any) => acceptPageRecord(model, state, record)
                     });
                 }).then((outcome: any) => {
+                    if (model.error) {
+                        // An error after the view is part of the page (for example an unknown repository).
+                        return rowStore.count().then((rowCount: number) => {
+                            model.rowCount = rowCount;
+                            model.workbench = model.metadata.workbench || {};
+                            return model;
+                        });
+                    }
                     if (state.error) {
                         throw state.error;
                     }
@@ -522,11 +546,20 @@ module workbench {
             return selected;
         }
 
-        function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
-                              model: PageModel): Promise<void> {
-            const paths = requestedLinkedModels(model);
+        /** A URL beside which "info" resolves to the server-level Info model (repositories/NONE/info). */
+        function notFoundInfoUrl(basePath: string, currentUrl: string): string {
+            return new URL(basePath + '/repositories/NONE/', currentUrl).toString();
+        }
+
+        /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
+        export function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
+                                     model: PageModel, explicitPaths?: string[]): Promise<void> {
+            const paths = explicitPaths || requestedLinkedModels(model);
             return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path))
                 .then((linked) => {
+                    if (linked.error) {
+                        return linked.rowStore.dispose().then(() => { throw new Error(linked.error.message); });
+                    }
                     if (path === '_internal/namespaces') {
                         model.linked.namespaces = { namespaceMap: linked.namespaceMap };
                         return linked.rowStore.dispose();
@@ -909,7 +942,19 @@ module workbench {
             };
         }
 
-        function renderFailure(mount: any, error: any): void {
+        /** The repository id segment of a Workbench URL (/repositories/<id>/<view>). */
+        function repositoryIdFromUrl(url: string): string {
+            const match = /\/repositories\/([^\/?#]+)/.exec(new URL(url).pathname);
+            return match ? decodeURIComponent(match[1]) : '';
+        }
+
+        /** Show a failure as an error callout in the outlet when the shell exists, otherwise in the mount. */
+        export function renderFailure(mount: any, error: any): void {
+            const views: any = workbench.views;
+            const outlet = views && typeof views.outletOf === 'function' ? views.outletOf(mount) : null;
+            if (outlet) {
+                mount = outlet;
+            }
             const document = mount && mount.ownerDocument;
             if (!document || !document.createElement) {
                 return;
@@ -967,6 +1012,14 @@ module workbench {
                     if (model.viewId !== viewId) {
                         throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                     }
+                    if (model.error) {
+                        if (model.error.code !== 'repository-not-found') {
+                            return model.rowStore.dispose().then(() => { throw new Error(model.error.message); });
+                        }
+                        // The repository does not exist: take the shell's server, menu and policy from NONE.
+                        return linkedModels(fetcher, notFoundInfoUrl(basePath, currentUrl), model, ['info'])
+                            .then(() => model);
+                    }
                     return linkedModels(fetcher, currentUrl, model).then(() => prepareInitialRows(model)).then(() => {
                         configureNamespaces(model);
                         return model;
@@ -979,9 +1032,11 @@ module workbench {
                 if (document && document.body && document.body.classList) {
                     document.body.classList.add('workbench-body');
                 }
+                const notFound = !!state.model.error && state.model.error.code === 'repository-not-found';
                 const context: any = {
                     basePath: basePathFor(mount),
-                    repositoryId: attribute(mount, 'data-workbench-repository-id'),
+                    repositoryId: notFound ? '' : attribute(mount, 'data-workbench-repository-id'),
+                    missingRepositoryId: notFound ? repositoryIdFromUrl(currentUrl) : undefined,
                     workbench: state.model.workbench || {},
                     linked: state.model.linked,
                     pageModel: state.model,

@@ -20,8 +20,7 @@ var workbench;
  * Invoked by the "Create" button on the form for all but
  * Create form views. Checks with the InfoServlet for the user-provided id
  * for the existence of the id already, giving a chance to back out if it
- * does. Depends on the current behavior of getting a failure response (500
- * Internal Server Error at present), when the ID does not exist.
+ * does. An unknown id answers 404 Not Found (500 on older servers).
  */
 function checkOverwrite() {
     var submit = false;
@@ -33,6 +32,10 @@ function checkOverwrite() {
                 'configuration of an existing repository!');
         },
         statusCode: {
+            // 404 answers an unknown repository; 500 is kept for servers from before the not-found page.
+            404: function () {
+                submit = true;
+            },
             500: function () {
                 submit = true;
             }

@@ -1359,6 +1359,15 @@ body.workbench-body .workbench-switcher {
 	min-width: 0;
 }
 
+/* Only the repository switcher gives up width (its title truncates); the others keep their size. */
+body.workbench-body .workbench-switcher:not([data-workbench-switcher="repository"]) {
+	flex: 0 0 auto;
+}
+
+body.workbench-body .workbench-switcher:not([data-workbench-switcher="repository"]) .workbench-switcher__value {
+	overflow: visible;
+}
+
 body.workbench-body .workbench-switcher__button {
 	box-sizing: border-box;
 	display: inline-flex;
@@ -1968,6 +1977,40 @@ body.workbench-body .workbench-callout--error .workbench-callout__title,
 body.query-result-embedded-body .workbench-callout--error .workbench-callout__icon,
 body.query-result-embedded-body .workbench-callout--error .workbench-callout__title {
 	color: var(--workbench-danger);
+}
+
+/* In-shell "Repository not found" page (M2.7, mockup 13). */
+body.workbench-body #workbench-page-surface > .workbench-not-found {
+	max-width: 640px;
+	margin: 24px auto 0;
+	padding: 40px 32px;
+	text-align: center;
+}
+
+body.workbench-body .workbench-not-found .workbench-not-found__icon {
+	width: 20px;
+	height: 20px;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-not-found h2 {
+	margin: 12px 0 8px;
+	font-size: 20px;
+}
+
+body.workbench-body .workbench-not-found p {
+	margin: 0 auto 20px;
+	max-width: 52ch;
+	color: var(--workbench-body);
+}
+
+body.workbench-body .workbench-not-found code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-not-found__actions {
+	justify-content: center;
 }
 
 /* Key/value list (mockup 11): label column and value column with a soft rule between rows;

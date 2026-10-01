@@ -2023,3 +2023,69 @@ function loadWorkbenchWithDocument() {
     }
     return { workbench: context.workbench, cookies };
 }
+
+test('an unknown repository renders the in-shell not-found view with the server menu', async () => {
+    const workbench = loadWorkbench();
+    installTestStreamRuntime(workbench);
+    const pageUrl = 'https://example.test/workbench/repositories/nope/summary';
+    const term = (value) => ({ kind: 'literal', value: String(value) });
+    const calls = [];
+    const notFound = {
+        ok: false,
+        status: 404,
+        headers: { get: (name) => name.toLowerCase() === 'content-type'
+            ? 'application/vnd.rdf4j.workbench+ndjson; charset=UTF-8' : null },
+        records: [
+            { type: 'head', version: 1 },
+            { type: 'view', id: 'summary' },
+            { type: 'error', status: 404, code: 'repository-not-found', message: 'No such repository: nope' }
+        ]
+    };
+    const info = pageResponse([
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'info' },
+        { type: 'vars', values: ['server', 'menu-group-id', 'menu-group-label', 'menu-item-id', 'menu-item-label',
+            'menu-item-href'] },
+        { type: 'rows', values: [[term('http://example.test/rdf4j-server'), term('repositories'), term('Server'),
+            term('repositories'), term('Repositories'), term('/workbench/repositories/NONE/repositories')]] },
+        { type: 'end' }
+    ]);
+    const document = {
+        location: { href: pageUrl },
+        body: { classList: { add() {} } },
+        documentElement: { setAttribute() {} },
+        readyState: 'complete',
+        getElementById() { return null; }
+    };
+    workbench.__testWindow.document = document;
+    const mount = {
+        ownerDocument: document,
+        getAttribute(name) {
+            return {
+                'data-workbench-fetch-page-model': 'true',
+                'data-workbench-view': 'summary',
+                'data-workbench-base-path': '/workbench'
+            }[name] || null;
+        }
+    };
+    const runtime = fakeRuntime();
+    const result = await workbench.app.bootstrap(mount, {
+        fetch(url) {
+            calls.push(new URL(String(url)).pathname);
+            return Promise.resolve(calls.length === 1 ? notFound : info);
+        },
+        runtime,
+        skipScripts: true
+    });
+
+    assert.equal(result.status, 'rendered');
+    assert.deepEqual(JSON.parse(JSON.stringify(result.model.error)),
+        { status: 404, code: 'repository-not-found', message: 'No such repository: nope' });
+    assert.deepEqual(calls, ['/workbench/repositories/nope/summary', '/workbench/repositories/NONE/info']);
+    const markup = flattenTemplateMarkup(mount.template);
+    assert.match(markup, /Repository not found/);
+    assert.match(markup, /nope/);
+    assert.match(markup, /id="workbench-outlet"/);
+    assert.match(markup, /data-workbench-nav-href/, 'the shell keeps the server menu');
+    assert.match(markup, /Go to repositories/);
+});

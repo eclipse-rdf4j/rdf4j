@@ -175,6 +175,12 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.context.checkOverwrite();
     harness.ajaxRequests[1].status(500);
     assert.equal(createForm.submitCount, 1);
+
+    // Unknown repositories answer 404 since the in-shell not-found page; 500 stays accepted for older servers.
+    createForm.submitCount = 0;
+    harness.context.checkOverwrite();
+    harness.ajaxRequests[2].status(404);
+    assert.equal(createForm.submitCount, 1);
 });
 
 test('create federate page enables create only for valid member selection', () => {

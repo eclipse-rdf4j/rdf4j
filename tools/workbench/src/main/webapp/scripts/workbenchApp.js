@@ -422,10 +422,23 @@ var workbench;
                 case 'error':
                     state.error = new Error(record.message || ('Workbench page request failed'
                         + (record.status ? ' (' + record.status + ')' : '')));
+                    if (state.haveView) {
+                        model.error = {
+                            status: typeof record.status === 'number' ? record.status : 0,
+                            code: typeof record.code === 'string' ? record.code : '',
+                            message: state.error.message
+                        };
+                    }
                     return Promise.resolve();
                 default:
                     throw invalid('unsupported event type ' + record.type);
             }
+        }
+        /** True when an error response still carries a page model (NDJSON page protocol body). */
+        function isPageProtocolResponse(response) {
+            var headers = response && response.headers;
+            var type = headers && typeof headers.get === 'function' ? String(headers.get('content-type') || '') : '';
+            return type.toLowerCase().indexOf(app.ACCEPT) === 0;
         }
         /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
         function loadModel(fetcher, url) {
@@ -439,7 +452,7 @@ var workbench;
                     headers: { Accept: app.ACCEPT },
                     credentials: 'same-origin'
                 }).then(function (response) {
-                    if (!response || response.ok === false) {
+                    if (!response || response.ok === false && !isPageProtocolResponse(response)) {
                         var status_1 = response && response.status ? ' (' + response.status + ')' : '';
                         throw new Error('Unable to load Workbench page data' + status_1);
                     }
@@ -447,6 +460,14 @@ var workbench;
                         onRecord: function (record) { return acceptPageRecord(model, state, record); }
                     });
                 }).then(function (outcome) {
+                    if (model.error) {
+                        // An error after the view is part of the page (for example an unknown repository).
+                        return rowStore.count().then(function (rowCount) {
+                            model.rowCount = rowCount;
+                            model.workbench = model.metadata.workbench || {};
+                            return model;
+                        });
+                    }
                     if (state.error) {
                         throw state.error;
                     }
@@ -480,10 +501,18 @@ var workbench;
             });
             return selected;
         }
-        function linkedModels(fetcher, currentUrl, model) {
-            var paths = requestedLinkedModels(model);
+        /** A URL beside which "info" resolves to the server-level Info model (repositories/NONE/info). */
+        function notFoundInfoUrl(basePath, currentUrl) {
+            return new URL(basePath + '/repositories/NONE/', currentUrl).toString();
+        }
+        /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
+        function linkedModels(fetcher, currentUrl, model, explicitPaths) {
+            var paths = explicitPaths || requestedLinkedModels(model);
             return Promise.all(paths.map(function (path) { return loadModel(fetcher, linkedUrl(currentUrl, path))
                 .then(function (linked) {
+                if (linked.error) {
+                    return linked.rowStore.dispose().then(function () { throw new Error(linked.error.message); });
+                }
                 if (path === '_internal/namespaces') {
                     model.linked.namespaces = { namespaceMap: linked.namespaceMap };
                     return linked.rowStore.dispose();
@@ -503,6 +532,7 @@ var workbench;
                 }
             });
         }
+        app.linkedModels = linkedModels;
         function scriptUrl(basePath, name) {
             return basePath + '/scripts/' + name;
         }
@@ -854,7 +884,18 @@ var workbench;
                 }
             };
         }
+        /** The repository id segment of a Workbench URL (/repositories/<id>/<view>). */
+        function repositoryIdFromUrl(url) {
+            var match = /\/repositories\/([^\/?#]+)/.exec(new URL(url).pathname);
+            return match ? decodeURIComponent(match[1]) : '';
+        }
+        /** Show a failure as an error callout in the outlet when the shell exists, otherwise in the mount. */
         function renderFailure(mount, error) {
+            var views = workbench.views;
+            var outlet = views && typeof views.outletOf === 'function' ? views.outletOf(mount) : null;
+            if (outlet) {
+                mount = outlet;
+            }
             var document = mount && mount.ownerDocument;
             if (!document || !document.createElement) {
                 return;
@@ -876,6 +917,7 @@ var workbench;
             }
             mount.appendChild(message);
         }
+        app.renderFailure = renderFailure;
         /** Fetch, combine, and render an eligible HTML shell exactly once. */
         function bootstrapAfterRecovery(mount, dependencies, basePath) {
             if (attribute(mount, 'data-workbench-fetch-page-model') !== 'true') {
@@ -913,6 +955,14 @@ var workbench;
                 if (model.viewId !== viewId) {
                     throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                 }
+                if (model.error) {
+                    if (model.error.code !== 'repository-not-found') {
+                        return model.rowStore.dispose().then(function () { throw new Error(model.error.message); });
+                    }
+                    // The repository does not exist: take the shell's server, menu and policy from NONE.
+                    return linkedModels(fetcher, notFoundInfoUrl(basePath, currentUrl), model, ['info'])
+                        .then(function () { return model; });
+                }
                 return linkedModels(fetcher, currentUrl, model).then(function () { return prepareInitialRows(model); }).then(function () {
                     configureNamespaces(model);
                     return model;
@@ -925,9 +975,11 @@ var workbench;
                 if (document && document.body && document.body.classList) {
                     document.body.classList.add('workbench-body');
                 }
+                var notFound = !!state.model.error && state.model.error.code === 'repository-not-found';
                 var context = {
                     basePath: basePathFor(mount),
-                    repositoryId: attribute(mount, 'data-workbench-repository-id'),
+                    repositoryId: notFound ? '' : attribute(mount, 'data-workbench-repository-id'),
+                    missingRepositoryId: notFound ? repositoryIdFromUrl(currentUrl) : undefined,
                     workbench: state.model.workbench || {},
                     linked: state.model.linked,
                     pageModel: state.model,
