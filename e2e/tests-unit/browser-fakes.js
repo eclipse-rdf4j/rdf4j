@@ -272,6 +272,11 @@ class FakeElement {
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
     }
 
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
+    }
+
     removeAllEventListeners() {
         this.eventHandlers.clear();
     }
@@ -504,6 +509,11 @@ class FakeWindow {
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
     }
 
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
+    }
+
     dispatchEvent(event) {
         const normalizedEvent = typeof event === 'string'
             ? { type: event }
@@ -714,6 +724,11 @@ class FakeDocument {
             return;
         }
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
+    }
+
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
     }
 
     removeAllEventListeners() {

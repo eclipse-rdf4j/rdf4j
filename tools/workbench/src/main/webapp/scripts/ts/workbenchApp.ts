@@ -1,4 +1,5 @@
 /// <reference path="workbenchViews.ts" />
+/// <reference path="workbenchRoutes.ts" />
 /// <reference lib="es2015.promise" />
 
 // WARNING: Do not edit the generated workbenchApp.js file. Edit this source
@@ -221,7 +222,7 @@ module workbench {
         }
 
         /** Stage the original form parameter map for one controller-owned submit. */
-        function stageInitialQueryParameters(form: any, document: any, parameters: any): () => void {
+        export function stageInitialQueryParameters(form: any, document: any, parameters: any): () => void {
             if (!form) {
                 throw invalid('initial query execution has no query form');
             }
@@ -622,12 +623,15 @@ module workbench {
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             let sequence: Promise<void> = Promise.resolve();
-            ['workbenchViews.js', 'queryStream.js', 'workbench-theme.js'].forEach((name) => {
+            ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbench-theme.js'].forEach((name) => {
                 sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
             });
             return sequence.then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');
+                }
+                if (!workbench.routes || typeof workbench.routes.get !== 'function') {
+                    throw new Error('The Workbench route registry is unavailable');
                 }
                 queryStream();
             });
@@ -682,7 +686,7 @@ module workbench {
             }
         }
 
-        function configureNamespaces(model: PageModel): void {
+        export function configureNamespaces(model: PageModel): void {
             const targetWindow: any = typeof window !== 'undefined' ? window : null;
             if (!targetWindow) {
                 return;
@@ -795,7 +799,8 @@ module workbench {
             }
         }
 
-        function releaseRowStore(model: PageModel, disposer?: () => void): void {
+        /** Dispose the mounted route when the page is left, but not when the browser keeps it in its back/forward cache. */
+        function disposeOnPagehide(instance: routes.RouteInstance): void {
             const targetWindow: any = typeof window !== 'undefined' ? window : null;
             if (!targetWindow || !targetWindow.addEventListener) {
                 return;
@@ -811,15 +816,10 @@ module workbench {
                 released = true;
                 saveScrollPosition(targetWindow, event);
                 queryStream().markCurrentRowStoresForRecovery(event);
-                if (disposer) {
-                    disposer();
-                }
-                if (model.rowStore) {
-                    model.rowStore.dispose();
-                }
                 if (targetWindow.removeEventListener) {
                     targetWindow.removeEventListener('pagehide', release, false);
                 }
+                instance.dispose('pagehide');
             };
             targetWindow.addEventListener('pagehide', release, false);
         }
@@ -853,34 +853,10 @@ module workbench {
             return targetWindow[litPromiseKey];
         }
 
+        /** The scripts a view loads for its model; the lists live in the route definitions (M7.1). */
         function routeScripts(viewId: string, model: PageModel): string[] {
-            switch (viewId) {
-                case 'server': return ['server.js'];
-                case 'create':
-                    if (model.vars.indexOf('fieldId') >= 0) {
-                        return ['create.js'];
-                    }
-                    if (model.vars.indexOf('location') >= 0
-                            && model.vars.indexOf('description') >= 0
-                            && model.vars.indexOf('id') >= 0) {
-                        return ['create.js', 'create-federate.js'];
-                    }
-                    return [];
-                case 'delete': return ['delete.js'];
-                case 'explore': return ['paging.js', 'explore.js'];
-                case 'saved-queries':
-                    return ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'];
-                case 'export': return ['paging.js', 'export.js'];
-                case 'add': return ['add.js'];
-                case 'update':
-                    return ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'];
-                case 'query':
-                    return ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
-                        'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js',
-                        'viz/full.render.js', 'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js',
-                        'paging.js', 'query.js'];
-                default: return [];
-            }
+            const definition = routes.get(viewId);
+            return definition ? definition.scripts(model) : [];
         }
 
         function installLegacyHelpers(basePath: string, dependencies: any): Promise<void> {
@@ -1058,11 +1034,18 @@ module workbench {
                     document.getElementById('noscript-message').style.display = 'none';
                 }
                 const outlet = workbench.views.outletOf ? workbench.views.outletOf(mount) || mount : mount;
-                const rowWindows = workbench.views.bindRowWindows
-                    ? workbench.views.bindRowWindows(outlet, state.model, context, state.runtime)
-                    : Promise.resolve(null);
-                return Promise.resolve(rowWindows).then((disposeRows: any) => {
-                    releaseRowStore(state.model, disposeRows);
+                const definition = routes.get(viewId);
+                const routeContext: routes.RouteMountContext = {
+                    outlet,
+                    model: state.model,
+                    context,
+                    runtime: state.runtime,
+                    url: new URL(currentUrl),
+                    state: { rendered: true }
+                };
+                const mounted = definition ? definition.mount(routeContext) : routes.defaultMount(routeContext);
+                return Promise.resolve(mounted).then((instance) => Promise.resolve(instance.ready).then(() => {
+                    disposeOnPagehide(instance);
                     return installRouteRuntime(basePath, viewId, state.model, dependencies).then(() => {
                         const runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
                         let restoreInitialPost: (() => void) | null = null;
@@ -1101,7 +1084,7 @@ module workbench {
                         restoreScrollPosition(targetWindow, scrollToRestore);
                         return { status: 'rendered', model: state.model, rendered };
                     });
-                });
+                }));
             }).catch((error) => {
                 renderFailure(mount, error);
                 throw error;

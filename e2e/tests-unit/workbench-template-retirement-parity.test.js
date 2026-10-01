@@ -34,7 +34,7 @@ function loadWorkbench() {
         workbench,
         setTimeout
     });
-    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
     }
     return context.workbench;

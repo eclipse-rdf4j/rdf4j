@@ -31,7 +31,7 @@ function loadWorkbench() {
     const window = { location: { href: 'http://localhost/rdf4j-workbench/repositories/a/types?filter=Thing' } };
     installDetailDisclosureTemplateRuntime(workbench);
     const sandbox = vm.createContext({ console, URL, Promise, window, workbench, setTimeout });
-    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), sandbox, { filename });
     }
     window.workbench = sandbox.workbench;

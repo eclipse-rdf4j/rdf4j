@@ -20,7 +20,7 @@ function loadWorkbench() {
         workbench,
         setTimeout
     });
-    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         const source = fs.readFileSync(path.join(scripts, filename), 'utf8');
         vm.runInContext(source, context, { filename });
     }
@@ -1426,9 +1426,10 @@ test('page bootstrap loads shared view and stream runtimes before requesting the
     });
 
     assert.equal(result.status, 'rendered');
-    assert.deepEqual(order.slice(0, 3), ['workbenchViews.js', 'queryStream.js', 'workbench-theme.js']);
-    assert.equal(order[3], 'page-request');
-    assert.equal(scripts.length, 3);
+    assert.deepEqual(order.slice(0, 4),
+        ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbench-theme.js']);
+    assert.equal(order[4], 'page-request');
+    assert.equal(scripts.length, 4);
 });
 
 test('page bootstrap consumes the shared incremental reader and keeps streamed rows in the row store', async () => {
@@ -2042,7 +2043,7 @@ function loadWorkbenchWithDocument() {
     workbench.getCookie = (name) => cookies[name] || '';
     const context = vm.createContext({ console, URL, Promise, window, workbench, setTimeout,
         document: { cookie: '' } });
-    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
     }
     return { workbench: context.workbench, cookies };

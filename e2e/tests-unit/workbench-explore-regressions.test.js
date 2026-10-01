@@ -27,7 +27,7 @@ function loadWorkbench() {
     const window = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, Promise, window, workbench, setTimeout });
-    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
     }
     window.workbench = context.workbench;
