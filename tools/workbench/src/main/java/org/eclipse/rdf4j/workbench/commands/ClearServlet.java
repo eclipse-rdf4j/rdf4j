@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.Resource;
@@ -37,7 +36,21 @@ public class ClearServlet extends TransformationServlet {
 
 	private final Logger logger = LoggerFactory.getLogger(ClearServlet.class);
 
+	/** How long the Clear page waits for its statement counts (plan task M13.2). */
+	static final long COUNT_BUDGET_MILLIS = 5000;
+
 	private final BrowseList browseList = new BrowseList();
+
+	private final long countBudgetMillis;
+
+	public ClearServlet() {
+		this(COUNT_BUDGET_MILLIS);
+	}
+
+	/** A Clear page that gives its counts the given time instead (tests use a shorter budget). */
+	ClearServlet(long countBudgetMillis) {
+		this.countBudgetMillis = countBudgetMillis;
+	}
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)
@@ -63,30 +76,63 @@ public class ClearServlet extends TransformationServlet {
 		}
 	}
 
+	@Override
+	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
+		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
+		if (BrowseList.countsRequested(req)) {
+			counts(builder);
+		} else {
+			service(builder);
+		}
+	}
+
 	/**
-	 * Lists what can be cleared: each graph in name order and then the default graph, with their statement counts
-	 * (empty when counting did not finish within two seconds), and the repository size as metadata
-	 * {@code repository-size}.
+	 * Lists what can be cleared, at once: each graph in name order and then the default graph, without counts. The page
+	 * asks for them with {@code counts=true} once it is shown (plan task M13.2).
 	 */
 	@Override
 	public void service(TupleResultBuilder builder) throws Exception {
+		List<Resource> contexts = contexts();
+		builder.start(CONTEXT, "statements");
+		builder.link(List.of(INFO));
+		for (Resource context : contexts) {
+			builder.result(context, null);
+		}
+		builder.result(null, null);
+		builder.end();
+	}
+
+	/**
+	 * The same list with statement counts, counted on their own connection for at most five seconds, and the repository
+	 * size as metadata {@code repository-size}. Counts that did not finish are empty, and {@code counts-timed-out} is
+	 * set.
+	 */
+	private void counts(TupleResultBuilder builder) throws Exception {
+		List<Resource> contexts = contexts();
+		BrowseList.StatementCounts counts = browseList.statementCounts(repository, contexts, countBudgetMillis);
+		builder.start(CONTEXT, "statements");
+		builder.link(List.of(INFO));
+		Long size = counts.values().get(BrowseList.REPOSITORY);
+		if (size != null) {
+			builder.metadata("repository-size", size);
+		}
+		if (counts.timedOut()) {
+			BrowseList.countsTimedOut(builder);
+		}
+		for (Resource context : contexts) {
+			builder.result(context, statements(counts.values().get(BrowseList.key(context))));
+		}
+		builder.result(null, statements(counts.values().get(BrowseList.DEFAULT_GRAPH)));
+		builder.end();
+	}
+
+	private List<Resource> contexts() {
 		List<Resource> contexts = new ArrayList<>();
 		try (RepositoryConnection con = repository.getConnection()) {
 			contexts.addAll(Iterations.asList(con.getContextIDs()));
 		}
 		contexts.sort(BrowseList.BY_NAME);
-		Map<String, Long> counts = browseList.statementCounts(repository, contexts);
-		builder.start(CONTEXT, "statements");
-		builder.link(List.of(INFO));
-		Long size = counts.get(BrowseList.REPOSITORY);
-		if (size != null) {
-			builder.metadata("repository-size", size);
-		}
-		for (Resource context : contexts) {
-			builder.result(context, statements(counts.get(BrowseList.key(context))));
-		}
-		builder.result(null, statements(counts.get(BrowseList.DEFAULT_GRAPH)));
-		builder.end();
+		return contexts;
 	}
 
 	private static Value statements(Long count) {

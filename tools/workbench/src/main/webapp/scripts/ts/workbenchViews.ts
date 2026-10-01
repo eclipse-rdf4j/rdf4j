@@ -2563,6 +2563,61 @@ module workbench {
         }
 
         /** "N statements", or "—" when the server could not count within its budget. */
+        /**
+         * Clear (M13.2): counts requested with counts=true once the page is shown, so the page never waits for them.
+         * The server stops counting after its budget and says so with counts-timed-out; counts that finished are kept.
+         * Values are keyed by graph in N-Triples, '' for the default graph and '*' for the whole repository.
+         */
+        const countedPages: { [viewId: string]: { timedOut: string } } = {
+            clear: { timedOut: 'Counting took longer than five seconds' }
+        };
+
+        interface PageCounts {
+            state: string;
+            values: { [key: string]: any };
+        }
+
+        function pageCounts(model: PageModel): PageCounts {
+            const holder: any = model;
+            if (!holder.pageCounts) {
+                holder.pageCounts = { state: countedPages[model.viewId] ? 'counting' : 'none', values: {} };
+            }
+            return holder.pageCounts;
+        }
+
+        /** A count of a counted page, as text: the count, "Counting…" while it is on its way, or "—". */
+        function pageCountLabel(model: PageModel, count: any, context: ViewContext): string {
+            const counts = pageCounts(model);
+            return text(count) ? statementsLabel(count, context) : counts.state === 'counting' ? 'Counting…' : '—';
+        }
+
+        /** Ask for the counts of a counted page and show them in place when they arrive; the result stops that. */
+        function loadPageCounts(mount: any, model: PageModel, context: ViewContext, runtime: LitRuntime,
+                                targetWindow: any): () => void {
+            const counts = pageCounts(model);
+            const app: any = (workbench as any).app;
+            const href = targetWindow && targetWindow.location && targetWindow.location.href;
+            if (counts.state !== 'counting' || !href || !app || typeof app.loadModel !== 'function') {
+                return () => {};
+            }
+            let disposed = false;
+            const url = new URL(String(href));
+            url.searchParams.set('counts', 'true');
+            app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
+                .then((answer: PageModel) => answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
+                    answer.rowStore.dispose();
+                    rows.forEach((row: any[]) => {
+                        if (text(row[1])) { counts.values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
+                    });
+                    const size = meta(answer, 'repository-size');
+                    if (text(size)) { counts.values['*'] = size; }
+                    counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+                }))
+                .then(null, () => { counts.state = 'failed'; })
+                .then(() => { if (!disposed) { render(mount, model, context, runtime); } });
+            return () => { disposed = true; };
+        }
+
         function statementsLabel(count: any, context: ViewContext): string {
             const raw = text(count);
             return raw ? formatCount(raw, context) + (raw === '1' ? ' statement' : ' statements') : '—';
@@ -2583,11 +2638,15 @@ module workbench {
         function clearPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const listing = (model.vars || []).indexOf('statements') >= 0 ? records(model) : [];
-            const targets: any[] = [{ value: '', label: 'Entire repository', count: meta(model, 'repository-size') }]
+            // The counts arrive after the page (M13.2); a page model that already has them shows them at once.
+            const counted = pageCounts(model).values;
+            const countOf = (key: string, fallback: any) => key in counted ? counted[key] : fallback;
+            const targets: any[] = [{ value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }]
                 .concat(listing.filter((record: any) => !record.context)
-                    .map((record: any) => ({ value: 'null', label: 'Default graph', count: record.statements })))
+                    .map((record: any) => ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) })))
                 .concat(listing.filter((record: any) => !!record.context)
-                    .map((record: any) => ({ value: ntriples(record.context), label: termText(record.context), count: record.statements })));
+                    .map((record: any) => ({ value: ntriples(record.context), label: termText(record.context),
+                        count: countOf(ntriples(record.context), record.statements) })));
             const holder: any = model;
             if (typeof holder.clearTarget !== 'string') {
                 const requested = locationParameter('context') || text(pageValue(model, 'context'));
@@ -2624,8 +2683,11 @@ module workbench {
                             const outlet = event.currentTarget.closest('.workbench-outlet');
                             if (outlet) { render(outlet, model, context, runtime); }
                         }}>${targets.map((target: any) => h`<option value=${target.value} ?selected=${target === selected}>${
-                            target.label + ' — ' + statementsLabel(target.count, context)}</option>`)}</select>${
+                            target.label + ' — ' + pageCountLabel(model, target.count, context)}</option>`)}</select>${
                             icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
+                        ${pageCounts(model).state === 'timed-out'
+                            ? h`<p id="clear-counts-help" class="workbench-field__help">${countedPages.clear.timedOut}; "—" marks a count that did not finish.</p>`
+                            : ''}
                     </div>
                 </div>
                 <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger">${
@@ -3558,7 +3620,7 @@ module workbench {
                 && hasQuery('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
             const hasPicker = hasQuery('[data-workbench-window-picker]');
             if (!targetWindow || !model.rowStore || !hasRows && !hasPicker) {
-                return Promise.resolve(() => {});
+                return Promise.resolve(loadPageCounts(mount, model, context, runtime, targetWindow));
             }
             if (hasRows && typeof HeightIndex !== 'function') {
                 return Promise.reject(new Error('Measured Workbench row-window geometry is unavailable'));

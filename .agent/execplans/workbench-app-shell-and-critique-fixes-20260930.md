@@ -76,8 +76,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 22:36Z) M11.3 Keep the Query route alive.
 - [ ] M12.1 Migrate tests that assumed full page loads. Code committed (9a32a0d6bb); `mvnf tools/workbench` passed; waiting for the Chromium, Firefox and WebKit suite runs.
 - [x] (2026-10-01 23:24Z) M13.1 The menu starts at the top (user request).
-- [ ] M13.2 (in progress) Clear counts asynchronously, with a 5 second budget (user request).
-- [ ] M13.3 Summary counts asynchronously, with a short budget (user request).
+- [x] (2026-10-01 23:32Z) M13.2 Clear counts asynchronously, with a 5 second budget (user request).
+- [ ] M13.3 (in progress) Summary counts asynchronously, with a short budget (user request).
 - [ ] M13.4 Query results stay visible per repository and tab (user request).
 - [ ] M13.5 Queries keep running in the background (user request).
 - [ ] M13.6 Review every warning for alignment and padding (user request).
@@ -366,6 +366,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Rationale: a final review before the user's additions would have to be repeated after them; the suite runs need no attention until they end.
   Date/Author: 2026-10-02 / implementer.
 - Decision (M13.1): the sidebar menu loses its 16px top margin. It rested at 96px (context bar 56px, the layout's 24px gap, then the margin) but sticks at `top: calc(var(--workbench-contextbar-height) + 24px)`, 80px, so the first 16px of scrolling moved it up before it stuck. Resting at 80px matches the sticky position and mockup 01, which places the menu 24px under the context bar.
+  Date/Author: 2026-10-02 / implementer.
+- Decision (M13.2): Clear's page data lists the graphs and the default graph with empty counts and answers at once; `counts=true` answers the same rows with counts, counted on their own connection by `BrowseList.statementCounts(repository, contexts, budgetMillis)` (the repository size, the default graph, then each graph), plus `repository-size`, and sets `counts-timed-out` when the 5,000 ms budget ran out, keeping the counts that finished. The view requests the counts from `bindRowWindows()` (whose early return for pages without row windows now starts `loadPageCounts()`), shows "Counting…" in each option until they arrive and "—" for a count that did not finish, with a note under the field when counting timed out; the confirmation dialog uses the count when it is known. `ClearServlet(long)` takes a shorter budget for tests.
+  Rationale: the same request pattern as Types and Graphs (M5.2); keeping finished counts makes a slow graph cost only its own count.
   Date/Author: 2026-10-02 / implementer.
 
 ## Outcomes & Retrospective

@@ -1862,6 +1862,57 @@ var workbench;
             }), function (event) { return recount(event.currentTarget.form); }, !selectedGraph, selectedGraph === 'null', graphs.map(function (record) { return h(__makeTemplateObject(["<option value=", "\n                                ?selected=", ">", "</option>"], ["<option value=", "\n                                ?selected=", ">", "</option>"]), ntriples(record.context), ntriples(record.context) === selectedGraph, termText(record.context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), disabled, icon(runtime, 'remove'), 'Remove ' + amount + '…', state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : '', removeMatchLabel(state, context));
         }
         /** "N statements", or "—" when the server could not count within its budget. */
+        /**
+         * Clear (M13.2): counts requested with counts=true once the page is shown, so the page never waits for them.
+         * The server stops counting after its budget and says so with counts-timed-out; counts that finished are kept.
+         * Values are keyed by graph in N-Triples, '' for the default graph and '*' for the whole repository.
+         */
+        var countedPages = {
+            clear: { timedOut: 'Counting took longer than five seconds' }
+        };
+        function pageCounts(model) {
+            var holder = model;
+            if (!holder.pageCounts) {
+                holder.pageCounts = { state: countedPages[model.viewId] ? 'counting' : 'none', values: {} };
+            }
+            return holder.pageCounts;
+        }
+        /** A count of a counted page, as text: the count, "Counting…" while it is on its way, or "—". */
+        function pageCountLabel(model, count, context) {
+            var counts = pageCounts(model);
+            return text(count) ? statementsLabel(count, context) : counts.state === 'counting' ? 'Counting…' : '—';
+        }
+        /** Ask for the counts of a counted page and show them in place when they arrive; the result stops that. */
+        function loadPageCounts(mount, model, context, runtime, targetWindow) {
+            var counts = pageCounts(model);
+            var app = workbench.app;
+            var href = targetWindow && targetWindow.location && targetWindow.location.href;
+            if (counts.state !== 'counting' || !href || !app || typeof app.loadModel !== 'function') {
+                return function () { };
+            }
+            var disposed = false;
+            var url = new URL(String(href));
+            url.searchParams.set('counts', 'true');
+            app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
+                .then(function (answer) { return answer.rowStore.read(0, answer.rowCount).then(function (rows) {
+                answer.rowStore.dispose();
+                rows.forEach(function (row) {
+                    if (text(row[1])) {
+                        counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                    }
+                });
+                var size = meta(answer, 'repository-size');
+                if (text(size)) {
+                    counts.values['*'] = size;
+                }
+                counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+            }); })
+                .then(null, function () { counts.state = 'failed'; })
+                .then(function () { if (!disposed) {
+                render(mount, model, context, runtime);
+            } });
+            return function () { disposed = true; };
+        }
         function statementsLabel(count, context) {
             var raw = text(count);
             return raw ? formatCount(raw, context) + (raw === '1' ? ' statement' : ' statements') : '—';
@@ -1880,11 +1931,15 @@ var workbench;
         function clearPage(runtime, model, context) {
             var h = runtime.html;
             var listing = (model.vars || []).indexOf('statements') >= 0 ? records(model) : [];
-            var targets = [{ value: '', label: 'Entire repository', count: meta(model, 'repository-size') }]
+            // The counts arrive after the page (M13.2); a page model that already has them shows them at once.
+            var counted = pageCounts(model).values;
+            var countOf = function (key, fallback) { return key in counted ? counted[key] : fallback; };
+            var targets = [{ value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }]
                 .concat(listing.filter(function (record) { return !record.context; })
-                .map(function (record) { return ({ value: 'null', label: 'Default graph', count: record.statements }); }))
+                .map(function (record) { return ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) }); }))
                 .concat(listing.filter(function (record) { return !!record.context; })
-                .map(function (record) { return ({ value: ntriples(record.context), label: termText(record.context), count: record.statements }); }));
+                .map(function (record) { return ({ value: ntriples(record.context), label: termText(record.context),
+                count: countOf(ntriples(record.context), record.statements) }); }));
             var holder = model;
             if (typeof holder.clearTarget !== 'string') {
                 var requested_1 = locationParameter('context') || text(pageValue(model, 'context'));
@@ -1910,13 +1965,14 @@ var workbench;
                     }
                 });
             };
-            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"]), confirmAndSubmit, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.', 'This permanently deletes statements.', 'clear-warning'), errorCallout(runtime, model), function (event) {
+            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"]), confirmAndSubmit, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.', 'This permanently deletes statements.', 'clear-warning'), errorCallout(runtime, model), function (event) {
                 holder.clearTarget = event.currentTarget.value;
                 var outlet = event.currentTarget.closest('.workbench-outlet');
                 if (outlet) {
                     render(outlet, model, context, runtime);
                 }
-            }, targets.map(function (target) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), target.value, target === selected, target.label + ' — ' + statementsLabel(target.count, context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), icon(runtime, 'clear'), everything ? 'Clear entire repository…' : 'Clear graph…');
+            }, targets.map(function (target) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), target.value, target === selected, target.label + ' — ' + pageCountLabel(model, target.count, context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), pageCounts(model).state === 'timed-out'
+                ? h(__makeTemplateObject(["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"], ["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"]), countedPages.clear.timedOut) : '', icon(runtime, 'clear'), everything ? 'Clear entire repository…' : 'Clear graph…');
         }
         function updatePage(runtime, model, context) {
             var h = runtime.html;
@@ -2513,7 +2569,7 @@ var workbench;
                 && hasQuery('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
             var hasPicker = hasQuery('[data-workbench-window-picker]');
             if (!targetWindow || !model.rowStore || !hasRows && !hasPicker) {
-                return Promise.resolve(function () { });
+                return Promise.resolve(loadPageCounts(mount, model, context, runtime, targetWindow));
             }
             if (hasRows && typeof HeightIndex !== 'function') {
                 return Promise.reject(new Error('Measured Workbench row-window geometry is unavailable'));

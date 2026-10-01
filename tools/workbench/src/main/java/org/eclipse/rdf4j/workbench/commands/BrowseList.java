@@ -103,9 +103,18 @@ final class BrowseList {
 	 * @return the count, or empty when it took longer; the count is then cancelled
 	 */
 	<T> Optional<T> withinBudget(Callable<T> count) throws Exception {
+		return withinBudget(count, COUNT_BUDGET_MILLIS);
+	}
+
+	/**
+	 * Runs a count and waits at most the given time.
+	 *
+	 * @return the count, or empty when it took longer; the count is then cancelled
+	 */
+	<T> Optional<T> withinBudget(Callable<T> count, long budgetMillis) throws Exception {
 		Future<T> future = executor.submit(count);
 		try {
-			return Optional.ofNullable(future.get(COUNT_BUDGET_MILLIS, TimeUnit.MILLISECONDS));
+			return Optional.ofNullable(future.get(budgetMillis, TimeUnit.MILLISECONDS));
 		} catch (TimeoutException e) {
 			future.cancel(true);
 			return Optional.empty();
@@ -118,15 +127,20 @@ final class BrowseList {
 		}
 	}
 
+	/** Statement counts that finished, and whether counting stopped before all of them did. */
+	record StatementCounts(Map<String, Long> values, boolean timedOut) {
+	}
+
 	/**
 	 * Counts the statements of the whole repository, the default graph and each of the given graphs, in that order, on
-	 * its own connection and within the budget.
+	 * its own connection and within the given time.
 	 *
 	 * @return the counts that finished, keyed by {@link #REPOSITORY}, {@link #DEFAULT_GRAPH} or the graph in N-Triples
 	 */
-	Map<String, Long> statementCounts(Repository repository, List<Resource> contexts) throws Exception {
+	StatementCounts statementCounts(Repository repository, List<Resource> contexts, long budgetMillis)
+			throws Exception {
 		Map<String, Long> counts = new ConcurrentHashMap<>();
-		withinBudget(() -> {
+		Optional<Boolean> finished = withinBudget(() -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
 				counts.put(REPOSITORY, connection.size());
 				counts.put(DEFAULT_GRAPH, connection.size((Resource) null));
@@ -137,9 +151,9 @@ final class BrowseList {
 					counts.put(key(context), connection.size(context));
 				}
 			}
-			return null;
-		});
-		return new HashMap<>(counts);
+			return Boolean.TRUE;
+		}, budgetMillis);
+		return new StatementCounts(new HashMap<>(counts), finished.isEmpty());
 	}
 
 	static String key(Resource context) {

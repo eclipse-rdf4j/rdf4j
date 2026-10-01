@@ -18,6 +18,7 @@ const {
 	repositoryPageUrl,
 	serverBaseUrl,
 	uniqueRepositoryId,
+	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
@@ -210,6 +211,37 @@ async function sizeOf(request, context) {
 	return Number((await response.text()).trim());
 }
 
+// Plan task M13.2 (user request): Clear lists its graphs at once and counts them afterwards, for up to five seconds.
+test('Clear shows its graphs before their counts arrive', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	let release;
+	const held = new Promise((resolve) => { release = resolve; });
+	const countRequests = [];
+	await page.route((url) => url.pathname.endsWith('/clear') && url.searchParams.get('counts') === 'true', async (route) => {
+		countRequests.push(route.request().url());
+		await held;
+		await route.continue();
+	});
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'clear'), { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'clear');
+	const options = page.locator('#clear-form select[name="context"] option');
+	await expect.poll(() => options.allInnerTexts()).toEqual([
+		'Entire repository — Counting…',
+		'Default graph — Counting…',
+		'http://example.org/graph/bsbm — Counting…',
+		'http://example.org/graph/spl — Counting…'
+	]);
+	expect(countRequests).toHaveLength(1);
+
+	release();
+	await expect.poll(() => options.allInnerTexts()).toEqual([
+		expect.stringMatching(/^Entire repository — [\d,]+ statements$/),
+		expect.stringMatching(/^Default graph — [\d,]+ statements?$/),
+		expect.stringMatching(/^http:\/\/example\.org\/graph\/bsbm — [\d,]+ statements$/),
+		expect.stringMatching(/^http:\/\/example\.org\/graph\/spl — [\d,]+ statements$/)
+	]);
+});
+
 // Keep this test last: it clears the repository.
 test('Clear lists the graphs with their sizes and asks before clearing a graph or everything', async ({ page, request }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -219,6 +251,8 @@ test('Clear lists the graphs with their sizes and asks before clearing a graph o
 		{ waitUntil: 'domcontentloaded' });
 	const target = page.locator('#clear-form select[name="context"]');
 	await expect(target).toHaveValue(spl);
+	// The counts arrive after the list (M13.2).
+	await expect(target.locator('option').first()).toHaveText(/statements$/);
 	const options = await target.locator('option').allInnerTexts();
 	expect(options[0]).toMatch(/^Entire repository — [\d,]+ statements$/);
 	expect(options[1]).toMatch(/^Default graph — [\d,]+ statements?$/);

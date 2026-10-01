@@ -41,8 +41,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * The Clear page (plan task M6.4, mockup 08) lists what can be cleared: every graph and the default graph with their
- * statement counts, and the repository size.
+ * The Clear page (plan task M6.4, mockup 08) lists what can be cleared: every graph and the default graph. Their
+ * statement counts and the repository size are requested separately with {@code counts=true} (plan task M13.2).
  */
 class ClearServletPageDataTest {
 
@@ -77,33 +77,56 @@ class ClearServletPageDataTest {
 	}
 
 	@Test
-	void pageDataListsEveryGraphWithItsCountAndTheRepositorySize() throws Exception {
-		List<JsonNode> records = run(store);
+	void pageDataListsEveryGraphAtOnceWithoutCounting() throws Exception {
+		long started = System.nanoTime();
+		List<JsonNode> records = run(new ClearServlet(), slowCountingStore(null), false);
+
+		assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+				.as("the page answers without waiting for counts (plan task M13.2)")
+				.isLessThan(1000);
+		assertThat(vars(records)).containsExactly("context", "statements");
+		assertThat(column(records, 0)).containsExactly(NS + "graph/a", NS + "graph/b", null);
+		assertThat(column(records, 1)).containsOnlyNulls();
+		assertThat(metadata(records).has("repository-size")).isFalse();
+		assertThat(metadata(records).has("counts-timed-out")).isFalse();
+	}
+
+	@Test
+	void countsAreAnsweredOnTheirOwnRequest() throws Exception {
+		List<JsonNode> records = run(new ClearServlet(), store, true);
 
 		assertThat(vars(records)).containsExactly("context", "statements");
 		assertThat(column(records, 0)).containsExactly(NS + "graph/a", NS + "graph/b", null);
 		assertThat(column(records, 1)).containsExactly("1", "3", "1");
 		assertThat(metadata(records).path("repository-size").asLong()).isEqualTo(5);
+		assertThat(metadata(records).has("counts-timed-out")).isFalse();
 	}
 
 	@Test
-	void countsThatTakeLongerThanTheBudgetAreLeftEmpty() throws Exception {
-		List<JsonNode> records = run(slowCountingStore());
+	void countingStopsAfterFiveSecondsAndAnswersTheCountsThatFinished() throws Exception {
+		assertThat(ClearServlet.COUNT_BUDGET_MILLIS).isEqualTo(5000);
+		long started = System.nanoTime();
+		// A shorter budget keeps the test fast; graph/b is the count that does not finish.
+		List<JsonNode> records = run(new ClearServlet(300), slowCountingStore(NS + "graph/b"), true);
 
-		assertThat(slowCounts.getCount()).as("the response did not wait for the counts").isEqualTo(1);
+		assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(5000);
+		assertThat(slowCounts.getCount()).as("the response did not wait for the slow count").isEqualTo(1);
 		assertThat(column(records, 0)).containsExactly(NS + "graph/a", NS + "graph/b", null);
-		assertThat(column(records, 1)).containsOnlyNulls();
-		assertThat(metadata(records).has("repository-size")).isFalse();
+		assertThat(column(records, 1)).containsExactly("1", null, "1");
+		assertThat(metadata(records).path("repository-size").asLong()).isEqualTo(5);
+		assertThat(metadata(records).path("counts-timed-out").asBoolean()).isTrue();
 	}
 
-	private List<JsonNode> run(Repository repository) throws Exception {
-		ClearServlet servlet = new ClearServlet();
+	private List<JsonNode> run(ClearServlet servlet, Repository repository, boolean counts) throws Exception {
 		servlet.setRepository(repository);
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
 		servlet.init(TestServletConfig.withParams("clear", "cookie-max-age", "300"));
 		try {
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/clear");
 			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+			if (counts) {
+				request.addParameter("counts", "true");
+			}
 			MockHttpServletResponse response = new MockHttpServletResponse();
 			servlet.service(request, response);
 			return response.getContentAsString().lines().map(ClearServletPageDataTest::readTree).toList();
@@ -112,18 +135,22 @@ class ClearServletPageDataTest {
 		}
 	}
 
-	/** A store whose statement sizes wait until the test ends. */
-	private Repository slowCountingStore() {
+	/** A store whose statement sizes wait until the test ends: every size, or only the size of the given graph. */
+	private Repository slowCountingStore(String slowGraph) {
 		return new RepositoryWrapper(store) {
 			@Override
 			public RepositoryConnection getConnection() throws RepositoryException {
 				return new RepositoryConnectionWrapper(this, super.getConnection()) {
 					@Override
 					public long size(Resource... contexts) throws RepositoryException {
-						try {
-							slowCounts.await(30, TimeUnit.SECONDS);
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
+						boolean slow = slowGraph == null || contexts.length == 1 && contexts[0] != null
+								&& slowGraph.equals(contexts[0].stringValue());
+						if (slow) {
+							try {
+								slowCounts.await(30, TimeUnit.SECONDS);
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+							}
 						}
 						return super.size(contexts);
 					}
