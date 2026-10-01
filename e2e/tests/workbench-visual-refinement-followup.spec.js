@@ -361,7 +361,7 @@ test('compare mode collapses and restores navigation without reserving an empty 
 		const compare = document.querySelector('#query-compare-layout').getBoundingClientRect();
 		const toolbar = document.querySelector('#query-compare-toolbar');
 		const copyBox = document.querySelector('#query-compare-copy').getBoundingClientRect();
-		const header = document.querySelector('#header').getBoundingClientRect();
+		const header = document.querySelector('#workbench-contextbar').getBoundingClientRect();
 		return {
 			width: box.width,
 			height: box.height,
@@ -564,7 +564,7 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 		const box = button.getBoundingClientRect();
 		const toolbar = document.querySelector('#query-compare-toolbar');
 		const copy = document.querySelector('#query-compare-copy').getBoundingClientRect();
-		const header = document.querySelector('#header').getBoundingClientRect();
+		const header = document.querySelector('#workbench-contextbar').getBoundingClientRect();
 		return {
 			width: box.width,
 			height: box.height,

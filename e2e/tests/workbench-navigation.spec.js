@@ -57,17 +57,21 @@ test('mobile header omits the theme selector and keeps server context reachable'
 			return {
 				viewport: document.documentElement.clientWidth,
 				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-				header: bounds('#header'),
+				header: bounds('#workbench-contextbar'),
 				brand: bounds('#logo'),
 				hasThemeControl: document.querySelector('#workbench-theme, .workbench-theme-control') !== null,
-				context: bounds('#contentheader')
+				context: bounds('#workbench-repository-switcher'),
+				serverLinks: document.querySelectorAll('#navigation a[href$="/repositories/NONE/server"]').length
 			};
 		});
 
 		expect(geometry.hasThemeControl).toBe(false);
 		expect(geometry.overflow).toBeLessThanOrEqual(1);
-		expect(geometry.context.top).toBeGreaterThanOrEqual(geometry.brand.bottom - 1);
-		expect(geometry.header.height).toBeLessThan(190);
+		// One compact row; the server stays reachable through the menu's Connection item.
+		expect(geometry.context.top).toBeGreaterThanOrEqual(geometry.header.top);
+		expect(geometry.context.bottom).toBeLessThanOrEqual(geometry.header.bottom);
+		expect(geometry.header.height).toBeLessThanOrEqual(60);
+		expect(geometry.serverLinks).toBeGreaterThan(0);
 		await routePage.close();
 	}
 });
@@ -116,5 +120,5 @@ test('the server page shows the same menu and server as every other page', async
 	const server = await groupLabels('/repositories/NONE/server');
 	expect(server).toEqual(repositories);
 	const serverUrl = WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server');
-	await expect(page.locator('#header')).toContainText(serverUrl);
+	await expect(page.locator('#workbench-server-switcher')).toHaveAttribute('title', serverUrl);
 });

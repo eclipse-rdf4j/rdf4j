@@ -46,33 +46,8 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
     assert.deepEqual(Array.from(harness.context.workbench.getQueryStringElements()), ['id=repo-1', 'title=My+Repo']);
     assert.deepEqual(params, ['flag=', 'true', '&']);
     assert.equal(harness.document.getElementById('noscript-message').style.display, 'none');
-    assert.equal(harness.document.getElementById('selected-user').textContent, 'alice');
-    assert.equal(harness.document.getElementById('selected-user').innerHTML, '');
-});
-
-test('template load falls back to unauthenticated user label', () => {
-    const harness = createFormBrowserHarness();
-
-    harness.loadScripts([]);
-    harness.runLoadHandlers();
-
-    const selectedUser = harness.document.getElementById('selected-user');
-    assert.equal(selectedUser.textContent, 'None');
-    assert.equal(selectedUser.children.length, 1);
-    assert.equal(selectedUser.children[0].className, 'disabled');
-});
-
-test('template renders credential-cookie usernames as text instead of HTML', () => {
-    const harness = createFormBrowserHarness();
-    const payload = '<img src=x onerror=globalThis.rdf4jXss=true>';
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(payload + ':secret').toString('base64'));
-
-    harness.loadScripts([]);
-    harness.runLoadHandlers();
-
-    const selectedUser = harness.document.getElementById('selected-user');
-    assert.equal(selectedUser.textContent, payload);
-    assert.equal(selectedUser.innerHTML, '');
+    // The server user is rendered by the shell (workbench.views.contextBarState), not patched into the DOM.
+    assert.equal(harness.document.getElementById('selected-user').textContent, '');
 });
 
 test('add page handles context and source selection branches', () => {

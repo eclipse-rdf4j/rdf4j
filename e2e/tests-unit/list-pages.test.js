@@ -119,7 +119,14 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     firstList.appendChild(itemB);
     firstList.appendChild(itemBDuplicate);
     firstListWrapper.appendChild(firstList);
-    harness.document.body.appendChild(firstListWrapper);
+    const surface = harness.registerElement('div', { id: 'workbench-page-surface' });
+    surface.appendChild(firstListWrapper);
+    harness.document.body.appendChild(surface);
+    // The shell's (initially empty) repository list must not be touched or break duplicate removal.
+    const popover = harness.registerElement('div', { id: 'workbench-repository-popover' });
+    const shellList = harness.registerElement('ul', { id: 'workbench-repository-options' });
+    popover.appendChild(shellList);
+    harness.document.body.appendChild(popover);
     harness.document.cookie = 'limit_explore=4; total_result_count=9';
 
     harness.loadExploreScript();
@@ -128,6 +135,7 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
     assert.equal(harness.document.getElementById('limit_explore').value, '4');
     assert.equal(firstList.getElementsByTagName('li').length, 1);
+    assert.equal(shellList.parentNode, popover, 'shell lists outside the page surface stay mounted');
     assert.equal(harness.heading.textContent, 'Explore');
     assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
     assert.equal(harness.document.getElementById('explore-result-count').textContent, '3-6 of 9');

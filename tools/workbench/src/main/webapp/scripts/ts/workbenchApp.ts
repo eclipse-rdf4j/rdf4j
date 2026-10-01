@@ -467,7 +467,8 @@ module workbench {
             }
         }
 
-        function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string): Promise<PageModel> {
+        /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
+        export function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string): Promise<PageModel> {
             const stream = queryStream();
             return stream.createRowStore().then((rowStore: any) => {
                 const model = newPageModel(rowStore);
@@ -599,7 +600,8 @@ module workbench {
             });
         }
 
-        function prepareInitialRows(model: PageModel): Promise<void> {
+        /** Read the rows a view renders directly (form fields, summary rows, Info rows) into model.rows. */
+        export function prepareInitialRows(model: PageModel): Promise<void> {
             let count = 0;
             if (model.viewId === 'create' || model.viewId === 'add') {
                 // These rows describe form fields and select choices, not a data result table.
@@ -988,6 +990,9 @@ module workbench {
                     resultsMountId: 'query-results'
                 };
                 const rendered = workbench.views.render(mount, state.model, context, state.runtime);
+                if (workbench.views.bindContextBar) {
+                    workbench.views.bindContextBar(mount, context);
+                }
                 configureTheme(mount, context.workbench);
                 if (document && document.getElementById && document.getElementById('noscript-message')) {
                     document.getElementById('noscript-message').style.display = 'none';

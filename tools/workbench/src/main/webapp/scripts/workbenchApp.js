@@ -427,6 +427,7 @@ var workbench;
                     throw invalid('unsupported event type ' + record.type);
             }
         }
+        /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
         function loadModel(fetcher, url) {
             var stream = queryStream();
             return stream.createRowStore().then(function (rowStore) {
@@ -464,6 +465,7 @@ var workbench;
                 }).then(null, function (error) { return rowStore.dispose().then(function () { throw error; }); });
             });
         }
+        app.loadModel = loadModel;
         function requestedLinkedModels(model) {
             var allowed = {
                 'info': true,
@@ -551,6 +553,7 @@ var workbench;
                 queryStream();
             });
         }
+        /** Read the rows a view renders directly (form fields, summary rows, Info rows) into model.rows. */
         function prepareInitialRows(model) {
             var count = 0;
             if (model.viewId === 'create' || model.viewId === 'add') {
@@ -573,6 +576,7 @@ var workbench;
                 model.rowStart = 0;
             });
         }
+        app.prepareInitialRows = prepareInitialRows;
         function configureTheme(mount, workbenchInfo) {
             var targetWindow = typeof window !== 'undefined' ? window : null;
             var theme = targetWindow && targetWindow.RDF4JWorkbenchTheme;
@@ -932,6 +936,9 @@ var workbench;
                     resultsMountId: 'query-results'
                 };
                 var rendered = workbench.views.render(mount, state.model, context, state.runtime);
+                if (workbench.views.bindContextBar) {
+                    workbench.views.bindContextBar(mount, context);
+                }
                 configureTheme(mount, context.workbench);
                 if (document && document.getElementById && document.getElementById('noscript-message')) {
                     document.getElementById('noscript-message').style.display = 'none';

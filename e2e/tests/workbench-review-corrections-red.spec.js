@@ -59,18 +59,21 @@ function nativeRepositoryConfig(repositoryId) {
 test('mobile shared header stays compact while retaining aligned context actions', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
-	const geometry = await page.locator('#header').evaluate(element => {
+	const geometry = await page.locator('#workbench-contextbar').evaluate(element => {
 		const rect = element.getBoundingClientRect();
-		const rows = [...element.querySelectorAll('#contentheader tr')].map(row => {
-			const rowRect = row.getBoundingClientRect();
-			const change = row.querySelector('.change')?.getBoundingClientRect();
-			return { height: rowRect.height, changeTop: change?.top ?? -1, rowTop: rowRect.top };
-		});
-		return { height: rect.height, rows };
+		const switchers = [...element.querySelectorAll('.workbench-switcher__button')]
+			.filter(button => button.getClientRects().length > 0)
+			.map(button => {
+				const box = button.getBoundingClientRect();
+				return { top: box.top, bottom: box.bottom };
+			});
+		return { top: rect.top, bottom: rect.bottom, height: rect.height, switchers };
 	});
-	expect(geometry.height, 'the mobile shell header should not consume the workspace').toBeLessThanOrEqual(190);
-	for (const row of geometry.rows) {
-		expect(Math.abs(row.changeTop - row.rowTop), 'Change should share the context row').toBeLessThan(8);
+	expect(geometry.height, 'the mobile shell header should not consume the workspace').toBeLessThanOrEqual(60);
+	expect(geometry.switchers.length).toBeGreaterThan(0);
+	for (const switcher of geometry.switchers) {
+		expect(switcher.top, 'switchers share the context row').toBeGreaterThanOrEqual(geometry.top);
+		expect(switcher.bottom, 'switchers share the context row').toBeLessThanOrEqual(geometry.bottom);
 	}
 });
 
@@ -211,10 +214,11 @@ test('shared shell keeps desktop gutters and mobile controls usable', async ({ p
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	await page.locator('form[action="create"] input[type="button"]').first().waitFor({ state: 'attached' });
 	const controls = await page.locator('form[action="create"] input[type="text"], form[action="create"] select').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
-	const changeTargets = await page.locator('#contentheader .change a').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+	const changeTargets = await page.locator('#workbench-contextbar .workbench-switcher__button').evaluateAll(elements => elements
+		.filter(element => element.getClientRects().length > 0).map(element => element.getBoundingClientRect().height));
 	expect(controls.every(height => height >= 44), 'mobile form controls should retain 44px targets').toBe(true);
 	expect(changeTargets.length).toBeGreaterThan(0);
-	expect(changeTargets.every(height => height >= 40), 'context Change links should have touch-sized hit regions').toBe(true);
+	expect(changeTargets.every(height => height >= 40), 'context switchers should have touch-sized hit regions').toBe(true);
 });
 
 test('saved queries wrap names and actions without mobile page overflow', async ({ page }) => {

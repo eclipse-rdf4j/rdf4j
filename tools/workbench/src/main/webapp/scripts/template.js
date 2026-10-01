@@ -153,6 +153,103 @@ var workbench;
         }
         format.count = count;
     })(format = workbench.format || (workbench.format = {}));
+    /**
+     * Anchored popover panels opened by a button (the context bar switchers). Only one popover is
+     * open at a time; Escape or a click outside closes it and Escape returns focus to its button.
+     */
+    var popover;
+    (function (popover) {
+        var closeOpenPopover = null;
+        function focusableIn(panel) {
+            return panel.querySelector('input:not([disabled]):not([hidden]), a[href], button:not([disabled]):not([hidden]), [tabindex="0"]');
+        }
+        function closeAll() {
+            if (closeOpenPopover) {
+                closeOpenPopover(false);
+            }
+        }
+        popover.closeAll = closeAll;
+        function bind(button, panel, options) {
+            if (!button || !panel || button.getAttribute('data-workbench-popover-bound') === 'true') {
+                return function () { };
+            }
+            button.setAttribute('data-workbench-popover-bound', 'true');
+            var document = button.ownerDocument;
+            var settings = options || {};
+            var isOpen = function () {
+                return button.getAttribute('aria-expanded') === 'true';
+            };
+            var onDocumentPointer = function (event) {
+                var target = event.target;
+                if (!panel.contains(target) && !button.contains(target)) {
+                    close(false);
+                }
+            };
+            var onDocumentKey = function (event) {
+                if (event.key === 'Escape' && isOpen()) {
+                    event.preventDefault();
+                    close(true);
+                }
+            };
+            var close = function (returnFocus) {
+                if (!isOpen()) {
+                    return;
+                }
+                button.setAttribute('aria-expanded', 'false');
+                panel.hidden = true;
+                document.removeEventListener('pointerdown', onDocumentPointer, true);
+                document.removeEventListener('keydown', onDocumentKey, true);
+                if (closeOpenPopover === close) {
+                    closeOpenPopover = null;
+                }
+                if (returnFocus) {
+                    button.focus();
+                }
+            };
+            var open = function () {
+                if (isOpen()) {
+                    return;
+                }
+                closeAll();
+                button.setAttribute('aria-expanded', 'true');
+                panel.hidden = false;
+                closeOpenPopover = close;
+                document.addEventListener('pointerdown', onDocumentPointer, true);
+                document.addEventListener('keydown', onDocumentKey, true);
+                if (settings.onOpen) {
+                    settings.onOpen(panel);
+                }
+                var first = focusableIn(panel);
+                if (first) {
+                    first.focus();
+                }
+            };
+            var onClick = function (event) {
+                event.preventDefault();
+                if (isOpen()) {
+                    close(false);
+                }
+                else {
+                    open();
+                }
+            };
+            var onButtonKey = function (event) {
+                if (event.key === 'ArrowDown' && !isOpen()) {
+                    event.preventDefault();
+                    open();
+                }
+            };
+            button.addEventListener('click', onClick, false);
+            button.addEventListener('keydown', onButtonKey, false);
+            return function () {
+                close(false);
+                button.removeEventListener('click', onClick, false);
+                button.removeEventListener('keydown', onButtonKey, false);
+                button.removeAttribute('data-workbench-popover-bound');
+            };
+        }
+        popover.bind = bind;
+    })(popover = workbench.popover || (workbench.popover = {}));
     var requestIdCounter = 0;
     var motionDisclosureDuration = 180;
     var motionLayoutDuration = 220;
@@ -926,8 +1023,7 @@ var workbench;
     workbench.addParam = addParam;
 })(workbench || (workbench = {}));
 /**
- * Code to run when the document loads: eliminate the 'noscript' warning
- * message, and display an unauthenticated user properly.
+ * Code to run when the document loads: eliminate the 'noscript' warning message.
  */
 workbench
     .addLoad(function () {
@@ -935,23 +1031,7 @@ workbench
     if (noScriptMessage) {
         noScriptMessage.style.display = 'none';
     }
-    var encoded = workbench.getCookie("server-user-password");
-    var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-    var user = decoded && decoded.substring(0, decoded.indexOf(':'));
-    var selectedUser = document.getElementById('selected-user');
-    if (!selectedUser) {
-        return;
-    }
-    if (!user || user == '""') {
-        selectedUser.textContent = '';
-        var anonymousUser = document.createElement('span');
-        anonymousUser.className = 'disabled';
-        anonymousUser.textContent = 'None';
-        selectedUser.appendChild(anonymousUser);
-    }
-    else {
-        selectedUser.textContent = user;
-    }
+    // The server user is part of the rendered shell state (workbench.views.contextBarState).
 });
 /**
  * Keep the shared navigation usable at every Workbench route.  The XSL

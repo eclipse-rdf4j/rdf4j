@@ -630,24 +630,24 @@ test('query stylesheet preserves shared header geometry across Workbench routes'
 		const measureShell = async () => page.evaluate(() => {
 			const rect = selector => document.querySelector(selector).getBoundingClientRect();
 			const style = selector => getComputedStyle(document.querySelector(selector));
-			const header = rect('#header');
+			const header = rect('#workbench-contextbar');
 			const logo = rect('#logo');
-			const context = rect('#contentheader');
+			const context = rect('#workbench-repository-switcher');
 			return {
 				header: { top: header.top, height: header.height },
 				logo: { top: logo.top, width: logo.width, height: logo.height },
 				context: { top: context.top, height: context.height },
-				font: style('#contentheader').fontFamily
+				font: style('#workbench-repository-switcher').fontFamily
 			};
 		});
 
 		await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-		await page.locator('#header').waitFor({ state: 'attached' });
+		await page.locator('#workbench-contextbar').waitFor({ state: 'attached' });
 		const queryShell = await measureShell();
 		await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E`, {
 			waitUntil: 'domcontentloaded'
 		});
-		await page.locator('#header').waitFor({ state: 'attached' });
+		await page.locator('#workbench-contextbar').waitFor({ state: 'attached' });
 		const exploreShell = await measureShell();
 
 		expect(Math.abs(queryShell.header.height - exploreShell.header.height)).toBeLessThanOrEqual(1);

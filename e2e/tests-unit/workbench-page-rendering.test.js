@@ -1975,3 +1975,51 @@ test('a model without a menu renders an empty menu instead of a built-in fallbac
     }
     assert.deepEqual(errors, ['Workbench menu is unavailable']);
 });
+
+test('the context bar decodes the server user from its cookie and renders it as text', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const cookies = {};
+    workbench.__testWindow.atob = (value) => Buffer.from(value, 'base64').toString('binary');
+    workbench.getCookie = (name) => cookies[name] || '';
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: { menu: [], server: 'http://example.test:8080/rdf4j-server' } };
+    assert.equal(workbench.views.contextBarState(context).user, '', 'no cookie and no document means no user');
+
+    const withDocument = loadWorkbenchWithDocument();
+    const payload = '<img src=x onerror=globalThis.rdf4jXss=true>';
+    withDocument.cookies['server-user-password'] = Buffer.from(payload + ':secret').toString('base64');
+    const state = withDocument.workbench.views.contextBarState(context);
+    assert.equal(state.user, payload);
+    assert.equal(state.server, 'http://example.test:8080/rdf4j-server');
+    const template = withDocument.workbench.views.pageTemplate({ viewId: 'summary', vars: [], rows: [], metadata: {} },
+        context, runtime);
+    const values = [];
+    const collectValues = (value) => {
+        if (Array.isArray(value)) { value.forEach(collectValues); return; }
+        if (value && Array.isArray(value.strings)) {
+            value.strings.forEach((fragment) => assert.ok(!fragment.includes('onerror'), 'the user never becomes markup'));
+            value.values.forEach(collectValues);
+            return;
+        }
+        values.push(value);
+    };
+    collectValues(template);
+    assert.ok(values.includes(payload), 'the user name is a text value binding');
+    assert.ok(values.includes('example.test:8080'), 'the server switcher shows host and port');
+    withDocument.cookies['server-user-password'] = '';
+    assert.equal(withDocument.workbench.views.contextBarState(context).user, '');
+});
+
+function loadWorkbenchWithDocument() {
+    const window = { atob: (value) => Buffer.from(value, 'base64').toString('binary') };
+    const workbench = {};
+    const cookies = {};
+    installDetailDisclosureTemplateRuntime(workbench);
+    workbench.getCookie = (name) => cookies[name] || '';
+    const context = vm.createContext({ console, URL, Promise, window, workbench, setTimeout,
+        document: { cookie: '' } });
+    for (const filename of ['workbenchViews.js', 'queryStream.js', 'workbenchApp.js']) {
+        vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
+    }
+    return { workbench: context.workbench, cookies };
+}

@@ -46,7 +46,9 @@ module workbench {
         copy: 'M8 8h11v12H8zM6 16H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5h8.5A1.5 1.5 0 0 1 15 5v1',
         link: 'M9.5 14.5 8 16a3.5 3.5 0 0 1-5-5l2.5-2.5a3.5 3.5 0 0 1 5 0m4-1 1.5-1.5a3.5 3.5 0 0 1 5 5L18.5 15a3.5 3.5 0 0 1-5 0M8 16l8-8',
         swap: 'M4 7h14m-4-4 4 4-4 4M20 17H6m4 4-4-4 4-4',
-        menu: 'M4 6h16M4 12h16M4 18h16'
+        menu: 'M4 6h16M4 12h16M4 18h16',
+        user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
+        search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5'
     };
 
     function actionIconPath(name: string): string {
@@ -533,22 +535,120 @@ module workbench {
             });
         }
 
-        function contextTable(context: ViewContext, active: string, runtime: LitRuntime): any {
-            const h = runtime.html;
+        /** Decodes the user name from the server-user-password cookie ("user:password" in base64). */
+        function serverUser(): string {
+            if (typeof document === 'undefined') {
+                return '';
+            }
+            const encoded = currentCookieValue('server-user-password');
+            if (!encoded) {
+                return '';
+            }
+            let decoded = encoded;
+            try {
+                decoded = typeof window !== 'undefined' && typeof window.atob === 'function' ? window.atob(encoded) : encoded;
+            } catch (error) {
+                return '';
+            }
+            const user = decoded.indexOf(':') >= 0 ? decoded.substring(0, decoded.indexOf(':')) : decoded;
+            return user === '""' ? '' : user;
+        }
+
+        function hostAndPort(server: string): string {
+            try {
+                return new URL(server).host || server;
+            } catch (error) {
+                return server;
+            }
+        }
+
+        /** Shell state for the context bar: server, repository and user. */
+        export function contextBarState(context: ViewContext): any {
             const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
-            const repositoryId = text(info.id || context.repositoryId);
-            const description = text(info.description || info.title);
-            const server = text(info.server || info.location || 'None');
-            const repositoryLabel = repositoryId
-                ? (description ? description + ' (' + repositoryId + ')' : repositoryId)
-                : 'None';
-            return h`<div id="contentheader" class="workbench-context">
-                <table><tbody>
-                    <tr><th>Server</th><td>${server || 'None'}</td><td class="change"><a href=${urlFor(context, 'server')}>Change</a></td></tr>
-                    <tr><th>Repository</th><td>${repositoryLabel}</td><td class="change"><a href=${urlFor(context, 'repositories')}>Change</a></td></tr>
-                    <tr><th>Server user</th><td id="selected-user"></td><td class="change"><a href=${urlFor(context, 'server')}>Change</a></td></tr>
-                </tbody></table>
-            </div>`;
+            const contextRepository = context.repositoryId && context.repositoryId !== 'NONE' ? context.repositoryId : '';
+            const repositoryId = text(info.id || contextRepository);
+            return {
+                server: text(info.server || info.location || ''),
+                repositoryId: repositoryId === 'NONE' ? '' : repositoryId,
+                repositoryTitle: text(info.description || info.title),
+                user: serverUser()
+            };
+        }
+
+        function switcherChevron(runtime: LitRuntime): any {
+            return icon(runtime, 'chevron', 'workbench-switcher__chevron');
+        }
+
+        /** The 56px context bar (mockups 01 and 04): brand, server, repository and user switchers. */
+        function contextBar(context: ViewContext, active: string, runtime: LitRuntime): any {
+            const h = runtime.html;
+            const state = contextBarState(context);
+            const server = state.server;
+            return h`<header id="workbench-contextbar" class="workbench-contextbar">
+                <a id="logo" class="workbench-brand" href=${urlFor(context, 'repositories')} aria-label="RDF4J Workbench home">
+                    <img src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
+                    <img class="product" src=${context.basePath + '/images/product.png'} alt="workbench" />
+                </a>
+                <div class="workbench-switcher" data-workbench-switcher="server">
+                    <button id="workbench-server-switcher" class="workbench-switcher__button" type="button"
+                            aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-server-popover"
+                            title=${server || 'No server'}>
+                        ${icon(runtime, 'server')}<span class="workbench-switcher__key">Server</span>
+                        <span class="workbench-switcher__value">${server ? hostAndPort(server) : 'None'}</span>
+                        ${switcherChevron(runtime)}
+                    </button>
+                    <div id="workbench-server-popover" class="workbench-popover" role="dialog" aria-label="Server" hidden>
+                        <dl class="workbench-kv">
+                            <div class="workbench-kv__row"><dt>Server</dt><dd class="workbench-kv__code">${server || 'None'}</dd></div>
+                            <div class="workbench-kv__row"><dt>User</dt><dd>${state.user || 'Not signed in'}</dd></div>
+                        </dl>
+                        <div class="workbench-popover__footer">
+                            <a href=${urlFor(context, 'server')}>${icon(runtime, 'settings')}Change server or user…</a>
+                        </div>
+                    </div>
+                </div>
+                <span class="workbench-contextbar__divider" aria-hidden="true"></span>
+                <div class="workbench-switcher" data-workbench-switcher="repository">
+                    <button id="workbench-repository-switcher" class="workbench-switcher__button" type="button"
+                            aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-repository-popover">
+                        ${icon(runtime, 'repository')}<span class="workbench-switcher__key">Repository</span>
+                        ${state.repositoryId
+                            ? h`<span class="workbench-switcher__value"><span class="workbench-switcher__id">${state.repositoryId}</span>${state.repositoryTitle
+                                ? h`<span class="workbench-switcher__title">${state.repositoryTitle}</span>` : ''}</span>`
+                            : h`<span class="workbench-switcher__value workbench-switcher__value--empty">No repository</span>`}
+                        ${switcherChevron(runtime)}
+                    </button>
+                    <div id="workbench-repository-popover" class="workbench-popover workbench-popover--repositories"
+                            role="dialog" aria-label="Choose repository" hidden
+                            data-workbench-active-view=${active} data-workbench-repositories-url=${urlFor(context, 'repositories')}
+                            data-workbench-base-path=${(context.basePath || '').replace(/\/+$/, '')}>
+                        <div class="workbench-popover__search">${icon(runtime, 'search')}
+                            <input id="workbench-repository-filter" type="search" placeholder="Find repository"
+                                aria-label="Find repository" autocomplete="off" aria-controls="workbench-repository-options" />
+                        </div>
+                        <ul id="workbench-repository-options" class="workbench-popover__list" aria-label="Repositories"></ul>
+                        <p class="workbench-popover__status" role="status" aria-live="polite"></p>
+                        <div class="workbench-popover__footer">
+                            <a href=${urlFor(context, 'repositories')}>${icon(runtime, 'repository')}All repositories</a>
+                            <a href=${urlFor(context, 'create')}>${icon(runtime, 'create')}Create repository</a>
+                        </div>
+                    </div>
+                </div>
+                <span class="workbench-contextbar__spacer"></span>
+                <div class="workbench-switcher" data-workbench-switcher="user">
+                    <button id="workbench-user-switcher" class="workbench-switcher__button workbench-switcher__button--user"
+                            type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-user-popover">
+                        ${icon(runtime, 'user')}<span id="selected-user" class="workbench-switcher__value">${state.user || 'Not signed in'}</span>
+                        ${switcherChevron(runtime)}
+                    </button>
+                    <div id="workbench-user-popover" class="workbench-popover workbench-popover--end" role="dialog" aria-label="User" hidden>
+                        <p class="workbench-popover__text">${state.user ? h`Signed in as <strong>${state.user}</strong>` : 'Not signed in'}</p>
+                        <div class="workbench-popover__footer">
+                            <a href=${urlFor(context, 'server')}>${icon(runtime, 'settings')}Change server or user…</a>
+                        </div>
+                    </div>
+                </div>
+            </header>`;
         }
 
         /** The state that the persistent shell (header, menu, footer) depends on. */
@@ -561,13 +661,7 @@ module workbench {
         function shellTemplate(state: ShellState, runtime: LitRuntime, outlet: any): any {
             const h = runtime.html;
             const context = state.context;
-            return h`<div id="header" class="workbench-header">
-                ${contextTable(context, state.viewId, runtime)}
-                <div id="logo" class="workbench-brand">
-                    <img src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
-                    <img class="product" src=${context.basePath + '/images/product.png'} alt="workbench" />
-                </div>
-            </div>
+            return h`${contextBar(context, state.viewId, runtime)}
             <details id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" open>
                 <summary id="workbench-navigation-summary">
                     <svg class="workbench-menu-icon" viewBox="0 0 24 24" width="18" height="18" focusable="false" aria-hidden="true">
@@ -2145,6 +2239,179 @@ module workbench {
         /** Return a route template without mutating the DOM (also used by unit tests). */
         export function pageTemplate(model: PageModel, context: ViewContext, runtime: LitRuntime): any {
             return shell(model, context, runtime, routeBody(model, context, runtime));
+        }
+
+        const repositoryScopedViews: { [view: string]: boolean } = {
+            summary: true, namespaces: true, contexts: true, types: true, explore: true, query: true,
+            'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true
+        };
+
+        /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
+        export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string): string {
+            const view = repositoryScopedViews[activeView] ? activeView : 'summary';
+            return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
+        }
+
+        function repositoryOptions(panel: any): any[] {
+            const list = panel.querySelector('#workbench-repository-options');
+            const options: any[] = [];
+            const links = list ? list.querySelectorAll('a.workbench-popover__option') : [];
+            for (let index = 0; index < links.length; index++) {
+                if (!links[index].parentElement.hidden) {
+                    options.push(links[index]);
+                }
+            }
+            return options;
+        }
+
+        function renderRepositoryOptions(panel: any, repositories: any[], currentId: string): void {
+            const document = panel.ownerDocument;
+            const list = panel.querySelector('#workbench-repository-options');
+            const basePath = panel.getAttribute('data-workbench-base-path') || '';
+            const activeView = panel.getAttribute('data-workbench-active-view') || '';
+            while (list.firstChild) {
+                list.removeChild(list.firstChild);
+            }
+            repositories.forEach((repository: any) => {
+                const item = document.createElement('li');
+                const link = document.createElement('a');
+                link.className = 'workbench-popover__option';
+                link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id));
+                link.setAttribute('data-repository-id', repository.id);
+                link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
+                if (repository.id === currentId) {
+                    link.setAttribute('aria-current', 'true');
+                }
+                const id = document.createElement('span');
+                id.className = 'workbench-popover__option-id';
+                id.textContent = repository.id;
+                link.appendChild(id);
+                if (repository.title) {
+                    const title = document.createElement('span');
+                    title.className = 'workbench-popover__option-title';
+                    title.textContent = repository.title;
+                    link.appendChild(title);
+                }
+                item.appendChild(link);
+                list.appendChild(item);
+            });
+            filterRepositoryOptions(panel);
+        }
+
+        function filterRepositoryOptions(panel: any): void {
+            const input = panel.querySelector('#workbench-repository-filter');
+            const needle = input ? String(input.value || '').trim().toLowerCase() : '';
+            const links = panel.querySelectorAll('a.workbench-popover__option');
+            let visible = 0;
+            for (let index = 0; index < links.length; index++) {
+                const matches = !needle || links[index].getAttribute('data-repository-search').indexOf(needle) >= 0;
+                links[index].parentElement.hidden = !matches;
+                if (matches) { visible++; }
+            }
+            const status = panel.querySelector('.workbench-popover__status');
+            if (status && panel.__rdf4jRepositoriesLoaded) {
+                status.textContent = visible ? '' : (links.length ? 'No matching repositories.' : 'No repositories are available.');
+            }
+        }
+
+        function loadRepositoryOptions(panel: any, currentId: string): Promise<void> {
+            if (panel.__rdf4jRepositoriesLoading) {
+                return panel.__rdf4jRepositoriesLoading;
+            }
+            const app: any = (workbench as any).app;
+            const status = panel.querySelector('.workbench-popover__status');
+            if (!app || typeof app.loadModel !== 'function' || typeof window === 'undefined') {
+                return Promise.resolve();
+            }
+            if (status) { status.textContent = 'Loading repositories…'; }
+            const url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
+            const loading = app.loadModel(window.fetch.bind(window), url).then((model: any) => {
+                return model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
+                    model.rowStore.dispose();
+                    return recordsFromRows(model, rows).map((record: any) => ({
+                        id: text(record.id), title: text(record.description)
+                    })).filter((repository: any) => !!repository.id);
+                }, (error: any) => {
+                    model.rowStore.dispose();
+                    throw error;
+                });
+            }).then((repositories: any[]) => {
+                panel.__rdf4jRepositoriesLoaded = true;
+                renderRepositoryOptions(panel, repositories, currentId);
+            }, (error: any) => {
+                panel.__rdf4jRepositoriesLoading = null;
+                if (status) {
+                    status.textContent = 'Unable to load repositories: ' + (error && error.message ? error.message : String(error));
+                }
+            });
+            panel.__rdf4jRepositoriesLoading = loading;
+            return loading;
+        }
+
+        function moveRepositoryFocus(panel: any, from: any, delta: number): void {
+            const options = repositoryOptions(panel);
+            const input = panel.querySelector('#workbench-repository-filter');
+            const index = options.indexOf(from);
+            const next = index + delta;
+            if (next < 0) {
+                if (input) { input.focus(); }
+            } else if (next < options.length) {
+                options[next].focus();
+            }
+        }
+
+        /**
+         * Bind the context bar switchers once per shell: popovers (workbench.popover from template.ts),
+         * the lazily loaded repository list, its filter and arrow-key movement.
+         */
+        export function bindContextBar(appMount: any, context: ViewContext): () => void {
+            const document = appMount && appMount.ownerDocument;
+            const popover: any = (workbench as any).popover;
+            if (!document || !document.getElementById || !popover || typeof popover.bind !== 'function') {
+                return () => {};
+            }
+            const disposers: Array<() => void> = [];
+            const currentId = contextBarState(context).repositoryId;
+            ['server', 'repository', 'user'].forEach((name) => {
+                const button = document.getElementById('workbench-' + name + '-switcher');
+                const panel = document.getElementById('workbench-' + name + '-popover');
+                disposers.push(popover.bind(button, panel, name === 'repository'
+                    ? { onOpen: (opened: any) => { loadRepositoryOptions(opened, currentId); } } : {}));
+            });
+            const repositoryPanel = document.getElementById('workbench-repository-popover');
+            const filter = document.getElementById('workbench-repository-filter');
+            if (repositoryPanel && filter && !repositoryPanel.__rdf4jContextBarBound) {
+                repositoryPanel.__rdf4jContextBarBound = true;
+                const onInput = () => filterRepositoryOptions(repositoryPanel);
+                const onKey = (event: any) => {
+                    const target = event.target;
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        if (target === filter) {
+                            if (event.key === 'ArrowDown') {
+                                const options = repositoryOptions(repositoryPanel);
+                                if (options.length) { options[0].focus(); }
+                            }
+                        } else if (target && target.classList && target.classList.contains('workbench-popover__option')) {
+                            moveRepositoryFocus(repositoryPanel, target, event.key === 'ArrowDown' ? 1 : -1);
+                        }
+                    } else if (event.key === 'Enter' && target === filter) {
+                        const options = repositoryOptions(repositoryPanel);
+                        if (options.length === 1) {
+                            event.preventDefault();
+                            options[0].click();
+                        }
+                    }
+                };
+                filter.addEventListener('input', onInput);
+                repositoryPanel.addEventListener('keydown', onKey);
+                disposers.push(() => {
+                    filter.removeEventListener('input', onInput);
+                    repositoryPanel.removeEventListener('keydown', onKey);
+                    repositoryPanel.__rdf4jContextBarBound = false;
+                });
+            }
+            return () => disposers.forEach((dispose) => dispose());
         }
 
         const outletsByMount = new WeakMap<Element, Element>();

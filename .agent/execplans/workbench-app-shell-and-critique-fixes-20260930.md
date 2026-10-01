@@ -33,8 +33,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 08:30Z) M1.8 Visible editor overlay icons and formatted numbers.
 - [x] (2026-10-01 09:00Z) M2.1 One navigation model everywhere.
 - [x] (2026-10-01 09:40Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
-- [ ] M2.3 (in progress) A compact context bar with switchers (mockups 01 and 04).
-- [ ] M2.4 Regroup the menu and make it sticky.
+- [x] (2026-10-01 10:40Z) M2.3 A compact context bar with switchers (mockups 01 and 04).
+- [ ] M2.4 (in progress) Regroup the menu and make it sticky.
 - [ ] M2.5 Dark-mode logo.
 - [ ] M2.6 Page titles.
 - [ ] M2.7 An in-shell "not found" page (mockup 13).
@@ -148,6 +148,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: `initial-evidence.txt`, heading "M2.2 Routine B parity".
 - Observation (M2.2): unit harnesses that inspect `mount.template` for owned row-region nodes (`workbench-explore-regressions.test.js`) now find the regions in the outlet's template; a `routeTemplate(workbench, mount)` helper reads `workbench.views.outletOf(mount).template`. Fake mounts without `ownerDocument.createElement` still receive the complete page template, so the bootstrap unit tests are unchanged.
   Evidence: three explore regression tests failed with "independent owned roots" until they read the outlet template.
+- Observation (M2.3): `explore.ts` removed duplicate list items from every `<ul>` in the document and crashed on the context bar's initially empty repository list (`items[0]` undefined), which aborted the Explore page's legacy load handlers; it would also have removed the popover. It now only scans lists inside `#workbench-page-surface`; `list-pages.test.js` pins that a shell list outside the surface stays mounted.
+  Evidence: `TypeError: Cannot read properties of undefined (reading 'innerText') at removeDuplicates (explore.js)` on `/explore?resource=<http://example.org/alice>`.
+- Observation (M2.3): the server user is no longer patched into `#selected-user` by a `template.ts` load handler; `workbench.views.contextBarState(context)` decodes the `server-user-password` cookie and the shell renders it as a text binding (the old XSS regression test moved to `workbench-page-rendering.test.js`). Below 900px the bar hides the product wordmark, switcher keys and repository title; below 600px the server switcher and the user name are hidden, and the server stays reachable through the menu until M2.8 adds the menu sheet.
+  Evidence: `e2e/tests/workbench-shell.spec.js` (3 tests) and the updated header specs pass.
 
 ## Decision Log
 

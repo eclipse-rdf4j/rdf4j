@@ -60,7 +60,9 @@ var workbench;
         copy: 'M8 8h11v12H8zM6 16H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5h8.5A1.5 1.5 0 0 1 15 5v1',
         link: 'M9.5 14.5 8 16a3.5 3.5 0 0 1-5-5l2.5-2.5a3.5 3.5 0 0 1 5 0m4-1 1.5-1.5a3.5 3.5 0 0 1 5 5L18.5 15a3.5 3.5 0 0 1-5 0M8 16l8-8',
         swap: 'M4 7h14m-4-4 4 4-4 4M20 17H6m4 4-4-4 4-4',
-        menu: 'M4 6h16M4 12h16M4 18h16'
+        menu: 'M4 6h16M4 12h16M4 18h16',
+        user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
+        search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5'
     };
     function actionIconPath(name) {
         return actionIconCatalog[name] || actionIconCatalog.add;
@@ -460,22 +462,63 @@ var workbench;
                 }));
             });
         }
-        function contextTable(context, active, runtime) {
-            var h = runtime.html;
+        /** Decodes the user name from the server-user-password cookie ("user:password" in base64). */
+        function serverUser() {
+            if (typeof document === 'undefined') {
+                return '';
+            }
+            var encoded = currentCookieValue('server-user-password');
+            if (!encoded) {
+                return '';
+            }
+            var decoded = encoded;
+            try {
+                decoded = typeof window !== 'undefined' && typeof window.atob === 'function' ? window.atob(encoded) : encoded;
+            }
+            catch (error) {
+                return '';
+            }
+            var user = decoded.indexOf(':') >= 0 ? decoded.substring(0, decoded.indexOf(':')) : decoded;
+            return user === '""' ? '' : user;
+        }
+        function hostAndPort(server) {
+            try {
+                return new URL(server).host || server;
+            }
+            catch (error) {
+                return server;
+            }
+        }
+        /** Shell state for the context bar: server, repository and user. */
+        function contextBarState(context) {
             var info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
-            var repositoryId = text(info.id || context.repositoryId);
-            var description = text(info.description || info.title);
-            var server = text(info.server || info.location || 'None');
-            var repositoryLabel = repositoryId
-                ? (description ? description + ' (' + repositoryId + ')' : repositoryId)
-                : 'None';
-            return h(__makeTemplateObject(["<div id=\"contentheader\" class=\"workbench-context\">\n                <table><tbody>\n                    <tr><th>Server</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Repository</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Server user</th><td id=\"selected-user\"></td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                </tbody></table>\n            </div>"], ["<div id=\"contentheader\" class=\"workbench-context\">\n                <table><tbody>\n                    <tr><th>Server</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Repository</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Server user</th><td id=\"selected-user\"></td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                </tbody></table>\n            </div>"]), server || 'None', urlFor(context, 'server'), repositoryLabel, urlFor(context, 'repositories'), urlFor(context, 'server'));
+            var contextRepository = context.repositoryId && context.repositoryId !== 'NONE' ? context.repositoryId : '';
+            var repositoryId = text(info.id || contextRepository);
+            return {
+                server: text(info.server || info.location || ''),
+                repositoryId: repositoryId === 'NONE' ? '' : repositoryId,
+                repositoryTitle: text(info.description || info.title),
+                user: serverUser()
+            };
+        }
+        views.contextBarState = contextBarState;
+        function switcherChevron(runtime) {
+            return icon(runtime, 'chevron', 'workbench-switcher__chevron');
+        }
+        /** The 56px context bar (mockups 01 and 04): brand, server, repository and user switchers. */
+        function contextBar(context, active, runtime) {
+            var h = runtime.html;
+            var state = contextBarState(context);
+            var server = state.server;
+            return h(__makeTemplateObject(["<header id=\"workbench-contextbar\" class=\"workbench-contextbar\">\n                <a id=\"logo\" class=\"workbench-brand\" href=", " aria-label=\"RDF4J Workbench home\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </a>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"server\">\n                    <button id=\"workbench-server-switcher\" class=\"workbench-switcher__button\" type=\"button\"\n                            aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-server-popover\"\n                            title=", ">\n                        ", "<span class=\"workbench-switcher__key\">Server</span>\n                        <span class=\"workbench-switcher__value\">", "</span>\n                        ", "\n                    </button>\n                    <div id=\"workbench-server-popover\" class=\"workbench-popover\" role=\"dialog\" aria-label=\"Server\" hidden>\n                        <dl class=\"workbench-kv\">\n                            <div class=\"workbench-kv__row\"><dt>Server</dt><dd class=\"workbench-kv__code\">", "</dd></div>\n                            <div class=\"workbench-kv__row\"><dt>User</dt><dd>", "</dd></div>\n                        </dl>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "Change server or user\u2026</a>\n                        </div>\n                    </div>\n                </div>\n                <span class=\"workbench-contextbar__divider\" aria-hidden=\"true\"></span>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"repository\">\n                    <button id=\"workbench-repository-switcher\" class=\"workbench-switcher__button\" type=\"button\"\n                            aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-repository-popover\">\n                        ", "<span class=\"workbench-switcher__key\">Repository</span>\n                        ", "\n                        ", "\n                    </button>\n                    <div id=\"workbench-repository-popover\" class=\"workbench-popover workbench-popover--repositories\"\n                            role=\"dialog\" aria-label=\"Choose repository\" hidden\n                            data-workbench-active-view=", " data-workbench-repositories-url=", "\n                            data-workbench-base-path=", ">\n                        <div class=\"workbench-popover__search\">", "\n                            <input id=\"workbench-repository-filter\" type=\"search\" placeholder=\"Find repository\"\n                                aria-label=\"Find repository\" autocomplete=\"off\" aria-controls=\"workbench-repository-options\" />\n                        </div>\n                        <ul id=\"workbench-repository-options\" class=\"workbench-popover__list\" aria-label=\"Repositories\"></ul>\n                        <p class=\"workbench-popover__status\" role=\"status\" aria-live=\"polite\"></p>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "All repositories</a>\n                            <a href=", ">", "Create repository</a>\n                        </div>\n                    </div>\n                </div>\n                <span class=\"workbench-contextbar__spacer\"></span>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"user\">\n                    <button id=\"workbench-user-switcher\" class=\"workbench-switcher__button workbench-switcher__button--user\"\n                            type=\"button\" aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-user-popover\">\n                        ", "<span id=\"selected-user\" class=\"workbench-switcher__value\">", "</span>\n                        ", "\n                    </button>\n                    <div id=\"workbench-user-popover\" class=\"workbench-popover workbench-popover--end\" role=\"dialog\" aria-label=\"User\" hidden>\n                        <p class=\"workbench-popover__text\">", "</p>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "Change server or user\u2026</a>\n                        </div>\n                    </div>\n                </div>\n            </header>"], ["<header id=\"workbench-contextbar\" class=\"workbench-contextbar\">\n                <a id=\"logo\" class=\"workbench-brand\" href=", " aria-label=\"RDF4J Workbench home\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </a>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"server\">\n                    <button id=\"workbench-server-switcher\" class=\"workbench-switcher__button\" type=\"button\"\n                            aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-server-popover\"\n                            title=", ">\n                        ", "<span class=\"workbench-switcher__key\">Server</span>\n                        <span class=\"workbench-switcher__value\">", "</span>\n                        ", "\n                    </button>\n                    <div id=\"workbench-server-popover\" class=\"workbench-popover\" role=\"dialog\" aria-label=\"Server\" hidden>\n                        <dl class=\"workbench-kv\">\n                            <div class=\"workbench-kv__row\"><dt>Server</dt><dd class=\"workbench-kv__code\">", "</dd></div>\n                            <div class=\"workbench-kv__row\"><dt>User</dt><dd>", "</dd></div>\n                        </dl>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "Change server or user\u2026</a>\n                        </div>\n                    </div>\n                </div>\n                <span class=\"workbench-contextbar__divider\" aria-hidden=\"true\"></span>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"repository\">\n                    <button id=\"workbench-repository-switcher\" class=\"workbench-switcher__button\" type=\"button\"\n                            aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-repository-popover\">\n                        ", "<span class=\"workbench-switcher__key\">Repository</span>\n                        ", "\n                        ", "\n                    </button>\n                    <div id=\"workbench-repository-popover\" class=\"workbench-popover workbench-popover--repositories\"\n                            role=\"dialog\" aria-label=\"Choose repository\" hidden\n                            data-workbench-active-view=", " data-workbench-repositories-url=", "\n                            data-workbench-base-path=", ">\n                        <div class=\"workbench-popover__search\">", "\n                            <input id=\"workbench-repository-filter\" type=\"search\" placeholder=\"Find repository\"\n                                aria-label=\"Find repository\" autocomplete=\"off\" aria-controls=\"workbench-repository-options\" />\n                        </div>\n                        <ul id=\"workbench-repository-options\" class=\"workbench-popover__list\" aria-label=\"Repositories\"></ul>\n                        <p class=\"workbench-popover__status\" role=\"status\" aria-live=\"polite\"></p>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "All repositories</a>\n                            <a href=", ">", "Create repository</a>\n                        </div>\n                    </div>\n                </div>\n                <span class=\"workbench-contextbar__spacer\"></span>\n                <div class=\"workbench-switcher\" data-workbench-switcher=\"user\">\n                    <button id=\"workbench-user-switcher\" class=\"workbench-switcher__button workbench-switcher__button--user\"\n                            type=\"button\" aria-haspopup=\"dialog\" aria-expanded=\"false\" aria-controls=\"workbench-user-popover\">\n                        ", "<span id=\"selected-user\" class=\"workbench-switcher__value\">", "</span>\n                        ", "\n                    </button>\n                    <div id=\"workbench-user-popover\" class=\"workbench-popover workbench-popover--end\" role=\"dialog\" aria-label=\"User\" hidden>\n                        <p class=\"workbench-popover__text\">", "</p>\n                        <div class=\"workbench-popover__footer\">\n                            <a href=", ">", "Change server or user\u2026</a>\n                        </div>\n                    </div>\n                </div>\n            </header>"]), urlFor(context, 'repositories'), context.basePath + '/images/logo.png', context.basePath + '/images/product.png', server || 'No server', icon(runtime, 'server'), server ? hostAndPort(server) : 'None', switcherChevron(runtime), server || 'None', state.user || 'Not signed in', urlFor(context, 'server'), icon(runtime, 'settings'), icon(runtime, 'repository'), state.repositoryId
+                ? h(__makeTemplateObject(["<span class=\"workbench-switcher__value\"><span class=\"workbench-switcher__id\">", "</span>", "</span>"], ["<span class=\"workbench-switcher__value\"><span class=\"workbench-switcher__id\">", "</span>", "</span>"]), state.repositoryId, state.repositoryTitle
+                    ? h(__makeTemplateObject(["<span class=\"workbench-switcher__title\">", "</span>"], ["<span class=\"workbench-switcher__title\">", "</span>"]), state.repositoryTitle) : '') : h(__makeTemplateObject(["<span class=\"workbench-switcher__value workbench-switcher__value--empty\">No repository</span>"], ["<span class=\"workbench-switcher__value workbench-switcher__value--empty\">No repository</span>"])), switcherChevron(runtime), active, urlFor(context, 'repositories'), (context.basePath || '').replace(/\/+$/, ''), icon(runtime, 'search'), urlFor(context, 'repositories'), icon(runtime, 'repository'), urlFor(context, 'create'), icon(runtime, 'create'), icon(runtime, 'user'), state.user || 'Not signed in', switcherChevron(runtime), state.user ? h(__makeTemplateObject(["Signed in as <strong>", "</strong>"], ["Signed in as <strong>", "</strong>"]), state.user) : 'Not signed in', urlFor(context, 'server'), icon(runtime, 'settings'));
         }
         /** Persistent shell around the outlet; `outlet` is the outlet node or, without a DOM, its template. */
         function shellTemplate(state, runtime, outlet) {
             var h = runtime.html;
             var context = state.context;
-            return h(__makeTemplateObject(["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextTable(context, state.viewId, runtime), context.basePath + '/images/logo.png', context.basePath + '/images/product.png', navigation(context, state.viewId, runtime), outlet);
+            return h(__makeTemplateObject(["", "\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["", "\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextBar(context, state.viewId, runtime), navigation(context, state.viewId, runtime), outlet);
         }
         /** The page area that changes from route to route: title, noscript notice and page surface. */
         function outletContentTemplate(model, runtime, body) {
@@ -1383,6 +1426,184 @@ var workbench;
             return shell(model, context, runtime, routeBody(model, context, runtime));
         }
         views.pageTemplate = pageTemplate;
+        var repositoryScopedViews = {
+            summary: true, namespaces: true, contexts: true, types: true, explore: true, query: true,
+            'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true
+        };
+        /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
+        function repositorySwitchTarget(basePath, activeView, repositoryId) {
+            var view = repositoryScopedViews[activeView] ? activeView : 'summary';
+            return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
+        }
+        views.repositorySwitchTarget = repositorySwitchTarget;
+        function repositoryOptions(panel) {
+            var list = panel.querySelector('#workbench-repository-options');
+            var options = [];
+            var links = list ? list.querySelectorAll('a.workbench-popover__option') : [];
+            for (var index = 0; index < links.length; index++) {
+                if (!links[index].parentElement.hidden) {
+                    options.push(links[index]);
+                }
+            }
+            return options;
+        }
+        function renderRepositoryOptions(panel, repositories, currentId) {
+            var document = panel.ownerDocument;
+            var list = panel.querySelector('#workbench-repository-options');
+            var basePath = panel.getAttribute('data-workbench-base-path') || '';
+            var activeView = panel.getAttribute('data-workbench-active-view') || '';
+            while (list.firstChild) {
+                list.removeChild(list.firstChild);
+            }
+            repositories.forEach(function (repository) {
+                var item = document.createElement('li');
+                var link = document.createElement('a');
+                link.className = 'workbench-popover__option';
+                link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id));
+                link.setAttribute('data-repository-id', repository.id);
+                link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
+                if (repository.id === currentId) {
+                    link.setAttribute('aria-current', 'true');
+                }
+                var id = document.createElement('span');
+                id.className = 'workbench-popover__option-id';
+                id.textContent = repository.id;
+                link.appendChild(id);
+                if (repository.title) {
+                    var title = document.createElement('span');
+                    title.className = 'workbench-popover__option-title';
+                    title.textContent = repository.title;
+                    link.appendChild(title);
+                }
+                item.appendChild(link);
+                list.appendChild(item);
+            });
+            filterRepositoryOptions(panel);
+        }
+        function filterRepositoryOptions(panel) {
+            var input = panel.querySelector('#workbench-repository-filter');
+            var needle = input ? String(input.value || '').trim().toLowerCase() : '';
+            var links = panel.querySelectorAll('a.workbench-popover__option');
+            var visible = 0;
+            for (var index = 0; index < links.length; index++) {
+                var matches = !needle || links[index].getAttribute('data-repository-search').indexOf(needle) >= 0;
+                links[index].parentElement.hidden = !matches;
+                if (matches) {
+                    visible++;
+                }
+            }
+            var status = panel.querySelector('.workbench-popover__status');
+            if (status && panel.__rdf4jRepositoriesLoaded) {
+                status.textContent = visible ? '' : (links.length ? 'No matching repositories.' : 'No repositories are available.');
+            }
+        }
+        function loadRepositoryOptions(panel, currentId) {
+            if (panel.__rdf4jRepositoriesLoading) {
+                return panel.__rdf4jRepositoriesLoading;
+            }
+            var app = workbench.app;
+            var status = panel.querySelector('.workbench-popover__status');
+            if (!app || typeof app.loadModel !== 'function' || typeof window === 'undefined') {
+                return Promise.resolve();
+            }
+            if (status) {
+                status.textContent = 'Loading repositories…';
+            }
+            var url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
+            var loading = app.loadModel(window.fetch.bind(window), url).then(function (model) {
+                return model.rowStore.read(0, model.rowCount).then(function (rows) {
+                    model.rowStore.dispose();
+                    return recordsFromRows(model, rows).map(function (record) { return ({
+                        id: text(record.id), title: text(record.description)
+                    }); }).filter(function (repository) { return !!repository.id; });
+                }, function (error) {
+                    model.rowStore.dispose();
+                    throw error;
+                });
+            }).then(function (repositories) {
+                panel.__rdf4jRepositoriesLoaded = true;
+                renderRepositoryOptions(panel, repositories, currentId);
+            }, function (error) {
+                panel.__rdf4jRepositoriesLoading = null;
+                if (status) {
+                    status.textContent = 'Unable to load repositories: ' + (error && error.message ? error.message : String(error));
+                }
+            });
+            panel.__rdf4jRepositoriesLoading = loading;
+            return loading;
+        }
+        function moveRepositoryFocus(panel, from, delta) {
+            var options = repositoryOptions(panel);
+            var input = panel.querySelector('#workbench-repository-filter');
+            var index = options.indexOf(from);
+            var next = index + delta;
+            if (next < 0) {
+                if (input) {
+                    input.focus();
+                }
+            }
+            else if (next < options.length) {
+                options[next].focus();
+            }
+        }
+        /**
+         * Bind the context bar switchers once per shell: popovers (workbench.popover from template.ts),
+         * the lazily loaded repository list, its filter and arrow-key movement.
+         */
+        function bindContextBar(appMount, context) {
+            var document = appMount && appMount.ownerDocument;
+            var popover = workbench.popover;
+            if (!document || !document.getElementById || !popover || typeof popover.bind !== 'function') {
+                return function () { };
+            }
+            var disposers = [];
+            var currentId = contextBarState(context).repositoryId;
+            ['server', 'repository', 'user'].forEach(function (name) {
+                var button = document.getElementById('workbench-' + name + '-switcher');
+                var panel = document.getElementById('workbench-' + name + '-popover');
+                disposers.push(popover.bind(button, panel, name === 'repository'
+                    ? { onOpen: function (opened) { loadRepositoryOptions(opened, currentId); } } : {}));
+            });
+            var repositoryPanel = document.getElementById('workbench-repository-popover');
+            var filter = document.getElementById('workbench-repository-filter');
+            if (repositoryPanel && filter && !repositoryPanel.__rdf4jContextBarBound) {
+                repositoryPanel.__rdf4jContextBarBound = true;
+                var onInput_1 = function () { return filterRepositoryOptions(repositoryPanel); };
+                var onKey_1 = function (event) {
+                    var target = event.target;
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        if (target === filter) {
+                            if (event.key === 'ArrowDown') {
+                                var options = repositoryOptions(repositoryPanel);
+                                if (options.length) {
+                                    options[0].focus();
+                                }
+                            }
+                        }
+                        else if (target && target.classList && target.classList.contains('workbench-popover__option')) {
+                            moveRepositoryFocus(repositoryPanel, target, event.key === 'ArrowDown' ? 1 : -1);
+                        }
+                    }
+                    else if (event.key === 'Enter' && target === filter) {
+                        var options = repositoryOptions(repositoryPanel);
+                        if (options.length === 1) {
+                            event.preventDefault();
+                            options[0].click();
+                        }
+                    }
+                };
+                filter.addEventListener('input', onInput_1);
+                repositoryPanel.addEventListener('keydown', onKey_1);
+                disposers.push(function () {
+                    filter.removeEventListener('input', onInput_1);
+                    repositoryPanel.removeEventListener('keydown', onKey_1);
+                    repositoryPanel.__rdf4jContextBarBound = false;
+                });
+            }
+            return function () { return disposers.forEach(function (dispose) { return dispose(); }); };
+        }
+        views.bindContextBar = bindContextBar;
         var outletsByMount = new WeakMap();
         var outletElements = new WeakSet();
         function outletNodeFor(appMount) {

@@ -257,7 +257,7 @@ test('keeps navigation state and option controls coherent on a narrow query page
         const privateLabel = rect('label[for="save-private"]');
         return {
             logoTop: rect('#logo').top,
-            contextTop: rect('#contentheader').top,
+            contextTop: rect('#workbench-repository-switcher').top,
             queryBorderWidth: parseFloat(queryLinkStyle.borderLeftWidth),
             queryBackground: queryLinkStyle.backgroundColor,
             inferPairGap: Math.abs((infer.top + infer.bottom) / 2 - (inferLabel.top + inferLabel.bottom) / 2),

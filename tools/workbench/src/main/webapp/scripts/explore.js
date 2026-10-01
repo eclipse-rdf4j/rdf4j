@@ -9,9 +9,14 @@ workbench.addLoad(function () {
         function textContent(element) {
             return $.trim(element.innerText || element.textContent);
         }
-        var lists = document.getElementsByTagName('ul');
+        // Only the explored resource's lists on the page surface; the shell's menus and popovers are not touched.
+        var surface = document.getElementById('workbench-page-surface');
+        var lists = surface ? surface.getElementsByTagName('ul') : [];
         for (var i = lists.length - 1; i + 1; i--) {
             var items = lists[i].getElementsByTagName('li');
+            if (items.length == 0) {
+                continue;
+            }
             for (var j = items.length - 1; j; j--) {
                 var text = textContent(items[j]);
                 if (items[j].innerHTML == items[j - 1].innerHTML || text == self) {

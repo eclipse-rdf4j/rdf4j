@@ -264,38 +264,29 @@ test('System Information keeps every section and live value inside one aligned s
 	expect(desktopMetrics.sections).toBe(3);
 });
 
-test('header Change links stay plain, compact, and use muted text', async ({ page }) => {
+test('context bar switchers stay compact and use muted keys', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	const changeLinks = page.locator('#contentheader.workbench-context .change a');
-	await expect(changeLinks).toHaveCount(3);
-	const changeBrackets = await page.locator('#contentheader.workbench-context .change').evaluateAll(elements =>
-		elements.map(element => ({
-			before: getComputedStyle(element, '::before').content,
-			after: getComputedStyle(element, '::after').content
-		})));
-	for (const brackets of changeBrackets) {
-		expect(brackets.before).toBe('none');
-		expect(brackets.after).toBe('none');
-	}
-	const measurements = await changeLinks.evaluateAll(elements => elements.map(element => {
-		const style = getComputedStyle(element);
-		const bounds = element.getBoundingClientRect();
+	const switchers = page.locator('#workbench-contextbar .workbench-switcher__button');
+	await expect(switchers).toHaveCount(3);
+	const measurements = await switchers.evaluateAll(elements => elements.map(element => {
+		const key = element.querySelector('.workbench-switcher__key');
 		return {
-			text: element.textContent.trim(),
-			fontSize: style.fontSize,
-			color: style.color,
-			textTransform: style.textTransform,
-			height: bounds.height
+			popup: element.getAttribute('aria-haspopup'),
+			expanded: element.getAttribute('aria-expanded'),
+			height: element.getBoundingClientRect().height,
+			keyColor: key ? getComputedStyle(key).color : null,
+			keyTransform: key ? getComputedStyle(key).textTransform : null
 		};
 	}));
-	for (const link of measurements) {
-		expect(link.text).toMatch(/^change$/i);
-		expect(link.text).not.toMatch(/[\[\]]/);
-		expect(link.fontSize).toBe('12px');
-		expect(link.color).toBe('rgb(79, 97, 104)');
-		expect(link.textTransform).toBe('none');
-		expect(link.height).toBeLessThanOrEqual(24);
+	for (const switcher of measurements) {
+		expect(switcher.popup).toBe('dialog');
+		expect(switcher.expanded).toBe('false');
+		expect(switcher.height).toBeLessThanOrEqual(44);
+		if (switcher.keyColor) {
+			expect(switcher.keyColor).toBe('rgb(79, 97, 104)');
+			expect(switcher.keyTransform).toBe('uppercase');
+		}
 	}
 });
 
