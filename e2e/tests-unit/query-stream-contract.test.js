@@ -860,3 +860,68 @@ test('formatRdfTerm shows literal values without quotes or datatype suffixes', (
     assert.equal(type.numeric, false);
     assert.equal(type.ntriples, '<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>');
 });
+
+// Plan task M9.2: a running query is cancelled when its page is left.
+test('a running query is cancelled with a keepalive request when the page is left, and with retries in the page', async () => {
+    async function runningQueryPage() {
+        const queryStream = loadQueryStreamApi();
+        const workbench = queryStream.__testWorkbench;
+        const window = queryStream.__testWindow;
+        const listeners = new Map();
+        window.addEventListener = (type, listener) => {
+            listeners.set(type, (listeners.get(type) || []).concat([listener]));
+        };
+        window.removeEventListener = (type, listener) => {
+            listeners.set(type, (listeners.get(type) || []).filter(handler => handler !== listener));
+        };
+        window.trigger = (type, event) => (listeners.get(type) || []).slice()
+            .forEach(listener => listener(Object.assign({ type }, event || {})));
+        const requests = [];
+        window.fetch = (url, options) => {
+            requests.push({ url: String(url), options: options || {} });
+            // The query's stream never answers; the cancel request does.
+            return options && options.keepalive ? Promise.resolve({ ok: true }) : new Promise(() => {});
+        };
+        const retryingCancels = [];
+        workbench.query = { cancelServerQuery: (id) => retryingCancels.push(id) };
+        const document = new FakeDocument();
+        const form = document.createElement('form');
+        form.setAttribute('id', 'query-form');
+        form.setAttribute('action', 'query');
+        for (const [name, value] of [['query', 'SELECT * WHERE { ?s ?p ?o }'], ['action', 'exec']]) {
+            const control = document.createElement(name === 'query' ? 'textarea' : 'input');
+            control.name = name;
+            control.value = value;
+            form.appendChild(control);
+        }
+        const target = document.createElement('section');
+        target.setAttribute('id', 'query-results');
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+        const worker = new InMemoryWorker();
+        workbench.queryPage.renderInto(document.body, {}, {
+            executionFormId: 'query-form', resultsMountId: 'query-results',
+            rowStoreOptions: { workerFactory: () => worker }
+        });
+        form.trigger('submit');
+        for (let attempt = 0; attempt < 30 && !workbench.queryPage.hasActiveRequest(); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        assert.equal(workbench.queryPage.hasActiveRequest(), true, 'the query is running');
+        return { workbench, window, requests, retryingCancels };
+    }
+
+    const leaving = await runningQueryPage();
+    leaving.window.trigger('pagehide', { persisted: false });
+    const keepalive = leaving.requests.filter(request => request.options.keepalive);
+    assert.equal(keepalive.length, 1, 'one cancel request that survives the page');
+    assert.equal(keepalive[0].options.method, 'POST');
+    assert.match(String(keepalive[0].options.body), /^action=cancel-query&query-request-id=\S+$/);
+    assert.deepEqual(leaving.retryingCancels, [], 'the retrying jQuery request would not outlive the page');
+
+    const navigating = await runningQueryPage();
+    assert.equal(navigating.workbench.queryPage.cancelExecution(), true);
+    assert.equal(navigating.retryingCancels.length, 1, 'in the page the retrying request is used');
+    assert.equal(navigating.requests.filter(request => request.options.keepalive).length, 0);
+    assert.equal(navigating.workbench.queryPage.cancelExecutionOnLeave(), false, 'nothing is left to cancel');
+});

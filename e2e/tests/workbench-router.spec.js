@@ -265,3 +265,32 @@ test('switching between Query and Summary keeps one editor and one result render
 	await expect(page.locator('#query-results [data-query-stream-root]')).toHaveCount(1);
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 });
+
+// Plan task M9.2: leaving the Query page while a query runs cancels it on the server.
+
+test('leaving the Query page while a query runs cancels it on the server', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'query');
+	const cancels = [];
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && (request.postData() || '').includes('action=cancel-query')) {
+			cancels.push(request.postData());
+		}
+	});
+	await page.route((url) => url.pathname.endsWith(`/repositories/${REPOSITORY_ID}/query`), async (route) => {
+		const request = route.request();
+		if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+			await new Promise((resolve) => setTimeout(resolve, 3000));
+		}
+		await route.continue().catch(() => {});
+	});
+	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o }'));
+	await page.locator('#exec').click();
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'true');
+
+	await menuLink(page, 'Summary').click();
+
+	await expectRoute(page, 'summary');
+	await expect.poll(() => cancels.length).toBeGreaterThan(0);
+	expect(cancels[0]).toMatch(/query-request-id=[^&]+/);
+});

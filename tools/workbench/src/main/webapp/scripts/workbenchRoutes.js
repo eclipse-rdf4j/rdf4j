@@ -105,7 +105,7 @@ var workbench;
                             return;
                         }
                         disposed = true;
-                        cleanups.splice(0).reverse().forEach(function (cleanup) { return cleanup(); });
+                        cleanups.splice(0).reverse().forEach(function (cleanup) { return cleanup(reason); });
                         base.dispose(reason);
                     }
                 };
@@ -160,7 +160,17 @@ var workbench;
                     }
                 }
             }
-            return function () {
+            // A running query is cancelled before anything is torn down (M9.2); a page that is going away sends
+            // one keepalive request, because the retrying request would not outlive it.
+            return function (reason) {
+                if (renderer) {
+                    if (reason === 'pagehide') {
+                        renderer.cancelExecutionOnLeave();
+                    }
+                    else {
+                        renderer.cancelExecution();
+                    }
+                }
                 unmount();
                 disposeRenderer();
             };

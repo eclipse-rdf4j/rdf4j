@@ -119,10 +119,10 @@ module workbench {
          * The mount of a converted route (plan task M7.2): the default mount, then, once the rows are bound, the
          * shared page decorations of the outlet and the route's own script. Dispose undoes them in reverse order.
          */
-        function routeMount(start?: (ctx: RouteMountContext) => () => void): (ctx: RouteMountContext) => RouteInstance {
+        function routeMount(start?: (ctx: RouteMountContext) => RouteCleanup): (ctx: RouteMountContext) => RouteInstance {
             return (ctx: RouteMountContext): RouteInstance => {
                 const base = defaultMount(ctx);
-                const cleanups: (() => void)[] = [];
+                const cleanups: RouteCleanup[] = [];
                 let disposed = false;
                 const ready = base.ready.then(() => {
                     if (disposed) {
@@ -143,12 +143,15 @@ module workbench {
                             return;
                         }
                         disposed = true;
-                        cleanups.splice(0).reverse().forEach((cleanup) => cleanup());
+                        cleanups.splice(0).reverse().forEach((cleanup) => cleanup(reason));
                         base.dispose(reason);
                     }
                 };
             };
         }
+
+        /** Undoes what a route's mount did; it is told why the route is left. */
+        type RouteCleanup = (reason?: 'navigate' | 'pagehide') => void;
 
         /** The mount function a route script exports (workbench.<name>.mount). */
         function scriptMount(name: string): (ctx: RouteMountContext) => () => void {
@@ -159,7 +162,7 @@ module workbench {
          * The Query route (M9.1): the streamed result renderer, then the Query page controller. A query posted to
          * the page (state.initialPost) is staged into the form, run once both are mounted, and the form restored.
          */
-        function mountQuery(ctx: RouteMountContext): () => void {
+        function mountQuery(ctx: RouteMountContext): RouteCleanup {
             const outlet = ctx.outlet;
             const document = outlet.ownerDocument;
             const content = outlet.querySelector('#query-page-content') || outlet;
@@ -197,7 +200,16 @@ module workbench {
                     }
                 }
             }
-            return () => {
+            // A running query is cancelled before anything is torn down (M9.2); a page that is going away sends
+            // one keepalive request, because the retrying request would not outlive it.
+            return (reason?: 'navigate' | 'pagehide') => {
+                if (renderer) {
+                    if (reason === 'pagehide') {
+                        renderer.cancelExecutionOnLeave();
+                    } else {
+                        renderer.cancelExecution();
+                    }
+                }
                 unmount();
                 disposeRenderer();
             };

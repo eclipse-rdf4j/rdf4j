@@ -737,6 +737,14 @@ function queryRouteHarness(state) {
         submitExecution() {
             log.push('submit');
             return true;
+        },
+        cancelExecution() {
+            log.push('cancel');
+            return true;
+        },
+        cancelExecutionOnLeave() {
+            log.push('cancel on leave');
+            return true;
         }
     };
     harness.workbench.query = {
@@ -763,8 +771,18 @@ test('the Query route renders its results into the page and mounts the Query pag
     await instance.ready;
     instance.dispose('navigate');
 
-    assert.deepEqual(harness.log, ['render into query-page-content', 'mount query page', 'query page disposed',
-        'renderer disposed']);
+    assert.deepEqual(harness.log, ['render into query-page-content', 'mount query page', 'cancel',
+        'query page disposed', 'renderer disposed']);
+});
+
+test('leaving a Query route cancels its running query first, with a keepalive request when the page goes', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+    instance.dispose('pagehide');
+
+    assert.deepEqual(harness.log.slice(2), ['cancel on leave', 'query page disposed', 'renderer disposed']);
 });
 
 test('a Query route that starts with a posted query runs it once its controller is mounted', async () => {
@@ -823,7 +841,7 @@ test('a Query route mounted without navigation state renders its outlet and runs
     await instance.ready;
     instance.dispose('navigate');
 
-    assert.deepEqual(harness.log, ['render outlet', 'render into query-page-content', 'mount query page',
+    assert.deepEqual(harness.log, ['render outlet', 'render into query-page-content', 'mount query page', 'cancel',
         'query page disposed', 'renderer disposed']);
 });
 

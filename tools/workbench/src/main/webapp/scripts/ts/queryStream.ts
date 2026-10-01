@@ -4293,6 +4293,8 @@ namespace workbench {
             submit(): boolean;
             loadMore(): boolean;
             cancel(): boolean;
+            /** Cancel the running query when the page is being left (one keepalive request). */
+            cancelOnLeave?(): boolean;
             dispose(): void;
             hasActiveRequest(): boolean;
             changePageOffset(offset: number): boolean;
@@ -4415,12 +4417,16 @@ namespace workbench {
             document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath;
         }
 
-        function cancelServerRequest(id: string) {
+        /**
+         * Ask the server to cancel a query. In the page the Query page's retrying request is used; a page that is
+         * being left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
+         */
+        function cancelServerRequest(id: string, leaving?: boolean) {
             if (!id) {
                 return;
             }
             var namespace: any = typeof workbench !== 'undefined' ? workbench : {};
-            if (namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
+            if (!leaving && namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
                 namespace.query.cancelServerQuery(id);
                 return;
             }
@@ -4552,7 +4558,7 @@ namespace workbench {
                 });
             }
 
-            function cancel(announce: boolean): boolean {
+            function cancel(announce: boolean, leaving?: boolean): boolean {
                 if (!activeId) {
                     return false;
                 }
@@ -4562,7 +4568,7 @@ namespace workbench {
                 if (abortController && typeof abortController.abort === 'function') {
                     abortController.abort();
                 }
-                cancelServerRequest(oldId);
+                cancelServerRequest(oldId, leaving);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 if (renderer && announce) {
@@ -4702,6 +4708,7 @@ namespace workbench {
                 submit: submit,
                 loadMore: loadMore,
                 cancel: () => cancel(true),
+                cancelOnLeave: () => cancel(true, true),
                 dispose: () => {
                     if (disposed) {
                         return;
@@ -4853,7 +4860,7 @@ namespace workbench {
                         markCurrentRowStoresForRecovery(event);
                     }
                     if (mountedController) {
-                        mountedController.cancel();
+                        mountedController.cancelOnLeave();
                         if (!event || event.persisted !== true) {
                             mountedController.dispose();
                         }
@@ -4898,6 +4905,10 @@ namespace workbench {
                 return mountedController ? mountedController.cancel() : false;
             }
 
+            export function cancelExecutionOnLeave(): boolean {
+                return mountedController ? mountedController.cancelOnLeave() : false;
+            }
+
             export function hasActiveRequest(): boolean {
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
@@ -4940,6 +4951,10 @@ namespace workbench {
 
         export function cancelExecution(): boolean {
             return queryStream.queryPage.cancelExecution();
+        }
+
+        export function cancelExecutionOnLeave(): boolean {
+            return queryStream.queryPage.cancelExecutionOnLeave();
         }
 
         export function hasActiveRequest(): boolean {

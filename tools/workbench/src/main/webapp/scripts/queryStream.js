@@ -4075,12 +4075,16 @@ var workbench;
             var cookiePath = pathSegments.length > 1 && pathSegments[1] ? '/' + pathSegments[1] : '/';
             document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath;
         }
-        function cancelServerRequest(id) {
+        /**
+         * Ask the server to cancel a query. In the page the Query page's retrying request is used; a page that is
+         * being left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
+         */
+        function cancelServerRequest(id, leaving) {
             if (!id) {
                 return;
             }
             var namespace = typeof workbench !== 'undefined' ? workbench : {};
-            if (namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
+            if (!leaving && namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
                 namespace.query.cancelServerQuery(id);
                 return;
             }
@@ -4204,7 +4208,7 @@ var workbench;
                     }
                 });
             }
-            function cancel(announce) {
+            function cancel(announce, leaving) {
                 if (!activeId) {
                     return false;
                 }
@@ -4214,7 +4218,7 @@ var workbench;
                 if (abortController && typeof abortController.abort === 'function') {
                     abortController.abort();
                 }
-                cancelServerRequest(oldId);
+                cancelServerRequest(oldId, leaving);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 if (renderer && announce) {
@@ -4348,6 +4352,7 @@ var workbench;
                 submit: submit,
                 loadMore: loadMore,
                 cancel: function () { return cancel(true); },
+                cancelOnLeave: function () { return cancel(true, true); },
                 dispose: function () {
                     if (disposed) {
                         return;
@@ -4498,7 +4503,7 @@ var workbench;
                         markCurrentRowStoresForRecovery(event);
                     }
                     if (mountedController) {
-                        mountedController.cancel();
+                        mountedController.cancelOnLeave();
                         if (!event || event.persisted !== true) {
                             mountedController.dispose();
                         }
@@ -4542,6 +4547,10 @@ var workbench;
                 return mountedController ? mountedController.cancel() : false;
             }
             queryPage.cancelExecution = cancelExecution;
+            function cancelExecutionOnLeave() {
+                return mountedController ? mountedController.cancelOnLeave() : false;
+            }
+            queryPage.cancelExecutionOnLeave = cancelExecutionOnLeave;
             function hasActiveRequest() {
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
@@ -4587,6 +4596,10 @@ var workbench;
             return queryStream.queryPage.cancelExecution();
         }
         queryPage.cancelExecution = cancelExecution;
+        function cancelExecutionOnLeave() {
+            return queryStream.queryPage.cancelExecutionOnLeave();
+        }
+        queryPage.cancelExecutionOnLeave = cancelExecutionOnLeave;
         function hasActiveRequest() {
             return queryStream.queryPage.hasActiveRequest();
         }

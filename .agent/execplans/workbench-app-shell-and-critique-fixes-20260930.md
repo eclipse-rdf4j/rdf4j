@@ -68,8 +68,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 19:58Z) M8.2 Scroll, focus and announcements.
 - [x] (2026-10-01 20:04Z) M8.3 Shell refresh on context changes.
 - [x] (2026-10-01 21:02Z) M9.1 Make Query, Update and Saved queries disposable.
-- [ ] M9.2 (in progress) Leaving while a query is running.
-- [ ] M10.1 Submit forms without reloading the document.
+- [x] (2026-10-01 21:10Z) M9.2 Leaving while a query is running.
+- [ ] M10.1 (in progress) Submit forms without reloading the document.
 - [ ] M10.2 Saved-query Edit opens the Query page in place.
 - [ ] M11.1 Load the graph renderer only when needed.
 - [ ] M11.2 Prefetch route code.
@@ -328,6 +328,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-01 / implementer.
 - Decision (M9.1, second step): `workbench.query.mountQueryPage(outlet)` replaces the Query page's load handler and its module-level `pagehide`/`pageshow` listeners. Page controls get their handlers in the `.wbQuery` namespace (looked up inside the outlet), the document click and keydown handlers too, and the output card's two custom-event listeners are named; the returned function removes all of them, clears pending input timers and calls `resetState()`. `resetState()` (formerly `testing.resetInternalState`, which is now an alias) also clears explanation spinner timers, aborts running explanation requests, destroys the SVG pan-zoom instances, closes the diff modal, undoes compare mode outside the page (window `resize`/`scroll` listeners, body classes and custom properties, the menu transform), releases both editors' resize handles (`editorSizing.install` returns a disposer that is now kept) and closes both editors. The Query route's mount calls `workbench.queryPage.renderInto()` (moved out of bootstrap), then `mountQueryPage()`; a query posted to the page (`state.initialPost`, also moved out of bootstrap) is staged, run and restored in that mount, in the same order as before. `update.mount(outlet)` opens the editor and closes it (and its resize handle) on dispose; `savedQueries.mount(outlet)` binds Delete and details in `.wbRoute` and closes opened read-only editors on dispose. All 17 routes are now router-ready, so the `routerReady: false` path of `staticRoute` is gone. The unit harness for the Query page calls `mountQueryPage(document.body)` from `runPageLoad()`.
   Rationale: the Query page held the most global state; with one mount and one cleanup it can be left and entered in the page like every other route.
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M9.2): the browser test the task names ("click Summary while a query runs; expect a cancel-query POST") already passed after M9.1, because disposing the result renderer cancels a running query through the retrying jQuery request. The task's two changes are still made explicit: the Query route's dispose cancels the running query before it tears anything down (`queryPage.cancelExecution()` for `navigate`), and for `pagehide` (route dispose and `renderInto()`'s own listener) the controller's new `cancelOnLeave()` sends one `fetch(..., { method: 'POST', keepalive: true })` instead of the jQuery request, which would not outlive the page; it still shows "Query cancelled." for a page kept in the back/forward cache. Route cleanups now receive the dispose reason.
+  Rationale: cancellation should not depend on teardown order, and only a keepalive request is delivered while a page unloads.
   Date/Author: 2026-10-01 / implementer.
 - Decision (M6.6): Delete starts with "Choose a repository" (empty, disabled) selected unless `?id=<id>` names one, and its button ("Delete repository…") stays disabled until a repository is chosen. Every deletion now asks for the typed id in `confirmDialog` ("Delete repository <id>?"); a proxied repository adds its warning to the same dialog. The safety check and the POST are unchanged. The dialog's input carries `data-workbench-confirm-text`, which the unit harness uses to type the text before confirming.
 
