@@ -936,8 +936,9 @@ var workbench;
                 if (document && document.getElementById && document.getElementById('noscript-message')) {
                     document.getElementById('noscript-message').style.display = 'none';
                 }
+                var outlet = workbench.views.outletOf ? workbench.views.outletOf(mount) || mount : mount;
                 var rowWindows = workbench.views.bindRowWindows
-                    ? workbench.views.bindRowWindows(mount, state.model, context, state.runtime)
+                    ? workbench.views.bindRowWindows(outlet, state.model, context, state.runtime)
                     : Promise.resolve(null);
                 return Promise.resolve(rowWindows).then(function (disposeRows) {
                     releaseRowStore(state.model, disposeRows);

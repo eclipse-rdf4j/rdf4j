@@ -471,10 +471,20 @@ var workbench;
                 : 'None';
             return h(__makeTemplateObject(["<div id=\"contentheader\" class=\"workbench-context\">\n                <table><tbody>\n                    <tr><th>Server</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Repository</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Server user</th><td id=\"selected-user\"></td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                </tbody></table>\n            </div>"], ["<div id=\"contentheader\" class=\"workbench-context\">\n                <table><tbody>\n                    <tr><th>Server</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Repository</th><td>", "</td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                    <tr><th>Server user</th><td id=\"selected-user\"></td><td class=\"change\"><a href=", ">Change</a></td></tr>\n                </tbody></table>\n            </div>"]), server || 'None', urlFor(context, 'server'), repositoryLabel, urlFor(context, 'repositories'), urlFor(context, 'server'));
         }
+        /** Persistent shell around the outlet; `outlet` is the outlet node or, without a DOM, its template. */
+        function shellTemplate(state, runtime, outlet) {
+            var h = runtime.html;
+            var context = state.context;
+            return h(__makeTemplateObject(["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextTable(context, state.viewId, runtime), context.basePath + '/images/logo.png', context.basePath + '/images/product.png', navigation(context, state.viewId, runtime), outlet);
+        }
+        /** The page area that changes from route to route: title, noscript notice and page surface. */
+        function outletContentTemplate(model, runtime, body) {
+            var h = runtime.html;
+            return h(__makeTemplateObject(["<h1 id=\"title_heading\">", "</h1>\n                <p id=\"noscript-message\" class=\"ERROR\">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>\n                <div id=\"workbench-page-surface\" class=\"workbench-page-surface\">", "</div>"], ["<h1 id=\"title_heading\">", "</h1>\n                <p id=\"noscript-message\" class=\"ERROR\">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>\n                <div id=\"workbench-page-surface\" class=\"workbench-page-surface\">", "</div>"]), routeTitle(model), body);
+        }
         function shell(model, context, runtime, body) {
             var h = runtime.html;
-            var title = routeTitle(model);
-            return h(__makeTemplateObject(["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">\n                <h1 id=\"title_heading\">", "</h1>\n                <p id=\"noscript-message\" class=\"ERROR\">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>\n                <div id=\"workbench-page-surface\" class=\"workbench-page-surface\">", "</div>\n            </main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["<div id=\"header\" class=\"workbench-header\">\n                ", "\n                <div id=\"logo\" class=\"workbench-brand\">\n                    <img src=", " alt=\"rdf4j\" />\n                    <img class=\"product\" src=", " alt=\"workbench\" />\n                </div>\n            </div>\n            <details id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" open>\n                <summary id=\"workbench-navigation-summary\">\n                    <svg class=\"workbench-menu-icon\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"M4 6h16M4 12h16M4 18h16\"></path>\n                    </svg><span>Menu</span>\n                    <svg class=\"workbench-menu-chevron workbench-disclosure-chevron\" viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" focusable=\"false\" aria-hidden=\"true\">\n                        <path d=\"m6 9 6 6 6-6\"></path>\n                    </svg>\n                </summary>\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </details>\n            <main id=\"content\" class=\"workbench-main\">\n                <h1 id=\"title_heading\">", "</h1>\n                <p id=\"noscript-message\" class=\"ERROR\">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>\n                <div id=\"workbench-page-surface\" class=\"workbench-page-surface\">", "</div>\n            </main>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextTable(context, model.viewId, runtime), context.basePath + '/images/logo.png', context.basePath + '/images/product.png', navigation(context, model.viewId, runtime), title, body);
+            return shellTemplate({ viewId: model.viewId, context: context }, runtime, h(__makeTemplateObject(["<div id=\"workbench-outlet\" class=\"workbench-outlet\" tabindex=\"-1\">", "</div>"], ["<div id=\"workbench-outlet\" class=\"workbench-outlet\" tabindex=\"-1\">", "</div>"]), outletContentTemplate(model, runtime, body)));
         }
         function workbenchData(context) {
             return normalizeWorkbench(context.workbench, context.linked && context.linked.info);
@@ -1373,21 +1383,43 @@ var workbench;
             return shell(model, context, runtime, routeBody(model, context, runtime));
         }
         views.pageTemplate = pageTemplate;
-        /** Render a complete route into the Workbench mount. */
-        function render(mount, model, context, runtime) {
-            var regions = rowRegionsByMount.get(mount);
-            if (model.rowStore && mount.ownerDocument && mount.ownerDocument.createElement) {
+        var outletsByMount = new WeakMap();
+        var outletElements = new WeakSet();
+        function outletNodeFor(appMount) {
+            var existing = outletsByMount.get(appMount);
+            if (existing) {
+                return existing;
+            }
+            var document = appMount && appMount.ownerDocument;
+            if (!document || typeof document.createElement !== 'function') {
+                return null;
+            }
+            var outlet = document.createElement('div');
+            outlet.id = 'workbench-outlet';
+            outlet.className = 'workbench-outlet';
+            outlet.setAttribute('tabindex', '-1');
+            outletsByMount.set(appMount, outlet);
+            outletElements.add(outlet);
+            return outlet;
+        }
+        /** The outlet element that renderShell placed inside an application mount, if any. */
+        function outletOf(appMount) {
+            return appMount ? outletsByMount.get(appMount) || null : null;
+        }
+        views.outletOf = outletOf;
+        function prepareRowRegions(target, model) {
+            var regions = rowRegionsByMount.get(target);
+            if (model.rowStore && target.ownerDocument && target.ownerDocument.createElement) {
                 if (!regions || regions.model !== model) {
-                    regions = { model: model, document: mount.ownerDocument, savedCards: {}, groups: {} };
-                    rowRegionsByMount.set(mount, regions);
+                    regions = { model: model, document: target.ownerDocument, savedCards: {}, groups: {} };
+                    rowRegionsByMount.set(target, regions);
                 }
+                return regions;
             }
-            else {
-                rowRegionsByMount.delete(mount);
-                regions = null;
-            }
-            var renderedContext = regions ? __assign(__assign({}, context), { rowRegions: regions }) : context;
-            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
+            rowRegionsByMount.delete(target);
+            return null;
+        }
+        function renderRowRegions(regions) {
             if (regions) {
                 if (regions.renderTableRows) {
                     regions.renderTableRows();
@@ -1397,6 +1429,45 @@ var workbench;
                 }
                 Object.keys(regions.groups).forEach(function (key) { return regions.groups[key].render(); });
             }
+        }
+        /**
+         * Render the persistent shell (header, menu, footer) into the application mount and return the
+         * outlet element that renderOutlet fills. Returns null when the mount has no DOM document.
+         */
+        function renderShell(appMount, shellState, runtime) {
+            var outlet = outletNodeFor(appMount);
+            if (!outlet) {
+                return null;
+            }
+            runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
+            return outlet;
+        }
+        views.renderShell = renderShell;
+        /** Render a route's title and page surface into the outlet. */
+        function renderOutlet(outletMount, model, context, runtime) {
+            var regions = prepareRowRegions(outletMount, model);
+            var renderedContext = regions ? __assign(__assign({}, context), { rowRegions: regions }) : context;
+            runtime.render(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount);
+            renderRowRegions(regions);
+            return outletMount;
+        }
+        views.renderOutlet = renderOutlet;
+        /** Render a complete route: the shell into the mount and the route into its outlet. */
+        function render(mount, model, context, runtime) {
+            if (outletElements.has(mount)) {
+                renderOutlet(mount, model, context, runtime);
+                return mount;
+            }
+            var outlet = renderShell(mount, { viewId: model.viewId, context: context }, runtime);
+            if (outlet) {
+                renderOutlet(outlet, model, context, runtime);
+                return mount;
+            }
+            // Without a DOM document (unit-test fakes) the complete page renders as one template.
+            var regions = prepareRowRegions(mount, model);
+            var renderedContext = regions ? __assign(__assign({}, context), { rowRegions: regions }) : context;
+            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
+            renderRowRegions(regions);
             return mount;
         }
         views.render = render;
@@ -1405,6 +1476,8 @@ var workbench;
             var targetWindow = typeof window !== 'undefined' ? window : null;
             var stream = workbench.queryStream;
             var HeightIndex = stream && stream.MeasuredRowHeights;
+            // Row regions belong to the outlet when the mount is an application mount with a shell.
+            var regionKey = outletOf(mount) || mount;
             var windowSize = model.pickerPageSize || 50;
             var hasQuery = function (selector) { return !!(mount && mount.querySelectorAll
                 && mount.querySelectorAll(selector) && mount.querySelectorAll(selector).length); };
@@ -1499,7 +1572,7 @@ var workbench;
                                 return;
                             }
                             model.exploreSummary = summary;
-                            var regions = rowRegionsByMount.get(mount);
+                            var regions = rowRegionsByMount.get(regionKey);
                             if (regions) {
                                 Object.keys(regions.groups).forEach(function (key) { return regions.groups[key].render(); });
                             }
@@ -1516,7 +1589,7 @@ var workbench;
                 bindExploreControls();
             };
             var renderCurrentRows = function () {
-                var regions = rowRegionsByMount.get(mount);
+                var regions = rowRegionsByMount.get(regionKey);
                 if (regions) {
                     if (regions.renderTableRows) {
                         regions.renderTableRows();
@@ -1648,9 +1721,9 @@ var workbench;
                     generation++;
                     groupGeneration++;
                     disposeExecutionForms();
-                    var regions = rowRegionsByMount.get(mount);
+                    var regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) {
-                        rowRegionsByMount.delete(mount);
+                        rowRegionsByMount.delete(regionKey);
                     }
                     if (hasRows && targetWindow.removeEventListener) {
                         targetWindow.removeEventListener('scroll', onScroll);

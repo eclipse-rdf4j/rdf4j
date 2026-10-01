@@ -32,8 +32,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 08:10Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
 - [x] (2026-10-01 08:30Z) M1.8 Visible editor overlay icons and formatted numbers.
 - [x] (2026-10-01 09:00Z) M2.1 One navigation model everywhere.
-- [ ] M2.2 (in progress) Split the shell from the page outlet (behavior-neutral refactor).
-- [ ] M2.3 A compact context bar with switchers (mockups 01 and 04).
+- [x] (2026-10-01 09:40Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
+- [ ] M2.3 (in progress) A compact context bar with switchers (mockups 01 and 04).
 - [ ] M2.4 Regroup the menu and make it sticky.
 - [ ] M2.5 Dark-mode logo.
 - [ ] M2.6 Page titles.
@@ -144,6 +144,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: probe before the change: `scale 0.18, stroke-width 1.75px, vector-effect none` (effective 0.315px).
 - Observation (M2.1): `e2e/tests/workbench-navigation-selection.spec.js` is stale beyond this plan: it reads `svg.query-nav-icon` (the menu icons are `svg.workbench-action-icon`) and waits for rows in `#query-results-frame`, the iframe that the streamed renderer replaced. It failed in the baseline at the server-page assertion, which M2.1 updated to the new rule (the server page selects its own menu item); the remaining stale selectors are left for M12.1.
   Evidence: baseline failure 73 at `workbench-navigation-selection.spec.js:182`; after M2.1 the spec fails in `readSelectedLink` (`icon` is null).
+- Observation (M2.2): `e2e/tests/workbench-live-route-parity.spec.js` fails before and after the split at "representative query outcomes" (its query step waits for a response pattern of the retired result iframe). Its JSON coverage record was used as the Routine B evidence instead: the route, create-variant, UI-check, mutation and navigation records of the run before and after the split are identical after normalizing the disposable repository id and screenshot paths (17 of 17 routes acceptable in both).
+  Evidence: `initial-evidence.txt`, heading "M2.2 Routine B parity".
+- Observation (M2.2): unit harnesses that inspect `mount.template` for owned row-region nodes (`workbench-explore-regressions.test.js`) now find the regions in the outlet's template; a `routeTemplate(workbench, mount)` helper reads `workbench.views.outletOf(mount).template`. Fake mounts without `ownerDocument.createElement` still receive the complete page template, so the bootstrap unit tests are unchanged.
+  Evidence: three explore regression tests failed with "independent owned roots" until they read the outlet template.
 
 ## Decision Log
 

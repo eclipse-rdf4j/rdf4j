@@ -980,6 +980,7 @@ test('shared navigation keeps app assets and Workbench servlet routes on their c
     const output = collectTemplateText(template).join(' ');
 
     assert.ok(output.includes('/workbench/images/logo.png'));
+    assert.ok(output.includes('id="workbench-outlet"'), 'the route renders inside the persistent shell outlet');
     assert.ok(output.includes('/workbench/repositories/repo-1/summary'));
     assert.ok(output.includes('/workbench/repositories/NONE/server'));
     assert.ok(output.includes('/workbench/repositories/NONE/repositories'));

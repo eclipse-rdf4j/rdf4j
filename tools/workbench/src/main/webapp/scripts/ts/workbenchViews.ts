@@ -551,11 +551,18 @@ module workbench {
             </div>`;
         }
 
-        function shell(model: PageModel, context: ViewContext, runtime: LitRuntime, body: any): any {
+        /** The state that the persistent shell (header, menu, footer) depends on. */
+        export interface ShellState {
+            viewId: string;
+            context: ViewContext;
+        }
+
+        /** Persistent shell around the outlet; `outlet` is the outlet node or, without a DOM, its template. */
+        function shellTemplate(state: ShellState, runtime: LitRuntime, outlet: any): any {
             const h = runtime.html;
-            const title = routeTitle(model);
+            const context = state.context;
             return h`<div id="header" class="workbench-header">
-                ${contextTable(context, model.viewId, runtime)}
+                ${contextTable(context, state.viewId, runtime)}
                 <div id="logo" class="workbench-brand">
                     <img src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
                     <img class="product" src=${context.basePath + '/images/product.png'} alt="workbench" />
@@ -571,15 +578,25 @@ module workbench {
                     </svg>
                 </summary>
                 <div id="navigation" class="workbench-nav"><ul class="maingroup">
-                    ${navigation(context, model.viewId, runtime)}
+                    ${navigation(context, state.viewId, runtime)}
                 </ul></div>
             </details>
-            <main id="content" class="workbench-main">
-                <h1 id="title_heading">${title}</h1>
-                <p id="noscript-message" class="ERROR">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>
-                <div id="workbench-page-surface" class="workbench-page-surface">${body}</div>
-            </main>
+            <main id="content" class="workbench-main">${outlet}</main>
             <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
+        }
+
+        /** The page area that changes from route to route: title, noscript notice and page surface. */
+        function outletContentTemplate(model: PageModel, runtime: LitRuntime, body: any): any {
+            const h = runtime.html;
+            return h`<h1 id="title_heading">${routeTitle(model)}</h1>
+                <p id="noscript-message" class="ERROR">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>
+                <div id="workbench-page-surface" class="workbench-page-surface">${body}</div>`;
+        }
+
+        function shell(model: PageModel, context: ViewContext, runtime: LitRuntime, body: any): any {
+            const h = runtime.html;
+            return shellTemplate({ viewId: model.viewId, context }, runtime,
+                h`<div id="workbench-outlet" class="workbench-outlet" tabindex="-1">${outletContentTemplate(model, runtime, body)}</div>`);
         }
 
         function workbenchData(context: ViewContext): any {
@@ -2130,26 +2147,93 @@ module workbench {
             return shell(model, context, runtime, routeBody(model, context, runtime));
         }
 
-        /** Render a complete route into the Workbench mount. */
-        export function render(mount: Element, model: PageModel, context: ViewContext,
-                               runtime: LitRuntime): Element {
-            let regions = rowRegionsByMount.get(mount);
-            if (model.rowStore && mount.ownerDocument && mount.ownerDocument.createElement) {
-                if (!regions || regions.model !== model) {
-                    regions = { model, document: mount.ownerDocument, savedCards: {}, groups: {} };
-                    rowRegionsByMount.set(mount, regions);
-                }
-            } else {
-                rowRegionsByMount.delete(mount);
-                regions = null;
+        const outletsByMount = new WeakMap<Element, Element>();
+        const outletElements = new WeakSet<Element>();
+
+        function outletNodeFor(appMount: any): Element | null {
+            const existing = outletsByMount.get(appMount);
+            if (existing) {
+                return existing;
             }
-            const renderedContext = regions ? { ...context, rowRegions: regions } : context;
-            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
+            const document = appMount && appMount.ownerDocument;
+            if (!document || typeof document.createElement !== 'function') {
+                return null;
+            }
+            const outlet = document.createElement('div');
+            outlet.id = 'workbench-outlet';
+            outlet.className = 'workbench-outlet';
+            outlet.setAttribute('tabindex', '-1');
+            outletsByMount.set(appMount, outlet);
+            outletElements.add(outlet);
+            return outlet;
+        }
+
+        /** The outlet element that renderShell placed inside an application mount, if any. */
+        export function outletOf(appMount: any): Element | null {
+            return appMount ? outletsByMount.get(appMount) || null : null;
+        }
+
+        function prepareRowRegions(target: any, model: PageModel): RowRegions {
+            let regions = rowRegionsByMount.get(target);
+            if (model.rowStore && target.ownerDocument && target.ownerDocument.createElement) {
+                if (!regions || regions.model !== model) {
+                    regions = { model, document: target.ownerDocument, savedCards: {}, groups: {} };
+                    rowRegionsByMount.set(target, regions);
+                }
+                return regions;
+            }
+            rowRegionsByMount.delete(target);
+            return null;
+        }
+
+        function renderRowRegions(regions: RowRegions): void {
             if (regions) {
                 if (regions.renderTableRows) { regions.renderTableRows(); }
                 if (regions.renderSavedRows) { regions.renderSavedRows(); }
                 Object.keys(regions.groups).forEach((key) => regions.groups[key].render());
             }
+        }
+
+        /**
+         * Render the persistent shell (header, menu, footer) into the application mount and return the
+         * outlet element that renderOutlet fills. Returns null when the mount has no DOM document.
+         */
+        export function renderShell(appMount: Element, shellState: ShellState, runtime: LitRuntime): Element | null {
+            const outlet = outletNodeFor(appMount);
+            if (!outlet) {
+                return null;
+            }
+            runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
+            return outlet;
+        }
+
+        /** Render a route's title and page surface into the outlet. */
+        export function renderOutlet(outletMount: Element, model: PageModel, context: ViewContext,
+                                     runtime: LitRuntime): Element {
+            const regions = prepareRowRegions(outletMount, model);
+            const renderedContext = regions ? { ...context, rowRegions: regions } : context;
+            runtime.render(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount);
+            renderRowRegions(regions);
+            return outletMount;
+        }
+
+        /** Render a complete route: the shell into the mount and the route into its outlet. */
+        export function render(mount: Element, model: PageModel, context: ViewContext,
+                               runtime: LitRuntime): Element {
+            if (outletElements.has(mount)) {
+                renderOutlet(mount, model, context, runtime);
+                return mount;
+            }
+            const outlet = renderShell(mount, { viewId: model.viewId, context }, runtime);
+            if (outlet) {
+                renderOutlet(outlet, model, context, runtime);
+                return mount;
+            }
+            // Without a DOM document (unit-test fakes) the complete page renders as one template.
+            const regions = prepareRowRegions(mount, model);
+            const renderedContext = regions ? { ...context, rowRegions: regions } : context;
+            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
+            renderRowRegions(regions);
             return mount;
         }
 
@@ -2159,6 +2243,8 @@ module workbench {
             const targetWindow: any = typeof window !== 'undefined' ? window : null;
             const stream: any = (workbench as any).queryStream;
             const HeightIndex = stream && stream.MeasuredRowHeights;
+            // Row regions belong to the outlet when the mount is an application mount with a shell.
+            const regionKey = outletOf(mount) || mount;
             const windowSize = model.pickerPageSize || 50;
             const hasQuery = (selector: string): boolean => !!(mount && mount.querySelectorAll
                 && mount.querySelectorAll(selector) && mount.querySelectorAll(selector).length);
@@ -2236,7 +2322,7 @@ module workbench {
                         prepareExploreSummary(model).then((summary) => {
                             if (disposed || activeGeneration !== groupGeneration) { return; }
                             (model as any).exploreSummary = summary;
-                            const regions = rowRegionsByMount.get(mount);
+                            const regions = rowRegionsByMount.get(regionKey);
                             if (regions) {
                                 Object.keys(regions.groups).forEach((key) => regions.groups[key].render());
                             }
@@ -2255,7 +2341,7 @@ module workbench {
             };
 
             const renderCurrentRows = () => {
-                const regions = rowRegionsByMount.get(mount);
+                const regions = rowRegionsByMount.get(regionKey);
                 if (regions) {
                     if (regions.renderTableRows) { regions.renderTableRows(); }
                     if (regions.renderSavedRows) { regions.renderSavedRows(); }
@@ -2365,8 +2451,8 @@ module workbench {
                     generation++;
                     groupGeneration++;
                     disposeExecutionForms();
-                    const regions = rowRegionsByMount.get(mount);
-                    if (regions && regions.model === model) { rowRegionsByMount.delete(mount); }
+                    const regions = rowRegionsByMount.get(regionKey);
+                    if (regions && regions.model === model) { rowRegionsByMount.delete(regionKey); }
                     if (hasRows && targetWindow.removeEventListener) {
                         targetWindow.removeEventListener('scroll', onScroll);
                         targetWindow.removeEventListener('resize', onResize);
