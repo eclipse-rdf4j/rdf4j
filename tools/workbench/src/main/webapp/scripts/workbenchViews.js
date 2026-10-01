@@ -2214,7 +2214,15 @@ var workbench;
                 status.textContent = visible ? '' : (links.length ? 'No matching repositories.' : 'No repositories are available.');
             }
         }
+        /**
+         * Fill the repository switcher. The list is fetched once per document, but the current repository and the
+         * page shown change with in-page navigation (M8.3), so every opening renders the options again.
+         */
         function loadRepositoryOptions(panel, currentId) {
+            if (panel.__rdf4jRepositories) {
+                renderRepositoryOptions(panel, panel.__rdf4jRepositories, currentId);
+                return Promise.resolve();
+            }
             if (panel.__rdf4jRepositoriesLoading) {
                 return panel.__rdf4jRepositoriesLoading;
             }
@@ -2239,6 +2247,7 @@ var workbench;
                 });
             }).then(function (repositories) {
                 panel.__rdf4jRepositoriesLoaded = true;
+                panel.__rdf4jRepositories = repositories;
                 renderRepositoryOptions(panel, repositories, currentId);
             }, function (error) {
                 panel.__rdf4jRepositoriesLoading = null;

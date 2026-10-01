@@ -3265,7 +3265,15 @@ module workbench {
             }
         }
 
+        /**
+         * Fill the repository switcher. The list is fetched once per document, but the current repository and the
+         * page shown change with in-page navigation (M8.3), so every opening renders the options again.
+         */
         function loadRepositoryOptions(panel: any, currentId: string): Promise<void> {
+            if (panel.__rdf4jRepositories) {
+                renderRepositoryOptions(panel, panel.__rdf4jRepositories, currentId);
+                return Promise.resolve();
+            }
             if (panel.__rdf4jRepositoriesLoading) {
                 return panel.__rdf4jRepositoriesLoading;
             }
@@ -3288,6 +3296,7 @@ module workbench {
                 });
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoaded = true;
+                panel.__rdf4jRepositories = repositories;
                 renderRepositoryOptions(panel, repositories, currentId);
             }, (error: any) => {
                 panel.__rdf4jRepositoriesLoading = null;

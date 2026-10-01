@@ -66,8 +66,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 19:39Z) M7.2 Convert the simple routes.
 - [x] (2026-10-01 19:54Z) M8.1 Link interception, preload, abort and commit.
 - [x] (2026-10-01 19:58Z) M8.2 Scroll, focus and announcements.
-- [ ] M8.3 (in progress) Shell refresh on context changes.
-- [ ] M9.1 Make Query, Update and Saved queries disposable.
+- [x] (2026-10-01 20:04Z) M8.3 Shell refresh on context changes.
+- [ ] M9.1 (in progress) Make Query, Update and Saved queries disposable.
 - [ ] M9.2 Leaving while a query is running.
 - [ ] M10.1 Submit forms without reloading the document.
 - [ ] M10.2 Saved-query Edit opens the Query page in place.
@@ -319,6 +319,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-01 / implementer.
 - Decision (M8.2): scroll positions are kept per history entry in the router's memory, keyed by the entry's `wbKey` (the first entry gets one when the router starts), and also written to the entry's `scrollY` when a page is left by a link. After Back the current entry already belongs to the page being returned to, so the page being left is recorded only in memory; M8.1 wrote its position into the wrong entry, which this task fixes. An entry the router did not create (for example one reached by a hash link) is restored to its `scrollY` or to the top. The restore waits for the route's `ready` (rows bound) and two animation frames. After a link or a replace the page starts at its top, scrolls to the element its hash names once ready, and focuses its `h1` (`tabindex="-1"`, `preventScroll`); every navigation announces "<page> loaded" (the page name from the document title) in `#workbench-route-status`, a visually hidden `role="status"` `aria-live="polite"` paragraph in the shell. The page model is requested without the hash. `history.scrollRestoration` is `manual` once the router runs, so a full reload starts at the top unless the session-storage restore (history traversal only) applies.
   Rationale: the browser cannot restore positions of entries it did not render itself; the router knows when each page has its final height.
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M8.3): the three menu and context-bar parity transitions already passed on the M8.2 build, because the M8.1 commit renders the whole shell from the new page's Info model (Lit updates only what changed) and binds the context bar again, rather than updating only the active item as the task assumed. The part they could not see was the repository switcher's option list, which was fetched and rendered once per document: after an in-page change of repository or page it marked the old repository as current and linked to the old view (red: `workbench-router.spec.js` "the repository switcher lists the repositories for the page that is shown"). The fetched list is now kept on the panel and rendered again for the current repository and page every time the switcher opens.
+  Rationale: the switcher is the only part of the shell that is not rendered from the page model.
   Date/Author: 2026-10-01 / implementer.
 - Decision (M6.6): Delete starts with "Choose a repository" (empty, disabled) selected unless `?id=<id>` names one, and its button ("Delete repository…") stays disabled until a repository is chosen. Every deletion now asks for the typed id in `confirmDialog` ("Delete repository <id>?"); a proxied repository adds its warning to the same dialog. The safety check and the POST are unchanged. The dialog's input carries `data-workbench-confirm-text`, which the unit harness uses to type the text before confirming.
 

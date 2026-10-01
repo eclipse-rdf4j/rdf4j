@@ -154,3 +154,81 @@ test('after a menu click the new heading has focus and the page is announced', a
 	await expect(page.locator('#workbench-route-status')).toHaveText('Namespaces loaded');
 	await expect(page.locator('#workbench-route-status')).toHaveAttribute('aria-live', 'polite');
 });
+
+// Plan task M8.3: after an in-page navigation the shell is what a page load of the same URL shows.
+
+/** The menu and the context bar as a reader sees them (Lit's comment markers removed). */
+async function shellSnapshot(page) {
+	return page.evaluate(() => ({
+		navigation: document.querySelector('#navigation').outerHTML.replace(/<!--[\s\S]*?-->/g, ''),
+		contextBar: document.querySelector('#workbench-contextbar').innerText,
+		title: document.title
+	}));
+}
+
+async function expectSameShellAfterReload(page, view) {
+	const navigated = await shellSnapshot(page);
+	await page.reload();
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', view);
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+	expect(navigated).toEqual(await shellSnapshot(page));
+}
+
+test('choosing a repository from the list shows the shell a page load would show', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl('NONE', 'repositories'));
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+	const documents = recordDocumentRequests(page);
+
+	await page.locator('#repositories-results a.workbench-repository-link', { hasText: REPOSITORY_ID }).first().click();
+	await expectRoute(page, 'summary');
+	expect(documents).toEqual([]);
+	await expect(page.locator('#workbench-repository-switcher')).toContainText(REPOSITORY_ID);
+
+	await expectSameShellAfterReload(page, 'summary');
+});
+
+test('leaving a repository for the repository list shows the shell a page load would show', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'summary');
+	const documents = recordDocumentRequests(page);
+
+	await menuLink(page, 'Repositories').click();
+	await expect(page).toHaveURL(/\/repositories\/NONE\/repositories$/);
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', 'repositories');
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+	expect(documents).toEqual([]);
+
+	await expectSameShellAfterReload(page, 'repositories');
+});
+
+test('leaving Query for Namespaces shows the shell a page load would show', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+
+	await menuLink(page, 'Namespaces').click();
+	await expectRoute(page, 'namespaces');
+
+	await expectSameShellAfterReload(page, 'namespaces');
+});
+
+test('the repository switcher lists the repositories for the page that is shown', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl('NONE', 'repositories'));
+	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+	const option = page.locator(`#workbench-repository-options a[data-repository-id="${REPOSITORY_ID}"]`);
+	await page.locator('#workbench-repository-switcher').click();
+	await expect(option).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	await page.locator('#repositories-results a.workbench-repository-link', { hasText: REPOSITORY_ID }).first().click();
+	await expectRoute(page, 'summary');
+	await menuLink(page, 'Types').click();
+	await expectRoute(page, 'types');
+	await page.locator('#workbench-repository-switcher').click();
+
+	await expect(option).toBeVisible();
+	await expect(option).toHaveAttribute('aria-current', 'true');
+	await expect(option).toHaveAttribute('href', new RegExp(`/repositories/${REPOSITORY_ID}/types$`));
+});
