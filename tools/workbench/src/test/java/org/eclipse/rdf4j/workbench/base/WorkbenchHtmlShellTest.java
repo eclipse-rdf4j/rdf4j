@@ -29,6 +29,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockServletContext;
 
@@ -37,6 +38,27 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 class WorkbenchHtmlShellTest {
+	@Test
+	void titleNamesThePageAndRepository() throws Exception {
+		assertThat(shellTitle("summary", "bsbm")).isEqualTo("Summary · bsbm — RDF4J Workbench");
+		assertThat(shellTitle("contexts", "bsbm")).isEqualTo("Graphs · bsbm — RDF4J Workbench");
+		assertThat(shellTitle("repositories", "NONE")).isEqualTo("Repositories — RDF4J Workbench");
+		assertThat(shellTitle("server", null)).isEqualTo("Connection — RDF4J Workbench");
+		assertThat(shellTitle("query", "a<b")).isEqualTo("Query · a&lt;b — RDF4J Workbench");
+	}
+
+	private static String shellTitle(String viewId, String repositoryId) throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+		when(request.getContextPath()).thenReturn("/rdf4j-workbench");
+		when(request.getAttribute(WorkbenchPageProtocol.REPOSITORY_ID_ATTRIBUTE)).thenReturn(repositoryId);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		WorkbenchHtmlShell.write(request, response, mock(ServletConfig.class), viewId);
+		String document = body.toString();
+		return document.substring(document.indexOf("<title>") + "<title>".length(), document.indexOf("</title>"));
+	}
+
 	@Test
 	void linksOnlyTheRedesignStylesheets() throws Exception {
 		HttpServletRequest request = mock(HttpServletRequest.class);

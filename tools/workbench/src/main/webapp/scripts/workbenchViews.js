@@ -156,6 +156,23 @@ var workbench;
     var views;
     (function (views) {
         var rowRegionsByMount = new WeakMap();
+        /** Short page names for the document title; keep in sync with SHORT_TITLES in WorkbenchHtmlShell.java. */
+        var shortTitles = {
+            summary: 'Summary', information: 'Information', repositories: 'Repositories',
+            create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces', contexts: 'Graphs',
+            types: 'Types', explore: 'Explore', query: 'Query', 'saved-queries': 'Saved queries', export: 'Export',
+            add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
+        };
+        /** "Page · repository — RDF4J Workbench", matching the title the server writes into the shell. */
+        function documentTitle(viewId, repositoryId) {
+            var page = shortTitles[viewId];
+            if (!page) {
+                return 'RDF4J Workbench';
+            }
+            var hasRepository = !!repositoryId && repositoryId !== 'NONE';
+            return page + (hasRepository ? ' · ' + repositoryId : '') + ' — RDF4J Workbench';
+        }
+        views.documentTitle = documentTitle;
         var titles = {
             summary: 'Summary',
             information: 'System Information',
@@ -1662,6 +1679,10 @@ var workbench;
                 return null;
             }
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
+            var document = appMount.ownerDocument;
+            if (document && 'title' in document) {
+                document.title = documentTitle(shellState.viewId, shellState.context.repositoryId);
+            }
             return outlet;
         }
         views.renderShell = renderShell;

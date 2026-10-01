@@ -138,3 +138,10 @@ test('dark mode shows the light-ink logo without a white plate', async ({ browse
 	expect(brand.sources.every((source) => source.endsWith('-dark.png')), JSON.stringify(brand)).toBe(true);
 	expect(brand.background).toBe('rgba(0, 0, 0, 0)');
 });
+
+test('the browser tab names the page and repository', async ({ page }) => {
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'), { waitUntil: 'networkidle' });
+	await expect(page).toHaveTitle(`Query · ${REPOSITORY_ID} — RDF4J Workbench`);
+	await page.goto(repositoryPageUrl('NONE', 'repositories'), { waitUntil: 'networkidle' });
+	await expect(page).toHaveTitle('Repositories — RDF4J Workbench');
+});

@@ -171,6 +171,24 @@ module workbench {
 
         const rowRegionsByMount = new WeakMap<Element, RowRegions>();
 
+        /** Short page names for the document title; keep in sync with SHORT_TITLES in WorkbenchHtmlShell.java. */
+        const shortTitles: { [key: string]: string } = {
+            summary: 'Summary', information: 'Information', repositories: 'Repositories',
+            create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces', contexts: 'Graphs',
+            types: 'Types', explore: 'Explore', query: 'Query', 'saved-queries': 'Saved queries', export: 'Export',
+            add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
+        };
+
+        /** "Page · repository — RDF4J Workbench", matching the title the server writes into the shell. */
+        export function documentTitle(viewId: string, repositoryId: string): string {
+            const page = shortTitles[viewId];
+            if (!page) {
+                return 'RDF4J Workbench';
+            }
+            const hasRepository = !!repositoryId && repositoryId !== 'NONE';
+            return page + (hasRepository ? ' · ' + repositoryId : '') + ' — RDF4J Workbench';
+        }
+
         const titles: { [key: string]: string } = {
             summary: 'Summary',
             information: 'System Information',
@@ -2471,6 +2489,10 @@ module workbench {
                 return null;
             }
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
+            const document: any = (appMount as any).ownerDocument;
+            if (document && 'title' in document) {
+                document.title = documentTitle(shellState.viewId, shellState.context.repositoryId);
+            }
             return outlet;
         }
 

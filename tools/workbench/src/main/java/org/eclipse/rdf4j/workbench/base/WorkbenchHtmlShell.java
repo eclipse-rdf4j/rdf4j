@@ -34,6 +34,16 @@ public final class WorkbenchHtmlShell {
 
 	private static final String WORKBENCH_BASE_PATH = "workbenchBasePath";
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+	private static final String APPLICATION_TITLE = "RDF4J Workbench";
+	/** Short page names for the document title; keep in sync with shortTitles in scripts/ts/workbenchViews.ts. */
+	private static final Map<String, String> SHORT_TITLES = Map.ofEntries(
+			Map.entry("summary", "Summary"), Map.entry("information", "Information"),
+			Map.entry("repositories", "Repositories"), Map.entry("create", "Create repository"),
+			Map.entry("delete", "Delete repository"), Map.entry("namespaces", "Namespaces"),
+			Map.entry("contexts", "Graphs"), Map.entry("types", "Types"), Map.entry("explore", "Explore"),
+			Map.entry("query", "Query"), Map.entry("saved-queries", "Saved queries"), Map.entry("export", "Export"),
+			Map.entry("add", "Add RDF"), Map.entry("remove", "Remove"), Map.entry("clear", "Clear"),
+			Map.entry("update", "SPARQL Update"), Map.entry("server", "Connection"));
 
 	private WorkbenchHtmlShell() {
 	}
@@ -66,7 +76,9 @@ public final class WorkbenchHtmlShell {
 		PrintWriter writer = response.getWriter();
 		writer.write("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">");
 		writer.write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-		writer.write("<title>RDF4J Workbench</title>");
+		writer.write("<title>");
+		writer.write(escape(documentTitle(viewId, repositoryId)));
+		writer.write("</title>");
 		writer.write("<meta name=\"color-scheme\" content=\"");
 		writer.write(colorScheme);
 		writer.write("\"><meta name=\"rdf4j-workbench-theme-default\" content=\"");
@@ -110,6 +122,16 @@ public final class WorkbenchHtmlShell {
 		writer.write(escape(basePath));
 		writer.write("/scripts/workbenchApp.js\" defer></script>");
 		writer.write("</body></html>");
+	}
+
+	/** "Page · repository — RDF4J Workbench"; the repository part is omitted when no repository is selected. */
+	static String documentTitle(String viewId, String repositoryId) {
+		String page = viewId == null ? null : SHORT_TITLES.get(viewId);
+		if (page == null) {
+			return APPLICATION_TITLE;
+		}
+		boolean hasRepository = repositoryId != null && !repositoryId.isBlank() && !"NONE".equals(repositoryId);
+		return page + (hasRepository ? " · " + repositoryId : "") + " — " + APPLICATION_TITLE;
 	}
 
 	private static String getDeploymentThemeDefault(ServletConfig config) throws IOException {
