@@ -108,14 +108,11 @@ class TripleIndex {
 		return parseIndexSpecList(indexSpecStr, false);
 	}
 
-	/** Statement indexes may include auxiliary pairs, provided their resolving full index is present. */
+	/** Statement indexes may include auxiliary pairs, provided at least one full terminal index is present. */
 	static Set<String> parseStatementIndexSpecList(String indexSpecStr) throws SailException {
 		Set<String> specs = parseIndexSpecList(indexSpecStr, true);
-		for (String partial : PartialIndex.SUPPORTED_FIELDS) {
-			String counterpart = PartialIndex.counterpartFields(partial);
-			if (specs.contains(partial) && !specs.contains(counterpart)) {
-				throw new SailException("Partial index '" + partial + "' requires full index '" + counterpart + "'");
-			}
+		if (!specs.isEmpty() && specs.stream().noneMatch(spec -> spec.length() == 4)) {
+			throw new SailException("Partial indexes require at least one full statement index");
 		}
 		return specs;
 	}

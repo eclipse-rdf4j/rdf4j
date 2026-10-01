@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -39,6 +40,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -47,6 +50,76 @@ class TripleStorePartialIndexesTest {
 
 	@TempDir
 	File dir;
+
+	@Test
+	void contextSubjectPairsResolveThroughSubjectPredicatePairs() throws Exception {
+		try (TripleStore store = open("cs,sp,psoc")) {
+			var contextPath = store.indexAccessPaths(1 << Component.C.ordinal())
+					.stream()
+					.filter(path -> path.indexFieldSequence().equals("cs"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(List.of("cs", "sp", "psoc"), contextPath.resolutionPath());
+			assertEquals(2, contextPath.resolutionDepth());
+			var boundPredicatePath = store.indexAccessPaths((1 << Component.C.ordinal())
+					| (1 << Component.P.ordinal()) | (1 << Component.S.ordinal()))
+					.stream()
+					.filter(path -> path.indexFieldSequence().equals("psoc"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(0, boundPredicatePath.resolutionDepth());
+			var contextSubjectPath = store.indexAccessPaths((1 << Component.C.ordinal())
+					| (1 << Component.S.ordinal()))
+					.stream()
+					.filter(path -> path.indexFieldSequence().equals("cs"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(List.of("cs", "sp", "psoc"), contextSubjectPath.resolutionPath());
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(11, 44, 55, 0, true);
+			store.storeTriple(11, 22, 33, 66, true);
+			store.storeTriple(11, 77, 88, 66, true);
+			store.storeTriple(99, 22, 33, 66, false);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn();
+					RecordIterator it = store.getTriples(txn, -1, -1, -1, 0, true)) {
+				assertEquals("cs", it.getIndexName());
+				assertEquals("[11, 22, 33, 0]", Arrays.toString(it.next()));
+				it.close();
+				assertNull(it.next());
+			}
+			assertEquals(Set.of("[11, 22, 33, 0]", "[11, 44, 55, 0]"), rows(store, -1, -1, -1, 0, true));
+			assertEquals(Set.of("[11, 77, 88, 66]"), rows(store, -1, 77, -1, 66, true));
+			assertEquals(Set.of(), rows(store, -1, 77, -1, 0, true));
+			assertEquals(Set.of(), rows(store, -1, -1, -1, 65, true));
+			assertEquals(Set.of("[99, 22, 33, 66]"), rows(store, -1, -1, -1, 66, false));
+			remove(store, -1, -1, -1, 0, true);
+			assertEquals(1, pairs(store, "cs", true));
+			assertEquals(2, pairs(store, "sp", true));
+			assertEquals(2, rows(store, -1, -1, -1, 66, true).size());
+		}
+		try (TripleStore store = open(null)) {
+			assertEquals(2, rows(store, -1, -1, -1, 66, true).size());
+			assertEquals(1, pairs(store, "cs", false));
+		}
+	}
+
+	@Test
+	void contextFirstFullIndexPreservesNonAnchorSupport() throws Exception {
+		try (TripleStore store = open("cs,spoc,cspo")) {
+			store.startTransaction();
+			store.storeTriple(1, 22, 33, 55, true);
+			store.storeTriple(11, 22, 44, 55, true);
+			store.storeTriple(11, 33, 55, 55, true);
+			store.commit();
+			remove(store, 11, 33, 55, 55, true);
+			assertEquals(2, pairs(store, "cs", true));
+		}
+		try (TripleStore store = open("cs,spoc")) {
+			assertEquals(Set.of("[1, 22, 33, 55]", "[11, 22, 44, 55]"), rows(store, -1, -1, -1, 55, true));
+		}
+	}
 
 	@Test
 	void contextSubjectPairsResolveAndPreserveSupport() throws Exception {
@@ -72,6 +145,101 @@ class TripleStorePartialIndexesTest {
 			remove(store, -1, -1, -1, 0, true);
 			assertEquals(2, pairs(store, "cs", true));
 			assertEquals(2, rows(store, -1, -1, -1, 66, true).size());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "cs,sp,psoc", "cs,sp,op,posc", "cs,scop", "cs,spoc", "cs,sp,op,ocps", "cs,op,psoc" })
+	void generalizedResolutionPreservesAllBindingsAndStatementKinds(String indexes) throws Exception {
+		List<long[]> quads = new ArrayList<>();
+		try (TripleStore store = open(indexes)) {
+			store.startTransaction();
+			for (int i = 0; i < 300; i++) {
+				long[] quad = { 1000 + i % 65, 2000 + i % 41, 3000 + i % 11, i % 2 == 0 ? 0 : 4000 };
+				if (store.storeTriple(quad[0], quad[1], quad[2], quad[3], true)) {
+					quads.add(quad);
+				}
+			}
+			store.storeTriple(11, 22, 33, 0, false);
+			store.storeTriple(11, 44, 55, 4000, false);
+			store.commit();
+			for (long context : new long[] { 0, 4000, 3999 }) {
+				for (int mask = 0; mask < 16; mask++) {
+					long[] pattern = { (mask & 1) != 0 ? 1000 : -1, (mask & 2) != 0 ? 2000 : -1,
+							(mask & 4) != 0 ? 3000 : -1, (mask & 8) != 0 ? context : -1 };
+					Set<String> expected = new HashSet<>();
+					for (long[] quad : quads) {
+						boolean matches = true;
+						for (int field = 0; field < 4; field++) {
+							matches &= pattern[field] < 0 || pattern[field] == quad[field];
+						}
+						if (matches) {
+							expected.add(Arrays.toString(quad));
+						}
+					}
+					assertEquals(expected, rows(store, pattern[0], pattern[1], pattern[2], pattern[3], true),
+							"binding mask " + mask + ", context " + context);
+				}
+			}
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.rollback();
+			assertEquals(Set.of("[11, 22, 33, 0]"), rows(store, -1, -1, -1, 0, false));
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.commit();
+			assertEquals(Set.of(), rows(store, -1, -1, -1, 0, false));
+			assertEquals(Set.of("[11, 44, 55, 4000]"), rows(store, -1, -1, -1, 4000, false));
+			remove(store, -1, -1, -1, 0, true);
+			assertEquals(65, pairs(store, "cs", true));
+			remove(store, -1, -1, -1, -1, true);
+			assertEquals(0, pairs(store, "cs", true));
+		}
+	}
+
+	@Test
+	void generalizedPlansExpandBindingsAndPreferShorterPaths() throws Exception {
+		try (TripleStore store = open("op,cs,psoc")) {
+			var path = store.indexAccessPaths((1 << Component.O.ordinal()) | (1 << Component.C.ordinal()))
+					.stream()
+					.filter(candidate -> candidate.indexFieldSequence().equals("op"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(List.of("op", "cs", "psoc"), path.resolutionPath());
+		}
+		try (TripleStore store = open("cs,sp,scop,psoc")) {
+			var path = store.indexAccessPaths(1 << Component.C.ordinal())
+					.stream()
+					.filter(candidate -> candidate.indexFieldSequence().equals("cs"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(List.of("cs", "scop"), path.resolutionPath());
+		}
+		try (TripleStore store = open("cs,spoc")) {
+			var path = store.indexAccessPaths(1 << Component.C.ordinal())
+					.stream()
+					.filter(candidate -> candidate.indexFieldSequence().equals("cs"))
+					.findFirst()
+					.orElseThrow();
+			assertEquals(List.of("cs", "spoc"), path.resolutionPath());
+		}
+	}
+
+	@Test
+	void chainedResolutionBackfillsAndReplacesTerminalIndex() throws Exception {
+		try (TripleStore store = open("spoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(11, 44, 55, 66, false);
+			store.commit();
+		}
+		for (String indexes : new String[] { "cs,sp,psoc", null, "cs,sp,posc", "cs,scop" }) {
+			try (TripleStore store = open(indexes)) {
+				assertEquals(Set.of("[11, 22, 33, 0]"), rows(store, -1, -1, -1, 0, true));
+				assertEquals(Set.of("[11, 44, 55, 66]"), rows(store, -1, -1, -1, 66, false));
+				assertEquals(1, pairs(store, "cs", true));
+				assertEquals(1, pairs(store, "cs", false));
+			}
 		}
 	}
 
@@ -449,10 +617,10 @@ class TripleStorePartialIndexesTest {
 	}
 
 	@Test
-	void missingCounterpartsAreRejected() {
-		assertThrows(SailException.class, () -> open("sp,posc"));
-		assertThrows(SailException.class, () -> open("op,psoc"));
-		assertThrows(SailException.class, () -> open("cs,spoc"));
+	void missingFullTerminalIndexesAreRejected() {
+		assertThrows(SailException.class, () -> open("sp"));
+		assertThrows(SailException.class, () -> open("op,sp"));
+		assertThrows(SailException.class, () -> open("cs,sp,op"));
 		assertThrows(SailException.class, () -> TripleIndex.parseIndexSpecList("cs"));
 		assertThrows(SailException.class, () -> TripleIndex.parseIndexSpecList("sp"));
 	}

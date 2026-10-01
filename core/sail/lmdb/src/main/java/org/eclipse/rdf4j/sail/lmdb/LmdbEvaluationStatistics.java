@@ -924,9 +924,9 @@ class LmdbEvaluationStatistics
 			double workRows = directLookup ? Math.max(DIRECT_LOOKUP_WORK_ROW_FLOOR, plannedRowsAfter)
 					: filterAppliedAtAccess ? rowsAfter : rowsBefore;
 			if (candidate.requiresResolution()) {
-				// Each distinct pair requires a counterpart seek before statement expansion. The number of pairs
-				// cannot exceed the pre-filter statement count, which is a conservative bound on this extra work.
-				workRows += rowsBefore;
+				// Estimate an additional seek/expansion per resolution hop. Intermediate projections may
+				// include candidates from other graphs, so this remains a heuristic rather than an exact pair count.
+				workRows += rowsBefore * candidate.resolutionDepth();
 			}
 			if (!isFiniteNonNegative(workRows)) {
 				continue;

@@ -25,20 +25,23 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStorePartialIndexesTest {
 
 	@TempDir
 	File dir;
 
-	@Test
-	void contextSubjectIndexSupportsGraphQueriesAndRemoval() {
+	@ParameterizedTest
+	@ValueSource(strings = { "cs,scpo", "cs,sp,psoc", "cs,sp,op,posc" })
+	void contextSubjectIndexSupportsGraphQueriesAndRemoval(String indexes) {
 		var vf = SimpleValueFactory.getInstance();
 		IRI s = vf.createIRI("urn:test:s");
 		IRI p = vf.createIRI("urn:test:p");
 		IRI o = vf.createIRI("urn:test:o");
 		IRI graph = vf.createIRI("urn:test:graph");
-		SailRepository repo = open("cs,scpo");
+		SailRepository repo = open(indexes);
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.begin();

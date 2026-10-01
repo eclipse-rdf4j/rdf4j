@@ -29,6 +29,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.sail.SailException;
@@ -40,21 +41,12 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Auxiliary distinct SP, OP or CS pairs, stored in two-field chunks with an ordered-varint anchor key and delta-encoded
- * values. Complete statements live exclusively in the full counterpart. Explicit and inferred support are independent.
- * Legacy empty-value pair records are valid singleton chunks.
+ * values. Complete statements live exclusively in full indexes. Explicit and inferred support are independent. Legacy
+ * empty-value pair records are valid singleton chunks.
  */
 final class PartialIndex {
 
 	static final List<String> SUPPORTED_FIELDS = List.of("sp", "op", "cs");
-
-	static String counterpartFields(String fields) {
-		return switch (fields) {
-		case "sp" -> "psoc";
-		case "op" -> "posc";
-		case "cs" -> "scpo";
-		default -> throw new IllegalArgumentException("Unknown partial index: " + fields);
-		};
-	}
 
 	private static int fieldIndex(char field) {
 		return switch (field) {
@@ -89,14 +81,14 @@ final class PartialIndex {
 	private final long env;
 	private final int explicitDbi;
 	private final int inferredDbi;
-	private final TripleIndex counterpart;
+	private final TripleIndex supportIndex;
 
-	PartialIndex(String fields, long env, long txn, TripleIndex counterpart) throws IOException {
+	PartialIndex(String fields, long env, long txn, TripleIndex supportIndex) throws IOException {
 		this.fields = fields;
 		this.firstField = fieldIndex(fields.charAt(0));
 		this.secondField = fieldIndex(fields.charAt(1));
 		this.env = env;
-		this.counterpart = counterpart;
+		this.supportIndex = supportIndex;
 		explicitDbi = openDatabaseWithTxn(txn, name(true), MDB_CREATE);
 		inferredDbi = openDatabaseWithTxn(txn, name(false), MDB_CREATE);
 	}
@@ -116,6 +108,14 @@ final class PartialIndex {
 	int score(long s, long p, long o, long c) {
 		return fieldValue(firstField, s, p, o, c) < 0 ? 0
 				: fieldValue(secondField, s, p, o, c) < 0 ? 1 : 2;
+	}
+
+	/** Bind both projected fields for planning, preserving constraints on every other field. */
+	long[] bindProjection(long[] pattern) {
+		long[] bound = pattern.clone();
+		bound[firstField] = Math.max(0, bound[firstField]);
+		bound[secondField] = Math.max(0, bound[secondField]);
+		return bound;
 	}
 
 	Pair project(long[] quad) {
@@ -162,15 +162,22 @@ final class PartialIndex {
 		return MDBVal.malloc(stack).mv_data(bytes.flip());
 	}
 
-	/** Checks the counterpart directly in the write transaction, also during cache replay under the write lock. */
+	/** Checks full statements in the write transaction, also during cache replay under the write lock. */
 	private boolean hasSupport(long txn, Pair pair, boolean explicit) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, counterpart.getDB(explicit), handle));
+			E(mdb_cursor_open(txn, supportIndex.getDB(explicit), handle));
 			long cursor = handle.get(0);
 			try {
-				// Every counterpart starts with the pair's fields in reverse order.
-				long[] min = { pair.second(), pair.first(), 0, 0 };
+				long[] pattern = { -1, -1, -1, -1 };
+				pattern[firstField] = pair.first();
+				pattern[secondField] = pair.second();
+				long[] min = new long[4], max = new long[4], quad = new long[4];
+				supportIndex.getMinEntry(min, pattern[0], pattern[1], pattern[2], pattern[3]);
+				// Unlike legacy max-entry helpers, zero is an exact value here, notably for the default graph.
+				supportIndex.toEntry(max, pattern[0] < 0 ? Long.MAX_VALUE : pattern[0],
+						pattern[1] < 0 ? Long.MAX_VALUE : pattern[1], pattern[2] < 0 ? Long.MAX_VALUE : pattern[2],
+						pattern[3] < 0 ? Long.MAX_VALUE : pattern[3]);
 				ByteBuffer bytes = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 				for (long field : min) {
 					Varint.writeUnsigned(bytes, field);
@@ -186,13 +193,21 @@ final class PartialIndex {
 				} else {
 					rc = E(mdb_cursor_get(cursor, key, data, MDB_LAST));
 				}
-				ChunkInput input = new ChunkInput();
 				while (rc == MDB_SUCCESS) {
-					input.reset(key.mv_data(), data.mv_data(), 4, counterpart.getIndexSplitPosition());
+					// This is a forward-only probe: streaming decoding retains the shared key prefix
+					// for every tuple, including non-anchor supporters in context-first chunks.
+					ChunkInput input = new ChunkInput(key.mv_data(), data.mv_data(), 4,
+							supportIndex.getIndexSplitPosition());
 					input.seek(min);
-					long[] tuple = input.next();
-					if (tuple != null) {
-						return tuple[0] == pair.second() && tuple[1] == pair.first();
+					long[] tuple;
+					while ((tuple = input.next()) != null) {
+						if (Arrays.compare(tuple, max) > 0) {
+							return false;
+						}
+						supportIndex.entryToQuad(tuple, quad);
+						if (quad[firstField] == pair.first() && quad[secondField] == pair.second()) {
+							return true;
+						}
 					}
 					rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));
 				}
@@ -203,8 +218,9 @@ final class PartialIndex {
 		}
 	}
 
-	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit) {
-		return new ResolvingIterator(txn, s, p, o, c, explicit);
+	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit,
+			IndexResolutionPlan resolution) {
+		return new ResolvingIterator(txn, s, p, o, c, explicit, resolution);
 	}
 
 	void close() {
@@ -221,13 +237,15 @@ final class PartialIndex {
 		private final Txn txn;
 		private final long s, p, o, c, first, second;
 		private final boolean explicit;
+		private final IndexResolutionPlan resolution;
 		private long lastSecond = -1;
 		private RecordIterator child;
 		private boolean closed;
 		private long scanned, matched, filtered;
 		private long rejected;
 
-		ResolvingIterator(Txn txn, long s, long p, long o, long c, boolean explicit) {
+		ResolvingIterator(Txn txn, long s, long p, long o, long c, boolean explicit,
+				IndexResolutionPlan resolution) {
 			this.txn = txn;
 			this.s = s;
 			this.p = p;
@@ -236,6 +254,7 @@ final class PartialIndex {
 			this.first = fieldValue(firstField, s, p, o, c);
 			this.second = fieldValue(secondField, s, p, o, c);
 			this.explicit = explicit;
+			this.resolution = resolution;
 		}
 
 		@Override
@@ -265,9 +284,7 @@ final class PartialIndex {
 					long[] pattern = { s, p, o, c };
 					pattern[firstField] = first;
 					pattern[secondField] = nextSecond;
-					child = new LmdbRecordIterator(counterpart,
-							counterpart.getPatternScore(pattern[0], pattern[1], pattern[2], pattern[3]),
-							pattern[0], pattern[1], pattern[2], pattern[3], explicit, txn);
+					child = resolution.iterator(txn, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
 				}
 				return null;
 			} catch (IOException | RuntimeException e) {

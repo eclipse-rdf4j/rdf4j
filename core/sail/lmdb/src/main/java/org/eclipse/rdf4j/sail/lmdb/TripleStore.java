@@ -357,16 +357,12 @@ class TripleStore implements Closeable {
 	private void initPartialIndexes(Set<String> previous, Set<String> requested) throws IOException {
 		List<PartialIndex> added = new ArrayList<>();
 		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
-			TripleIndex counterpart = null;
-			String fullFields = PartialIndex.counterpartFields(fields);
-			for (TripleIndex full : indexes) {
-				if (full.toString().equals(fullFields)) {
-					counterpart = full;
-					break;
-				}
-			}
 			if (requested.contains(fields)) {
-				PartialIndex partial = new PartialIndex(fields, env, writeTxn, counterpart);
+				long[] pattern = { fields.indexOf('s') >= 0 ? 0 : -1, fields.indexOf('p') >= 0 ? 0 : -1,
+						fields.indexOf('o') >= 0 ? 0 : -1, fields.indexOf('c') >= 0 ? 0 : -1 };
+				TripleIndex supportIndex = TripleIndex.getBestIndex(indexes, pattern[0], pattern[1], pattern[2],
+						pattern[3]);
+				PartialIndex partial = new PartialIndex(fields, env, writeTxn, supportIndex);
 				partialIndexes.add(partial);
 				if (!previous.contains(fields)) {
 					added.add(partial);
@@ -668,9 +664,14 @@ class TripleStore implements Closeable {
 		int indexScore = index.getPatternScore(subj, pred, obj, context);
 		PartialIndex bestPartial = bestPartialIndex(subj, pred, obj, context, indexScore);
 		if (bestPartial != null) {
-			return bestPartial.iterator(txn, subj, pred, obj, context, explicit);
+			return resolutionPlan(bestPartial, subj, pred, obj, context)
+					.iterator(txn, subj, pred, obj, context, explicit);
 		}
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, indexScore);
+	}
+
+	private IndexResolutionPlan resolutionPlan(PartialIndex partial, long s, long p, long o, long c) {
+		return IndexResolutionPlan.startingWith(partial, partialIndexes, indexes, new long[] { s, p, o, c });
 	}
 
 	private PartialIndex bestPartialIndex(long subj, long pred, long obj, long context, int fullScore) {
@@ -1192,7 +1193,8 @@ class TripleStore implements Closeable {
 			for (int i = 0; i < prefixLength; i++) {
 				prefixMask |= 1 << toEstimatorComponent(fields.charAt(i)).ordinal();
 			}
-			accessPaths.add(new IndexAccessPath(fields, prefixLength, prefixMask));
+			accessPaths.add(new IndexAccessPath(fields, prefixLength, prefixMask,
+					resolutionPlan(partial, subj, pred, obj, context).fields()));
 		}
 		return List.copyOf(accessPaths);
 	}
@@ -1201,11 +1203,18 @@ class TripleStore implements Closeable {
 		private final String indexFieldSequence;
 		private final int prefixLength;
 		private final int prefixComponentMask;
+		private final List<String> resolutionPath;
 
 		private IndexAccessPath(String indexFieldSequence, int prefixLength, int prefixComponentMask) {
+			this(indexFieldSequence, prefixLength, prefixComponentMask, List.of(indexFieldSequence));
+		}
+
+		private IndexAccessPath(String indexFieldSequence, int prefixLength, int prefixComponentMask,
+				List<String> resolutionPath) {
 			this.indexFieldSequence = indexFieldSequence;
 			this.prefixLength = prefixLength;
 			this.prefixComponentMask = prefixComponentMask;
+			this.resolutionPath = List.copyOf(resolutionPath);
 		}
 
 		String indexFieldSequence() {
@@ -1221,7 +1230,15 @@ class TripleStore implements Closeable {
 		}
 
 		boolean requiresResolution() {
-			return indexFieldSequence.length() == 2;
+			return resolutionDepth() > 0;
+		}
+
+		int resolutionDepth() {
+			return resolutionPath.size() - 1;
+		}
+
+		List<String> resolutionPath() {
+			return resolutionPath;
 		}
 	}
 
