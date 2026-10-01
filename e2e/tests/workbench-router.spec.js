@@ -124,3 +124,33 @@ test('?router=off starts the Workbench without in-page navigation', async ({ pag
 	await expect(page.locator('#workbench-outlet h1')).toHaveText('Types In Repository');
 	expect(documents.length).toBe(1);
 });
+
+// Plan task M8.2: scroll, focus and announcements.
+
+test('Back returns to the scroll position the page was left at', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'types');
+	await page.evaluate(() => window.scrollTo(0, 1200));
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1150);
+
+	await menuLink(page, 'Summary').click();
+	await expectRoute(page, 'summary');
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+	await page.goBack();
+	await expectRoute(page, 'types');
+
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1150);
+	expect(Math.abs(await page.evaluate(() => window.scrollY) - 1200)).toBeLessThanOrEqual(50);
+});
+
+test('after a menu click the new heading has focus and the page is announced', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'summary');
+
+	await menuLink(page, 'Namespaces').click();
+	await expectRoute(page, 'namespaces');
+
+	await expect(page.locator('#workbench-outlet h1')).toBeFocused();
+	await expect(page.locator('#workbench-route-status')).toHaveText('Namespaces loaded');
+	await expect(page.locator('#workbench-route-status')).toHaveAttribute('aria-live', 'polite');
+});

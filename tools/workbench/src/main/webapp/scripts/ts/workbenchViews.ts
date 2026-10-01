@@ -748,13 +748,14 @@ module workbench {
             </nav>
             ${menuSheet(context, state.viewId, runtime, groups)}
             <main id="content" class="workbench-main">${outlet}</main>
+            <p id="workbench-route-status" class="workbench-visually-hidden" role="status" aria-live="polite"></p>
             <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
         }
 
         /** The page area that changes from route to route: title, noscript notice and page surface. */
         function outletContentTemplate(model: PageModel, runtime: LitRuntime, body: any): any {
             const h = runtime.html;
-            return h`<h1 id="title_heading">${routeTitle(model)}</h1>
+            return h`<h1 id="title_heading" tabindex="-1">${routeTitle(model)}</h1>
                 <p id="noscript-message" class="ERROR">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>
                 <div id="workbench-page-surface" class="workbench-page-surface">${body}</div>`;
         }

@@ -47,6 +47,7 @@ function fakeWindow(href) {
             reload() { win.reloaded++; }
         },
         history: {
+            scrollRestoration: 'auto',
             state: null,
             entries: [],
             pushState(state, title, url) {
@@ -66,6 +67,11 @@ function fakeWindow(href) {
             win.scrollY = y;
             win.scrolledTo.push(y);
         },
+        frames: 0,
+        requestAnimationFrame(callback) {
+            win.frames++;
+            setTimeout(callback, 0);
+        },
         addEventListener(type, handler) {
             listeners.set(type, (listeners.get(type) || []).concat([handler]));
         },
@@ -74,7 +80,10 @@ function fakeWindow(href) {
         },
         listenerCount(type) { return (listeners.get(type) || []).length; },
         dispatch(type, event) { (listeners.get(type) || []).slice().forEach((handler) => handler(event)); },
-        goTo(url) { current = new URL(url, current).href; }
+        goTo(url, state) {
+            current = new URL(url, current).href;
+            win.history.state = state === undefined ? null : state;
+        }
     };
     return win;
 }
@@ -115,7 +124,11 @@ function loadRouter(options) {
     const settings = options || {};
     const window = fakeWindow(settings.href || base + 'summary');
     const documentListeners = new Map();
+    const elements = {};
     const document = {
+        title: 'Summary · repo-1 — RDF4J Workbench',
+        elements,
+        getElementById(id) { return elements[id] || null; },
         addEventListener(type, handler) {
             documentListeners.set(type, (documentListeners.get(type) || []).concat([handler]));
         },
@@ -131,6 +144,11 @@ function loadRouter(options) {
         vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), context, { filename: absolutePath });
     }
     const outlet = fakeElement({ id: 'workbench-outlet' });
+    const focused = [];
+    const heading = fakeElement({ id: 'title_heading' });
+    heading.focus = (focusOptions) => focused.push(focusOptions);
+    outlet.querySelector = (selector) => (selector === 'h1' ? heading : null);
+    elements['workbench-route-status'] = fakeElement({ id: 'workbench-route-status' });
     const mount = fakeElement({ id: 'workbench-app' });
     const log = [];
     const loads = new Map();
@@ -162,7 +180,10 @@ function loadRouter(options) {
         renderFailure(appMount, error) { log.push('failure ' + error.message); }
     };
     workbench.views = {
-        render(appMount, loaded) { log.push('render ' + loaded.viewId); },
+        render(appMount, loaded) {
+            log.push('render ' + loaded.viewId);
+            document.title = loaded.title || document.title;
+        },
         outletOf: () => outlet,
         bindContextBar() {
             log.push('bind context bar');
@@ -197,7 +218,8 @@ function loadRouter(options) {
     };
     return {
         window, document, workbench, router: workbench.router, outlet, mount, log, disposed, model, register,
-        session, fetched, loadModelCalls,
+        session, fetched, loadModelCalls, focused, heading,
+        status: elements['workbench-route-status'],
         answer(url, loaded) { pending(base + url).resolve(loaded); return settle(); },
         fail(url, error) { pending(base + url).reject(error); return settle(); },
         start() { workbench.router.start(session); }
@@ -342,8 +364,10 @@ test('the old page stays until the next one is ready, then the outlet swaps in o
         'load types', 'scripts paging.js', 'scripts paging.js,types.js', 'dispose initial navigate',
         'namespaces types', 'render types', 'unbind context bar', 'bind context bar', 'mount types'
     ]);
+    const firstKey = harness.window.history.entries[0][1].wbKey;
     assert.deepEqual(JSON.parse(JSON.stringify(harness.window.history.entries)), [
-        ['replace', { scrollY: 640 }, base + 'summary'],
+        ['replace', { wbKey: firstKey }, base + 'summary'],
+        ['replace', { wbKey: firstKey, scrollY: 640 }, base + 'summary'],
         ['push', JSON.parse(JSON.stringify(harness.window.history.state)), base + 'types']
     ]);
     assert.equal(harness.window.history.state.scrollY, 0);
@@ -382,7 +406,8 @@ test('without AbortController a newer navigation still wins', async () => {
     assert.deepEqual(harness.fetched[0].fetchOptions, {});
     assert.equal(await first, 'abandoned');
     assert.equal(await second, 'committed');
-    assert.equal(harness.window.history.entries[1][0], 'replace', 'history: replace replaces the entry');
+    assert.equal(harness.window.history.entries[2][0], 'replace', 'history: replace replaces the entry');
+    assert.equal(harness.window.history.entries[2][2], base + 'contexts');
 });
 
 test('a model answered from a redirect is committed at its final URL', async () => {
@@ -515,11 +540,11 @@ test('Back and Forward navigate in the page, and reload routes the router cannot
     await navigation;
     const entries = harness.window.history.entries.length;
 
-    harness.window.goTo(base + 'summary');
+    harness.window.goTo(base + 'summary', harness.window.history.entries[0][1]);
     harness.window.dispatch('popstate', { state: null });
     await harness.answer('summary', harness.model('summary'));
     assert.equal(harness.router.current().viewId, 'summary');
-    assert.equal(harness.window.history.entries.length, entries + 1, 'only the scroll position is replaced');
+    assert.equal(harness.window.history.entries.length, entries, 'Back changes no history entry');
 
     harness.window.goTo(base + 'summary#size');
     harness.window.dispatch('popstate', { state: null });
@@ -538,4 +563,118 @@ test('leaving the page disposes the current route unless the page is kept for Ba
     assert.equal(harness.log.includes('dispose initial pagehide'), false);
     harness.window.dispatch('pagehide', { persisted: false });
     assert.ok(harness.log.includes('dispose initial pagehide'));
+});
+
+// Plan task M8.2: scroll, focus and announcements.
+
+const frames = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+test('the router restores scroll positions itself', () => {
+    const harness = loadRouter();
+    harness.start();
+
+    assert.equal(harness.window.history.scrollRestoration, 'manual');
+    assert.equal(typeof harness.window.history.state.wbKey, 'string', 'the first entry gets a key');
+});
+
+test('an entry that already has a key keeps it', () => {
+    const harness = loadRouter();
+    harness.window.history.state = { wbKey: 'kept', scrollY: 12 };
+    harness.start();
+
+    assert.equal(harness.window.history.entries.length, 0);
+});
+
+test('Back restores the scroll position of the page it returns to once its rows are bound', async () => {
+    const harness = loadRouter();
+    harness.start();
+    const summaryState = harness.window.history.state;
+    harness.window.scrollY = 1200;
+    const forward = harness.router.navigate(base + 'types', { history: 'push' });
+    await harness.answer('types', harness.model('types'));
+    await forward;
+    await frames();
+    harness.window.scrollY = 300;
+
+    const framesBefore = harness.window.frames;
+    harness.window.goTo(base + 'summary', summaryState);
+    harness.window.dispatch('popstate', { state: summaryState });
+    await harness.answer('summary', harness.model('summary'));
+    await frames();
+
+    assert.equal(harness.window.frames - framesBefore, 2, 'two animation frames after the rows are bound');
+    assert.equal(harness.window.scrollY, 1200);
+
+    harness.window.goTo(base + 'types', harness.window.history.entries[2][1]);
+    harness.window.dispatch('popstate', { state: null });
+    await harness.answer('types', harness.model('types'));
+    await frames();
+    assert.equal(harness.window.scrollY, 300, 'Forward returns to where Types was left');
+});
+
+test('an entry the router did not create is restored to its saved position or the top', async () => {
+    const harness = loadRouter();
+    harness.start();
+
+    harness.window.goTo(base + 'types', { scrollY: 80 });
+    harness.window.dispatch('popstate', { state: null });
+    await harness.answer('types', harness.model('types'));
+    await frames();
+    assert.equal(harness.window.scrollY, 80);
+    assert.equal(typeof harness.window.history.state.wbKey, 'string', 'the entry gets a key');
+
+    harness.window.goTo(base + 'contexts', null);
+    harness.window.dispatch('popstate', { state: null });
+    await harness.answer('contexts', harness.model('contexts'));
+    await frames();
+    assert.equal(harness.window.scrollY, 0);
+});
+
+test('a new page starts at its top, its heading takes focus and its title is announced', async () => {
+    const harness = loadRouter();
+    harness.start();
+    harness.window.scrollY = 500;
+
+    const navigation = harness.router.navigate(base + 'types', { history: 'push' });
+    await harness.answer('types', harness.model('types', { title: 'Types · repo-1 — RDF4J Workbench' }));
+    await navigation;
+    await settle();
+
+    assert.equal(harness.window.scrollY, 0);
+    assert.equal(harness.heading.getAttribute('tabindex'), '-1');
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.focused)), [{ preventScroll: true }]);
+    assert.equal(harness.status.textContent, 'Types loaded');
+});
+
+test('a link to an element of the new page scrolls to that element', async () => {
+    const harness = loadRouter();
+    const scrolled = [];
+    harness.document.elements.size = { scrollIntoView: () => scrolled.push('size') };
+    harness.start();
+
+    const navigation = harness.router.navigate(base + 'types#size', { history: 'push' });
+    await harness.answer('types', harness.model('types'));
+    await navigation;
+    await settle();
+    assert.deepEqual(scrolled, ['size']);
+
+    const missing = harness.router.navigate(base + 'contexts#nothing', { history: 'push' });
+    await harness.answer('contexts', harness.model('contexts'));
+    await missing;
+    await settle();
+    assert.deepEqual(scrolled, ['size'], 'a hash that names nothing leaves the page at its top');
+});
+
+test('a page without a heading or a status region is still shown', async () => {
+    const harness = loadRouter();
+    harness.outlet.querySelector = () => null;
+    delete harness.document.elements['workbench-route-status'];
+    harness.document.title = 'Plain';
+    harness.start();
+
+    const navigation = harness.router.navigate(base + 'types', { history: 'push' });
+    await harness.answer('types', harness.model('types'));
+    assert.equal(await navigation, 'committed');
+    await settle();
+    assert.equal(harness.outlet.getAttribute('data-workbench-route-ready'), 'true');
 });

@@ -28,6 +28,8 @@ var workbench;
         var controller = null;
         var progressTimer = null;
         var keyCounter = 0;
+        /** The scroll position each history entry (by its wbKey) was left at. */
+        var positions = {};
         var currentRoute = null;
         function isRunning() {
             return running;
@@ -70,6 +72,27 @@ var workbench;
             else {
                 element.removeAttribute('aria-busy');
                 element.removeAttribute('data-workbench-route-loading');
+            }
+        }
+        function newKey() {
+            return String(Date.now()) + '-' + (++keyCounter);
+        }
+        /** Run callback after two animation frames, when a freshly rendered page has its final height. */
+        function afterTwoFrames(callback) {
+            var windowObject = window;
+            windowObject.requestAnimationFrame(function () { return windowObject.requestAnimationFrame(callback); });
+        }
+        /** Move keyboard focus to the new page's heading and announce the page to screen readers. */
+        function announce() {
+            var windowObject = window;
+            var heading = outlet().querySelector('h1');
+            if (heading) {
+                heading.setAttribute('tabindex', '-1');
+                heading.focus({ preventScroll: true });
+            }
+            var status = windowObject.document.getElementById('workbench-route-status');
+            if (status) {
+                status.textContent = String(windowObject.document.title).split(' · ')[0].split(' — ')[0] + ' loaded';
             }
         }
         function abandoned() {
@@ -143,10 +166,17 @@ var workbench;
             running = true;
             session = started;
             var url = new URL(started.url);
-            currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url),
-                instance: started.instance };
-            markRoute(currentRoute.viewId, true);
             var windowObject = window;
+            var history = windowObject.history;
+            // Back and Forward restore the position each page was left at (M8.2), not the browser.
+            history.scrollRestoration = 'manual';
+            var key = history.state && history.state.wbKey;
+            if (!key) {
+                key = newKey();
+                history.replaceState(Object.assign({}, history.state, { wbKey: key }), '');
+            }
+            currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url), key: key, instance: started.instance };
+            markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
             windowObject.addEventListener('popstate', onPopState, false);
             windowObject.addEventListener('pagehide', onPageHide, false);
@@ -175,13 +205,15 @@ var workbench;
             var stale = function () { return mine !== generation; };
             var model = null;
             setBusy(true);
-            return Promise.all([app().loadModel(fetcher, target.href, signal), app().loadScripts(definition.baseScripts())])
+            // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
+            var request = target.href.split('#')[0];
+            return Promise.all([app().loadModel(fetcher, request, signal), app().loadScripts(definition.baseScripts())])
                 .then(function (loaded) {
                 model = loaded[0];
                 if (stale()) {
                     throw abandoned();
                 }
-                return app().completeModel(fetcher, model.finalUrl || target.href, model, session.basePath, signal);
+                return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal);
             })
                 .then(function () {
                 if (stale()) {
@@ -193,7 +225,9 @@ var workbench;
                 if (stale()) {
                     throw abandoned();
                 }
-                commit(definition, model, new URL(model.finalUrl || target.href), options, mine);
+                var shown = new URL(model.finalUrl || request);
+                shown.hash = target.hash;
+                commit(definition, model, shown, options, mine);
                 return 'committed';
             })
                 .then(null, function (error) {
@@ -216,14 +250,29 @@ var workbench;
         function commit(definition, model, url, options, mine) {
             var windowObject = window;
             var history = windowObject.history;
-            history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
+            positions[currentRoute.key] = windowObject.scrollY;
+            if (options.history !== 'none') {
+                // The current entry still belongs to the page being left (after Back it already does not).
+                history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
+            }
             currentRoute.instance.dispose('navigate');
-            var entry = { wbKey: String(Date.now()) + '-' + (++keyCounter), scrollY: 0 };
+            var key = newKey();
+            var restoreTo = 0;
             if (options.history === 'push') {
-                history.pushState(entry, '', url.href);
+                history.pushState({ wbKey: key, scrollY: 0 }, '', url.href);
             }
             else if (options.history === 'replace') {
-                history.replaceState(entry, '', url.href);
+                history.replaceState({ wbKey: key, scrollY: 0 }, '', url.href);
+            }
+            else {
+                var state = history.state || {};
+                if (state.wbKey) {
+                    key = state.wbKey;
+                }
+                else {
+                    history.replaceState(Object.assign({}, state, { wbKey: key }), '');
+                }
+                restoreTo = key in positions ? positions[key] : state.scrollY || 0;
             }
             if (!model.error) {
                 app().configureNamespaces(model);
@@ -234,11 +283,11 @@ var workbench;
                 session.contextBar();
             }
             session.contextBar = views().bindContextBar(session.mount, context);
-            if (options.history === 'push') {
+            if (options.history !== 'none') {
                 windowObject.scrollTo(0, 0);
             }
             var viewId = viewIdOf(url);
-            currentRoute = { url: url.href, viewId: viewId, repositoryId: repositoryIdOf(url), instance: { dispose: function () { } } };
+            currentRoute = { url: url.href, viewId: viewId, repositoryId: repositoryIdOf(url), key: key, instance: { dispose: function () { } } };
             markRoute(viewId, false);
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
             var mounted = model.error ? { dispose: function () { return model.rowStore.dispose(); } }
@@ -250,10 +299,22 @@ var workbench;
                 }
                 currentRoute.instance = instance;
                 return Promise.resolve(instance.ready).then(function () {
-                    if (mine === generation) {
-                        setBusy(false);
-                        markRoute(viewId, true);
+                    if (mine !== generation) {
+                        return;
                     }
+                    setBusy(false);
+                    markRoute(viewId, true);
+                    if (options.history === 'none') {
+                        afterTwoFrames(function () { return windowObject.scrollTo(0, restoreTo); });
+                    }
+                    else {
+                        var target = url.hash
+                            ? windowObject.document.getElementById(decodeURIComponent(url.hash.substring(1))) : null;
+                        if (target) {
+                            target.scrollIntoView();
+                        }
+                    }
+                    announce();
                 });
             });
         }
