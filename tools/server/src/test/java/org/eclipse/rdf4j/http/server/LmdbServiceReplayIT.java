@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
@@ -48,6 +49,8 @@ import com.sun.net.httpserver.HttpServer;
 /** End-to-end coverage for replaying a server query before its first result is serialized. */
 public class LmdbServiceReplayIT {
 
+	private static final long GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
+	private static final double GROWTH_THRESHOLD = 0.10d;
 	private static final String REPOSITORY_ID = "lmdb-service-replay";
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:lmdb-service-replay:subject");
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:lmdb-service-replay:value");
@@ -58,6 +61,7 @@ public class LmdbServiceReplayIT {
 	@BeforeAll
 	static void startServer() throws Exception {
 		server = new TestServer();
+		server.includeTestClassesInWebapp();
 		try {
 			server.start();
 		} catch (Exception e) {
@@ -79,10 +83,12 @@ public class LmdbServiceReplayIT {
 			RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(TestServer.SERVER_URL);
 			HTTPRepository repositoryForCleanup = null;
 			try {
-				// Keep TripleStore small so the writer must exercise the map-growth path.
+				// Leave hard capacity available while a committed literal crosses the soft growth watermark.
 				LmdbStoreConfig lmdbConfig = new LmdbStoreConfig("spoc,posc")
 						.setForceSync(true)
-						.setTripleDBSize(4096 * 10)
+						.setTripleDBSize(GROWTH_MAP_SIZE)
+						.setValueDBSize(GROWTH_MAP_SIZE)
+						.setMapGrowthThreshold(GROWTH_THRESHOLD)
 						.setMapGrowthReadDrainTimeoutMillis(250);
 				manager.addRepositoryConfig(new RepositoryConfig(REPOSITORY_ID,
 						new SailRepositoryConfig(lmdbConfig)));
@@ -94,6 +100,8 @@ public class LmdbServiceReplayIT {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 					seed.add(SUBJECT, SERVICE_PREDICATE, Values.iri(serviceGate.endpoint()));
 				}
+				LongSupplier replayAccepted = server.replayAcceptedCounter(REPOSITORY_ID);
+				long initialReplayAccepted = replayAccepted.getAsLong();
 
 				// The SERVICE endpoint variable is read from LMDB, forcing the local snapshot lookup before the gate.
 				String query = "SELECT ?value ?remoteValue WHERE { "
@@ -116,12 +124,19 @@ public class LmdbServiceReplayIT {
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
 				Model growth = growthStatements(10_000);
+				// HTTP namespace updates use a separate request even during an active transaction. Keep the
+				// growth demand in this model so it publishes atomically with the new query result.
+				String growthLiteral = "n"
+						.repeat(Math.toIntExact(Math.round(GROWTH_MAP_SIZE * GROWTH_THRESHOLD * 1.5d)));
+				growth.add(Values.iri("urn:rdf4j:lmdb-service-replay:growth:overflow"), GROWTH_PREDICATE,
+						Values.literal(growthLiteral));
 				try (RepositoryConnection writer = repository.getConnection()) {
 					writer.begin();
 					writer.add(growth);
 					writer.add(SUBJECT, VALUE_PREDICATE, Values.literal("after"));
 					writer.commit();
 				}
+				awaitReplayAccepted(replayAccepted, initialReplayAccepted);
 				serviceGate.release();
 
 				assertThat(queryResult.get(30, TimeUnit.SECONDS))
@@ -144,6 +159,16 @@ public class LmdbServiceReplayIT {
 		} finally {
 			queryExecutor.shutdownNow();
 			queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+	}
+
+	private static void awaitReplayAccepted(LongSupplier replayAccepted, long initialReplayAccepted) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (replayAccepted.getAsLong() <= initialReplayAccepted) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the soft growth episode did not accept the blocked SERVICE query for replay");
+			}
+			Thread.onSpinWait();
 		}
 	}
 

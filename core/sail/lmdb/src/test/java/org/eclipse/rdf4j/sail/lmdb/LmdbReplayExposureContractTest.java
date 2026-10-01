@@ -160,6 +160,7 @@ class LmdbReplayExposureContractTest {
 				writer.commit();
 			}
 			awaitGrowthEpisode(backingStore, before);
+			awaitForcedInvalidatedView(backingStore, before);
 			SailConnection sailConnection = ((SailRepositoryConnection) reader).getSailConnection();
 			SailConflictException conflict = assertThrows(SailConflictException.class,
 					() -> sailConnection.hasStatement(VF.createIRI("urn:lmdb-replay-exposure:absent"),
@@ -204,6 +205,7 @@ class LmdbReplayExposureContractTest {
 
 			String namespace = publishGrowth(repository, initialMapSize, "empty-result", 10_000);
 			awaitGrowthEpisode(backingStore, before);
+			awaitForcedInvalidatedView(backingStore, before);
 
 			SailConnection sailConnection = ((SailRepositoryConnection) reader).getSailConnection();
 			SailConflictException conflict = assertThrows(SailConflictException.class,

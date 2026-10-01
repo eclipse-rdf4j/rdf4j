@@ -84,13 +84,18 @@ class LmdbShaclGrowthIT {
 
 			long initialTripleMapSize = mapSize(lmdbStore, "tripleStore");
 			long initialValueMapSize = mapSize(lmdbStore, "valueStore");
+			// Namespaces occupy TripleStore overflow pages; a literal occupies ValueStore overflow pages.
+			// Size both from the initialized maps so encoded IDs and platform page sizes cannot avoid growth.
+			String growthNamespace = NS + "n".repeat(Math.toIntExact(initialTripleMapSize));
+			String growthName = "Person " + "n".repeat(Math.toIntExact(initialValueMapSize));
 			IRI lastPerson = null;
 			try (RepositoryConnection writer = repository.getConnection()) {
 				writer.begin(ShaclSail.TransactionSettings.ValidationApproach.Bulk, IsolationLevels.SNAPSHOT);
+				writer.setNamespace("growth-demand", growthNamespace);
 				for (int index = 0; index < 10_000; index++) {
 					IRI person = VF.createIRI(NS, "person:" + index);
 					writer.add(person, RDF.TYPE, PERSON);
-					writer.add(person, NAME, VF.createLiteral("Person " + index));
+					writer.add(person, NAME, VF.createLiteral(index == 0 ? growthName : "Person " + index));
 					lastPerson = person;
 				}
 
@@ -100,16 +105,27 @@ class LmdbShaclGrowthIT {
 						"the staged terms must remain buffered until SHACL validation reaches prepare");
 
 				writer.prepare();
-				assertTrue(mapSize(lmdbStore, "tripleStore") > initialTripleMapSize,
-						"successful preflight must grow the TripleStore after validating the staged write");
-				assertTrue(mapSize(lmdbStore, "valueStore") > initialValueMapSize,
-						"successful preflight must grow the ValueStore after validating the staged write");
+				assertEquals(initialTripleMapSize, mapSize(lmdbStore, "tripleStore"),
+						"prepare must retain the buffered TripleStore write until the admitted writer commits");
+				assertEquals(initialValueMapSize, mapSize(lmdbStore, "valueStore"),
+						"prepare must retain the buffered ValueStore write until the admitted writer commits");
 				writer.commit();
 			}
 
 			try (RepositoryConnection verify = repository.getConnection()) {
+				// A new snapshot waits for managed growth and pins the complete published generation.
+				verify.begin(IsolationLevels.SNAPSHOT);
+				assertEquals(growthNamespace, verify.getNamespace("growth-demand"));
+				assertTrue(mapSize(lmdbStore, "tripleStore") > initialTripleMapSize,
+						"the validated publication must complete real TripleStore map growth");
+				assertTrue(mapSize(lmdbStore, "valueStore") > initialValueMapSize,
+						"the validated publication must complete real ValueStore map growth");
+				assertEquals(20_000, verify.size(), "the entire validated batch must publish atomically");
 				assertTrue(verify.hasStatement(lastPerson, RDF.TYPE, PERSON, false),
 						"the valid staged batch must be committed after both LMDB maps grow");
+				assertTrue(verify.hasStatement(VF.createIRI(NS, "person:0"), NAME, VF.createLiteral(growthName), false),
+						"the overflow-page literal must be committed with the complete batch");
+				verify.rollback();
 			}
 
 			IRI invalidPerson = VF.createIRI(NS, "invalid-person");
