@@ -149,7 +149,7 @@ test('workbench action and data typography uses the shared readable scale', asyn
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/information`, { waitUntil: 'domcontentloaded' });
 	const dataFont = await page.locator('#workbench-page-surface').evaluate(element => {
-		const data = element.querySelector('table.simple td');
+		const data = element.querySelector('dl.workbench-kv dd');
 		return data ? Number.parseFloat(getComputedStyle(data).fontSize) : 0;
 	});
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/update`, { waitUntil: 'domcontentloaded' });

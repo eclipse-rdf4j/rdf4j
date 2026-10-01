@@ -1035,15 +1035,12 @@ body.workbench-body .workbench-explore-groups ul {
 	}
 }
 
-body.workbench-body .workbench-page-surface table.simple,
 body.workbench-body .workbench-page-surface table.data,
 body.workbench-body .workbench-page-surface table.dataentry {
 	font-family: var(--workbench-font);
 	font-size: var(--workbench-control-font-size);
 }
 
-body.workbench-body #content.workbench-main .workbench-page-surface table.simple th,
-body.workbench-body #content.workbench-main .workbench-page-surface table.simple td,
 body.workbench-body #content.workbench-main .workbench-page-surface table.data th,
 body.workbench-body #content.workbench-main .workbench-page-surface table.data td,
 body.workbench-body #content.workbench-main .workbench-page-surface table.dataentry th,
@@ -1216,21 +1213,13 @@ html {
 }
 
 body.workbench-body #contentheader.workbench-context table,
-body.workbench-body table.simple,
 body.workbench-body table.dataentry {
 	border-collapse: collapse;
 }
 
 body.workbench-body #contentheader.workbench-context th,
-body.workbench-body table.simple th,
 body.workbench-body table.dataentry th {
 	text-align: left;
-	vertical-align: top;
-}
-
-body.workbench-body table.simple th,
-body.workbench-body table.simple td {
-	padding: 0 5px 0 0;
 	vertical-align: top;
 }
 
@@ -1612,9 +1601,9 @@ body.workbench-body #title_heading {
 	border: 0;
 	color: var(--workbench-ink);
 	font-family: inherit;
-	font-size: 28px;
+	font-size: 24px;
 	font-weight: 600;
-	line-height: 1.2;
+	line-height: 1.25;
 	white-space: normal;
 }
 
@@ -1645,12 +1634,73 @@ body.workbench-body .workbench-page-surface h3 {
 	font-family: inherit;
 }
 
+/* Heading scale (mockup 11): page title 24px/600, section title (h2 in a card) 18px/600,
+ * card sub-section (h3) 14px/600, field label 12px/600, helper text 12px muted, body 14px/1.5. */
 body.workbench-body .workbench-page-surface h2 {
 	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.3;
 }
 
 body.workbench-body .workbench-page-surface h3 {
-	font-size: 16px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+body.workbench-body .workbench-page-surface .workbench-island > :first-child,
+body.workbench-body .workbench-page-surface .workbench-island > section:first-child > :first-child {
+	margin-top: 0;
+	padding-top: 0;
+}
+
+/* Key/value list (mockup 11): label column and value column with a soft rule between rows;
+ * the label stacks above the value below 600px. */
+body.workbench-body dl.workbench-kv {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body .workbench-kv__row {
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	column-gap: 16px;
+	padding: 9px 0;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-kv__row:last-child {
+	border-bottom: 0;
+}
+
+body.workbench-body .workbench-kv__row > dt {
+	margin: 0;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	line-height: 1.5;
+}
+
+body.workbench-body .workbench-kv__row > dd {
+	min-width: 0;
+	margin: 0;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-kv__row > dd.workbench-kv__code,
+body.workbench-body .workbench-kv__row > dd code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+@media (max-width: 600px) {
+	body.workbench-body .workbench-kv__row {
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 2px;
+	}
 }
 
 body.workbench-body .workbench-page-surface p {
@@ -1686,42 +1736,11 @@ body.workbench-body #workbench-information > section + section {
 }
 
 body.workbench-body #workbench-information > section > h2 {
-	margin: 0 0 8px;
-	font-size: 16px;
+	margin: 0 0 4px;
+	font-size: 14px;
 	font-weight: 600;
 }
 
-body.workbench-body #workbench-information table.simple {
-	width: 100%;
-	border-collapse: collapse;
-}
-
-body.workbench-body #workbench-information table.simple th,
-body.workbench-body #workbench-information table.simple td {
-	padding: 8px 12px 8px 0;
-	border: 0;
-	border-bottom: 1px solid var(--workbench-soft-rule);
-	font-size: var(--workbench-body-font-size);
-	line-height: 1.5;
-	text-align: left;
-	vertical-align: top;
-}
-
-body.workbench-body #workbench-information table.simple tr:last-child th,
-body.workbench-body #workbench-information table.simple tr:last-child td {
-	border-bottom: 0;
-}
-
-body.workbench-body #workbench-information table.simple th {
-	width: 160px;
-	min-width: 160px;
-	color: var(--workbench-muted);
-	font-weight: 600;
-}
-
-body.workbench-body #workbench-information table.simple td {
-	padding-left: 8px;
-}
 
 body.workbench-body .workbench-page-surface:has(.workbench-summary-location) {
 	padding: 0;
@@ -3058,18 +3077,6 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 		min-height: var(--workbench-touch-height);
 	}
 
-	body.workbench-body #workbench-information table.simple th {
-		width: 38%;
-		min-width: 0;
-		padding-right: 8px;
-	}
-
-	body.workbench-body #workbench-information table.simple td {
-		padding-right: 0;
-		overflow-wrap: anywhere;
-		word-break: break-word;
-	}
-
 	body.workbench-body #contentheader.workbench-context .change a {
 		display: inline-flex;
 		align-items: center;
@@ -3350,37 +3357,31 @@ html[data-theme="dark"] #query-explanation-dot-view-compare svg .edge polygon {
 	stroke: var(--workbench-outline) !important;
 }
 
-body.workbench-body .workbench-page-surface table.simple,
 body.workbench-body .workbench-page-surface table.data,
 body.workbench-body .workbench-page-surface table.dataentry {
 	color: var(--workbench-body);
 }
 
-body.workbench-body .workbench-page-surface table.simple th,
 body.workbench-body .workbench-page-surface table.data th,
 body.workbench-body .workbench-page-surface table.dataentry th {
 	color: var(--workbench-ink);
 }
 
-body.workbench-body .workbench-page-surface table.simple td,
 body.workbench-body .workbench-page-surface table.data td,
 body.workbench-body .workbench-page-surface table.dataentry td {
 	color: var(--workbench-body);
 }
 
-html[data-theme="dark"] body.workbench-body .workbench-page-surface table.simple,
 html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data,
 html[data-theme="dark"] body.workbench-body .workbench-page-surface table.dataentry {
 	background: var(--workbench-surface);
 }
 
-html[data-theme="dark"] body.workbench-body .workbench-page-surface table.simple th,
 html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data th {
 	border-color: var(--workbench-soft-rule);
 	background: var(--workbench-inset);
 }
 
-html[data-theme="dark"] body.workbench-body .workbench-page-surface table.simple td,
 html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data td {
 	border-color: var(--workbench-soft-rule);
 	background: var(--workbench-surface);

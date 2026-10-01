@@ -174,17 +174,17 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 	await page.setViewportSize({ width: 390, height: 900 });
 	await setTheme(page, 'dark');
 	await openPage(page, `repositories/${REPOSITORY_ID}/information`);
-	const informationGap = await page.locator('#workbench-information table.simple tr').first().evaluate(row => {
-		const label = row.querySelector('th').getBoundingClientRect();
-		const value = row.querySelector('td').getBoundingClientRect();
+	const informationGap = await page.locator('#workbench-information .workbench-kv__row').first().evaluate(row => {
+		const label = row.querySelector('dt').getBoundingClientRect();
+		const value = row.querySelector('dd').getBoundingClientRect();
 		const labelRange = document.createRange();
-		labelRange.selectNodeContents(row.querySelector('th'));
+		labelRange.selectNodeContents(row.querySelector('dt'));
 		const valueRange = document.createRange();
-		valueRange.selectNodeContents(row.querySelector('td'));
+		valueRange.selectNodeContents(row.querySelector('dd'));
 		return {
 			cellGap: value.left - label.right,
 			textGap: valueRange.getBoundingClientRect().left - labelRange.getBoundingClientRect().right,
-			valuePadding: parseFloat(getComputedStyle(row.querySelector('td')).paddingLeft)
+			valuePadding: parseFloat(getComputedStyle(row).columnGap)
 		};
 	});
 	console.log(`INFORMATION_VALUE_GAP ${JSON.stringify(informationGap)}`);

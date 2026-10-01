@@ -26,8 +26,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 05:15Z) M1.1 Result headings show variable names exactly.
 - [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
 - [x] (2026-10-01 06:45Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
-- [ ] M1.4 (in progress) One heading scale and a key/value component.
-- [ ] M1.5 One content width and flatter containers.
+- [x] (2026-10-01 07:05Z) M1.4 One heading scale and a key/value component.
+- [ ] M1.5 (in progress) One content width and flatter containers.
 - [ ] M1.6 One form layout.
 - [ ] M1.7 Callouts.
 - [ ] M1.8 Visible editor overlay icons and formatted numbers.

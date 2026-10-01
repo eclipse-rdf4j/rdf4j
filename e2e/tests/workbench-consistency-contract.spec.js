@@ -253,7 +253,7 @@ test('System Information keeps every section and live value inside one aligned s
 	}
 	await expect(island.getByText('RDF4J Workbench', { exact: true })).toBeVisible();
 	await expect(island.getByText(/MB$/, { exact: false }).first()).toBeVisible();
-	const labelWidth = await island.locator('table.simple th').first().evaluate(element => element.getBoundingClientRect().width);
+	const labelWidth = await island.locator('dl.workbench-kv dt').first().evaluate(element => element.getBoundingClientRect().width);
 	expect(labelWidth).toBeGreaterThanOrEqual(160);
 	const desktopMetrics = await island.evaluate(element => ({
 		directSurfaces: element.querySelectorAll(':scope > .workbench-island').length,

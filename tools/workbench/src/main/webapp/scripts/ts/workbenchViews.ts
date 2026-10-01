@@ -641,12 +641,17 @@ module workbench {
             return display;
         }
 
+        /** Shared key/value list (mockup 11): label column and value column, stacked below 600px. */
+        function keyValueList(runtime: LitRuntime, rows: [string, any][]): any {
+            const h = runtime.html;
+            return h`<dl class="workbench-kv">${rows.map((row) => h`<div class="workbench-kv__row"><dt>${row[0]}</dt><dd>${
+                row[1] && typeof row[1] === 'object' && Array.isArray(row[1].strings) ? row[1] : text(row[1])}</dd></div>`)}</dl>`;
+        }
+
         function simpleSection(runtime: LitRuntime, title: string, rows: [string, any][], className?: string,
                                id?: string, island: boolean = true): any {
             const h = runtime.html;
-            const content = h`<h2>${title}</h2><table class="simple"><tbody>
-                    ${rows.map((row) => h`<tr><th>${row[0]}</th><td>${text(row[1])}</td></tr>`)}
-                </tbody></table>`;
+            const content = h`<h2>${title}</h2>${keyValueList(runtime, rows)}`;
             const sectionClass = [island ? 'workbench-island' : '', className || '']
                 .filter((part) => part.length > 0).join(' ');
             return id

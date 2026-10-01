@@ -1902,3 +1902,24 @@ test('page tables label their columns for people instead of showing raw variable
     }, context, runtime);
     assert.deepEqual(headings(explore), ['Subject', 'Predicate', 'Object', 'Context']);
 });
+
+test('summary and information render key/value lists instead of simple tables', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const summary = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'summary', vars: ['id', 'description', 'location', 'server', 'size', 'contexts'],
+        rows: [['repo-1', 'Repository one', 'http://example.test/repositories/repo-1', 'http://example.test', '42', '2']],
+        rowCount: 1, metadata: {}
+    }, context, runtime));
+    assert.match(summary, /<dl class="workbench-kv"/);
+    assert.match(summary, /<div class="workbench-kv__row"><dt>Statements<\/dt>|<dt>/);
+    assert.doesNotMatch(summary, /table class="simple"/);
+    const information = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'information', vars: ['version', 'os', 'jvm', 'user', 'memory-used', 'maximum-memory'],
+        rows: [['6.2.0', 'macOS', 'Java 25', 'tester', '10 MB', '20 MB']], rowCount: 1, metadata: {}
+    }, context, runtime));
+    assert.match(information, /<dl class="workbench-kv"/);
+    assert.doesNotMatch(information, /table class="simple"/);
+    assert.doesNotMatch(information, /<th>[^<]*:<\/th>/);
+});

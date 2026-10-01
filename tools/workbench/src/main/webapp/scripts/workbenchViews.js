@@ -522,10 +522,15 @@ var workbench;
             }
             return display;
         }
+        /** Shared key/value list (mockup 11): label column and value column, stacked below 600px. */
+        function keyValueList(runtime, rows) {
+            var h = runtime.html;
+            return h(__makeTemplateObject(["<dl class=\"workbench-kv\">", "</dl>"], ["<dl class=\"workbench-kv\">", "</dl>"]), rows.map(function (row) { return h(__makeTemplateObject(["<div class=\"workbench-kv__row\"><dt>", "</dt><dd>", "</dd></div>"], ["<div class=\"workbench-kv__row\"><dt>", "</dt><dd>", "</dd></div>"]), row[0], row[1] && typeof row[1] === 'object' && Array.isArray(row[1].strings) ? row[1] : text(row[1])); }));
+        }
         function simpleSection(runtime, title, rows, className, id, island) {
             if (island === void 0) { island = true; }
             var h = runtime.html;
-            var content = h(__makeTemplateObject(["<h2>", "</h2><table class=\"simple\"><tbody>\n                    ", "\n                </tbody></table>"], ["<h2>", "</h2><table class=\"simple\"><tbody>\n                    ", "\n                </tbody></table>"]), title, rows.map(function (row) { return h(__makeTemplateObject(["<tr><th>", "</th><td>", "</td></tr>"], ["<tr><th>", "</th><td>", "</td></tr>"]), row[0], text(row[1])); }));
+            var content = h(__makeTemplateObject(["<h2>", "</h2>", ""], ["<h2>", "</h2>", ""]), title, keyValueList(runtime, rows));
             var sectionClass = [island ? 'workbench-island' : '', className || '']
                 .filter(function (part) { return part.length > 0; }).join(' ');
             return id
