@@ -1846,3 +1846,42 @@ test('a syntax error becomes a callout that points at the line and keeps the par
     assert.equal(genericAlert.querySelector('.query-result-error__goto'), null);
     generic.dispose();
 });
+
+// Task M4.1: rows scroll with the page unless the result is taller than the browser can scroll.
+function fakePageView() {
+    return {
+        innerHeight: 900,
+        scrollX: 0,
+        scrollY: 0,
+        listeners: {},
+        addEventListener(type, listener) { (this.listeners[type] = this.listeners[type] || []).push(listener); },
+        removeEventListener() {},
+        scrollBy() {},
+        scrollTo() {}
+    };
+}
+
+async function renderedScrollSource(capacity) {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    document.defaultView = fakePageView();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), initialLayout: 'table' });
+    renderer.tableScrollCapacity = capacity;
+    await renderer.accept({ type: 'view', id: 'query-result-tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    await renderer.accept({ type: 'rows', values: Array.from({ length: 200 }, (_unused, index) => [
+        { kind: 'literal', value: 'v' + index }
+    ]) });
+    await renderer.accept({ type: 'end', metadata: {} });
+    const source = renderer.root.getAttribute('data-scroll-source');
+    const compressed = renderer.rowCoordinates.compressed;
+    renderer.dispose();
+    return { source, compressed };
+}
+
+test('rows scroll with the page, and a result taller than the scroll capacity keeps its inner scroll element', async () => {
+    assert.deepEqual(await renderedScrollSource(Number.MAX_SAFE_INTEGER), { source: 'page', compressed: false });
+    assert.deepEqual(await renderedScrollSource(50), { source: 'element', compressed: true });
+});

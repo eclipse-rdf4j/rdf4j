@@ -125,7 +125,7 @@ test('releases batched query rows on reload and page navigation', async ({ page 
 		.map(store => store.id);
 	expect(firstPageOwnedStoreIds).toContain(firstExecutionStoreId);
 	const firstResult = await visibleQueryResult(page);
-	expect(firstResult.status).toMatch(/20,?000 results\./);
+	expect(firstResult.status).toMatch(/^20,?000 rows · complete/);
 	expect(firstResult.visibleRows).toBeLessThanOrEqual(80);
 
 	await page.reload({ waitUntil: 'domcontentloaded' });
@@ -151,7 +151,7 @@ test('releases batched query rows on reload and page navigation', async ({ page 
 	const secondActiveStorage = await readRowStoreSnapshot(page);
 	const secondExecutionStoreId = assertAddedQueryRows(afterReloadStorage, secondActiveStorage, ROW_COUNT);
 	const secondResult = await visibleQueryResult(page);
-	expect(secondResult.status).toMatch(/20,?000 results\./);
+	expect(secondResult.status).toMatch(/^20,?000 rows · complete/);
 
 	await page.goto(SUMMARY_URL, { waitUntil: 'domcontentloaded' });
 	await page.locator('#workbench-app').waitFor({ state: 'visible' });
@@ -192,7 +192,7 @@ test('releases batched query rows on reload and page navigation', async ({ page 
 		: await waitForExecutionStoreReleased(page, baselineStorage, secondPageStoreIds);
 	if (bfcacheRestored) {
 		expect(returnedPage.queryResultCount, 'a BFCache-restored result view must retain its row store').toBe(1);
-		expect(returnedPage.queryResultStatus).toMatch(/20,?000 results\./);
+		expect(returnedPage.queryResultStatus).toMatch(/^20,?000 rows · complete/);
 		expect(afterBackStorage.logicalRowCount).toBe(secondActiveStorage.logicalRowCount);
 		expect(afterBackStorage.physicalRowRecordCount).toBe(secondActiveStorage.physicalRowRecordCount);
 	} else {
@@ -376,7 +376,7 @@ async function runBatchedQuery(page) {
 	}, `SELECT ?item WHERE { VALUES ?item { ${values} } }`);
 	await page.locator('#exec').click();
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false', { timeout: 60000 });
-	await expect(page.locator('#query-results .query-result-status')).toHaveText(/20,?000 results\./, { timeout: 15000 });
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/, { timeout: 15000 });
 }
 
 async function visibleQueryResult(page) {

@@ -46,8 +46,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 10:15Z) M3.4 Clear names, units, and no silent "Clear".
 - [x] (2026-10-01 10:37Z) M3.5 One status line and designed result states (mockup 02).
 - [x] (2026-10-01 06:41Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
-- [ ] M4.1 (in progress) Results scroll with the page, with a pinned header; full screen fills the screen.
-- [ ] M4.2 Column sizing without mid-word breaks.
+- [x] (2026-10-01 10:56Z) M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
+- [ ] M4.2 (in progress) Column sizing without mid-word breaks.
 - [ ] M4.3 Literal, IRI and heading rendering.
 - [ ] M4.4 Mobile records do not clip and use the same labels.
 - [ ] M5.1 Explore (mockup 05).
@@ -269,6 +269,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 
 - Decision (M3.5): status wording beyond the plan's examples: a complete result without timing reads "N rows · complete"; a Yes/No answer reads "Answer · complete in X ms"; while rows stream with server progress the line keeps the progress numbers ("Receiving… 2 rows · 1,000,000 processed · 3,000 ms elapsed") because they are the only sign of life for a slow query that has not produced rows yet. The total in "N rows" is the server's exact `total-result-count` when present. The loaded-of label ("1,000 of 12,345 loaded", or "10 loaded" when the total is unknown) shows only while more rows exist than are loaded. Full screen, Display and Download are hidden whenever no rows are on screen (a failure without retained rows, an empty result, a Yes/No answer); after a timeout or a failed Load more the retained rows keep them, which is a narrowing of "fail() hides Full screen and Display" so partial results stay readable. Error callouts: a parser message with a position is titled "Syntax error on line L, column C"; other unclassified failures are titled "The query failed"; timeouts, cancellations, server stops, incomplete streams and failed Load more keep their message without a title (their wording was already designed); an empty query is an info callout. The renderer reports a parser position with a bubbling `workbench:query-error-location` event (`reveal` true when "Go to line" is pressed), and `query.ts` marks the editor line (`query-editor-error-marker` in the `gutterErrorBar` gutter, `query-editor-error-line` background) until the next edit. In the output card the renderer's "Query result" heading is visually hidden (it still names the region and returns in full screen), which resolves the M3.3 note.
   Rationale: follows mockup 02 while keeping existing information and readable partial results.
+  Date/Author: 2026-10-01 / implementer.
+
+- Decision (M4.1): in page mode the renderer never scrolls the page to keep rows in place. Its anchor compensation (requested rows and reflow anchors, computed before an asynchronous row read) scrolled the page back after the user had wheeled further, so page mode follows the live page position and leaves anchoring to the browser's scroll anchoring (`overflow-anchor`, which Chromium and Firefox implement; WebKit may shift by a row while rows above the viewport are measured). The one exception is End (or Cmd/Ctrl+ArrowDown) outside an editable element: row heights are estimates until rendered, so the table grows while its last rows are measured, and the renderer keeps scrolling to the new bottom until the last row is on screen or other scroll input arrives. The pinned header copy (`.query-result-floating-head`) is a zero-height sticky element so that showing it never moves the table. Not implemented from the task text: scrolling the page to put a compressed result's card under the context bar on the first scroll into it; the compressed table's own height (`100vh - context bar - 96px`) already fills the screen.
+  Rationale: native page scrolling must never be fought; the End behavior keeps the "last row is reachable" acceptance.
   Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective

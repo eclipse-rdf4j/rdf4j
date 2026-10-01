@@ -924,6 +924,69 @@ body.query-results-fullscreen-active {
     white-space: nowrap;
 }
 
+/* Results scroll with the page (M4.1). Only full screen and results taller than the browser's scroll capacity
+ * use an inner scroll element (data-scroll-source="element"). */
+.query-result-layout[data-scroll-source="element"] > .query-result-table-wrap,
+.query-result-layout[data-scroll-source="element"] > .query-result-records {
+    height: calc(100vh - var(--workbench-contextbar-height, 0px) - 96px);
+    overflow: auto;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout > * {
+    flex: none;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout > .query-result-table-wrap,
+.query-results[data-fullscreen="true"] > .query-result-layout > .query-result-records {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* In page mode the browser's scroll anchoring keeps the visible records in place while rows are measured. */
+.query-result-layout[data-scroll-source="page"] > .query-result-records {
+    overflow-anchor: auto;
+}
+
+/* The pinned copy of the header row: zero height in the flow, so showing it never moves the table. */
+.query-result-floating-head {
+    position: sticky;
+    top: var(--workbench-contextbar-height, 0px);
+    z-index: 3;
+    height: 0;
+}
+
+.query-result-floating-head[hidden] {
+    display: none;
+}
+
+.query-result-floating-head__viewport {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    overflow: hidden;
+    background: var(--workbench-surface);
+    box-shadow: 0 1px 0 var(--workbench-soft-rule);
+}
+
+.query-result-floating-head table.data {
+    margin: 0;
+}
+
+.query-result-floating-head table.data thead th {
+    background: var(--workbench-inset);
+    white-space: nowrap;
+}
+
 @media (max-width: 900px) {
     body.workbench-body .workbench-page-surface .query-result-table-wrap table.data {
         display: table;

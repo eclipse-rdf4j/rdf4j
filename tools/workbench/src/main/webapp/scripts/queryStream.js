@@ -1101,6 +1101,10 @@ var workbench;
                 enumerable: false,
                 configurable: true
             });
+            /** True when a result this tall needs the compressed coordinates of an inner scroll element. */
+            ResultScrollCoordinates.prototype.exceedsCapacity = function (logicalHeight) {
+                return logicalHeight > this.capacity;
+            };
             ResultScrollCoordinates.prototype.spacers = function (logicalStart, windowHeight, physicalScroll, logicalScroll) {
                 var top = logicalStart - (typeof logicalScroll === 'number' ? logicalScroll
                     : this.logicalOffset(physicalScroll)) + physicalScroll;
@@ -1708,6 +1712,13 @@ var workbench;
                 this.rowHeightEstimateSampled = false;
                 this.recordHeightEstimateSampled = false;
                 this.requestedRow = null;
+                /**
+                 * 'page' when the rows scroll with the page (the default), 'element' in full screen and for results taller
+                 * than the browser's scroll capacity, where tableWrap or records scroll themselves.
+                 */
+                this.scrollMode = '';
+                this.floatingSignature = '';
+                this.pageEndIntent = false;
                 this.reflowAnchor = null;
                 this.viewportMeasurement = null;
                 this.tablePosition = { logical: 0, physical: 0 };
@@ -1919,8 +1930,6 @@ var workbench;
                 this.tableWrap = createElement(this.document, 'div', 'query-result-table-wrap');
                 this.tableWrap.setAttribute('id', this.elementId('query-result-table-wrap'));
                 this.tableWrap.tabIndex = 0;
-                this.tableWrap.style.maxHeight = '70vh';
-                this.tableWrap.style.overflow = 'auto';
                 this.table = createElement(this.document, 'table', 'data');
                 this.table.setAttribute('aria-label', 'Query results');
                 this.tableColumns = createElement(this.document, 'colgroup');
@@ -1929,6 +1938,16 @@ var workbench;
                 this.tableBody = createElement(this.document, 'tbody');
                 this.table.appendChild(this.tableBody);
                 this.tableWrap.appendChild(this.table);
+                // A copy of the header row pinned under the context bar while the page scrolls the rows; the real
+                // header stays in the table for assistive technology.
+                this.floatingHead = createElement(this.document, 'div', 'query-result-floating-head');
+                this.floatingHead.setAttribute('aria-hidden', 'true');
+                this.floatingHead.hidden = true;
+                this.floatingViewport = createElement(this.document, 'div', 'query-result-floating-head__viewport');
+                this.floatingTable = createElement(this.document, 'table', 'data');
+                this.floatingViewport.appendChild(this.floatingTable);
+                this.floatingHead.appendChild(this.floatingViewport);
+                this.root.appendChild(this.floatingHead);
                 this.root.appendChild(this.tableWrap);
                 this.emptyResult = this.createEmptyState();
                 this.root.appendChild(this.emptyResult);
@@ -1936,8 +1955,6 @@ var workbench;
                 this.records.setAttribute('id', this.elementId('query-result-records'));
                 this.records.hidden = true;
                 this.records.tabIndex = 0;
-                this.records.style.maxHeight = '70vh';
-                this.records.style.overflow = 'auto';
                 this.root.appendChild(this.records);
                 var continuation = createElement(this.document, 'div', 'workbench-actions query-result-load-more-actions');
                 this.loadMoreButton = this.createButton('Load more', function () {
@@ -1977,10 +1994,29 @@ var workbench;
                     _this.renderAndReport();
                 }, false);
                 this.onScroll = function () {
-                    _this.scheduleRender();
+                    _this.syncFloatingHeadScroll();
+                    if (_this.scrollMode === 'element') {
+                        _this.scheduleRender();
+                    }
                 };
                 this.tableWrap.addEventListener('scroll', this.onScroll, false);
                 this.records.addEventListener('scroll', this.onScroll, false);
+                var pageView = this.pageView();
+                if (pageView) {
+                    var onPageScroll = function () {
+                        if (_this.scrollMode === 'page') {
+                            _this.updateFloatingHead();
+                            _this.scheduleRender();
+                        }
+                    };
+                    pageView.addEventListener('scroll', onPageScroll, { passive: true });
+                    this.installPageEndIntent(pageView);
+                    pageView.addEventListener('resize', onPageScroll, false);
+                    this.disposers.push(function () {
+                        pageView.removeEventListener('scroll', onPageScroll, { passive: true });
+                        pageView.removeEventListener('resize', onPageScroll, false);
+                    });
+                }
                 this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target, function (enabled) { return _this.setFullscreenPresentation(enabled); }));
                 this.installAutoLayoutObserver();
                 this.renderAndReport();
@@ -2732,7 +2768,7 @@ var workbench;
                 var availableWidth = this.resultWidth();
                 var currentScrollport = this.root.getAttribute('data-effective-layout') === 'records'
                     ? this.records : this.tableWrap;
-                var viewportHeight = currentScrollport.clientHeight || 0;
+                var viewportHeight = this.measuredViewportHeight(currentScrollport);
                 if (isRows && this.viewportMeasurement && (this.viewportMeasurement.width !== availableWidth
                     || this.viewportMeasurement.height !== viewportHeight)) {
                     // Native reflow can clamp scrollTop before ResizeObserver runs. Use the committed logical anchor.
@@ -2774,7 +2810,7 @@ var workbench;
                 this.setControlHidden(this.downloadFormatControl, !formatEnabled || !isRows);
                 this.setControlHidden(this.downloadLimitControl, !downloadLimitEnabled || !isRows);
                 this.viewportMeasurement = { width: availableWidth,
-                    height: (effectiveLayout === 'records' ? this.records : this.tableWrap).clientHeight || 0 };
+                    height: this.measuredViewportHeight(effectiveLayout === 'records' ? this.records : this.tableWrap) };
                 this.booleanResult.hidden = state.view !== 'boolean' || typeof state.booleanValue !== 'boolean'
                     || !!state.error;
                 this.errorResult.hidden = !state.error;
@@ -2874,7 +2910,7 @@ var workbench;
                             }
                             _this.setEffectiveLayout(measuredLayout, true);
                             _this.viewportMeasurement = { width: _this.resultWidth(),
-                                height: (measuredLayout === 'records' ? _this.records : _this.tableWrap).clientHeight || 0 };
+                                height: _this.measuredViewportHeight(measuredLayout === 'records' ? _this.records : _this.tableWrap) };
                             return measuredLayout === 'table' ? _this.renderRows() : _this.renderRecords();
                         }
                     }
@@ -3064,7 +3100,8 @@ var workbench;
                 var generation = ++this.rowRenderGeneration;
                 var headerHeight = this.measureElementHeight(this.table.querySelector('thead'));
                 this.rowCoordinates.setCapacity(Math.max(1, this.tableScrollCapacity - headerHeight));
-                var viewportHeight = Math.max(1, (this.tableWrap.clientHeight || this.measureRowEstimate() * 24) - headerHeight);
+                this.updateScrollMode(this.rowHeights, this.rowCoordinates);
+                var viewportHeight = this.rowViewportHeight(this.tableWrap, headerHeight);
                 var geometry = this.prepareWindow(this.tableWrap, this.rowHeights, this.rowCoordinates, viewportHeight);
                 var scrollTop = geometry.scrollTop;
                 var range = geometry.range;
@@ -3105,7 +3142,7 @@ var workbench;
                         var sampleIndex = Math.floor(renderedHeights.length / 2);
                         _this.rowHeightEstimateSampled = true;
                         if (_this.rowHeights.setEstimate(renderedHeights[sampleIndex])) {
-                            _this.requestedRow = geometry.anchor;
+                            _this.keepAnchor(geometry);
                             return _this.renderRows();
                         }
                     }
@@ -3114,6 +3151,7 @@ var workbench;
                         _this.updateSpacerHeights(range);
                     }
                     _this.commitScroll(_this.tableWrap, _this.tablePosition, geometry);
+                    _this.followPageEnd(range.end);
                 });
             };
             QueryResultRenderer.prototype.createTableRow = function (rowIndex, values) {
@@ -3191,7 +3229,8 @@ var workbench;
                     return Promise.resolve();
                 }
                 var generation = ++this.recordRenderGeneration;
-                var viewportHeight = this.records.clientHeight || this.measureRowEstimate() * 24;
+                this.updateScrollMode(this.recordHeights, this.recordCoordinates);
+                var viewportHeight = this.rowViewportHeight(this.records, 0);
                 var geometry = this.prepareWindow(this.records, this.recordHeights, this.recordCoordinates, viewportHeight);
                 var range = geometry.range;
                 var start = range.start;
@@ -3232,13 +3271,14 @@ var workbench;
                         heights.sort(function (left, right) { return left - right; });
                         _this.recordHeightEstimateSampled = true;
                         if (_this.recordHeights.setEstimate(heights[Math.floor(heights.length / 2)])) {
-                            _this.requestedRow = geometry.anchor;
+                            _this.keepAnchor(geometry);
                             return _this.renderRecords();
                         }
                     }
                     _this.refreshPosition(_this.records, _this.recordHeights, _this.recordCoordinates, _this.recordPosition, viewportHeight, geometry);
                     _this.updateRecordSpacerHeights(start, end);
                     _this.commitScroll(_this.records, _this.recordPosition, geometry);
+                    _this.followPageEnd(end);
                 });
             };
             QueryResultRenderer.prototype.createRecord = function (rowIndex, values) {
@@ -3369,6 +3409,12 @@ var workbench;
                 }
                 return spacer;
             };
+            /** Keep the first visible row in place across a re-render of the inner scroll element. */
+            QueryResultRenderer.prototype.keepAnchor = function (geometry) {
+                if (this.scrollMode !== 'page') {
+                    this.requestedRow = geometry.anchor;
+                }
+            };
             QueryResultRenderer.prototype.visibleRow = function () {
                 var records = this.root.getAttribute('data-effective-layout') === 'records';
                 var heights = records ? this.recordHeights : this.rowHeights;
@@ -3386,7 +3432,10 @@ var workbench;
                 coordinates.update(heights.offsetOf(this.state.rowCount), viewportHeight);
                 var requestedRow = this.requestedRow;
                 var reflowAnchor = this.reflowAnchor;
-                if (this.requestedRow !== null) {
+                if (this.scrollMode === 'page') {
+                    // The rows follow wherever the page is; there is no element position to restore.
+                }
+                else if (this.requestedRow !== null) {
                     anchor = this.requestedRow;
                     within = 0;
                 }
@@ -3404,11 +3453,150 @@ var workbench;
                     atEnd: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
             };
             QueryResultRenderer.prototype.logicalPosition = function (scrollport, coordinates, position) {
+                var current = this.scrollPosition(scrollport);
                 // Preserve subpixel logical positions when an engine rounds programmatic scrollTop to CSS pixels.
-                if (Math.abs((scrollport.scrollTop || 0) - position.physical) < 1) {
+                if (Math.abs(current - position.physical) < 1) {
                     return position.logical;
                 }
-                return coordinates.logicalOffset(scrollport.scrollTop || 0);
+                return coordinates.logicalOffset(current);
+            };
+            /** The window that scrolls the rows in page mode, or null where there is none (unit-test fakes). */
+            QueryResultRenderer.prototype.pageView = function () {
+                var view = this.document.defaultView;
+                return view && typeof view.addEventListener === 'function' && typeof view.innerHeight === 'number'
+                    && typeof view.scrollBy === 'function' ? view : null;
+            };
+            /** The height of the sticky context bar, read from --workbench-contextbar-height. */
+            QueryResultRenderer.prototype.stickyOffset = function () {
+                var view = this.pageView();
+                var documentElement = this.document.documentElement;
+                if (!view || !documentElement || typeof view.getComputedStyle !== 'function') {
+                    return 0;
+                }
+                var value = parseFloat(view.getComputedStyle(documentElement).getPropertyValue('--workbench-contextbar-height'));
+                return isFinite(value) && value > 0 ? value : 0;
+            };
+            /** Pick the scroll source for the visible rows and expose it as data-scroll-source for the CSS. */
+            QueryResultRenderer.prototype.updateScrollMode = function (heights, coordinates) {
+                heights.resize(this.state.rowCount);
+                var mode = this.pageView() && this.target.getAttribute('data-fullscreen') !== 'true'
+                    && !coordinates.exceedsCapacity(heights.offsetOf(this.state.rowCount)) ? 'page' : 'element';
+                if (mode !== this.scrollMode) {
+                    this.scrollMode = mode;
+                    this.root.setAttribute('data-scroll-source', mode);
+                    this.tablePosition.physical = this.scrollPosition(this.tableWrap);
+                    this.recordPosition.physical = this.scrollPosition(this.records);
+                }
+            };
+            /** Scroll offset of the rows: the element's scrollTop, or in page mode how far the rows sit above the
+             *  visible area under the context bar (and under the pinned header for the table). */
+            QueryResultRenderer.prototype.scrollPosition = function (scrollport) {
+                if (this.scrollMode !== 'page') {
+                    return scrollport.scrollTop || 0;
+                }
+                var rows = scrollport === this.records ? this.records : this.tableBody;
+                var top = rows && rows.getBoundingClientRect ? rows.getBoundingClientRect().top : 0;
+                return Math.max(0, this.visibleTop(scrollport) - top);
+            };
+            QueryResultRenderer.prototype.visibleTop = function (scrollport) {
+                return this.stickyOffset() + (scrollport === this.records ? 0
+                    : this.measureElementHeight(this.table.querySelector('thead')));
+            };
+            /** The height whose change re-anchors the rows: the window in page mode, else the scroll element. */
+            QueryResultRenderer.prototype.measuredViewportHeight = function (scrollport) {
+                var view = this.pageView();
+                return this.scrollMode === 'page' && view ? view.innerHeight : scrollport.clientHeight || 0;
+            };
+            /** Height available to the rows: the scroll element's box, or the window below the pinned parts. */
+            QueryResultRenderer.prototype.rowViewportHeight = function (scrollport, headerHeight) {
+                var view = this.pageView();
+                if (this.scrollMode === 'page' && view) {
+                    return Math.max(1, view.innerHeight - this.visibleTop(scrollport));
+                }
+                return Math.max(1, (scrollport.clientHeight || this.measureRowEstimate() * 24) - headerHeight);
+            };
+            /** True in page mode when the page is scrolled to its bottom. */
+            QueryResultRenderer.prototype.pageAtBottom = function () {
+                var view = this.pageView();
+                var documentElement = this.document.documentElement;
+                return this.scrollMode === 'page' && !!view && !!documentElement
+                    && view.scrollY + view.innerHeight >= documentElement.scrollHeight - 2;
+            };
+            /**
+             * Row heights are estimates until rows are rendered, so measuring the last rows makes the table taller
+             * after End scrolled the page to what was its bottom. Until the last row is on screen, keep going to the
+             * new bottom; any other scrolling input cancels this.
+             */
+            QueryResultRenderer.prototype.followPageEnd = function (renderedEnd) {
+                var view = this.pageView();
+                var documentElement = this.document.documentElement;
+                if (!this.pageEndIntent || !view || !documentElement || this.scrollMode !== 'page') {
+                    return;
+                }
+                if (renderedEnd >= this.state.rowCount && this.pageAtBottom()) {
+                    this.pageEndIntent = false;
+                    return;
+                }
+                view.scrollTo(view.scrollX, documentElement.scrollHeight);
+            };
+            QueryResultRenderer.prototype.installPageEndIntent = function (view) {
+                var _this = this;
+                var onKey = function (event) {
+                    var target = event.target;
+                    var editable = target && (target.isContentEditable
+                        || /^(?:INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ''));
+                    var toEnd = event.key === 'End' || (event.key === 'ArrowDown' && (event.metaKey || event.ctrlKey));
+                    _this.pageEndIntent = toEnd && !editable && !event.defaultPrevented;
+                };
+                var cancel = function (event) {
+                    if (!event || event.type !== 'wheel' || event.deltaY < 0) {
+                        _this.pageEndIntent = false;
+                    }
+                };
+                view.addEventListener('keydown', onKey, false);
+                view.addEventListener('wheel', cancel, { passive: true });
+                view.addEventListener('touchstart', cancel, { passive: true });
+                view.addEventListener('mousedown', cancel, false);
+                this.disposers.push(function () {
+                    view.removeEventListener('keydown', onKey, false);
+                    view.removeEventListener('wheel', cancel, { passive: true });
+                    view.removeEventListener('touchstart', cancel, { passive: true });
+                    view.removeEventListener('mousedown', cancel, false);
+                });
+            };
+            QueryResultRenderer.prototype.syncFloatingHeadScroll = function () {
+                if (this.floatingViewport && !this.floatingHead.hidden) {
+                    this.floatingViewport.scrollLeft = this.tableWrap.scrollLeft || 0;
+                }
+            };
+            /** Show the pinned header copy only while the real header row is hidden above the sticky offset. */
+            QueryResultRenderer.prototype.updateFloatingHead = function () {
+                var head = this.table.querySelector('thead');
+                var show = this.scrollMode === 'page' && !this.tableWrap.hidden && !!head
+                    && this.root.getAttribute('data-effective-layout') === 'table' && this.state.rowCount > 0;
+                if (show) {
+                    var offset = this.stickyOffset();
+                    var headBox = head.getBoundingClientRect();
+                    var tableBox = this.table.getBoundingClientRect();
+                    show = headBox.top < offset - 0.5 && tableBox.bottom > offset + headBox.height;
+                }
+                if (!show) {
+                    this.floatingHead.hidden = true;
+                    return;
+                }
+                var columns = Array.prototype.map.call(this.tableColumns.children, function (column) { return column.style.width; }).join(',');
+                var signature = this.headerSignature + '|' + columns + '|' + this.table.style.tableLayout;
+                if (signature !== this.floatingSignature) {
+                    this.floatingSignature = signature;
+                    this.floatingTable.textContent = '';
+                    clearChildren(this.floatingTable);
+                    this.floatingTable.appendChild(this.tableColumns.cloneNode(true));
+                    this.floatingTable.appendChild(head.cloneNode(true));
+                    this.floatingTable.style.tableLayout = this.table.style.tableLayout;
+                }
+                this.floatingTable.style.width = this.table.getBoundingClientRect().width + 'px';
+                this.floatingHead.hidden = false;
+                this.syncFloatingHeadScroll();
             };
             QueryResultRenderer.prototype.refreshPosition = function (scrollport, heights, coordinates, position, viewportHeight, geometry) {
                 coordinates.update(heights.offsetOf(this.state.rowCount), viewportHeight);
@@ -3418,6 +3606,20 @@ var workbench;
                 position.physical = coordinates.physicalOffset(position.logical);
             };
             QueryResultRenderer.prototype.commitScroll = function (scrollport, position, geometry) {
+                if (this.scrollMode === 'page') {
+                    // The page scrolls natively and the browser's scroll anchoring keeps the visible rows in place
+                    // when rows above them are measured, so the renderer never moves the page itself.
+                    position.physical = this.scrollPosition(scrollport);
+                    position.logical = position.physical;
+                    if (this.requestedRow === geometry.requestedRow) {
+                        this.requestedRow = null;
+                    }
+                    if (this.reflowAnchor === geometry.reflowAnchor) {
+                        this.reflowAnchor = null;
+                    }
+                    this.updateFloatingHead();
+                    return;
+                }
                 // Commit native scrolling only after the new rows and their offscreen geometry exist.
                 // Reading a clamped interim scrollTop while spacers are replaced would lose the seek anchor.
                 var nativeMaximum = Math.max(0, scrollport.scrollHeight - scrollport.clientHeight);
@@ -3598,7 +3800,7 @@ var workbench;
                     var scrollport = _this.root.getAttribute('data-effective-layout') === 'records'
                         ? _this.records : _this.tableWrap;
                     if (!_this.viewportMeasurement || _this.viewportMeasurement.width !== _this.resultWidth()
-                        || _this.viewportMeasurement.height !== (scrollport.clientHeight || 0)) {
+                        || _this.viewportMeasurement.height !== _this.measuredViewportHeight(scrollport)) {
                         _this.scheduleRender();
                     }
                 });
@@ -3610,16 +3812,18 @@ var workbench;
                 return this.root.clientWidth || this.tableWrap.clientWidth || this.records.clientWidth || 0;
             };
             QueryResultRenderer.prototype.retainScrollAnchor = function () {
-                if (!this.state.rowCount || this.requestedRow !== null || this.reflowAnchor) {
+                if (!this.state.rowCount || this.requestedRow !== null || this.reflowAnchor || this.scrollMode === 'page') {
                     return;
                 }
                 var records = this.root.getAttribute('data-effective-layout') === 'records';
                 var heights = records ? this.recordHeights : this.rowHeights;
                 var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
                 var position = records ? this.recordPosition : this.tablePosition;
-                var row = heights.range(position.logical, 0, 0, 1).start;
-                this.reflowAnchor = { row: row, within: position.logical - heights.offsetOf(row),
-                    end: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
+                var scrollport = records ? this.records : this.tableWrap;
+                var logical = this.logicalPosition(scrollport, coordinates, position);
+                var row = heights.range(logical, 0, 0, 1).start;
+                this.reflowAnchor = { row: row, within: logical - heights.offsetOf(row),
+                    end: coordinates.maximumOffset > 0 && logical >= coordinates.maximumOffset };
             };
             QueryResultRenderer.prototype.resetRowMeasurements = function () {
                 this.rowHeights = new MeasuredRowHeights(this.state.rowCount, this.measureRowEstimate());
