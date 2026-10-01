@@ -1034,36 +1034,14 @@ workbench
     // The server user is part of the rendered shell state (workbench.views.contextBarState).
 });
 /**
- * Keep the shared navigation usable at every Workbench route.  The XSL
- * template renders the complete list for desktop and this small controller
- * only changes its disclosure state at the narrow breakpoint.
+ * Native disclosures (details elements) keep their animated open state. The menu itself is rendered by
+ * workbench.views: a sidebar on wide screens and a menu sheet (dialog) on narrow screens.
  */
 workbench.addLoad(function installWorkbenchNavigation() {
-    var disclosure = document.getElementById('workbench-navigation-disclosure');
-    if (!disclosure) {
-        return;
-    }
     var allDisclosures = document.querySelectorAll('details');
     for (var i = 0; i < allDisclosures.length; i++) {
         workbench.installNativeDisclosure(allDisclosures[i]);
     }
-    var mediaQuery = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
-    var firstSync = true;
-    var syncDisclosure = function () {
-        var isMobile = mediaQuery ? mediaQuery.matches : window.innerWidth <= 900;
-        workbench.setNativeDisclosureOpen(disclosure, !isMobile, !firstSync);
-        firstSync = false;
-    };
-    syncDisclosure();
-    if (mediaQuery) {
-        if (mediaQuery.addEventListener) {
-            mediaQuery.addEventListener('change', syncDisclosure);
-        }
-        else if (mediaQuery.addListener) {
-            mediaQuery.addListener(syncDisclosure);
-        }
-    }
-    // The active item and its open group are rendered by workbench.views; the menu is never re-marked here.
 });
 /**
  * Keep disclosure triggers in the toolbar while their panels open below the

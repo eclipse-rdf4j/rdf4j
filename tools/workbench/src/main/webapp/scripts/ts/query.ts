@@ -1432,7 +1432,8 @@ module workbench {
         function syncCompareSidebarState() {
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
 
-            var navigationDisclosure = <HTMLDetailsElement>document.getElementById('workbench-navigation-disclosure');
+            // Only an older shell renders the menu inside a details disclosure.
+            var navigationDisclosure = <HTMLDetailsElement>document.querySelector('details#workbench-navigation-disclosure');
             if (compareModeEnabled) {
                 if (navigationDisclosure && compareNavigationDisclosureOpenBeforeCompare === null) {
                     compareNavigationDisclosureOpenBeforeCompare = navigationDisclosure.open;

@@ -10,9 +10,9 @@ test.describe('Workbench-wide refresh seed', () => {
         await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/summary`, { waitUntil: 'domcontentloaded' });
 
         await expect(page.locator('link[href*="styles/workbench-refresh.css"]')).toHaveCount(1);
-        await expect(page.locator('#workbench-navigation-disclosure')).toHaveCount(1);
-        await expect(page.locator('#workbench-navigation-disclosure')).not.toHaveAttribute('open', '');
-        await expect(page.locator('#workbench-navigation-summary')).toContainText('Menu');
+        await expect(page.locator('#workbench-navigation-disclosure')).toBeHidden();
+        await expect(page.locator('#workbench-menu-button')).toHaveAttribute('aria-label', 'Menu');
+        await expect(page.locator('#workbench-menu-sheet')).toBeHidden();
         await expect(page.locator('#navigation')).toHaveClass(/workbench-nav/);
         await expect(page.locator('#content')).toHaveClass(/workbench-main/);
         await expect(page.locator('#workbench-page-surface')).toHaveClass(/workbench-page-surface/);

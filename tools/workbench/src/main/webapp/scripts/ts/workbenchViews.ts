@@ -544,15 +544,19 @@ module workbench {
             </li>`;
         }
 
-        /** Every group renders the same way: a non-interactive label followed by its items (M2.4). */
-        function navigation(context: ViewContext, active: string, runtime: LitRuntime): any {
+        /**
+         * Every group renders the same way: a non-interactive label followed by its items (M2.4). The sidebar
+         * uses the default id prefix; the mobile menu sheet renders the same menu with its own prefix.
+         */
+        function navigation(context: ViewContext, active: string, runtime: LitRuntime,
+                            idPrefix: string = 'workbench-nav', groups?: any[]): any {
             const h = runtime.html;
             const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
-            return menuEntries(context).filter((group: any) => (group.items || []).length > 0).map((group: any) => {
+            return (groups || menuEntries(context)).filter((group: any) => (group.items || []).length > 0).map((group: any) => {
                 const items = group.items || [];
                 const groupId = text(group.id || group['menu-group-id'] || 'workbench');
                 const groupLabel = text(group.label || group['menu-group-label'] || 'Workbench');
-                const list = h`<ul id=${'workbench-nav-items-' + groupId} class="group" aria-labelledby=${'workbench-nav-label-' + groupId}>
+                const list = h`<ul id=${idPrefix + '-items-' + groupId} class="group" aria-labelledby=${idPrefix + '-label-' + groupId}>
                     ${items.map((item: any) => navigationItem(runtime, context, info, item, groupLabel, active))}
                 </ul>`;
                 if (items.length > navigationDisclosureThreshold) {
@@ -560,9 +564,9 @@ module workbench {
                     return h`<li class="workbench-nav-group workbench-nav-group--long" data-workbench-menu-group=${groupId}
                             data-workbench-menu-label=${groupLabel}>
                         <details class="workbench-nav-group__disclosure" ?open=${containsActive}>
-                            <summary id=${'workbench-nav-summary-' + groupId} aria-controls=${'workbench-nav-items-' + groupId}
+                            <summary id=${idPrefix + '-summary-' + groupId} aria-controls=${idPrefix + '-items-' + groupId}
                                     class="workbench-nav-group__summary">
-                                <span id=${'workbench-nav-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
+                                <span id=${idPrefix + '-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
                                 ${icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron')}
                             </summary>
                             ${list}
@@ -571,7 +575,7 @@ module workbench {
                 }
                 return h`<li class="workbench-nav-group" data-workbench-menu-group=${groupId}
                         data-workbench-menu-label=${groupLabel}>
-                    <span id=${'workbench-nav-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
+                    <span id=${idPrefix + '-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
                     ${list}
                 </li>`;
             });
@@ -692,7 +696,31 @@ module workbench {
                         </div>
                     </div>
                 </div>
+                <button id="workbench-menu-button" class="workbench-action workbench-action--ghost workbench-action--icon workbench-menu-button"
+                        type="button" aria-haspopup="dialog" aria-controls="workbench-menu-sheet"
+                        aria-label="Menu" title="Menu">${icon(runtime, 'menu')}</button>
             </header>`;
+        }
+
+        /** Full-height menu sheet for narrow screens (M2.8, mockup 14); a native modal dialog. */
+        function menuSheet(context: ViewContext, active: string, runtime: LitRuntime, groups: any[]): any {
+            const h = runtime.html;
+            const state = contextBarState(context);
+            return h`<dialog id="workbench-menu-sheet" class="workbench-menu-sheet" aria-label="Menu">
+                <div class="workbench-menu-sheet__header">
+                    <span class="workbench-menu-sheet__brand workbench-brand">
+                        <img class="workbench-brand__light" src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
+                        <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.png'} alt="rdf4j" />
+                    </span>
+                    <span class="workbench-menu-sheet__repository">${state.repositoryId || 'No repository'}</span>
+                    <button id="workbench-menu-close" class="workbench-action workbench-action--secondary workbench-action--icon"
+                            type="button" aria-label="Close menu" title="Close menu">${icon(runtime, 'close')}</button>
+                </div>
+                <p class="workbench-menu-sheet__context">Server ${state.server ? hostAndPort(state.server) : 'None'} · ${state.user || 'Not signed in'}</p>
+                <nav id="workbench-menu-sheet-nav" class="workbench-nav workbench-menu-sheet__nav" aria-label="Workbench menu">
+                    <ul class="maingroup">${navigation(context, active, runtime, 'workbench-sheet-nav', groups)}</ul>
+                </nav>
+            </dialog>`;
         }
 
         /** The state that the persistent shell (header, menu, footer) depends on. */
@@ -707,20 +735,14 @@ module workbench {
         function shellTemplate(state: ShellState, runtime: LitRuntime, outlet: any): any {
             const h = runtime.html;
             const context = state.context;
+            const groups = menuEntries(context);
             return h`${contextBar(context, state.viewId, runtime)}
-            <details id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" open>
-                <summary id="workbench-navigation-summary">
-                    <svg class="workbench-menu-icon" viewBox="0 0 24 24" width="18" height="18" focusable="false" aria-hidden="true">
-                        <path d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg><span>Menu</span>
-                    <svg class="workbench-menu-chevron workbench-disclosure-chevron" viewBox="0 0 24 24" width="18" height="18" focusable="false" aria-hidden="true">
-                        <path d="m6 9 6 6 6-6"></path>
-                    </svg>
-                </summary>
+            <nav id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" aria-label="Workbench menu">
                 <div id="navigation" class="workbench-nav"><ul class="maingroup">
-                    ${navigation(context, state.viewId, runtime)}
+                    ${navigation(context, state.viewId, runtime, 'workbench-nav', groups)}
                 </ul></div>
-            </details>
+            </nav>
+            ${menuSheet(context, state.viewId, runtime, groups)}
             <main id="content" class="workbench-main">${outlet}</main>
             <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
         }
@@ -2409,6 +2431,43 @@ module workbench {
             }
         }
 
+        /** Open the menu sheet from the menu button; close it from its close button or when an item is chosen. */
+        function bindMenuSheet(document: any): () => void {
+            const button = document.getElementById('workbench-menu-button');
+            const sheet = document.getElementById('workbench-menu-sheet');
+            const close = document.getElementById('workbench-menu-close');
+            if (!button || !sheet || typeof sheet.showModal !== 'function' || sheet.__rdf4jMenuSheetBound) {
+                return () => {};
+            }
+            sheet.__rdf4jMenuSheetBound = true;
+            const onOpen = () => {
+                if (!sheet.open) {
+                    sheet.showModal();
+                    button.setAttribute('aria-expanded', 'true');
+                }
+            };
+            const onCloseButton = () => sheet.close();
+            const onClosed = () => button.setAttribute('aria-expanded', 'false');
+            const onSheetClick = (event: any) => {
+                const target = event.target;
+                if (target === sheet || (target && target.closest && target.closest('a[href]'))) {
+                    sheet.close();
+                }
+            };
+            button.setAttribute('aria-expanded', 'false');
+            button.addEventListener('click', onOpen);
+            if (close) { close.addEventListener('click', onCloseButton); }
+            sheet.addEventListener('close', onClosed);
+            sheet.addEventListener('click', onSheetClick);
+            return () => {
+                button.removeEventListener('click', onOpen);
+                if (close) { close.removeEventListener('click', onCloseButton); }
+                sheet.removeEventListener('close', onClosed);
+                sheet.removeEventListener('click', onSheetClick);
+                sheet.__rdf4jMenuSheetBound = false;
+            };
+        }
+
         /**
          * Bind the context bar switchers once per shell: popovers (workbench.popover from template.ts),
          * the lazily loaded repository list, its filter and arrow-key movement.
@@ -2427,6 +2486,7 @@ module workbench {
                 disposers.push(popover.bind(button, panel, name === 'repository'
                     ? { onOpen: (opened: any) => { loadRepositoryOptions(opened, currentId); } } : {}));
             });
+            disposers.push(bindMenuSheet(document));
             const repositoryPanel = document.getElementById('workbench-repository-popover');
             const filter = document.getElementById('workbench-repository-filter');
             if (repositoryPanel && filter && !repositoryPanel.__rdf4jContextBarBound) {

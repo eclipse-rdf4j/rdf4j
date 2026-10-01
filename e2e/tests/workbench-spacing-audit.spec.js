@@ -221,8 +221,7 @@ async function reveals(page, info, route) {
 }
 
 async function navigation(page, info, state) {
-	const shell = page.locator('#workbench-navigation-disclosure'), summary = page.locator('#workbench-navigation-summary');
-	if (await summary.isVisible() && !await shell.evaluate(element => element.open)) await summary.click();
+	const menuButton = page.locator('#workbench-menu-button');
 	const groups = page.locator('#navigation .workbench-nav-group__disclosure');
 	for (let index = 0; index < await groups.count(); index++) {
 		const group = groups.nth(index), trigger = group.locator(':scope > summary');
@@ -230,9 +229,10 @@ async function navigation(page, info, state) {
 		await capture(page, info, 'navigation', `${state}-${index}-closed`);
 		await trigger.click(); await capture(page, info, 'navigation', `${state}-${index}-open`);
 	}
-	if (await summary.isVisible()) {
-		await summary.click(); await capture(page, info, 'navigation', `${state}-shell-closed`);
-		await summary.click(); await capture(page, info, 'navigation', `${state}-shell-open`);
+	if (await menuButton.isVisible()) {
+		await capture(page, info, 'navigation', `${state}-shell-closed`);
+		await menuButton.click(); await capture(page, info, 'navigation', `${state}-shell-open`);
+		await page.keyboard.press('Escape');
 	}
 }
 

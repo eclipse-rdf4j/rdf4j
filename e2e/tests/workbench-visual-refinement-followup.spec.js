@@ -539,11 +539,7 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 	await page.setViewportSize({ width: 390, height: 900 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
 	const navigationDisclosure = page.locator('#workbench-navigation-disclosure');
-	const navigationSummary = page.locator('#workbench-navigation-summary');
-	if (await navigationDisclosure.evaluate(element => element.open)) {
-		await navigationSummary.click();
-	}
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(false);
+	await expect(navigationDisclosure).toBeHidden();
 	await page.locator('#explain-trigger').click();
 	await page.waitForFunction(() => {
 		const explanation = document.querySelector('#query-explanation');
@@ -642,37 +638,34 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 		return Math.max(Math.abs(geometry.menuLeft - geometry.toggleLeft),
 			Math.abs(geometry.menuTop - geometry.toggleBottom - 8));
 	}).toBeLessThanOrEqual(2);
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(true);
-	const summaryLink = page.getByRole('link', { name: 'Summary', exact: true });
+	const summaryLink = navigationDisclosure.getByRole('link', { name: 'Summary', exact: true });
 	await expect(summaryLink).toBeVisible();
 	await summaryLink.click();
 	await expect(page).toHaveURL(/\/summary$/);
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(false);
-	await navigationSummary.click();
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(true);
-	const queryLink = page.getByRole('link', { name: 'Query', exact: true });
+	await expect(navigationDisclosure).toBeHidden();
+	await page.locator('#workbench-menu-button').click();
+	const queryLink = page.locator('#workbench-menu-sheet').getByRole('link', { name: 'Query', exact: true });
 	await expect(queryLink).toBeVisible();
 	await queryLink.click();
 	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/query$`));
 });
 
-test('compare navigation follows the responsive menu state after crossing its breakpoint', async ({ page }) => {
-	const navigationDisclosure = page.locator('#workbench-navigation-disclosure');
-	const navigationSummary = page.locator('#workbench-navigation-summary');
+test('compare navigation follows the responsive menu after crossing its breakpoint', async ({ page }) => {
+	const sidebar = page.locator('#workbench-navigation-disclosure');
+	const menuButton = page.locator('#workbench-menu-button');
+	const sheet = page.locator('#workbench-menu-sheet');
 
 	await page.setViewportSize({ width: 390, height: 900 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	if (await navigationDisclosure.evaluate(element => element.open)) {
-		await navigationSummary.click();
-	}
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(false);
+	await expect(sidebar).toBeHidden();
 	await enterCompareMode(page);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.locator('#query-compare-close').click();
 	await expect(page.locator('body')).not.toHaveClass(/query-compare-mode/);
 	await expect(page.locator('#query-compare-layout')).not.toHaveClass(/query-compare-layout--closing/);
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(true);
-	const desktopNavigationLink = page.getByRole('link', { name: 'Summary', exact: true });
+	await expect(sidebar).toBeVisible();
+	await expect(menuButton).toBeHidden();
+	const desktopNavigationLink = sidebar.getByRole('link', { name: 'Summary', exact: true });
 	await expect(desktopNavigationLink).toBeVisible();
 	await captureResponsiveCompareState(page, 'compare-restored-desktop-after-resize-1440.png');
 	await desktopNavigationLink.click();
@@ -680,18 +673,18 @@ test('compare navigation follows the responsive menu state after crossing its br
 
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(true);
+	await expect(sidebar).toBeVisible();
 	await enterCompareMode(page);
 	await page.setViewportSize({ width: 390, height: 900 });
 	await page.locator('#query-compare-close').click();
 	await expect(page.locator('body')).not.toHaveClass(/query-compare-mode/);
 	await expect(page.locator('#query-compare-layout')).not.toHaveClass(/query-compare-layout--closing/);
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(false);
-	await expect(navigationSummary).toBeVisible();
+	await expect(sidebar).toBeHidden();
+	await expect(menuButton).toBeVisible();
 	await captureResponsiveCompareState(page, 'compare-restored-mobile-after-resize-390.png');
-	await navigationSummary.click();
-	await expect.poll(() => navigationDisclosure.evaluate(element => element.open)).toBe(true);
-	const mobileNavigationLink = page.getByRole('link', { name: 'Summary', exact: true });
+	await menuButton.click();
+	await expect(sheet).toBeVisible();
+	const mobileNavigationLink = sheet.getByRole('link', { name: 'Summary', exact: true });
 	await expect(mobileNavigationLink).toBeVisible();
 	await mobileNavigationLink.click();
 	await expect(page).toHaveURL(/\/summary$/);

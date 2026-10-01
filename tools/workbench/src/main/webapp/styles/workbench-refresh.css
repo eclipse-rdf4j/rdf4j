@@ -897,7 +897,6 @@ body.workbench-body .workbench-disclosure__toggle,
 body.workbench-body .query-compare-toolbar button:not(:disabled),
 body.workbench-body .workbench-page-surface details.workbench-options > summary,
 body.workbench-body .workbench-page-surface details.workbench-save > summary,
-body.workbench-body .workbench-navigation-disclosure > summary,
 body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary,
 body.query-result-embedded-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
 body.query-result-embedded-body .workbench-disclosure__toggle {
@@ -932,7 +931,6 @@ body.workbench-body .workbench-disclosure__toggle:active,
 body.workbench-body .query-compare-toolbar button:active:not(:disabled),
 body.workbench-body .workbench-page-surface details.workbench-options > summary:active,
 body.workbench-body .workbench-page-surface details.workbench-save > summary:active,
-body.workbench-body .workbench-navigation-disclosure > summary:active,
 body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary:active,
 body.query-result-embedded-body .workbench-disclosure__toggle:active {
 	background-color: var(--workbench-selected);
@@ -945,12 +943,13 @@ body.query-result-embedded-body .workbench-disclosure__toggle:active {
 	}
 	body.workbench-body .workbench-action button,
 	body.workbench-body .workbench-action,
-	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button, input[type="button"], input[type="submit"]),
+	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button,
+	input[type="button"],
+	input[type="submit"]),
 	body.workbench-body .workbench-disclosure__toggle,
 	body.workbench-body .query-compare-toolbar button,
 	body.workbench-body .workbench-page-surface details.workbench-options > summary,
 	body.workbench-body .workbench-page-surface details.workbench-save > summary,
-	body.workbench-body .workbench-navigation-disclosure > summary,
 	body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary,
 	body.query-result-embedded-body .workbench-action button,
 	body.query-result-embedded-body .workbench-action,
@@ -1671,14 +1670,6 @@ body.workbench-body .workbench-navigation-disclosure {
 	box-shadow: var(--workbench-shadow);
 }
 
-body.workbench-body .workbench-navigation-disclosure > summary {
-	display: none;
-}
-
-body.workbench-body .workbench-navigation-disclosure:not([open]) > #navigation {
-	display: none;
-}
-
 body.workbench-body #navigation.workbench-nav {
 	position: static;
 	box-sizing: border-box;
@@ -1977,6 +1968,136 @@ body.workbench-body .workbench-callout--error .workbench-callout__title,
 body.query-result-embedded-body .workbench-callout--error .workbench-callout__icon,
 body.query-result-embedded-body .workbench-callout--error .workbench-callout__title {
 	color: var(--workbench-danger);
+}
+
+/* Menu button and menu sheet (M2.8, mockup 14): below 900px the sidebar gives way to a full-height
+ * modal sheet opened from the context bar. */
+body.workbench-body #workbench-contextbar .workbench-menu-button {
+	display: none;
+	flex: 0 0 auto;
+	width: var(--workbench-touch-height);
+	height: var(--workbench-touch-height);
+	min-height: var(--workbench-touch-height);
+}
+
+body.workbench-body .workbench-menu-sheet {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	height: 100%;
+	max-height: 100%;
+	margin: 0;
+	padding: 0 16px 24px;
+	border: 0;
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	overflow: auto;
+}
+
+body.workbench-body .workbench-menu-sheet::backdrop {
+	background: rgba(8, 14, 17, .4);
+}
+
+body.workbench-body .workbench-menu-sheet__header {
+	position: sticky;
+	top: 0;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 52px;
+	margin: 0 -16px;
+	padding: 0 12px 0 16px;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+	background: var(--workbench-surface);
+}
+
+body.workbench-body .workbench-menu-sheet__brand img {
+	height: 26px;
+}
+
+body.workbench-body .workbench-menu-sheet__repository {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-menu-sheet__context {
+	margin: 12px 0 0;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-menu-sheet__nav {
+	padding: 0;
+}
+
+body.workbench-body .workbench-menu-sheet__nav ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .workbench-menu-sheet__nav li {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body .workbench-menu-sheet__nav .workbench-nav-group__label {
+	display: block;
+	padding: 16px 8px 4px;
+	color: var(--workbench-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+}
+
+body.workbench-body .workbench-menu-sheet__nav a,
+body.workbench-body .workbench-menu-sheet__nav span.disabled {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: var(--workbench-touch-height);
+	padding: 0 12px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-menu-sheet__nav li.current > a {
+	border-left: 3px solid var(--workbench-primary);
+	padding-left: 9px;
+	background: var(--workbench-selected);
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-menu-sheet__nav span.disabled {
+	color: var(--workbench-muted);
+	opacity: .62;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body #workbench-contextbar.workbench-contextbar {
+		height: 52px;
+	}
+
+	body.workbench-body #workbench-contextbar .workbench-menu-button {
+		display: inline-flex;
+	}
+
+	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
+	body.workbench-body .workbench-switcher[data-workbench-switcher="user"],
+	body.workbench-body .workbench-contextbar__divider {
+		display: none;
+	}
+
+	body.workbench-body:not(.query-compare-mode) .workbench-navigation-disclosure {
+		display: none;
+	}
 }
 
 /* In-shell "Repository not found" page (M2.7, mockup 13). */
@@ -3043,25 +3164,8 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 		box-shadow: var(--workbench-shadow);
 	}
 
-	body.workbench-body .workbench-navigation-disclosure > summary {
-		box-sizing: border-box;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-height: 44px;
-		padding: 10px 12px;
-		color: var(--workbench-nav);
-		font-weight: 600;
-		cursor: pointer;
-		list-style: none;
-	}
-
 	body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary {
 		min-height: var(--workbench-touch-height);
-	}
-
-	body.workbench-body .workbench-navigation-disclosure > summary::-webkit-details-marker {
-		display: none;
 	}
 
 	body.workbench-body #navigation.workbench-nav {

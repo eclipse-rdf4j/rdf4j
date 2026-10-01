@@ -656,13 +656,13 @@ test('shared form and mobile navigation disclosures reverse within narrow layout
 	await waitForOwnedAnimations(importPanel);
 	await expect(importPanel).toBeHidden();
 
-	const navigation = page.locator('#workbench-navigation-disclosure');
-	const navigationSummary = page.locator('#workbench-navigation-summary');
-	await expect(navigation).not.toHaveAttribute('open', '');
-	await navigationSummary.click();
-	await expect(navigationSummary).toHaveAttribute('aria-expanded', 'true');
-	expect(await activeMotionCount(navigation)).toBeGreaterThan(0);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(navigation)).toBe(true);
+	// On narrow screens the menu is a modal sheet opened from the context bar.
+	const menuButton = page.locator('#workbench-menu-button');
+	await menuButton.click();
+	await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+	await expect(page.locator('#workbench-menu-sheet')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(menuButton).toHaveAttribute('aria-expanded', 'false');
 
 	const bounds = await page.evaluate(() => ({
 		viewport: document.documentElement.clientWidth,

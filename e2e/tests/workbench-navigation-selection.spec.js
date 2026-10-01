@@ -103,15 +103,12 @@ async function waitForCurrentLink(page, expectedRoute) {
 }
 
 async function showMobileMenu(page, isMobile) {
-    const menu = page.locator('#workbench-navigation-disclosure');
     if (!isMobile) {
-        await expect.poll(() => menu.evaluate(element => element.open)).toBe(true);
+        await expect(page.locator('#navigation')).toBeVisible();
         return;
     }
-    if (await menu.evaluate(element => element.open) === false) {
-        await page.locator('#workbench-navigation-summary').click();
-    }
-    await expect.poll(() => menu.evaluate(element => element.open)).toBe(true);
+    await page.locator('#workbench-menu-button').click();
+    await expect(page.locator('#workbench-menu-sheet')).toBeVisible();
 }
 
 async function capture(page, viewportName, routeName) {

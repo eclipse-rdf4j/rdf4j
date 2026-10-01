@@ -38,8 +38,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 12:00Z) M2.5 Dark-mode logo (`design/workbench-app-shell-plan-20260930/make-dark-logos.cjs` recolored 2,026 and 2,213 pixels).
 - [x] (2026-10-01 12:15Z) M2.6 Page titles.
 - [x] (2026-10-01 13:00Z) M2.7 An in-shell "not found" page (mockup 13).
-- [ ] M2.8 (in progress) A compact mobile header and a menu sheet (mockup 14).
-- [ ] M3.1 Cmd/Ctrl+Enter runs the query.
+- [x] (2026-10-01 14:00Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
+- [ ] M3.1 (in progress) Cmd/Ctrl+Enter runs the query.
 - [ ] M3.2 The editor grows with its content, can be resized, and results come into view.
 - [ ] M3.3 Results and Explanation become tabs of one card; the Execute row never moves.
 - [ ] M3.4 Clear names, units, and no silent "Clear".
@@ -154,6 +154,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: `e2e/tests/workbench-shell.spec.js` (3 tests) and the updated header specs pass.
 - Observation (M2.7): an error record after the `view` record now stays on the model as `model.error = { status, code, message }` and `loadModel()` resolves; `bootstrapAfterRecovery()` keeps rejecting for every code other than `repository-not-found` (so the earlier "terminal error" unit test is unchanged), and `linkedModels()` rejects when a linked model carries an error. For `repository-not-found` the Info model is loaded from `repositories/NONE/info` through `linkedModels(fetcher, <basePath>/repositories/NONE/, model, ['info'])`, the context bar shows "No repository", and the missing id comes from the URL (`context.missingRepositoryId`). `renderFailure()` renders into `#workbench-outlet` once the shell exists.
   Evidence: `WorkbenchServletTest.unknownRepositoryAnswersNotFoundForEveryKindOfRequest`, the unit test "an unknown repository renders the in-shell not-found view with the server menu", and `workbench-shell.spec.js` "an unknown repository shows a not-found page inside the shell with status 404".
+- Observation (M2.8): the sidebar container `#workbench-navigation-disclosure` is now a plain `<nav>` (no summary, no `open` state); below 900px it is hidden and the same policy menu renders a second time inside the modal `<dialog id="workbench-menu-sheet">` (ids prefixed `workbench-sheet-nav-` so they stay unique; the menu entries are computed once per shell render so the "menu unavailable" error logs once). Only one copy is ever visible, so the accessibility tree has one menu. `query.ts` compare mode only manipulates the old disclosure when a `details#workbench-navigation-disclosure` exists. Specs that opened the old "Menu" summary now open the sheet with `#workbench-menu-button`.
+  Evidence: `workbench-shell.spec.js` "on a phone the header is one compact bar and the menu opens as a sheet" (title top 72px at 390 and 320 wide).
 
 ## Decision Log
 

@@ -157,3 +157,28 @@ test('an unknown repository shows a not-found page inside the shell with status 
 	await expect(page.getByRole('link', { name: 'Go to repositories' })).toBeVisible();
 	await expect(page).toHaveTitle('Repository not found — RDF4J Workbench');
 });
+
+test('on a phone the header is one compact bar and the menu opens as a sheet', async ({ page }) => {
+	for (const width of [390, 320]) {
+		await page.setViewportSize({ width, height: 844 });
+		await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'), { waitUntil: 'networkidle' });
+		const titleTop = await page.locator('#title_heading').evaluate(element => element.getBoundingClientRect().top + window.scrollY);
+		expect(titleTop, `title top at ${width}px`).toBeLessThanOrEqual(110);
+		const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+		expect(overflow).toBeLessThanOrEqual(1);
+		const menuButton = page.locator('#workbench-menu-button');
+		await expect(menuButton).toBeVisible();
+		await expect(menuButton).toHaveAttribute('aria-haspopup', 'dialog');
+		const buttonBox = await menuButton.boundingBox();
+		expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+		await menuButton.click();
+		const sheet = page.getByRole('dialog', { name: 'Menu' });
+		await expect(sheet).toBeVisible();
+		await expect(sheet.getByRole('link', { name: 'Query' })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(sheet).toBeHidden();
+	}
+	await page.locator('#workbench-menu-button').click();
+	await page.getByRole('dialog', { name: 'Menu' }).getByRole('link', { name: 'Summary' }).click();
+	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary$`));
+});

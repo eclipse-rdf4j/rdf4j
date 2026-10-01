@@ -154,14 +154,13 @@ test('query shell uses outline icons and a responsive Menu disclosure', async ({
     await page.setViewportSize({ width: 390, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-    const menu = page.locator('#workbench-navigation-disclosure');
-    await expect(menu).toHaveCount(1);
-    await expect(menu.locator('summary')).toHaveText(/Menu/i);
-    await expect(menu).not.toHaveAttribute('open', '');
+    const menu = page.locator('#workbench-menu-sheet');
+    await expect(menu).toBeHidden();
     await expect(page.locator('#navigation a').first()).toBeHidden();
-    await menu.locator('summary').press('Enter');
-    await expect(menu).toHaveAttribute('open', '');
-    await expect(page.locator('#navigation a').first()).toBeVisible();
+    await page.locator('#workbench-menu-button').press('Enter');
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('a').first()).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth
@@ -170,6 +169,6 @@ test('query shell uses outline icons and a responsive Menu disclosure', async ({
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-    await expect(menu).toHaveAttribute('open', '');
+    await expect(page.locator('#workbench-menu-button')).toBeHidden();
     await expect(page.locator('#navigation a').first()).toBeVisible();
 });

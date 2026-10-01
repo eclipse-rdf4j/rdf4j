@@ -66,9 +66,10 @@ test('dark navigation indicators stay readable and the mobile logo fits its artw
 		await routePage.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/repositories`);
 		await routePage.locator('#workbench-page-surface').waitFor({ state: 'attached' });
 
-		await routePage.locator('#workbench-navigation-summary').click();
+		await routePage.locator('#workbench-menu-button').click();
+		await expect(routePage.getByRole('dialog', { name: 'Menu' })).toBeVisible();
 		const display = await routePage.evaluate(() => {
-			const label = document.querySelector('#navigation .workbench-nav-group__label');
+			const label = document.querySelector('#workbench-menu-sheet .workbench-nav-group__label');
 			const brand = document.querySelector('#logo');
 			const visible = selector => Array.from(brand.querySelectorAll(selector))
 				.find(image => image.getClientRects().length > 0);

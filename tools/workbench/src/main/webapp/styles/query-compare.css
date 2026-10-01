@@ -136,10 +136,6 @@ html[data-theme="dark"] body.workbench-body.query-compare-mode .workbench-naviga
     background-color: transparent;
 }
 
-body.workbench-body.query-compare-mode .workbench-navigation-disclosure > summary {
-    display: none;
-}
-
 body.workbench-body.query-compare-mode #navigation.workbench-nav {
     position: static;
     display: block;
@@ -401,7 +397,6 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
 .query-compare-action:hover {
 	background: var(--workbench-inset);
 }
-
 
 .query-compare-action:focus-visible {
 	outline: 2px solid var(--workbench-focus);
