@@ -188,7 +188,7 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
-		this.pageWalkingEstimatorEnabled = false && config.getPageCardinalityEstimator()
+		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
 				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		// create directory if it not exists
@@ -1048,9 +1048,7 @@ class TripleStore implements Closeable {
 					keyData.mv_data(keyBuf);
 					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					int keyDiff;
-					if (rc != MDB_SUCCESS ||
-							(keyDiff = mdb_cmp(txn, dbi, keyData, maxKey)) >= 0 &&
-									(keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) >= 0)) {
+					if (rc != MDB_SUCCESS || (keyDiff = mdb_cmp(txn, dbi, keyData, maxKey)) > 0) {
 						break;
 					} else {
 						var keyBuffer = keyData.mv_data();
@@ -1097,7 +1095,7 @@ class TripleStore implements Closeable {
 						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 						while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
 							keyDiff = mdb_cmp(txn, dbi, keyData, maxKey);
-							if (keyDiff > 0 || keyDiff == 0 && mdb_dcmp(txn, dbi, valueData, maxValue) >= 0) {
+							if (keyDiff > 0) {
 								endOfRange = true;
 								break;
 							} else {
