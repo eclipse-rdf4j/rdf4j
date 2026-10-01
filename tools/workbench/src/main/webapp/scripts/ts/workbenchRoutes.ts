@@ -155,15 +155,63 @@ module workbench {
             return (ctx: RouteMountContext) => (workbench as any)[name].mount(ctx.outlet);
         }
 
-        /** A route whose script list does not depend on its model; converted routes pass their mount. */
+        /**
+         * The Query route (M9.1): the streamed result renderer, then the Query page controller. A query posted to
+         * the page (state.initialPost) is staged into the form, run once both are mounted, and the form restored.
+         */
+        function mountQuery(ctx: RouteMountContext): () => void {
+            const outlet = ctx.outlet;
+            const document = outlet.ownerDocument;
+            const content = outlet.querySelector('#query-page-content') || outlet;
+            const renderer: any = (workbench as any).queryPage;
+            const initialPost = ctx.state && ctx.state.initialPost;
+            let disposeRenderer = (): void => {};
+            let restore: () => void = null;
+            if (renderer) {
+                disposeRenderer = renderer.renderInto(content, ctx.model, ctx.context);
+                if (initialPost) {
+                    const form = document.getElementById(ctx.context.executionFormId);
+                    restore = (workbench as any).app.stageInitialQueryParameters(form, document, initialPost);
+                }
+            } else {
+                const warning = document.createElement('p');
+                warning.className = 'error';
+                warning.setAttribute('role', 'alert');
+                warning.textContent = 'The query page renderer is unavailable.';
+                content.appendChild(warning);
+            }
+            const unmount = (workbench as any).query.mountQueryPage(outlet);
+            if (initialPost) {
+                try {
+                    if (!renderer || typeof renderer.submitExecution !== 'function') {
+                        throw new Error('The initial query execution controller is unavailable');
+                    }
+                    renderer.submitExecution();
+                } catch (error) {
+                    unmount();
+                    disposeRenderer();
+                    throw error;
+                } finally {
+                    if (restore) {
+                        restore();
+                    }
+                }
+            }
+            return () => {
+                unmount();
+                disposeRenderer();
+            };
+        }
+
+        /** A route whose script list does not depend on its model. */
         function staticRoute(viewId: string, names: string[],
-                             mount?: (ctx: RouteMountContext) => RouteInstance): RouteDefinition {
+                             mount: (ctx: RouteMountContext) => RouteInstance): RouteDefinition {
             return {
                 viewId,
-                routerReady: !!mount,
+                routerReady: true,
                 scripts: () => names.slice(),
                 baseScripts: () => names.slice(),
-                mount: mount || defaultMount
+                mount
             };
         }
 
@@ -179,11 +227,13 @@ module workbench {
         register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
         register(staticRoute('saved-queries',
-            ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js']));
-        register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js']));
+            ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'],
+            routeMount(scriptMount('savedQueries'))));
+        register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'],
+            routeMount(scriptMount('update'))));
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
-            'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js']));
+            'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js'], routeMount(mountQuery)));
         const createRoute: RouteDefinition = {
             viewId: 'create',
             routerReady: true,

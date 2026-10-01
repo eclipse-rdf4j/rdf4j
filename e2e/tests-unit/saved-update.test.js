@@ -108,7 +108,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
 
     harness.loadScripts(['saved-queries.js']);
-    harness.runLoadHandlers();
+    harness.context.workbench.savedQueries.mount(harness.document.body);
 
     assert.equal(pre.innerHTML, 'ASK {}');
     assert.equal(queryInput.getAttribute('value'), 'DESCRIBE ?s');
@@ -174,7 +174,7 @@ test('saved query controls bind inert data attributes to static handlers', async
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(owner + ':secret').toString('base64'));
 
     harness.loadScripts(['saved-queries.js']);
-    harness.runLoadHandlers();
+    harness.context.workbench.savedQueries.mount(harness.document.body);
 
     deleteButton.click();
     await new Promise((resolve) => setImmediate(resolve));
@@ -217,7 +217,7 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
 
     assert.equal(harness.context.workbench.update.doSubmit(), true);
 
-    harness.runLoadHandlers();
+    harness.context.workbench.update.mount(harness.document.body);
 
     const instance = yasqe.state.instance;
     assert.deepEqual(setupCompletersArg, { ex: 'http://example.com/' });
@@ -283,4 +283,61 @@ test('yasqe helper registers namespace completer and delegates prefix helpers', 
     assert.equal(completer.isValidCompletionPosition(), false);
     assert.equal(completer.preProcessToken('tok'), 'editor:tok');
     assert.equal(yasqe.state.appendPrefixCalls.length, 1);
+});
+
+// Plan task M9.1: Update and Saved queries mount, dispose and mount again.
+test('the Update route closes its editor on dispose and opens one again on the next mount', () => {
+    const harness = createFormBrowserHarness({ globals: { namespaces: {} } });
+    const page = harness.registerElement('div', { id: 'page' });
+    const update = harness.registerElement('textarea', { id: 'update', value: 'DELETE WHERE {}' });
+    page.appendChild(update);
+    page.appendChild(harness.registerElement('div', { id: 'update-editor-resize' }));
+    harness.document.body.appendChild(page);
+    const yasqe = createYasqeStub(harness);
+    harness.context.YASQE = yasqe.api;
+    harness.loadScripts(['yasqeHelper.js', 'update.js']);
+    const released = [];
+    harness.context.workbench.editorSizing.install = () => () => released.push('sizing');
+
+    const first = harness.context.workbench.update.mount(page);
+    const firstEditor = yasqe.state.instance;
+    first();
+    assert.equal(firstEditor.closed, true);
+    assert.deepEqual(released, ['sizing']);
+    assert.equal(harness.context.workbench.update.doSubmit(), true, 'a submit after dispose is harmless');
+    const second = harness.context.workbench.update.mount(page);
+
+    assert.notEqual(yasqe.state.instance, firstEditor);
+    assert.equal(yasqe.state.instance.closed, undefined);
+    second();
+});
+
+test('the Saved queries route unbinds its buttons and closes opened editors on dispose', () => {
+    const harness = createFormBrowserHarness();
+    const page = harness.registerElement('div', { id: 'page' });
+    const toggle = harness.registerElement('button', { id: 'urn-1-toggle', className: 'saved-query-toggle',
+        attributes: { 'data-query-urn': 'urn-1', 'aria-expanded': 'false' } });
+    const metadata = harness.registerElement('div', { id: 'urn-1-metadata' });
+    metadata.style.display = 'none';
+    const text = harness.registerElement('textarea', { id: 'urn-1-text', value: ' SELECT * {} ' });
+    text.style.display = 'none';
+    const remove = harness.registerElement('button', { className: 'saved-query-delete',
+        attributes: { 'data-query-owner': 'alice', 'data-query-name': 'q', 'data-query-urn': 'urn-1' } });
+    [toggle, metadata, text, remove].forEach((element) => page.appendChild(element));
+    harness.document.body.appendChild(page);
+    const yasqe = createYasqeStub(harness);
+    harness.context.YASQE = yasqe.api;
+    harness.loadScripts(['saved-queries.js']);
+
+    const first = harness.context.workbench.savedQueries.mount(page);
+    assert.equal(toggle.listenerCount('click'), 1);
+    toggle.click();
+    const opened = yasqe.state.instance;
+    first();
+    assert.equal(opened.closed, true, 'an opened editor is closed');
+    assert.equal(toggle.listenerCount('click'), 0);
+    assert.equal(remove.listenerCount('click'), 0);
+    const second = harness.context.workbench.savedQueries.mount(page);
+    assert.equal(toggle.listenerCount('click'), 1);
+    second();
 });

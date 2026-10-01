@@ -14,6 +14,7 @@ module workbench {
         declare var YASQE:any;
         declare var namespaces:{string:string};
         var yasqe:any = null;
+        var releaseSizing: () => void = null;
 
         /** Cmd/Ctrl+Enter submits the update form through its submit handler (which saves the editor text). */
         function submitUpdateForm() {
@@ -23,9 +24,9 @@ module workbench {
             }
         }
 
-        export function initYasqe() {
+        function initYasqe(root: HTMLElement) {
             workbench.yasqeHelper.setupCompleters(namespaces);
-            yasqe = YASQE.fromTextArea(document.getElementById('update'), {
+            yasqe = YASQE.fromTextArea(root.querySelector('#update'), {
                 createShareLink: function () {
                     return {update: yasqe.getValue()};
                 },
@@ -48,9 +49,9 @@ module workbench {
             // The editor frame grows with its content like the Query editor (styles/query.css) and can be
             // resized with the handle under it.
             var sizing: any = (<any>workbench).editorSizing;
-            var handle = document.getElementById('update-editor-resize');
+            var handle = root.querySelector('#update-editor-resize');
             if (sizing && typeof sizing.install === 'function' && handle) {
-                sizing.install(yasqe, handle, 'rdf4j.workbench.update-editor-height.v1');
+                releaseSizing = sizing.install(yasqe, handle, 'rdf4j.workbench.update-editor-height.v1');
             }
             yasqe.refresh();
 
@@ -60,6 +61,21 @@ module workbench {
                 yasqe.setValue('INSERT DATA {\n\t<http://exampleSub> '+
                     '<http://examplePred> <http://exampleObj> .\n}');
             }
+        }
+
+        /** Route mount (plan task M9.1): open the editor; the returned function closes it again. */
+        export function mount(outlet: HTMLElement): () => void {
+            initYasqe(outlet);
+            return function() {
+                if (typeof releaseSizing === 'function') {
+                    releaseSizing();
+                }
+                releaseSizing = null;
+                if (yasqe) {
+                    yasqe.toTextArea();
+                    yasqe = null;
+                }
+            };
         }
 
         /**
@@ -76,7 +92,3 @@ module workbench {
         }
     }
 }
-
-workbench.addLoad(function updatePageLoaded() {
-    workbench.update.initYasqe();
-});

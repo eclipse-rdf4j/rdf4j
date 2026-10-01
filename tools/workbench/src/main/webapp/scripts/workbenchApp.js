@@ -1035,7 +1035,8 @@ var workbench;
                     context: context,
                     runtime: state.runtime,
                     url: new URL(currentUrl),
-                    state: { rendered: true }
+                    // A query posted to the Query page runs once the route is mounted (M9.1).
+                    state: { rendered: true, initialPost: initialPost }
                 };
                 // A router-ready route mounts its scripts itself, so they load first; the other routes start
                 // their scripts in the legacy load handlers, after their rows are bound (M7.2).
@@ -1051,45 +1052,7 @@ var workbench;
                 }); })
                     .then(function () {
                     var runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
-                    var restoreInitialPost = null;
-                    if (viewId === 'query') {
-                        var target = mount.querySelector
-                            ? mount.querySelector('#query-page-content') : mount;
-                        var queryPage_1 = workbench.queryPage;
-                        if (queryPage_1 && typeof queryPage_1.renderInto === 'function') {
-                            queryPage_1.renderInto(target, state.model, context);
-                            if (initialPost) {
-                                var form = document && document.getElementById
-                                    ? document.getElementById(context.executionFormId) : null;
-                                restoreInitialPost = stageInitialQueryParameters(form, document, initialPost);
-                            }
-                        }
-                        else if (target && document) {
-                            var warning = document.createElement('p');
-                            warning.className = 'error';
-                            warning.setAttribute('role', 'alert');
-                            warning.textContent = 'The query page renderer is unavailable.';
-                            target.appendChild(warning);
-                        }
-                    }
                     runLegacyLoadHandlers();
-                    if (initialPost) {
-                        var queryPage_2 = workbench.queryPage;
-                        if (!queryPage_2 || typeof queryPage_2.submitExecution !== 'function') {
-                            if (restoreInitialPost) {
-                                restoreInitialPost();
-                            }
-                            throw new Error('The initial query execution controller is unavailable');
-                        }
-                        try {
-                            queryPage_2.submitExecution();
-                        }
-                        finally {
-                            if (restoreInitialPost) {
-                                restoreInitialPost();
-                            }
-                        }
-                    }
                     restoreScrollPosition(targetWindow, scrollToRestore);
                     // ?router=off starts the Workbench without in-page navigation (debugging, M8.1).
                     var router = workbench.router;

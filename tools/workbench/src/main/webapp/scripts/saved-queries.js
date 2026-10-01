@@ -65,30 +65,46 @@ var workbench;
             toggle.textContent = expanded ? 'Hide details' : 'Show details';
         }
         savedQueries.toggle = toggle;
+        /**
+         * Route mount (plan task M9.1): tidy the rendered query texts and bind the Delete and details buttons in the
+         * .wbRoute namespace. The returned function unbinds them and closes every opened editor.
+         */
+        function mount(outlet) {
+            var page = $(outlet);
+            // not using jQuery.html(...) for this since it doesn't do the whitespace correctly
+            var queries = outlet.getElementsByTagName('pre');
+            for (var i = 0; i < queries.length; i++) {
+                queries[i].innerHTML = queries[i].innerHTML.trim();
+            }
+            page.find('[name="edit-query"]').find('[name="query"]').each(function () {
+                $(this).attr('value', $(this).attr('value').trim());
+            });
+            var deletes = page.find('.saved-query-delete');
+            deletes.each(function () {
+                var button = $(this);
+                button.on('click.wbRoute', function () {
+                    deleteQuery(button.attr('data-query-owner'), button.attr('data-query-name'), button.attr('data-query-urn'));
+                });
+            });
+            var toggles = page.find('.saved-query-toggle');
+            toggles.each(function () {
+                var button = $(this);
+                button.on('click.wbRoute', function () {
+                    toggle(button.attr('data-query-urn'));
+                });
+            });
+            return function () {
+                deletes.off('.wbRoute');
+                toggles.off('.wbRoute');
+                Object.keys(yasqeInstances).forEach(function (urn) {
+                    if (yasqeInstances[urn]) {
+                        yasqeInstances[urn].toTextArea();
+                    }
+                    delete yasqeInstances[urn];
+                });
+            };
+        }
+        savedQueries.mount = mount;
     })(savedQueries = workbench.savedQueries || (workbench.savedQueries = {}));
 })(workbench || (workbench = {}));
-workbench
-    .addLoad(function () {
-    // not using jQuery.html(...) for this since it doesn't do the 
-    // whitespace correctly
-    var queries = document.getElementsByTagName('pre');
-    for (var i = 0; i < queries.length; i++) {
-        queries[i].innerHTML = queries[i].innerHTML.trim();
-    }
-    $('[name="edit-query"]').find('[name="query"]').each(function () {
-        $(this).attr('value', $(this).attr('value').trim());
-    });
-    $('.saved-query-delete').each(function () {
-        var button = $(this);
-        button.click(function () {
-            workbench.savedQueries.deleteQuery(button.attr('data-query-owner'), button.attr('data-query-name'), button.attr('data-query-urn'));
-        });
-    });
-    $('.saved-query-toggle').each(function () {
-        var button = $(this);
-        button.click(function () {
-            workbench.savedQueries.toggle(button.attr('data-query-urn'));
-        });
-    });
-});
 //# sourceMappingURL=saved-queries.js.map

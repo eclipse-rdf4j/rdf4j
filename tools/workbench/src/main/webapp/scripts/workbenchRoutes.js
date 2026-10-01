@@ -115,14 +115,64 @@ var workbench;
         function scriptMount(name) {
             return function (ctx) { return workbench[name].mount(ctx.outlet); };
         }
-        /** A route whose script list does not depend on its model; converted routes pass their mount. */
+        /**
+         * The Query route (M9.1): the streamed result renderer, then the Query page controller. A query posted to
+         * the page (state.initialPost) is staged into the form, run once both are mounted, and the form restored.
+         */
+        function mountQuery(ctx) {
+            var outlet = ctx.outlet;
+            var document = outlet.ownerDocument;
+            var content = outlet.querySelector('#query-page-content') || outlet;
+            var renderer = workbench.queryPage;
+            var initialPost = ctx.state && ctx.state.initialPost;
+            var disposeRenderer = function () { };
+            var restore = null;
+            if (renderer) {
+                disposeRenderer = renderer.renderInto(content, ctx.model, ctx.context);
+                if (initialPost) {
+                    var form = document.getElementById(ctx.context.executionFormId);
+                    restore = workbench.app.stageInitialQueryParameters(form, document, initialPost);
+                }
+            }
+            else {
+                var warning = document.createElement('p');
+                warning.className = 'error';
+                warning.setAttribute('role', 'alert');
+                warning.textContent = 'The query page renderer is unavailable.';
+                content.appendChild(warning);
+            }
+            var unmount = workbench.query.mountQueryPage(outlet);
+            if (initialPost) {
+                try {
+                    if (!renderer || typeof renderer.submitExecution !== 'function') {
+                        throw new Error('The initial query execution controller is unavailable');
+                    }
+                    renderer.submitExecution();
+                }
+                catch (error) {
+                    unmount();
+                    disposeRenderer();
+                    throw error;
+                }
+                finally {
+                    if (restore) {
+                        restore();
+                    }
+                }
+            }
+            return function () {
+                unmount();
+                disposeRenderer();
+            };
+        }
+        /** A route whose script list does not depend on its model. */
         function staticRoute(viewId, names, mount) {
             return {
                 viewId: viewId,
-                routerReady: !!mount,
+                routerReady: true,
                 scripts: function () { return names.slice(); },
                 baseScripts: function () { return names.slice(); },
-                mount: mount || defaultMount
+                mount: mount
             };
         }
         function has(model, name) {
@@ -135,11 +185,11 @@ var workbench;
         register(staticRoute('explore', ['paging.js', 'explore.js'], routeMount(scriptMount('explore'))));
         register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
-        register(staticRoute('saved-queries', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js']));
-        register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js']));
+        register(staticRoute('saved-queries', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'], routeMount(scriptMount('savedQueries'))));
+        register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'], routeMount(scriptMount('update'))));
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
-            'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js']));
+            'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js'], routeMount(mountQuery)));
         var createRoute = {
             viewId: 'create',
             routerReady: true,

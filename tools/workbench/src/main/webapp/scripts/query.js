@@ -41,6 +41,8 @@ var workbench;
         var compareNavigationDisclosureOpenBeforeCompare = null;
         var compareNavigationNarrowModeBeforeCompare = null;
         var compareSidebarPositionListenersInstalled = false;
+        /** Releases each pane editor's resize handle (workbench.editorSizing). */
+        var editorSizingDisposers = {};
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement = null;
@@ -1146,6 +1148,20 @@ var workbench;
                 window.addEventListener('resize', syncCompareSidebarState);
                 window.addEventListener('scroll', updateCompareSidebarNavigationPosition, true);
                 compareSidebarPositionListenersInstalled = true;
+            }
+        }
+        /** Undo what compare mode changed outside the page: the menu's position, body classes and listeners. */
+        function releaseCompareChrome() {
+            if (compareSidebarPositionListenersInstalled) {
+                window.removeEventListener('resize', syncCompareSidebarState);
+                window.removeEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = false;
+            }
+            $('body').removeClass('query-compare-mode query-compare-nav-open');
+            $('#navigation').css('transform', '');
+            if (document.body) {
+                document.body.style.removeProperty('--query-compare-nav-top');
+                document.body.style.removeProperty('--query-compare-nav-left');
             }
         }
         function lockExplanationDimensions(paneKey) {
@@ -2669,14 +2685,6 @@ var workbench;
             }
             clearActiveQuery();
         }
-        function installQueryPageLifecycleHandlers() {
-            if (!window.addEventListener) {
-                return;
-            }
-            window.addEventListener('pagehide', resetResultArea, false);
-            window.addEventListener('pageshow', resetResultArea, false);
-        }
-        installQueryPageLifecycleHandlers();
         function createStableExplanationFromResponse(signature, response, fallbackFormat) {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
@@ -3556,7 +3564,7 @@ var workbench;
         function initPaneYasqe(paneKey, clearFeedbackOnChange) {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
-                consumeShareLink: null, //don't try to parse the url args. this is already done by the addLoad function below
+                consumeShareLink: null, //don't try to parse the url args. mountQueryPage already does
                 persistent: null,
                 // Queries run through the Workbench form; YASQE must never send them to its default endpoint.
                 sparql: { endpoint: '', showQueryButton: false },
@@ -3596,7 +3604,8 @@ var workbench;
             var sizing = workbench.editorSizing;
             var resizeHandle = document.getElementById(paneKey === 'compare' ? 'query-compare-editor-resize' : 'query-editor-resize');
             if (sizing && typeof sizing.install === 'function' && resizeHandle) {
-                sizing.install(paneEditor, resizeHandle, 'rdf4j.workbench.editor-height.v1');
+                releaseEditorSizing(paneKey);
+                editorSizingDisposers[paneKey] = sizing.install(paneEditor, resizeHandle, 'rdf4j.workbench.editor-height.v1');
             }
             paneEditor.refresh();
             setPaneQueryEditor(paneKey, paneEditor);
@@ -3615,7 +3624,15 @@ var workbench;
             }
             initPaneYasqe('compare');
         }
+        function releaseEditorSizing(paneKey) {
+            var release = editorSizingDisposers[paneKey];
+            delete editorSizingDisposers[paneKey];
+            if (typeof release === 'function') {
+                release();
+            }
+        }
         function closeCompareYasqe() {
+            releaseEditorSizing('compare');
             if (compareYasqe) {
                 compareYasqe.toTextArea();
                 compareYasqe = null;
@@ -3623,6 +3640,7 @@ var workbench;
             clearPanePersistedQuery('compare');
         }
         function closeYasqe() {
+            releaseEditorSizing('primary');
             if (yasqe) {
                 yasqe.toTextArea();
                 yasqe = null;
@@ -3709,6 +3727,315 @@ var workbench;
             updateCompareActionState();
         }
         query_1.refreshCompareActionState = refreshCompareActionState;
+        /**
+         * Mount the Query page in outlet (plan task M9.1): fill the editor from the URL, the session draft or the
+         * cookies, set up the explanation and compare views, and bind the page's controls. Element handlers and
+         * document handlers use the .wbQuery event namespace; the returned function removes them, the window and
+         * output listeners and pending input timers, and resets the module (resetState).
+         */
+        function mountQueryPage(outlet) {
+            var page = $(outlet);
+            var bound = [];
+            var timers = [];
+            /** Bind handler to the events of the page element that selector names, in the .wbQuery namespace. */
+            function on(selector, events, handler) {
+                var element = page.find(selector);
+                element.on(events.split(' ').map(function (name) { return name + '.wbQuery'; }).join(' '), handler);
+                bound.push(element);
+            }
+            /**
+             * Gets a parameter from the URL or the cookies, preferentially in that
+             * order.
+             *
+             * @param param
+             *            the name of the parameter
+             * @returns the value of the given parameter, or something that evaluates
+             *          as false, if the parameter was not found
+             */
+            function getParameterFromUrl(param) {
+                var href = document.location.href;
+                var elements = href.substring(href.indexOf('?') + 1).substring(href.indexOf(';') + 1).split(decodeURIComponent('%26'));
+                var result = '';
+                for (var i = 0; elements.length - i; i++) {
+                    var pair = elements[i].split('=');
+                    var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
+                    if (pair[0] == param) {
+                        result = value;
+                    }
+                }
+                return result;
+            }
+            function getParameterFromUrlOrCookie(param) {
+                var result = getParameterFromUrl(param);
+                if (!result) {
+                    result = workbench.getCookie(param);
+                }
+                return result;
+            }
+            function getQueryTextFromServer(queryParam, refParam) {
+                $.getJSON('query', {
+                    action: "get",
+                    query: queryParam,
+                    ref: refParam
+                }, function (response) {
+                    if (response.queryText) {
+                        applyLoadedPrimaryQuery(response.queryText);
+                    }
+                });
+            }
+            window.addEventListener('pagehide', resetResultArea, false);
+            window.addEventListener('pageshow', resetResultArea, false);
+            // Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
+            // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).
+            updateYasqe();
+            // Populate the query text area with the value of the URL query parameter, only if it is present. If
+            // it is not present in the URL query, then looks for the 'query' cookie, and sets it from that. (The
+            // cookie enables re-populating the text field with the previous query when the user returns via the
+            // browser back button.)
+            var query = getParameterFromUrl('query');
+            if (query) {
+                var ref = getParameterFromUrl('ref');
+                if (ref == 'id' || ref == 'hash') {
+                    getQueryTextFromServer(query, ref);
+                }
+                else {
+                    setQueryValue(query);
+                    persistPrimaryQueryValue();
+                }
+            }
+            else {
+                var initialQueryValue = getQueryValue();
+                if (initialQueryValue) {
+                    persistPrimaryQueryValue();
+                }
+                else {
+                    var sessionDraft = getPrimaryQueryDraftSessionValue();
+                    if (sessionDraft) {
+                        setQueryValue(sessionDraft);
+                    }
+                    else {
+                        query = getParameterFromUrlOrCookie('query');
+                        if (query) {
+                            var fallbackRef = getParameterFromUrlOrCookie('ref');
+                            if (fallbackRef == 'id' || fallbackRef == 'hash') {
+                                getQueryTextFromServer(query, fallbackRef);
+                            }
+                            else {
+                                setQueryValue(query);
+                                persistPrimaryQueryValue();
+                            }
+                        }
+                    }
+                }
+            }
+            // Trim the query text area contents of any leading and/or trailing whitespace.
+            setQueryValue($.trim(getQueryValue()));
+            initializeExplanationView();
+            initializeCompareUi();
+            workbench.tabs.bind(outlet.querySelector('#query-output [role="tablist"]'));
+            var queryOutput = outlet.querySelector('#query-output');
+            var onResultSummary = function (event) {
+                updateResultsBadge(event.detail);
+            };
+            var onErrorLocation = function (event) {
+                var location = event.detail || {};
+                showQueryErrorLocation(location.line, location.column, !!location.reveal);
+            };
+            if (queryOutput) {
+                queryOutput.addEventListener('workbench:query-result-summary', onResultSummary);
+                queryOutput.addEventListener('workbench:query-error-location', onErrorLocation);
+            }
+            // Add click handlers identifying the clicked element in a hidden 'action' form field.
+            var addHandler = function (id, callback) {
+                on('#' + id, 'click', function setAction() {
+                    $('#action').val(id);
+                    if (callback) {
+                        callback();
+                    }
+                });
+            };
+            addHandler('exec', function () {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            addHandler('save', function () {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            on('#copy-explanation', 'click', function () {
+                copyExplanation('primary');
+            });
+            on('#copy-explanation-compare', 'click', function () {
+                copyExplanation('compare');
+            });
+            on('#query-compare-copy', 'click', function () {
+                copyExplanation('primary');
+            });
+            on('#query-compare-swap', 'click', function () {
+                swapCompareQueries();
+            });
+            on('#download-explanation', 'click', downloadExplanation);
+            on('#explanation-highlight-syntax', 'click', function () {
+                setExplanationHighlightMode('syntax');
+            });
+            on('#explanation-highlight-hotspot', 'click', function () {
+                setExplanationHighlightMode('hotspot');
+            });
+            $(document).on('click.wbQuery', function (event) {
+                if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+                    && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
+                    setExplanationSettingsOpen(false);
+                }
+            });
+            on('#explanation-properties-all', 'click', function () {
+                setAllExplanationPropertiesVisible(true);
+            });
+            on('#explanation-properties-none', 'click', function () {
+                setAllExplanationPropertiesVisible(false);
+            });
+            // Add event handlers to the save name field to react to changes in it.
+            on('#query-name', 'keydown cut paste', handleNameChange);
+            // Add event handlers to the query text area to react to changes in it.
+            function deferInputChange(handler) {
+                return function () {
+                    timers.push(window.setTimeout(handler, 0));
+                };
+            }
+            on('#query', 'keydown cut paste change', deferInputChange(function () {
+                clearFeedback();
+                notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+            }));
+            on('#query-compare', 'keydown cut paste change', deferInputChange(function () {
+                clearFeedback();
+                notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
+            }));
+            on('#explain-level', 'change', function () {
+                notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
+            });
+            on('#explain-format', 'change', function () {
+                notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+            });
+            on('#query-diff-modal', 'click', function (event) {
+                if (event.target && event.target.id === 'query-diff-modal') {
+                    closeDiffModal();
+                }
+            });
+            $(document).on('keydown.wbQuery', function (event) {
+                if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
+                    handleDiffModalTab(event);
+                    return;
+                }
+                if (event.key === 'Escape' && isResultsFullscreen()) {
+                    toggleResultsFullscreen();
+                    event.preventDefault();
+                    return;
+                }
+                if (event.key === 'Escape'
+                    && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+                    setExplanationSettingsOpen(false);
+                    var settingsToggle = document.getElementById('explanation-settings-toggle');
+                    if (settingsToggle) {
+                        settingsToggle.focus();
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
+                    closeDiffModal();
+                }
+            });
+            // Detect if there is no current authenticated user, and if so, disable the 'save privately' option.
+            if ($('#selected-user>span').is('.disabled')) {
+                page.find('#save-private').prop('checked', false).prop('disabled', true);
+            }
+            return function () {
+                window.removeEventListener('pagehide', resetResultArea, false);
+                window.removeEventListener('pageshow', resetResultArea, false);
+                $(document).off('.wbQuery');
+                bound.forEach(function (element) {
+                    element.off('.wbQuery');
+                });
+                if (queryOutput) {
+                    queryOutput.removeEventListener('workbench:query-result-summary', onResultSummary);
+                    queryOutput.removeEventListener('workbench:query-error-location', onErrorLocation);
+                }
+                timers.forEach(function (timer) {
+                    clearTimeout(timer);
+                });
+                resetState();
+            };
+        }
+        query_1.mountQueryPage = mountQueryPage;
+        /**
+         * Return the module to the state it had before the page was mounted: close the editors and the diff
+         * modal, stop pending explanation requests and timers, and undo compare mode outside the page. The Query
+         * route's dispose and the unit tests use it.
+         */
+        function resetState() {
+            ['primary', 'compare'].forEach(function (controllerKey) {
+                var uiState = getExplainRequestUiState(controllerKey);
+                clearTimeout(uiState.spinnerDelayTimeoutId);
+                clearTimeout(uiState.spinnerHideTimeoutId);
+            });
+            [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function (request) {
+                if (request && typeof request.abort === 'function') {
+                    request.abort();
+                }
+            });
+            destroyDotPanZoom('primary');
+            destroyDotPanZoom('compare');
+            syncDiffModalPresentation(false);
+            releaseCompareChrome();
+            releaseEditorSizing('primary');
+            releaseEditorSizing('compare');
+            if (yasqe && typeof yasqe.toTextArea === 'function') {
+                yasqe.toTextArea();
+            }
+            if (compareYasqe && typeof compareYasqe.toTextArea === 'function') {
+                compareYasqe.toTextArea();
+            }
+            clearActiveQuery();
+            yasqe = null;
+            compareYasqe = null;
+            vizRenderer = null;
+            queryPageState = createInitialQueryPageState();
+            lastRenderedExplanationKeys = {};
+            pendingDotRenderKeys = {};
+            activePrimaryRequestSignature = null;
+            activeCompareRequestSignatures = {};
+            resetExplainRequestUiState('primary');
+            resetExplainRequestUiState('compare');
+            activeExplainRequestId = 0;
+            activeExplainJqXHR = null;
+            resultPresentationLayout = 'auto';
+            resultPresentationWrap = true;
+            var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+            if (fullscreenTarget) {
+                setResultsFullscreen(false, false, fullscreenTarget);
+            }
+            primaryExplanationPending = false;
+            activeCompareRequestId = 0;
+            activeComparePendingRequests = 0;
+            activeCompareExplainJqXHRs = [];
+            compareModeEnabled = false;
+            compareSidebarOpen = false;
+            compareQuerySeeded = false;
+            diffNotReadyLabel = '';
+            lastDiffTriggerElement = null;
+            explanationHighlightMode = 'syntax';
+            explanationHiddenProperties = loadExplanationHiddenProperties();
+            explanationPropertyOptionsKey = '';
+            primaryPaneState.latestExplanation = '';
+            primaryPaneState.latestExplanationFormat = 'text';
+            primaryPaneState.dotPanZoomInstance = null;
+            primaryPaneState.explainButtonViewportTopBeforeRequest = null;
+            primaryPaneState.explainButtonIdBeforeRequest = '';
+            comparePaneState.latestExplanation = '';
+            comparePaneState.latestExplanationFormat = 'text';
+            comparePaneState.dotPanZoomInstance = null;
+            comparePaneState.explainButtonViewportTopBeforeRequest = null;
+            comparePaneState.explainButtonIdBeforeRequest = '';
+        }
+        query_1.resetState = resetState;
         query_1.testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -3848,49 +4175,7 @@ var workbench;
                     queryPageState: queryPageState
                 };
             },
-            resetInternalState: function () {
-                clearActiveQuery();
-                yasqe = null;
-                compareYasqe = null;
-                vizRenderer = null;
-                queryPageState = createInitialQueryPageState();
-                lastRenderedExplanationKeys = {};
-                pendingDotRenderKeys = {};
-                activePrimaryRequestSignature = null;
-                activeCompareRequestSignatures = {};
-                resetExplainRequestUiState('primary');
-                resetExplainRequestUiState('compare');
-                activeExplainRequestId = 0;
-                activeExplainJqXHR = null;
-                resultPresentationLayout = 'auto';
-                resultPresentationWrap = true;
-                var fullscreenTarget = workbench.resultFullscreen.currentTarget();
-                if (fullscreenTarget) {
-                    setResultsFullscreen(false, false, fullscreenTarget);
-                }
-                primaryExplanationPending = false;
-                activeCompareRequestId = 0;
-                activeComparePendingRequests = 0;
-                activeCompareExplainJqXHRs = [];
-                compareModeEnabled = false;
-                compareSidebarOpen = false;
-                compareQuerySeeded = false;
-                diffNotReadyLabel = '';
-                lastDiffTriggerElement = null;
-                explanationHighlightMode = 'syntax';
-                explanationHiddenProperties = loadExplanationHiddenProperties();
-                explanationPropertyOptionsKey = '';
-                primaryPaneState.latestExplanation = '';
-                primaryPaneState.latestExplanationFormat = 'text';
-                primaryPaneState.dotPanZoomInstance = null;
-                primaryPaneState.explainButtonViewportTopBeforeRequest = null;
-                primaryPaneState.explainButtonIdBeforeRequest = '';
-                comparePaneState.latestExplanation = '';
-                comparePaneState.latestExplanationFormat = 'text';
-                comparePaneState.dotPanZoomInstance = null;
-                comparePaneState.explainButtonViewportTopBeforeRequest = null;
-                comparePaneState.explainButtonIdBeforeRequest = '';
-            },
+            resetInternalState: resetState,
             setInternalState: function (state) {
                 if ('activeComparePendingRequests' in state) {
                     activeComparePendingRequests = state.activeComparePendingRequests;
@@ -3938,210 +4223,4 @@ var workbench;
         };
     })(query = workbench.query || (workbench.query = {}));
 })(workbench || (workbench = {}));
-workbench.addLoad(function queryPageLoaded() {
-    /**
-     * Gets a parameter from the URL or the cookies, preferentially in that
-     * order.
-     *
-     * @param param
-     *            the name of the parameter
-     * @returns the value of the given parameter, or something that evaluates
-                  as false, if the parameter was not found
-     */
-    function getParameterFromUrl(param) {
-        var href = document.location.href;
-        var elements = href.substring(href.indexOf('?') + 1).substring(href.indexOf(';') + 1).split(decodeURIComponent('%26'));
-        var result = '';
-        for (var i = 0; elements.length - i; i++) {
-            var pair = elements[i].split('=');
-            var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
-            if (pair[0] == param) {
-                result = value;
-            }
-        }
-        return result;
-    }
-    function getParameterFromUrlOrCookie(param) {
-        var result = getParameterFromUrl(param);
-        if (!result) {
-            result = workbench.getCookie(param);
-        }
-        return result;
-    }
-    function getQueryTextFromServer(queryParam, refParam) {
-        $.getJSON('query', {
-            action: "get",
-            query: queryParam,
-            ref: refParam
-        }, function (response) {
-            if (response.queryText) {
-                workbench.query.applyLoadedPrimaryQuery(response.queryText);
-            }
-        });
-    }
-    //Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
-    //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
-    workbench.query.updateYasqe();
-    // Populate the query text area with the value of the URL query parameter,
-    // only if it is present. If it is not present in the URL query, then
-    // looks for the 'query' cookie, and sets it from that. (The cookie
-    // enables re-populating the text field with the previous query when the
-    // user returns via the browser back button.)
-    var query = getParameterFromUrl('query');
-    if (query) {
-        var ref = getParameterFromUrl('ref');
-        if (ref == 'id' || ref == 'hash') {
-            getQueryTextFromServer(query, ref);
-        }
-        else {
-            workbench.query.setQueryValue(query);
-            workbench.query.persistPrimaryQueryValue();
-        }
-    }
-    else {
-        var initialQueryValue = workbench.query.getQueryValue();
-        if (initialQueryValue) {
-            workbench.query.persistPrimaryQueryValue();
-        }
-        else {
-            var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
-            if (sessionDraft) {
-                workbench.query.setQueryValue(sessionDraft);
-            }
-            else {
-                query = getParameterFromUrlOrCookie('query');
-                if (query) {
-                    var fallbackRef = getParameterFromUrlOrCookie('ref');
-                    if (fallbackRef == 'id' || fallbackRef == 'hash') {
-                        getQueryTextFromServer(query, fallbackRef);
-                    }
-                    else {
-                        workbench.query.setQueryValue(query);
-                        workbench.query.persistPrimaryQueryValue();
-                    }
-                }
-            }
-        }
-    }
-    // Trim the query text area contents of any leading and/or trailing
-    // whitespace.
-    workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
-    workbench.query.initializeExplanationView();
-    workbench.query.initializeCompareUi();
-    workbench.tabs.bind(document.querySelector('#query-output [role="tablist"]'));
-    var queryOutput = document.getElementById('query-output');
-    if (queryOutput) {
-        queryOutput.addEventListener('workbench:query-result-summary', function (event) {
-            workbench.query.updateResultsBadge(event.detail);
-        });
-        queryOutput.addEventListener('workbench:query-error-location', function (event) {
-            var location = event.detail || {};
-            workbench.query.showQueryErrorLocation(location.line, location.column, !!location.reveal);
-        });
-    }
-    // Add click handlers identifying the clicked element in a hidden 'action'
-    // form field.
-    var addHandler = function (id, callback) {
-        $('#' + id).click(function setAction() {
-            $('#action').val(id);
-            if (callback) {
-                callback();
-            }
-        });
-    };
-    addHandler('exec', function () {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    addHandler('save', function () {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    $('#copy-explanation').click(function () {
-        workbench.query.copyExplanation('primary');
-    });
-    $('#copy-explanation-compare').click(function () {
-        workbench.query.copyExplanation('compare');
-    });
-    $('#query-compare-copy').click(function () {
-        workbench.query.copyExplanation('primary');
-    });
-    $('#query-compare-swap').click(function () {
-        workbench.query.swapCompareQueries();
-    });
-    $('#download-explanation').click(workbench.query.downloadExplanation);
-    $('#explanation-highlight-syntax').click(function () {
-        workbench.query.setExplanationHighlightMode('syntax');
-    });
-    $('#explanation-highlight-hotspot').click(function () {
-        workbench.query.setExplanationHighlightMode('hotspot');
-    });
-    $(document).click(function (event) {
-        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
-            && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
-            workbench.query.setExplanationSettingsOpen(false);
-        }
-    });
-    $('#explanation-properties-all').click(function () {
-        workbench.query.setAllExplanationPropertiesVisible(true);
-    });
-    $('#explanation-properties-none').click(function () {
-        workbench.query.setAllExplanationPropertiesVisible(false);
-    });
-    // Add event handlers to the save name field to react to changes in it.
-    $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
-    // Add event handlers to the query text area to react to changes in it.
-    function deferInputChange(handler) {
-        return function () {
-            window.setTimeout(handler, 0);
-        };
-    }
-    $('#query').bind('keydown cut paste change', deferInputChange(function () {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    }));
-    $('#query-compare').bind('keydown cut paste change', deferInputChange(function () {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
-    }));
-    $('#explain-level').change(function () {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
-    });
-    $('#explain-format').change(function () {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
-    });
-    $('#query-diff-modal').click(function (event) {
-        if (event.target && event.target.id === 'query-diff-modal') {
-            workbench.query.closeDiffModal();
-        }
-    });
-    $(document).keydown(function (event) {
-        if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
-            workbench.query.handleDiffModalTab(event);
-            return;
-        }
-        if (event.key === 'Escape' && workbench.query.isResultsFullscreen()) {
-            workbench.query.toggleResultsFullscreen();
-            event.preventDefault();
-            return;
-        }
-        if (event.key === 'Escape'
-            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
-            workbench.query.setExplanationSettingsOpen(false);
-            var settingsToggle = document.getElementById('explanation-settings-toggle');
-            if (settingsToggle) {
-                settingsToggle.focus();
-            }
-            return;
-        }
-        if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
-            workbench.query.closeDiffModal();
-        }
-    });
-    // Detect if there is no current authenticated user, and if so, disable
-    // the 'save privately' option.
-    if ($('#selected-user>span').is('.disabled')) {
-        $('#save-private').prop('checked', false).prop('disabled', true);
-    }
-});
 //# sourceMappingURL=query.js.map

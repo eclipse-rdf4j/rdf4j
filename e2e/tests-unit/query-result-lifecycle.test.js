@@ -91,6 +91,7 @@ test('without the streamed renderer a submit says that results are unavailable',
 test('the result area starts afresh when the page is hidden or shown again', () => {
     for (const type of ['pagehide', 'pageshow']) {
         const harness = createQueryBrowserHarness({ queryScriptPath: compileQuerySource() });
+        harness.runPageLoad();
         const results = harness.document.getElementById('query-results');
         results.hidden = false;
         harness.setValue('query-request-id', 'query-1');

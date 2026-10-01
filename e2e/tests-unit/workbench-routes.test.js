@@ -147,7 +147,7 @@ test('the built-in definitions carry the script lists the pages load today', () 
     }
     for (const viewId of ['query', 'saved-queries', 'update']) {
         assert.equal(routes.get(viewId).viewId, viewId);
-        assert.equal(routes.isRouterReady(viewId), false, viewId + ' is converted in M9.1');
+        assert.equal(routes.isRouterReady(viewId), true, viewId + ' is converted (M9.1)');
     }
 });
 
@@ -469,7 +469,8 @@ test('releasing a page cancels Remove\'s scheduled and running count', async () 
 
 test('route scripts define their mount functions even when they load before any other Workbench script', () => {
     for (const [file, name] of [['add.js', 'add'], ['export.js', 'exportPage'], ['explore.js', 'explore'],
-        ['create.js', 'create'], ['create-federate.js', 'createFederate']]) {
+        ['create.js', 'create'], ['create-federate.js', 'createFederate'], ['update.js', 'update'],
+        ['saved-queries.js', 'savedQueries']]) {
         const absolutePath = path.resolve(__dirname, '../..', routeScriptsDir + file);
         const context = vm.createContext({});
         vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), context, { filename: absolutePath });
@@ -718,4 +719,125 @@ test('loadScripts loads route scripts in order from the Workbench script folder'
     await workbench.app.loadScripts(['paging.js', 'explore.js']);
 
     assert.deepEqual(appended, ['/workbench/scripts/paging.js', '/workbench/scripts/explore.js']);
+});
+
+// Plan task M9.1: the Query, Update and Saved queries routes.
+
+/** A route harness whose query renderer and page controller are stand-ins that record what happens. */
+function queryRouteHarness(state) {
+    const harness = routeHarness();
+    const log = [];
+    const content = append(harness, harness.outlet, 'div', { id: 'query-page-content' });
+    const form = append(harness, content, 'form', { id: 'query-form' });
+    harness.workbench.queryPage = {
+        renderInto(target, model, context) {
+            log.push('render into ' + target.id);
+            return () => log.push('renderer disposed');
+        },
+        submitExecution() {
+            log.push('submit');
+            return true;
+        }
+    };
+    harness.workbench.query = {
+        mountQueryPage(outlet) {
+            log.push('mount query page');
+            return () => log.push('query page disposed');
+        }
+    };
+    harness.workbench.app = {
+        stageInitialQueryParameters(target, document, parameters) {
+            log.push('stage ' + parameters.query + ' into ' + target.id);
+            return () => log.push('restore');
+        }
+    };
+    const ctx = { outlet: harness.outlet, model: { viewId: 'query', vars: [] }, context: { executionFormId: 'query-form' },
+        runtime: fakeRuntime(), url: new URL('https://example.test/'), state };
+    return Object.assign(harness, { log, ctx, form });
+}
+
+test('the Query route renders its results into the page and mounts the Query page controller', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+    instance.dispose('navigate');
+
+    assert.deepEqual(harness.log, ['render into query-page-content', 'mount query page', 'query page disposed',
+        'renderer disposed']);
+});
+
+test('a Query route that starts with a posted query runs it once its controller is mounted', async () => {
+    const harness = queryRouteHarness({ rendered: true, initialPost: { query: 'ASK {}' } });
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+
+    assert.deepEqual(harness.log, ['render into query-page-content', 'stage ASK {} into query-form',
+        'mount query page', 'submit', 'restore']);
+    instance.dispose('navigate');
+});
+
+test('a posted query without an execution controller is restored and reported', async () => {
+    const harness = queryRouteHarness({ rendered: true, initialPost: { query: 'ASK {}' } });
+    delete harness.workbench.queryPage.submitExecution;
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await assert.rejects(instance.ready, /The initial query execution controller is unavailable/);
+    assert.equal(harness.log[harness.log.length - 1], 'restore');
+    instance.dispose('navigate');
+});
+
+test('a Query route without the result renderer says so in the page', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+    delete harness.workbench.queryPage;
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+
+    const warning = harness.outlet.querySelector('#query-page-content p');
+    assert.equal(warning.textContent, 'The query page renderer is unavailable.');
+    assert.equal(warning.getAttribute('role'), 'alert');
+    instance.dispose('navigate');
+    assert.deepEqual(harness.log, ['mount query page', 'query page disposed']);
+});
+
+test('the Update and Saved queries routes mount their scripts', async () => {
+    for (const [viewId, name] of [['update', 'update'], ['saved-queries', 'savedQueries']]) {
+        const harness = routeHarness();
+        const log = [];
+        harness.workbench[name] = { mount: (outlet) => { log.push('mount ' + outlet.id); return () => log.push('unmount'); } };
+        const instance = harness.workbench.routes.get(viewId).mount({ outlet: harness.outlet, model: { viewId, vars: [] },
+            context: {}, runtime: fakeRuntime(), url: new URL('https://example.test/'), state: { rendered: true } });
+        await instance.ready;
+        instance.dispose('navigate');
+        assert.deepEqual(log, ['mount workbench-outlet', 'unmount'], viewId);
+    }
+});
+
+test('a Query route mounted without navigation state renders its outlet and runs nothing', async () => {
+    const harness = queryRouteHarness(undefined);
+    harness.workbench.views.renderOutlet = () => harness.log.push('render outlet');
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+    instance.dispose('navigate');
+
+    assert.deepEqual(harness.log, ['render outlet', 'render into query-page-content', 'mount query page',
+        'query page disposed', 'renderer disposed']);
+});
+
+test('a Query route whose page has no content area renders into the outlet itself', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+    harness.outlet.removeChild(harness.outlet.querySelector('#query-page-content'));
+    harness.workbench.queryPage.renderInto = (target) => {
+        harness.log.push('render into ' + target.id);
+        return () => {};
+    };
+
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+    instance.dispose('navigate');
+
+    assert.equal(harness.log[0], 'render into workbench-outlet');
 });

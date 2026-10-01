@@ -421,7 +421,9 @@ test('query route loads the complete legacy Explain, Compare, and Diff dependenc
     workbench.addLoad = () => {};
     workbench.views.render = () => ({});
     workbench.views.bindRowWindows = undefined;
-    workbench.queryPage = { renderInto() {} };
+    workbench.queryPage = { renderInto() { return () => {}; } };
+    // skipScripts is off here, so query.js is never really evaluated: stand in for its page controller (M9.1).
+    workbench.query = { mountQueryPage: () => () => {} };
     const mount = {
         ownerDocument: document,
         querySelector() { return this; },
@@ -1065,12 +1067,16 @@ test('query page renderer receives the Lit runtime through its shell context', a
     workbench.queryPage = {
         renderInto(_target, _model, context) {
             received = context;
+            return () => {};
         },
         submitExecution() {
             submissions++;
             return true;
         }
     };
+    // skipScripts leaves query.js out: stand in for its page controller (M9.1).
+    let pageMounts = 0;
+    workbench.query = { mountQueryPage: () => { pageMounts++; return () => {}; } };
     const source = encodeEvents([
         { type: 'head', version: 1 },
         { type: 'view', id: 'query' },
@@ -1107,6 +1113,7 @@ test('query page renderer receives the Lit runtime through its shell context', a
     assert.equal(received.executionFormId, 'query-form');
     assert.equal(received.resultsMountId, 'query-results');
     assert.equal(submissions, 0, 'a regular GET query page must not execute a query on load');
+    assert.equal(pageMounts, 1, 'the Query page controller is mounted once');
     assert.ok(collectTemplateText(mount.template).join(' ').includes('id="query-page-content"'));
 });
 
@@ -1161,13 +1168,17 @@ test('bootstrap replays a native query execution descriptor exactly once after m
             if (id === 'query-results') { return resultTarget; }
             return null;
         },
-        createElement() { return { setAttribute() {} }; }
+        createElement() {
+            // The shell's outlet: the Query route looks for its content inside it.
+            return { setAttribute() {}, querySelector() { return null; }, appendChild() {}, ownerDocument: document };
+        }
     };
     workbench.__testWindow.document = document;
     workbench.__testWindow.localStorage = { getItem() { return null; }, setItem() {} };
     workbench.__testWindow.matchMedia = () => ({ matches: false });
+    workbench.query = { mountQueryPage: () => { calls.push('mountQueryPage'); return () => {}; } };
     workbench.queryPage = {
-        renderInto() { calls.push('renderInto'); },
+        renderInto() { calls.push('renderInto'); return () => {}; },
         submitExecution() {
             calls.push('submitExecution');
             assert.equal(controls.find((control) => control.name === 'query').value, params.query[0]);
@@ -1210,7 +1221,8 @@ test('bootstrap replays a native query execution descriptor exactly once after m
     assert.equal(getCount, 2, 'each explicit bootstrap call still makes its one page-model GET');
     assert.equal(calls.filter((call) => call === 'submitExecution').length, 1,
         'the consumed initial descriptor must execute once even if bootstrap is called again');
-    assert.deepEqual(calls.slice(0, 3), ['page-get', 'renderInto', 'submitExecution']);
+    assert.deepEqual(calls.slice(0, 4), ['page-get', 'renderInto', 'mountQueryPage', 'submitExecution'],
+        'the posted query runs after the Query page controller is mounted, as it did after the load handlers');
     assert.equal(controls.find((control) => control.name === 'save-private').checked, true,
         'temporary omissions must not change the rendered query form after submission');
     assert.equal(controls.find((control) => control.name === 'save-private').disabled, undefined);

@@ -857,3 +857,61 @@ test('a server syntax error marks its editor line until the next edit and Go to 
     harness.context.workbench.query.showQueryErrorLocation(0, 1, true);
     assert.equal(editor.lineClasses['-1:background'], undefined, 'line numbers start at 1');
 });
+
+// Plan task M9.1: the Query route mounts, disposes and mounts again in one document.
+test('the Query page mounts, disposes and mounts again without leaving listeners or editors behind', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runLoadHandlers();
+    const created = [];
+    const yasqe = harness.context.YASQE;
+    const fromTextArea = yasqe.fromTextArea;
+    yasqe.fromTextArea = (...args) => {
+        const instance = fromTextArea(...args);
+        created.push(instance);
+        return instance;
+    };
+    const query = harness.context.workbench.query;
+    const snapshot = () => JSON.parse(JSON.stringify({
+        window: harness.window.listenerCounts(), document: harness.document.listenerCounts()
+    }));
+    const beforeMount = snapshot();
+
+    const first = query.mountQueryPage(harness.document.body);
+    const afterFirst = snapshot();
+    assert.equal(created.filter((instance) => !instance.closed).length, 1, 'one editor');
+    first();
+    assert.equal(created.filter((instance) => !instance.closed).length, 0, 'dispose closes the editor');
+    const second = query.mountQueryPage(harness.document.body);
+
+    assert.deepEqual(snapshot(), afterFirst, 'listeners do not pile up');
+    assert.equal(created.filter((instance) => !instance.closed).length, 1, 'still one editor');
+    second();
+    assert.deepEqual(snapshot(), beforeMount, 'dispose removes every window and document listener it added');
+});
+
+test('disposing the Query page undoes compare mode, stops pending explanations and releases both editors', () => {
+    const harness = createQueryBrowserHarness();
+    for (const id of ['query-editor-resize', 'query-compare-editor-resize']) {
+        harness.document.body.appendChild(harness.registerElement('div', { id }));
+    }
+    const released = [];
+    harness.context.workbench.editorSizing = { install: (editor, handle) => () => released.push(handle.id) };
+    const cleanup = harness.runPageLoad();
+    const query = harness.context.workbench.query;
+    const resizeBefore = harness.window.listenerCount('resize');
+    const scrollBefore = harness.window.listenerCount('scroll');
+    query.toggleCompareMode();
+    assert.equal(harness.window.listenerCount('resize'), resizeBefore + 1, 'compare mode follows the window size');
+    harness.click('explain-trigger');
+    const explain = harness.ajaxRequests[harness.ajaxRequests.length - 1];
+    const compareEditor = harness.yasqeState.instances['query-compare'];
+
+    cleanup();
+
+    assert.equal(harness.window.listenerCount('resize'), resizeBefore);
+    assert.equal(harness.window.listenerCount('scroll'), scrollBefore);
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), false);
+    assert.equal(explain.aborted, true, 'a running explanation is abandoned');
+    assert.equal(compareEditor.closed, true);
+    assert.deepEqual(released.sort(), ['query-compare-editor-resize', 'query-editor-resize']);
+});

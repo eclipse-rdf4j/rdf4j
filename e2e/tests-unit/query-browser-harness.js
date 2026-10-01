@@ -612,8 +612,10 @@ function createQueryBrowserHarness(options = {}) {
                 request.callback(request.response);
             }
         },
+        /** The template's load handlers, then the Query route's mount of the page (M9.1). */
         runPageLoad() {
             harness.runLoadHandlers();
+            return context.workbench.query.mountQueryPage(document.body);
         }
     });
 }

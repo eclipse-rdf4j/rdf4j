@@ -166,6 +166,16 @@ async function shellSnapshot(page) {
 	}));
 }
 
+/** Click this test's repository in the (windowed) repository list. */
+async function clickRepositoryLink(page) {
+	await expect(page.locator('#repositories-results a.workbench-repository-link', { hasText: REPOSITORY_ID }))
+		.not.toHaveCount(0);
+	await page.evaluate((id) => {
+		const links = Array.from(document.querySelectorAll('#repositories-results a.workbench-repository-link'));
+		links.find((link) => link.textContent.trim() === id).click();
+	}, REPOSITORY_ID);
+}
+
 async function expectSameShellAfterReload(page, view) {
 	const navigated = await shellSnapshot(page);
 	await page.reload();
@@ -180,7 +190,8 @@ test('choosing a repository from the list shows the shell a page load would show
 	await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
 	const documents = recordDocumentRequests(page);
 
-	await page.locator('#repositories-results a.workbench-repository-link', { hasText: REPOSITORY_ID }).first().click();
+	// The list is windowed and reuses row elements, so find and click the link in one step.
+	await clickRepositoryLink(page);
 	await expectRoute(page, 'summary');
 	expect(documents).toEqual([]);
 	await expect(page.locator('#workbench-repository-switcher')).toContainText(REPOSITORY_ID);
@@ -222,7 +233,7 @@ test('the repository switcher lists the repositories for the page that is shown'
 	await expect(option).toBeVisible();
 	await page.keyboard.press('Escape');
 
-	await page.locator('#repositories-results a.workbench-repository-link', { hasText: REPOSITORY_ID }).first().click();
+	await clickRepositoryLink(page);
 	await expectRoute(page, 'summary');
 	await menuLink(page, 'Types').click();
 	await expectRoute(page, 'types');
@@ -231,4 +242,26 @@ test('the repository switcher lists the repositories for the page that is shown'
 	await expect(option).toBeVisible();
 	await expect(option).toHaveAttribute('aria-current', 'true');
 	await expect(option).toHaveAttribute('href', new RegExp(`/repositories/${REPOSITORY_ID}/types$`));
+});
+
+// Plan task M9.1: Query, Update and Saved queries are router-ready and leave nothing behind.
+
+test('switching between Query and Summary keeps one editor and one result renderer', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'query');
+	const documents = recordDocumentRequests(page);
+	for (let round = 0; round < 5; round++) {
+		await menuLink(page, 'Summary').click();
+		await expectRoute(page, 'summary');
+		await menuLink(page, 'Query').click();
+		await expectRoute(page, 'query');
+	}
+
+	expect(documents).toEqual([]);
+	expect(await page.locator('.CodeMirror').count()).toBe(1);
+	expect(await page.locator('#query-results').count()).toBe(1);
+	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('ASK {}'));
+	await page.locator('#exec').click();
+	await expect(page.locator('#query-results [data-query-stream-root]')).toHaveCount(1);
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 });
