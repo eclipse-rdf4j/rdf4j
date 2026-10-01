@@ -564,7 +564,7 @@ var workbench;
             var h = runtime.html;
             var context = state.context;
             var groups = menuEntries(context);
-            return h(__makeTemplateObject(["", "\n            <nav id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" aria-label=\"Workbench menu\">\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </nav>\n            ", "\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <p id=\"workbench-route-status\" class=\"workbench-visually-hidden\" role=\"status\" aria-live=\"polite\"></p>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["", "\n            <nav id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" aria-label=\"Workbench menu\">\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </nav>\n            ", "\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <p id=\"workbench-route-status\" class=\"workbench-visually-hidden\" role=\"status\" aria-live=\"polite\"></p>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextBar(context, state.viewId, runtime), navigation(context, state.viewId, runtime, 'workbench-nav', groups), menuSheet(context, state.viewId, runtime, groups), outlet);
+            return h(__makeTemplateObject(["", "\n            <nav id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" aria-label=\"Workbench menu\">\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </nav>\n            ", "\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <p id=\"workbench-route-status\" class=\"workbench-visually-hidden\" role=\"status\" aria-live=\"polite\"></p>\n            <div id=\"workbench-kept-alive\" hidden inert></div>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"], ["", "\n            <nav id=\"workbench-navigation-disclosure\" class=\"workbench-navigation-disclosure\" aria-label=\"Workbench menu\">\n                <div id=\"navigation\" class=\"workbench-nav\"><ul class=\"maingroup\">\n                    ", "\n                </ul></div>\n            </nav>\n            ", "\n            <main id=\"content\" class=\"workbench-main\">", "</main>\n            <p id=\"workbench-route-status\" class=\"workbench-visually-hidden\" role=\"status\" aria-live=\"polite\"></p>\n            <div id=\"workbench-kept-alive\" hidden inert></div>\n            <div id=\"footer\" class=\"workbench-footer\"><div>Copyright \u00A9 Eclipse RDF4J contributors</div></div>"]), contextBar(context, state.viewId, runtime), navigation(context, state.viewId, runtime, 'workbench-nav', groups), menuSheet(context, state.viewId, runtime, groups), outlet);
         }
         /** The page area that changes from route to route: title, noscript notice and page surface. */
         function outletContentTemplate(model, runtime, body) {
@@ -2399,6 +2399,22 @@ var workbench;
             return appMount ? outletsByMount.get(appMount) || null : null;
         }
         views.outletOf = outletOf;
+        /**
+         * Take the current outlet out of the shell, so the next renderShell creates a new one; the router parks the
+         * old one while its page is kept alive (M11.3).
+         */
+        function detachOutlet(appMount) {
+            var outlet = outletOf(appMount);
+            outletsByMount.delete(appMount);
+            return outlet;
+        }
+        views.detachOutlet = detachOutlet;
+        /** Make outlet the shell's outlet again (a kept page shown again, M11.3). */
+        function attachOutlet(appMount, outlet) {
+            outletsByMount.set(appMount, outlet);
+            outletElements.add(outlet);
+        }
+        views.attachOutlet = attachOutlet;
         function prepareRowRegions(target, model) {
             var regions = rowRegionsByMount.get(target);
             if (model.rowStore && target.ownerDocument && target.ownerDocument.createElement) {

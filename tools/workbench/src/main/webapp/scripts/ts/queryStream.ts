@@ -2041,6 +2041,11 @@ namespace workbench {
             private columnWidthAppliedWidth = -1;
             private disposed = false;
             private disposers: (() => void)[] = [];
+            /** The window listeners this renderer added, so a kept-alive Query page can drop them (M11.3). */
+            private windowListeners: any[][] = [];
+            private suspended = false;
+            /** A layout asked for while suspended; done once the renderer is shown again. */
+            private renderDeferred = false;
             private batchState: QueryResultState = null;
             private batchStart = 0;
             private batchOffset = 0;
@@ -2219,8 +2224,7 @@ namespace workbench {
                             event.preventDefault();
                         }
                     };
-                    view.addEventListener('keydown', onFullscreenEscape, false);
-                    this.disposers.push(() => view.removeEventListener('keydown', onFullscreenEscape, false));
+                    this.listenWindow(view, 'keydown', onFullscreenEscape, false);
                 }
 
                 this.status = createElement(this.document, 'div', 'query-result-status');
@@ -2333,13 +2337,9 @@ namespace workbench {
                             this.scheduleRender();
                         }
                     };
-                    pageView.addEventListener('scroll', onPageScroll, { passive: true });
+                    this.listenWindow(pageView, 'scroll', onPageScroll, { passive: true });
                     this.installPageEndIntent(pageView);
-                    pageView.addEventListener('resize', onPageScroll, false);
-                    this.disposers.push(() => {
-                        pageView.removeEventListener('scroll', onPageScroll, { passive: true });
-                        pageView.removeEventListener('resize', onPageScroll, false);
-                    });
+                    this.listenWindow(pageView, 'resize', onPageScroll, false);
                 }
                 this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target,
                     enabled => this.setFullscreenPresentation(enabled)));
@@ -2508,6 +2508,33 @@ namespace workbench {
                     });
                 }
                 return this.render();
+            }
+
+            private listenWindow(view: any, type: string, handler: any, options: any): void {
+                view.addEventListener(type, handler, options);
+                this.windowListeners.push([view, type, handler, options]);
+                this.disposers.push(() => view.removeEventListener(type, handler, options));
+            }
+
+            /** Hidden while its Query page is kept alive (M11.3): stop listening to the window; rows keep arriving. */
+            suspend(): void {
+                if (this.suspended) {
+                    return;
+                }
+                this.suspended = true;
+                this.windowListeners.forEach((entry) => entry[0].removeEventListener(entry[1], entry[2], entry[3]));
+            }
+
+            resume(): void {
+                if (!this.suspended) {
+                    return;
+                }
+                this.suspended = false;
+                this.windowListeners.forEach((entry) => entry[0].addEventListener(entry[1], entry[2], entry[3]));
+                if (this.renderDeferred) {
+                    this.renderDeferred = false;
+                    this.renderAndReport();
+                }
             }
 
             private scheduleRender() {
@@ -3096,6 +3123,12 @@ namespace workbench {
 
             private render(): Promise<void> {
                 if (this.disposed) {
+                    return Promise.resolve();
+                }
+                // Hidden (kept alive, M11.3), the renderer would lay itself out at zero size and shorten the page;
+                // the rows wait in the row store until it is shown again.
+                if (this.suspended) {
+                    this.renderDeferred = true;
                     return Promise.resolve();
                 }
                 var generation = ++this.renderGeneration;
@@ -3964,16 +3997,10 @@ namespace workbench {
                         this.pageEndIntent = false;
                     }
                 };
-                view.addEventListener('keydown', onKey, false);
-                view.addEventListener('wheel', cancel, { passive: true });
-                view.addEventListener('touchstart', cancel, { passive: true });
-                view.addEventListener('mousedown', cancel, false);
-                this.disposers.push(() => {
-                    view.removeEventListener('keydown', onKey, false);
-                    view.removeEventListener('wheel', cancel, { passive: true });
-                    view.removeEventListener('touchstart', cancel, { passive: true });
-                    view.removeEventListener('mousedown', cancel, false);
-                });
+                this.listenWindow(view, 'keydown', onKey, false);
+                this.listenWindow(view, 'wheel', cancel, { passive: true });
+                this.listenWindow(view, 'touchstart', cancel, { passive: true });
+                this.listenWindow(view, 'mousedown', cancel, false);
             }
 
             private syncFloatingHeadScroll() {
@@ -4300,6 +4327,9 @@ namespace workbench {
             cancel(): boolean;
             /** Cancel the running query when the page is being left (one keepalive request). */
             cancelOnLeave?(): boolean;
+            /** Kept alive (M11.3): the result renderer stops and starts listening to the window. */
+            suspend?(): void;
+            resume?(): void;
             dispose(): void;
             hasActiveRequest(): boolean;
             changePageOffset(offset: number): boolean;
@@ -4714,6 +4744,16 @@ namespace workbench {
                 loadMore: loadMore,
                 cancel: () => cancel(true),
                 cancelOnLeave: () => cancel(true, true),
+                suspend: () => {
+                    if (renderer) {
+                        renderer.suspend();
+                    }
+                },
+                resume: () => {
+                    if (renderer) {
+                        renderer.resume();
+                    }
+                },
                 dispose: () => {
                     if (disposed) {
                         return;
@@ -4914,6 +4954,18 @@ namespace workbench {
                 return mountedController ? mountedController.cancelOnLeave() : false;
             }
 
+            export function suspend(): void {
+                if (mountedController) {
+                    mountedController.suspend();
+                }
+            }
+
+            export function resume(): void {
+                if (mountedController) {
+                    mountedController.resume();
+                }
+            }
+
             export function hasActiveRequest(): boolean {
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
@@ -4960,6 +5012,14 @@ namespace workbench {
 
         export function cancelExecutionOnLeave(): boolean {
             return queryStream.queryPage.cancelExecutionOnLeave();
+        }
+
+        export function suspend(): void {
+            queryStream.queryPage.suspend();
+        }
+
+        export function resume(): void {
+            queryStream.queryPage.resume();
         }
 
         export function hasActiveRequest(): boolean {

@@ -73,8 +73,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 21:36Z) M10.2 Saved-query Edit opens the Query page in place.
 - [x] (2026-10-01 22:02Z) M11.1 Load the graph renderer only when needed.
 - [x] (2026-10-01 22:04Z) M11.2 Prefetch route code.
-- [ ] M11.3 (in progress) Keep the Query route alive.
-- [ ] M12.1 Migrate tests that assumed full page loads.
+- [x] (2026-10-01 22:36Z) M11.3 Keep the Query route alive.
+- [ ] M12.1 (in progress) Migrate tests that assumed full page loads.
 - [ ] M12.2 Final review and retrospective.
 - [ ] M13.1 The menu starts at the top (user request).
 - [ ] M13.2 Clear counts asynchronously, with a 5 second budget (user request).
@@ -189,6 +189,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: the M7.1 RED/GREEN entries in `initial-evidence.txt`; `wb-spec` run of six bootstrap-related specs on the M7.1 jar (20 passed, 3 failed, all three on the baseline lists).
 - Observation (M7.2): two leaks a router would have hit. `template.ts` kept every installed `<details>` in `nativeDisclosureStates` forever, and Remove's live count (a 400 ms timer and a fetch) kept running after its page was left. The unit fakes needed jQuery event namespaces (`on('change.wbRoute')`, `off('.wbRoute')`) and per-type listener snapshots (`listenerCounts()`) to test mount, dispose and mount again. The coverage gate counts the module wrappers tsc writes (`workbench.x || (workbench.x = {})` and the outer `workbench || ...`) as branches, so a script that gains a `module` also needs a test that evaluates it in an empty global and a second time.
   Evidence: the M7.2 RED/GREEN entries in `initial-evidence.txt`.
+- Observation (M11.3): a hidden page still lays itself out. The kept result renderer kept receiving rows and measured its rows at zero width inside `#workbench-kept-alive`, so Back showed row 70 instead of the row left (194); `render()` now only marks itself deferred while suspended and `resume()` renders once. In WebKit, the browser test's own `scrollTo` was undone by the result card's smooth reveal (`revealResults`, M3.2), which was still animating when the test scrolled; Chromium and Firefox stop that animation on a programmatic scroll. The test now emulates reduced motion, which makes the reveal instant; a person's own wheel or key input stops the animation in WebKit too.
+  Evidence: the M11.3 RED/GREEN entries in `initial-evidence.txt`.
 
 ## Decision Log
 
@@ -350,6 +352,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Rationale: almost 2 MB less on every Query visit; DOT explanations are rare.
   Date/Author: 2026-10-02 / implementer.
 - Decision (M6.6): Delete starts with "Choose a repository" (empty, disabled) selected unless `?id=<id>` names one, and its button ("Delete repository…") stays disabled until a repository is chosen. Every deletion now asks for the typed id in `confirmDialog` ("Delete repository <id>?"); a proxied repository adds its warning to the same dialog. The safety check and the POST are unchanged. The dialog's input carries `data-workbench-confirm-text`, which the unit harness uses to type the text before confirming.
+- Decision (M11.3): the router keeps the shown route's record (`url`, view, repository, history key, instance and model) and, when the Query route is left for another view, parks its outlet in `#workbench-kept-alive` (the outlet loses its id while parked) and calls `instance.suspend()` instead of disposing it. Opening the same Query URL again (a link, the menu or Back, without a form body) moves the outlet back, calls `resume()`, rebinds the context bar and restores the scroll position; no page model is loaded and nothing is executed. Another repository's Query page, a second kept route, `pagehide` and a form answer dispose the kept instance first. Suspending removes the Query page's document handlers (the `.wbQuery` jQuery namespace and the click/keydown listeners) and the compare chrome, and the renderer's window listeners (now registered through one `listenWindow` registry); the renderer keeps its row store and its running execution and defers layout until resume. The kept and the shown outlet both have `#title_heading`, `#noscript-message` and `#workbench-page-surface`; the kept container follows `<main>` in the shell, so `getElementById` finds the shown page's, and a unit test checks that no other route renders an id of the Query page.
+  Rationale: a running query keeps streaming while another page is shown, which is the first half of the user's background-query request (M13.5 adds the running indicator and the per-repository restore); the Query page is the only route whose state is expensive to rebuild.
+  Date/Author: 2026-10-02 / implementer.
 
 ## Outcomes & Retrospective
 

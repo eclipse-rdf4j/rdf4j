@@ -4383,8 +4383,48 @@ module workbench {
                 });
             }
 
-            window.addEventListener('pagehide', resetResultArea, false);
-            window.addEventListener('pageshow', resetResultArea, false);
+            var onDocumentClick = function(event: any) {
+                if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+                    && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
+                    setExplanationSettingsOpen(false);
+                }
+            };
+            var onDocumentKeydown = function(event: any) {
+                if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
+                    handleDiffModalTab(event);
+                    return;
+                }
+                if (event.key === 'Escape' && isResultsFullscreen()) {
+                    toggleResultsFullscreen();
+                    event.preventDefault();
+                    return;
+                }
+                if (event.key === 'Escape'
+                    && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+                    setExplanationSettingsOpen(false);
+                    var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
+                    if (settingsToggle) {
+                        settingsToggle.focus();
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
+                    closeDiffModal();
+                }
+            };
+            /** The page's window and document listeners, dropped while the page is kept alive (M11.3). */
+            function listen() {
+                window.addEventListener('pagehide', resetResultArea, false);
+                window.addEventListener('pageshow', resetResultArea, false);
+                $(document).on('click.wbQuery', onDocumentClick);
+                $(document).on('keydown.wbQuery', onDocumentKeydown);
+            }
+            function unlisten() {
+                window.removeEventListener('pagehide', resetResultArea, false);
+                window.removeEventListener('pageshow', resetResultArea, false);
+                $(document).off('.wbQuery');
+            }
+            listen();
 
             // Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
             // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).
@@ -4480,12 +4520,6 @@ module workbench {
             on('#explanation-highlight-hotspot', 'click', function() {
                 setExplanationHighlightMode('hotspot');
             });
-            $(document).on('click.wbQuery', function(event) {
-                if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
-                    && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
-                    setExplanationSettingsOpen(false);
-                }
-            });
             on('#explanation-properties-all', 'click', function() {
                 setAllExplanationPropertiesVisible(true);
             });
@@ -4520,39 +4554,14 @@ module workbench {
                     closeDiffModal();
                 }
             });
-            $(document).on('keydown.wbQuery', function(event) {
-                if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
-                    handleDiffModalTab(event);
-                    return;
-                }
-                if (event.key === 'Escape' && isResultsFullscreen()) {
-                    toggleResultsFullscreen();
-                    event.preventDefault();
-                    return;
-                }
-                if (event.key === 'Escape'
-                    && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
-                    setExplanationSettingsOpen(false);
-                    var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
-                    if (settingsToggle) {
-                        settingsToggle.focus();
-                    }
-                    return;
-                }
-                if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
-                    closeDiffModal();
-                }
-            });
-
             // Detect if there is no current authenticated user, and if so, disable the 'save privately' option.
             if ($('#selected-user>span').is('.disabled')) {
                 page.find('#save-private').prop('checked', false).prop('disabled', true);
             }
 
-            return function() {
-                window.removeEventListener('pagehide', resetResultArea, false);
-                window.removeEventListener('pageshow', resetResultArea, false);
-                $(document).off('.wbQuery');
+            var suspended = false;
+            var cleanup: any = function() {
+                unlisten();
                 bound.forEach(function(element) {
                     element.off('.wbQuery');
                 });
@@ -4565,6 +4574,23 @@ module workbench {
                 });
                 resetState();
             };
+            // Kept alive (M11.3): hidden, the page listens to nothing outside itself and compare mode leaves the
+            // page shown instead alone; the editors, results and a running query stay as they are.
+            cleanup.suspend = function() {
+                if (!suspended) {
+                    suspended = true;
+                    unlisten();
+                    releaseCompareChrome();
+                }
+            };
+            cleanup.resume = function() {
+                if (suspended) {
+                    suspended = false;
+                    listen();
+                    syncCompareSidebarState();
+                }
+            };
+            return cleanup;
         }
 
         /**

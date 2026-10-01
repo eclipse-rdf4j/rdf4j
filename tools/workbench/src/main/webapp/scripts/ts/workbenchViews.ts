@@ -749,6 +749,7 @@ module workbench {
             ${menuSheet(context, state.viewId, runtime, groups)}
             <main id="content" class="workbench-main">${outlet}</main>
             <p id="workbench-route-status" class="workbench-visually-hidden" role="status" aria-live="polite"></p>
+            <div id="workbench-kept-alive" hidden inert></div>
             <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
         }
 
@@ -3438,6 +3439,22 @@ module workbench {
         /** The outlet element that renderShell placed inside an application mount, if any. */
         export function outletOf(appMount: any): Element | null {
             return appMount ? outletsByMount.get(appMount) || null : null;
+        }
+
+        /**
+         * Take the current outlet out of the shell, so the next renderShell creates a new one; the router parks the
+         * old one while its page is kept alive (M11.3).
+         */
+        export function detachOutlet(appMount: any): Element | null {
+            const outlet = outletOf(appMount);
+            outletsByMount.delete(appMount);
+            return outlet;
+        }
+
+        /** Make outlet the shell's outlet again (a kept page shown again, M11.3). */
+        export function attachOutlet(appMount: any, outlet: Element): void {
+            outletsByMount.set(appMount, outlet);
+            outletElements.add(outlet);
         }
 
         function prepareRowRegions(target: any, model: PageModel): RowRegions {

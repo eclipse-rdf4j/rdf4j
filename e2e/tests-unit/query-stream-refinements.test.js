@@ -1923,3 +1923,28 @@ test('cells show language badges, datatype tags and right-aligned numbers, and h
     assert.equal(hidden[2].querySelector('.rdf-datatype'), null, 'Show datatypes off hides the tags');
     renderer.dispose();
 });
+
+// Plan task M11.3: a renderer that is hidden in #workbench-kept-alive keeps its layout until it is shown again.
+test('a suspended result renderer takes rows but does not lay itself out until it is resumed', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    // renderGeneration counts the layouts the renderer actually makes.
+    const layouts = renderer.renderGeneration;
+
+    renderer.suspend();
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'one' }], [{ kind: 'literal', value: 'two' }]] });
+    await renderer.accept({ type: 'end', metadata: {} });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(renderer.renderGeneration, layouts, 'nothing is laid out while hidden');
+
+    renderer.resume();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(renderer.renderGeneration, layouts + 1, 'one layout once it is shown again');
+    renderer.dispose();
+});

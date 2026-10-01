@@ -745,12 +745,17 @@ function queryRouteHarness(state) {
         cancelExecutionOnLeave() {
             log.push('cancel on leave');
             return true;
-        }
+        },
+        suspend() { log.push('renderer suspended'); },
+        resume() { log.push('renderer resumed'); }
     };
     harness.workbench.query = {
         mountQueryPage(outlet) {
             log.push('mount query page');
-            return () => log.push('query page disposed');
+            const cleanup = () => log.push('query page disposed');
+            cleanup.suspend = () => log.push('query page suspended');
+            cleanup.resume = () => log.push('query page resumed');
+            return cleanup;
         }
     };
     harness.workbench.app = {
@@ -885,4 +890,109 @@ test('the Query page model of a saved query\'s Edit has its row read, so the edi
 
     const empty = { viewId: 'query', rowCount: 0, rowStore: { read: async () => { throw new Error('not read'); } } };
     await workbench.app.prepareInitialRows(empty);
+});
+
+// Plan task M11.3: the kept-alive Query page.
+
+function templateText(template) {
+    if (Array.isArray(template)) {
+        return template.map(templateText).join('');
+    }
+    if (template && Array.isArray(template.strings)) {
+        return template.strings.reduce((result, fragment, index) => result + fragment
+            + (index < template.values.length ? templateText(template.values[index]) : ''), '');
+    }
+    return template === null || template === undefined || typeof template === 'object' ? '' : String(template);
+}
+
+test('no page but Query renders the element ids the kept Query page keeps', () => {
+    const workbench = loadWorkbench();
+    const idsOf = (viewId) => {
+        const mount = {};
+        const model = { viewId, vars: [], rows: [], rowStart: 0, rowCount: 0, rowTopSpacer: 0, rowBottomSpacer: 0,
+            rowStore: null, namespaceMap: {}, links: [], metadata: {}, pickerRows: [], pickerStart: 0, pickerPageSize: 50 };
+        workbench.views.render(mount, model, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} },
+            fakeRuntime());
+        return new Set(Array.from(templateText(mount.template).matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
+    };
+    const others = ['summary', 'information', 'repositories', 'delete', 'namespaces', 'contexts', 'types', 'explore',
+        'saved-queries', 'export', 'add', 'remove', 'clear', 'update', 'server', 'create']
+        .map((viewId) => ({ viewId, ids: idsOf(viewId) }));
+    // The shell and the outlet's title, notice and surface are on every page; the rest belong to the Query page.
+    const own = Array.from(idsOf('query')).filter((id) => !others.every((other) => other.ids.has(id)));
+    for (const id of ['query-page-content', 'query-form', 'query', 'exec', 'query-output', 'query-results']) {
+        assert.ok(own.includes(id), `the Query page renders #${id}`);
+    }
+    for (const { viewId, ids } of others) {
+        assert.deepEqual(own.filter((id) => ids.has(id)), [], `${viewId} renders ids of the Query page`);
+    }
+});
+
+test('the shell has a hidden, inert place for a kept page', () => {
+    const workbench = loadWorkbench();
+    const mount = {};
+    workbench.views.render(mount, { viewId: 'summary', vars: [], rows: [], rowCount: 0, metadata: {}, links: [],
+        namespaceMap: {} }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime());
+
+    const markup = templateText(mount.template);
+    assert.match(markup, /<div id="workbench-kept-alive" hidden inert><\/div>/);
+    // Both outlets have a title and a page surface with the same ids; the shown one comes first in the document.
+    assert.ok(markup.indexOf('id="content"') < markup.indexOf('id="workbench-kept-alive"'),
+        'the kept page follows the shown page');
+});
+
+test('an outlet can be taken out of the shell and put back', () => {
+    const workbench = loadWorkbench();
+    const created = [];
+    const document = { createElement() {
+        const element = { attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+        created.push(element);
+        return element;
+    } };
+    const mount = { ownerDocument: document };
+    const runtime = fakeRuntime();
+    const outlet = workbench.views.renderShell(mount, { viewId: 'summary', context: { basePath: '/workbench' } },
+        runtime);
+    assert.equal(workbench.views.outletOf(mount), outlet);
+
+    assert.equal(workbench.views.detachOutlet(mount), outlet);
+    const next = workbench.views.renderShell(mount, { viewId: 'types', context: { basePath: '/workbench' } }, runtime);
+    assert.notEqual(next, outlet, 'the next page gets a new outlet');
+    workbench.views.attachOutlet(mount, outlet);
+    assert.equal(workbench.views.outletOf(mount), outlet);
+    assert.equal(workbench.views.renderShell(mount, { viewId: 'query', context: { basePath: '/workbench' } }, runtime),
+        outlet, 'and the shell renders the outlet put back');
+});
+
+test('the Query route is kept alive: it suspends and resumes its page and its renderer', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+    const definition = harness.workbench.routes.get('query');
+    assert.equal(definition.keepAlive, true);
+
+    const instance = definition.mount(harness.ctx);
+    await instance.ready;
+    harness.log.length = 0;
+    instance.suspend();
+    instance.resume();
+
+    assert.deepEqual(harness.log, ['query page suspended', 'renderer suspended', 'renderer resumed',
+        'query page resumed'], 'a running query keeps running while the page is suspended');
+    instance.dispose('navigate');
+});
+
+test('routes whose parts cannot be suspended suspend and resume without effect', async () => {
+    const harness = queryRouteHarness({ rendered: true });
+    delete harness.workbench.queryPage.suspend;
+    delete harness.workbench.queryPage.resume;
+    harness.workbench.query.mountQueryPage = () => () => {};
+    const instance = harness.workbench.routes.get('query').mount(harness.ctx);
+    await instance.ready;
+    instance.suspend();
+    instance.resume();
+    const summary = harness.workbench.routes.get('summary').mount(Object.assign({}, harness.ctx, { model: { viewId: 'summary' } }));
+    await summary.ready;
+    summary.suspend();
+    summary.resume();
+    instance.dispose('navigate');
+    summary.dispose('navigate');
 });

@@ -915,3 +915,26 @@ test('disposing the Query page undoes compare mode, stops pending explanations a
     assert.equal(compareEditor.closed, true);
     assert.deepEqual(released.sort(), ['query-compare-editor-resize', 'query-editor-resize']);
 });
+
+// Plan task M11.3: a kept-alive Query page drops its window and document listeners while it is hidden.
+test('a suspended Query page has no window or document listeners, and gets them back on resume', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runLoadHandlers();
+    const snapshot = () => JSON.parse(JSON.stringify({
+        window: harness.window.listenerCounts(), document: harness.document.listenerCounts()
+    }));
+    const beforeMount = snapshot();
+    const cleanup = harness.context.workbench.query.mountQueryPage(harness.document.body);
+    harness.context.workbench.query.toggleCompareMode();
+    const mounted = snapshot();
+
+    cleanup.suspend();
+    assert.deepEqual(snapshot(), beforeMount, 'nothing listens while the page is hidden');
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), false,
+        'compare mode does not change the page shown instead');
+    cleanup.resume();
+    assert.deepEqual(snapshot(), mounted);
+    assert.equal(harness.document.body.classList.contains('query-compare-mode'), true);
+    assert.notEqual(harness.yasqeState.instances.query.closed, true, 'the editor stays open');
+    cleanup();
+});

@@ -107,6 +107,12 @@ var workbench;
                         disposed = true;
                         cleanups.splice(0).reverse().forEach(function (cleanup) { return cleanup(reason); });
                         base.dispose(reason);
+                    },
+                    suspend: function () {
+                        cleanups.slice().reverse().forEach(function (cleanup) { return cleanup.suspend && cleanup.suspend(); });
+                    },
+                    resume: function () {
+                        cleanups.forEach(function (cleanup) { return cleanup.resume && cleanup.resume(); });
                     }
                 };
             };
@@ -162,7 +168,7 @@ var workbench;
             }
             // A running query is cancelled before anything is torn down (M9.2); a page that is going away sends
             // one keepalive request, because the retrying request would not outlive it.
-            return function (reason) {
+            var cleanup = function (reason) {
                 if (renderer) {
                     if (reason === 'pagehide') {
                         renderer.cancelExecutionOnLeave();
@@ -174,12 +180,31 @@ var workbench;
                 unmount();
                 disposeRenderer();
             };
+            // Kept alive (M11.3), the page drops its window and document listeners; a running query keeps running.
+            cleanup.suspend = function () {
+                if (unmount.suspend) {
+                    unmount.suspend();
+                }
+                if (renderer && renderer.suspend) {
+                    renderer.suspend();
+                }
+            };
+            cleanup.resume = function () {
+                if (renderer && renderer.resume) {
+                    renderer.resume();
+                }
+                if (unmount.resume) {
+                    unmount.resume();
+                }
+            };
+            return cleanup;
         }
         /** A route whose script list does not depend on its model. */
-        function staticRoute(viewId, names, mount) {
+        function staticRoute(viewId, names, mount, keepAlive) {
             return {
                 viewId: viewId,
                 routerReady: true,
+                keepAlive: !!keepAlive,
                 scripts: function () { return names.slice(); },
                 baseScripts: function () { return names.slice(); },
                 mount: mount
@@ -201,7 +226,7 @@ var workbench;
         // shown (M11.1).
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
-            'query.js'], routeMount(mountQuery)));
+            'query.js'], routeMount(mountQuery), true));
         var createRoute = {
             viewId: 'create',
             routerReady: true,

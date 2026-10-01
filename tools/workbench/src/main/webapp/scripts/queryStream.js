@@ -1800,6 +1800,11 @@ var workbench;
                 this.columnWidthAppliedWidth = -1;
                 this.disposed = false;
                 this.disposers = [];
+                /** The window listeners this renderer added, so a kept-alive Query page can drop them (M11.3). */
+                this.windowListeners = [];
+                this.suspended = false;
+                /** A layout asked for while suspended; done once the renderer is shown again. */
+                this.renderDeferred = false;
                 this.batchState = null;
                 this.batchStart = 0;
                 this.batchOffset = 0;
@@ -1960,8 +1965,7 @@ var workbench;
                             event.preventDefault();
                         }
                     };
-                    view.addEventListener('keydown', onFullscreenEscape, false);
-                    this.disposers.push(function () { return view.removeEventListener('keydown', onFullscreenEscape, false); });
+                    this.listenWindow(view, 'keydown', onFullscreenEscape, false);
                 }
                 this.status = createElement(this.document, 'div', 'query-result-status');
                 this.status.setAttribute('role', 'status');
@@ -2068,13 +2072,9 @@ var workbench;
                             _this.scheduleRender();
                         }
                     };
-                    pageView.addEventListener('scroll', onPageScroll, { passive: true });
+                    this.listenWindow(pageView, 'scroll', onPageScroll, { passive: true });
                     this.installPageEndIntent(pageView);
-                    pageView.addEventListener('resize', onPageScroll, false);
-                    this.disposers.push(function () {
-                        pageView.removeEventListener('scroll', onPageScroll, { passive: true });
-                        pageView.removeEventListener('resize', onPageScroll, false);
-                    });
+                    this.listenWindow(pageView, 'resize', onPageScroll, false);
                 }
                 this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target, function (enabled) { return _this.setFullscreenPresentation(enabled); }));
                 this.installAutoLayoutObserver();
@@ -2247,6 +2247,30 @@ var workbench;
                     });
                 }
                 return this.render();
+            };
+            QueryResultRenderer.prototype.listenWindow = function (view, type, handler, options) {
+                view.addEventListener(type, handler, options);
+                this.windowListeners.push([view, type, handler, options]);
+                this.disposers.push(function () { return view.removeEventListener(type, handler, options); });
+            };
+            /** Hidden while its Query page is kept alive (M11.3): stop listening to the window; rows keep arriving. */
+            QueryResultRenderer.prototype.suspend = function () {
+                if (this.suspended) {
+                    return;
+                }
+                this.suspended = true;
+                this.windowListeners.forEach(function (entry) { return entry[0].removeEventListener(entry[1], entry[2], entry[3]); });
+            };
+            QueryResultRenderer.prototype.resume = function () {
+                if (!this.suspended) {
+                    return;
+                }
+                this.suspended = false;
+                this.windowListeners.forEach(function (entry) { return entry[0].addEventListener(entry[1], entry[2], entry[3]); });
+                if (this.renderDeferred) {
+                    this.renderDeferred = false;
+                    this.renderAndReport();
+                }
             };
             QueryResultRenderer.prototype.scheduleRender = function () {
                 var _this = this;
@@ -2811,6 +2835,12 @@ var workbench;
             QueryResultRenderer.prototype.render = function () {
                 var _this = this;
                 if (this.disposed) {
+                    return Promise.resolve();
+                }
+                // Hidden (kept alive, M11.3), the renderer would lay itself out at zero size and shorten the page;
+                // the rows wait in the row store until it is shown again.
+                if (this.suspended) {
+                    this.renderDeferred = true;
                     return Promise.resolve();
                 }
                 var generation = ++this.renderGeneration;
@@ -3660,16 +3690,10 @@ var workbench;
                         _this.pageEndIntent = false;
                     }
                 };
-                view.addEventListener('keydown', onKey, false);
-                view.addEventListener('wheel', cancel, { passive: true });
-                view.addEventListener('touchstart', cancel, { passive: true });
-                view.addEventListener('mousedown', cancel, false);
-                this.disposers.push(function () {
-                    view.removeEventListener('keydown', onKey, false);
-                    view.removeEventListener('wheel', cancel, { passive: true });
-                    view.removeEventListener('touchstart', cancel, { passive: true });
-                    view.removeEventListener('mousedown', cancel, false);
-                });
+                this.listenWindow(view, 'keydown', onKey, false);
+                this.listenWindow(view, 'wheel', cancel, { passive: true });
+                this.listenWindow(view, 'touchstart', cancel, { passive: true });
+                this.listenWindow(view, 'mousedown', cancel, false);
             };
             QueryResultRenderer.prototype.syncFloatingHeadScroll = function () {
                 if (this.floatingViewport && !this.floatingHead.hidden) {
@@ -4353,6 +4377,16 @@ var workbench;
                 loadMore: loadMore,
                 cancel: function () { return cancel(true); },
                 cancelOnLeave: function () { return cancel(true, true); },
+                suspend: function () {
+                    if (renderer) {
+                        renderer.suspend();
+                    }
+                },
+                resume: function () {
+                    if (renderer) {
+                        renderer.resume();
+                    }
+                },
                 dispose: function () {
                     if (disposed) {
                         return;
@@ -4551,6 +4585,18 @@ var workbench;
                 return mountedController ? mountedController.cancelOnLeave() : false;
             }
             queryPage.cancelExecutionOnLeave = cancelExecutionOnLeave;
+            function suspend() {
+                if (mountedController) {
+                    mountedController.suspend();
+                }
+            }
+            queryPage.suspend = suspend;
+            function resume() {
+                if (mountedController) {
+                    mountedController.resume();
+                }
+            }
+            queryPage.resume = resume;
             function hasActiveRequest() {
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
@@ -4600,6 +4646,14 @@ var workbench;
             return queryStream.queryPage.cancelExecutionOnLeave();
         }
         queryPage.cancelExecutionOnLeave = cancelExecutionOnLeave;
+        function suspend() {
+            queryStream.queryPage.suspend();
+        }
+        queryPage.suspend = suspend;
+        function resume() {
+            queryStream.queryPage.resume();
+        }
+        queryPage.resume = resume;
         function hasActiveRequest() {
             return queryStream.queryPage.hasActiveRequest();
         }

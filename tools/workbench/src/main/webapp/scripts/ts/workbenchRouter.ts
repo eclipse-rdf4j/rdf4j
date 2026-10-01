@@ -59,8 +59,19 @@ module workbench {
         let keyCounter = 0;
         /** The scroll position each history entry (by its wbKey) was left at. */
         const positions: { [key: string]: number } = {};
-        let currentRoute: { url: string; viewId: string; repositoryId: string; key: string;
-            instance: routes.RouteInstance } = null;
+        interface ShownRoute {
+            url: string;
+            viewId: string;
+            repositoryId: string;
+            key: string;
+            instance: routes.RouteInstance;
+            model?: any;
+            context?: any;
+        }
+
+        let currentRoute: ShownRoute = null;
+        /** The keep-alive route (Query) parked in #workbench-kept-alive while another page is shown (M11.3). */
+        let kept: { route: ShownRoute; outlet: any; scrollY: number } = null;
         /** The navigation (its generation) that is uploading a file, or 0. */
         let uploading = 0;
         /** How long the pointer or focus must stay on a link before its route's scripts load (M11.2). */
@@ -336,7 +347,103 @@ module workbench {
         function onPageHide(event: any): void {
             if (!event.persisted) {
                 currentRoute.instance.dispose('pagehide');
+                disposeKept('pagehide');
             }
+        }
+
+        function keptContainer(): any {
+            return (window as any).document.getElementById('workbench-kept-alive');
+        }
+
+        function disposeKept(reason: 'navigate' | 'pagehide'): void {
+            if (!kept) {
+                return;
+            }
+            const parked = kept;
+            kept = null;
+            keptContainer().removeChild(parked.outlet);
+            parked.route.instance.dispose(reason);
+        }
+
+        /**
+         * Leave the route that is shown for a page of view nextViewId: a keep-alive route (Query) is suspended and
+         * its outlet taken out of the shell, to be parked once the next page is rendered; any other route, and a
+         * keep-alive route followed by another page of its own kind, is disposed (one Query page at a time).
+         */
+        function leaveCurrent(nextViewId: string): any {
+            const definition = routes.get(currentRoute.viewId);
+            const instance = currentRoute.instance;
+            if (!definition || !definition.keepAlive || typeof instance.suspend !== 'function'
+                    || nextViewId === currentRoute.viewId) {
+                instance.dispose('navigate');
+                return null;
+            }
+            disposeKept('navigate');
+            instance.suspend();
+            const route = currentRoute;
+            route.context = route.context || app().viewContext(session.mount, route.model, route.url, session.runtime);
+            kept = { route, outlet: views().detachOutlet(session.mount), scrollY: (window as any).scrollY };
+            return kept.outlet;
+        }
+
+        /** Show the kept route again, as it was left: no page model, no new mount (M11.3). */
+        function restoreKept(url: URL, options: NavigateOptions): Outcome {
+            const windowObject: any = window;
+            const history = windowObject.history;
+            ++generation;
+            if (controller) {
+                controller.abort();
+            }
+            positions[currentRoute.key] = windowObject.scrollY;
+            if (options.history !== 'none') {
+                history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
+            }
+            currentRoute.instance.dispose('navigate');
+            const restored = kept;
+            kept = null;
+            keptContainer().removeChild(restored.outlet);
+            restored.outlet.setAttribute('id', 'workbench-outlet');
+            views().attachOutlet(session.mount, restored.outlet);
+            const entry = enterHistory(url, options);
+            app().configureNamespaces(restored.route.model);
+            views().renderShell(session.mount, { viewId: restored.route.viewId, context: restored.route.context },
+                session.runtime);
+            rebindContextBar(restored.route.context);
+            currentRoute = Object.assign({}, restored.route, { url: url.href, key: entry.key });
+            markRoute(currentRoute.viewId, true);
+            restored.route.instance.resume();
+            const scrollTo = options.history === 'none' ? entry.restoreTo : restored.scrollY;
+            afterTwoFrames(() => windowObject.scrollTo(0, scrollTo));
+            announce();
+            return 'committed';
+        }
+
+        function rebindContextBar(context: any): void {
+            if (session.contextBar) {
+                session.contextBar();
+            }
+            session.contextBar = views().bindContextBar(session.mount, context);
+        }
+
+        /** Record the page being shown in history; for Back and Forward, find where it was left. */
+        function enterHistory(url: URL, options: NavigateOptions): { key: string; restoreTo: number } {
+            const history = (window as any).history;
+            let key = newKey();
+            let restoreTo = 0;
+            if (options.history === 'push') {
+                history.pushState({ wbKey: key, scrollY: 0 }, '', url.href);
+            } else if (options.history === 'replace') {
+                history.replaceState({ wbKey: key, scrollY: 0 }, '', url.href);
+            } else {
+                const state = history.state || {};
+                if (state.wbKey) {
+                    key = state.wbKey;
+                } else {
+                    history.replaceState(Object.assign({}, state, { wbKey: key }), '');
+                }
+                restoreTo = key in positions ? positions[key] : state.scrollY || 0;
+            }
+            return { key, restoreTo };
         }
 
         /**
@@ -360,7 +467,7 @@ module workbench {
                 history.replaceState(Object.assign({}, history.state, { wbKey: key }), '');
             }
             currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url), key,
-                instance: started.instance };
+                instance: started.instance, model: started.model };
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
             windowObject.document.addEventListener('submit', onSubmit, false);
@@ -387,6 +494,9 @@ module workbench {
             if (!definition || !definition.routerReady) {
                 windowObject.location.assign(target.href);
                 return Promise.resolve<Outcome>('fallback');
+            }
+            if (kept && !options.body && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
+                return Promise.resolve(restoreKept(target, options));
             }
             const mine = ++generation;
             if (controller) {
@@ -476,22 +586,14 @@ module workbench {
                 // The current entry still belongs to the page being left (after Back it already does not).
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
-            currentRoute.instance.dispose('navigate');
-            let key = newKey();
-            let restoreTo = 0;
-            if (options.history === 'push') {
-                history.pushState({ wbKey: key, scrollY: 0 }, '', url.href);
-            } else if (options.history === 'replace') {
-                history.replaceState({ wbKey: key, scrollY: 0 }, '', url.href);
-            } else {
-                const state = history.state || {};
-                if (state.wbKey) {
-                    key = state.wbKey;
-                } else {
-                    history.replaceState(Object.assign({}, state, { wbKey: key }), '');
-                }
-                restoreTo = key in positions ? positions[key] : state.scrollY || 0;
+            const parked = leaveCurrent(viewIdOf(url));
+            if (kept && kept.route.viewId === viewIdOf(url)) {
+                // Another page of the kept kind (a different Query URL) starts afresh.
+                disposeKept('navigate');
             }
+            const entry = enterHistory(url, options);
+            const key = entry.key;
+            const restoreTo = entry.restoreTo;
             if (!model.error) {
                 app().configureNamespaces(model);
             }
@@ -500,16 +602,18 @@ module workbench {
             session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
             const context = app().viewContext(session.mount, model, url.href, session.runtime);
             views().render(session.mount, model, context, session.runtime);
-            if (session.contextBar) {
-                session.contextBar();
+            if (parked) {
+                // The kept page's outlet waits, hidden and inert, without the id that belongs to the page shown.
+                parked.removeAttribute('id');
+                keptContainer().appendChild(parked);
             }
-            session.contextBar = views().bindContextBar(session.mount, context);
+            rebindContextBar(context);
             if (options.history !== 'none') {
                 windowObject.scrollTo(0, 0);
             }
             const viewId = viewIdOf(url);
             currentRoute = { url: url.href, viewId, repositoryId: repositoryIdOf(url), key,
-                instance: { dispose() {} } };
+                instance: { dispose() {} }, model, context };
             markRoute(viewId, false);
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
             const mounted = model.error ? { dispose: () => model.rowStore.dispose() }

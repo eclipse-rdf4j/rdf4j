@@ -266,9 +266,10 @@ test('switching between Query and Summary keeps one editor and one result render
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 });
 
-// Plan task M9.2: leaving the Query page while a query runs cancels it on the server.
+// Plan task M9.2, as changed by M11.3 and the user's request M13.5: a query keeps running while other pages are
+// shown; it is cancelled when the tab is left (unit tests) or on Cancel.
 
-test('leaving the Query page while a query runs cancels it on the server', async ({ page }) => {
+test('a query keeps running while another page is shown, and its results are there on return', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await openRoute(page, 'query');
 	const cancels = [];
@@ -280,19 +281,23 @@ test('leaving the Query page while a query runs cancels it on the server', async
 	await page.route((url) => url.pathname.endsWith(`/repositories/${REPOSITORY_ID}/query`), async (route) => {
 		const request = route.request();
 		if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
-			await new Promise((resolve) => setTimeout(resolve, 3000));
+			await new Promise((resolve) => setTimeout(resolve, 2000));
 		}
 		await route.continue().catch(() => {});
 	});
-	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o }'));
+	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 3'));
 	await page.locator('#exec').click();
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'true');
 
 	await menuLink(page, 'Summary').click();
-
 	await expectRoute(page, 'summary');
-	await expect.poll(() => cancels.length).toBeGreaterThan(0);
-	expect(cancels[0]).toMatch(/query-request-id=[^&]+/);
+	await page.waitForTimeout(2500);
+	expect(cancels).toEqual([]);
+	await menuLink(page, 'Query').click();
+
+	await expectRoute(page, 'query');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.locator('#query-results .query-result-status')).toContainText('3 rows');
 });
 
 // Plan task M10.1: forms are sent through the router.
@@ -446,4 +451,54 @@ test('hovering the Query menu link loads the Query page script before any click'
 
 	await expect.poll(() => scripts.length).toBe(1);
 	await expect(page).toHaveURL(new RegExp('/summary$'));
+});
+
+// Plan task M11.3: the Query page is kept alive while another page is shown.
+test('Back to the Query page shows the results where they were left, without running the query again', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	// The result card's reveal is otherwise a smooth scroll that WebKit keeps animating over the scroll below.
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await openRoute(page, 'query');
+	const values = Array.from({ length: 400 }, (_, index) => String(index)).join(' ');
+	const text = `SELECT ?item WHERE { VALUES ?item { ${values} } }`;
+	await page.locator('.CodeMirror').first().evaluate((element, query) => element.CodeMirror.setValue(query), text);
+	await page.locator('#exec').click();
+	await expect(page.locator('#query-results .query-result-status')).toContainText('400 rows');
+	// The table renders a window of rows that it reuses, so compare the first row fully in view instead.
+	const visibleRow = () => page.evaluate(() => {
+		const rows = Array.from(document.querySelectorAll('#query-results tbody tr[data-query-row-index]'));
+		const shown = rows.find((element) => {
+			const box = element.getBoundingClientRect();
+			return box.top >= 80 && box.bottom <= window.innerHeight;
+		});
+		return shown ? Number(shown.getAttribute('data-query-row-index')) : null;
+	});
+	await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+	await expect.poll(visibleRow).toBeGreaterThan(100);
+	const left = await visibleRow();
+	const executions = [];
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+			executions.push(request.url());
+		}
+	});
+
+	await menuLink(page, 'Summary').click();
+	await expectRoute(page, 'summary');
+	await page.goBack();
+	await expectRoute(page, 'query');
+
+	await expect.poll(visibleRow).toBe(left);
+	expect(await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.getValue())).toBe(text);
+	expect(executions).toEqual([]);
+	for (let round = 0; round < 10; round++) {
+		await menuLink(page, 'Summary').click();
+		await expectRoute(page, 'summary');
+		expect(await page.locator('#workbench-kept-alive > *').count()).toBeLessThanOrEqual(1);
+		await page.goBack();
+		await expectRoute(page, 'query');
+	}
+	expect(await page.locator('#workbench-kept-alive > *').count()).toBe(0);
+	expect(await page.locator('.CodeMirror').count()).toBe(1);
+	expect(executions).toEqual([]);
 });

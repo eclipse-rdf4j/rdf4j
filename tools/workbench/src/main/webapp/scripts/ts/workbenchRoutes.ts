@@ -145,13 +145,26 @@ module workbench {
                         disposed = true;
                         cleanups.splice(0).reverse().forEach((cleanup) => cleanup(reason));
                         base.dispose(reason);
+                    },
+                    suspend(): void {
+                        cleanups.slice().reverse().forEach((cleanup) => cleanup.suspend && cleanup.suspend());
+                    },
+                    resume(): void {
+                        cleanups.forEach((cleanup) => cleanup.resume && cleanup.resume());
                     }
                 };
             };
         }
 
-        /** Undoes what a route's mount did; it is told why the route is left. */
-        type RouteCleanup = (reason?: 'navigate' | 'pagehide') => void;
+        /**
+         * Undoes what a route's mount did; it is told why the route is left. A kept-alive route's cleanup may also
+         * suspend and resume what it mounted (M11.3).
+         */
+        interface RouteCleanup {
+            (reason?: 'navigate' | 'pagehide'): void;
+            suspend?: () => void;
+            resume?: () => void;
+        }
 
         /** The mount function a route script exports (workbench.<name>.mount). */
         function scriptMount(name: string): (ctx: RouteMountContext) => () => void {
@@ -202,7 +215,7 @@ module workbench {
             }
             // A running query is cancelled before anything is torn down (M9.2); a page that is going away sends
             // one keepalive request, because the retrying request would not outlive it.
-            return (reason?: 'navigate' | 'pagehide') => {
+            const cleanup: RouteCleanup = (reason?: 'navigate' | 'pagehide') => {
                 if (renderer) {
                     if (reason === 'pagehide') {
                         renderer.cancelExecutionOnLeave();
@@ -213,14 +226,33 @@ module workbench {
                 unmount();
                 disposeRenderer();
             };
+            // Kept alive (M11.3), the page drops its window and document listeners; a running query keeps running.
+            cleanup.suspend = () => {
+                if (unmount.suspend) {
+                    unmount.suspend();
+                }
+                if (renderer && renderer.suspend) {
+                    renderer.suspend();
+                }
+            };
+            cleanup.resume = () => {
+                if (renderer && renderer.resume) {
+                    renderer.resume();
+                }
+                if (unmount.resume) {
+                    unmount.resume();
+                }
+            };
+            return cleanup;
         }
 
         /** A route whose script list does not depend on its model. */
         function staticRoute(viewId: string, names: string[],
-                             mount: (ctx: RouteMountContext) => RouteInstance): RouteDefinition {
+                             mount: (ctx: RouteMountContext) => RouteInstance, keepAlive?: boolean): RouteDefinition {
             return {
                 viewId,
                 routerReady: true,
+                keepAlive: !!keepAlive,
                 scripts: () => names.slice(),
                 baseScripts: () => names.slice(),
                 mount
@@ -247,7 +279,7 @@ module workbench {
         // shown (M11.1).
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
-            'query.js'], routeMount(mountQuery)));
+            'query.js'], routeMount(mountQuery), true));
         const createRoute: RouteDefinition = {
             viewId: 'create',
             routerReady: true,

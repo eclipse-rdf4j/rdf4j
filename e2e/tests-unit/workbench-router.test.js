@@ -1010,3 +1010,171 @@ test('nothing is prefetched when the browser asks to save data', async () => {
 
     assert.equal(harness.log.filter((line) => line.startsWith('scripts')).length, 0);
 });
+
+// Plan task M11.3: the Query route is kept alive while other pages are shown.
+
+/** The router harness with outlets that can be parked in #workbench-kept-alive, and a keep-alive Query route. */
+function loadKeepAliveRouter(start) {
+    const harness = loadRouter(start ? { href: base + start } : undefined);
+    if (start) {
+        harness.session.url = base + start;
+    }
+    const kept = fakeElement({ id: 'workbench-kept-alive' });
+    kept.children = [];
+    kept.appendChild = (node) => { kept.children.push(node); node.parentNode = kept; };
+    kept.removeChild = (node) => { kept.children = kept.children.filter((child) => child !== node); node.parentNode = null; };
+    harness.document.elements['workbench-kept-alive'] = kept;
+    let outlet = harness.outlet;
+    const outlets = [outlet];
+    harness.workbench.views.outletOf = () => outlet;
+    harness.workbench.views.detachOutlet = () => {
+        const old = outlet;
+        outlet = fakeElement({ id: 'workbench-outlet' });
+        outlet.querySelector = () => null;
+        outlets.push(outlet);
+        return old;
+    };
+    harness.workbench.views.attachOutlet = (appMount, element) => { outlet = element; };
+    harness.workbench.views.renderShell = (appMount, state) => { harness.log.push('render shell ' + state.viewId); };
+    const routes = harness.workbench.routes;
+    routes.register({
+        viewId: 'query', routerReady: true, keepAlive: true, scripts: () => [], baseScripts: () => [],
+        mount() {
+            harness.log.push('mount query');
+            return {
+                ready: Promise.resolve(),
+                dispose: (reason) => harness.log.push('dispose query ' + reason),
+                suspend: () => harness.log.push('suspend query'),
+                resume: () => harness.log.push('resume query')
+            };
+        }
+    });
+    return Object.assign(harness, { kept, outlets, currentOutlet: () => outlet });
+}
+
+async function visit(harness, view, model) {
+    const navigation = harness.router.navigate(base + view, { history: 'push' });
+    await harness.answer(view, model || harness.model(view.split('?')[0]));
+    return navigation;
+}
+
+test('leaving the Query page parks it, suspended, and opening it again shows it without loading', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    const queryOutlet = harness.currentOutlet();
+    harness.window.scrollY = 900;
+
+    await visit(harness, 'types');
+    assert.ok(harness.log.includes('suspend query'));
+    assert.equal(harness.log.includes('dispose query navigate'), false, 'kept, not disposed');
+    assert.deepEqual(harness.kept.children, [queryOutlet], 'its outlet waits in #workbench-kept-alive');
+    assert.equal(queryOutlet.getAttribute('id'), null, 'without the outlet id, which belongs to the page shown');
+    assert.notEqual(harness.currentOutlet(), queryOutlet);
+
+    const loads = harness.loadModelCalls.length;
+    assert.equal(await harness.router.navigate(base + 'query', { history: 'push' }), 'committed');
+    assert.equal(harness.loadModelCalls.length, loads, 'no page model is loaded');
+    assert.equal(harness.currentOutlet(), queryOutlet);
+    assert.equal(queryOutlet.getAttribute('id'), 'workbench-outlet');
+    assert.deepEqual(harness.kept.children, []);
+    assert.ok(harness.log.includes('dispose types navigate'));
+    assert.ok(harness.log.includes('render shell query'));
+    assert.equal(harness.log[harness.log.length - 1], 'resume query');
+    assert.equal(harness.router.current().viewId, 'query');
+    assert.equal(harness.window.location.href, base + 'query');
+    await frames();
+    assert.equal(harness.window.scrollY, 900, 'the page is where it was left');
+    assert.equal(harness.outlet.getAttribute('data-workbench-route-ready'), 'true');
+});
+
+test('Back to the kept Query page restores it too', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    const queryEntry = harness.window.history.state;
+    await visit(harness, 'summary');
+
+    harness.window.goTo(base + 'query', queryEntry);
+    harness.window.dispatch('popstate', { state: queryEntry });
+    await settle();
+
+    assert.equal(harness.router.current().viewId, 'query');
+    assert.equal(harness.log[harness.log.length - 1], 'resume query');
+});
+
+test('another Query page, a second kept page or leaving the tab disposes the kept Query page', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    await visit(harness, 'types');
+
+    await visit(harness, 'query?query=ASK%20%7B%7D');
+    assert.ok(harness.log.includes('dispose query navigate'), 'a different Query URL starts afresh');
+    assert.deepEqual(harness.kept.children, []);
+
+    await visit(harness, 'types');
+    assert.equal(harness.kept.children.length, 1);
+    harness.window.dispatch('pagehide', { persisted: false });
+    assert.ok(harness.log.includes('dispose query pagehide'));
+});
+
+test('a kept page is replaced when another one is kept', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    await visit(harness, 'types');
+    const first = harness.kept.children[0];
+
+    await visit(harness, 'query?query=SELECT');
+    await visit(harness, 'summary');
+
+    assert.equal(harness.kept.children.length, 1);
+    assert.notEqual(harness.kept.children[0], first);
+});
+
+test('a kept-alive route without suspend is disposed like any other', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.workbench.routes.register({ viewId: 'explore', routerReady: true, keepAlive: true,
+        scripts: () => [], baseScripts: () => [],
+        mount: () => ({ dispose: (reason) => harness.log.push('dispose explore ' + reason) }) });
+    harness.start();
+    await visit(harness, 'explore');
+
+    await visit(harness, 'types');
+
+    assert.ok(harness.log.includes('dispose explore navigate'));
+    assert.deepEqual(harness.kept.children, []);
+});
+
+test('going from one Query page straight to another disposes the first: only one Query page exists', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+
+    await visit(harness, 'query?query=ASK');
+
+    assert.ok(harness.log.includes('dispose query navigate'));
+    assert.equal(harness.log.includes('suspend query'), false);
+    assert.deepEqual(harness.kept.children, []);
+});
+
+test('a Query page that was the first page is kept with a context built for it', async () => {
+    const harness = loadKeepAliveRouter('query');
+    harness.session.instance = {
+        dispose: (reason) => harness.log.push('dispose first ' + reason),
+        suspend: () => harness.log.push('suspend first'),
+        resume: () => harness.log.push('resume first')
+    };
+    const shells = [];
+    harness.workbench.views.renderShell = (appMount, state) => shells.push(state);
+    harness.start();
+
+    await visit(harness, 'types');
+    assert.ok(harness.log.includes('suspend first'));
+    await harness.router.navigate(base + 'query', { history: 'push' });
+
+    assert.equal(shells[0].viewId, 'query');
+    assert.equal(shells[0].context.url, base + 'query', 'the context of the first page');
+    assert.equal(harness.log[harness.log.length - 1], 'resume first');
+});

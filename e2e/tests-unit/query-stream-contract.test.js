@@ -952,3 +952,56 @@ test('a page model answered with an error status is read when the caller accepts
     await assert.rejects(queryStream.consumeNdjsonResponse(response(), { onRecord() {} }),
         /Workbench request failed with HTTP status 400/, 'query streams still treat it as a failure');
 });
+
+// Plan task M11.3: the result renderer of a kept-alive Query page.
+test('a suspended result renderer stops listening to the window and keeps its query running', async () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    const window = queryStream.__testWindow;
+    const listeners = new Map();
+    window.addEventListener = (type, listener) => {
+        listeners.set(type, (listeners.get(type) || []).concat([listener]));
+    };
+    window.removeEventListener = (type, listener) => {
+        listeners.set(type, (listeners.get(type) || []).filter(handler => handler !== listener));
+    };
+    const count = () => [...listeners.values()].reduce((total, handlers) => total + handlers.length, 0);
+    window.fetch = () => new Promise(() => {});
+    const document = new FakeDocument();
+    const form = document.createElement('form');
+    form.setAttribute('id', 'query-form');
+    form.setAttribute('action', 'query');
+    for (const [name, value] of [['query', 'SELECT * WHERE { ?s ?p ?o }'], ['action', 'exec']]) {
+        const control = document.createElement(name === 'query' ? 'textarea' : 'input');
+        control.name = name;
+        control.value = value;
+        form.appendChild(control);
+    }
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const worker = new InMemoryWorker();
+    workbench.queryPage.renderInto(document.body, {}, { executionFormId: 'query-form', resultsMountId: 'query-results',
+        rowStoreOptions: { workerFactory: () => worker } });
+    const beforeQuery = count();
+    form.trigger('submit');
+    for (let attempt = 0; attempt < 30 && !workbench.queryPage.hasActiveRequest(); attempt += 1) {
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    const running = count();
+    assert.ok(running > beforeQuery, 'the renderer listens to the window');
+    // The renderer's own window listeners; the disclosure anchors' shared resize listener (template.ts) stays.
+    const own = () => ['keydown', 'scroll', 'wheel', 'touchstart', 'mousedown']
+        .reduce((total, type) => total + (listeners.get(type) || []).length, 0);
+    assert.ok(own() > 0);
+
+    workbench.queryPage.suspend();
+    assert.equal(own(), 0, 'none of the renderer\'s window listeners remain');
+    assert.equal(workbench.queryPage.hasActiveRequest(), true, 'the query keeps running');
+    workbench.queryPage.suspend();
+    workbench.queryPage.resume();
+    assert.equal(count(), running);
+    workbench.queryPage.resume();
+    assert.equal(count(), running, 'resuming twice adds nothing');
+});
