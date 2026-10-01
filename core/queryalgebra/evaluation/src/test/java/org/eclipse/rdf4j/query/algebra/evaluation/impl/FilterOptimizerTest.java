@@ -16,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -28,6 +30,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -39,11 +42,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.CompareAll;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -62,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
@@ -85,6 +93,241 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public FilterOptimizer getOptimizer() {
 		return new FilterOptimizer();
+	}
+
+	@Test
+	public void pushesHavingThroughAggregatePlaceholder() throws Exception {
+		String query = """
+				SELECT ?key (COUNT(DISTINCT ?item) AS ?count) WHERE {
+				  VALUES (?key ?item) { ("a" 1) ("a" 1) ("b" 2) ("c" UNDEF) }
+				} GROUP BY ?key HAVING(COUNT(?item) > 1)
+				""";
+		TupleExpr optimized = parseTupleExpr(query);
+		List<BindingSet> expected = evaluate(optimized.clone());
+		assertThat(expected).singleElement().satisfies(row -> {
+			assertThat(row.getValue("key").stringValue()).isEqualTo("a");
+			assertThat(((Literal) row.getValue("count")).intValue()).isEqualTo(1);
+		});
+		new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		Extension placeholder = findFirst(optimized, Extension.class,
+				extension -> extension.getElements()
+						.stream()
+						.allMatch(element -> element.getExpr() instanceof AggregateOperator)
+						&& (extension.getArg() instanceof Group || extension.getArg()instanceof Filter filter
+								&& filter.getArg() instanceof Group));
+		assertThat(placeholder.getArg()).as("optimized HAVING tree:\n%s", optimized).isInstanceOf(Filter.class);
+		assertThat(((Filter) placeholder.getArg()).getArg()).isInstanceOf(Group.class);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setTrackResultSize(true);
+		List<BindingSet> actual = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = strategy.evaluate(optimized, EmptyBindingSet.getInstance())) {
+			while (rows.hasNext()) {
+				actual.add(rows.next());
+			}
+		}
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(placeholder.getResultSizeActual()).isEqualTo(1);
+		assertThat(findFirst(optimized, Group.class, ignored -> true).getResultSizeActual()).isEqualTo(3);
+	}
+
+	@Test
+	public void keepsUncostedSubqueryFilterAtJoin() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI depends = vf.createIRI("urn:dependsOn");
+		String query = """
+				SELECT ?component ?name ?part WHERE {
+				  ?component a <urn:Component> . ?component <urn:name> ?name .
+				  FILTER(?name = "Component 1" || ?name = "Component 2")
+				  OPTIONAL { ?component <urn:partOf> ?part }
+				  FILTER EXISTS { ?component <urn:dependsOn> ?dep }
+				}
+				""";
+		for (int subjects : List.of(12, 24)) {
+			for (int fanout : List.of(0, 1, 3)) {
+				List<Statement> statements = new ArrayList<>();
+				for (int index = 0; index < subjects; index++) {
+					IRI subject = vf.createIRI("urn:component:" + index);
+					statements.add(vf.createStatement(subject, RDF.TYPE, vf.createIRI("urn:Component")));
+					statements.add(vf.createStatement(subject, vf.createIRI("urn:name"),
+							vf.createLiteral("Component " + index)));
+					statements.add(vf.createStatement(subject, depends, vf.createIRI("urn:dependency")));
+					for (int part = 0; part < fanout; part++) {
+						statements.add(vf.createStatement(subject, vf.createIRI("urn:partOf"),
+								vf.createIRI("urn:part:" + part)));
+					}
+				}
+				StatementListTripleSource source = new StatementListTripleSource(statements);
+				List<BindingSet> expected = evaluateParsedQuery(query, source);
+				assertThat(expected).hasSize(2 * Math.max(1, fanout));
+				source.lookups.clear();
+				TupleExpr optimized = parseTupleExpr(query);
+				new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+				assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(source.lookups.get(depends))
+						.as("EXISTS probes for %s typed subjects and OPTIONAL fanout %s", subjects, fanout)
+						.isEqualTo(2);
+				Filter exists = findFirst(optimized, Filter.class,
+						filter -> !findAll(filter.getCondition(), Exists.class).isEmpty());
+				assertThat(exists.getArg()).isInstanceOf(Join.class);
+				assertThat(exists.getParentNode()).isInstanceOf(LeftJoin.class);
+			}
+		}
+	}
+
+	@Test
+	public void keepsNestedSubqueryAtJoinWhenCostSupportedButUnknown() {
+		String query = """
+				SELECT * WHERE {
+				  ?u <urn:name> ?v . ?s <urn:parent> ?u .
+				  FILTER(EXISTS { ?u <urn:follows> ?local } || ?u = <urn:other>)
+				  FILTER EXISTS { ?u <urn:follows> ?local }
+				}
+				""";
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer(new SelectiveJoinStatistics(Double.NaN, Double.NaN, Double.NaN))
+				.optimize(optimized, null, EmptyBindingSet.getInstance());
+		Join join = findFirst(optimized, Join.class, ignored -> true);
+		assertThat(findAll(join.getLeftArg(), Exists.class)).isEmpty();
+		assertThat(findAll(join.getRightArg(), Exists.class)).isEmpty();
+		assertThat(findAll(optimized, Exists.class)).hasSize(2);
+	}
+
+	@Test
+	public void subqueryPlacementFallbackHandlesNestingOperandsAndCostModes() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI follows = vf.createIRI("urn:follows");
+		IRI u1 = vf.createIRI("urn:u1");
+		IRI u2 = vf.createIRI("urn:u2");
+		TripleSource source = statementListTripleSource(
+				vf.createStatement(u1, vf.createIRI("urn:name"), vf.createLiteral("one")),
+				vf.createStatement(u2, vf.createIRI("urn:name"), vf.createLiteral("two")),
+				vf.createStatement(vf.createIRI("urn:s1"), vf.createIRI("urn:parent"), u1),
+				vf.createStatement(vf.createIRI("urn:s2"), vf.createIRI("urn:parent"), u1),
+				vf.createStatement(vf.createIRI("urn:s3"), vf.createIRI("urn:parent"), u2),
+				vf.createStatement(vf.createIRI("urn:s4"), vf.createIRI("urn:parent"), u2),
+				vf.createStatement(u1, follows, vf.createIRI("urn:local")));
+		String exists = "EXISTS { ?u <urn:follows> ?local }";
+		List<String> conditions = List.of(exists, "!" + exists, exists + " || ?u = <urn:other>",
+				"IF(" + exists + ", true, false)", "COALESCE(" + exists + ", false)",
+				"?u != <urn:other> && " + exists, exists + " && ?u != <urn:other>");
+		for (boolean reversed : List.of(false, true)) {
+			String patterns = reversed ? "?s <urn:parent> ?u . ?u <urn:name> ?v ."
+					: "?u <urn:name> ?v . ?s <urn:parent> ?u .";
+			for (String condition : conditions) {
+				String query = "SELECT ?u WHERE { " + patterns + " FILTER(" + condition + ") }";
+				List<BindingSet> expected = evaluateParsedQuery(query, source);
+				assertThat(expected).as("duplicate bag fixture for %s", query).hasSize(2);
+				for (EvaluationStatistics statistics : Arrays.asList(null, new EvaluationStatistics(),
+						new UnavailableJoinStatistics())) {
+					TupleExpr optimized = parseTupleExpr(query);
+					new FilterOptimizer(statistics).optimize(optimized, null, EmptyBindingSet.getInstance());
+					Join join = findFirst(optimized, Join.class, ignored -> true);
+					assertThat(findAll(join.getLeftArg(), Exists.class)).as(query).isEmpty();
+					assertThat(findAll(join.getRightArg(), Exists.class)).as(query).isEmpty();
+					assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+				}
+				TupleExpr aggressive = parseTupleExpr(query);
+				new FilterOptimizer(null, true, false).optimize(aggressive, null, EmptyBindingSet.getInstance());
+				Join join = findFirst(aggressive, Join.class, ignored -> true);
+				assertThat(findAll(join.getLeftArg(), Exists.class).size()
+						+ findAll(join.getRightArg(), Exists.class).size()).as(query).isEqualTo(1);
+				assertThat(evaluate(aggressive, source)).containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
+	}
+
+	@Test
+	public void comparisonSubqueriesUseTheSameUnknownCostFallback() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment comparisonRows = singleValueBindingSetAssignment("value", vf.createLiteral("one"));
+		for (ValueExpr condition : List.of(new CompareAny(Var.of("v"), comparisonRows.clone(), CompareOp.EQ),
+				new CompareAll(Var.of("v"), comparisonRows.clone(), CompareOp.EQ))) {
+			Join join = new Join(singleValueBindingSetAssignment("v", vf.createLiteral("one")),
+					singleValueBindingSetAssignment("other", vf.createLiteral(1)));
+			QueryRoot root = new QueryRoot(new Filter(join, condition));
+			List<BindingSet> expected = evaluate(root.clone());
+			new FilterOptimizer(new UnavailableJoinStatistics()).optimize(root, null, EmptyBindingSet.getInstance());
+			assertThat(join.getParentNode()).isInstanceOf(Filter.class);
+			assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	public void supportedWorkComparisonCanStillPushExistsBeforeJoinFanout() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI u1 = vf.createIRI("urn:u1");
+		IRI u2 = vf.createIRI("urn:u2");
+		IRI follows = vf.createIRI("urn:follows");
+		StatementListTripleSource source = new StatementListTripleSource(List.of(
+				vf.createStatement(u1, vf.createIRI("urn:name"), vf.createLiteral("one")),
+				vf.createStatement(u2, vf.createIRI("urn:name"), vf.createLiteral("two")),
+				vf.createStatement(vf.createIRI("urn:s1"), vf.createIRI("urn:parent"), u1),
+				vf.createStatement(vf.createIRI("urn:s2"), vf.createIRI("urn:parent"), u1),
+				vf.createStatement(vf.createIRI("urn:s3"), vf.createIRI("urn:parent"), u2),
+				vf.createStatement(vf.createIRI("urn:s4"), vf.createIRI("urn:parent"), u2),
+				vf.createStatement(u1, follows, vf.createIRI("urn:local"))));
+		String query = "SELECT ?u WHERE { ?u <urn:name> ?v . ?s <urn:parent> ?u . "
+				+ "FILTER EXISTS { ?u <urn:follows> ?local } }";
+		List<BindingSet> expected = evaluateParsedQuery(query, source);
+		assertThat(expected).hasSize(2);
+		source.lookups.clear();
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer(new EarlyWorkEstimatingStatistics()).optimize(optimized, null,
+				EmptyBindingSet.getInstance());
+		Join join = findFirst(optimized, Join.class, ignored -> true);
+		assertThat(join.getLeftArg()).isInstanceOf(Filter.class);
+		assertThat(findAll(((Filter) join.getLeftArg()).getCondition(), Exists.class)).hasSize(1);
+		assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(source.lookups.get(follows)).isEqualTo(2);
+	}
+
+	@Test
+	public void mixedAggregatePlaceholdersPreserveAssignmentOrderAndErrors() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		List<List<ExtensionElem>> orders = List.of(
+				List.of(new ExtensionElem(new ValueConstant(vf.createLiteral(2)), "x"),
+						new ExtensionElem(new Count(Var.of("item")), "x"), new ExtensionElem(Var.of("x"), "copy")),
+				List.of(new ExtensionElem(new Count(Var.of("item")), "x"), new ExtensionElem(Var.of("x"), "copy"),
+						new ExtensionElem(new ValueConstant(vf.createLiteral(2)), "x")),
+				List.of(new ExtensionElem(Var.of("missing"), "x"), new ExtensionElem(new Count(Var.of("item")), "x"),
+						new ExtensionElem(Var.of("x"), "copy")));
+		for (int index = 0; index < orders.size(); index++) {
+			Extension extension = new Extension(singleValueBindingSetAssignment("x", vf.createLiteral(3)));
+			orders.get(index).forEach(extension::addElement);
+			List<BindingSet> rows = evaluate(extension);
+			assertThat(rows).hasSize(1);
+			if (index == 2) {
+				assertThat(rows.getFirst().getBindingNames()).doesNotContain("x", "copy");
+			} else {
+				assertThat(rows.getFirst().getValue("x")).isEqualTo(vf.createLiteral(2));
+				assertThat(rows.getFirst().getValue("copy")).isEqualTo(vf.createLiteral(index == 0 ? 2 : 3));
+			}
+			QueryRoot original = new QueryRoot(new Filter(extension, new Bound(Var.of("copy"))));
+			List<BindingSet> expected = evaluate(original.clone());
+			new FilterOptimizer().optimize(original, null, EmptyBindingSet.getInstance());
+			assertThat(original.getArg()).isInstanceOf(Filter.class);
+			assertThat(((Filter) original.getArg()).getArg()).isInstanceOf(Extension.class);
+			assertThat(evaluate(original)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	public void preservesAggregateVariantsEmptyGroupsAndProjectionScope() throws Exception {
+		for (String aggregate : List.of("COUNT(*) > 1", "COUNT(?item) > 1", "COUNT(DISTINCT ?item) > 0",
+				"SUM(?item) > 1", "AVG(?item) >= 1", "MIN(?item) = 1", "MAX(?item) = 1",
+				"SAMPLE(?item) = 1", "GROUP_CONCAT(?item) != \"\"")) {
+			assertFilterOptimizerPreservesResults("SELECT ?key WHERE { VALUES (?key ?item) "
+					+ "{ (\"a\" 1) (\"a\" 1) (\"b\" 1) (\"c\" UNDEF) } } GROUP BY ?key HAVING(" + aggregate + ")");
+		}
+		assertFilterOptimizerPreservesResults(
+				"SELECT (COUNT(*) AS ?count) WHERE { FILTER(false) } HAVING(COUNT(*) = 0)");
+		assertFilterOptimizerPreservesResults(
+				"SELECT ?key WHERE { VALUES ?key {} } GROUP BY ?key HAVING(COUNT(*) = 0)");
+		assertFilterOptimizerPreservesResults(
+				"SELECT (COUNT(*) AS ?alias) WHERE { VALUES ?item { 1 2 } } HAVING(?alias = 2)");
+		assertFilterOptimizerPreservesResults("SELECT ?key WHERE { { SELECT ?key WHERE { VALUES (?key ?item) "
+				+ "{ (\"a\" 1) (\"a\" 1) (\"b\" UNDEF) } } GROUP BY ?key HAVING(COUNT(?item) > 1) } "
+				+ "FILTER(?key = \"a\") }");
 	}
 
 	@Test
@@ -159,9 +402,15 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter correlatedFilter = findFirst(optimized, Filter.class,
 				filter -> findAll(filter.getCondition(), Exists.class).size() == 2);
 
-		assertThat(correlatedFilter.getArg()).isInstanceOf(StatementPattern.class);
-		assertThat(((StatementPattern) correlatedFilter.getArg()).getObjectVar().getName()).isEqualTo("o");
-		assertThat(correlatedFilter.getParentNode()).isInstanceOf(Join.class);
+		assertThat(correlatedFilter.getArg()).isInstanceOf(Join.class);
+		assertThat(correlatedFilter.getParentNode()).isInstanceOf(Projection.class);
+		TupleExpr aggressive = parseTupleExpr(query);
+		new FilterOptimizer(null, true, false).optimize(aggressive, null, EmptyBindingSet.getInstance());
+		Filter moved = findFirst(aggressive, Filter.class,
+				filter -> findAll(filter.getCondition(), Exists.class).size() == 2);
+		assertThat(moved.getArg()).isInstanceOf(StatementPattern.class);
+		assertThat(((StatementPattern) moved.getArg()).getObjectVar().getName()).isEqualTo("o");
+		assertThat(moved.getParentNode()).isInstanceOf(Join.class);
 	}
 
 	@Test
@@ -217,7 +466,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Set<String> expectedComparisons = new HashSet<>(comparisonSignatures(scopedV1Filter.getCondition()));
 		expectedComparisons.addAll(comparisonSignatures(scopedV2Filter.getCondition()));
 
-		new FilterOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		new FilterOptimizer(null, true, false).optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 
 		// The optimizer clones EXISTS expressions while splitting repeatable conjunctions, so compare their scoped
 		// condition structure rather than object identity. Splitting v2's two comparisons legitimately creates a third
@@ -701,12 +950,34 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void mergesExistsBeforeCompareForValuesOnlyJoin() {
+	public void retainsUncostedExistsAboveValuesJoin() {
 		String query = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
 				+ "FILTER(?u != ?v) FILTER EXISTS {?v <urn:follows> ?u .} }";
 
 		TupleExpr optimized = parseTupleExpr(query);
 		new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		Join join = findFirst(optimized, Join.class, ignored -> true);
+		assertThat(join.getParentNode()).isInstanceOf(Filter.class);
+		Filter retained = (Filter) join.getParentNode();
+		assertThat(findAll(retained.getCondition(), Exists.class)).hasSize(1);
+		assertThat(findAll(retained.getCondition(), Compare.class)).isEmpty();
+		assertThat(join.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) join.getLeftArg()).getBindingNames()).containsExactly("u");
+		assertThat(join.getRightArg()).isInstanceOf(Filter.class);
+		Filter scalar = (Filter) join.getRightArg();
+		assertThat(scalar.getArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) scalar.getArg()).getBindingNames()).containsExactly("v");
+		assertThat(findAll(scalar.getCondition(), Exists.class)).isEmpty();
+		assertThat(findAll(scalar.getCondition(), Compare.class)).singleElement()
+				.satisfies(compare -> assertThat(compare.getOperator()).isEqualTo(CompareOp.NE));
+	}
+
+	@Test
+	public void mergesExistsBeforeCompareForValuesOnlyJoinWhenCostingDisabled() {
+		String query = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
+				+ "FILTER(?u != ?v) FILTER EXISTS {?v <urn:follows> ?u .} }";
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer(null, true, false).optimize(optimized, null, EmptyBindingSet.getInstance());
 		Join join = findFirst(optimized, Join.class, ignored -> true);
 		assertThat(join.getParentNode()).isInstanceOf(Projection.class);
 		assertThat(join.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
@@ -1081,9 +1352,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter inScopeInFilter = findFirst(root, Filter.class,
 				filter -> filter.getCondition() instanceof ListMemberOperator);
 		Group group = findFirst(root, Group.class, ignored -> true);
-		List<Filter> groupFilters = flattenJoinLeaves(group.getArg()).stream()
-				.filter(Filter.class::isInstance)
-				.map(Filter.class::cast)
+		List<Filter> groupFilters = findAll(group.getArg(), Filter.class).stream()
 				.filter(filter -> filter.getCondition() instanceof ListMemberOperator)
 				.toList();
 
@@ -1093,6 +1362,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				.singleElement()
 				.satisfies(filter -> {
 					assertThat(filter).isSameAs(inScopeInFilter);
+					assertThat(hasAncestor(filter, Exists.class)).isFalse();
 					assertThat(filter.getCondition()).isInstanceOf(ListMemberOperator.class);
 					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
 					assertThat(((StatementPattern) filter.getArg()).getPredicateVar().getValue().stringValue())
@@ -1332,6 +1602,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	private static final class StatementListTripleSource extends EmptyTripleSource {
 		private final List<Statement> statements;
+		private final Map<IRI, Integer> lookups = new HashMap<>();
 
 		private StatementListTripleSource(List<Statement> statements) {
 			this.statements = statements;
@@ -1340,6 +1611,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
+			lookups.merge(predicate, 1, Integer::sum);
 			Iterator<Statement> matches = statements.stream()
 					.filter(statement -> (subject == null || subject.equals(statement.getSubject()))
 							&& (predicate == null || predicate.equals(statement.getPredicate()))
@@ -1451,6 +1723,41 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			}
 			if (factor instanceof Filter) {
 				return Optional.of(new FactorCostEstimate(50.0d, 1.0d));
+			}
+			return Optional.empty();
+		}
+	}
+
+	private static final class UnavailableJoinStatistics extends EvaluationStatistics implements JoinFactorCostModel {
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expression) {
+			return Double.NaN;
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> boundVariables) {
+			return Optional.empty();
+		}
+	}
+
+	private static final class EarlyWorkEstimatingStatistics extends SelectiveJoinStatistics
+			implements JoinFactorCostModel {
+		private EarlyWorkEstimatingStatistics() {
+			super(5.0d, 100.0d, 20.0d);
+		}
+
+		@Override
+		public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> boundVariables) {
+			if (factor instanceof Join) {
+				return Optional.of(new FactorCostEstimate(50.0d, 5.0d));
+			}
+			if (factor instanceof Filter) {
+				return Optional.of(new FactorCostEstimate(5.0d, 1.0d));
 			}
 			return Optional.empty();
 		}

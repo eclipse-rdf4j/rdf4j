@@ -772,7 +772,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						if (operator.equals(valueExpr)) {
 							group.addGroupElement(new GroupElem(alias, operator));
-							extension.setArg(group);
 						} else {
 							ValueExpr expr = (ValueExpr) operator.getParentNode();
 

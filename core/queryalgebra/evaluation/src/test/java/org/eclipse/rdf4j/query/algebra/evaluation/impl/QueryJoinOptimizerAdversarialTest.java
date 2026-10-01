@@ -801,7 +801,8 @@ class QueryJoinOptimizerAdversarialTest {
 		List<BindingSet> expected = evaluate(root.clone(), source);
 		assertThat(expected).hasSize(exists ? 0 : 1);
 
-		new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		// Force descent attempts so unavailable placement costs cannot mask the binding-safety proof.
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
 		assertThat(evaluate(root, source))
 				.as("a scoped EXISTS/NOT EXISTS must keep bindings supplied by nested join siblings")
 				.containsExactlyElementsOf(expected);
@@ -835,7 +836,7 @@ class QueryJoinOptimizerAdversarialTest {
 		List<BindingSet> expected = evaluate(root.clone(), source);
 		assertThat(expected).hasSize(3).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(x));
 
-		new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(root, source))
 				.as("nullable bindings supplied by nested siblings must not be replaced by an unbound candidate input")
@@ -863,7 +864,7 @@ class QueryJoinOptimizerAdversarialTest {
 				VF.createStatement(VF.createIRI("urn:other"), blocked, y)));
 		List<BindingSet> expected = evaluate(root.clone(), source);
 
-		new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
 
 		assertThat(scopedFilter.getArg())
 				.as("the candidate itself supplies both correlated values")
@@ -892,7 +893,7 @@ class QueryJoinOptimizerAdversarialTest {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expression = parsed.getTupleExpr();
 		List<BindingSet> rawResults = evaluate(expression.clone(), source);
-		new FilterOptimizer().optimize(expression, null, EmptyBindingSet.getInstance());
+		new FilterOptimizer(null, true, false).optimize(expression, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(expression, source)).containsExactlyElementsOf(rawResults)
 				.singleElement()
@@ -937,7 +938,7 @@ class QueryJoinOptimizerAdversarialTest {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		TupleExpr expression = parsed.getTupleExpr();
 		List<BindingSet> rawResults = evaluate(expression.clone(), source);
-		new FilterOptimizer().optimize(expression, null, EmptyBindingSet.getInstance());
+		new FilterOptimizer(null, true, false).optimize(expression, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(expression, source)).containsExactlyElementsOf(rawResults)
 				.singleElement()

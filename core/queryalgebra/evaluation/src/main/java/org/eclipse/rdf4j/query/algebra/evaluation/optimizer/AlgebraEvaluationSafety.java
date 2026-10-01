@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -141,7 +142,7 @@ final class AlgebraEvaluationSafety {
 				return false;
 			}
 			for (ExtensionElem element : extension.getElements()) {
-				if (!isRepeatable(element.getExpr())) {
+				if (TupleExprs.isEvaluatedExtensionElement(element) && !isRepeatable(element.getExpr())) {
 					return false;
 				}
 			}
@@ -210,7 +211,7 @@ final class AlgebraEvaluationSafety {
 
 		Class<?> expressionClass = expression.getClass();
 		if (expression instanceof Var variable) {
-			return variable.getName() != null && !variable.isAnonymous();
+			return variable.getName() != null;
 		}
 		if (expressionClass == ValueConstant.class) {
 			return true;

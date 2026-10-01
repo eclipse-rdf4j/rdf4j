@@ -1068,9 +1068,13 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private OutputFacts extensionFacts(Extension extension, ReadOnlyContext input) {
 		OutputFacts base = outputFacts(extension.getArg(), childInput(extension, extension.getArg(), input));
+		if (base.isKnownEmpty()
+				|| extension.getElements().stream().noneMatch(TupleExprs::isEvaluatedExtensionElement)) {
+			return base;
+		}
 		Set<String> overwritten = new HashSet<>(base.overwrittenInputNames);
 		for (ExtensionElem element : extension.getElements()) {
-			if (element.getName() != null) {
+			if (TupleExprs.isEvaluatedExtensionElement(element) && element.getName() != null) {
 				overwritten.add(element.getName());
 			}
 		}
@@ -1084,7 +1088,7 @@ public final class QueryAlgebraBindingAnalysis {
 		Map<String, Set<ValueKind>> kinds = new HashMap<>(base.valueKinds);
 		for (ExtensionElem element : extension.getElements()) {
 			String name = element.getName();
-			if (name == null) {
+			if (name == null || !TupleExprs.isEvaluatedExtensionElement(element)) {
 				continue;
 			}
 			ValueExprFacts expressionFacts = expressionFacts(element.getExpr(), scope.snapshot());
@@ -1106,13 +1110,14 @@ public final class QueryAlgebraBindingAnalysis {
 				scope.possible(name);
 			}
 		}
-		return OutputFacts.known(possible, guaranteed, fixed, kinds, input, true, base.retainedInputNames)
+		return OutputFacts
+				.known(possible, guaranteed, fixed, kinds, input, base.canProduceRows, base.retainedInputNames)
 				.withOverwrittenInputs(overwritten);
 	}
 
 	private void addExtensionElement(MutableScope scope, ExtensionElem element) {
 		String name = element.getName();
-		if (name == null) {
+		if (name == null || !TupleExprs.isEvaluatedExtensionElement(element)) {
 			return;
 		}
 		ValueExprFacts facts = expressionFacts(element.getExpr(), scope.snapshot());

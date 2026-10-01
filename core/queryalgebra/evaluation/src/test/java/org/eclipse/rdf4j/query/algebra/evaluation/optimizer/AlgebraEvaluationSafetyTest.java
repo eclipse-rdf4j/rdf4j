@@ -27,16 +27,19 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
@@ -60,6 +63,24 @@ import org.junit.jupiter.api.Test;
 
 class AlgebraEvaluationSafetyTest {
 	private static final String UNREGISTERED_FUNCTION_URI = "urn:codex:test:unregistered-function";
+
+	@Test
+	void anonymousBindingReadsAreRepeatable() {
+		assertThat(AlgebraEvaluationSafety.isRepeatable(Var.of("aggregateResult", true))).isTrue();
+		assertThat(AlgebraEvaluationSafety.isRepeatable(new BNodeGenerator())).isFalse();
+	}
+
+	@Test
+	void aggregatePlaceholdersDoNotAddEffectsToRepeatableExtensions() {
+		Extension placeholder = new Extension(new SingletonSet(),
+				new ExtensionElem(new Count(Var.of("item")), "count"));
+		assertThat(AlgebraEvaluationSafety.isRepeatable(placeholder)).isTrue();
+		Extension groupedPlaceholder = new Extension(new Group(new SingletonSet()),
+				new ExtensionElem(new Count(Var.of("item")), "count"));
+		assertThat(AlgebraEvaluationSafety.isRepeatable(groupedPlaceholder)).isFalse();
+		placeholder.addElement(new ExtensionElem(new FunctionCall(UNREGISTERED_FUNCTION_URI), "effect"));
+		assertThat(AlgebraEvaluationSafety.isRepeatable(placeholder)).isFalse();
+	}
 
 	@Test
 	void registeredStringPredicatesAreRepeatableOnlyWithRepeatableArguments() {

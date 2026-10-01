@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -482,9 +483,11 @@ public class FilterOptimizer implements QueryOptimizer {
 			Set<String> dependencies = stableNames();
 			boolean overwritesDependency = node.getElements()
 					.stream()
+					.filter(TupleExprs::isEvaluatedExtensionElement)
 					.anyMatch(element -> dependencies.contains(element.getName()));
 			boolean extensionIsRepeatable = node.getElements()
 					.stream()
+					.filter(TupleExprs::isEvaluatedExtensionElement)
 					.allMatch(element -> AlgebraEvaluationSafety.isRepeatable(element.getExpr()));
 			if (!overwritesDependency && extensionIsRepeatable && candidateHasKnownDependencies(node.getArg())) {
 				node.getArg().visit(this);
@@ -738,11 +741,12 @@ public class FilterOptimizer implements QueryOptimizer {
 				return false;
 			}
 
+			boolean containsSubquery = containsValueSubquery(filter.getCondition());
 			if (statistics == null || !statistics.supportsJoinEstimation()) {
-				return false;
+				return containsSubquery;
 			}
 
-			if (hasSiblingWithHigherConditionCost()) {
+			if (!containsSubquery && hasSiblingWithHigherConditionCost()) {
 				return false;
 			}
 
@@ -757,8 +761,27 @@ public class FilterOptimizer implements QueryOptimizer {
 
 			double currentInputRows = statistics.getCardinality(join);
 			double candidateInputRows = estimateFilteredInputRows(candidateArg);
-			return isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)
-					&& currentInputRows < candidateInputRows;
+			if (isFiniteNonNegative(currentInputRows) && isFiniteNonNegative(candidateInputRows)) {
+				return currentInputRows < candidateInputRows;
+			}
+			// A subquery may be executed for many more rows after pushdown. Without a usable comparison, retain its
+			// current join placement; scalar filters keep their ordinary pushdown behavior.
+			return containsSubquery;
+		}
+
+		private static boolean containsValueSubquery(ValueExpr condition) {
+			boolean[] found = { false };
+			condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (node instanceof SubQueryValueOperator) {
+						found[0] = true;
+					} else if (!found[0]) {
+						super.meetNode(node);
+					}
+				}
+			});
+			return found[0];
 		}
 
 		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {

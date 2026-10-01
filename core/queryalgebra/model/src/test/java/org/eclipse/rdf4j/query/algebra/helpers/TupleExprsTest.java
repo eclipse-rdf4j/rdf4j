@@ -21,25 +21,35 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -47,6 +57,19 @@ import org.junit.jupiter.api.Test;
 public class TupleExprsTest {
 
 	private final ValueFactory f = SimpleValueFactory.getInstance();
+
+	@Test
+	public void onlyRootAggregatesAreUnevaluatedExtensionElements() {
+		for (ValueExpr aggregate : List.of(new Count(null), new Count(Var.of("item")),
+				new Count(Var.of("item"), true), new Sum(Var.of("item")), new Avg(Var.of("item")),
+				new Min(Var.of("item")), new Max(Var.of("item")), new Sample(Var.of("item")),
+				new GroupConcat(Var.of("item")))) {
+			assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(aggregate, "result"))).isFalse();
+		}
+		assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(Var.of("result", true), "copy"))).isTrue();
+		assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(
+				new MathExpr(new Count(Var.of("item")), Var.of("other"), MathExpr.MathOp.PLUS), "nested"))).isTrue();
+	}
 
 	@Test
 	public void isFilterExistsFunctionOnEmptyFilter() {

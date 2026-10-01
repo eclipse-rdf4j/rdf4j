@@ -25,8 +25,10 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -64,6 +66,50 @@ import org.junit.jupiter.api.Test;
 class OptimizerBindingAnalysisTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void aggregatePlaceholdersPreserveChildAndInheritedBindingFacts() {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("count", VF.createLiteral(7));
+		for (TupleExpr child : List.of(new SingletonSet(), values("count", VF.createLiteral(3)), new EmptySet())) {
+			Extension extension = new Extension(child,
+					new ExtensionElem(new Count(Var.of("item")), "count"));
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(extension, input);
+			QueryAlgebraBindingAnalysis.OutputFacts base = analysis.outputFacts(child, analysis.rootContext());
+			QueryAlgebraBindingAnalysis.OutputFacts actual = analysis.outputFacts(extension, analysis.rootContext());
+			assertThat(actual.possibleOutputs()).isEqualTo(base.possibleOutputs());
+			assertThat(actual.guaranteedOutputs()).isEqualTo(base.guaranteedOutputs());
+			assertThat(actual.fixedValues()).isEqualTo(base.fixedValues());
+			assertThat(actual.valueKinds()).isEqualTo(base.valueKinds());
+			assertThat(actual.inheritedInputNames()).isEqualTo(base.inheritedInputNames());
+			assertThat(actual.retainedInputNames()).isEqualTo(base.retainedInputNames());
+			assertThat(actual.overwrittenInputNames()).isEqualTo(base.overwrittenInputNames());
+			assertThat(actual.canProduceRows()).isEqualTo(base.canProduceRows());
+		}
+	}
+
+	@Test
+	void aggregatePlaceholderPreservesTheInputOfFollowingAssignments() {
+		Extension extension = new Extension(values("count", VF.createLiteral(3)),
+				new ExtensionElem(new Count(Var.of("item")), "count"),
+				new ExtensionElem(Var.of("count"), "copy"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(extension,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.contextAt(extension.getElements().getLast().getExpr()).fixedValues().get("count"))
+				.isEqualTo(VF.createLiteral(3));
+		assertThat(analysis.outputFacts(extension, analysis.rootContext()).fixedValues().get("copy"))
+				.isEqualTo(VF.createLiteral(3));
+	}
+
+	@Test
+	void extensionsCannotCreateRowsFromAnEmptyChild() {
+		Extension extension = new Extension(new EmptySet(),
+				new ExtensionElem(new Count(Var.of("item")), "count"),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(1)), "assigned"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(extension,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.outputFacts(extension, analysis.rootContext()).isKnownEmpty()).isTrue();
+	}
 
 	@Test
 	void outputTransferUsesTheSameJoinChildFrameAsContextAt() {

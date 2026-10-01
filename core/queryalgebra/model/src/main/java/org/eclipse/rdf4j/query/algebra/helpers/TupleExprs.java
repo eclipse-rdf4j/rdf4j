@@ -21,9 +21,11 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -43,6 +45,18 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/**
+	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
+	 * Group and are skipped by the evaluator. This does not change the Extension's declared bindings or classify the
+	 * expression's repeatability.
+	 *
+	 * @param element an Extension element
+	 * @return whether the element is an executed assignment rather than an aggregate placeholder
+	 */
+	public static boolean isEvaluatedExtensionElement(ExtensionElem element) {
+		return !(element.getExpr() instanceof AggregateOperator);
+	}
 
 	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true

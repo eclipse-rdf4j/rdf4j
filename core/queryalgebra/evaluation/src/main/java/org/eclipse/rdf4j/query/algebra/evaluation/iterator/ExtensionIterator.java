@@ -20,14 +20,13 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
@@ -52,8 +51,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			EvaluationStrategy strategy, QueryEvaluationContext context) {
 		Consumer<MutableBindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
-			ValueExpr expr = extElem.getExpr();
-			if (!(expr instanceof AggregateOperator)) {
+			if (TupleExprs.isEvaluatedExtensionElement(extElem)) {
 				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
 				Consumer<MutableBindingSet> removeBinding = context.removeBinding(extElem.getName());
