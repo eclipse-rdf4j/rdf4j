@@ -101,3 +101,99 @@ test('mobile records are not capped by an inline height', async ({ page }) => {
 	const capped = await page.locator('#query-results [style*="max-height"]').count();
 	expect(capped).toBe(0);
 });
+
+/** Height of one text line in a cell, including its vertical padding. */
+async function oneLineHeight(locator) {
+	return locator.evaluate(element => {
+		const style = getComputedStyle(element);
+		const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+		return { height: element.getBoundingClientRect().height,
+			oneLine: lineHeight * 1.6 + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) };
+	});
+}
+
+test('cells and headers do not break words in the middle', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await runQuery(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 50');
+	// A cell is as tall as its row, so check the label's own line boxes: one line means it did not break.
+	const label = page.locator('#query-results tbody td a', { hasText: /^rdfs:label$/ }).first();
+	const lines = await label.evaluate(element => {
+		const range = document.createRange();
+		range.selectNodeContents(element);
+		return new Set(Array.from(range.getClientRects()).filter(rect => rect.width > 0)
+			.map(rect => Math.round(rect.top))).size;
+	});
+	expect(lines).toBe(1);
+	for (const header of await page.locator('#query-results thead th').all()) {
+		const geometry = await oneLineHeight(header);
+		expect(geometry.height, JSON.stringify(geometry)).toBeLessThan(geometry.oneLine);
+	}
+});
+
+test('a 400-row result shows at least 12 rows at 1440x900', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await runQuery(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 400');
+	// Scrolled into the table, rows fill the window below the context bar and the pinned header row.
+	await page.evaluate(() => {
+		const offset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--workbench-contextbar-height')) || 0;
+		const table = document.querySelector('#query-results .query-result-table-wrap').getBoundingClientRect();
+		window.scrollBy(0, table.top - offset + 200);
+	});
+	await expect(page.locator('#query-results .query-result-floating-head__viewport')).toBeVisible();
+	await page.waitForTimeout(300);
+	const visible = await page.evaluate(() => {
+		const head = document.querySelector('#query-results .query-result-floating-head__viewport').getBoundingClientRect();
+		return Array.from(document.querySelectorAll('#query-results tbody tr[data-query-row-index]')).filter(row => {
+			const rowBox = row.getBoundingClientRect();
+			return rowBox.top >= head.bottom - 1 && rowBox.bottom <= window.innerHeight;
+		}).length;
+	});
+	expect(visible).toBeGreaterThanOrEqual(12);
+});
+
+test('the Explore table keeps its headers on one line', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const resource = encodeURIComponent('<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/Product1>');
+	await page.goto(`${require('./workbench-test-helpers.js').repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${resource}`,
+		{ waitUntil: 'networkidle' });
+	const headers = page.locator('#workbench-page-surface table.data thead th');
+	await expect(headers.first()).toBeVisible();
+	for (const header of await headers.all()) {
+		const geometry = await oneLineHeight(header);
+		expect(geometry.height, `${await header.textContent()}: ${JSON.stringify(geometry)}`).toBeLessThan(geometry.oneLine);
+	}
+});
+
+test('long IRIs wrap only after / # : ? & =', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	const iri = 'http://example.org/alpha/bravo/charlie/delta/echo/foxtrot/golf/hotel/india/juliett?kilo=lima&mike=november#oscar';
+	await runQuery(page, `SELECT ?first ?second ?third WHERE { VALUES (?first ?second ?third) { (<${iri}> <${iri}> <${iri}>) } }`);
+	const result = page.locator('#query-results .query-result-layout');
+	await result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' }).click();
+	await result.locator('select[name="result-layout"]').selectOption('table');
+	await page.setViewportSize({ width: 820, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	const breaks = await page.evaluate(() => {
+		const found = [];
+		for (const link of document.querySelectorAll('#query-results tbody td a:not(.resourceURL)')) {
+			const characters = [];
+			const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+				for (let offset = 0; offset < node.textContent.length; offset++) {
+					const range = document.createRange();
+					range.setStart(node, offset);
+					range.setEnd(node, offset + 1);
+					characters.push({ character: node.textContent[offset], top: Math.round(range.getBoundingClientRect().top) });
+				}
+			}
+			for (let index = 1; index < characters.length; index++) {
+				if (characters[index].top > characters[index - 1].top) {
+					found.push(characters[index - 1].character);
+				}
+			}
+		}
+		return found;
+	});
+	expect(breaks.length, 'the IRIs are long enough to wrap').toBeGreaterThan(0);
+	expect(breaks.filter(character => !'/#:?&='.includes(character)), JSON.stringify(breaks)).toEqual([]);
+});

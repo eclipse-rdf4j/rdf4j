@@ -1727,6 +1727,29 @@ namespace workbench {
             return (match ? match[0] : text.split('\n')[0]).trim();
         }
 
+        /**
+         * Append an IRI-like label with a line-break opportunity (<wbr>) after each / # : ? & =, so a narrow column
+         * wraps it at those boundaries instead of in the middle of a word. Copied text and titles are unchanged.
+         */
+        function appendBreakableText(document: any, target: any, text: string) {
+            if (typeof document.createTextNode !== 'function') {
+                target.textContent = text;
+                return;
+            }
+            var chunk = '';
+            for (var index = 0; index < text.length; index++) {
+                chunk += text.charAt(index);
+                if ('/#:?&='.indexOf(text.charAt(index)) >= 0 && index < text.length - 1) {
+                    target.appendChild(document.createTextNode(chunk));
+                    target.appendChild(document.createElement('wbr'));
+                    chunk = '';
+                }
+            }
+            if (chunk) {
+                target.appendChild(document.createTextNode(chunk));
+            }
+        }
+
         function clearChildren(element: any) {
             while (element && element.children && element.children.length > 0) {
                 element.removeChild(element.children[0]);
@@ -3337,8 +3360,12 @@ namespace workbench {
                     this.table.style.maxWidth = '';
                     return;
                 }
-                var allocatedWidths = allocateTableColumnWidths(widths,
-                    this.measureReadableColumnWidths(), viewportWidth, this.wrap);
+                var minimums = this.measureReadableColumnWidths();
+                // With wrapping on, one long sampled value may claim at most 40 characters of width (M4.2).
+                var cap = this.tableCharacterWidth() * 40;
+                var sampled = this.wrap ? widths.map((width, index) => Math.max(minimums[index] || 0, Math.min(width, cap)))
+                    : widths;
+                var allocatedWidths = allocateTableColumnWidths(sampled, minimums, viewportWidth, this.wrap);
                 var tableWidth = allocatedWidths.reduce((total, value) => total + value, 0);
                 var assignedWidth = 0;
                 allocatedWidths.forEach((allocatedWidth, index) => {
@@ -3469,7 +3496,11 @@ namespace workbench {
                     var resource = createElement(this.document, 'div', 'resource');
                     var explore = createElement(this.document, 'a');
                     explore.setAttribute('href', display.exploreHref);
-                    explore.textContent = display.label;
+                    if (display.kind === 'iri' || display.kind === 'bnode') {
+                        appendBreakableText(this.document, explore, display.label);
+                    } else {
+                        explore.textContent = display.label;
+                    }
                     resource.appendChild(explore);
                     if (display.externalHref) {
                         var external = createElement(this.document, 'a', 'resourceURL');
@@ -4001,6 +4032,21 @@ namespace workbench {
                     return Math.max(1, lineHeight + padding + border);
                 }
                 return 1;
+            }
+
+            /** Width of one "0" in the table font. */
+            private tableCharacterWidth(): number {
+                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
+                var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
+                var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
+                var width = isFinite(fontSize) && fontSize > 0 ? fontSize * 0.55 : 8;
+                var canvas = this.document.createElement('canvas');
+                var context = canvas.getContext && canvas.getContext('2d');
+                if (context && tableStyle) {
+                    context.font = tableStyle.font;
+                    width = context.measureText('0').width || width;
+                }
+                return width;
             }
 
             private measureReadableColumnWidths(): number[] {

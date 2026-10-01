@@ -2841,7 +2841,9 @@ body.query-result-embedded-body .query-result-embedded table.data td {
 	border: 0;
 	border-bottom: 1px solid var(--workbench-soft-rule);
 	vertical-align: top;
-	overflow-wrap: anywhere;
+	/* Wrap at word boundaries (and at the <wbr> after / # : in IRIs); split a word only if it cannot fit (M4.2). */
+	overflow-wrap: break-word;
+	word-break: normal;
 }
 
 body.workbench-body .workbench-page-surface table.data th,
@@ -2852,6 +2854,7 @@ body.query-result-embedded-body .query-result-embedded table.data th {
 	font-weight: 600;
 	text-align: left;
 	text-transform: none;
+	white-space: nowrap;
 }
 
 body.workbench-body .workbench-page-surface table.data img {
