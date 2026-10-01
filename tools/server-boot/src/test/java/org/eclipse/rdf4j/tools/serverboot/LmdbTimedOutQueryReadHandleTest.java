@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -310,12 +311,18 @@ class LmdbTimedOutQueryReadHandleTest {
 	}
 
 	private void attachLogAppender() {
-		logAppender = new ListAppender<>();
-		logAppender.start();
+		logAppender = createLogAppender();
 		attachLogger(ERROR_LOGGING_FILTER_LOGGER);
 		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbUtil");
 		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStatistics");
 		attachLogger(TUPLE_QUERY_RESULT_VIEW_LOGGER);
+	}
+
+	static ListAppender<ILoggingEvent> createLogAppender() {
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.list = new CopyOnWriteArrayList<>();
+		appender.start();
+		return appender;
 	}
 
 	private void attachLogger(String loggerName) {
