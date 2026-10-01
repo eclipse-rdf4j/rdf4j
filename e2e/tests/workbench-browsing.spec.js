@@ -233,45 +233,73 @@ test('Add RDF marks the chosen source and uploads a dropped file into the target
 	expect(await repositorySize(request)).toBe(before + 1);
 });
 
-test('Export states its timeout in seconds with a readable duration and titles the preview', async ({ page }) => {
+test('Export names the file it downloads and warns when a format would merge the named graphs', async ({ page, browserName }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('label[for="timeout"]')).toHaveText('Timeout');
-	await expect(page.locator('#timeout')).toHaveValue('43200');
-	await expect(page.locator('#export-timeout-unit')).toHaveText('seconds');
-	await expect(page.locator('#export-timeout-help')).toHaveText('12 hours');
-	await page.locator('#timeout').fill('90');
-	await expect(page.locator('#export-timeout-help')).toHaveText('1 minute 30 seconds');
-	await page.locator('#timeout').fill('0');
-	await expect(page.locator('#export-timeout-help')).toHaveText('No limit');
-	await expect(page.locator('#export-results h2')).toHaveText('Statement preview');
-});
+	const form = page.locator('#export-form');
+	await expect(form.locator('h2')).toHaveText('Download a file');
+	const format = form.locator('#Accept');
+	const note = form.locator('#export-format-note');
+	const download = form.locator('button[name="action"][value="download"]');
 
-test('Compressed exports download compressed, and Safari users learn how to keep them that way', async ({ page, browserName }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'domcontentloaded' });
-	const compression = page.locator('#compression');
-	await compression.selectOption('gzip');
-	const [download] = await Promise.all([
-		page.waitForEvent('download'),
-		page.getByRole('button', { name: 'Download' }).click()
-	]);
-	expect(download.suggestedFilename()).toMatch(/^export\.[a-z]+\.gz$/);
-	const bytes = fs.readFileSync(await download.path());
+	await format.selectOption('application/n-quads');
+	await expect(note).toHaveText('Keeps the named graphs.');
+	await form.locator('label[for="compression-gzip"]').click();
+	await expect(download).toHaveText('Download export.nq.gz');
+
+	await format.selectOption('text/turtle');
+	await expect(note).toContainText('Turtle cannot hold named graphs');
+	await expect(note).toContainText('2 named graphs');
+	await expect(download).toHaveText('Download export.ttl.gz');
+	await form.locator('label[for="compression-zip"]').click();
+	await expect(download).toHaveText('Download export.zip');
+	await expect(form.locator('#export-compression-help')).toContainText('export.ttl');
+	await form.locator('label[for="compression-none"]').click();
+	await expect(download).toHaveText('Download export.ttl');
+
+	await expect(form.locator('#timeout')).toBeHidden();
+	await form.locator('#export-advanced-toggle').click();
+	await expect(form.locator('#timeout')).toHaveValue('43200');
+	await expect(form.locator('#export-timeout-unit')).toHaveText('seconds');
+	await expect(form.locator('#export-timeout-help')).toHaveText('12 hours');
+	await form.locator('#timeout').fill('90');
+	await expect(form.locator('#export-timeout-help')).toHaveText('1 minute 30 seconds');
+	await form.locator('#timeout').fill('0');
+	await expect(form.locator('#export-timeout-help')).toHaveText('No limit');
+	await form.locator('#timeout').fill('43200');
+
+	await format.selectOption('application/n-quads');
+	await form.locator('label[for="compression-gzip"]').click();
+	const [file] = await Promise.all([page.waitForEvent('download'), download.click()]);
+	expect(file.suggestedFilename()).toBe('export.nq.gz');
+	const bytes = fs.readFileSync(await file.path());
 	expect(bytes.subarray(0, 2).toString('hex'), 'the saved file is gzip data').toBe('1f8b');
 
 	// Safari expands archives after downloading them when "Open safe files after downloading" is on.
-	const note = page.locator('#export-compression-help');
+	const safariNote = form.locator('#export-safari-note');
 	if (browserName === 'webkit') {
-		await expect(note).toBeVisible();
-		await expect(note).toContainText('Open “safe” files after downloading');
-		await compression.selectOption('none');
-		await expect(note).toBeHidden();
-		await compression.selectOption('zip');
-		await expect(note).toBeVisible();
+		await expect(safariNote).toContainText('Open “safe” files after downloading');
+		await form.locator('label[for="compression-none"]').click();
+		await expect(safariNote).toHaveCount(0);
 	} else {
-		await expect(note).toBeHidden();
+		await expect(safariNote).toHaveCount(0);
 	}
+});
+
+test('Export previews statements in their own card without changing the download', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'domcontentloaded' });
+	const preview = page.locator('#export-results');
+	await expect(preview.locator('h2')).toHaveText('Preview statements');
+	await expect(preview).toContainText('does not change the downloaded file');
+	await page.locator('#Accept').selectOption('text/turtle');
+	await page.locator('label[for="compression-zip"]').click();
+	await preview.locator('#limit_export').selectOption('10');
+	await preview.getByRole('button', { name: 'Show preview' }).click();
+	await expect(preview.locator('tbody tr[data-workbench-row-index]')).toHaveCount(10);
+	await expect(page.locator('#Accept'), 'previewing keeps the chosen format').toHaveValue('text/turtle');
+	await expect(page.locator('#compression-zip'), 'previewing keeps the chosen compression').toBeChecked();
+	await expect(page.locator('#export-form #limit_export')).toHaveCount(0);
 });
 
 test('Saved query details open from a disclosure button and read Yes or No', async ({ page }) => {

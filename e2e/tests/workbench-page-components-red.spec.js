@@ -55,8 +55,9 @@ test('data and administration pages expose stable islands and action regions', a
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/export`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#export-download-form')).toHaveCount(1);
     await expect(page.locator('#export-download-form #Accept')).toBeVisible();
-    await expect(page.locator('#export-result-options')).toHaveCount(1);
-    await expect(page.locator('#export-result-options')).not.toHaveAttribute('open', '');
+    // Export's disclosure holds the timeout since the Export redesign.
+    await expect(page.locator('#export-advanced')).toHaveCount(1);
+    await expect(page.locator('#export-advanced')).not.toHaveAttribute('open', '');
     await expect(page.locator('#export-results')).toHaveCount(1);
 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/update`, { waitUntil: 'domcontentloaded' });

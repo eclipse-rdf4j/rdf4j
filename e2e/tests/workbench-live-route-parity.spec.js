@@ -368,13 +368,13 @@ async function exerciseExportPreview(page, evidence) {
 	await page.goto(exportUrl, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#export-form')).toBeVisible();
 	const exportControls = await page.evaluate(() => {
-		const toggle = document.querySelector('#export-result-options-toggle');
+		const toggle = document.querySelector('#export-advanced-toggle');
 		const icon = toggle && toggle.querySelector('svg');
 		const path = icon && icon.querySelector('path');
 		return {
 			defaultFormat: document.querySelector('#Accept')?.value || null,
 			previewLimit: document.querySelector('#limit_export')?.value || null,
-			compression: document.querySelector('#compression')?.value || null,
+			compression: document.querySelector('input[name="compression"]:checked')?.value || null,
 			timeout: document.querySelector('#timeout')?.value || null,
 			resultOptionsText: toggle ? toggle.innerText.trim() : null,
 			resultOptionsIcon: icon ? icon.getAttribute('data-workbench-icon') : null,
@@ -389,10 +389,11 @@ async function exerciseExportPreview(page, evidence) {
 	expect.soft(exportControls.previewLimit, 'export preview defaults to 100 statements').toBe('100');
 	expect.soft(exportControls.compression, 'full exports default to gzip compression').toBe('gzip');
 	expect.soft(exportControls.timeout, 'export retains the configured 12-hour timeout').toBe('43200');
-	await expect.soft(page.locator('#export-form button[name="action"][value="download"]')).toHaveAccessibleName('Download');
+	await expect.soft(page.locator('#export-form button[name="action"][value="download"]')).toHaveAccessibleName(/^Download export\./);
 	expect.soft(exportControls.defaultFormat, 'configured export default').toBe('application/n-quads');
-	expect.soft(exportControls.resultOptionsText).toMatch(/result options/i);
-	expect.soft(exportControls.resultOptionsIcon, 'result options uses the shared chevron').toBe('chevron');
+	// The timeout sits under Advanced settings since the Export redesign.
+	expect.soft(exportControls.resultOptionsText).toMatch(/advanced settings/i);
+	expect.soft(exportControls.resultOptionsIcon, 'Advanced settings uses the shared chevron').toBe('chevron');
 	expect.soft(exportControls.resultOptionsPath, 'result options chevron path').toBe('m6 9 6 6 6-6');
 	expect.soft(exportControls.downloadIcon, 'export Download uses the shared download icon').toBe('download');
 	expect.soft(exportControls.downloadPath, 'download icon must not use the plus fallback').not.toBe('M12 5v14M5 12h14');
@@ -445,7 +446,7 @@ async function exerciseExportPreview(page, evidence) {
 			&& requestEvent.headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson');
 	}, { timeout: 30_000 });
 	const navigationPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30_000 });
-	await page.getByRole('button', { name: 'Retrieve statements' }).click();
+	await page.getByRole('button', { name: 'Show preview' }).click();
 	await navigationPromise;
 	const pageModelResponse = await pageModelResponsePromise;
 	await expect(page.locator('#export-results')).toBeVisible();

@@ -136,8 +136,8 @@ test('captures actual query explanation, comparison, result disclosure, and form
 	await expect(page.locator('#add-import-settings-panel')).toBeVisible();
 	await captureState(page, 'add-advanced-open-1440-light.png');
 	await openPage(page, `repositories/${REPOSITORY_ID}/export`);
-	await page.locator('#export-result-options-toggle').press('Enter');
-	await expect(page.locator('#export-result-options-panel')).toBeVisible();
+	await page.locator('#export-advanced-toggle').press('Enter');
+	await expect(page.locator('#export-advanced-panel')).toBeVisible();
 	await captureState(page, 'export-options-open-1440-light.png');
 
 	expect(browserErrors).toEqual([]);

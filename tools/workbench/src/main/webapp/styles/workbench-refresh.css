@@ -2345,10 +2345,107 @@ body.workbench-body .workbench-form-card :is(tt, code) {
 	overflow-wrap: anywhere;
 }
 
-body.workbench-body #export-form .workbench-form-grid {
-	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+/* Export (user-requested redesign): the download card and the preview card. Stacked, both take the full width and
+ * the download fields sit side by side; on wide screens the download card is a column beside the preview. */
+body.workbench-body #workbench-page-surface > #export-form.workbench-form-card {
+	max-width: none;
+}
+
+body.workbench-body #export-form .export-download__fields {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	align-items: start;
+	gap: var(--workbench-form-gap) 24px;
 	width: 100%;
 	max-width: 100%;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body #export-form .export-download__fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+body.workbench-body .export-card__header {
+	margin: 0 0 var(--workbench-space-subgroup);
+}
+
+body.workbench-body .export-card__header > h2 {
+	margin: 0 0 4px;
+}
+
+body.workbench-body .export-card__header > .workbench-page-meta {
+	margin: 0;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-page-surface fieldset.workbench-segmented.export-compression {
+	margin: 0;
+}
+
+body.workbench-body .workbench-segmented__help {
+	grid-column: 1 / -1;
+	margin: 4px 0 0;
+}
+
+body.workbench-body .workbench-field__help.workbench-field__help--warning {
+	color: var(--workbench-warning);
+	font-weight: 500;
+}
+
+body.workbench-body .workbench-field__help-icon {
+	width: 14px;
+	height: 14px;
+	margin-right: 4px;
+	vertical-align: -2px;
+}
+
+body.workbench-body .export-file-name {
+	padding: 0;
+	background: none;
+	color: inherit;
+	font-family: var(--workbench-code-font);
+	font-size: inherit;
+}
+
+body.workbench-body .export-preview__controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	margin: 0 0 var(--workbench-control-gap);
+}
+
+body.workbench-body .export-preview__controls > label {
+	margin: 0;
+	font-weight: 600;
+}
+
+body.workbench-body #result-limited[hidden] {
+	display: none;
+}
+
+@media (min-width: 1200px) {
+	body.workbench-body .workbench-page-surface:has(> #export-form) {
+		display: grid;
+		grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+		align-items: start;
+		gap: 20px;
+	}
+
+	body.workbench-body .workbench-page-surface:has(> #export-form) > .workbench-island {
+		min-width: 0;
+		margin: 0;
+	}
+
+	/* The download card stays in view beside a long preview. */
+	body.workbench-body .workbench-page-surface:has(> #export-form) > #export-form {
+		position: sticky;
+		top: calc(var(--workbench-contextbar-height, 56px) + 16px);
+	}
+
+	body.workbench-body #export-form .export-download__fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 body.workbench-body .workbench-select-control,
@@ -2489,7 +2586,7 @@ body.query-result-embedded-body .query-result-embedded :is(.query-result-check, 
 
 /* The source choice is a segmented control without a fieldset box (M5.5, mockup 10); the page-surface fieldset
  * rule would otherwise draw one. */
-body.workbench-body .workbench-page-surface fieldset.workbench-source-tabs {
+body.workbench-body .workbench-page-surface fieldset:is(.workbench-source-tabs, .workbench-segmented) {
 	box-sizing: border-box;
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2502,21 +2599,21 @@ body.workbench-body .workbench-page-surface fieldset.workbench-source-tabs {
 	background: transparent;
 }
 
-body.workbench-body .workbench-source-tabs label + label {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label + label {
 	border-left-width: 0;
 }
 
-body.workbench-body .workbench-source-tabs label:not(:last-of-type) {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:not(:last-of-type) {
 	border-top-right-radius: 0;
 	border-bottom-right-radius: 0;
 }
 
-body.workbench-body .workbench-source-tabs label:not(:first-of-type) {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:not(:first-of-type) {
 	border-top-left-radius: 0;
 	border-bottom-left-radius: 0;
 }
 
-body.workbench-body .workbench-source-tabs legend {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) legend {
 	grid-column: 1 / -1;
 	margin-bottom: 4px;
 	padding: 0;
@@ -2525,7 +2622,7 @@ body.workbench-body .workbench-source-tabs legend {
 	font-weight: 600;
 }
 
-body.workbench-body .workbench-source-tabs label {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label {
 	position: relative;
 	box-sizing: border-box;
 	display: flex;
@@ -2544,21 +2641,21 @@ body.workbench-body .workbench-source-tabs label {
 }
 
 /* Selected segment (M5.5, mockup 10): selected fill, a 3px primary underline and ink text. */
-body.workbench-body .workbench-source-tabs label:has(input:checked) {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:has(input:checked) {
 	background: var(--workbench-selected);
 	box-shadow: inset 0 -3px 0 var(--workbench-primary);
 	color: var(--workbench-ink);
 	font-weight: 600;
 }
 
-body.workbench-body .workbench-source-tabs label:has(input:focus-visible) {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:has(input:focus-visible) {
 	outline: 2px solid var(--workbench-focus);
 	outline-offset: 2px;
 }
 
 /* Text that only assistive technology reads, such as the label of an icon-only button. */
 .workbench-visually-hidden,
-body.workbench-body .workbench-source-tabs input[type="radio"] {
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) input[type="radio"] {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -2576,10 +2673,6 @@ body.workbench-body .workbench-form-actions {
 	flex-wrap: wrap;
 	gap: var(--workbench-control-gap);
 	margin-top: var(--workbench-form-gap);
-}
-
-body.workbench-body #export-results > .workbench-form-actions {
-	margin-bottom: var(--workbench-control-gap);
 }
 
 body.workbench-body #explore-pagination[hidden] {
@@ -3731,12 +3824,12 @@ body.workbench-body .saved-query-row > .yasqe {
 		gap: var(--workbench-form-gap);
 	}
 
-	body.workbench-body .workbench-source-tabs {
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
 		align-items: stretch;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
-	body.workbench-body .workbench-source-tabs label {
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label {
 		min-height: var(--workbench-touch-height);
 		padding-inline: 4px;
 		font-size: var(--workbench-control-font-size);
@@ -3866,7 +3959,7 @@ body.workbench-body .saved-query-row > .yasqe {
 }
 
 @media (max-width: 600px) {
-	body.workbench-body .workbench-source-tabs {
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
 	box-sizing: border-box;
 	width: 100%;
 	min-width: 0;

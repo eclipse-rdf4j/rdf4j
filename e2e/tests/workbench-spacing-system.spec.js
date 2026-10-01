@@ -195,7 +195,8 @@ test('S1 field associations use one rendered gap', async ({ page }, info) => {
 	for (const variant of VARIANTS) {
 		for (const [route, selectors] of [
 			['NONE/server', ['#workbench-server']],
-			['export', ['#Accept', '#compression', '#timeout']],
+			// Export's compression is a segmented fieldset and its timeout sits under Advanced settings (Export redesign).
+			['export', ['#Accept']],
 			['NONE/create?type=memory', ['#type', '[data-field-role=repository-id]', '[data-field-role=repository-title]']]
 		]) {
 			await open(page, route, variant);
@@ -282,7 +283,7 @@ test('S4 form subgroups and actions have one spacing owner', async ({ page }, in
 			['NONE/server', '#server-form > .workbench-form-grid', '#server-auth', '#server-auth-toggle', '#server-change-actions'],
 			// Add RDF ends its fields with the Data format and Target graph row (plan task M5.5).
 			['add', '.add-target-fields', '#add-import-settings', '#add-import-settings-toggle', '#add-upload-actions'],
-			['export', '#export-form > .workbench-form-grid', '#export-result-options', '#export-result-options-toggle', '#export-form > .workbench-form-actions']
+			['export', '#export-form > .workbench-form-grid', '#export-advanced', '#export-advanced-toggle', '#export-form > .workbench-form-actions']
 		]) {
 			await open(page, route, variant);
 			for (const expanded of [false, true]) {
@@ -678,7 +679,8 @@ test('S3 stacked form grids use the shared field rhythm', async ({ page }, info)
 		for (const [route, toggle, fields] of [
 			['NONE/server', '#server-auth-toggle', '#server-auth-panel .workbench-form-grid > .workbench-field'],
 			['add', '#add-import-settings-toggle', '#add-import-settings-panel .workbench-form-grid > .workbench-field'],
-			['export', null, '#export-form > .workbench-form-grid > .workbench-field']
+			// Export's compression is a segmented fieldset since the Export redesign.
+			['export', null, '#export-form > .workbench-form-grid > :is(.workbench-field, fieldset)']
 		]) {
 			await open(page, route, variant);
 			if (toggle) { await page.locator(toggle).click(); await settled(page); }
@@ -855,7 +857,7 @@ test('S13 mixed control rows align their labeled bodies and compact glyphs', asy
 		// Export/Explore options and Add's override checkbox are separate helper
 		// rows. Record their actual layout without aligning them to unrelated fields.
 		for (const [route, toggle, panel] of [['explore', '#explore-result-options-toggle', '#explore-result-options-panel'],
-			['export', '#export-result-options-toggle', '#export-result-options-panel'],
+			['export', '#export-advanced-toggle', '#export-advanced-panel'],
 			['add', '#add-import-settings-toggle', '#add-import-settings-panel']]) {
 			await open(page, route, variant); await page.locator(toggle).click(); await settled(page);
 			const controls = await mixedControls(page.locator(panel));

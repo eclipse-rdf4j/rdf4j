@@ -536,7 +536,8 @@ test('Export Download button contains its accessible label and shared icon', () 
     assert.ok(buttonStart >= 0, 'Export should keep a native Download submit button');
     assert.ok(buttonEnd > buttonStart, 'the Download button should have a complete template boundary');
     const buttonMarkup = markup.substring(buttonStart, buttonEnd);
-    assert.match(buttonMarkup, /aria-label="Download"/, 'the Download button should expose an accessible name');
+    // The button's visible text names the file it downloads (Export redesign), so it needs no aria-label.
+    assert.match(buttonMarkup, /Download <code[^>]*>export\.[a-z]+\.gz<\/code>/, 'the Download button should name its file');
     assert.match(buttonMarkup, /data-workbench-icon=?download/,
         'the Download button should contain the shared icon');
 });
@@ -717,7 +718,7 @@ test('settings and action dropdowns share one component while information stays 
         ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']] },
             [['explore-result-options', 'explore-result-options-toggle', 'explore-result-options-panel']]],
         ['export', { vars: [], rows: [] },
-            [['export-result-options', 'export-result-options-toggle', 'export-result-options-panel']]],
+            [['export-advanced', 'export-advanced-toggle', 'export-advanced-panel']]],
         ['add', { vars: [], rows: [] },
             [['add-import-settings', 'add-import-settings-toggle', 'add-import-settings-panel']]],
         ['server', { vars: ['server'], rows: [['http://example.test']] },

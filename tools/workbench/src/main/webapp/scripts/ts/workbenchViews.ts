@@ -51,7 +51,8 @@ module workbench {
         search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
         sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
         more: 'M6 12h.01M12 12h.01M18 12h.01',
-        check: 'm5 12 5 5 9-10'
+        check: 'm5 12 5 5 9-10',
+        'warning-sign': 'M12 4 2.8 20h18.4L12 4Zm0 6v4.5m0 2.5h.01'
     };
 
     function actionIconPath(name: string): string {
@@ -1487,7 +1488,7 @@ module workbench {
         }
 
         /** One Explore cell, formatted like a query result cell (M4.3): prefixed names, values, tags. */
-        function exploreTerm(runtime: LitRuntime, term: any, namespaces: any[]): any {
+        function exploreTerm(runtime: LitRuntime, term: any, namespaces: any[], alwaysLink?: boolean): any {
             const h = runtime.html;
             const stream = workbench.queryStream as any;
             if (!term || typeof term !== 'object' || !term.kind || !stream || typeof stream.formatRdfTerm !== 'function') {
@@ -1498,8 +1499,10 @@ module workbench {
                 : display.language ? h`<span class="rdf-language">@${display.language}${term.direction ? '--' + term.direction : ''}</span>`
                     : stream.showsDatatypeTag(display)
                         ? h`<span class="rdf-datatype">${stream.abbreviateIri(display.datatype, namespaces)}</span>` : '';
-            const value = display.exploreHref
-                ? h`<a href=${display.exploreHref} title=${display.title}>${display.label}</a>`
+            const href = display.exploreHref
+                || (alwaysLink ? 'explore?resource=' + encodeURIComponent(stream.exploreResource(term)) : '');
+            const value = href
+                ? h`<a href=${href} title=${display.title}>${display.label}</a>`
                 : h`<span title=${display.title}>${display.label}</span>`;
             return h`<div class="resource">${value}${tags}</div>`;
         }
@@ -2024,11 +2027,45 @@ module workbench {
                     `;
         }
 
+        /** The formats Export can write; the server's `export-formats` adds file extensions and named-graph support. */
+        function exportFormats(model: PageModel, info: any): any[] {
+            const described = meta(model, 'export-formats');
+            if (Array.isArray(described) && described.length) {
+                return described.map((format: any) => ({ value: text(format.value), label: text(format.label),
+                    extension: text(format.extension), graphs: format.graphs === true || format.graphs === 'true' }));
+            }
+            return formatOptions(info.graphDownloadFormats || info['graph-download-format'])
+                .map((format: any) => ({ value: format.value, label: format.label, extension: '', graphs: null as boolean }));
+        }
+
+        /** What happens to the named graphs in the chosen format, so a single-graph format is never a surprise. */
+        function exportFormatNote(format: any, graphCount: number): { text: string; warning: boolean } {
+            if (format.graphs === true) {
+                return { text: 'Keeps the named graphs.', warning: false };
+            }
+            if (format.graphs !== false) {
+                return { text: '', warning: false };
+            }
+            if (graphCount === 0) {
+                return { text: format.label + ' does not record graphs; this repository has no named graphs to lose.', warning: false };
+            }
+            const which = isFinite(graphCount)
+                ? (graphCount === 1 ? 'the named graph' : 'all ' + graphCount + ' named graphs') : 'every graph';
+            return { text: format.label + ' cannot hold named graphs: the statements of ' + which
+                + ' are written as one graph. Choose N-Quads or TriG to keep them.', warning: true };
+        }
+
+        /**
+         * Export (user-requested redesign): one card downloads a file and names it on its button, with a note on what
+         * the format does with named graphs and the timeout under Advanced settings; a second card previews statements
+         * with its own form, so its limit is never mistaken for a download setting. The preview form carries the chosen
+         * format and compression along, so previewing never resets them.
+         */
         function exportPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const info = workbenchData(context);
             const defaults = info.defaults || info;
-            const graphFormats = formatOptions(info.graphDownloadFormats || info['graph-download-format']);
+            const formats = exportFormats(model, info);
             const locationObject: any = typeof window !== 'undefined' ? window.location : null;
             const urlFormat = locationObject && typeof locationObject.search === 'string'
                 ? new URLSearchParams(locationObject.search).get('Accept') : '';
@@ -2036,61 +2073,112 @@ module workbench {
             const cookieFormat = currentCookieValue('Accept');
             const configuredFormat = text(meta(model, 'default-export-format') || defaults['default-export-format']);
             const genericFormat = text(meta(model, 'default-Accept') || defaults['default-Accept']);
-            const available = (candidate: string) => graphFormats.some((format: any) => format.value === candidate);
-            const defaultFormat = [explicitFormat, cookieFormat, configuredFormat, genericFormat]
-                .filter((candidate: string) => candidate && available(candidate))[0]
-                || (graphFormats.length ? graphFormats[0].value : 'application/n-quads');
+            const available = (candidate: string) => formats.some((format: any) => format.value === candidate);
+            const holder: any = model;
+            if (!holder.exportChoice) {
+                const urlCompression = locationObject && typeof locationObject.search === 'string'
+                    ? new URLSearchParams(locationObject.search).get('compression') : '';
+                holder.exportChoice = {
+                    format: [explicitFormat, cookieFormat, configuredFormat, genericFormat]
+                        .filter((candidate: string) => candidate && available(candidate))[0]
+                        || (formats.length ? formats[0].value : 'application/n-quads'),
+                    compression: ['none', 'gzip', 'zip'].indexOf(urlCompression) >= 0 ? urlCompression : 'gzip'
+                };
+            }
+            const choice = holder.exportChoice;
+            const format = formats.filter((candidate: any) => candidate.value === choice.format)[0]
+                || { value: choice.format, label: choice.format, extension: '', graphs: null as boolean };
+            const extension = format.extension || 'rdf';
+            const fileName = choice.compression === 'zip' ? 'export.zip'
+                : 'export.' + extension + (choice.compression === 'gzip' ? '.gz' : '');
+            const graphCountValue = meta(model, 'named-graph-count');
+            const graphCount = graphCountValue === undefined || graphCountValue === null || text(graphCountValue) === ''
+                ? NaN : Number(text(graphCountValue));
+            const note = exportFormatNote(format, graphCount);
+            const compressionHelp = choice.compression === 'zip' ? 'A .zip archive with export.' + extension + ' inside.'
+                : choice.compression === 'gzip' ? 'The smallest download. Add RDF and most RDF tools read .gz files directly.'
+                    : 'The file is as large as the data.';
             const timeout = text(meta(model, 'export-timeout')) || '43200';
             const safari = isSafari();
             const requested = text(meta(model, 'statement-preview-requested')) === 'true';
             const previewLimit = text(meta(model, 'statement-preview-limit')) || '100';
-            return h`<form id="export-form" class="workbench-island workbench-form-card" action="export">
-                <div class="workbench-form-grid">
-                    <div class="workbench-field"><label for="Accept">Download format</label>
-                        <select id="Accept" name="Accept">${graphFormats.map((format: any) => h`<option value=${format.value} ?selected=${format.value === defaultFormat}>${format.label}</option>`)}</select>
+            const repositoryName = context.repositoryId || 'this repository';
+            const rerender = (event: any) => {
+                const outlet = event.currentTarget.closest('.workbench-outlet');
+                if (outlet) { render(outlet, model, context, runtime); }
+            };
+            const option = (candidate: any) => h`<option value=${candidate.value} ?selected=${candidate.value === format.value}>${
+                candidate.label}</option>`;
+            const keeping = formats.filter((candidate: any) => candidate.graphs === true);
+            const merging = formats.filter((candidate: any) => candidate.graphs !== true);
+            return h`<form id="export-form" class="workbench-island workbench-form-card export-card" action="export">
+                <div class="export-card__header"><h2>Download a file</h2>
+                    <p class="workbench-page-meta">Writes every statement in ${repositoryName} to one file.</p></div>
+                <div class="workbench-form-grid export-download__fields">
+                    <div class="workbench-field"><label for="Accept">Format</label>
+                        <div class="workbench-select-control"><select id="Accept" name="Accept" aria-describedby="export-format-note"
+                                @change=${(event: any) => { choice.format = event.currentTarget.value; rerender(event); }}>${
+                            keeping.length && merging.length
+                                ? h`<optgroup label="Keep named graphs">${keeping.map(option)}</optgroup>
+                                    <optgroup label="Without named graphs">${merging.map(option)}</optgroup>`
+                                : formats.map(option)}</select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
+                        <p id="export-format-note" class=${'workbench-field__help' + (note.warning ? ' workbench-field__help--warning' : '')}
+                            ?hidden=${!note.text}>${note.warning ? icon(runtime, 'warning-sign', 'workbench-field__help-icon') : ''}${note.text}</p>
                     </div>
-                    <div class="workbench-field"><label for="compression">Compression</label><select id="compression" name="compression"
-                            aria-describedby=${safari ? 'export-compression-help' : runtime.nothing} @change=${(event: any) => {
-                                const help = event.currentTarget.ownerDocument.getElementById('export-compression-help');
-                                if (help) { help.hidden = event.currentTarget.value === 'none'; }
-                            }}>
-                        <option value="none">None</option><option value="gzip" selected>Gzip</option><option value="zip">Zip</option>
-                    </select>${safari ? h`<p id="export-compression-help" class="workbench-field__help">Safari expands .gz and .zip
-                        downloads after saving them. To keep the compressed file, turn off <em>Open “safe” files after
-                        downloading</em> in Safari Settings › General.</p>` : ''}</div>
-                    <div class="workbench-field"><label for="timeout">Timeout</label>
+                    <fieldset class="workbench-segmented export-compression" aria-describedby="export-compression-help">
+                        <legend>Compression</legend>
+                        ${[['none', 'None'], ['gzip', 'Gzip'], ['zip', 'Zip']].map((entry: string[]) => h`<label for=${'compression-' + entry[0]}>
+                            <input type="radio" id=${'compression-' + entry[0]} name="compression" value=${entry[0]}
+                                ?checked=${choice.compression === entry[0]}
+                                @change=${(event: any) => { choice.compression = entry[0]; rerender(event); }} /><span>${entry[1]}</span>
+                        </label>`)}
+                        <p id="export-compression-help" class="workbench-field__help workbench-segmented__help">${compressionHelp}</p>
+                        ${safari && choice.compression !== 'none' ? h`<p id="export-safari-note"
+                            class="workbench-field__help workbench-segmented__help">Safari expands .gz and .zip downloads after saving
+                            them. To keep the compressed file, turn off <em>Open “safe” files after downloading</em> in Safari
+                            Settings › General.</p>` : ''}
+                    </fieldset>
+                </div>
+                ${workbench.detailDisclosure.render(h, {
+                    id: 'export-advanced', toggleId: 'export-advanced-toggle',
+                    panelId: 'export-advanced-panel', label: 'Advanced settings',
+                    ownerClass: 'workbench-options workbench-form-subgroup'
+                }, h`<div class="workbench-field workbench-disclosure__field"><label for="timeout">Timeout</label>
                         <div class="workbench-input-unit"><input id="timeout" name="timeout" type="number" min="0" step="1" required
                             value=${timeout} aria-describedby="export-timeout-unit export-timeout-help"
                             @input=${(event: any) => {
                                 const help = event.target.ownerDocument.getElementById('export-timeout-help');
                                 if (help) { help.textContent = durationLabel(event.target.value); }
                             }} /><span id="export-timeout-unit" class="workbench-input-unit__suffix">seconds</span></div>
-                        <p id="export-timeout-help" class="workbench-field__help" aria-live="polite">${durationLabel(timeout)}</p>
-                    </div>
-                </div>
-                ${workbench.detailDisclosure.render(h, {
-                    id: 'export-result-options', toggleId: 'export-result-options-toggle',
-                    panelId: 'export-result-options-panel', label: 'Result options',
-                    ownerClass: 'workbench-options workbench-form-subgroup'
-                }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_export">Preview limit</label>
-                        ${limitSelect(runtime, 'limit_export', context, previewLimit)}
-                        <span id="result-limited">${requested && previewLimit !== '0' && rowCount(model) >= Number(previewLimit)
-                            ? 'The preview is limited to the selected number of statements.' : ''}</span>
-                        <span class="hint">Limit only applies to the preview, not to downloads.</span>
+                        <p class="workbench-field__help"><span id="export-timeout-help" aria-live="polite">${durationLabel(timeout)}</span>
+                            · the export stops when it takes longer.</p>
                     </div>`)}
-                <div class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
-                    <span class="workbench-action-hit-area"><span class="workbench-action-label">
-                        <button type="submit" name="action" value="download" aria-label="Download">
-                            ${icon(runtime, 'download')}<span>Download</span>
-                        </button>
-                    </span></span>
-                </span></div>
+                <div class="workbench-form-actions"><button type="submit" name="action" value="download"
+                        class="workbench-action workbench-action--primary">${icon(runtime, 'download')}<span>Download <code
+                        class="export-file-name">${fileName}</code></span></button></div>
             </form>
-            <section id="export-results" class="workbench-island workbench-responsive-records">
-                <h2>Statement preview</h2>
-                <div class="workbench-form-actions"><button class="workbench-action workbench-action--secondary" type="submit" form="export-form" name="action" value="preview">Retrieve statements</button></div>
-                ${rowCount(model) ? table(runtime, model, context, { linkTerms: true })
-                    : h`<p class="workbench-empty" role="status">${requested ? 'No results to display.' : 'Choose Retrieve statements to preview repository data.'}</p>`}
+            <section id="export-results" class="workbench-island workbench-responsive-records export-card">
+                <div class="export-card__header"><h2>Preview statements</h2>
+                    <p class="workbench-page-meta">Shows the first statements of ${repositoryName} here. It does not change the
+                        downloaded file.</p></div>
+                <form id="export-preview-form" class="export-preview__controls" action="export">
+                    <input type="hidden" name="action" value="preview" />
+                    <input type="hidden" name="Accept" value=${format.value} />
+                    <input type="hidden" name="compression" value=${choice.compression} />
+                    <label for="limit_export">Show</label><div class="workbench-select-control">${limitSelect(runtime,
+                        'limit_export', context, previewLimit)}${icon(runtime, 'chevron', 'workbench-select-chevron')}</div><span
+                        class="export-preview__unit">statements</span>
+                    <button class="workbench-action workbench-action--secondary" type="submit">Show preview</button>
+                </form>
+                <p id="result-limited" class="workbench-field__help" ?hidden=${!(requested && previewLimit !== '0'
+                    && rowCount(model) >= Number(previewLimit))}>${'Showing the first ' + previewLimit + ' statements.'}</p>
+                ${rowCount(model) ? table(runtime, model, context, {
+                    labels: { context: 'Graph' },
+                    // Prefixed names and value tags, as on Explore, keep four columns readable beside the download card.
+                    cells: (record: any) => (model.vars || []).map((name: string) => h`<td data-label=${columnLabel(name,
+                        { labels: { context: 'Graph' } })}>${exploreTerm(runtime, record[name], exploreNamespaces(model), true)}</td>`)
+                }) : h`<p class="workbench-empty" role="status">${requested ? 'No statements to show.'
+                        : 'Choose Show preview to see the first statements.'}</p>`}
             </section>`;
         }
 

@@ -345,13 +345,7 @@ test.describe('Workbench configuration and option sizing', () => {
 		geometry.context = await routePage.locator('#context').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`);
-		const exportOptions = routePage.locator('#export-result-options');
-		if (!(await exportOptions.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
-			await exportOptions.locator(':scope > .workbench-disclosure__toggle').click();
-		}
-		const exportResultOptionsPanel = exportOptions.locator(':scope > .workbench-disclosure__panel');
-		await expect(exportResultOptionsPanel).toBeVisible();
-		await waitForSettledDisclosure(exportResultOptionsPanel);
+		// The preview limit sits in the preview card since the Export redesign, outside any disclosure.
 		geometry.exportLimit = await routePage.locator('#limit_export').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/query`);
@@ -393,7 +387,7 @@ test.describe('Workbench configuration and option sizing', () => {
 					await routePage.locator('#add-import-settings-toggle').click();
 				}
 				if (name === 'Export') {
-					await routePage.locator('#export-result-options-toggle').click();
+					await routePage.locator('#export-advanced-toggle').click();
 				}
 				if (name === 'Explore') {
 					await routePage.locator('#explore-result-options-toggle').click();
@@ -601,7 +595,7 @@ test.describe('Workbench configuration and option sizing', () => {
 					await routePage.locator('#add-import-settings-toggle').click();
 				}
 				if (name === 'Export') {
-					await routePage.locator('#export-result-options-toggle').click();
+					await routePage.locator('#export-advanced-toggle').click();
 				}
 				const controls = await routePage.locator('#workbench-page-surface select:not([multiple])').evaluateAll(elements =>
 				elements.filter(element => element.getBoundingClientRect().width > 0).map(element => ({
@@ -612,8 +606,8 @@ test.describe('Workbench configuration and option sizing', () => {
 				const geometry = await routePage.evaluate(() => ({
 					viewport: document.documentElement.clientWidth,
 					pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-					resultOptionsWidth: document.querySelector('#export-result-options') &&
-						Math.round(document.querySelector('#export-result-options').getBoundingClientRect().width)
+					resultOptionsWidth: document.querySelector('#export-advanced') &&
+						Math.round(document.querySelector('#export-advanced').getBoundingClientRect().width)
 				}));
 				const expectedHeight = width <= 900 ? 44 : 36;
 				console.log(`MAIN_SINGLE_SELECTS ${JSON.stringify({ name, width, expectedHeight, controls, ...geometry })}`);
@@ -752,14 +746,15 @@ test.describe('Workbench configuration and option sizing', () => {
 			await addPage.close();
 
 			const exportPage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`, { width, height: 1000 });
-			await exportPage.locator('#export-result-options-toggle').click();
-			const exportResultPanel = exportPage.locator('#export-result-options-panel');
+			// Export's disclosure holds the timeout since the Export redesign.
+			await exportPage.locator('#export-advanced-toggle').click();
+			const exportResultPanel = exportPage.locator('#export-advanced-panel');
 			await expect(exportResultPanel).toBeVisible();
 			await waitForSettledDisclosure(exportResultPanel);
-			const exportGeometry = await exportPage.locator('#export-result-options').evaluate(element => {
+			const exportGeometry = await exportPage.locator('#export-advanced').evaluate(element => {
 				const panel = element.querySelector('.workbench-disclosure__panel').getBoundingClientRect();
 				const summary = element.querySelector('.workbench-disclosure__toggle').getBoundingClientRect();
-				const control = element.querySelector('#limit_export').getBoundingClientRect();
+				const control = element.querySelector('#timeout').getBoundingClientRect();
 				const field = element.querySelector('.workbench-field').getBoundingClientRect();
 				return {
 					panelWidth: Math.round(panel.width),

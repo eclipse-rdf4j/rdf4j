@@ -321,15 +321,18 @@ test('Export keeps its independent defaults, preview state, and explicit unlimit
     assert.equal(selectedValue('application/n-quads'), true, 'the default export format should stay N-Quads');
     assert.equal(selectedValue('100'), true, 'the preview limit should remain independent of the Explore default');
     assert.equal(selectedValue('200'), false, 'the Explore default must not become the export preview default');
-    assert.ok(initialMarkup.includes('value="gzip" selected'), 'compression should default to gzip');
-    assert.ok(initial.dynamicValues.includes('Choose Retrieve statements to preview repository data.'));
+    const compression = optionValue => initial.templates.find(item => item.strings.join('').includes('type="radio"')
+        && item.strings.join('').includes('name="compression"') && item.values.includes(optionValue));
+    const gzip = compression('gzip');
+    assert.ok(gzip && gzip.values[gzip.values.indexOf('gzip') + 1] === true, 'compression should default to gzip');
+    assert.ok(initial.dynamicValues.includes('Choose Show preview to see the first statements.'));
 
     const unlimited = page({ 'export-timeout': '0' });
     assert.ok(unlimited.dynamicValues.includes('0'), 'an explicit zero timeout must be preserved');
     const emptyPreview = page({ 'statement-preview-requested': 'true' });
     const emptyText = emptyPreview.templates.flatMap(item => item.strings).join(' ')
         + ' ' + emptyPreview.dynamicValues.join(' ');
-    assert.ok(emptyText.includes('No results to display.'), 'an empty preview should report no results');
-    assert.ok(!emptyText.includes('Choose Retrieve statements to preview repository data.'),
+    assert.ok(emptyText.includes('No statements to show.'), 'an empty preview should report no results');
+    assert.ok(!emptyText.includes('Choose Show preview to see the first statements.'),
         'an empty requested preview should not look like a preview has not been requested');
 });

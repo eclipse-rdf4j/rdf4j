@@ -145,7 +145,8 @@ test('route templates preserve paging, saved-query streams, export selection, an
 			}))
 		};
 	});
-	const exportDownloadIcon = exportButtonState.candidates.find(candidate => candidate.text === 'Download')?.icon || null;
+	// The Download button names its file since the Export redesign ("Download export.nq.gz").
+	const exportDownloadIcon = exportButtonState.candidates.find(candidate => candidate.text.startsWith('Download'))?.icon || null;
 	console.log('EXPORT_DOWNLOAD_CONTROL_RED', JSON.stringify(exportButtonState));
 	expect.soft(await page.getByRole('button', { name: 'Download' }).count(),
 		'the export download button has a computed accessible name').toBe(1);
@@ -154,7 +155,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	const previewResponsePromise = page.waitForResponse(response => response.request().url().includes(`/repositories/${REPOSITORY_ID}/export`)
 		&& response.request().headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson'), { timeout: 20_000 });
 	const previewNavigationPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20_000 });
-	await page.getByRole('button', { name: 'Retrieve statements' }).click();
+	await page.getByRole('button', { name: 'Show preview' }).click();
 	await previewNavigationPromise;
 	const previewResponse = await previewResponsePromise;
 	await expect(page.locator('#export-results')).toBeVisible();

@@ -277,7 +277,8 @@ test('explanation toolbar groups use deliberate spacing without an offset', asyn
 test('preview actions stay separate and empty result messages belong after table headings', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/export`);
-	const exportSelects = await page.locator('#export-form .workbench-select-control > select').evaluateAll(selects =>
+	// The preview limit has its own form in the preview card since the Export redesign.
+	const exportSelects = await page.locator('#workbench-page-surface .workbench-select-control > select').evaluateAll(selects =>
 		selects.map(select => ({
 			id: select.id,
 			wrapperClass: select.parentElement.classList.contains('workbench-select-control'),
@@ -285,7 +286,7 @@ test('preview actions stay separate and empty result messages belong after table
 			chevronCount: select.parentElement.querySelectorAll('.workbench-select-chevron').length
 		}))
 	);
-	expect(exportSelects.map(select => select.id)).toEqual(['Accept', 'compression', 'limit_export']);
+	expect(exportSelects.map(select => select.id)).toEqual(['Accept', 'limit_export']);
 	await expect(page.locator('#timeout')).toHaveValue('43200');
 	for (const select of exportSelects) {
 		expect(select.wrapperClass).toBe(true);
@@ -300,7 +301,7 @@ test('preview actions stay separate and empty result messages belong after table
 
 	await Promise.all([
 		page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-		page.locator('#export-results button[name="action"][value="preview"]').click()
+		page.locator('#export-preview-form button[type="submit"]').click()
 	]);
 	await expect(page.locator('#export-results table.data tbody tr')).toHaveCount(2);
 	const populatedGap = await exportContentGap(page);
@@ -498,7 +499,7 @@ test('empty tuple and graph query tables remain free of preview-only status rows
 
 async function exportContentGap(page) {
 	return page.locator('#export-results').evaluate(section => {
-		const actions = section.querySelector('.workbench-form-actions').getBoundingClientRect();
+		const actions = section.querySelector('.export-preview__controls').getBoundingClientRect();
 		const empty = section.querySelector('.workbench-empty');
 		const content = empty && getComputedStyle(empty).display !== 'none'
 			? empty
