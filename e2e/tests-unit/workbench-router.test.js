@@ -679,3 +679,21 @@ test('a page without a heading or a status region is still shown', async () => {
     await settle();
     assert.equal(harness.outlet.getAttribute('data-workbench-route-ready'), 'true');
 });
+
+// End-of-M8 suite finding: the application element describes the page that is shown.
+test('a committed navigation updates the view and repository the application element names', async () => {
+    const harness = loadRouter();
+    harness.mount.setAttribute('data-workbench-view', 'summary');
+    harness.mount.setAttribute('data-workbench-repository-id', 'repo-1');
+    harness.register('repositories');
+    harness.workbench.app.loadModel = () => Promise.resolve(harness.model('repositories'));
+    harness.start();
+
+    const navigation = harness.router.navigate('https://example.test/workbench/repositories/NONE/repositories',
+        { history: 'push' });
+    assert.equal(harness.mount.getAttribute('data-workbench-view'), 'summary', 'unchanged until the commit');
+    assert.equal(await navigation, 'committed');
+
+    assert.equal(harness.mount.getAttribute('data-workbench-view'), 'repositories');
+    assert.equal(harness.mount.getAttribute('data-workbench-repository-id'), 'NONE');
+});

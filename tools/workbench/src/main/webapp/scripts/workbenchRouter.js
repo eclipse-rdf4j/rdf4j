@@ -277,6 +277,9 @@ var workbench;
             if (!model.error) {
                 app().configureNamespaces(model);
             }
+            // The application element describes the page that is shown, as the server's shell does.
+            session.mount.setAttribute('data-workbench-view', viewIdOf(url));
+            session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
             var context = app().viewContext(session.mount, model, url.href, session.runtime);
             views().render(session.mount, model, context, session.runtime);
             if (session.contextBar) {

@@ -146,7 +146,9 @@ test('Remove and Clear stack labels above equally wide fields', async ({ page })
 		for (const entry of layout.labels) {
 			expect(entry.labelBottom, `${view} ${entry.for}`).toBeLessThanOrEqual(entry.controlTop);
 		}
-		expect(new Set(layout.widths).size, `${view} ${JSON.stringify(layout.widths)}`).toBe(1);
+		// Clear chooses its graph from one select (M6.4), so only Remove has text fields to compare.
+		expect(layout.widths.length, `${view} ${JSON.stringify(layout.widths)}`).toBe(view === 'remove' ? 3 : 0);
+		expect(new Set(layout.widths).size, `${view} ${JSON.stringify(layout.widths)}`).toBeLessThanOrEqual(1);
 	}
 });
 
