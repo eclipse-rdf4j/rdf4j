@@ -3559,13 +3559,21 @@ var workbench;
                         }
                         else {
                             if (response.existed) {
-                                if (confirm('Query name exists. Click OK to overwrite.')) {
-                                    ajaxSave(true);
-                                }
-                                else {
-                                    feedback.removeClass().addClass('error');
-                                    feedback.text('Cancelled overwriting existing query.');
-                                }
+                                var name = String($('#query-name').val() || '');
+                                workbench.confirmDialog.open({
+                                    title: 'Replace saved query?',
+                                    body: 'A saved query named "' + name + '" already exists. Saving replaces it.',
+                                    confirmLabel: 'Replace',
+                                    danger: true
+                                }).then(function (overwrite) {
+                                    if (overwrite) {
+                                        ajaxSave(true);
+                                    }
+                                    else {
+                                        feedback.removeClass().addClass('error');
+                                        feedback.text('Cancelled overwriting existing query.');
+                                    }
+                                });
                             }
                         }
                     }

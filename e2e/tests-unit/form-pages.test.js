@@ -108,7 +108,10 @@ test('add page handles context and source selection branches', () => {
     assert.equal(context.disabled, false);
   });
 
-test('create page resolves field roles, overwrite checks, and delayed enablement', () => {
+/** Lets promise chains (confirmation dialogs, M6.2) finish. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('create page resolves field roles, overwrite checks, and delayed enablement', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true, true],
         href: 'http://localhost:8080/rdf4j-workbench/create?id=repo-1&title=My+Repo'
@@ -150,19 +153,24 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.context.checkOverwrite();
     const infoRequest = harness.ajaxRequests[0];
     infoRequest.resolve({});
+    await settle();
     assert.equal(createForm.submitCount, 1);
     assert.equal(harness.confirms.length, 2);
+    assert.match(harness.confirms[0], /Replace repository configuration\?/);
+    assert.match(harness.confirms[1], /Use this repository id\?/);
 
     createForm.submitCount = 0;
     id.value = 'new-id';
     harness.context.checkOverwrite();
     harness.ajaxRequests[1].status(500);
+    await settle();
     assert.equal(createForm.submitCount, 1);
 
     // Unknown repositories answer 404 since the in-shell not-found page; 500 stays accepted for older servers.
     createForm.submitCount = 0;
     harness.context.checkOverwrite();
     harness.ajaxRequests[2].status(404);
+    await settle();
     assert.equal(createForm.submitCount, 1);
 });
 
@@ -223,7 +231,7 @@ test('create federate page enables create only for valid member selection', () =
     assert.equal(createButton.disabled, true);
 });
 
-test('delete page reports timeout and successful unsafe-delete confirmation', () => {
+test('delete page reports timeout and successful unsafe-delete confirmation', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -252,8 +260,38 @@ test('delete page reports timeout and successful unsafe-delete confirmation', ()
         }
     });
     harness.ajaxRequests[1].resolve({ safe: false });
+    await settle();
     assert.equal(form.submitCount, 1);
+    assert.match(harness.confirms[0], /Delete a proxied repository\?/);
     assert.equal(feedback.textContent, '');
+});
+
+test('delete page submits a safe repository without asking and keeps a cancelled one (M6.2)', async () => {
+    const harness = createFormBrowserHarness({
+        confirmResponses: [false]
+    });
+    const form = harness.registerElement('form', { id: 'delete-form' });
+    const button = harness.registerElement('button', { id: 'delete-button' });
+    const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
+    const feedback = harness.registerElement('div', { id: 'delete-feedback' });
+    form.appendChild(button);
+    harness.document.body.appendChild(form);
+    harness.document.body.appendChild(id);
+    harness.document.body.appendChild(feedback);
+    harness.loadScripts(['delete.js']);
+    const event = { target: button, preventDefault() {} };
+
+    harness.context.checkIsSafeToDelete(event);
+    harness.ajaxRequests[0].resolve({ safe: true });
+    await settle();
+    assert.equal(form.submitCount, 1);
+    assert.equal(harness.confirms.length, 0, 'a repository nothing proxies needs no extra question');
+
+    harness.context.checkIsSafeToDelete(event);
+    harness.ajaxRequests[1].resolve({ safe: false });
+    await settle();
+    assert.equal(harness.confirms.length, 1);
+    assert.equal(form.submitCount, 1, 'Cancel keeps the repository');
 });
 
 test('delete page reports generic server errors', () => {
@@ -307,4 +345,39 @@ test('server page rewrites password field when credentials are present', () => {
     });
     assert.equal(password.name, '');
     assert.equal(form.submitCount, 2);
+});
+
+test('confirmation dialog waits for the typed text and resolves false on Cancel (M6.2)', async () => {
+    const harness = createFormBrowserHarness();
+    harness.loadScripts([]);
+    const component = harness.context.workbench.confirmDialog;
+    const pending = component.open({ title: 'Delete repository?', body: 'This deletes bsbm and its data.',
+        confirmLabel: 'Delete repository', danger: true, requireText: 'bsbm' });
+    const dialog = harness.document.querySelectorAll('dialog')[0];
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.querySelectorAll('h2')[0].textContent, 'Delete repository?');
+    const [cancel, confirm] = dialog.querySelectorAll('button');
+    assert.equal(cancel.textContent, 'Cancel');
+    assert.equal(harness.document.activeElement, cancel, 'Cancel has the focus first');
+    assert.equal(confirm.textContent, 'Delete repository');
+    assert.ok(confirm.classList.contains('workbench-action--danger'));
+    assert.equal(confirm.disabled, true);
+    const input = dialog.querySelectorAll('input')[0];
+    input.value = 'bsb';
+    input.trigger('input');
+    assert.equal(confirm.disabled, true);
+    input.value = 'bsbm';
+    input.trigger('input');
+    assert.equal(confirm.disabled, false);
+    cancel.click();
+    assert.equal(await pending, false);
+    assert.equal(dialog.parentNode, null, 'the dialog is removed once it closes');
+
+    const confirmed = component.open({ title: 'Clear graph?', body: 'Clears 3 statements.', confirmLabel: 'Clear graph',
+        danger: true });
+    const second = harness.document.querySelectorAll('dialog')[0];
+    const confirmButton = second.querySelectorAll('button')[1];
+    assert.equal(confirmButton.disabled, false);
+    confirmButton.click();
+    assert.equal(await confirmed, true);
 });

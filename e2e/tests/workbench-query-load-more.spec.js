@@ -1649,13 +1649,13 @@ async function saveQueryNamed(page, query, queryName, options = {}) {
 		&& /\/query(?:[?#]|$)/.test(request.url())
 		&& !isStreamingAccept(request.headers().accept || '')
 		&& new URLSearchParams(request.postData() || '').get('action') === 'save');
-	const overwriteDialog = options.overwrite ? page.waitForEvent('dialog') : null;
 	await page.locator('#save').click();
 	await saveRequest;
-	if (overwriteDialog) {
-		const dialog = await overwriteDialog;
-		expect(dialog.message()).toMatch(/overwrite/i);
-		await dialog.accept();
+	if (options.overwrite) {
+		// An existing name is confirmed in the Workbench dialog (plan task M6.2).
+		const dialog = page.getByRole('dialog', { name: 'Replace saved query?' });
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Replace' }).click();
 	}
 	await expect(page.locator('#save-feedback')).toHaveText('Query saved.');
 	await openSavedQueryRow(page, queryName);

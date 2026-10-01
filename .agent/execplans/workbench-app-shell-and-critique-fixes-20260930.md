@@ -57,8 +57,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 15:47Z) M5.5 Add RDF and Export.
 - [x] (2026-10-01 15:47Z) M5.6 Saved queries details.
 - [x] (2026-10-01 15:51Z) M6.1 Show server-side errors on Clear, Remove and Update.
-- [ ] M6.2 (in progress) A confirmation dialog component.
-- [ ] M6.3 Namespaces (mockup 07).
+- [x] (2026-10-01 16:00Z) M6.2 A confirmation dialog component.
+- [ ] M6.3 (in progress) Namespaces (mockup 07).
 - [ ] M6.4 Clear (mockup 08).
 - [ ] M6.5 Remove with a live match count (mockup 09, left).
 - [ ] M6.6 Delete repository (mockup 09, right).
@@ -297,6 +297,7 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Decision (M5.4): Summary is one card (`#workbench-summary`) with "Repository" (ID, Location and Server in monospace, Title) and "Size" (Statements and Named graphs, both through `workbench.format.count` with the view's locale) and the closed "Configuration (Turtle)" disclosure (still `#summary-config-model`). `ViewContext.locale` already existed (M1), so only its use is new. The Information page already used the key/value component and is unchanged. Specs that waited for the "Repository Location" heading after creating a repository now wait for the card's "Repository" heading.
 - Decision (M5.5): the "Override parsed contexts" checkbox is gone. `AddServlet` never read `overrideContext`; it puts every statement into `context` whenever that parameter is non-empty, and the checkbox only enabled the field. With the field moved next to Data format as "Target graph" (placeholder "Default graph"), an empty value keeps the graphs named in the data and a graph IRI overrides them, which is exactly what the server does, so a second control would only disable the first. `workbench.add.handleContextOverride` was removed with it. The source choice is now a joined segmented control (the page-surface `fieldset` rule outranked the old selector, so the box stayed until the selector named `fieldset.workbench-source-tabs`). The drop zone keeps the real file input (visually hidden, still focusable) and a "choose a file" label, assigns dropped files with `input.files = dataTransfer.files` and fires `change`, so the existing base-URI handling runs. Export's timeout helper reads days, hours, minutes and seconds ("12 hours", "1 minute 30 seconds", "No limit").
 - Decision (M5.6): the saved-query details are the key/value list (`.saved-query-metadata`, still `id=<urn>-metadata` and toggled by `style.display`), with "Include inferred statements" and "Shared" as Yes/No and the query language only when it is not SPARQL. The toggle is a `button` with `aria-expanded` and `aria-controls` whose text switches between "Show details" and "Hide details"; the old `value` attribute is gone, and the specs that read it or the metadata table were updated.
+- Decision (M6.2): `workbench.confirmDialog.open()` builds its dialog with DOM calls (a string body is a paragraph; a Lit template is rendered with the page's Lit runtime), appends it to `body`, removes it on `close` and resolves on close, so Escape, Cancel and confirm share one path. The callers became promise chains: Create asks "Replace repository configuration?" and then "Use this repository id?", the proxied-repository Delete asks once, saved-query Delete and the Query page's existing-name save ask "Delete saved query?" and "Replace saved query?". The unit harness answers these dialogs from `confirmResponses` (recording their text in `confirms`), so the existing tests keep their meaning and only wait for the promise. In WebKit on macOS, Tab skips buttons (Option+Tab reaches them); the keyboard test uses that key there.
 
 ## Outcomes & Retrospective
 

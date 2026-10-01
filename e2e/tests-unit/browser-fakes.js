@@ -451,6 +451,32 @@ class FakeElement {
     }
 }
 
+/** A minimal HTMLDialogElement: showModal() and close() with the close event. */
+class FakeDialogElement extends FakeElement {
+    constructor(ownerDocument, tagName, options = {}) {
+        super(ownerDocument, tagName, options);
+        this.open = false;
+        this.returnValue = '';
+    }
+
+    showModal() {
+        this.open = true;
+        this.attributes.set('open', '');
+    }
+
+    close(returnValue) {
+        if (!this.open) {
+            return;
+        }
+        this.open = false;
+        this.attributes.delete('open');
+        if (returnValue !== undefined) {
+            this.returnValue = String(returnValue);
+        }
+        this.trigger('close');
+    }
+}
+
 class FakeWindow {
     constructor(name, initialHref) {
         this.name = name || '';
@@ -621,7 +647,8 @@ class FakeDocument {
     }
 
     createElement(tagName) {
-        const element = new FakeElement(this, tagName);
+        const element = String(tagName).toLowerCase() === 'dialog'
+            ? new FakeDialogElement(this, tagName) : new FakeElement(this, tagName);
         if (String(tagName).toLowerCase() === 'iframe') {
             element.contentWindow = new FakeWindow('', 'about:blank');
         }

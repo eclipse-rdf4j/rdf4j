@@ -25,31 +25,46 @@ module workbench {
  * does. An unknown id answers 404 Not Found (500 on older servers).
  */
 function checkOverwrite() {
-    var submit = false;
+    // 'exists' asks before replacing the configuration; 'absent' creates; anything else sends nothing.
+    var found = '';
     var id = workbench.create.id.val();
     $.ajax({
         url: '../' + id + '/info',
         success: function () {
-            submit = confirm('WARNING: You are about to overwrite the ' +
-                'configuration of an existing repository!');
+            found = 'exists';
         },
         statusCode: {
             // 404 answers an unknown repository; 500 is kept for servers from before the not-found page.
             404: function () {
-                submit = true;
+                found = 'absent';
             },
             500: function () {
-                submit = true;
+                found = 'absent';
             }
         },
 		complete : function(xhr, status) {
-            if (submit && !id.match(/^[a-z0-9._-]+$/)) {
-                submit = confirm('WARNING: There are potentially incompatible ' +
-                    'characters in the repository id.');
-            }
-            if (submit) {
-                $("form[action='create']").submit();
-            }
+            var overwrite: Promise<boolean> = found == 'exists' ? workbench.confirmDialog.open({
+                title: 'Replace repository configuration?',
+                body: 'A repository with the id "' + id + '" already exists. Creating it again replaces its configuration.',
+                confirmLabel: 'Replace configuration',
+                danger: true
+            }) : Promise.resolve(found == 'absent');
+            overwrite.then(function(submit: boolean) {
+                if (submit && !id.match(/^[a-z0-9._-]+$/)) {
+                    return workbench.confirmDialog.open({
+                        title: 'Use this repository id?',
+                        body: 'The id "' + id + '" contains characters other than lowercase letters, digits, '
+                            + 'dots, underscores and hyphens, which some tools cannot handle.',
+                        confirmLabel: 'Create repository',
+                        danger: false
+                    });
+                }
+                return submit;
+            }).then(function(submit: boolean) {
+                if (submit) {
+                    $("form[action='create']").submit();
+                }
+            });
         }
     });
 }

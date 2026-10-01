@@ -226,6 +226,108 @@ var workbench;
         }
         tabs.bind = bind;
     })(tabs = workbench.tabs || (workbench.tabs = {}));
+    /**
+     * A modal confirmation (M6.2): a native dialog with a title, a body, an optional typed confirmation,
+     * Cancel (focused first) and the confirm button. Escape and Cancel resolve false; only confirming resolves true.
+     */
+    var confirmDialog;
+    (function (confirmDialog) {
+        var counter = 0;
+        function renderBody(container, body) {
+            var lit = window.RDF4JLitHTML;
+            if (body && typeof body === 'object' && lit && typeof lit.render === 'function') {
+                lit.render(body, container);
+            }
+            else {
+                var paragraph = container.ownerDocument.createElement('p');
+                paragraph.textContent = body === null || body === undefined ? '' : String(body);
+                container.appendChild(paragraph);
+            }
+        }
+        function button(doc, className, label) {
+            var element = doc.createElement('button');
+            element.type = 'button';
+            element.className = className;
+            element.textContent = label;
+            return element;
+        }
+        function open(options) {
+            var doc = document;
+            var id = 'workbench-confirm-' + (++counter);
+            var dialog = doc.createElement('dialog');
+            dialog.className = 'workbench-dialog';
+            dialog.setAttribute('aria-labelledby', id + '-title');
+            dialog.setAttribute('aria-describedby', id + '-body');
+            var title = doc.createElement('h2');
+            title.id = id + '-title';
+            title.className = 'workbench-dialog__title';
+            title.textContent = options.title;
+            var body = doc.createElement('div');
+            body.id = id + '-body';
+            body.className = 'workbench-dialog__body';
+            dialog.appendChild(title);
+            dialog.appendChild(body);
+            renderBody(body, options.body);
+            var input = null;
+            if (options.requireText) {
+                var field = doc.createElement('div');
+                field.className = 'workbench-field workbench-dialog__field';
+                var label = doc.createElement('label');
+                label.setAttribute('for', id + '-input');
+                label.textContent = options.requireLabel || 'Type ' + options.requireText + ' to confirm';
+                input = doc.createElement('input');
+                input.id = id + '-input';
+                input.type = 'text';
+                input.setAttribute('autocomplete', 'off');
+                input.setAttribute('spellcheck', 'false');
+                field.appendChild(label);
+                field.appendChild(input);
+                dialog.appendChild(field);
+            }
+            var actions = doc.createElement('div');
+            actions.className = 'workbench-dialog__actions';
+            var cancel = button(doc, 'workbench-action workbench-action--secondary', 'Cancel');
+            var confirm = button(doc, 'workbench-action ' + (options.danger ? 'workbench-action--danger' : 'workbench-action--primary'), options.confirmLabel);
+            actions.appendChild(cancel);
+            actions.appendChild(confirm);
+            dialog.appendChild(actions);
+            var sync = function () {
+                confirm.disabled = !!input && input.value !== options.requireText;
+            };
+            sync();
+            return new Promise(function (resolve) {
+                var confirmed = false;
+                if (input) {
+                    input.addEventListener('input', sync);
+                    input.addEventListener('keydown', function (event) {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            confirm.click();
+                        }
+                    });
+                }
+                cancel.addEventListener('click', function () {
+                    dialog.close();
+                });
+                confirm.addEventListener('click', function () {
+                    if (!confirm.disabled) {
+                        confirmed = true;
+                        dialog.close();
+                    }
+                });
+                dialog.addEventListener('close', function () {
+                    if (dialog.parentNode) {
+                        dialog.parentNode.removeChild(dialog);
+                    }
+                    resolve(confirmed);
+                });
+                doc.body.appendChild(dialog);
+                dialog.showModal();
+                cancel.focus();
+            });
+        }
+        confirmDialog.open = open;
+    })(confirmDialog = workbench.confirmDialog || (workbench.confirmDialog = {}));
     var popover;
     (function (popover) {
         var closeOpenPopover = null;

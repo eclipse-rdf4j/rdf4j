@@ -129,6 +129,28 @@ function createScriptHarness(options = {}) {
         return confirmResponses.shift();
     }
 
+    // With confirmResponses, confirmation dialogs (workbench.confirmDialog, M6.2) are answered like
+    // window.confirm(): their text is recorded in confirms and the next response clicks confirm or Cancel.
+    if (options.confirmResponses) {
+        const createElement = document.createElement.bind(document);
+        document.createElement = (tagName) => {
+            const element = createElement(tagName);
+            if (String(tagName).toLowerCase() === 'dialog') {
+                const showModal = element.showModal.bind(element);
+                element.showModal = () => {
+                    showModal();
+                    confirms.push(element.textContent);
+                    const answer = getNextConfirmResponse();
+                    Promise.resolve().then(() => {
+                        const buttons = element.querySelectorAll('button');
+                        (answer ? buttons[buttons.length - 1] : buttons[0]).click();
+                    });
+                };
+            }
+            return element;
+        };
+    }
+
     function defaultAjaxHandler(ajaxOptions) {
         const request = createAjaxRequest(ajaxOptions);
         ajaxRequests.push(request);

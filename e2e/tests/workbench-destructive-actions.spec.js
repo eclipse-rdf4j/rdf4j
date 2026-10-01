@@ -41,3 +41,38 @@ test('Remove with every field empty shows the server error in an error callout',
 	await expect(error).toBeVisible();
 	await expect(error).toContainText('No values');
 });
+
+test('Deleting a saved query asks in a dialog that works with the keyboard alone', async ({ page, browserName }) => {
+	// Safari moves focus to buttons with Option+Tab.
+	const nextControl = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const queryName = `destructive-dialog-${Date.now()}`;
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'), { waitUntil: 'domcontentloaded' });
+	const editor = page.locator('.CodeMirror').first();
+	await editor.waitFor();
+	await editor.evaluate((element) => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
+	await page.locator('#save-query-toggle').press('Enter');
+	await page.locator('#query-name').fill(queryName);
+	await page.evaluate(() => window.workbench.query.handleNameChange());
+	await page.locator('#save').click();
+	await expect(page.locator('#save-feedback')).toContainText('Query saved.');
+
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'saved-queries'), { waitUntil: 'domcontentloaded' });
+	const row = page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) });
+	await row.locator('.saved-query-delete').focus();
+	await page.keyboard.press('Enter');
+	const dialog = page.getByRole('dialog', { name: 'Delete saved query?' });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(row).toHaveCount(1);
+
+	await row.locator('.saved-query-delete').focus();
+	await page.keyboard.press('Enter');
+	await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+	await page.keyboard.press(nextControl);
+	await expect(dialog.getByRole('button', { name: 'Delete' })).toBeFocused();
+	await page.keyboard.press('Enter');
+	await expect(page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) })).toHaveCount(0);
+});

@@ -2877,6 +2877,67 @@ body.workbench-body .workbench-browse-card table.data td.workbench-row-actions >
 	margin-left: 4px;
 }
 
+/* Confirmation dialog (M6.2): a native modal dialog with its actions at the end. */
+body.workbench-body dialog.workbench-dialog {
+	box-sizing: border-box;
+	width: min(480px, calc(100vw - 32px));
+	padding: var(--workbench-card-inset, 24px);
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body dialog.workbench-dialog::backdrop {
+	background: color-mix(in srgb, var(--workbench-canvas) 75%, transparent);
+}
+
+body.workbench-body .workbench-dialog__title {
+	margin: 0 0 12px;
+	font-size: 18px;
+}
+
+body.workbench-body .workbench-dialog__body > :first-child {
+	margin-top: 0;
+}
+
+body.workbench-body .workbench-dialog__body > :last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body .workbench-dialog__field {
+	display: grid;
+	gap: 4px;
+	margin-top: var(--workbench-form-gap);
+}
+
+body.workbench-body .workbench-dialog__field > input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: var(--workbench-control-height);
+	padding: 0 var(--workbench-control-inset);
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-dialog__field > input[type="text"]:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 1px;
+}
+
+body.workbench-body .workbench-dialog__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	margin-top: var(--workbench-space-section);
+}
+
 /* Repository list (M5.3, mockup 12): the whole row opens the repository; actions live in a small menu. */
 body.workbench-body .workbench-action-icon--more {
 	stroke-width: 3;

@@ -70,7 +70,7 @@ function createYasqeStub(harness) {
     };
 }
 
-test('saved queries delete permissions and toggle behavior cover both branches', () => {
+test('saved queries delete permissions and toggle behavior cover both branches', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -114,6 +114,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(queryInput.getAttribute('value'), 'DESCRIBE ?s');
 
     harness.context.workbench.savedQueries.deleteQuery('alice', 'Query 1', 'urn:query');
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
 
     harness.context.workbench.savedQueries.deleteQuery('bob', 'Query 2', 'urn:query');
@@ -133,7 +134,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(toggle.textContent, 'Show details');
 });
 
-test('saved query controls bind inert data attributes to static handlers', () => {
+test('saved query controls bind inert data attributes to static handlers', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -176,6 +177,7 @@ test('saved query controls bind inert data attributes to static handlers', () =>
     harness.runLoadHandlers();
 
     deleteButton.click();
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
     assert.match(harness.confirms[0], /globalThis\.rdf4jXss=true/);
     assert.equal(harness.context.rdf4jXss, undefined);

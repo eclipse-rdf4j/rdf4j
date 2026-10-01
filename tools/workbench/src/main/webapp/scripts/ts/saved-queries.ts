@@ -16,12 +16,16 @@ module workbench {
             var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
             var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
             if ((!savedBy || currentUser == savedBy)) {
-                if (confirm("'"
-                    + name
-                    + "' will no longer be accessible, even using your browser's history. "
-                    + "Do you really wish to delete it?")) {
-                    (<HTMLFormElement>document.forms.namedItem(urn)).submit();
-                }
+                workbench.confirmDialog.open({
+                    title: 'Delete saved query?',
+                    body: "'" + name + "' will no longer be accessible, even using your browser's history.",
+                    confirmLabel: 'Delete',
+                    danger: true
+                }).then(function(confirmed: boolean) {
+                    if (confirmed) {
+                        (<HTMLFormElement>document.forms.namedItem(urn)).submit();
+                    }
+                });
             } else {
                 alert("'" + name + "' was saved by user '" + savedBy + "'.\nUser '"
                     + currentUser + "' is not allowed do delete it.");

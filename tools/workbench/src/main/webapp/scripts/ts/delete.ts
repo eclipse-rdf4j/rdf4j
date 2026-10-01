@@ -13,7 +13,6 @@
 function checkIsSafeToDelete(event: JQueryEventObject) {
 	event.preventDefault();
 	var id = $('#id').val();
-	var submitForm = false;
 	var feedback = $('#delete-feedback');
 	$
 			.ajax({
@@ -37,16 +36,18 @@ function checkIsSafeToDelete(event: JQueryEventObject) {
 				},
 				success : function(data) {
 					feedback.text('');
-					submitForm = data.safe;
-					if (!submitForm) {
-						submitForm = confirm('WARNING: You are about to delete a repository that has been proxied by another repository!');
-					}
-					if (submitForm) {
-						var form = <HTMLFormElement>$(event.target).closest('form').get(0);
-						if (form) {
+					var form = <HTMLFormElement>$(event.target).closest('form').get(0);
+					var confirmed: Promise<boolean> = data.safe ? Promise.resolve(true) : workbench.confirmDialog.open({
+						title: 'Delete a proxied repository?',
+						body: 'Another repository proxies this one and stops working once it is deleted.',
+						confirmLabel: 'Delete repository',
+						danger: true
+					});
+					confirmed.then(function(submit: boolean) {
+						if (submit && form) {
 							form.submit();
 						}
-					}
+					});
 				}
 			});
 }
