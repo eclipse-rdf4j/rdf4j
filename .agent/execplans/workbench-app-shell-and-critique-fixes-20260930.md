@@ -31,8 +31,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 07:50Z) M1.6 One form layout (Remove and Clear use `.workbench-field-stack`; the create forms keep their stacked `table.dataentry` markup, which `create.ts` reads).
 - [x] (2026-10-01 08:10Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
 - [x] (2026-10-01 08:30Z) M1.8 Visible editor overlay icons and formatted numbers.
-- [ ] M2.1 (in progress) One navigation model everywhere.
-- [ ] M2.2 Split the shell from the page outlet (behavior-neutral refactor).
+- [x] (2026-10-01 09:00Z) M2.1 One navigation model everywhere.
+- [ ] M2.2 (in progress) Split the shell from the page outlet (behavior-neutral refactor).
 - [ ] M2.3 A compact context bar with switchers (mockups 01 and 04).
 - [ ] M2.4 Regroup the menu and make it sticky.
 - [ ] M2.5 Dark-mode logo.
@@ -142,6 +142,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: baseline log entry 25 at `query-result-toolbar-geometry.spec.js:60`.
 - Observation (M1.8): the editor overlay icons were nearly invisible because YASQE draws them in 100-unit view boxes and the redesign stroked them with `stroke-width: 1.75px` in view-box units, which renders at 0.3px when the icon is 18px wide. `vector-effect: non-scaling-stroke` on the icon paths fixes it.
   Evidence: probe before the change: `scale 0.18, stroke-width 1.75px, vector-effect none` (effective 0.315px).
+- Observation (M2.1): `e2e/tests/workbench-navigation-selection.spec.js` is stale beyond this plan: it reads `svg.query-nav-icon` (the menu icons are `svg.workbench-action-icon`) and waits for rows in `#query-results-frame`, the iframe that the streamed renderer replaced. It failed in the baseline at the server-page assertion, which M2.1 updated to the new rule (the server page selects its own menu item); the remaining stale selectors are left for M12.1.
+  Evidence: baseline failure 73 at `workbench-navigation-selection.spec.js:182`; after M2.1 the spec fails in `readSelectedLink` (`icon` is null).
 
 ## Decision Log
 

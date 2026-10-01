@@ -173,25 +173,6 @@ var workbench;
             update: 'Execute SPARQL Update on Repository',
             server: 'Connect to RDF4J Server'
         };
-        var defaultMenu = [
-            { id: 'server', label: 'Server', icon: 'server', group: 'Server' },
-            { id: 'repositories', label: 'Repositories', icon: 'repository', group: 'Repositories' },
-            { id: 'create', label: 'Create', icon: 'create', group: 'Repositories' },
-            { id: 'delete', label: 'Delete', icon: 'delete', group: 'Repositories' },
-            { id: 'summary', label: 'Summary', icon: 'summary', group: 'Browse' },
-            { id: 'namespaces', label: 'Namespaces', icon: 'namespaces', group: 'Browse' },
-            { id: 'contexts', label: 'Contexts', icon: 'contexts', group: 'Browse' },
-            { id: 'types', label: 'Types', icon: 'types', group: 'Browse' },
-            { id: 'explore', label: 'Explore', icon: 'explore', group: 'Browse' },
-            { id: 'query', label: 'Query', icon: 'query', group: 'Query' },
-            { id: 'saved-queries', label: 'Saved Queries', icon: 'saved', group: 'Query' },
-            { id: 'export', label: 'Export', icon: 'export', group: 'Query' },
-            { id: 'update', label: 'SPARQL Update', icon: 'update', group: 'Modify' },
-            { id: 'add', label: 'Add', icon: 'add', group: 'Modify' },
-            { id: 'remove', label: 'Remove', icon: 'remove', group: 'Modify' },
-            { id: 'clear', label: 'Clear', icon: 'clear', group: 'Modify' },
-            { id: 'information', label: 'Information', icon: 'information', group: 'Information' }
-        ];
         function text(value) {
             if (value === null || typeof value === 'undefined') {
                 return '';
@@ -435,16 +416,11 @@ var workbench;
             if (Array.isArray(menu) && menu.length) {
                 return menu;
             }
-            var groups = [];
-            defaultMenu.forEach(function (item) {
-                var group = groups.filter(function (candidate) { return candidate.id === item.group; })[0];
-                if (!group) {
-                    group = { id: item.group, label: item.group, icon: item.icon, items: [] };
-                    groups.push(group);
-                }
-                group.items.push(item);
-            });
-            return groups;
+            // The menu always comes from the policy-filtered Info model; never invent one.
+            if (typeof console !== 'undefined' && console.error) {
+                console.error('Workbench menu is unavailable');
+            }
+            return [];
         }
         function isDisabled(item, info) {
             var id = item.id || item['menu-item-id'];
@@ -474,7 +450,8 @@ var workbench;
                     return h(__makeTemplateObject(["<li class=\"workbench-nav-group workbench-nav-group--single\"\n                            data-workbench-menu-group=", " data-workbench-menu-label=", ">\n                        ", "\n                    </li>"], ["<li class=\"workbench-nav-group workbench-nav-group--single\"\n                            data-workbench-menu-group=", " data-workbench-menu-label=", ">\n                        ", "\n                    </li>"]), groupId, groupLabel, disabled
                         ? h(__makeTemplateObject(["<span class=\"disabled\" title=", ">", "", "</span>"], ["<span class=\"disabled\" title=", ">", "", "</span>"]), groupLabel, icon(runtime, item.icon || item['menu-item-icon'] || id), label) : h(__makeTemplateObject(["<a href=", "\n                                    data-workbench-nav-href=", "\n                                    title=", " aria-current=", ">\n                                ", "", "\n                            </a>"], ["<a href=", "\n                                    data-workbench-nav-href=", "\n                                    title=", " aria-current=", ">\n                                ", "", "\n                            </a>"]), item.href || item['menu-item-href'] || urlFor(context, id), item.href || item['menu-item-href'] || urlFor(context, id), groupLabel, active === id ? 'page' : 'false', icon(runtime, item.icon || item['menu-item-icon'] || id), label));
                 }
-                return h(__makeTemplateObject(["<li class=\"workbench-nav-group\" data-workbench-menu-group=", "\n                        data-workbench-menu-label=", ">\n                    <details class=\"workbench-nav-group__disclosure\">\n                        <summary id=", "\n                                aria-controls=", "\n                                class=\"query-nav-group-label workbench-nav-group__summary\">\n                            ", "\n                            <span class=\"workbench-nav-group__label\">", "</span>\n                            ", "\n                        </summary>\n                        <ul id=", " class=\"group\" aria-label=", ">\n                            ", "\n                        </ul>\n                    </details>\n                </li>"], ["<li class=\"workbench-nav-group\" data-workbench-menu-group=", "\n                        data-workbench-menu-label=", ">\n                    <details class=\"workbench-nav-group__disclosure\">\n                        <summary id=", "\n                                aria-controls=", "\n                                class=\"query-nav-group-label workbench-nav-group__summary\">\n                            ", "\n                            <span class=\"workbench-nav-group__label\">", "</span>\n                            ", "\n                        </summary>\n                        <ul id=", " class=\"group\" aria-label=", ">\n                            ", "\n                        </ul>\n                    </details>\n                </li>"]), groupId, groupLabel, 'workbench-nav-summary-' + groupId, 'workbench-nav-items-' + groupId, icon(runtime, group.icon || group['menu-group-icon'] || 'modify'), groupLabel, icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron'), 'workbench-nav-items-' + groupId, groupLabel, items.map(function (item) {
+                var containsActive = items.some(function (item) { return text(item.id || item['menu-item-id']) === active; });
+                return h(__makeTemplateObject(["<li class=\"workbench-nav-group\" data-workbench-menu-group=", "\n                        data-workbench-menu-label=", ">\n                    <details class=\"workbench-nav-group__disclosure\" ?open=", ">\n                        <summary id=", "\n                                aria-controls=", "\n                                class=\"query-nav-group-label workbench-nav-group__summary\">\n                            ", "\n                            <span class=\"workbench-nav-group__label\">", "</span>\n                            ", "\n                        </summary>\n                        <ul id=", " class=\"group\" aria-label=", ">\n                            ", "\n                        </ul>\n                    </details>\n                </li>"], ["<li class=\"workbench-nav-group\" data-workbench-menu-group=", "\n                        data-workbench-menu-label=", ">\n                    <details class=\"workbench-nav-group__disclosure\" ?open=", ">\n                        <summary id=", "\n                                aria-controls=", "\n                                class=\"query-nav-group-label workbench-nav-group__summary\">\n                            ", "\n                            <span class=\"workbench-nav-group__label\">", "</span>\n                            ", "\n                        </summary>\n                        <ul id=", " class=\"group\" aria-label=", ">\n                            ", "\n                        </ul>\n                    </details>\n                </li>"]), groupId, groupLabel, containsActive, 'workbench-nav-summary-' + groupId, 'workbench-nav-items-' + groupId, icon(runtime, group.icon || group['menu-group-icon'] || 'modify'), groupLabel, icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron'), 'workbench-nav-items-' + groupId, groupLabel, items.map(function (item) {
                     var id = text(item.id || item['menu-item-id']);
                     var label = text(item.label || item['menu-item-label'] || id);
                     var href = item.href || item['menu-item-href'] || urlFor(context, id);

@@ -189,26 +189,6 @@ module workbench {
             server: 'Connect to RDF4J Server'
         };
 
-        const defaultMenu: any[] = [
-            { id: 'server', label: 'Server', icon: 'server', group: 'Server' },
-            { id: 'repositories', label: 'Repositories', icon: 'repository', group: 'Repositories' },
-            { id: 'create', label: 'Create', icon: 'create', group: 'Repositories' },
-            { id: 'delete', label: 'Delete', icon: 'delete', group: 'Repositories' },
-            { id: 'summary', label: 'Summary', icon: 'summary', group: 'Browse' },
-            { id: 'namespaces', label: 'Namespaces', icon: 'namespaces', group: 'Browse' },
-            { id: 'contexts', label: 'Contexts', icon: 'contexts', group: 'Browse' },
-            { id: 'types', label: 'Types', icon: 'types', group: 'Browse' },
-            { id: 'explore', label: 'Explore', icon: 'explore', group: 'Browse' },
-            { id: 'query', label: 'Query', icon: 'query', group: 'Query' },
-            { id: 'saved-queries', label: 'Saved Queries', icon: 'saved', group: 'Query' },
-            { id: 'export', label: 'Export', icon: 'export', group: 'Query' },
-            { id: 'update', label: 'SPARQL Update', icon: 'update', group: 'Modify' },
-            { id: 'add', label: 'Add', icon: 'add', group: 'Modify' },
-            { id: 'remove', label: 'Remove', icon: 'remove', group: 'Modify' },
-            { id: 'clear', label: 'Clear', icon: 'clear', group: 'Modify' },
-            { id: 'information', label: 'Information', icon: 'information', group: 'Information' }
-        ];
-
         function text(value: any): string {
             if (value === null || typeof value === 'undefined') {
                 return '';
@@ -478,16 +458,11 @@ module workbench {
             if (Array.isArray(menu) && menu.length) {
                 return menu;
             }
-            const groups: any[] = [];
-            defaultMenu.forEach((item) => {
-                let group = groups.filter((candidate) => candidate.id === item.group)[0];
-                if (!group) {
-                    group = { id: item.group, label: item.group, icon: item.icon, items: [] };
-                    groups.push(group);
-                }
-                group.items.push(item);
-            });
-            return groups;
+            // The menu always comes from the policy-filtered Info model; never invent one.
+            if (typeof console !== 'undefined' && console.error) {
+                console.error('Workbench menu is unavailable');
+            }
+            return [];
         }
 
         function isDisabled(item: any, info: any): boolean {
@@ -527,9 +502,10 @@ module workbench {
                             </a>`}
                     </li>`;
                 }
+                const containsActive = items.some((item: any) => text(item.id || item['menu-item-id']) === active);
                 return h`<li class="workbench-nav-group" data-workbench-menu-group=${groupId}
                         data-workbench-menu-label=${groupLabel}>
-                    <details class="workbench-nav-group__disclosure">
+                    <details class="workbench-nav-group__disclosure" ?open=${containsActive}>
                         <summary id=${'workbench-nav-summary-' + groupId}
                                 aria-controls=${'workbench-nav-items-' + groupId}
                                 class="query-nav-group-label workbench-nav-group__summary">

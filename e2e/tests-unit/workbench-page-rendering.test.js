@@ -969,9 +969,14 @@ test('modification and browse views preserve their action form identifiers', () 
 test('shared navigation keeps app assets and Workbench servlet routes on their correct roots', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
+    const menu = [
+        { id: 'explore', label: 'Repository', items: [{ id: 'summary', label: 'Summary' }, { id: 'query', label: 'Query' }] },
+        { id: 'repositories', label: 'Server', items: [{ id: 'repositories', label: 'Repositories' }, { id: 'server', label: 'Connection' }] },
+        { id: 'system', label: 'System', items: [{ id: 'information', label: 'Information' }] }
+    ];
     const template = workbench.views.pageTemplate({
         viewId: 'summary', vars: [], rows: [], metadata: {}
-    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, runtime);
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: { menu } }, runtime);
     const output = collectTemplateText(template).join(' ');
 
     assert.ok(output.includes('/workbench/images/logo.png'));
@@ -1949,4 +1954,23 @@ test('a page error renders an error callout inside the page surface', () => {
     }, context, runtime));
     assert.match(markup, /class="workbench-callout workbench-callout--error" role="alert"/);
     assert.match(markup, /No values/);
+});
+
+test('a model without a menu renders an empty menu instead of a built-in fallback', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const errors = [];
+    const originalError = console.error;
+    console.error = (message) => errors.push(String(message));
+    try {
+        const template = workbench.views.pageTemplate({
+            viewId: 'server', vars: [], rows: [], metadata: {}
+        }, { basePath: '/workbench', repositoryId: 'NONE', workbench: {} }, runtime);
+        const output = collectTemplateText(template).join(' ');
+        assert.equal((output.match(/data-workbench-nav-href/g) || []).length, 0);
+        assert.ok(!output.includes('SPARQL Update'), 'the hard-coded fallback menu must not render');
+    } finally {
+        console.error = originalError;
+    }
+    assert.deepEqual(errors, ['Workbench menu is unavailable']);
 });

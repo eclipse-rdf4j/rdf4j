@@ -103,3 +103,18 @@ test('dark navigation indicators stay readable and the mobile logo plate fits it
 		await routePage.close();
 	}
 });
+
+test('the server page shows the same menu and server as every other page', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	const groupLabels = async (path) => {
+		await page.goto(`${WORKBENCH_BASE_URL}${path}`);
+		await page.locator('#navigation .workbench-nav-group').first().waitFor({ state: 'attached' });
+		return page.locator('#navigation .workbench-nav-group')
+			.evaluateAll(groups => groups.map(group => group.getAttribute('data-workbench-menu-label')));
+	};
+	const repositories = await groupLabels('/repositories/NONE/repositories');
+	const server = await groupLabels('/repositories/NONE/server');
+	expect(server).toEqual(repositories);
+	const serverUrl = WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server');
+	await expect(page.locator('#header')).toContainText(serverUrl);
+});

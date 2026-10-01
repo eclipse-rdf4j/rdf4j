@@ -1097,9 +1097,7 @@ workbench
 /**
  * Keep the shared navigation usable at every Workbench route.  The XSL
  * template renders the complete list for desktop and this small controller
- * only changes its disclosure state at the narrow breakpoint.  It also marks
- * the route currently displayed by the browser so the same navigation works
- * for pages that do not load query.ts.
+ * only changes its disclosure state at the narrow breakpoint.
  */
 workbench.addLoad(function installWorkbenchNavigation() {
     var disclosure = <HTMLDetailsElement>document.getElementById('workbench-navigation-disclosure');
@@ -1128,37 +1126,7 @@ workbench.addLoad(function installWorkbenchNavigation() {
         }
     }
 
-    var currentPath = window.location.pathname.replace(/\/+$/, '');
-    var currentSegment = currentPath.substring(currentPath.lastIndexOf('/') + 1);
-    var entries = document.querySelectorAll('#navigation a[data-workbench-nav-href]');
-    for (var i = 0; i < entries.length; i++) {
-        var entry = <HTMLAnchorElement>entries[i];
-        var target = entry.getAttribute('data-workbench-nav-href');
-        if (!target) {
-            continue;
-        }
-        var targetUrl = document.createElement('a');
-        targetUrl.href = entry.href;
-        var targetPath = targetUrl.pathname.replace(/\/+$/, '');
-        var targetSegment = targetPath.substring(targetPath.lastIndexOf('/') + 1);
-        if (targetSegment === currentSegment || (currentSegment === '' && targetSegment === 'repositories')) {
-            var item = entry.parentElement;
-            if (item) {
-                item.className += ' current';
-                var group = item.parentElement;
-                while (group && !group.classList.contains('workbench-nav-group')) {
-                    group = group.parentElement;
-                }
-                if (group) {
-                    var groupDisclosure = <HTMLDetailsElement>group.querySelector('.workbench-nav-group__disclosure');
-                    if (groupDisclosure) {
-                        workbench.setNativeDisclosureOpen(groupDisclosure, true, false);
-                    }
-                }
-            }
-            entry.setAttribute('aria-current', 'page');
-        }
-    }
+    // The active item and its open group are rendered by workbench.views; the menu is never re-marked here.
 });
 
 /**

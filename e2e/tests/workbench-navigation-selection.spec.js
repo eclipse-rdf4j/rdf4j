@@ -179,7 +179,10 @@ test('every menu destination has one consistent selected link on desktop and mob
 
             if (destination.route === `${WORKBENCH_MOUNT}/repositories/NONE/server`) {
                 await expect(page.locator('#workbench-server')).toBeVisible();
-                await expect(page.locator('#navigation a[aria-current="page"]')).toHaveCount(0);
+                // The server page uses the same policy menu as every page, so its own item is selected.
+                await expect(page.locator('#navigation a[aria-current="page"]')).toHaveCount(1);
+                await expect(page.locator('#navigation a[aria-current="page"]'))
+                    .toHaveAttribute('href', /\/repositories\/NONE\/server$/);
                 continue;
             }
 
