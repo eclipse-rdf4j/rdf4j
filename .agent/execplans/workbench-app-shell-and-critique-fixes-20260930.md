@@ -39,8 +39,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 12:15Z) M2.6 Page titles.
 - [x] (2026-10-01 13:00Z) M2.7 An in-shell "not found" page (mockup 13).
 - [x] (2026-10-01 14:00Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
-- [ ] M3.1 (in progress) Cmd/Ctrl+Enter runs the query.
-- [ ] M3.2 The editor grows with its content, can be resized, and results come into view.
+- [x] (2026-10-01 14:40Z) M3.1 Cmd/Ctrl+Enter runs the query.
+- [ ] M3.2 (in progress) The editor grows with its content, can be resized, and results come into view.
 - [ ] M3.3 Results and Explanation become tabs of one card; the Execute row never moves.
 - [ ] M3.4 Clear names, units, and no silent "Clear".
 - [ ] M3.5 One status line and designed result states (mockup 02).

@@ -15,6 +15,14 @@ module workbench {
         declare var namespaces:{string:string};
         var yasqe:any = null;
 
+        /** Cmd/Ctrl+Enter submits the update form through its submit handler (which saves the editor text). */
+        function submitUpdateForm() {
+            var form = <HTMLFormElement>document.getElementById('update-form');
+            if (form && typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            }
+        }
+
         export function initYasqe() {
             workbench.yasqeHelper.setupCompleters(namespaces);
             yasqe = YASQE.fromTextArea(document.getElementById('update'), {
@@ -29,7 +37,12 @@ module workbench {
                 // regular query interface, and we show the most recent
                 // -update- query.
                 persistent: "update",
-
+                // Updates run through the Workbench form; YASQE must never send them to its default endpoint.
+                sparql: { endpoint: '', showQueryButton: false },
+                extraKeys: {
+                    'Ctrl-Enter': submitUpdateForm,
+                    'Cmd-Enter': submitUpdateForm
+                }
             });
 
             var $wrapper = $(yasqe.getWrapperElement());

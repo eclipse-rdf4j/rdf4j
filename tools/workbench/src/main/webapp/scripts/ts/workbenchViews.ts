@@ -1874,6 +1874,17 @@ module workbench {
             </form>`;
         }
 
+        /** True on Apple platforms, where the Execute shortcut is Cmd+Enter instead of Ctrl+Enter. */
+        function isMacPlatform(): boolean {
+            const navigatorObject: any = typeof navigator !== 'undefined' ? navigator : null;
+            if (!navigatorObject) {
+                return false;
+            }
+            const platform = String((navigatorObject.userAgentData && navigatorObject.userAgentData.platform)
+                || navigatorObject.platform || '');
+            return platform.indexOf('Mac') >= 0;
+        }
+
         function queryFeatureEnabled(context: ViewContext, id: string): boolean {
             const features = context.workbench && context.workbench.queryFeatures;
             return !features || typeof features[id] === 'undefined' || features[id] !== false;
@@ -2224,7 +2235,9 @@ module workbench {
                         </div>
                         <div class="query-actions-toolbar workbench-action-toolbar"><div class="query-form__field query-actions-toolbar__primary workbench-action-toolbar__primary">
                             <button id="exec" class="query-action workbench-action workbench-action--primary" type="submit"
-                                ?hidden=${!queryFeatureEnabled(context, 'query-execution')}>${icon(runtime, 'execute')}<span>Execute</span></button>
+                                ?hidden=${!queryFeatureEnabled(context, 'query-execution')}
+                                title=${'Execute (' + (isMacPlatform() ? 'Cmd' : 'Ctrl') + '+Enter)'}>${icon(runtime, 'execute')}<span>Execute</span><kbd
+                                class="workbench-shortcut-hint" aria-hidden="true">${isMacPlatform() ? '⌘↵' : 'Ctrl+↵'}</kbd></button>
                             <input id="query-cancel" class="query-cancel workbench-action workbench-action--secondary" type="button" value="Cancel" aria-hidden="true" disabled
                                 ?hidden=${!queryFeatureEnabled(context, 'query-cancel')}
                                 @click=${() => invoke('workbench.query.cancelQuery')} />

@@ -10,6 +10,8 @@ interface YASQE_Instance extends CodeMirror.EditorFromTextArea {
 interface YASQE_Config extends CodeMirror.EditorConfiguration {
 	consumeShareLink(): any;
 	persistent?: any;
+	/** YASQE's own query submission; the Workbench disables it and submits through its forms. */
+	sparql?: { endpoint?: string; showQueryButton?: boolean };
 }
 
 interface Token {

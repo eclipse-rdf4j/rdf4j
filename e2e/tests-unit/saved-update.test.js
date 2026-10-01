@@ -225,6 +225,16 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
     assert.equal(instance.getValue(), 'DELETE WHERE {}');
     assert.equal(harness.context.workbench.update.doSubmit(), true);
     assert.equal(instance.saveCount, 1);
+
+    // Cmd/Ctrl+Enter submits through the form's submit handler; YASQE never posts to its own endpoint.
+    assert.deepEqual(JSON.parse(JSON.stringify(instance.options.sparql)), { endpoint: '', showQueryButton: false });
+    instance.options.extraKeys['Ctrl-Enter']();
+    const form = harness.registerElement('form', { id: 'update-form' });
+    let requested = 0;
+    form.requestSubmit = () => { requested++; };
+    instance.options.extraKeys['Ctrl-Enter']();
+    instance.options.extraKeys['Cmd-Enter']();
+    assert.equal(requested, 2);
 });
 
 test('yasqe helper registers namespace completer and delegates prefix helpers', () => {

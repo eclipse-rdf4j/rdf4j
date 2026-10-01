@@ -989,3 +989,19 @@ body.workbench-body .query-page .workbench-select-control > select,
 body.query-result-embedded-body .query-result-embedded .workbench-select-control > select {
 	padding-right: 36px;
 }
+
+/* Keyboard hint inside the Execute button (M3.1). */
+.query-page #exec .workbench-shortcut-hint {
+    margin-left: 2px;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 4px;
+    font: 600 11px/1.2 var(--workbench-font);
+    opacity: .85;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+    .query-page #exec .workbench-shortcut-hint {
+        display: none;
+    }
+}

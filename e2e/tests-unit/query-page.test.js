@@ -728,3 +728,71 @@ test('saved query edit takes precedence over stale tab draft', () => {
 
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
 });
+
+test('editor shortcuts click Execute, Explain and Save and never use the YASQE endpoint', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const editor = harness.yasqeState.instances.query;
+    assert.deepEqual(JSON.parse(JSON.stringify(editor.options.sparql)), { endpoint: '', showQueryButton: false });
+    const keys = editor.options.extraKeys;
+    const clicks = [];
+    for (const id of ['exec', 'explain-trigger', 'explain-compare-trigger']) {
+        harness.document.getElementById(id).addEventListener('click', () => clicks.push(id));
+    }
+    const idle = () => {
+        harness.document.getElementById('exec').disabled = false;
+        harness.document.getElementById('explain-trigger').disabled = false;
+        harness.document.getElementById('explain-compare-trigger').disabled = false;
+        const runningCancel = harness.document.getElementById('query-cancel');
+        if (runningCancel) {
+            runningCancel.disabled = true;
+            runningCancel.setAttribute('aria-hidden', 'true');
+        }
+    };
+    keys['Ctrl-Enter']();
+    idle();
+    keys['Cmd-Enter']();
+    idle();
+    keys['Shift-Ctrl-Enter']();
+    idle();
+    keys['Shift-Cmd-Enter']();
+    idle();
+    assert.deepEqual(clicks, ['exec', 'exec', 'explain-trigger', 'explain-trigger']);
+
+    // A running query ignores the shortcuts.
+    harness.document.getElementById('exec').disabled = true;
+    keys['Ctrl-Enter']();
+    keys['Shift-Ctrl-Enter']();
+    assert.equal(clicks.length, 4);
+    harness.document.getElementById('exec').disabled = false;
+    const cancel = harness.document.getElementById('query-cancel') || harness.registerElement('input', { id: 'query-cancel' });
+    cancel.disabled = false;
+    cancel.setAttribute('aria-hidden', 'false');
+    keys['Cmd-Enter']();
+    assert.equal(clicks.length, 4);
+    cancel.disabled = true;
+    cancel.setAttribute('aria-hidden', 'true');
+
+    // Ctrl/Cmd+S opens the Save disclosure and focuses the query name.
+    const toggle = harness.registerElement('button', { id: 'save-query-toggle' });
+    toggle.setAttribute('aria-expanded', 'false');
+    let opened = 0;
+    toggle.addEventListener('click', () => { opened++; toggle.setAttribute('aria-expanded', 'true'); });
+    let focused = 0;
+    harness.document.getElementById('query-name').focus = () => { focused++; };
+    keys['Ctrl-S']();
+    keys['Cmd-S']();
+    assert.equal(opened, 1, 'an open Save disclosure stays open');
+    assert.equal(focused, 2);
+
+    // The compare editor refreshes both explanations instead.
+    harness.context.workbench.query.toggleCompareMode();
+    const compare = harness.yasqeState.instances['query-compare'];
+    if (compare) {
+        idle();
+        compare.options.extraKeys['Ctrl-Enter']();
+        idle();
+        compare.options.extraKeys['Shift-Cmd-Enter']();
+        assert.deepEqual(clicks.slice(4), ['explain-compare-trigger', 'explain-compare-trigger']);
+    }
+});

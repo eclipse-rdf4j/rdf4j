@@ -3940,11 +3940,63 @@ var workbench;
             updateCompareActionState();
         }
         query_1.updateYasqe = updateYasqe;
+        /** True while an execution is running: Execute is disabled or Cancel is offered. */
+        function isQueryExecutionRunning() {
+            var exec = document.getElementById('exec');
+            var cancel = document.getElementById('query-cancel');
+            return !!(exec && exec.disabled) || !!(cancel && !cancel.disabled && cancel.getAttribute('aria-hidden') !== 'true');
+        }
+        function clickControl(id) {
+            var control = document.getElementById(id);
+            if (control && !control.disabled && !control.hidden) {
+                control.click();
+            }
+        }
+        function openSaveQuery() {
+            var toggle = document.getElementById('save-query-toggle');
+            if (toggle && !toggle.hidden && toggle.getAttribute('aria-expanded') !== 'true') {
+                toggle.click();
+            }
+            var name = document.getElementById('query-name');
+            if (name) {
+                name.focus();
+            }
+        }
+        /**
+         * Editor shortcuts (M3.1). They click the same buttons as the pointer does, so the Execute and Explain
+         * click handlers still set the form's action fields and copy the editor text before submitting.
+         */
+        function queryEditorKeys(paneKey) {
+            var run = function () {
+                if (!isQueryExecutionRunning()) {
+                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'exec');
+                }
+            };
+            var explain = function () {
+                if (!isQueryExecutionRunning()) {
+                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'explain-trigger');
+                }
+            };
+            var save = function () {
+                openSaveQuery();
+            };
+            return {
+                'Ctrl-Enter': run,
+                'Cmd-Enter': run,
+                'Shift-Ctrl-Enter': explain,
+                'Shift-Cmd-Enter': explain,
+                'Ctrl-S': save,
+                'Cmd-S': save
+            };
+        }
         function initPaneYasqe(paneKey, clearFeedbackOnChange) {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
                 consumeShareLink: null, //don't try to parse the url args. this is already done by the addLoad function below
-                persistent: null
+                persistent: null,
+                // Queries run through the Workbench form; YASQE must never send them to its default endpoint.
+                sparql: { endpoint: '', showQueryButton: false },
+                extraKeys: queryEditorKeys(paneKey)
             });
             var queryPage = document.getElementById('query-page');
             if (queryPage && queryPage.getAttribute('data-editor-fullscreen-enabled') === 'false') {
