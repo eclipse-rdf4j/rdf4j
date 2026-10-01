@@ -912,11 +912,17 @@ module workbench {
             if (!document || !document.createElement) {
                 return;
             }
-            const message = document.createElement('p');
-            message.className = 'error';
-            message.setAttribute('role', 'alert');
-            message.textContent = 'Unable to load this Workbench page: '
-                + (error && error.message ? error.message : String(error));
+            const text = error && error.message ? error.message : String(error);
+            const createCallout = (workbench as any).createCallout;
+            let message: any;
+            if (typeof createCallout === 'function') {
+                message = createCallout(document, 'error', text, 'Unable to load this Workbench page.');
+            } else {
+                message = document.createElement('p');
+                message.className = 'error';
+                message.setAttribute('role', 'alert');
+                message.textContent = 'Unable to load this Workbench page: ' + text;
+            }
             while (mount.firstChild) {
                 mount.removeChild(mount.firstChild);
             }

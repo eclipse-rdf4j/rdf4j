@@ -84,7 +84,7 @@ test('covers task-fixture operation states without touching user repositories', 
 		select.value = unsupported.value;
 	});
 	await page.locator('#add-upload-actions input[type="submit"]').click();
-	await expect(page.locator('p.error[role="alert"]')).toBeVisible();
+	await expect(page.locator('.workbench-callout--error[role="alert"]')).toBeVisible();
 	await capture(page, 'add-unsupported-format-error-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/update`);

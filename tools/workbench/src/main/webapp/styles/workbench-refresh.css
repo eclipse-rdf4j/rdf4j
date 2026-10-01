@@ -23,6 +23,9 @@
 	--workbench-danger-surface: #fff1f0;
 	--workbench-danger-hover: #912018;
 	--workbench-on-danger: #ffffff;
+	--workbench-warning: #8a5a00;
+	--workbench-warning-surface: #fff6e0;
+	--workbench-warning-rule: #e9c46a;
 	--workbench-success: #28734b;
 	--workbench-logo-plate: #ffffff;
 	--workbench-heatmap-low: #def3fb;
@@ -1657,6 +1660,74 @@ body.workbench-body .workbench-page-surface .workbench-island > section:first-ch
 	padding-top: 0;
 }
 
+/* Callouts (mockup 11): icon, optional bold title and body; info, warning and error variants. */
+body.workbench-body .workbench-callout,
+body.query-result-embedded-body .workbench-callout {
+	box-sizing: border-box;
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	max-width: 100%;
+	margin: 0 0 var(--workbench-space-subgroup);
+	padding: 12px 14px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+	font-weight: 400;
+	line-height: 1.5;
+}
+
+body.workbench-body .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout__icon {
+	flex: 0 0 18px;
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-callout__body,
+body.query-result-embedded-body .workbench-callout__body {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-callout__title,
+body.query-result-embedded-body .workbench-callout__title {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-callout--warning,
+body.query-result-embedded-body .workbench-callout--warning {
+	border-color: var(--workbench-warning-rule);
+	background: var(--workbench-warning-surface);
+}
+
+body.workbench-body .workbench-callout--warning .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout--warning .workbench-callout__icon {
+	color: var(--workbench-warning);
+}
+
+body.workbench-body .workbench-callout--error,
+body.query-result-embedded-body .workbench-callout--error {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+}
+
+body.workbench-body .workbench-callout--error .workbench-callout__icon,
+body.workbench-body .workbench-callout--error .workbench-callout__title,
+body.query-result-embedded-body .workbench-callout--error .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout--error .workbench-callout__title {
+	color: var(--workbench-danger);
+}
+
 /* Key/value list (mockup 11): label column and value column with a soft rule between rows;
  * the label stacks above the value below 600px. */
 body.workbench-body dl.workbench-kv {
@@ -3138,6 +3209,9 @@ html[data-theme="dark"] {
 	--workbench-danger-surface: #391b1b;
 	--workbench-danger-hover: #ff9a93;
 	--workbench-on-danger: #1a0b0a;
+	--workbench-warning: #f3c969;
+	--workbench-warning-surface: #2e2512;
+	--workbench-warning-rule: #6b5420;
 	--workbench-success: #72d5a2;
 	--workbench-focus: #73c4e2;
 	--workbench-logo-plate: #ffffff;

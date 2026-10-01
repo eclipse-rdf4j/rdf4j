@@ -1234,7 +1234,8 @@ test('bootstrap consumes but never replays a non-exec initial POST descriptor', 
         documentElement: { setAttribute() {} },
         readyState: 'complete',
         getElementById() { return null; },
-        createElement() { return { setAttribute() {} }; }
+        createElement() { return { setAttribute() {}, appendChild() {} }; },
+        createTextNode(value) { return { nodeValue: value }; }
     };
     workbench.__testWindow.document = document;
     workbench.__testWindow.localStorage = { getItem() { return null; }, setItem() {} };
@@ -1297,7 +1298,8 @@ test('bootstrap renders an inline initial page model once without fetching its r
         documentElement: { setAttribute() {} },
         readyState: 'complete',
         getElementById() { return null; },
-        createElement() { return { setAttribute() {} }; }
+        createElement() { return { setAttribute() {}, appendChild() {} }; },
+        createTextNode(value) { return { nodeValue: value }; }
     };
     workbench.__testWindow.document = document;
     workbench.__testWindow.localStorage = { getItem() { return null; }, setItem() {} };
@@ -1922,4 +1924,29 @@ test('summary and information render key/value lists instead of simple tables', 
     assert.match(information, /<dl class="workbench-kv"/);
     assert.doesNotMatch(information, /table class="simple"/);
     assert.doesNotMatch(information, /<th>[^<]*:<\/th>/);
+});
+
+test('Remove and Clear warn with a warning callout', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    for (const viewId of ['remove', 'clear']) {
+        const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+            viewId, vars: [], rows: [], rowCount: 0, metadata: {}
+        }, context, runtime));
+        assert.match(markup, /class="workbench-callout workbench-callout--warning"/, viewId);
+        assert.match(markup, /role="note"/, viewId);
+        assert.doesNotMatch(markup, /class="WARN"/, viewId);
+    }
+});
+
+test('a page error renders an error callout inside the page surface', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'remove', vars: [], rows: [], rowCount: 0, metadata: { 'error-message': 'No values' }
+    }, context, runtime));
+    assert.match(markup, /class="workbench-callout workbench-callout--error" role="alert"/);
+    assert.match(markup, /No values/);
 });

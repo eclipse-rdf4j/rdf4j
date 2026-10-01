@@ -29,8 +29,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 07:05Z) M1.4 One heading scale and a key/value component.
 - [x] (2026-10-01 07:30Z) M1.5 One content width and flatter containers (the Remove and Clear warnings now sit inside their form card).
 - [x] (2026-10-01 07:50Z) M1.6 One form layout (Remove and Clear use `.workbench-field-stack`; the create forms keep their stacked `table.dataentry` markup, which `create.ts` reads).
-- [ ] M1.7 (in progress) Callouts.
-- [ ] M1.8 Visible editor overlay icons and formatted numbers.
+- [x] (2026-10-01 08:10Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
+- [ ] M1.8 (in progress) Visible editor overlay icons and formatted numbers.
 - [ ] M2.1 One navigation model everywhere.
 - [ ] M2.2 Split the shell from the page outlet (behavior-neutral refactor).
 - [ ] M2.3 A compact context bar with switchers (mockups 01 and 04).

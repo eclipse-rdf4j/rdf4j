@@ -53,6 +53,49 @@ module workbench {
         return actionIconCatalog[name] || actionIconCatalog.add;
     }
 
+    const calloutIcons: { [kind: string]: string } = {
+        info: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 7v5m0-8h.01',
+        warning: 'M12 4 2.8 20h18.4L12 4Zm0 6v4.5m0 2.5h.01',
+        error: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 8v5m0 3h.01'
+    };
+
+    function calloutIconPath(kind: string): string {
+        return calloutIcons[kind] || calloutIcons.info;
+    }
+
+    /** DOM version of the callout component for code that does not render with Lit. */
+    export function createCallout(document: any, kind: string, body: string, title?: string): any {
+        const namespace = 'http://www.w3.org/2000/svg';
+        const element = document.createElement('div');
+        element.className = 'workbench-callout workbench-callout--' + (calloutIcons[kind] ? kind : 'info');
+        element.setAttribute('role', kind === 'error' ? 'alert' : 'note');
+        if (document.createElementNS) {
+            const svg = document.createElementNS(namespace, 'svg');
+            svg.setAttribute('class', 'workbench-callout__icon');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('width', '18');
+            svg.setAttribute('height', '18');
+            svg.setAttribute('focusable', 'false');
+            svg.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS(namespace, 'path');
+            path.setAttribute('d', calloutIconPath(kind));
+            svg.appendChild(path);
+            element.appendChild(svg);
+        }
+        const content = document.createElement('div');
+        content.className = 'workbench-callout__body';
+        if (title) {
+            const strong = document.createElement('strong');
+            strong.className = 'workbench-callout__title';
+            strong.textContent = title;
+            content.appendChild(strong);
+            content.appendChild(document.createTextNode(' '));
+        }
+        content.appendChild(document.createTextNode(body));
+        element.appendChild(content);
+        return element;
+    }
+
     export module icons {
         export function decorateButton(button: any, name: string, accessibleName: string): void {
             if (!button || !button.ownerDocument || typeof button.setAttribute !== 'function') {
@@ -648,6 +691,38 @@ module workbench {
                 row[1] && typeof row[1] === 'object' && Array.isArray(row[1].strings) ? row[1] : text(row[1])}</dd></div>`)}</dl>`;
         }
 
+        /** Callout (mockup 11): info and warning use role="note", errors use role="alert". */
+        function callout(runtime: LitRuntime, kind: string, body: any, title?: string, id?: string): any {
+            const h = runtime.html;
+            const content = h`<svg class="workbench-callout__icon" viewBox="0 0 24 24" width="18" height="18"
+                    focusable="false" aria-hidden="true"><path d=${calloutIconPath(kind)}></path></svg>
+                <div class="workbench-callout__body">${title
+                    ? h`<strong class="workbench-callout__title">${title}</strong> ` : ''}${body}</div>`;
+            if (kind === 'error') {
+                return id
+                    ? h`<div id="${id}" class="workbench-callout workbench-callout--error" role="alert">${content}</div>`
+                    : h`<div class="workbench-callout workbench-callout--error" role="alert">${content}</div>`;
+            }
+            if (kind === 'warning') {
+                return id
+                    ? h`<div id="${id}" class="workbench-callout workbench-callout--warning" role="note">${content}</div>`
+                    : h`<div class="workbench-callout workbench-callout--warning" role="note">${content}</div>`;
+            }
+            return id
+                ? h`<div id="${id}" class="workbench-callout workbench-callout--info" role="note">${content}</div>`
+                : h`<div class="workbench-callout workbench-callout--info" role="note">${content}</div>`;
+        }
+
+        function errorCallout(runtime: LitRuntime, model: PageModel): any {
+            const message = text(pageValue(model, 'error-message'));
+            return message ? callout(runtime, 'error', message) : '';
+        }
+
+        function systemRepositoryCallout(runtime: LitRuntime, context: ViewContext): any {
+            return context.repositoryId === 'SYSTEM'
+                ? callout(runtime, 'warning', 'The SYSTEM repository is intended for system use.') : '';
+        }
+
         function simpleSection(runtime: LitRuntime, title: string, rows: [string, any][], className?: string,
                                id?: string, island: boolean = true): any {
             const h = runtime.html;
@@ -911,7 +986,7 @@ module workbench {
             const selectedNamespace = text(model.metadata.selectedNamespaceValue || pageValue(model, 'namespace'));
             const selectedEntry = model.metadata.selectedNamespace;
             const selectedVisible = entries.some((row: any) => text(row.namespace) === selectedNamespace);
-            return h`${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
+            return h`${errorCallout(runtime, model)}
                 <form id="namespaces-form" class="workbench-island" action="namespaces" method="post">
                     <div class="workbench-form-grid">
                         <div class="workbench-field"><label for="prefix">Prefix</label>
@@ -1206,7 +1281,7 @@ module workbench {
                     ${propertyGroups.some((group: any) => !!group) ? h`<div>${propertyGroups}</div>` : ''}
                 </div>` : '';
             return h`${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
-                ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
+                ${errorCallout(runtime, model)}
                 ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}${summary.comment ? h`<p class="workbench-prose">${text(summary.comment)}</p>` : ''}
                 <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
                     <span id="explore-resource-value">${resource}</span><span id="explore-result-count">${total}</span>
@@ -1472,8 +1547,8 @@ module workbench {
             const isolationOptions = rows.filter((row: any) => field(row, 'isolation-level-option'));
             const selectedIsolation = text(pageValue(model, 'transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'));
             const error = text(pageValue(model, 'error-message'));
-            return h`${error ? h`<p class="error" role="alert">${error}</p>` : ''}
-                ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
+            return h`${error ? callout(runtime, 'error', error) : ''}
+                ${systemRepositoryCallout(runtime, context)}
                 <form method="post" action="add" enctype="multipart/form-data" class="workbench-form-card">
                     <fieldset id="add-source-tabs" class="workbench-source-tabs"><legend>Source</legend>
                         ${[['file', 'File'], ['url', 'URL'], ['text', 'Text']].map((entry: string[]) => h`<label for=${'source-' + entry[0]}>
@@ -1541,14 +1616,14 @@ module workbench {
         function removePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove">
-                ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
-                <p id="remove-warning" class="WARN" role="alert">Only statements matching the supplied values will be removed. An empty form is rejected.</p>
+                ${systemRepositoryCallout(runtime, context)}
+                ${callout(runtime, 'warning', 'Only statements matching the supplied values will be removed. An empty form is rejected.', 'Remove is permanent.', 'remove-warning')}
                 <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>
                 <details id="remove-examples" class="workbench-options"><summary>Examples${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
                     <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>
                         <li>Literal: <tt>"Hello"</tt>, <tt>"Hello"@en</tt>, or <tt>"Hello"^^&lt;http://bar.com/foo&gt;</tt></li></ul>
                 </details>
-                ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
+                ${errorCallout(runtime, model)}
                     <div class="workbench-field-stack">
                         ${[['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map((entry: string[]) => h`<div class="workbench-field">
                             <label for=${entry[0]}>${entry[1]}</label>${entry[2] === 'textarea'
@@ -1565,9 +1640,9 @@ module workbench {
         function clearPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             return h`<form id="clear-form" class="workbench-island workbench-form-card" method="post" action="clear">
-                ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
-                <p id="clear-warning" class="WARN" role="alert">Clearing without a context removes every statement in this repository.</p>
-                ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
+                ${systemRepositoryCallout(runtime, context)}
+                ${callout(runtime, 'warning', 'Clearing without a context removes every statement in this repository.', 'Clear is permanent.', 'clear-warning')}
+                ${errorCallout(runtime, model)}
                     <div class="workbench-field-stack">
                         <div class="workbench-field"><label for="context">Context</label>
                             <input id="context" name="context" type="text" value=${text(pageValue(model, 'context'))} /></div>

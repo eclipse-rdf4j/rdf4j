@@ -855,11 +855,18 @@ var workbench;
             if (!document || !document.createElement) {
                 return;
             }
-            var message = document.createElement('p');
-            message.className = 'error';
-            message.setAttribute('role', 'alert');
-            message.textContent = 'Unable to load this Workbench page: '
-                + (error && error.message ? error.message : String(error));
+            var text = error && error.message ? error.message : String(error);
+            var createCallout = workbench.createCallout;
+            var message;
+            if (typeof createCallout === 'function') {
+                message = createCallout(document, 'error', text, 'Unable to load this Workbench page.');
+            }
+            else {
+                message = document.createElement('p');
+                message.className = 'error';
+                message.setAttribute('role', 'alert');
+                message.textContent = 'Unable to load this Workbench page: ' + text;
+            }
             while (mount.firstChild) {
                 mount.removeChild(mount.firstChild);
             }
