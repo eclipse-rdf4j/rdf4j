@@ -611,7 +611,6 @@ final class TxnManager {
 				if (closed || idle) {
 					return;
 				}
-				closeCursors();
 				permit = readerPermit;
 				releasePermit = release();
 			}
