@@ -232,14 +232,8 @@ function createQueryBrowserHarness(options = {}) {
         id: 'query-results-status',
         attributes: { 'aria-live': 'polite', role: 'status' }
     });
-    const queryResultsFrame = document.createElement('iframe');
-    queryResultsFrame.setAttribute('id', 'query-results-frame');
-    queryResultsFrame.setAttribute('name', 'query-results-frame');
-    queryResultsFrame.setAttribute('title', 'Query results');
-    queryResultsFrame.hidden = true;
     queryResults.appendChild(queryResultsLoading);
     queryResults.appendChild(queryResultsStatus);
-    queryResults.appendChild(queryResultsFrame);
     document.body.appendChild(navigation);
     document.body.appendChild(titleHeading);
     document.body.appendChild(noScriptMessage);
@@ -602,9 +596,6 @@ function createQueryBrowserHarness(options = {}) {
         getJSONRequests,
         pendingGetJSONRequests,
         pendingExplainRequests,
-        getResultFrame() {
-            return document.getElementById('query-results-frame');
-        },
         yasqeState: yasqe.state,
         requestsByAction(action) {
             return harness.ajaxRequests.filter((request) => request.action === action);

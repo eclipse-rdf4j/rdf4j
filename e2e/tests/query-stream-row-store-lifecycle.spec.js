@@ -247,7 +247,11 @@ test('closing the query tab leaves a durable marker that a fresh same-origin tab
 	await runBatchedQuery(page);
 	const active = await readRowStoreSnapshot(page);
 	const resultStoreId = assertAddedQueryRows(before, active, ROW_COUNT);
-	await page.close();
+	// Close the tab the way a user does: the page's unload handlers (pagehide) run. Playwright's default close
+	// skips them unless the page has subframes, which the Query page no longer has (M9.1).
+	const closed = page.waitForEvent('close');
+	await page.close({ runBeforeUnload: true });
+	await closed;
 
 	const recoveryPage = await context.newPage();
 	const pageErrors = [];

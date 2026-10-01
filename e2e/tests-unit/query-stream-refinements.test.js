@@ -1015,10 +1015,6 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
         executionForm.appendChild(input);
     }
     document.body.appendChild(executionForm);
-    const resultFrame = document.createElement('iframe');
-    resultFrame.setAttribute('id', 'query-results-frame');
-    resultFrame.setAttribute('name', 'query-results-frame');
-    document.body.appendChild(resultFrame);
     let fullscreenToggles = 0;
     const renderer = new queryStream.QueryResultRenderer(target, {
         executionForm,
@@ -1083,7 +1079,8 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     const parameters = new Map(download.formControls.map(input => [input.name, input.value]));
     assert.equal(download.method, 'POST');
     assert.equal(download.action, 'query');
-    assert.equal(download.target, 'query-results-frame');
+    const downloadFrame = document.getElementById(download.target);
+    assert.ok(downloadFrame && downloadFrame.hidden, 'the download goes to the renderer\'s own hidden frame');
     assert.equal(parameters.get('action'), 'exec');
     assert.equal(parameters.get('Accept'), 'text/csv');
     assert.equal(parameters.get('download_limit'), '17');

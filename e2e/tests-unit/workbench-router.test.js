@@ -567,7 +567,8 @@ test('leaving the page disposes the current route unless the page is kept for Ba
 
 // Plan task M8.2: scroll, focus and announcements.
 
-const frames = () => new Promise((resolve) => setTimeout(resolve, 5));
+/** Runs after the two animation frames the router has queued (each fake frame is a zero timer). */
+const frames = () => new Promise((resolve) => setTimeout(() => setTimeout(() => setTimeout(resolve, 0), 0), 0));
 
 test('the router restores scroll positions itself', () => {
     const harness = loadRouter();

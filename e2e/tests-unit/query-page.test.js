@@ -57,19 +57,14 @@ test('query utilities cover name validation, query language switch, save, and su
     assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
     assert.equal(harness.openedWindows.length, 0);
 
+    // Execution belongs to the streamed result renderer (query-result-lifecycle.test.js); without it nothing runs.
     harness.setValue('action', 'exec');
     harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
     assert.equal(harness.context.workbench.query.doSubmit(), false);
     assert.equal(harness.openedWindows.length, 0);
     assert.equal(harness.document.location.pathname, '/rdf4j-workbench/repositories/test/query');
-    assert.match(harness.getResultFrame().src, /action=exec/);
     assert.equal(harness.getProperty('include-query-text', 'value'), 'false');
-
-    harness.context.workbench.query.setQueryValue('x'.repeat(3000));
-    assert.equal(harness.context.workbench.query.doSubmit(), false);
-    assert.equal(harness.getProperty('include-query-text', 'value'), 'true');
     assert.equal(harness.alerts.length, 0);
-    assert.equal(harness.document.lastSubmittedForm.getAttribute('target'), 'query-results-frame');
 });
 
 test('disabled editor fullscreen hides YASQE control and blocks F11', () => {

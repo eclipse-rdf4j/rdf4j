@@ -236,3 +236,68 @@ test('mounted query streams own server paging while explicit downloads remain na
     assert.equal(harness.document.lastSubmittedForm.action, 'query',
         'raw Accept downloads remain explicit browser POSTs');
 });
+
+// Plan task M9.1: with the result iframe gone, paging on the Query page goes to the mounted streamed renderer.
+test('paging hands offsets and limits to a mounted streamed query page and keeps other parameters', () => {
+    const changes = [];
+    const pages = [];
+    const queryPage = {
+        isMounted: () => true,
+        changePageParameter(name, value) {
+            changes.push([name, value]);
+            return true;
+        },
+        nextPage: () => pages.push('next'),
+        previousPage: () => pages.push('previous')
+    };
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        workbench: { queryPage }
+    });
+    const limit = harness.registerElement('select', { id: 'limit_query', value: '50' });
+    harness.document.body.appendChild(limit);
+    harness.loadPagingScripts([]);
+    const paging = harness.context.workbench.paging;
+
+    paging.addPagingParam('offset', 25);
+    paging.addGraphParam('limit_query');
+    paging.nextOffset('query');
+    paging.previousOffset('query');
+    assert.deepEqual(changes, [['offset', 25], ['limit_query', 50]]);
+    assert.deepEqual(pages, ['next', 'previous']);
+
+    for (const [name, value] of [['offset', -1], ['offset', 'many'], ['know_total', 3]]) {
+        paging.addPagingParam(name, value);
+        assert.equal(harness.document.lastSubmittedForm.serializeArray()
+            .some((entry) => entry.name === name), true, name + ' is posted as a page request');
+    }
+    assert.equal(changes.length, 2, 'invalid values and other parameters are not handed to the renderer');
+
+    delete queryPage.changePageParameter;
+    paging.addPagingParam('offset', 50);
+    assert.equal(changes.length, 2);
+    queryPage.isMounted = () => false;
+    paging.nextOffset('query');
+    assert.deepEqual(pages, ['next', 'previous'], 'an unmounted renderer pages through the server');
+});
+
+test('the datatype toggle starts hidden when the cookie says so and binds only inside its page', () => {
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'
+    });
+    harness.document.cookie = 'show-datatypes=false';
+    harness.loadPagingScripts([]);
+    const page = harness.registerElement('div', { id: 'page' });
+    const inside = harness.registerElement('input', { type: 'checkbox', name: 'show-datatypes', checked: true });
+    page.appendChild(inside);
+    harness.document.body.appendChild(page);
+
+    harness.context.workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent(page);
+
+    assert.equal(inside.checked, false);
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), true);
+    assert.equal(inside.listenerCount('change'), 1);
+    inside.checked = true;
+    inside.trigger('change');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
+});

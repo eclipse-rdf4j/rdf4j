@@ -3136,8 +3136,6 @@ module workbench {
                             </div>
                             <div id="query-results-loading" class="query-results__loading" hidden role="status" aria-live="polite">Loading query results...</div>
                             <div id="query-results-status" class="query-results__status" role="status" aria-live="polite"></div>
-                            <iframe id="query-results-frame" name="query-results-frame" class="query-results__frame"
-                                title="Query results" hidden></iframe>
                         </section>
                         <p class="query-output__empty query-results-panel__empty">Choose Execute to see the results here.</p>
                     </div>

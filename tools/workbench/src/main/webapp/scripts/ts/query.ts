@@ -34,19 +34,11 @@ module workbench {
         var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
         var activeExplainRequestId = 0;
         var activeExplainJqXHR: JQueryXHR = null;
-        var activeQueryRequestId: string = null;
-        var resultFrameDocument: Document = null;
-        var resultFrameDocumentReadyHandler: () => void = null;
-        var resultFrameResizeObserver: any = null;
-        var resultFrameResizeFrame: HTMLIFrameElement = null;
-        var resultFrameWindowResizeHandler: () => void = null;
         var resultPresentationLayout = 'auto';
         var resultPresentationWrap = true;
         var resultLoadingRequested = false;
-        var RESULT_FRAME_ID = 'query-results-frame';
         var RESULT_LOADING_ID = 'query-results-loading';
         var RESULT_STATUS_ID = 'query-results-status';
-        var EMBEDDED_RESULT_PARAM = 'embedded';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
@@ -3028,9 +3020,6 @@ module workbench {
                 .toggleClass('query-cancel--visible', visible);
         }
 
-        function getResultFrame(): HTMLIFrameElement {
-            return <HTMLIFrameElement>document.getElementById(RESULT_FRAME_ID);
-        }
 
         function setResultLoading(loading: boolean) {
             var loadingElement = document.getElementById(RESULT_LOADING_ID);
@@ -3059,10 +3048,6 @@ module workbench {
                     workbench.animateElementOpacity(resultsElement, true);
                 }
                 resultsElement.setAttribute('aria-busy', loading ? 'true' : 'false');
-            }
-            var frame = getResultFrame();
-            if (frame && loading) {
-                frame.hidden = false;
             }
         }
 
@@ -3097,20 +3082,7 @@ module workbench {
             return <HTMLButtonElement>streamed || <HTMLButtonElement>document.getElementById('query-results-fullscreen');
         }
 
-        function setResultFullscreenButtonAvailable(available: boolean) {
-            var button = getResultFullscreenButton();
-            if (!button) {
-                return;
-            }
-            var enabled = available && button.getAttribute('data-result-fullscreen-enabled') !== 'false';
-            button.hidden = !enabled;
-            button.disabled = !enabled;
-        }
 
-        function isResultFullscreenEnabled(): boolean {
-            var button = getResultFullscreenButton();
-            return !!button && button.getAttribute('data-result-fullscreen-enabled') !== 'false';
-        }
 
         function isQueryRerunEnabled(): boolean {
             var button = <HTMLInputElement>document.getElementById('rerun-explanation');
@@ -3132,73 +3104,9 @@ module workbench {
                 || document.getElementById('query-results'));
         }
 
-        function postResultPresentationToFrame() {
-            var frame = getResultFrame();
-            if (!frame || !frame.contentWindow || typeof frame.contentWindow.postMessage !== 'function') {
-                return;
-            }
-            var targetOrigin = window.location.origin;
-            if (!targetOrigin || targetOrigin === 'null') {
-                targetOrigin = window.location.protocol + '//' + window.location.host;
-            }
-            try {
-                frame.contentWindow.postMessage({
-                    type: 'rdf4j-query-display-state',
-                    layout: resultPresentationLayout,
-                    wrap: resultPresentationWrap,
-                    fullscreen: isResultsFullscreen(),
-                    queryRequestId: activeQueryRequestId || ''
-                }, targetOrigin);
-            } catch (e) {
-                // A cross-origin redirect can make the current result document inaccessible.
-            }
-        }
 
-        function postResultFullscreenStateToFrame() {
-            var frame = getResultFrame();
-            if (!frame || !frame.contentWindow || typeof frame.contentWindow.postMessage !== 'function') {
-                return;
-            }
-            var targetOrigin = window.location.origin;
-            if (!targetOrigin || targetOrigin === 'null') {
-                targetOrigin = window.location.protocol + '//' + window.location.host;
-            }
-            try {
-                frame.contentWindow.postMessage({
-                    type: 'rdf4j-query-fullscreen-state',
-                    enabled: isResultsFullscreen(),
-                    queryRequestId: activeQueryRequestId || ''
-                }, targetOrigin);
-            } catch (e) {
-                // A cross-origin redirect can make the result document inaccessible.
-            }
-        }
 
-        function restoreResultFullscreenFocus(button: HTMLButtonElement, frame: HTMLIFrameElement) {
-            if (button && !button.hidden && !button.disabled) {
-                button.focus();
-                return;
-            }
-            var frameDocument = getResultFrameDocument(frame);
-            var frameButton = frameDocument && frameDocument.getElementById('query-result-fullscreen');
-            if (frameButton && typeof (<HTMLElement>frameButton).focus === 'function') {
-                (<HTMLElement>frameButton).focus();
-                return;
-            }
-            if (frame && typeof frame.focus === 'function') {
-                frame.focus();
-            }
-        }
 
-        function syncEmbeddedResultHeader(frame: HTMLIFrameElement) {
-            var parentHeader = document.querySelector('.query-results__header');
-            if (!parentHeader) {
-                return;
-            }
-            var childDocument = getResultFrameDocument(frame);
-            var childHeader = childDocument && childDocument.getElementById('query-result-embedded-header');
-            (<HTMLElement>parentHeader).hidden = !!childHeader;
-        }
 
         export function setResultsFullscreen(enabled: boolean, restoreFocus: boolean = true,
                                              target?: HTMLElement, control?: HTMLButtonElement) {
@@ -3207,23 +3115,7 @@ module workbench {
                 return;
             }
             var button = control || getResultFullscreenButton(results);
-            var frame = results.id === 'query-results' ? getResultFrame() : null;
-            workbench.resultFullscreen.set(results, button, enabled, restoreFocus, {
-                previousFocus: frame && document.activeElement === frame ? button : undefined,
-                change: function(fullscreen: boolean) {
-                    if (results.id === 'query-results') {
-                        if (fullscreen) {
-                            postResultPresentationToFrame();
-                        } else {
-                            resizeResultFrame(getResultFrame());
-                        }
-                        postResultFullscreenStateToFrame();
-                    }
-                },
-                restoreFocus: function() {
-                    restoreResultFullscreenFocus(button, results.id === 'query-results' ? getResultFrame() : null);
-                }
-            });
+            workbench.resultFullscreen.set(results, button, enabled, restoreFocus);
         }
 
         export function getResultPresentationState(): { layout: string; wrap: boolean } {
@@ -3235,354 +3127,49 @@ module workbench {
                 resultPresentationLayout = layout;
             }
             resultPresentationWrap = wrap !== false;
-            postResultPresentationToFrame();
         }
 
-        function stopResultFrame(frame: HTMLIFrameElement) {
-            try {
-                if (frame && frame.contentWindow && typeof frame.contentWindow.stop === 'function') {
-                    frame.contentWindow.stop();
-                }
-            } catch (e) {
-                // A redirect can make the result document cross-origin before cleanup runs.
-            }
-        }
 
-        function getResultFrameLocation(frame: HTMLIFrameElement): string {
-            try {
-                if (!frame || !frame.contentWindow || !frame.contentWindow.location) {
-                    return '';
-                }
-                return frame.contentWindow.location.href || '';
-            } catch (e) {
-                return null;
-            }
-        }
 
-        function getResultFrameDocument(frame: HTMLIFrameElement): Document {
-            try {
-                return frame ? frame.contentDocument : null;
-            } catch (e) {
-                return null;
-            }
-        }
 
-        function getResultFrameMarker(frame: HTMLIFrameElement): HTMLElement {
-            var document = getResultFrameDocument(frame);
-            return document ? document.getElementById('rdf4j-query-result') : null;
-        }
 
-        function clearResultFrameDocumentReadyHandler() {
-            if (resultFrameDocument && resultFrameDocumentReadyHandler) {
-                resultFrameDocument.removeEventListener('readystatechange', resultFrameDocumentReadyHandler, false);
-            }
-            resultFrameDocument = null;
-            resultFrameDocumentReadyHandler = null;
-        }
 
-        function waitForResultFrameDocument(frame: HTMLIFrameElement) {
-            clearResultFrameDocumentReadyHandler();
-            var document = getResultFrameDocument(frame);
-            if (!document || !document.addEventListener) {
-                return;
-            }
-            resultFrameDocument = document;
-            resultFrameDocumentReadyHandler = function() {
-                handleResultFrameLoad(frame);
-            };
-            document.addEventListener('readystatechange', resultFrameDocumentReadyHandler, false);
-        }
 
-        function clearResultFrameResizeObserver() {
-            if (resultFrameResizeObserver && typeof resultFrameResizeObserver.disconnect === 'function') {
-                resultFrameResizeObserver.disconnect();
-            }
-            if (resultFrameWindowResizeHandler) {
-                window.removeEventListener('resize', resultFrameWindowResizeHandler, false);
-            }
-            resultFrameResizeObserver = null;
-            resultFrameResizeFrame = null;
-            resultFrameWindowResizeHandler = null;
-        }
 
-        function resizeResultFrame(frame: HTMLIFrameElement) {
-            if (frame !== getResultFrame()) {
-                return;
-            }
-            if (isResultsFullscreen()) {
-                frame.style.height = '';
-                return;
-            }
-            var document = getResultFrameDocument(frame);
-            if (!document || !document.documentElement || !getResultFrameMarker(frame)) {
-                return;
-            }
-            var body = document.body;
-            var content = document.getElementById('query-result-embedded');
-            var contentHeight = content
-                ? Math.max(content.scrollHeight, content.getBoundingClientRect().height)
-                : Math.max(document.documentElement.scrollHeight, body ? body.scrollHeight : 0);
-            var viewportHeight = Math.max(320, Math.round(window.innerHeight * 0.75));
-            var maxHeight = Math.min(640, viewportHeight);
-			var desiredHeight = Math.max(160, Math.min(contentHeight + 12, maxHeight));
-            frame.style.height = desiredHeight + 'px';
-        }
 
-        function installResultFrameResizeObserver(frame: HTMLIFrameElement) {
-            clearResultFrameResizeObserver();
-            resizeResultFrame(frame);
-            var ResizeObserverConstructor = (<any>window).ResizeObserver;
-            var document = getResultFrameDocument(frame);
-            if (!ResizeObserverConstructor || !document || !document.documentElement) {
-                return;
-            }
-            resultFrameResizeFrame = frame;
-            resultFrameResizeObserver = new ResizeObserverConstructor(function() {
-                resizeResultFrame(resultFrameResizeFrame);
-            });
-            var content = document.getElementById('query-result-embedded');
-            resultFrameResizeObserver.observe(content || document.documentElement);
-            if (!content && document.body) {
-                resultFrameResizeObserver.observe(document.body);
-            }
-            resultFrameWindowResizeHandler = function() {
-                resizeResultFrame(frame);
-            };
-            window.addEventListener('resize', resultFrameWindowResizeHandler, false);
-        }
 
-        function failResultFrameLoad(frame: HTMLIFrameElement) {
-            if (frame !== getResultFrame() || !activeQueryRequestId) {
-                return;
-            }
-            clearResultFrameDocumentReadyHandler();
-            clearResultFrameResizeObserver();
-            setResultLoading(false);
-            setResultStatus('Unable to load query results.');
-            setResultFullscreenButtonAvailable(false);
-            clearActiveQuery();
-        }
 
-        function handleResultFrameLoad(frame: HTMLIFrameElement) {
-            if (frame !== getResultFrame()) {
-                return;
-            }
-            clearResultFrameDocumentReadyHandler();
-            var location = getResultFrameLocation(frame);
-            if (location === null || location === 'about:blank' || !location) {
-                if (location === null) {
-                    failResultFrameLoad(frame);
-                }
-                return;
-            }
-            if (!activeQueryRequestId) {
-                setResultLoading(false);
-                return;
-            }
-            var marker = getResultFrameMarker(frame);
-            if (!marker) {
-                var document = getResultFrameDocument(frame);
-                if (!document || !document.documentElement) {
-                    waitForResultFrameDocument(frame);
-                    return;
-                }
-                failResultFrameLoad(frame);
-                return;
-            }
-            var markerRequestId = $.trim(marker.getAttribute('data-query-request-id') || '');
-            if (!markerRequestId) {
-                failResultFrameLoad(frame);
-                return;
-            }
-            if (markerRequestId !== activeQueryRequestId) {
-                return;
-            }
-            installResultFrameResizeObserver(frame);
-            syncEmbeddedResultHeader(frame);
-            setResultLoading(false);
-            if (marker.getAttribute('data-query-result-status') === 'error') {
-                setResultStatus('Query execution failed.');
-            }
-            setResultFullscreenButtonAvailable(true);
-            postResultPresentationToFrame();
-            clearActiveQuery(markerRequestId || undefined);
-        }
 
-        function installResultFrameHandlers(frame: HTMLIFrameElement) {
-            if (!frame || !frame.addEventListener) {
-                return;
-            }
-            frame.addEventListener('load', function() {
-                handleResultFrameLoad(frame);
-            }, false);
-            frame.addEventListener('error', function() {
-                failResultFrameLoad(frame);
-            }, false);
-        }
 
-        function replaceResultFrame(stopOldFrame: boolean = true): HTMLIFrameElement {
-            var oldFrame = getResultFrame();
-            var parent = oldFrame && oldFrame.parentNode;
-            if (!parent) {
-                return oldFrame;
-            }
-            if (stopOldFrame) {
-                stopResultFrame(oldFrame);
-            }
-            clearResultFrameDocumentReadyHandler();
-            clearResultFrameResizeObserver();
-            var frame = <HTMLIFrameElement>document.createElement('iframe');
-            frame.id = RESULT_FRAME_ID;
-            frame.name = RESULT_FRAME_ID;
-            frame.title = 'Query results';
-            frame.className = 'query-results__frame';
-            frame.hidden = true;
-            parent.removeChild(oldFrame);
-            parent.appendChild(frame);
-            installResultFrameHandlers(frame);
-            return frame;
-        }
 
-        function handleResultMessage(event: MessageEvent) {
-            if (event.origin !== window.location.origin) {
-                return;
-            }
-            var frame = getResultFrame();
-            if (!frame || event.source !== frame.contentWindow) {
-                return;
-            }
-            var data = event.data || {};
-            var queryRequestId = typeof data.queryRequestId === 'string' ? $.trim(data.queryRequestId) : '';
-            if (!queryRequestId) {
-                return;
-            }
-            if (data.type === 'rdf4j-query-start') {
-                clearResultFrameResizeObserver();
-                activeQueryRequestId = queryRequestId;
-                $('#query-request-id').val(queryRequestId);
-                setQueryCancelVisible(true);
-                setResultStatus('');
-                setResultLoading(true);
-                return;
-            }
-            if (data.type === 'rdf4j-query-toggle-fullscreen') {
-                if (!isResultFullscreenEnabled()) {
-                    return;
-                }
-                var resultMarker = getResultFrameMarker(frame);
-                var resultMarkerRequestId = resultMarker
-                    ? $.trim(resultMarker.getAttribute('data-query-request-id') || '') : '';
-                if (queryRequestId && resultMarkerRequestId && queryRequestId !== resultMarkerRequestId) {
-                    return;
-                }
-                setResultsFullscreen(!isResultsFullscreen());
-                return;
-            }
-            if (data.type === 'rdf4j-query-display-state') {
-                if (queryRequestId !== activeQueryRequestId) {
-                    return;
-                }
-                var displayLayout = data.layout === 'table' || data.layout === 'records' || data.layout === 'auto'
-                    ? data.layout : resultPresentationLayout;
-                if (data.fullscreen === true) {
-                    // Legacy result controls send temporary fullscreen wrap state. Keep only its layout.
-                    resultPresentationLayout = displayLayout;
-                    return;
-                }
-                applyResultPresentationState(displayLayout, data.wrap !== false);
-                return;
-            }
-            if (data.type !== 'rdf4j-query-result' || queryRequestId !== activeQueryRequestId) {
-                return;
-            }
-            installResultFrameResizeObserver(frame);
-            syncEmbeddedResultHeader(frame);
-            setResultLoading(false);
-            if (data.status === 'error') {
-                setResultStatus('Query execution failed.');
-            }
-            setResultFullscreenButtonAvailable(true);
-            postResultPresentationToFrame();
-            clearActiveQuery(queryRequestId);
-        }
 
-        function installResultMessageHandler() {
-            if (window.addEventListener) {
-                window.addEventListener('message', handleResultMessage, false);
-                var frame = getResultFrame();
-                if (frame) {
-                    installResultFrameHandlers(frame);
-                }
-            }
-        }
 
-        function clearActiveQuery(queryRequestId?: string) {
-            if (queryRequestId && queryRequestId !== activeQueryRequestId) {
-                return;
-            }
-            activeQueryRequestId = null;
+        function clearActiveQuery() {
             $('#query-request-id').val('');
             setQueryCancelVisible(false);
+        }
+
+        /** Leaving the page (or returning to it from the back/forward cache) starts the result area afresh. */
+        function resetResultArea() {
+            setResultsFullscreen(false, false);
+            setResultLoading(false);
+            setResultStatus('');
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                resultsElement.hidden = true;
+            }
+            clearActiveQuery();
         }
 
         function installQueryPageLifecycleHandlers() {
             if (!window.addEventListener) {
                 return;
             }
-            window.addEventListener('pagehide', function() {
-                setResultsFullscreen(false, false);
-                stopResultFrame(getResultFrame());
-                clearResultFrameDocumentReadyHandler();
-                clearResultFrameResizeObserver();
-                setResultLoading(false);
-                setResultStatus('');
-                var resultsElement = document.getElementById('query-results');
-                if (resultsElement) {
-                    resultsElement.hidden = true;
-                }
-                clearActiveQuery();
-            }, false);
-            window.addEventListener('pageshow', function() {
-                setResultsFullscreen(false, false);
-                stopResultFrame(getResultFrame());
-                clearResultFrameDocumentReadyHandler();
-                clearResultFrameResizeObserver();
-                setResultLoading(false);
-                setResultStatus('');
-                var resultsElement = document.getElementById('query-results');
-                if (resultsElement) {
-                    resultsElement.hidden = true;
-                }
-                clearActiveQuery();
-            }, false);
-        }
-
-        function beginTrackedQuery(): boolean {
-            var hadActiveQuery = !!activeQueryRequestId;
-            if (hadActiveQuery) {
-                cancelQuery();
-            }
-
-            setResultsFullscreen(false, false);
-            resultPresentationLayout = 'auto';
-            resultPresentationWrap = true;
-            setResultFullscreenButtonAvailable(false);
-
-            var frame = replaceResultFrame(!hadActiveQuery);
-            if (!frame) {
-                return false;
-            }
-            var queryRequestId = generateRequestId();
-            activeQueryRequestId = queryRequestId;
-            $('#query-request-id').val(queryRequestId);
-            setQueryCancelVisible(true);
-            setResultStatus('');
-            setResultLoading(true);
-            return true;
+            window.addEventListener('pagehide', resetResultArea, false);
+            window.addEventListener('pageshow', resetResultArea, false);
         }
 
         installQueryPageLifecycleHandlers();
-        installResultMessageHandler();
 
         function createStableExplanationFromResponse(
             signature: RequestSignature,
@@ -4163,90 +3750,8 @@ module workbench {
                 return streamedQueryPage.submitExecution();
             }
 
-            var queryElement = <HTMLTextAreaElement>document.getElementById('query');
-            if (!queryElement || !$.trim(queryElement.value)) {
-                var hadActiveQuery = !!activeQueryRequestId;
-                if (hadActiveQuery) {
-                    cancelQuery();
-                }
-                var emptyFrame = replaceResultFrame(!hadActiveQuery);
-                if (emptyFrame) {
-                    emptyFrame.hidden = true;
-                }
-                setResultsFullscreen(false, false);
-                setResultFullscreenButtonAvailable(false);
-                setResultLoading(false);
-                setResultStatus('Enter a query to see results.');
-                clearActiveQuery();
-                return false;
-            }
-            if (!beginTrackedQuery()) {
-                return false;
-            }
-
-            var url: string[] = [];
-            url[url.length] = 'query';
-            if (document.all) {
-                url[url.length] = ';';
-            } else {
-                url[url.length] = '?';
-            }
-            workbench.addParam(url, 'action');
-            workbench.addParam(url, 'queryLn');
-            workbench.addParam(url, 'query');
-            workbench.addParam(url, 'limit_query');
-            workbench.addParam(url, 'query-timeout');
-            workbench.addParam(url, 'infer');
-            workbench.addParam(url, 'explain');
-            workbench.addParam(url, 'explain-format');
-            workbench.addParam(url, 'query-request-id');
-            url[url.length] = EMBEDDED_RESULT_PARAM + '=true&';
-            var href = url.join('').replace(/&$/, '');
-            var loc = document.location;
-            var currentBaseLength = loc.href.length - loc.pathname.length
-                - loc.search.length;
-            var pathLength = href.length;
-            var urlLength = pathLength + currentBaseLength;
-            var frame = getResultFrame();
-            if (!frame) {
-                clearActiveQuery();
-                return false;
-            }
-
-            if (pathLength > 2048 || urlLength > 2083) {
-                $('#include-query-text').val('true');
-                var temporaryForm = <HTMLFormElement>document.createElement('form');
-                temporaryForm.method = 'post';
-                temporaryForm.action = 'query';
-                temporaryForm.setAttribute('target', frame.name || RESULT_FRAME_ID);
-                temporaryForm.style.display = 'none';
-                var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
-                var hasEmbedded = false;
-                for (var i = 0; i < serializedForm.length; i++) {
-                    var serializedInput = <HTMLInputElement>document.createElement('input');
-                    serializedInput.type = 'hidden';
-                    serializedInput.name = serializedForm[i].name;
-                    serializedInput.value = serializedForm[i].value;
-                    temporaryForm.appendChild(serializedInput);
-                    if (serializedForm[i].name === EMBEDDED_RESULT_PARAM) {
-                        hasEmbedded = true;
-                    }
-                }
-                if (!hasEmbedded) {
-                    var embeddedInput = <HTMLInputElement>document.createElement('input');
-                    embeddedInput.type = 'hidden';
-                    embeddedInput.name = EMBEDDED_RESULT_PARAM;
-                    embeddedInput.value = 'true';
-                    temporaryForm.appendChild(embeddedInput);
-                }
-                document.body.appendChild(temporaryForm);
-                temporaryForm.submit();
-                document.body.removeChild(temporaryForm);
-                return false;
-            }
-
-            frame.src = href;
-            frame.hidden = false;
+            // The streamed result renderer is the only way to show results (M9.1 removed the result iframe).
+            setResultStatus('Query results are unavailable on this page.');
             return false;
         }
 
@@ -4259,17 +3764,7 @@ module workbench {
                     && streamedQueryPage.hasActiveRequest()
                     && typeof streamedQueryPage.cancelExecution === 'function') {
                 streamedQueryPage.cancelExecution();
-                return;
             }
-            var queryRequestId = activeQueryRequestId;
-            if (!queryRequestId) {
-                return;
-            }
-            stopResultFrame(getResultFrame());
-            postCancelQuery(queryRequestId);
-            clearActiveQuery(queryRequestId);
-            setResultLoading(false);
-            setResultStatus('Query cancelled.');
         }
 
         export function toggleResultsFullscreen(target?: HTMLElement, control?: HTMLButtonElement) {
@@ -4918,7 +4413,6 @@ module workbench {
                     activeCompareRequestId: activeCompareRequestId,
                     activeCompareRequestSignatures: activeCompareRequestSignatures,
                     activePrimaryRequestSignature: activePrimaryRequestSignature,
-                    activeQueryRequestId: activeQueryRequestId,
                     compareModeEnabled: compareModeEnabled,
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
@@ -4946,7 +4440,6 @@ module workbench {
                 resetExplainRequestUiState('compare');
                 activeExplainRequestId = 0;
                 activeExplainJqXHR = null;
-                activeQueryRequestId = null;
                 resultPresentationLayout = 'auto';
                 resultPresentationWrap = true;
                 var fullscreenTarget = workbench.resultFullscreen.currentTarget();

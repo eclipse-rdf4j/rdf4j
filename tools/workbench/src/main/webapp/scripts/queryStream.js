@@ -2744,21 +2744,15 @@ var workbench;
                 var snapshot = this.options.executionSnapshot;
                 downloadForm.action = snapshot ? snapshot.url : executionUrl(executionForm);
                 downloadForm.style.display = 'none';
-                var sharedFrame = this.document.getElementById
-                    ? this.document.getElementById('query-results-frame') : null;
-                if (sharedFrame) {
-                    downloadForm.target = sharedFrame.name || sharedFrame.id;
+                // Downloads go to a hidden frame of their own, so the page stays where it is.
+                if (!this.downloadFrame) {
+                    this.downloadFrame = this.document.createElement('iframe');
+                    this.downloadFrame.setAttribute('id', this.elementId('query-result-download-frame'));
+                    this.downloadFrame.setAttribute('name', this.elementId('query-result-download-frame'));
+                    this.downloadFrame.hidden = true;
+                    (this.document.body || this.target).appendChild(this.downloadFrame);
                 }
-                else {
-                    if (!this.downloadFrame) {
-                        this.downloadFrame = this.document.createElement('iframe');
-                        this.downloadFrame.setAttribute('id', this.elementId('query-result-download-frame'));
-                        this.downloadFrame.setAttribute('name', this.elementId('query-result-download-frame'));
-                        this.downloadFrame.hidden = true;
-                        (this.document.body || this.target).appendChild(this.downloadFrame);
-                    }
-                    downloadForm.target = this.downloadFrame.name || this.elementId('query-result-download-frame');
-                }
+                downloadForm.target = this.downloadFrame.name || this.elementId('query-result-download-frame');
                 var excluded = ['Accept', 'download_limit', 'query-request-id', 'action', 'submit', 'batch-size', 'batch-offset'];
                 if (snapshot) {
                     snapshot.body.forEach(function (value, name) {
