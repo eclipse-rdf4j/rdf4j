@@ -6,116 +6,130 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-workbench.addLoad(function() {
-    function removeDuplicates(self:string) {
-        function textContent(element:HTMLElement) {
-            return $.trim(element.innerText || element.textContent);
-        }
+module workbench {
 
-        // Only the explored resource's lists on the page surface; the shell's menus and popovers are not touched.
-        var surface = document.getElementById('workbench-page-surface');
-        var lists: ArrayLike<HTMLUListElement> = surface ? surface.getElementsByTagName('ul') : [];
-        for (var i = lists.length - 1; i + 1; i--) {
-            var items = lists[i].getElementsByTagName('li');
-            if (items.length == 0) {
-                continue;
-            }
-            for (var j = items.length - 1; j; j--) {
-                var text = textContent(items[j]);
-                if (items[j].innerHTML == items[j - 1].innerHTML || text == self) {
-                    items[j].parentNode.removeChild(items[j]);
+    export module explore {
+
+        /**
+         * Route mount (plan task M7.2): fill the resource summary and the row count, drop repeated list items and
+         * bind the datatype toggle, all inside the outlet. The returned function unbinds the toggle.
+         */
+        export function mount(outlet: HTMLElement): () => void {
+            function removeDuplicates(self: string) {
+                function textContent(element: HTMLElement) {
+                    return $.trim(element.innerText || element.textContent);
+                }
+
+                // Only the explored resource's lists on the page surface; the shell's menus and popovers are not touched.
+                var surface = outlet.querySelector('#workbench-page-surface');
+                var lists: ArrayLike<HTMLUListElement> = surface ? surface.getElementsByTagName('ul') : [];
+                for (var i = lists.length - 1; i + 1; i--) {
+                    var items = lists[i].getElementsByTagName('li');
+                    if (items.length == 0) {
+                        continue;
+                    }
+                    for (var j = items.length - 1; j; j--) {
+                        var text = textContent(items[j]);
+                        if (items[j].innerHTML == items[j - 1].innerHTML || text == self) {
+                            items[j].parentNode.removeChild(items[j]);
+                        }
+                    }
+
+                    text = textContent(items[0]);
+                    if (text == self) {
+                        items[0].parentNode.removeChild(items[0]);
+                    }
+
+                    if (items.length == 0) {
+                        lists[i].parentNode.parentNode.removeChild(lists[i].parentNode);
+                    }
                 }
             }
 
-            text = textContent(items[0]);
-            if (text == self) {
-                items[0].parentNode.removeChild(items[0]);
+            function syncExplorePaginationVisibility() {
+                var pagination = outlet.querySelector('#explore-pagination') as HTMLElement;
+                if (!pagination) {
+                    return;
+                }
+                var resultRows = outlet.querySelectorAll('#explore-results table.data tbody tr');
+                var resultTable = outlet.querySelector('#explore-results table.data') as HTMLElement;
+                var emptyResult = outlet.querySelector('#explore-results .workbench-empty');
+                var emptyPage = Boolean(emptyResult) || Boolean(resultTable && resultRows.length === 0);
+                if (resultTable) {
+                    resultTable.hidden = resultRows.length === 0;
+                }
+                var offset = workbench.paging.getOffset();
+                pagination.hidden = emptyPage && offset <= 0;
             }
 
-            if (items.length == 0) {
-                lists[i].parentNode.parentNode.removeChild(lists[i].parentNode);
+            var page = $(outlet);
+            // Populate parameters
+            var elements = workbench.getQueryStringElements();
+            var resource = page.find('#resource');
+            var suffix = '_explore';
+            var limit_param = workbench.paging.LIMIT + suffix;
+            var limit_id = workbench.paging.LIM_ID + suffix;
+            var limit_param_found = false;
+            for (var i = 0; elements.length - i; i++) {
+                var pair = elements[i].split('=');
+                var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
+                if ('resource' == pair[0]) {
+                    resource.val(value);
+                }
+                else if (limit_param == pair[0]) {
+                    page.find(limit_id).val(value);
+                    limit_param_found = true;
+                }
             }
-        }
-    }
+            if (!limit_param_found) {
+                var limit_cookie = workbench.getCookie(limit_param);
+                if (limit_cookie) {
+                    page.find(limit_id).val(limit_cookie);
+                }
+            }
+            var explore = 'explore';
+            workbench.paging.correctButtons(explore);
+            var rvalue = resource.val();
+            if (rvalue) {
+                var summary = outlet.querySelector('#explore-resource-summary');
+                var resourceValue = outlet.querySelector('#explore-resource-value');
+                var resultCount = outlet.querySelector('#explore-result-count');
+                if (summary && resourceValue && resultCount) {
+                    resourceValue.textContent = rvalue;
+                    summary.removeAttribute('hidden');
+                }
+                removeDuplicates(rvalue);
+                var limit = workbench.paging.getLimit(explore);
 
-    function syncExplorePaginationVisibility() {
-        var pagination = document.getElementById('explore-pagination');
-        if (!pagination) {
-            return;
-        }
-        var resultRows = document.querySelectorAll('#explore-results table.data tbody tr');
-        var resultTable = document.querySelector('#explore-results table.data') as HTMLElement;
-        var emptyResult = document.querySelector('#explore-results .workbench-empty');
-        var emptyPage = Boolean(emptyResult) || Boolean(resultTable && resultRows.length === 0);
-        if (resultTable) {
-            resultTable.hidden = resultRows.length === 0;
-        }
-        var offset = workbench.paging.getOffset();
-        pagination.hidden = emptyPage && offset <= 0;
-    }
+                // Modify title to reflect total_result_count cookie
+                var total_result_count = workbench.paging.getTotalResultCount();
+                var have_total_count = (total_result_count > 0);
+                var offset = limit == 0 ? 0 : workbench.paging.getOffset();
+                var first = offset + 1;
+                var last = limit == 0 ? total_result_count : offset + limit;
+                var result_rows = outlet.querySelectorAll('#explore-results table.data tbody tr');
+                var result_table = outlet.querySelector('#explore-results table.data');
+                var empty_result = outlet.querySelector('#explore-results .workbench-empty');
+                var empty_page = Boolean(empty_result) || Boolean(result_table && result_rows.length === 0);
 
-    // Populate parameters
-    var elements = workbench.getQueryStringElements();
-    var resource = $('#resource');
-    var suffix = '_explore';
-    var limit_param = workbench.paging.LIMIT + suffix;
-    var limit_id = workbench.paging.LIM_ID + suffix;
-    var limit_param_found = false;
-    for (var i = 0; elements.length - i; i++) {
-        var pair = elements[i].split('=');
-        var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
-        if ('resource' == pair[0]) {
-            resource.val(value);
-        }
-        else if (limit_param == pair[0]) {
-            $(limit_id).val(value);
-            limit_param_found = true;
-        }
-    }
-    if (!limit_param_found){
-        var limit_cookie = workbench.getCookie(limit_param);
-        if (limit_cookie) {
-            $(limit_id).val(limit_cookie);
+                // Truncate range if close to end.
+                last = have_total_count ? Math.min(total_result_count, last) : last;
+                var range = 'Rows ' + first + '–' + last;
+                if (empty_page) {
+                    range = have_total_count ? 'Rows 0 of ' + total_result_count : 'No rows';
+                }
+                else if (have_total_count) {
+                    range = range + ' of ' + total_result_count;
+                }
+                if (resultCount) {
+                    resultCount.textContent = range;
+                }
+            }
+            workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent(outlet);
+            syncExplorePaginationVisibility();
+            return function() {
+                page.find("input[name='show-datatypes']").off('.wbRoute');
+            };
         }
     }
-    var explore = 'explore';
-    workbench.paging.correctButtons(explore);
-    var rvalue=resource.val();
-    if (rvalue) {
-        var summary = document.getElementById('explore-resource-summary');
-        var resourceValue = document.getElementById('explore-resource-value');
-        var resultCount = document.getElementById('explore-result-count');
-        if (summary && resourceValue && resultCount) {
-            resourceValue.textContent = rvalue;
-            summary.removeAttribute('hidden');
-        }
-        removeDuplicates(rvalue);
-        var limit = workbench.paging.getLimit(explore);
-
-        // Modify title to reflect total_result_count cookie
-        var total_result_count = workbench.paging.getTotalResultCount();
-        var have_total_count = (total_result_count > 0);
-        var offset = limit == 0 ? 0 : workbench.paging.getOffset();
-        var first = offset + 1;
-        var last = limit == 0 ? total_result_count : offset + limit;
-        var result_rows = document.querySelectorAll('#explore-results table.data tbody tr');
-        var result_table = document.querySelector('#explore-results table.data');
-        var empty_result = document.querySelector('#explore-results .workbench-empty');
-        var empty_page = Boolean(empty_result) || Boolean(result_table && result_rows.length === 0);
-
-        // Truncate range if close to end.
-        last = have_total_count ? Math.min(total_result_count, last) : last;
-        var range = 'Rows ' + first + '–' + last;
-        if (empty_page) {
-            range = have_total_count ? 'Rows 0 of ' + total_result_count : 'No rows';
-        }
-        else if (have_total_count) {
-            range = range + ' of ' + total_result_count;
-        }
-        if (resultCount) {
-            resultCount.textContent = range;
-        }
-    }
-    workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent();
-    syncExplorePaginationVisibility();
-});
+}

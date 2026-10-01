@@ -45,10 +45,13 @@ var workbench;
             }
         }
         add.enabledInput = enabledInput;
+        /** Route mount (plan task M7.2): show the panel of the source that is checked in this page. */
+        function mount(outlet) {
+            var selected = $(outlet).find("input[name='source']:checked").val() || 'file';
+            enabledInput(selected == 'contents' ? 'text' : selected);
+            return function () { };
+        }
+        add.mount = mount;
     })(add = workbench.add || (workbench.add = {}));
 })(workbench || (workbench = {}));
-workbench.addLoad(function addPageLoaded() {
-    var selected = $("input[name='source']:checked").val() || 'file';
-    workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
-});
 //# sourceMappingURL=add.js.map

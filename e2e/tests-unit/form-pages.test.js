@@ -137,7 +137,7 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.document.body.appendChild(createForm);
 
     harness.loadScripts(['create.js']);
-    harness.runLoadHandlers();
+    harness.workbench.create.mount(harness.document.body);
 
     assert.equal(id.value, 'repo-1');
     assert.equal(title.value, 'My Repo');
@@ -210,7 +210,7 @@ test('create federate page enables create only for valid member selection', () =
     ].forEach((element) => harness.document.body.appendChild(element));
 
     harness.loadScripts(['create-federate.js']);
-    harness.runLoadHandlers();
+    harness.workbench.createFederate.mount(harness.document.body);
 
     assert.equal(createButton.disabled, false);
     assert.equal(feedback.style.display, 'none');

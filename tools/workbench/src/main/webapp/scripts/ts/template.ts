@@ -156,25 +156,32 @@ module workbench {
             };
         }
 
-        export function bindOwner(owner: HTMLElement): void {
+        export function bindOwner(owner: HTMLElement): () => void {
             if (!owner) {
-                return;
+                return function() {};
             }
             var toggle = <HTMLButtonElement>owner.querySelector('.workbench-disclosure__toggle');
             var panelId = toggle ? toggle.getAttribute('aria-controls') : null;
             var panel = panelId && owner.ownerDocument ? owner.ownerDocument.getElementById(panelId) : null;
-            bind(toggle, panel, owner);
+            return bind(toggle, panel, owner);
         }
 
-        export function bindAll(root?: any): void {
+        /** Bind every disclosure under root; the returned function releases the ones this call bound. */
+        export function bindAll(root?: any): () => void {
             var scope = root || document;
             if (!scope || !scope.querySelectorAll) {
-                return;
+                return function() {};
             }
             var owners = scope.querySelectorAll('[data-workbench-detail-disclosure="true"]');
+            var disposers: (() => void)[] = [];
             for (var i = 0; i < owners.length; i++) {
-                bindOwner(<HTMLElement>owners[i]);
+                disposers.push(bindOwner(<HTMLElement>owners[i]));
             }
+            return function() {
+                for (var j = 0; j < disposers.length; j++) {
+                    disposers[j]();
+                }
+            };
         }
     }
 
@@ -530,6 +537,7 @@ module workbench {
         summary: HTMLElement;
         content: NativeDisclosureContentState[];
         requestedOpen: boolean;
+        onClick?: (event: Event) => void;
     }
 
     interface PanelDisclosureState {
@@ -911,10 +919,22 @@ module workbench {
         details.setAttribute('data-workbench-motion-ready', 'true');
         summary.setAttribute('aria-expanded', details.open ? 'true' : 'false');
         applyNativeDisclosureContent(state, details.open);
-        summary.addEventListener('click', function(event: Event) {
+        state.onClick = function(event: Event) {
             event.preventDefault();
             setNativeDisclosureOpen(details, !state.requestedOpen, true);
-        }, true);
+        };
+        summary.addEventListener('click', state.onClick, true);
+    }
+
+    /** Forget an installed native disclosure and remove its summary listener (a route that is left). */
+    export function releaseNativeDisclosure(details: HTMLDetailsElement): void {
+        var state = nativeDisclosureState(details);
+        if (!state) {
+            return;
+        }
+        nativeDisclosureStates.splice(nativeDisclosureStates.indexOf(state), 1);
+        state.summary.removeEventListener('click', state.onClick, true);
+        details.removeAttribute('data-workbench-motion-ready');
     }
 
     function panelDisclosureState(button: HTMLButtonElement, panel: HTMLElement,
@@ -1277,6 +1297,65 @@ module workbench {
         return createFallbackRequestId();
     }
 
+    /** Give every select under root the shared chevron while keeping the native control. */
+    function wrapSelects(root: any): void {
+        var selects = root.querySelectorAll('select');
+        var iconNamespace = 'http://www.w3.org/2000/svg';
+        for (var i = 0; i < selects.length; i++) {
+            var select = <HTMLSelectElement>selects[i];
+            if (select.parentElement && select.parentElement.classList.contains('workbench-select-control')) {
+                continue;
+            }
+
+            var parent = select.parentNode;
+            if (!parent) {
+                continue;
+            }
+
+            var control = document.createElement('span');
+            control.className = 'workbench-select-control';
+            parent.insertBefore(control, select);
+            control.appendChild(select);
+
+            var chevron = document.createElementNS(iconNamespace, 'svg');
+            chevron.setAttribute('class', 'workbench-action-icon workbench-select-chevron');
+            chevron.setAttribute('viewBox', '0 0 24 24');
+            chevron.setAttribute('width', '16');
+            chevron.setAttribute('height', '16');
+            chevron.setAttribute('focusable', 'false');
+            chevron.setAttribute('aria-hidden', 'true');
+            var chevronPath = document.createElementNS(iconNamespace, 'path');
+            chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
+            chevron.appendChild(chevronPath);
+            control.appendChild(chevron);
+        }
+    }
+
+    /**
+     * The decorations every page gets: animated native disclosures (details elements), button/panel disclosures
+     * whose panels open below their toolbar, and the shared select chevron. Run for the document once it loads and
+     * for the outlet on every route mount; the returned function releases the disclosures this call installed.
+     */
+    export function decoratePage(root: any): () => void {
+        var allDisclosures = root.querySelectorAll('details');
+        var installed: HTMLDetailsElement[] = [];
+        for (var i = 0; i < allDisclosures.length; i++) {
+            var details = <HTMLDetailsElement>allDisclosures[i];
+            if (!nativeDisclosureState(details)) {
+                installNativeDisclosure(details);
+                installed.push(details);
+            }
+        }
+        var releaseDisclosures = detailDisclosure.bindAll(root);
+        wrapSelects(root);
+        return function() {
+            releaseDisclosures();
+            for (var j = 0; j < installed.length; j++) {
+                releaseNativeDisclosure(installed[j]);
+            }
+        };
+    }
+
     export interface LoadRoutine {
         (ev?: Event): void;
     }
@@ -1367,59 +1446,9 @@ workbench
     });
 
 /**
- * Native disclosures (details elements) keep their animated open state. The menu itself is rendered by
- * workbench.views: a sidebar on wide screens and a menu sheet (dialog) on narrow screens.
+ * Decorate the whole document once it has loaded: the shell, and the page of a route that is not mounted through
+ * the route registry. Router-ready routes decorate their outlet from their mount (workbench.decoratePage).
  */
-workbench.addLoad(function installWorkbenchNavigation() {
-    var allDisclosures = document.querySelectorAll('details');
-    for (var i = 0; i < allDisclosures.length; i++) {
-        workbench.installNativeDisclosure(<HTMLDetailsElement>allDisclosures[i]);
-    }
-});
-
-/**
- * Keep disclosure triggers in the toolbar while their panels open below the
- * controls. Native details summaries move with their content in a wrapping
- * flex row, so these button/panel pairs provide a stable keyboard and pointer
- * interaction for both the query page and embedded result documents.
- */
-workbench.addLoad(function installDisclosureToggles() {
-    workbench.detailDisclosure.bindAll(document);
-});
-
-/**
- * Keep native select controls keyboard and screen-reader accessible while
- * giving every Workbench page and embedded result one shared chevron style.
- */
-workbench.addLoad(function installSharedSelectControls() {
-    var selects = document.querySelectorAll('select');
-    var iconNamespace = 'http://www.w3.org/2000/svg';
-    for (var i = 0; i < selects.length; i++) {
-        var select = <HTMLSelectElement>selects[i];
-        if (select.parentElement && select.parentElement.classList.contains('workbench-select-control')) {
-            continue;
-        }
-
-        var parent = select.parentNode;
-        if (!parent) {
-            continue;
-        }
-
-        var control = document.createElement('span');
-        control.className = 'workbench-select-control';
-        parent.insertBefore(control, select);
-        control.appendChild(select);
-
-        var chevron = document.createElementNS(iconNamespace, 'svg');
-        chevron.setAttribute('class', 'workbench-action-icon workbench-select-chevron');
-        chevron.setAttribute('viewBox', '0 0 24 24');
-        chevron.setAttribute('width', '16');
-        chevron.setAttribute('height', '16');
-        chevron.setAttribute('focusable', 'false');
-        chevron.setAttribute('aria-hidden', 'true');
-        var chevronPath = document.createElementNS(iconNamespace, 'path');
-        chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
-        chevron.appendChild(chevronPath);
-        control.appendChild(chevron);
-    }
+workbench.addLoad(function decorateDocument() {
+    workbench.decoratePage(document);
 });

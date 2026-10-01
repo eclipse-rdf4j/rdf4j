@@ -25,7 +25,8 @@ const scripts = process.env.WORKBENCH_SCRIPT_DIR
 function loadWorkbench(window = {}) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
-    const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, setTimeout });
+    const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, setTimeout,
+        clearTimeout });
     for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         const absolutePath = path.join(scripts, filename);
         vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), context, { filename: absolutePath });
@@ -140,9 +141,13 @@ test('the built-in definitions carry the script lists the pages load today', () 
     assert.deepEqual(Array.from(routes.get('create').scripts({ vars: ['location'] })), []);
     assert.deepEqual(Array.from(routes.get('create').scripts({ vars: ['description', 'location'] })), []);
     for (const viewId of ['summary', 'information', 'repositories', 'delete', 'namespaces', 'contexts', 'types', 'explore',
-        'query', 'saved-queries', 'export', 'add', 'remove', 'clear', 'update', 'server', 'create']) {
+        'export', 'add', 'remove', 'clear', 'server', 'create']) {
         assert.equal(routes.get(viewId).viewId, viewId);
-        assert.equal(routes.isRouterReady(viewId), false, viewId + ' is not converted yet');
+        assert.equal(routes.isRouterReady(viewId), true, viewId + ' is converted (M7.2)');
+    }
+    for (const viewId of ['query', 'saved-queries', 'update']) {
+        assert.equal(routes.get(viewId).viewId, viewId);
+        assert.equal(routes.isRouterReady(viewId), false, viewId + ' is converted in M9.1');
     }
 });
 
@@ -208,4 +213,342 @@ test('the default mount releases the row windows and the row store exactly once'
     await bare.ready;
     bare.dispose('navigate');
     assert.deepEqual(released, [], 'a page without row windows or a row store has nothing to release');
+});
+
+// Plan task M7.2: the simple routes are router-ready, and mounting, disposing and mounting again leaves nothing behind.
+
+const { createScriptHarness } = require('./script-harness.js');
+
+const routeScriptsDir = 'tools/workbench/src/main/webapp/scripts/';
+
+/** A document with a #workbench-outlet and the route scripts loaded, as the router sees it. */
+function routeHarness(href) {
+    const harness = createScriptHarness({ href: href || 'http://localhost:8080/rdf4j-workbench/repositories/repo-1/summary' });
+    const outlet = harness.registerElement('main', { id: 'workbench-outlet', className: 'workbench-outlet' });
+    harness.document.body.appendChild(outlet);
+    for (const name of ['template.js', 'paging.js', 'add.js', 'export.js', 'explore.js', 'create.js',
+        'create-federate.js', 'workbenchRoutes.js']) {
+        harness.runScript(routeScriptsDir + name);
+    }
+    const released = [];
+    harness.workbench.views = {
+        bindRowWindows: () => Promise.resolve(() => released.push('row-windows')),
+        releasePage: (model) => released.push(model.viewId)
+    };
+    return Object.assign(harness, { outlet, released });
+}
+
+function append(harness, parent, tagName, options) {
+    const element = harness.registerElement(tagName, options || {});
+    parent.appendChild(element);
+    return element;
+}
+
+function listenerSnapshot(harness) {
+    return { window: harness.window.listenerCounts(), document: harness.document.listenerCounts() };
+}
+
+/** Mount a route, dispose it, mount it again: the second mount must hold exactly what the first one did. */
+async function remount(harness, viewId, vars) {
+    const routes = harness.workbench.routes;
+    assert.equal(routes.isRouterReady(viewId), true, viewId + ' is router-ready');
+    const ctx = {
+        outlet: harness.outlet,
+        model: { viewId, vars: vars || [], rowStore: { dispose() {} } },
+        context: {},
+        runtime: fakeRuntime(),
+        url: new URL(harness.document.location.href),
+        state: { rendered: true }
+    };
+    const first = await routes.get(viewId).mount(ctx);
+    await first.ready;
+    const afterFirst = listenerSnapshot(harness);
+    first.dispose('navigate');
+    const afterDispose = listenerSnapshot(harness);
+    const second = await routes.get(viewId).mount(ctx);
+    await second.ready;
+    assert.deepEqual(listenerSnapshot(harness), afterFirst, viewId + ': listeners do not pile up');
+    return { first, second, afterFirst, afterDispose };
+}
+
+for (const viewId of ['repositories', 'summary', 'information', 'contexts', 'types', 'namespaces', 'server',
+    'delete', 'clear', 'remove']) {
+    test(`the ${viewId} route decorates its outlet on every mount and releases it on dispose`, async () => {
+        const harness = routeHarness();
+        const select = append(harness, harness.outlet, 'select', { id: 'choice' });
+        const owner = append(harness, harness.outlet, 'div', {
+            attributes: { 'data-workbench-detail-disclosure': 'true' }
+        });
+        const toggle = append(harness, owner, 'button', {
+            className: 'workbench-disclosure__toggle',
+            attributes: { 'aria-controls': 'route-panel', 'aria-expanded': 'false' }
+        });
+        append(harness, owner, 'div', { id: 'route-panel' });
+        const details = append(harness, harness.outlet, 'details');
+        const summary = append(harness, details, 'summary');
+        append(harness, details, 'div');
+
+        const { second } = await remount(harness, viewId);
+
+        assert.ok(select.parentNode.classList.contains('workbench-select-control'), 'selects in the outlet are wrapped');
+        assert.equal(toggle.getAttribute('data-workbench-bound'), 'true');
+        assert.equal(toggle.listenerCount('click'), 1);
+        assert.equal(details.getAttribute('data-workbench-motion-ready'), 'true');
+        assert.equal(summary.listenerCount('click'), 1);
+        second.dispose('pagehide');
+        assert.notEqual(toggle.getAttribute('data-workbench-bound'), 'true', 'the disclosure is released on dispose');
+        assert.equal(toggle.listenerCount('click'), 0);
+        assert.notEqual(details.getAttribute('data-workbench-motion-ready'), 'true');
+        assert.equal(summary.listenerCount('click'), 0);
+        assert.deepEqual(harness.released, ['row-windows', viewId, 'row-windows', viewId],
+            'each dispose releases the row windows and the page');
+    });
+}
+
+test('the add route selects the checked source on every mount', async () => {
+    const harness = routeHarness();
+    const outlet = harness.outlet;
+    append(harness, outlet, 'input', { id: 'source-url', name: 'source', type: 'radio', checked: true,
+        attributes: { value: 'url' } });
+    const url = append(harness, outlet, 'input', { id: 'url', value: 'https://example.test/data.ttl' });
+    const file = append(harness, outlet, 'input', { id: 'file' });
+    const baseURI = append(harness, outlet, 'input', { id: 'baseURI' });
+    append(harness, outlet, 'select', { id: 'Content-Type' });
+
+    await remount(harness, 'add');
+
+    assert.equal(url.disabled, false);
+    assert.equal(file.disabled, true);
+    assert.equal(baseURI.value, 'https://example.test/data.ttl');
+});
+
+test('the export route restores the preview limit on every mount', async () => {
+    const harness = routeHarness('http://localhost:8080/rdf4j-workbench/repositories/repo-1/export?limit_export=25');
+    const limit = append(harness, harness.outlet, 'input', { id: 'limit_export', value: '100' });
+
+    await remount(harness, 'export');
+
+    assert.equal(limit.value, '25');
+});
+
+test('the explore route binds its controls inside the outlet and removes them on dispose', async () => {
+    const harness = routeHarness(
+        'http://localhost:8080/rdf4j-workbench/repositories/repo-1/explore?resource=%3Curn%3Ax%3E');
+    const outlet = harness.outlet;
+    append(harness, outlet, 'input', { id: 'resource' });
+    append(harness, outlet, 'input', { id: 'limit_explore', value: '10' });
+    append(harness, outlet, 'input', { id: 'nextX', value: 'Next 10' });
+    append(harness, outlet, 'input', { id: 'previousX', value: 'Previous 10' });
+    const showDataTypes = append(harness, outlet, 'input', { name: 'show-datatypes', type: 'checkbox',
+        checked: true });
+    const summary = append(harness, outlet, 'p', { id: 'explore-resource-summary', hidden: true });
+    const value = append(harness, summary, 'span', { id: 'explore-resource-value' });
+    append(harness, summary, 'span', { id: 'explore-result-count' });
+
+    const { second } = await remount(harness, 'explore');
+
+    assert.equal(value.textContent, '<urn:x>');
+    assert.equal(showDataTypes.listenerCount('change'), 1, 'the datatype toggle is bound once');
+    second.dispose('navigate');
+    assert.equal(showDataTypes.listenerCount('change'), 0, 'dispose removes the namespaced handler');
+});
+
+test('the create route validates the repository id and unbinds its handlers on dispose', async () => {
+    const harness = routeHarness(
+        'http://localhost:8080/rdf4j-workbench/repositories/NONE/create?id=repo-1&title=My+Repo');
+    const form = append(harness, harness.outlet, 'form', { attributes: { action: 'create' } });
+    const id = append(harness, form, 'input', { id: 'id', attributes: { 'data-field-role': 'repository-id' } });
+    const title = append(harness, form, 'input', { id: 'title',
+        attributes: { 'data-field-role': 'repository-title' } });
+    const create = append(harness, form, 'input', { id: 'create', type: 'submit' });
+
+    const { second } = await remount(harness, 'create', ['fieldId', 'label']);
+
+    assert.equal(id.value, 'repo-1');
+    assert.equal(title.value, 'My Repo');
+    assert.equal(create.disabled, false);
+    assert.equal(id.listenerCount('keydown'), 1, 'the id handler is bound once');
+    id.value = '';
+    id.trigger('keydown');
+    harness.advanceTimers(0);
+    assert.equal(create.disabled, true);
+    second.dispose('navigate');
+    assert.equal(id.listenerCount('keydown'), 0, 'dispose removes the namespaced handlers');
+});
+
+test('the create route checks the federation members when the form asks for them', async () => {
+    const harness = routeHarness();
+    const outlet = harness.outlet;
+    const form = append(harness, outlet, 'form', { attributes: { action: 'create' } });
+    const id = append(harness, form, 'input', { id: 'id', value: 'repo-a',
+        attributes: { 'data-field-role': 'repository-id' } });
+    const create = append(harness, form, 'input', { id: 'create', type: 'submit' });
+    append(harness, form, 'div', { id: 'create-feedback' });
+    const recurse = append(harness, form, 'div', { id: 'recurse-message' });
+    const member = append(harness, form, 'input', { className: 'memberID', type: 'checkbox', checked: true,
+        attributes: { value: 'repo-a' } });
+    append(harness, form, 'input', { className: 'memberID', type: 'checkbox', checked: true,
+        attributes: { value: 'repo-b' } });
+
+    const { second } = await remount(harness, 'create', ['id', 'description', 'location']);
+
+    assert.equal(create.disabled, true, 'a federation cannot reuse a member id');
+    assert.equal(recurse.style.display, '');
+    assert.equal(member.listenerCount('change'), 1);
+    assert.equal(id.listenerCount('keydown'), 1, 'the federation check replaces the plain id check');
+    second.dispose('navigate');
+    assert.equal(member.listenerCount('change'), 0);
+    assert.equal(id.listenerCount('keydown'), 0);
+});
+
+test('the repository type chooser needs no create script', async () => {
+    const harness = routeHarness();
+    const id = append(harness, harness.outlet, 'input', { id: 'id', value: '' });
+
+    await remount(harness, 'create', ['type', 'label']);
+
+    assert.equal(id.listenerCount('keydown'), 0);
+});
+
+test('a route mounts without the shared page decorations when template.js is absent', async () => {
+    const workbench = loadWorkbench();
+    workbench.views.bindRowWindows = undefined;
+    workbench.views.releasePage = undefined;
+    const instance = workbench.routes.get('summary').mount({ outlet: {}, model: { viewId: 'summary' }, context: {},
+        runtime: fakeRuntime(), url: new URL('https://example.test/'), state: { rendered: true } });
+    await instance.ready;
+    instance.dispose('navigate');
+});
+
+test('bootstrap loads a router-ready route\'s scripts before mounting it, and another route\'s after', async () => {
+    for (const [routerReady, expected] of [[true, ['paging.js', 'explore.js', 'mount']],
+        [false, ['mount', 'paging.js', 'explore.js']]]) {
+        const { window, mount, dependencies } = page('explore');
+        const order = [];
+        Object.assign(window.document, {
+            createElement() { return { setAttribute() {}, getAttribute() { return null; } }; },
+            querySelector() { return null; },
+            head: { appendChild(script) { order.push(script.src.split('/').pop()); script.onload(); } }
+        });
+        const workbench = loadWorkbench(window);
+        installTestStream(workbench);
+        workbench.addLoad = () => {};
+        window.jQuery = {};
+        workbench.views.render = () => ({ status: 'rendered' });
+        workbench.routes.register({
+            viewId: 'explore', routerReady, scripts: () => ['paging.js', 'explore.js'], baseScripts: () => [],
+            mount() {
+                order.push('mount');
+                return { dispose() {} };
+            }
+        });
+
+        await workbench.app.bootstrap(mount, Object.assign({}, dependencies, { skipScripts: false }));
+
+        assert.deepEqual(order.filter((name) => expected.indexOf(name) >= 0), expected,
+            routerReady ? 'a router-ready route mounts its scripts itself' : 'legacy scripts start after the mount');
+    }
+});
+
+test('releasing a page cancels Remove\'s scheduled and running count', async () => {
+    const workbench = loadWorkbench();
+    let fired = 0;
+    let aborted = 0;
+    const model = { removeCount: { timer: setTimeout(() => fired++, 5), controller: { abort: () => aborted++ } } };
+    const idle = { removeCount: { timer: null, controller: null } };
+
+    workbench.views.releasePage(model);
+    workbench.views.releasePage(idle);
+    workbench.views.releasePage({});
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(fired, 0, 'the scheduled count does not start');
+    assert.equal(aborted, 1, 'the running count is aborted');
+    assert.equal(model.removeCount.controller, null);
+});
+
+test('route scripts define their mount functions even when they load before any other Workbench script', () => {
+    for (const [file, name] of [['add.js', 'add'], ['export.js', 'exportPage'], ['explore.js', 'explore'],
+        ['create.js', 'create'], ['create-federate.js', 'createFederate']]) {
+        const absolutePath = path.resolve(__dirname, '../..', routeScriptsDir + file);
+        const context = vm.createContext({});
+        vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), context, { filename: absolutePath });
+        assert.equal(typeof context.workbench[name].mount, 'function', file);
+    }
+});
+
+test('the export route falls back to 100 preview rows for a limit that is not a count', async () => {
+    const harness = routeHarness('http://localhost:8080/rdf4j-workbench/repositories/repo-1/export?limit_export=-5');
+    const limit = append(harness, harness.outlet, 'input', { id: 'limit_export', value: '7' });
+
+    harness.workbench.exportPage.mount(harness.outlet)();
+
+    assert.equal(limit.value, '100');
+});
+
+test('route scripts evaluated a second time keep their mount functions', () => {
+    const harness = routeHarness();
+    for (const name of ['add.js', 'export.js', 'explore.js', 'create.js', 'create-federate.js']) {
+        harness.runScript(routeScriptsDir + name);
+    }
+    for (const name of ['add', 'exportPage', 'explore', 'create', 'createFederate']) {
+        assert.equal(typeof harness.workbench[name].mount, 'function', name);
+    }
+});
+
+test('a converted route disposed before its rows are bound never decorates or starts its script', async () => {
+    const harness = routeHarness();
+    const select = append(harness, harness.outlet, 'select');
+    const ctx = { outlet: harness.outlet, model: { viewId: 'summary', vars: [] }, context: {}, runtime: fakeRuntime(),
+        url: new URL('https://example.test/'), state: { rendered: true } };
+
+    const instance = harness.workbench.routes.get('summary').mount(ctx);
+    instance.dispose('navigate');
+    instance.dispose('pagehide');
+    await instance.ready;
+
+    assert.equal(select.parentNode, harness.outlet, 'the page was not decorated');
+    assert.deepEqual(harness.released, ['summary', 'row-windows'], 'released once, row windows once they arrive');
+});
+
+test('the create route reuses an advanced settings group that is already in the page', async () => {
+    const harness = routeHarness();
+    const form = append(harness, harness.outlet, 'form', { attributes: { action: 'create' } });
+    const table = append(harness, form, 'table', { className: 'dataentry' });
+    table.tBodies = [];
+    append(harness, form, 'input', { id: 'id', value: 'repo', attributes: { 'data-field-role': 'repository-id' } });
+    const instance = harness.workbench.routes.get('create').mount({ outlet: harness.outlet,
+        model: { viewId: 'create', vars: ['fieldId'] }, context: {}, runtime: fakeRuntime(),
+        url: new URL('https://example.test/'), state: { rendered: true } });
+    await instance.ready;
+    instance.dispose('navigate');
+
+    const owner = append(harness, harness.outlet, 'div', { className: 'workbench-advanced',
+        attributes: { 'data-workbench-detail-disclosure': 'true' } });
+    const toggle = append(harness, owner, 'button', { className: 'workbench-disclosure__toggle',
+        attributes: { 'aria-controls': 'create-advanced-panel', 'aria-expanded': 'false' } });
+    append(harness, owner, 'div', { id: 'create-advanced-panel' });
+    const cleanup = harness.workbench.create.mount(harness.outlet);
+    assert.equal(toggle.getAttribute('data-workbench-bound'), 'true');
+    cleanup();
+    assert.notEqual(toggle.getAttribute('data-workbench-bound'), 'true');
+});
+
+test('page decorations install each native disclosure once and release only what they installed', () => {
+    const harness = routeHarness();
+    const workbench = harness.workbench;
+    const plain = append(harness, harness.outlet, 'details');
+    const details = append(harness, harness.outlet, 'details');
+    const summary = append(harness, details, 'summary');
+
+    const releaseOutlet = workbench.decoratePage(harness.outlet);
+    const releaseAgain = workbench.decoratePage(harness.outlet);
+    releaseAgain();
+    assert.equal(summary.listenerCount('click'), 1, 'a second decoration leaves the first one in place');
+    releaseOutlet();
+    assert.equal(summary.listenerCount('click'), 0);
+    assert.notEqual(plain.getAttribute('data-workbench-motion-ready'), 'true', 'a details without summary is skipped');
+    workbench.releaseNativeDisclosure(details);
+    assert.equal(typeof workbench.detailDisclosure.bindOwner(null), 'function');
+    assert.equal(typeof workbench.detailDisclosure.bindAll({}), 'function');
 });

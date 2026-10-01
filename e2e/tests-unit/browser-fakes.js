@@ -277,6 +277,11 @@ class FakeElement {
         return (this.eventHandlers.get(type) || []).length;
     }
 
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
+    }
+
     removeAllEventListeners() {
         this.eventHandlers.clear();
     }
@@ -514,6 +519,11 @@ class FakeWindow {
         return (this.eventHandlers.get(type) || []).length;
     }
 
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
+    }
+
     dispatchEvent(event) {
         const normalizedEvent = typeof event === 'string'
             ? { type: event }
@@ -731,6 +741,11 @@ class FakeDocument {
         return (this.eventHandlers.get(type) || []).length;
     }
 
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
+    }
+
     removeAllEventListeners() {
         this.eventHandlers.clear();
     }
@@ -745,6 +760,22 @@ class FakeDocument {
         handlers.forEach((handler) => handler.call(this, normalizedEvent));
         return normalizedEvent;
     }
+}
+
+function listenerCounts(eventHandlers) {
+    const counts = {};
+    eventHandlers.forEach((handlers, type) => {
+        if (handlers.length) {
+            counts[type] = handlers.length;
+        }
+    });
+    return counts;
+}
+
+/** A jQuery event name: 'keydown.wbRoute' is the type 'keydown' in the namespace 'wbRoute'. */
+function parseEventName(name) {
+    const parts = String(name).split('.');
+    return { type: parts[0], namespaces: parts.slice(1).filter(Boolean) };
 }
 
 function parseSelectorToken(selector) {
@@ -1110,18 +1141,40 @@ class JQueryCollection {
     }
 
     on(eventNames, handler) {
-        return this.bind(eventNames, handler);
+        const events = String(eventNames || '').split(/\s+/).filter(Boolean).map(parseEventName);
+        return this.each((index, element) => {
+            events.forEach((event) => {
+                element.addEventListener(event.type, handler);
+                if (event.namespaces.length) {
+                    element.jqueryHandlers = (element.jqueryHandlers || []).concat([
+                        { type: event.type, namespaces: event.namespaces, handler }
+                    ]);
+                }
+            });
+        });
     }
 
+    /** Like jQuery: off() removes every handler, off('click') every click handler, off('.ns') a namespace. */
     off(eventNames) {
-        const eventTypes = String(eventNames || '').split(/\s+/).filter(Boolean);
+        const events = String(eventNames || '').split(/\s+/).filter(Boolean).map(parseEventName);
         return this.each((index, element) => {
-            if (!eventTypes.length) {
+            if (!events.length) {
                 element.removeAllEventListeners();
+                element.jqueryHandlers = [];
                 return;
             }
-            eventTypes.forEach((eventType) => {
-                element.removeEventListener(eventType);
+            events.forEach((event) => {
+                if (!event.namespaces.length) {
+                    element.removeEventListener(event.type);
+                    return;
+                }
+                (element.jqueryHandlers || []).filter((registered) =>
+                    (!event.type || registered.type === event.type)
+                    && event.namespaces.every((namespace) => registered.namespaces.indexOf(namespace) >= 0))
+                    .forEach((registered) => {
+                        element.removeEventListener(registered.type, registered.handler);
+                        element.jqueryHandlers = element.jqueryHandlers.filter((other) => other !== registered);
+                    });
             });
         });
     }

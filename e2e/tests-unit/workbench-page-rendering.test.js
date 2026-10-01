@@ -1318,6 +1318,9 @@ test('bootstrap renders an inline initial page model once without fetching its r
         return { status: 'rendered' };
     };
     workbench.views.bindRowWindows = () => Promise.resolve(() => {});
+    // skipScripts leaves add.js out; the Add route mounts its script (M7.2).
+    let addMounts = 0;
+    workbench.add = { mount() { addMounts++; return () => {}; } };
     const mount = {
         ownerDocument: document,
         getAttribute(name) { return attrs[name] || null; },
@@ -1346,6 +1349,7 @@ test('bootstrap renders an inline initial page model once without fetching its r
     assert.equal(modelAttributeRemovedBeforeDecode, true, 'consume the inline payload before parsing it');
     assert.equal(fetchCount, 0, 'the initial model replaces the route GET');
     assert.equal(renderCount, 1, 'a consumed initial model must not render or fetch twice');
+    assert.equal(addMounts, 1, 'the Add route is mounted once');
     assert.equal(second.status, 'skipped');
     assert.equal(attrs['data-workbench-initial-model'], undefined, 'the descriptor is removed before parsing');
     assert.equal(attrs['data-workbench-initial-model-consumed'], 'true');

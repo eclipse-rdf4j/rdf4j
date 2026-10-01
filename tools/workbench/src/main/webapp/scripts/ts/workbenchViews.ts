@@ -2385,6 +2385,20 @@ module workbench {
             controller: any;
         }
 
+        /** Cancel what a page still has pending when its route is disposed: Remove's scheduled or running count. */
+        export function releasePage(model: PageModel): void {
+            const state: RemoveCount = (model as any).removeCount;
+            if (!state) {
+                return;
+            }
+            clearTimeout(state.timer);
+            if (state.controller) {
+                state.controller.abort();
+            }
+            state.timer = null;
+            state.controller = null;
+        }
+
         const removeFields: string[][] = [['subj', 'Subject', 'Any subject'], ['pred', 'Predicate', 'Any predicate'],
             ['obj', 'Object', 'Any object']];
 

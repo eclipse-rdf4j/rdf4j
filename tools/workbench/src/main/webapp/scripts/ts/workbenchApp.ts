@@ -1043,10 +1043,17 @@ module workbench {
                     url: new URL(currentUrl),
                     state: { rendered: true }
                 };
-                const mounted = definition ? definition.mount(routeContext) : routes.defaultMount(routeContext);
-                return Promise.resolve(mounted).then((instance) => Promise.resolve(instance.ready).then(() => {
-                    disposeOnPagehide(instance);
-                    return installRouteRuntime(basePath, viewId, state.model, dependencies).then(() => {
+                // A router-ready route mounts its scripts itself, so they load first; the other routes start
+                // their scripts in the legacy load handlers, after their rows are bound (M7.2).
+                const scriptsFirst = !!definition && definition.routerReady;
+                const loadScripts = () => installRouteRuntime(basePath, viewId, state.model, dependencies);
+                return (scriptsFirst ? loadScripts() : Promise.resolve())
+                    .then(() => definition ? definition.mount(routeContext) : routes.defaultMount(routeContext))
+                    .then((instance) => Promise.resolve(instance.ready).then(() => {
+                        disposeOnPagehide(instance);
+                        return scriptsFirst ? undefined : loadScripts();
+                    }))
+                    .then(() => {
                         const runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
                         let restoreInitialPost: (() => void) | null = null;
                         if (viewId === 'query') {
@@ -1084,7 +1091,6 @@ module workbench {
                         restoreScrollPosition(targetWindow, scrollToRestore);
                         return { status: 'rendered', model: state.model, rendered };
                     });
-                }));
             }).catch((error) => {
                 renderFailure(mount, error);
                 throw error;

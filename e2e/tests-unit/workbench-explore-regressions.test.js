@@ -444,10 +444,13 @@ for (const example of countCases) {
         sandbox.document = {
             location: new URL(`https://workbench.test/explore?resource=${encodeURIComponent(resource)}`
                 + `&limit_explore=${example.limit}&offset=${example.offset}`),
-            getElementById(id) { return elements[id] || null; },
-            getElementsByTagName() { return []; },
+            getElementById(id) { return elements[id] || null; }
+        };
+        // The route mount (M7.2) looks for its elements inside the outlet.
+        const outlet = {
             querySelectorAll() { return example.returned ? [{}] : []; },
             querySelector(selector) {
+                if (/^#[\w-]+$/.test(selector)) { return elements[selector.substring(1)] || null; }
                 if (selector.endsWith('.workbench-empty')) { return example.returned ? null : {}; }
                 return example.returned ? {} : null;
             }
@@ -459,6 +462,9 @@ for (const example of countCases) {
             '#previousX': previous
         };
         const jquery = selector => {
+            if (selector === outlet) {
+                return { find: jquery };
+            }
             const control = controls[selector] || {};
             return {
                 val(value) { if (arguments.length) { control.value = value; return this; } return control.value; },
@@ -466,18 +472,17 @@ for (const example of countCases) {
                     if (arguments.length > 1) { control[name] = value; return this; }
                     return control[name];
                 },
-                on() { return this; }
+                on() { return this; },
+                off() { return this; }
             };
         };
         sandbox.$ = jquery;
-        const loadCallbacks = [];
-        workbench.addLoad = callback => loadCallbacks.push(callback);
         workbench.getQueryStringElements = () => sandbox.document.location.search.substring(1).split('&');
         workbench.getCookie = name => name === 'total_result_count' ? example.cookie : '';
         for (const filename of ['paging.js', 'explore.js']) {
             vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), sandbox, { filename });
         }
-        loadCallbacks.forEach(callback => callback());
+        workbench.explore.mount(outlet)();
         assert.equal(resultCount.textContent, example.range,
             'the actual total must survive native rendering and legacy startup');
         assert.ok(countInput, 'native Explore must publish the canonical paging metadata input');

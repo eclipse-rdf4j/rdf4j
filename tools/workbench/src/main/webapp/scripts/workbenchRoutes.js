@@ -67,6 +67,9 @@ var workbench;
                     if (disposeRows) {
                         disposeRows();
                     }
+                    if (views.releasePage) {
+                        views.releasePage(ctx.model);
+                    }
                     if (ctx.model.rowStore) {
                         ctx.model.rowStore.dispose();
                     }
@@ -74,34 +77,72 @@ var workbench;
             };
         }
         routes.defaultMount = defaultMount;
-        /** A route whose script list does not depend on its model. */
-        function staticRoute(viewId, names) {
+        /**
+         * The mount of a converted route (plan task M7.2): the default mount, then, once the rows are bound, the
+         * shared page decorations of the outlet and the route's own script. Dispose undoes them in reverse order.
+         */
+        function routeMount(start) {
+            return function (ctx) {
+                var base = defaultMount(ctx);
+                var cleanups = [];
+                var disposed = false;
+                var ready = base.ready.then(function () {
+                    if (disposed) {
+                        return;
+                    }
+                    var decoratePage = workbench.decoratePage;
+                    if (typeof decoratePage === 'function') {
+                        cleanups.push(decoratePage(ctx.outlet));
+                    }
+                    if (start) {
+                        cleanups.push(start(ctx));
+                    }
+                });
+                return {
+                    ready: ready,
+                    dispose: function (reason) {
+                        if (disposed) {
+                            return;
+                        }
+                        disposed = true;
+                        cleanups.splice(0).reverse().forEach(function (cleanup) { return cleanup(); });
+                        base.dispose(reason);
+                    }
+                };
+            };
+        }
+        /** The mount function a route script exports (workbench.<name>.mount). */
+        function scriptMount(name) {
+            return function (ctx) { return workbench[name].mount(ctx.outlet); };
+        }
+        /** A route whose script list does not depend on its model; converted routes pass their mount. */
+        function staticRoute(viewId, names, mount) {
             return {
                 viewId: viewId,
-                routerReady: false,
+                routerReady: !!mount,
                 scripts: function () { return names.slice(); },
                 baseScripts: function () { return names.slice(); },
-                mount: defaultMount
+                mount: mount || defaultMount
             };
         }
         function has(model, name) {
             return model.vars.indexOf(name) >= 0;
         }
         ['summary', 'information', 'repositories', 'namespaces', 'contexts', 'types', 'clear', 'remove']
-            .forEach(function (viewId) { return register(staticRoute(viewId, [])); });
-        register(staticRoute('server', ['server.js']));
-        register(staticRoute('delete', ['delete.js']));
-        register(staticRoute('explore', ['paging.js', 'explore.js']));
-        register(staticRoute('export', ['paging.js', 'export.js']));
-        register(staticRoute('add', ['add.js']));
+            .forEach(function (viewId) { return register(staticRoute(viewId, [], routeMount())); });
+        register(staticRoute('server', ['server.js'], routeMount()));
+        register(staticRoute('delete', ['delete.js'], routeMount()));
+        register(staticRoute('explore', ['paging.js', 'explore.js'], routeMount(scriptMount('explore'))));
+        register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
+        register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
         register(staticRoute('saved-queries', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js']));
         register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js']));
         register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
             'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js', 'paging.js', 'query.js']));
-        register({
+        var createRoute = {
             viewId: 'create',
-            routerReady: false,
+            routerReady: true,
             // The repository-type chooser needs no script; a configuration form needs create.js,
             // and the federation form also needs create-federate.js.
             scripts: function (model) {
@@ -114,8 +155,15 @@ var workbench;
                 return [];
             },
             baseScripts: function () { return ['create.js']; },
-            mount: defaultMount
-        });
+            // Each script the form needs mounts in load order, so the federation check replaces the plain id check.
+            mount: routeMount(function (ctx) {
+                var cleanups = createRoute.scripts(ctx.model).map(function (name) {
+                    return scriptMount(name === 'create.js' ? 'create' : 'createFederate')(ctx);
+                });
+                return function () { return cleanups.reverse().forEach(function (cleanup) { return cleanup(); }); };
+            })
+        };
+        register(createRoute);
     })(routes = workbench.routes || (workbench.routes = {}));
 })(workbench || (workbench = {}));
 //# sourceMappingURL=workbenchRoutes.js.map

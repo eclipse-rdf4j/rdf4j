@@ -36,7 +36,7 @@ test('export page defaults to its own preview limit instead of the Explore limit
 	harness.document.body.appendChild(limitExplore);
 
 	harness.loadPagingScripts(['export.js']);
-	harness.runLoadHandlers();
+	harness.workbench.exportPage.mount(harness.document.body);
 
 	assert.equal(limitExport.value, '100');
 	assert.equal(limitExplore.value, '0');
@@ -51,7 +51,7 @@ test('export page prefers its own preview-limit query parameter', () => {
 	harness.document.body.appendChild(limitExport);
 
 	harness.loadPagingScripts(['export.js']);
-	harness.runLoadHandlers();
+	harness.workbench.exportPage.mount(harness.document.body);
 
 	assert.equal(limitExport.value, '50');
 });
@@ -100,7 +100,7 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     harness.document.cookie = 'limit_explore=4; total_result_count=9';
 
     harness.loadExploreScript();
-    harness.runLoadHandlers();
+    harness.workbench.explore.mount(harness.document.body);
 
     assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
     assert.equal(harness.document.getElementById('limit_explore').value, '4');

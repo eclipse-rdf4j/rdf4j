@@ -990,54 +990,60 @@ var workbench;
                     url: new URL(currentUrl),
                     state: { rendered: true }
                 };
-                var mounted = definition ? definition.mount(routeContext) : workbench.routes.defaultMount(routeContext);
-                return Promise.resolve(mounted).then(function (instance) { return Promise.resolve(instance.ready).then(function () {
+                // A router-ready route mounts its scripts itself, so they load first; the other routes start
+                // their scripts in the legacy load handlers, after their rows are bound (M7.2).
+                var scriptsFirst = !!definition && definition.routerReady;
+                var loadScripts = function () { return installRouteRuntime(basePath, viewId, state.model, dependencies); };
+                return (scriptsFirst ? loadScripts() : Promise.resolve())
+                    .then(function () { return definition ? definition.mount(routeContext) : workbench.routes.defaultMount(routeContext); })
+                    .then(function (instance) { return Promise.resolve(instance.ready).then(function () {
                     disposeOnPagehide(instance);
-                    return installRouteRuntime(basePath, viewId, state.model, dependencies).then(function () {
-                        var runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
-                        var restoreInitialPost = null;
-                        if (viewId === 'query') {
-                            var target = mount.querySelector
-                                ? mount.querySelector('#query-page-content') : mount;
-                            var queryPage_1 = workbench.queryPage;
-                            if (queryPage_1 && typeof queryPage_1.renderInto === 'function') {
-                                queryPage_1.renderInto(target, state.model, context);
-                                if (initialPost) {
-                                    var form = document && document.getElementById
-                                        ? document.getElementById(context.executionFormId) : null;
-                                    restoreInitialPost = stageInitialQueryParameters(form, document, initialPost);
-                                }
-                            }
-                            else if (target && document) {
-                                var warning = document.createElement('p');
-                                warning.className = 'error';
-                                warning.setAttribute('role', 'alert');
-                                warning.textContent = 'The query page renderer is unavailable.';
-                                target.appendChild(warning);
+                    return scriptsFirst ? undefined : loadScripts();
+                }); })
+                    .then(function () {
+                    var runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
+                    var restoreInitialPost = null;
+                    if (viewId === 'query') {
+                        var target = mount.querySelector
+                            ? mount.querySelector('#query-page-content') : mount;
+                        var queryPage_1 = workbench.queryPage;
+                        if (queryPage_1 && typeof queryPage_1.renderInto === 'function') {
+                            queryPage_1.renderInto(target, state.model, context);
+                            if (initialPost) {
+                                var form = document && document.getElementById
+                                    ? document.getElementById(context.executionFormId) : null;
+                                restoreInitialPost = stageInitialQueryParameters(form, document, initialPost);
                             }
                         }
-                        runLegacyLoadHandlers();
-                        if (initialPost) {
-                            var queryPage_2 = workbench.queryPage;
-                            if (!queryPage_2 || typeof queryPage_2.submitExecution !== 'function') {
-                                if (restoreInitialPost) {
-                                    restoreInitialPost();
-                                }
-                                throw new Error('The initial query execution controller is unavailable');
+                        else if (target && document) {
+                            var warning = document.createElement('p');
+                            warning.className = 'error';
+                            warning.setAttribute('role', 'alert');
+                            warning.textContent = 'The query page renderer is unavailable.';
+                            target.appendChild(warning);
+                        }
+                    }
+                    runLegacyLoadHandlers();
+                    if (initialPost) {
+                        var queryPage_2 = workbench.queryPage;
+                        if (!queryPage_2 || typeof queryPage_2.submitExecution !== 'function') {
+                            if (restoreInitialPost) {
+                                restoreInitialPost();
                             }
-                            try {
-                                queryPage_2.submitExecution();
-                            }
-                            finally {
-                                if (restoreInitialPost) {
-                                    restoreInitialPost();
-                                }
+                            throw new Error('The initial query execution controller is unavailable');
+                        }
+                        try {
+                            queryPage_2.submitExecution();
+                        }
+                        finally {
+                            if (restoreInitialPost) {
+                                restoreInitialPost();
                             }
                         }
-                        restoreScrollPosition(targetWindow, scrollToRestore);
-                        return { status: 'rendered', model: state.model, rendered: rendered };
-                    });
-                }); });
+                    }
+                    restoreScrollPosition(targetWindow, scrollToRestore);
+                    return { status: 'rendered', model: state.model, rendered: rendered };
+                });
             }).catch(function (error) {
                 renderFailure(mount, error);
                 throw error;

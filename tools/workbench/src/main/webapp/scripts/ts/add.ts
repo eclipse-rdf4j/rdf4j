@@ -46,10 +46,12 @@ module workbench {
                 }
             }
         }
+
+        /** Route mount (plan task M7.2): show the panel of the source that is checked in this page. */
+        export function mount(outlet: HTMLElement): () => void {
+            var selected = $(outlet).find("input[name='source']:checked").val() || 'file';
+            enabledInput(selected == 'contents' ? 'text' : selected);
+            return function() {};
+        }
     }
 }
-
-workbench.addLoad(function addPageLoaded() {
-    var selected = $("input[name='source']:checked").val() || 'file';
-    workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
-});

@@ -266,6 +266,16 @@ function createScriptHarness(options = {}) {
         }
         windowEventHandlers.set(type, windowEventHandlers.get(type).filter((candidate) => candidate !== handler));
     };
+    defaultWindow.listenerCount = (type) => (windowEventHandlers.get(type) || []).length;
+    defaultWindow.listenerCounts = () => {
+        const counts = {};
+        windowEventHandlers.forEach((handlers, type) => {
+            if (handlers.length) {
+                counts[type] = handlers.length;
+            }
+        });
+        return counts;
+    };
     defaultWindow.dispatchEvent = (event) => {
         const normalizedEvent = typeof event === 'string'
             ? { type: event }

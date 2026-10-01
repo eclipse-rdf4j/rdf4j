@@ -457,14 +457,16 @@ var workbench;
             }
             DataTypeVisibility.setShow = setShow;
         })(DataTypeVisibility || (DataTypeVisibility = {}));
-        function setShowDataTypesCheckboxAndSetChangeEvent() {
+        /** Bind the "Show datatypes" checkbox (inside root when given) in the .wbRoute event namespace. */
+        function setShowDataTypesCheckboxAndSetChangeEvent(root) {
             var hideDataTypes = (workbench.getCookie('show-datatypes') == 'false');
-            var showDTcb = $("input[name='show-datatypes']");
+            var selector = "input[name='show-datatypes']";
+            var showDTcb = root ? $(root).find(selector) : $(selector);
             if (hideDataTypes) {
                 showDTcb.prop('checked', false);
                 DataTypeVisibility.setShow(false);
             }
-            showDTcb.on('change', function () {
+            showDTcb.on('change.wbRoute', function () {
                 DataTypeVisibility.setShow(showDTcb.prop('checked'));
             });
         }
