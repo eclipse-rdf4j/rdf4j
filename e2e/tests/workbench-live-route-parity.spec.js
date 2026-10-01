@@ -606,7 +606,9 @@ async function exerciseMutations(page, request, evidence) {
 		await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'remove');
 		await page.locator('#subj').fill('<urn:route-parity:alice>');
 		await page.locator('#pred').fill('<urn:route-parity:name>');
-		await page.locator('#remove-form input[type="submit"]').click();
+		// Remove names its live count on the button and confirms it in a dialog (plan task M6.5).
+		await page.locator('#remove-form button[type="submit"]').click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 1 };

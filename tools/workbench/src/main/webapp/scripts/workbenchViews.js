@@ -1628,10 +1628,126 @@ var workbench;
                 ownerClass: 'workbench-options workbench-form-subgroup'
             }, h(__makeTemplateObject(["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" aria-describedby=\"baseURI-help\"\n                                    value=", " />\n                                <p id=\"baseURI-help\" class=\"workbench-field__help\">Resolves relative IRIs in the data; it does not choose a graph.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"], ["<div class=\"workbench-form-grid\">\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"baseURI\">Base URI</label>\n                                <input id=\"baseURI\" name=\"baseURI\" type=\"text\" size=\"48\" aria-describedby=\"baseURI-help\"\n                                    value=", " />\n                                <p id=\"baseURI-help\" class=\"workbench-field__help\">Resolves relative IRIs in the data; it does not choose a graph.</p>\n                            </div>\n                            <div class=\"workbench-field workbench-disclosure__field\"><label for=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">Isolation level</label>\n                                <select id=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\"\n                                    name=\"transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel\">\n                                    <option value=\"\" ?selected=", ">Default</option>\n                                    ", "\n                                </select>\n                                <div class=\"hint\">Choose the transaction isolation level used for this import.</div>\n                            </div>\n                        </div>"]), text(pageValue(model, 'baseURI')), !selectedIsolation, isolationOptions.map(function (row) { return h(__makeTemplateObject(["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"], ["<option value=", "\n                                        ?selected=", ">\n                                        ", "</option>"]), text(row['isolation-level-option']), text(row['isolation-level-option']) === selectedIsolation, text(row['isolation-level-option-label']) || text(row['isolation-level-option'])); }))), icon(runtime, 'upload'));
         }
+        var removeFields = [['subj', 'Subject', 'Any subject'], ['pred', 'Predicate', 'Any predicate'],
+            ['obj', 'Object', 'Any object']];
+        /** "N statements match" for a live Remove count; above the server's limit it says "more than". */
+        function removeMatchLabel(state, context) {
+            if (state.state !== 'counted') {
+                return state.state === 'counting' ? 'Counting…' : state.state === 'timed-out' ? '—' : '';
+            }
+            if (state.count > 1000000) {
+                return 'More than 1,000,000 statements match';
+            }
+            if (state.count === 0) {
+                return 'No statements match';
+            }
+            return state.count === 1 ? '1 statement matches' : formatCount(String(state.count), context) + ' statements match';
+        }
+        /**
+         * Remove (M6.5, mockup 09): the page counts the explicit statements that match as values are typed (400 ms
+         * after the last change, cancelling the previous request), names that number on the button and confirms it in a
+         * dialog before the existing POST. The button is disabled while nothing is chosen and when nothing matches.
+         */
         function removePage(runtime, model, context) {
             var h = runtime.html;
-            return h(__makeTemplateObject(["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        ", "\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Remove\" /></span>\n                    </label></span></div>\n                </form>"], ["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        ", "\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Remove\" /></span>\n                    </label></span></div>\n                </form>"]), systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Only statements matching the supplied values will be removed. An empty form is rejected.', 'Remove is permanent.', 'remove-warning'), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), errorCallout(runtime, model), [['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map(function (entry) { return h(__makeTemplateObject(["<div class=\"workbench-field\">\n                            <label for=", ">", "</label>", "\n                        </div>"], ["<div class=\"workbench-field\">\n                            <label for=", ">", "</label>", "\n                        </div>"]), entry[0], entry[1], entry[2] === 'textarea'
-                ? h(__makeTemplateObject(["<textarea id=\"obj\" name=\"obj\" rows=\"3\">", "</textarea>"], ["<textarea id=\"obj\" name=\"obj\" rows=\"3\">", "</textarea>"]), text(pageValue(model, 'obj'))) : h(__makeTemplateObject(["<input id=", " name=", " type=\"text\" value=", " />"], ["<input id=", " name=", " type=\"text\" value=", " />"]), entry[0], entry[0], text(pageValue(model, entry[0])))); }), icon(runtime, 'remove'));
+            var graphs = (model.vars || []).indexOf('error-message') < 0
+                ? records(model).filter(function (record) { return !!record.context; }) : [];
+            var holder = model;
+            var state = holder.removeCount
+                || (holder.removeCount = { state: 'empty', count: 0, field: '', message: '', timer: null, controller: null });
+            var refresh = function (form) {
+                var outlet = form.closest('.workbench-outlet');
+                if (outlet) {
+                    render(outlet, model, context, runtime);
+                }
+            };
+            var values = function (form) {
+                var fields = {};
+                ['subj', 'pred', 'obj', 'context'].forEach(function (name) {
+                    var control = form.querySelector('[name="' + name + '"]');
+                    fields[name] = control ? String(control.value || '').trim() : '';
+                });
+                return fields;
+            };
+            var recount = function (form) {
+                clearTimeout(state.timer);
+                if (state.controller) {
+                    state.controller.abort();
+                }
+                var fields = values(form);
+                if (!fields.subj && !fields.pred && !fields.obj && !fields.context) {
+                    state.state = 'empty';
+                    state.field = '';
+                    refresh(form);
+                    return;
+                }
+                state.timer = setTimeout(function () {
+                    var app = workbench.app;
+                    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+                    state.controller = controller;
+                    state.state = 'counting';
+                    state.field = '';
+                    refresh(form);
+                    var query = new URLSearchParams({ count: 'true' });
+                    Object.keys(fields).forEach(function (name) { if (fields[name]) {
+                        query.set(name, fields[name]);
+                    } });
+                    var fetcher = function (url, options) { return window.fetch(url, controller
+                        ? Object.assign({}, options, { signal: controller.signal }) : options); };
+                    app.loadModel(fetcher, new URL('remove?' + query.toString(), window.location.href).toString())
+                        .then(function (answer) {
+                        if (state.controller !== controller) {
+                            return answer.rowStore.dispose();
+                        }
+                        if (answer.error) {
+                            state.state = 'invalid';
+                            state.field = answer.error.code;
+                            state.message = answer.error.message;
+                            answer.rowStore.dispose();
+                            return refresh(form);
+                        }
+                        return answer.rowStore.read(0, 1).then(function (rows) {
+                            answer.rowStore.dispose();
+                            var count = rows.length && rows[0][0] ? Number(text(rows[0][0])) : NaN;
+                            state.state = isFinite(count) ? 'counted' : 'timed-out';
+                            state.count = isFinite(count) ? count : 0;
+                            refresh(form);
+                        });
+                    }, function (error) {
+                        if (state.controller !== controller || (error && error.name === 'AbortError')) {
+                            return;
+                        }
+                        state.state = 'failed';
+                        refresh(form);
+                    });
+                }, 400);
+            };
+            var counted = state.state === 'counted';
+            var disabled = state.state === 'empty' || state.state === 'invalid' || state.state === 'counting'
+                || counted && state.count === 0;
+            var amount = counted ? (state.count > 1000000 ? 'more than 1,000,000 statements'
+                : state.count === 1 ? '1 statement' : formatCount(String(state.count), context) + ' statements') : 'statements';
+            var confirmAndSubmit = function (event) {
+                event.preventDefault();
+                var form = event.currentTarget;
+                if (disabled) {
+                    return;
+                }
+                workbench.confirmDialog.open({
+                    title: counted ? 'Remove ' + amount + '?' : 'Remove the matching statements?',
+                    body: 'This permanently removes ' + (counted ? amount : 'every explicit statement') + ' that match these values.',
+                    confirmLabel: 'Remove statements', danger: true
+                }).then(function (confirmed) { if (confirmed) {
+                    form.submit();
+                } });
+            };
+            var selectedGraph = text(pageValue(model, 'context'));
+            return h(__makeTemplateObject(["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\"\n                    @submit=", ">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                <div class=\"workbench-field-stack\">\n                    ", "\n                    <div class=\"workbench-field\"><label for=\"context\">Graph</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\"\n                                @change=", ">\n                            <option value=\"\" ?selected=", ">Any graph</option>\n                            <option value=\"null\" ?selected=", ">Default graph</option>\n                            ", "\n                        </select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions remove-actions\">\n                    <button type=\"submit\" class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>", "</span></button>\n                    <span id=\"remove-count\" class=\"remove-actions__count\" role=\"status\"\n                        title=", ">", "</span>\n                </div>\n            </form>"], ["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\"\n                    @submit=", ">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                <div class=\"workbench-field-stack\">\n                    ", "\n                    <div class=\"workbench-field\"><label for=\"context\">Graph</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\"\n                                @change=", ">\n                            <option value=\"\" ?selected=", ">Any graph</option>\n                            <option value=\"null\" ?selected=", ">Default graph</option>\n                            ", "\n                        </select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions remove-actions\">\n                    <button type=\"submit\" class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>", "</span></button>\n                    <span id=\"remove-count\" class=\"remove-actions__count\" role=\"status\"\n                        title=", ">", "</span>\n                </div>\n            </form>"]), confirmAndSubmit, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Every explicit statement that matches the values below is removed; empty fields match anything.', 'Remove is permanent.', 'remove-warning'), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), errorCallout(runtime, model), removeFields.map(function (entry) {
+                var invalid = state.state === 'invalid' && state.field === entry[0];
+                var onInput = function (event) { return recount(event.currentTarget.form); };
+                return h(__makeTemplateObject(["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"], ["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"]), entry[0], entry[1], entry[0] === 'obj'
+                    ? h(__makeTemplateObject(["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"], ["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"]), entry[2], invalid ? 'true' : 'false', onInput, text(pageValue(model, 'obj'))) : h(__makeTemplateObject(["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"], ["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"]), entry[0], entry[0], entry[2], invalid ? 'true' : 'false', entry[0] + '-error', text(pageValue(model, entry[0])), onInput), entry[0] + '-error', !invalid, invalid ? state.message : '');
+            }), function (event) { return recount(event.currentTarget.form); }, !selectedGraph, selectedGraph === 'null', graphs.map(function (record) { return h(__makeTemplateObject(["<option value=", "\n                                ?selected=", ">", "</option>"], ["<option value=", "\n                                ?selected=", ">", "</option>"]), ntriples(record.context), ntriples(record.context) === selectedGraph, termText(record.context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), disabled, icon(runtime, 'remove'), 'Remove ' + amount + '…', state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : '', removeMatchLabel(state, context));
         }
         /** "N statements", or "—" when the server could not count within its budget. */
         function statementsLabel(count, context) {

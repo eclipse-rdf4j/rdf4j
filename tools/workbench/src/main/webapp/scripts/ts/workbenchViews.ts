@@ -2278,28 +2278,154 @@ module workbench {
                 </form>`;
         }
 
+        interface RemoveCount {
+            /** 'empty' (no values), 'counting', 'counted', 'timed-out', 'invalid' or 'failed'. */
+            state: string;
+            count: number;
+            field: string;
+            message: string;
+            timer: any;
+            controller: any;
+        }
+
+        const removeFields: string[][] = [['subj', 'Subject', 'Any subject'], ['pred', 'Predicate', 'Any predicate'],
+            ['obj', 'Object', 'Any object']];
+
+        /** "N statements match" for a live Remove count; above the server's limit it says "more than". */
+        function removeMatchLabel(state: RemoveCount, context: ViewContext): string {
+            if (state.state !== 'counted') {
+                return state.state === 'counting' ? 'Counting…' : state.state === 'timed-out' ? '—' : '';
+            }
+            if (state.count > 1000000) { return 'More than 1,000,000 statements match'; }
+            if (state.count === 0) { return 'No statements match'; }
+            return state.count === 1 ? '1 statement matches' : formatCount(String(state.count), context) + ' statements match';
+        }
+
+        /**
+         * Remove (M6.5, mockup 09): the page counts the explicit statements that match as values are typed (400 ms
+         * after the last change, cancelling the previous request), names that number on the button and confirms it in a
+         * dialog before the existing POST. The button is disabled while nothing is chosen and when nothing matches.
+         */
         function removePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove">
+            const graphs = (model.vars || []).indexOf('error-message') < 0
+                ? records(model).filter((record: any) => !!record.context) : [];
+            const holder: any = model;
+            const state: RemoveCount = holder.removeCount
+                || (holder.removeCount = { state: 'empty', count: 0, field: '', message: '', timer: null, controller: null });
+            const refresh = (form: any) => {
+                const outlet = form.closest('.workbench-outlet');
+                if (outlet) { render(outlet, model, context, runtime); }
+            };
+            const values = (form: any) => {
+                const fields: any = {};
+                ['subj', 'pred', 'obj', 'context'].forEach((name) => {
+                    const control = form.querySelector('[name="' + name + '"]');
+                    fields[name] = control ? String(control.value || '').trim() : '';
+                });
+                return fields;
+            };
+            const recount = (form: any) => {
+                clearTimeout(state.timer);
+                if (state.controller) { state.controller.abort(); }
+                const fields = values(form);
+                if (!fields.subj && !fields.pred && !fields.obj && !fields.context) {
+                    state.state = 'empty';
+                    state.field = '';
+                    refresh(form);
+                    return;
+                }
+                state.timer = setTimeout(() => {
+                    const app: any = (workbench as any).app;
+                    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                    state.controller = controller;
+                    state.state = 'counting';
+                    state.field = '';
+                    refresh(form);
+                    const query = new URLSearchParams({ count: 'true' });
+                    Object.keys(fields).forEach((name) => { if (fields[name]) { query.set(name, fields[name]); } });
+                    const fetcher = (url: string, options: any) => window.fetch(url, controller
+                        ? Object.assign({}, options, { signal: controller.signal }) : options);
+                    app.loadModel(fetcher, new URL('remove?' + query.toString(), window.location.href).toString())
+                        .then((answer: any) => {
+                            if (state.controller !== controller) { return answer.rowStore.dispose(); }
+                            if (answer.error) {
+                                state.state = 'invalid';
+                                state.field = answer.error.code;
+                                state.message = answer.error.message;
+                                answer.rowStore.dispose();
+                                return refresh(form);
+                            }
+                            return answer.rowStore.read(0, 1).then((rows: any[][]) => {
+                                answer.rowStore.dispose();
+                                const count = rows.length && rows[0][0] ? Number(text(rows[0][0])) : NaN;
+                                state.state = isFinite(count) ? 'counted' : 'timed-out';
+                                state.count = isFinite(count) ? count : 0;
+                                refresh(form);
+                            });
+                        }, (error: any) => {
+                            if (state.controller !== controller || (error && error.name === 'AbortError')) { return; }
+                            state.state = 'failed';
+                            refresh(form);
+                        });
+                }, 400);
+            };
+            const counted = state.state === 'counted';
+            const disabled = state.state === 'empty' || state.state === 'invalid' || state.state === 'counting'
+                || counted && state.count === 0;
+            const amount = counted ? (state.count > 1000000 ? 'more than 1,000,000 statements'
+                : state.count === 1 ? '1 statement' : formatCount(String(state.count), context) + ' statements') : 'statements';
+            const confirmAndSubmit = (event: any) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                if (disabled) { return; }
+                (workbench as any).confirmDialog.open({
+                    title: counted ? 'Remove ' + amount + '?' : 'Remove the matching statements?',
+                    body: 'This permanently removes ' + (counted ? amount : 'every explicit statement') + ' that match these values.',
+                    confirmLabel: 'Remove statements', danger: true
+                }).then((confirmed: boolean) => { if (confirmed) { form.submit(); } });
+            };
+            const selectedGraph = text(pageValue(model, 'context'));
+            return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove"
+                    @submit=${confirmAndSubmit}>
                 ${systemRepositoryCallout(runtime, context)}
-                ${callout(runtime, 'warning', 'Only statements matching the supplied values will be removed. An empty form is rejected.', 'Remove is permanent.', 'remove-warning')}
+                ${callout(runtime, 'warning', 'Every explicit statement that matches the values below is removed; empty fields match anything.', 'Remove is permanent.', 'remove-warning')}
                 <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>
                 <details id="remove-examples" class="workbench-options"><summary>Examples${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
                     <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>
                         <li>Literal: <tt>"Hello"</tt>, <tt>"Hello"@en</tt>, or <tt>"Hello"^^&lt;http://bar.com/foo&gt;</tt></li></ul>
                 </details>
                 ${errorCallout(runtime, model)}
-                    <div class="workbench-field-stack">
-                        ${[['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map((entry: string[]) => h`<div class="workbench-field">
-                            <label for=${entry[0]}>${entry[1]}</label>${entry[2] === 'textarea'
-                                ? h`<textarea id="obj" name="obj" rows="3">${text(pageValue(model, 'obj'))}</textarea>`
-                                : h`<input id=${entry[0]} name=${entry[0]} type="text" value=${text(pageValue(model, entry[0]))} />`}
-                        </div>`)}
+                <div class="workbench-field-stack">
+                    ${removeFields.map((entry: string[]) => {
+                        const invalid = state.state === 'invalid' && state.field === entry[0];
+                        const onInput = (event: any) => recount(event.currentTarget.form);
+                        return h`<div class="workbench-field"><label for=${entry[0]}>${entry[1]}</label>${entry[0] === 'obj'
+                            ? h`<textarea id="obj" name="obj" rows="3" placeholder=${entry[2]} aria-invalid=${invalid ? 'true' : 'false'}
+                                aria-describedby="obj-error" @input=${onInput}>${text(pageValue(model, 'obj'))}</textarea>`
+                            : h`<input id=${entry[0]} name=${entry[0]} type="text" placeholder=${entry[2]} autocomplete="off"
+                                spellcheck="false" aria-invalid=${invalid ? 'true' : 'false'} aria-describedby=${entry[0] + '-error'}
+                                value=${text(pageValue(model, entry[0]))} @input=${onInput} />`}
+                            <p id=${entry[0] + '-error'} class="workbench-field__error" ?hidden=${!invalid}>${invalid ? state.message : ''}</p>
+                        </div>`;
+                    })}
+                    <div class="workbench-field"><label for="context">Graph</label>
+                        <div class="workbench-select-control"><select id="context" name="context"
+                                @change=${(event: any) => recount(event.currentTarget.form)}>
+                            <option value="" ?selected=${!selectedGraph}>Any graph</option>
+                            <option value="null" ?selected=${selectedGraph === 'null'}>Default graph</option>
+                            ${graphs.map((record: any) => h`<option value=${ntriples(record.context)}
+                                ?selected=${ntriples(record.context) === selectedGraph}>${termText(record.context)}</option>`)}
+                        </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                     </div>
-                    <div class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
-                        ${icon(runtime, 'remove')}<span class="workbench-action-label"><input type="submit" value="Remove" /></span>
-                    </label></span></div>
-                </form>`;
+                </div>
+                <div class="workbench-form-actions remove-actions">
+                    <button type="submit" class="workbench-action workbench-action--danger-outline" ?disabled=${disabled}>${
+                        icon(runtime, 'remove')}<span>${'Remove ' + amount + '…'}</span></button>
+                    <span id="remove-count" class="remove-actions__count" role="status"
+                        title=${state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : ''}>${removeMatchLabel(state, context)}</span>
+                </div>
+            </form>`;
         }
 
         /** "N statements", or "—" when the server could not count within its budget. */

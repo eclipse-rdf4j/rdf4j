@@ -198,7 +198,8 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 	await openPage(page, `repositories/${REPOSITORY_ID}/remove`);
 	const dangerStyle = await page.locator('#remove-form .workbench-action--danger-outline').evaluate(action => {
 		const style = getComputedStyle(action);
-		const input = action.querySelector('input[type="submit"]');
+		// Remove's action is a button since plan task M6.5; older actions wrap an input.
+		const input = action.querySelector('input[type="submit"]') || action;
 		const inputStyle = getComputedStyle(input);
 		const colorProbe = document.createElement('span');
 		colorProbe.style.color = 'var(--workbench-danger)';

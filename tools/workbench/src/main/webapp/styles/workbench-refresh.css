@@ -2938,6 +2938,28 @@ body.workbench-body .workbench-dialog__actions {
 	margin-top: var(--workbench-space-section);
 }
 
+/* Remove (M6.5, mockup 09): the live match count sits next to the button that names it. */
+body.workbench-body .remove-actions {
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap) 12px;
+}
+
+body.workbench-body .remove-actions__count {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+}
+
+body.workbench-body .workbench-field__error {
+	margin: 0;
+	color: var(--workbench-danger);
+	font-size: var(--workbench-label-font-size);
+}
+
+body.workbench-body .workbench-field__error[hidden] {
+	display: none;
+}
+
 /* Repository list (M5.3, mockup 12): the whole row opens the repository; actions live in a small menu. */
 body.workbench-body .workbench-action-icon--more {
 	stroke-width: 3;

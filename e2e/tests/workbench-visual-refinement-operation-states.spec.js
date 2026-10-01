@@ -101,13 +101,15 @@ test('covers task-fixture operation states without touching user repositories', 
 	await capture(page, 'update-invalid-sparql-error-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/remove`);
-	await page.locator('#remove-form input[type="submit"]').click();
+	// Remove's button stays disabled while every field is empty (plan task M6.5); post the empty form directly.
+	await page.locator('#remove-form').evaluate((form) => form.submit());
 	// The server's rejection is an error callout in the form (plan task M6.1).
 	await expect(page.locator('#remove-form .workbench-callout--error')).toContainText('No values');
 	await capture(page, 'remove-empty-request-error-1440.png');
 	await page.locator('#subj').fill('<urn:visual:alice>');
 	await page.locator('#pred').fill('<urn:visual:name>');
-	await page.locator('#remove-form input[type="submit"]').click();
+	await page.locator('#remove-form button[type="submit"]').click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
 	await capture(page, 'remove-success-summary-1440.png');
 

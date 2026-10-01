@@ -36,7 +36,9 @@ test.afterAll(async ({ request }) => {
 test('Remove with every field empty shows the server error in an error callout', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'remove'), { waitUntil: 'domcontentloaded' });
-	await page.locator('#remove-form input[type="submit"]').click();
+	// The button stays disabled while every field is empty (plan task M6.5), so post the empty form directly.
+	await expect(page.locator('#remove-form button[type="submit"]')).toBeDisabled();
+	await page.locator('#remove-form').evaluate((form) => form.submit());
 	const error = page.locator('#remove-form .workbench-callout--error');
 	await expect(error).toBeVisible();
 	await expect(error).toContainText('No values');
@@ -128,6 +130,40 @@ test('Namespaces start with empty fields, edit in the row and delete only after 
 	await dialog.getByRole('button', { name: 'Delete prefix' }).click();
 	await expect(card.locator('td:first-child', { hasText: /^tst$/ })).toHaveCount(0);
 	expect(await namespaceOf(request, 'tst')).toBe('');
+});
+
+test('Remove counts the matching statements as you type and confirms before removing them', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'remove'), { waitUntil: 'domcontentloaded' });
+	const form = page.locator('#remove-form');
+	const action = form.locator('button[type="submit"]');
+	await expect(form.locator('#subj')).toHaveAttribute('placeholder', 'Any subject');
+	await expect(form.locator('select#context option').first()).toHaveText('Any graph');
+	await expect(action).toBeDisabled();
+
+	await form.locator('#subj').fill('<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/Product1>');
+	const status = form.locator('#remove-count');
+	await expect(status).toHaveText(/^\d+ statements match$/);
+	const matches = Number((await status.innerText()).match(/^(\d+)/)[1]);
+	expect(matches).toBeGreaterThan(1);
+	await expect(action).toHaveText(`Remove ${matches} statements…`);
+	await expect(action).toBeEnabled();
+
+	await form.locator('#pred').fill('<not an iri');
+	await expect(form.locator('#pred-error')).toContainText('predicate');
+	await expect(action).toBeDisabled();
+	await form.locator('#pred').fill('');
+	await expect(action).toHaveText(`Remove ${matches} statements…`);
+
+	const before = await sizeOf(request);
+	await action.click();
+	const dialog = page.getByRole('dialog', { name: `Remove ${matches} statements?` });
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	expect(await sizeOf(request)).toBe(before);
+	await action.click();
+	await dialog.getByRole('button', { name: 'Remove statements' }).click();
+	await expect(page).toHaveURL(/\/summary$/);
+	expect(await sizeOf(request)).toBe(before - matches);
 });
 
 /** The number of statements in the repository or one of its graphs, read through the server's REST API. */
