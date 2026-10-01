@@ -1559,8 +1559,15 @@ class TripleStore implements Closeable {
 			return Optional.empty();
 		}
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		// GRAPH ?g over all contexts drops default-graph rows above the scan. The row kept for a prefix must already
+		// be a named-graph row, or the prefix's named-graph rows are skipped together with a representative that
+		// evaluation then discards.
+		LmdbValueIdFilter scanFilter = context < 0
+				&& statementPattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+						? LmdbValueIdFilter.namedGraphsOnly()
+						: idFilter;
 		return Optional.of(new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, context, explicit, txn,
-				idFilter, plan.prefixLength()));
+				scanFilter, plan.prefixLength()));
 	}
 
 	Optional<LmdbDistinctCursorSkipSupport.Plan> distinctCursorSkipPlan(StatementPattern statementPattern) {
