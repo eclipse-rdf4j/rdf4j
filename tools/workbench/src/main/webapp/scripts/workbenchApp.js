@@ -455,26 +455,34 @@ var workbench;
          * came from after redirects.
          */
         function loadModel(fetcher, url, signal) {
+            var request = { headers: { Accept: app.ACCEPT }, credentials: 'same-origin' };
+            if (signal) {
+                request.signal = signal;
+            }
+            return fetcher(url, request).then(function (response) { return loadModelFromResponse(response, signal, url); });
+        }
+        app.loadModel = loadModel;
+        /**
+         * Read a page model from a response that is already there, for example the answer to a form POST the
+         * router sent (M10.1). requestedUrl stands in for response.url when a fake response has none.
+         */
+        function loadModelFromResponse(response, signal, requestedUrl) {
+            if (!response || response.ok === false && !isPageProtocolResponse(response)) {
+                var status_1 = response && response.status ? ' (' + response.status + ')' : '';
+                return Promise.reject(new Error('Unable to load Workbench page data' + status_1));
+            }
             var stream = queryStream();
             return stream.createRowStore().then(function (rowStore) {
                 var model = newPageModel(rowStore);
                 var state = {
                     haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
                 };
-                var request = { headers: { Accept: app.ACCEPT }, credentials: 'same-origin' };
-                if (signal) {
-                    request.signal = signal;
-                }
-                return fetcher(url, request).then(function (response) {
-                    if (!response || response.ok === false && !isPageProtocolResponse(response)) {
-                        var status_1 = response && response.status ? ' (' + response.status + ')' : '';
-                        throw new Error('Unable to load Workbench page data' + status_1);
-                    }
-                    model.finalUrl = response.url || url;
-                    return stream.consumeNdjsonResponse(response, {
-                        signal: signal,
-                        onRecord: function (record) { return acceptPageRecord(model, state, record); }
-                    });
+                model.finalUrl = response.url || requestedUrl;
+                return stream.consumeNdjsonResponse(response, {
+                    signal: signal,
+                    // A page model with an error status still describes the page to show (M10.1).
+                    allowErrorStatus: true,
+                    onRecord: function (record) { return acceptPageRecord(model, state, record); }
                 }).then(function (outcome) {
                     if (outcome && outcome.type === 'stale') {
                         throw abortError();
@@ -505,7 +513,7 @@ var workbench;
                 }).then(null, function (error) { return rowStore.dispose().then(function () { throw error; }); });
             });
         }
-        app.loadModel = loadModel;
+        app.loadModelFromResponse = loadModelFromResponse;
         function requestedLinkedModels(model) {
             var allowed = {
                 'info': true,

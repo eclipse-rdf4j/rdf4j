@@ -23,7 +23,7 @@ module workbench {
                     danger: true
                 }).then(function(confirmed: boolean) {
                     if (confirmed) {
-                        (<HTMLFormElement>document.forms.namedItem(urn)).submit();
+                        workbench.submitForm(<HTMLFormElement>document.forms.namedItem(urn));
                     }
                 });
             } else {

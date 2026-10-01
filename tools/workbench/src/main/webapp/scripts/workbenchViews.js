@@ -896,7 +896,11 @@ var workbench;
                 form.appendChild(input);
             });
             document.body.appendChild(form);
-            form.submit();
+            workbench.submitForm(form);
+            // Sent through the router the page stays, so the helper form must not stay with it.
+            if (form.parentNode) {
+                form.parentNode.removeChild(form);
+            }
         }
         /** Namespaces (M6.3, mockup 07): rows in prefix order, edited in place; no field is prefilled from a row. */
         function namespacesPage(runtime, model, context) {
@@ -1830,7 +1834,7 @@ var workbench;
                     body: 'This permanently removes ' + (counted ? amount : 'every explicit statement') + ' that match these values.',
                     confirmLabel: 'Remove statements', danger: true
                 }).then(function (confirmed) { if (confirmed) {
-                    form.submit();
+                    workbench.submitForm(form);
                 } });
             };
             var selectedGraph = text(pageValue(model, 'context'));
@@ -1886,7 +1890,7 @@ var workbench;
                     : { title: 'Clear graph?', body: removes + ' from ' + (selected.value === 'null' ? 'the default graph' : selected.label) + '.',
                         confirmLabel: 'Clear graph', danger: true }).then(function (confirmed) {
                     if (confirmed) {
-                        form.submit();
+                        workbench.submitForm(form);
                     }
                 });
             };

@@ -69,8 +69,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 20:04Z) M8.3 Shell refresh on context changes.
 - [x] (2026-10-01 21:02Z) M9.1 Make Query, Update and Saved queries disposable.
 - [x] (2026-10-01 21:10Z) M9.2 Leaving while a query is running.
-- [ ] M10.1 (in progress) Submit forms without reloading the document.
-- [ ] M10.2 Saved-query Edit opens the Query page in place.
+- [x] (2026-10-01 21:27Z) M10.1 Submit forms without reloading the document.
+- [ ] M10.2 (in progress) Saved-query Edit opens the Query page in place.
 - [ ] M11.1 Load the graph renderer only when needed.
 - [ ] M11.2 Prefetch route code.
 - [ ] M11.3 Keep the Query route alive.
@@ -331,6 +331,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-01 / implementer.
 - Decision (M9.2): the browser test the task names ("click Summary while a query runs; expect a cancel-query POST") already passed after M9.1, because disposing the result renderer cancels a running query through the retrying jQuery request. The task's two changes are still made explicit: the Query route's dispose cancels the running query before it tears anything down (`queryPage.cancelExecution()` for `navigate`), and for `pagehide` (route dispose and `renderInto()`'s own listener) the controller's new `cancelOnLeave()` sends one `fetch(..., { method: 'POST', keepalive: true })` instead of the jQuery request, which would not outlive the page; it still shows "Query cancelled." for a page kept in the back/forward cache. Route cleanups now receive the dispose reason.
   Rationale: cancellation should not depend on teardown order, and only a keepalive request is delivered while a page unloads.
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M10.1): the router handles `submit` events in the outlet that nothing else has handled, except the server form and Export's download button. GET forms navigate to `action?fields`; POST forms are fetched with the page-model `Accept` header (`FormData` for `multipart/form-data`, `URLSearchParams` otherwise), and the answer is read with the new `app.loadModelFromResponse()`: a redirected answer is pushed at its final URL and shown with the definition of its own view (Clear's answer is Summary), an answer in place replaces the entry, and an answer from a route the router does not show is loaded by the browser (it cannot be posted again). Scripts that submit after a dialog call the new `workbench.submitForm(form)` (template.ts), which uses `router.submit()` and submits natively without a router: Remove, Clear, the Namespaces helper form (removed again after sending), Delete, Create and saved-query Delete; `requestSubmit()` was not used because it would run the page's own confirming submit handler again. `paging.ts` navigates through the router when it runs, except downloads. While an upload runs, any navigation (links, Back, scripts) asks "An upload is in progress. Leave and cancel it?" first and a `beforeunload` handler is registered; leaving aborts the upload. The browser test found that a rejected Namespaces save (status 400, a complete page model ending with `end`, M6.3) was refused by `consumeNdjsonResponse`, which demanded an `error` record for any error status; page models now pass `allowErrorStatus`, so the list shows with its error callout, while query streams keep the strict rule.
+  Rationale: forms are the remaining way out of the page; they now keep the shell, and the user cannot lose an upload by clicking away.
   Date/Author: 2026-10-01 / implementer.
 - Decision (M6.6): Delete starts with "Choose a repository" (empty, disabled) selected unless `?id=<id>` names one, and its button ("Delete repository…") stays disabled until a repository is chosen. Every deletion now asks for the typed id in `confirmDialog` ("Delete repository <id>?"); a proxied repository adds its warning to the same dialog. The safety check and the POST are unchanged. The dialog's input carries `data-workbench-confirm-text`, which the unit harness uses to type the text before confirming.
 

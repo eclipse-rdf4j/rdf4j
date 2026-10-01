@@ -25,6 +25,10 @@ module workbench {
         export interface NavigateOptions {
             history: 'push' | 'replace' | 'none';
             state?: any;
+            /** A form POST (M10.1): sent with the page-model Accept header; its answer is the page shown. */
+            body?: any;
+            /** Set once the user agreed to cancel a running upload. */
+            leaveUpload?: boolean;
         }
 
         /** What bootstrap hands over once the first route is mounted. */
@@ -57,6 +61,8 @@ module workbench {
         const positions: { [key: string]: number } = {};
         let currentRoute: { url: string; viewId: string; repositoryId: string; key: string;
             instance: routes.RouteInstance } = null;
+        /** The navigation (its generation) that is uploading a file, or 0. */
+        let uploading = 0;
 
         export function isRunning(): boolean {
             return running;
@@ -132,6 +138,38 @@ module workbench {
             }
         }
 
+        function onBeforeUnload(event: any): void {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+
+        function startUpload(mine: number): void {
+            uploading = mine;
+            (window as any).addEventListener('beforeunload', onBeforeUnload, false);
+        }
+
+        function endUpload(mine: number): void {
+            if (uploading === mine) {
+                uploading = 0;
+                (window as any).removeEventListener('beforeunload', onBeforeUnload, false);
+            }
+        }
+
+        /** While an upload runs, leaving the page cancels it, so the user is asked first. */
+        function confirmLeavingUpload(): Promise<boolean> {
+            return (workbench as any).confirmDialog.open({
+                title: 'An upload is in progress. Leave and cancel it?',
+                body: 'The file has not been added yet. Leaving this page stops the upload.',
+                confirmLabel: 'Leave and cancel upload',
+                danger: true
+            }).then((leave: boolean) => {
+                if (leave) {
+                    endUpload(uploading);
+                }
+                return leave;
+            });
+        }
+
         function abandoned(): Error {
             const error = new Error('The navigation was replaced by a newer one.');
             error.name = 'AbortError';
@@ -188,7 +226,73 @@ module workbench {
                 windowObject.location.reload();
                 return;
             }
+            if (uploading) {
+                const stay = currentRoute;
+                confirmLeavingUpload().then((leave) => {
+                    if (leave) {
+                        navigate(url.href, { history: 'none', leaveUpload: true });
+                    } else {
+                        windowObject.history.pushState({ wbKey: stay.key, scrollY: windowObject.scrollY }, '', stay.url);
+                    }
+                });
+                return;
+            }
             navigate(url.href, { history: 'none' });
+        }
+
+        /** Build the request a form submission makes (FormData includes the button that submitted it). */
+        function formRequest(form: any, submitter: any): { method: string; action: URL; data: any; multipart: boolean } {
+            const windowObject: any = window;
+            const attribute = (name: string) => submitter && submitter.getAttribute('form' + name)
+                || form.getAttribute(name);
+            return {
+                method: String(attribute('method') || 'get').toLowerCase(),
+                action: new URL(attribute('action') || windowObject.location.href, windowObject.location.href),
+                data: new FormData(form, submitter),
+                multipart: String(attribute('enctype') || '').toLowerCase() === 'multipart/form-data'
+            };
+        }
+
+        /** Send a form through the router when its action is a route the router shows; false otherwise. */
+        function route(form: any, submitter: any): boolean {
+            const request = formRequest(form, submitter);
+            if (!routable(request.action)) {
+                return false;
+            }
+            if (request.method === 'get') {
+                request.action.search = new URLSearchParams(request.data).toString();
+                navigate(request.action.href, { history: 'push' });
+                return true;
+            }
+            navigate(request.action.href, { history: 'push',
+                body: request.multipart ? request.data : new URLSearchParams(request.data) });
+            return true;
+        }
+
+        function onSubmit(event: any): void {
+            const form = event.target;
+            if (event.defaultPrevented || !form || form.tagName !== 'FORM' || !outlet().contains(form)
+                    || form.getAttribute('id') === 'server-form') {
+                return;
+            }
+            const submitter = event.submitter;
+            // Downloads (Export) stay with the browser, which saves the answer as a file.
+            if (submitter && submitter.getAttribute('name') === 'action' && submitter.getAttribute('value') === 'download') {
+                return;
+            }
+            if (route(form, submitter)) {
+                event.preventDefault();
+            }
+        }
+
+        /**
+         * Submit a form from a script (after a confirmation dialog, for example): through the router when it runs
+         * and can show the answer, natively otherwise.
+         */
+        export function submit(form: any, submitter?: any): void {
+            if (!running || !route(form, submitter)) {
+                form.submit();
+            }
         }
 
         function onPageHide(event: any): void {
@@ -221,6 +325,7 @@ module workbench {
                 instance: started.instance };
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
+            windowObject.document.addEventListener('submit', onSubmit, false);
             windowObject.addEventListener('popstate', onPopState, false);
             windowObject.addEventListener('pagehide', onPageHide, false);
         }
@@ -231,6 +336,10 @@ module workbench {
          */
         export function navigate(url: string, options: NavigateOptions): Promise<Outcome> {
             const windowObject: any = window;
+            if (uploading && !options.leaveUpload) {
+                return confirmLeavingUpload().then((leave): Outcome | Promise<Outcome> => leave
+                    ? navigate(url, Object.assign({}, options, { leaveUpload: true })) : 'abandoned');
+            }
             const target = new URL(url, windowObject.location.href);
             const viewId = viewIdOf(target);
             const definition = routes.get(viewId);
@@ -248,14 +357,36 @@ module workbench {
                 signal ? Object.assign({}, requestOptions, { signal }) : requestOptions);
             const stale = () => mine !== generation;
             let model: any = null;
+            let shownDefinition = definition;
+            let history = options.history;
             setBusy(true);
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
-            return Promise.all([app().loadModel(fetcher, request, signal), app().loadScripts(definition.baseScripts())])
+            let answer: Promise<any>;
+            if (options.body) {
+                // A form POST: fetch follows the servlet's redirect with the same Accept header, so the answer is
+                // the page model of the page to show (M10.1).
+                if (typeof FormData === 'function' && options.body instanceof FormData) {
+                    startUpload(mine);
+                }
+                answer = fetcher(request, { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
+                    credentials: 'same-origin' }).then((response: any) => app().loadModelFromResponse(response, signal));
+            } else {
+                answer = app().loadModel(fetcher, request, signal);
+            }
+            return Promise.all([answer, app().loadScripts(definition.baseScripts())])
                 .then((loaded: any[]) => {
                     model = loaded[0];
                     if (stale()) {
                         throw abandoned();
+                    }
+                    if (options.body) {
+                        // A redirect shows another page (a new entry); an answer in place replaces this one.
+                        history = model.finalUrl && model.finalUrl !== request ? 'push' : 'replace';
+                        shownDefinition = routes.get(model.viewId);
+                        if (!shownDefinition || !shownDefinition.routerReady) {
+                            throw new Error('The answer is a page the router does not show: ' + model.viewId);
+                        }
                     }
                     return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal);
                 })
@@ -263,7 +394,7 @@ module workbench {
                     if (stale()) {
                         throw abandoned();
                     }
-                    return model.error ? undefined : app().loadScripts(definition.scripts(model));
+                    return model.error ? undefined : app().loadScripts(shownDefinition.scripts(model));
                 })
                 .then((): Outcome => {
                     if (stale()) {
@@ -271,10 +402,12 @@ module workbench {
                     }
                     const shown = new URL(model.finalUrl || request);
                     shown.hash = target.hash;
-                    commit(definition, model, shown, options, mine);
+                    commit(shownDefinition, model, shown, Object.assign({}, options, { history }), mine);
+                    endUpload(mine);
                     return 'committed';
                 })
                 .then(null, (error: any): Outcome => {
+                    endUpload(mine);
                     if (model) {
                         model.rowStore.dispose();
                     }
@@ -285,7 +418,8 @@ module workbench {
                     if (error && error.name === 'AbortError') {
                         return 'abandoned';
                     }
-                    windowObject.location.assign(target.href);
+                    // A form's answer cannot be posted again; the browser loads the page it led to instead.
+                    windowObject.location.assign(model && model.finalUrl || target.href);
                     return 'fallback';
                 });
         }

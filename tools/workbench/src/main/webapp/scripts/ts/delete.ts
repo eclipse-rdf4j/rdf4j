@@ -49,7 +49,7 @@ function checkIsSafeToDelete(event: JQueryEventObject) {
 						requireText: String(id)
 					}).then(function(submit: boolean) {
 						if (submit && form) {
-							form.submit();
+							workbench.submitForm(form);
 						}
 					});
 				}

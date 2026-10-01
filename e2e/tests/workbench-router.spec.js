@@ -294,3 +294,90 @@ test('leaving the Query page while a query runs cancels it on the server', async
 	await expect.poll(() => cancels.length).toBeGreaterThan(0);
 	expect(cancels[0]).toMatch(/query-request-id=[^&]+/);
 });
+
+// Plan task M10.1: forms are sent through the router.
+test.describe('forms through the router', () => {
+	const FORMS_ID = uniqueRepositoryId('workbench-router-forms');
+	const formsPage = (view) => repositoryPageUrl(FORMS_ID, view);
+
+	test.beforeAll(async ({ request }) => {
+		await createSeededRepository(request, serverBaseUrl(), FORMS_ID, { graphs: ['bsbm', 'spl'] });
+	});
+
+	test.afterAll(async ({ request }) => {
+		await deleteRepository(request, serverBaseUrl(), FORMS_ID);
+	});
+
+	async function sizeOf(request) {
+		const response = await request.get(`${serverBaseUrl()}/repositories/${encodeURIComponent(FORMS_ID)}/size`);
+		return Number((await response.text()).trim());
+	}
+
+	async function openForm(page, view) {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(formsPage(view));
+		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
+	}
+
+	test('clearing a graph shows Summary without loading a document', async ({ page, request }) => {
+		await openForm(page, 'clear');
+		const documents = recordDocumentRequests(page);
+		const before = await sizeOf(request);
+		await page.locator('#clear-form select[name="context"]').selectOption('<http://example.org/graph/spl>');
+		await page.locator('#clear-form button[type="submit"]').click();
+		await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
+
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/summary$`));
+		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', 'summary');
+		expect(documents).toEqual([]);
+		expect(await sizeOf(request)).toBeLessThan(before);
+	});
+
+	test('an invalid namespace prefix is reported in the page without loading a document', async ({ page }) => {
+		await openForm(page, 'namespaces');
+		const documents = recordDocumentRequests(page);
+		const card = page.locator('#namespaces-results');
+		await card.getByRole('button', { name: 'Add namespace' }).click();
+		const added = card.locator('tbody tr').first();
+		await added.getByRole('textbox', { name: 'Prefix' }).fill('1 bad');
+		await added.getByRole('textbox', { name: 'Namespace' }).fill('http://example.org/bad#');
+		await added.getByRole('button', { name: 'Save' }).click();
+
+		await expect(page.locator('#workbench-outlet .workbench-callout--error')).toContainText('1 bad');
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/namespaces$`));
+		expect(documents).toEqual([]);
+	});
+
+	test('uploading a Turtle file shows Summary with the larger repository', async ({ page, request }) => {
+		await openForm(page, 'add');
+		const documents = recordDocumentRequests(page);
+		const before = await sizeOf(request);
+		await page.locator('#file').setInputFiles({ name: 'more.ttl', mimeType: 'text/turtle',
+			buffer: Buffer.from('<urn:router:a> <urn:router:p> "one", "two" .\n') });
+		await page.locator('input[type="submit"][value="Upload"]').click();
+
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/summary$`));
+		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', 'summary');
+		expect(documents).toEqual([]);
+		expect(await sizeOf(request)).toBe(before + 2);
+	});
+
+	test('leaving during an upload asks first', async ({ page }) => {
+		await openForm(page, 'add');
+		await page.route((url) => url.pathname.endsWith(`/repositories/${FORMS_ID}/add`), async (route) => {
+			if (route.request().method() === 'POST') {
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+			}
+			await route.continue().catch(() => {});
+		});
+		await page.locator('#file').setInputFiles({ name: 'slow.ttl', mimeType: 'text/turtle',
+			buffer: Buffer.from('<urn:router:slow> <urn:router:p> "x" .\n') });
+		await page.locator('input[type="submit"][value="Upload"]').click();
+		await menuLink(page, 'Types').click();
+
+		const dialog = page.getByRole('dialog', { name: 'An upload is in progress. Leave and cancel it?' });
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/add$`));
+	});
+});

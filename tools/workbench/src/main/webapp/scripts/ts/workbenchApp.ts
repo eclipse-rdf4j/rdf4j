@@ -501,6 +501,23 @@ module workbench {
          */
         export function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
                                   signal?: AbortSignal): Promise<PageModel> {
+            const request: any = { headers: { Accept: ACCEPT }, credentials: 'same-origin' };
+            if (signal) {
+                request.signal = signal;
+            }
+            return fetcher(url, request).then((response: any) => loadModelFromResponse(response, signal, url));
+        }
+
+        /**
+         * Read a page model from a response that is already there, for example the answer to a form POST the
+         * router sent (M10.1). requestedUrl stands in for response.url when a fake response has none.
+         */
+        export function loadModelFromResponse(response: any, signal?: AbortSignal,
+                                              requestedUrl?: string): Promise<PageModel> {
+            if (!response || response.ok === false && !isPageProtocolResponse(response)) {
+                const status = response && response.status ? ' (' + response.status + ')' : '';
+                return Promise.reject(new Error('Unable to load Workbench page data' + status));
+            }
             const stream = queryStream();
             return stream.createRowStore().then((rowStore: any) => {
                 const model = newPageModel(rowStore);
@@ -508,20 +525,12 @@ module workbench {
                     rowsSeen: boolean; error: Error | null } = {
                     haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
                 };
-                const request: any = { headers: { Accept: ACCEPT }, credentials: 'same-origin' };
-                if (signal) {
-                    request.signal = signal;
-                }
-                return fetcher(url, request).then((response: any) => {
-                    if (!response || response.ok === false && !isPageProtocolResponse(response)) {
-                        const status = response && response.status ? ' (' + response.status + ')' : '';
-                        throw new Error('Unable to load Workbench page data' + status);
-                    }
-                    model.finalUrl = response.url || url;
-                    return stream.consumeNdjsonResponse(response, {
-                        signal,
-                        onRecord: (record: any) => acceptPageRecord(model, state, record)
-                    });
+                model.finalUrl = response.url || requestedUrl;
+                return stream.consumeNdjsonResponse(response, {
+                    signal,
+                    // A page model with an error status still describes the page to show (M10.1).
+                    allowErrorStatus: true,
+                    onRecord: (record: any) => acceptPageRecord(model, state, record)
                 }).then((outcome: any) => {
                     if (outcome && outcome.type === 'stale') {
                         throw abortError();

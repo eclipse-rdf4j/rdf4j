@@ -19,7 +19,7 @@ var workbench;
                     danger: true
                 }).then(function (confirmed) {
                     if (confirmed) {
-                        document.forms.namedItem(urn).submit();
+                        workbench.submitForm(document.forms.namedItem(urn));
                     }
                 });
             }

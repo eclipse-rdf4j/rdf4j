@@ -1356,6 +1356,19 @@ module workbench {
         };
     }
 
+    /**
+     * Submit a form from a script, for example after a confirmation dialog: through the in-page router when it
+     * runs and can show the answer (M10.1), natively otherwise.
+     */
+    export function submitForm(form: HTMLFormElement): void {
+        var router: any = (<any>workbench).router;
+        if (router && typeof router.submit === 'function') {
+            router.submit(form);
+        } else {
+            form.submit();
+        }
+    }
+
     export interface LoadRoutine {
         (ev?: Event): void;
     }

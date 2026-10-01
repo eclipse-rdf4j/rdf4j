@@ -48,7 +48,7 @@ function checkIsSafeToDelete(event) {
                 requireText: String(id)
             }).then(function (submit) {
                 if (submit && form) {
-                    form.submit();
+                    workbench.submitForm(form);
                 }
             });
         }

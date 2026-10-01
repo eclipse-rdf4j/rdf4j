@@ -750,6 +750,11 @@ namespace workbench {
             signal?: any;
             isCurrent?: () => boolean;
             onRecord?: (record: QueryResultRecord) => void | Promise<void>;
+            /**
+             * Read a complete answer (one that ends with end) even when its status is an error: a rejected form
+             * POST answers with the page to show, for example Namespaces with its error message (M10.1).
+             */
+            allowErrorStatus?: boolean;
         }
 
         /**
@@ -831,7 +836,7 @@ namespace workbench {
                     if (!state.terminal) {
                         throw protocolError('the response ended before an end or error record.');
                     }
-                    if (response.ok === false && state.terminal.type !== 'error') {
+                    if (response.ok === false && state.terminal.type !== 'error' && !options.allowErrorStatus) {
                         throw new Error('Workbench request failed with HTTP status ' + response.status + '.');
                     }
                     return state.terminal;

@@ -306,7 +306,7 @@ function checkOverwrite() {
                 return submit;
             }).then(function (submit) {
                 if (submit) {
-                    $("form[action='create']").submit();
+                    workbench.submitForm($("form[action='create']").get(0));
                 }
             });
         }

@@ -859,3 +859,18 @@ test('a Query route whose page has no content area renders into the outlet itsel
 
     assert.equal(harness.log[0], 'render into workbench-outlet');
 });
+
+test('a page model read from a response accepts an error status that still ends the page', async () => {
+    const workbench = loadWorkbench();
+    streamOf(workbench);
+    const response = { ok: false, status: 400, url: 'https://example.test/namespaces',
+        headers: { get: () => 'application/vnd.rdf4j.workbench+ndjson;charset=UTF-8' },
+        records: [{ type: 'head', version: 1 }, { type: 'view', id: 'namespaces' }, { type: 'vars', values: [] },
+            { type: 'end' }] };
+
+    const model = await workbench.app.loadModelFromResponse(response);
+
+    assert.equal(workbench.lastStreamOptions.allowErrorStatus, true);
+    assert.equal(model.viewId, 'namespaces');
+    assert.equal(model.finalUrl, 'https://example.test/namespaces');
+});

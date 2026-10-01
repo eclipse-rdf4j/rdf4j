@@ -1197,6 +1197,20 @@ var workbench;
         };
     }
     workbench.decoratePage = decoratePage;
+    /**
+     * Submit a form from a script, for example after a confirmation dialog: through the in-page router when it
+     * runs and can show the answer (M10.1), natively otherwise.
+     */
+    function submitForm(form) {
+        var router = workbench.router;
+        if (router && typeof router.submit === 'function') {
+            router.submit(form);
+        }
+        else {
+            form.submit();
+        }
+    }
+    workbench.submitForm = submitForm;
     // The following is to allow composed XSLT style sheets to each add
     // functions to the window.onload event.
     function chain(args) {

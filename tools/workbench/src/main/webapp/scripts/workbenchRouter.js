@@ -31,6 +31,8 @@ var workbench;
         /** The scroll position each history entry (by its wbKey) was left at. */
         var positions = {};
         var currentRoute = null;
+        /** The navigation (its generation) that is uploading a file, or 0. */
+        var uploading = 0;
         function isRunning() {
             return running;
         }
@@ -95,6 +97,34 @@ var workbench;
                 status.textContent = String(windowObject.document.title).split(' · ')[0].split(' — ')[0] + ' loaded';
             }
         }
+        function onBeforeUnload(event) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+        function startUpload(mine) {
+            uploading = mine;
+            window.addEventListener('beforeunload', onBeforeUnload, false);
+        }
+        function endUpload(mine) {
+            if (uploading === mine) {
+                uploading = 0;
+                window.removeEventListener('beforeunload', onBeforeUnload, false);
+            }
+        }
+        /** While an upload runs, leaving the page cancels it, so the user is asked first. */
+        function confirmLeavingUpload() {
+            return workbench.confirmDialog.open({
+                title: 'An upload is in progress. Leave and cancel it?',
+                body: 'The file has not been added yet. Leaving this page stops the upload.',
+                confirmLabel: 'Leave and cancel upload',
+                danger: true
+            }).then(function (leave) {
+                if (leave) {
+                    endUpload(uploading);
+                }
+                return leave;
+            });
+        }
         function abandoned() {
             var error = new Error('The navigation was replaced by a newer one.');
             error.name = 'AbortError';
@@ -148,8 +178,72 @@ var workbench;
                 windowObject.location.reload();
                 return;
             }
+            if (uploading) {
+                var stay_1 = currentRoute;
+                confirmLeavingUpload().then(function (leave) {
+                    if (leave) {
+                        navigate(url.href, { history: 'none', leaveUpload: true });
+                    }
+                    else {
+                        windowObject.history.pushState({ wbKey: stay_1.key, scrollY: windowObject.scrollY }, '', stay_1.url);
+                    }
+                });
+                return;
+            }
             navigate(url.href, { history: 'none' });
         }
+        /** Build the request a form submission makes (FormData includes the button that submitted it). */
+        function formRequest(form, submitter) {
+            var windowObject = window;
+            var attribute = function (name) { return submitter && submitter.getAttribute('form' + name)
+                || form.getAttribute(name); };
+            return {
+                method: String(attribute('method') || 'get').toLowerCase(),
+                action: new URL(attribute('action') || windowObject.location.href, windowObject.location.href),
+                data: new FormData(form, submitter),
+                multipart: String(attribute('enctype') || '').toLowerCase() === 'multipart/form-data'
+            };
+        }
+        /** Send a form through the router when its action is a route the router shows; false otherwise. */
+        function route(form, submitter) {
+            var request = formRequest(form, submitter);
+            if (!routable(request.action)) {
+                return false;
+            }
+            if (request.method === 'get') {
+                request.action.search = new URLSearchParams(request.data).toString();
+                navigate(request.action.href, { history: 'push' });
+                return true;
+            }
+            navigate(request.action.href, { history: 'push',
+                body: request.multipart ? request.data : new URLSearchParams(request.data) });
+            return true;
+        }
+        function onSubmit(event) {
+            var form = event.target;
+            if (event.defaultPrevented || !form || form.tagName !== 'FORM' || !outlet().contains(form)
+                || form.getAttribute('id') === 'server-form') {
+                return;
+            }
+            var submitter = event.submitter;
+            // Downloads (Export) stay with the browser, which saves the answer as a file.
+            if (submitter && submitter.getAttribute('name') === 'action' && submitter.getAttribute('value') === 'download') {
+                return;
+            }
+            if (route(form, submitter)) {
+                event.preventDefault();
+            }
+        }
+        /**
+         * Submit a form from a script (after a confirmation dialog, for example): through the router when it runs
+         * and can show the answer, natively otherwise.
+         */
+        function submit(form, submitter) {
+            if (!running || !route(form, submitter)) {
+                form.submit();
+            }
+        }
+        router.submit = submit;
         function onPageHide(event) {
             if (!event.persisted) {
                 currentRoute.instance.dispose('pagehide');
@@ -178,6 +272,7 @@ var workbench;
             currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url), key: key, instance: started.instance };
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
+            windowObject.document.addEventListener('submit', onSubmit, false);
             windowObject.addEventListener('popstate', onPopState, false);
             windowObject.addEventListener('pagehide', onPageHide, false);
         }
@@ -188,6 +283,10 @@ var workbench;
          */
         function navigate(url, options) {
             var windowObject = window;
+            if (uploading && !options.leaveUpload) {
+                return confirmLeavingUpload().then(function (leave) { return leave
+                    ? navigate(url, Object.assign({}, options, { leaveUpload: true })) : 'abandoned'; });
+            }
             var target = new URL(url, windowObject.location.href);
             var viewId = viewIdOf(target);
             var definition = workbench.routes.get(viewId);
@@ -204,14 +303,37 @@ var workbench;
             var fetcher = function (requestUrl, requestOptions) { return session.fetcher(requestUrl, signal ? Object.assign({}, requestOptions, { signal: signal }) : requestOptions); };
             var stale = function () { return mine !== generation; };
             var model = null;
+            var shownDefinition = definition;
+            var history = options.history;
             setBusy(true);
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             var request = target.href.split('#')[0];
-            return Promise.all([app().loadModel(fetcher, request, signal), app().loadScripts(definition.baseScripts())])
+            var answer;
+            if (options.body) {
+                // A form POST: fetch follows the servlet's redirect with the same Accept header, so the answer is
+                // the page model of the page to show (M10.1).
+                if (typeof FormData === 'function' && options.body instanceof FormData) {
+                    startUpload(mine);
+                }
+                answer = fetcher(request, { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
+                    credentials: 'same-origin' }).then(function (response) { return app().loadModelFromResponse(response, signal); });
+            }
+            else {
+                answer = app().loadModel(fetcher, request, signal);
+            }
+            return Promise.all([answer, app().loadScripts(definition.baseScripts())])
                 .then(function (loaded) {
                 model = loaded[0];
                 if (stale()) {
                     throw abandoned();
+                }
+                if (options.body) {
+                    // A redirect shows another page (a new entry); an answer in place replaces this one.
+                    history = model.finalUrl && model.finalUrl !== request ? 'push' : 'replace';
+                    shownDefinition = workbench.routes.get(model.viewId);
+                    if (!shownDefinition || !shownDefinition.routerReady) {
+                        throw new Error('The answer is a page the router does not show: ' + model.viewId);
+                    }
                 }
                 return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal);
             })
@@ -219,7 +341,7 @@ var workbench;
                 if (stale()) {
                     throw abandoned();
                 }
-                return model.error ? undefined : app().loadScripts(definition.scripts(model));
+                return model.error ? undefined : app().loadScripts(shownDefinition.scripts(model));
             })
                 .then(function () {
                 if (stale()) {
@@ -227,10 +349,12 @@ var workbench;
                 }
                 var shown = new URL(model.finalUrl || request);
                 shown.hash = target.hash;
-                commit(definition, model, shown, options, mine);
+                commit(shownDefinition, model, shown, Object.assign({}, options, { history: history }), mine);
+                endUpload(mine);
                 return 'committed';
             })
                 .then(null, function (error) {
+                endUpload(mine);
                 if (model) {
                     model.rowStore.dispose();
                 }
@@ -241,7 +365,8 @@ var workbench;
                 if (error && error.name === 'AbortError') {
                     return 'abandoned';
                 }
-                windowObject.location.assign(target.href);
+                // A form's answer cannot be posted again; the browser loads the page it led to instead.
+                windowObject.location.assign(model && model.finalUrl || target.href);
                 return 'fallback';
             });
         }

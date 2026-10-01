@@ -137,7 +137,18 @@ function loadRouter(options) {
     };
     window.document = document;
     const workbench = {};
+    /** FormData over the fake forms of these tests: their fields, then the submitter's name and value. */
+    class FakeFormData {
+        constructor(form, submitter) {
+            this.entries = (form.fields || []).slice();
+            if (submitter && submitter.getAttribute('name')) {
+                this.entries.push([submitter.getAttribute('name'), submitter.getAttribute('value') || '']);
+            }
+        }
+        [Symbol.iterator]() { return this.entries[Symbol.iterator](); }
+    }
     const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, document, workbench,
+        FormData: FakeFormData,
         setTimeout, clearTimeout, AbortController: settings.noAbortController ? undefined : AbortController });
     for (const filename of ['workbenchRoutes.js', 'workbenchRouter.js']) {
         const absolutePath = path.join(scripts, filename);
@@ -696,4 +707,241 @@ test('a committed navigation updates the view and repository the application ele
 
     assert.equal(harness.mount.getAttribute('data-workbench-view'), 'repositories');
     assert.equal(harness.mount.getAttribute('data-workbench-repository-id'), 'NONE');
+});
+
+// Plan task M10.1: forms through the router.
+
+/** A form as the submit handler sees it; FormData in the router's world reads its fields. */
+function fakeForm(harness, attributes, fields) {
+    const form = fakeElement(Object.assign({ method: 'get' }, attributes));
+    form.tagName = 'FORM';
+    form.fields = fields || [];
+    form.submitted = 0;
+    form.submit = () => { form.submitted++; };
+    harness.outlet.contains = (node) => node === form || node === harness.outlet;
+    return form;
+}
+
+function submitEvent(form, submitter, options) {
+    return Object.assign({
+        type: 'submit', target: form, submitter: submitter || null, defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; }
+    }, options || {});
+}
+
+function loadFormRouter() {
+    const harness = loadRouter();
+    const posts = [];
+    harness.session.fetcher = (url, options) => {
+        posts.push({ url, options });
+        return new Promise((resolve) => { harness.respond = resolve; });
+    };
+    harness.workbench.app.ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
+    harness.workbench.app.loadModelFromResponse = (response, signal) => {
+        harness.log.push('model from ' + response.url);
+        return Promise.resolve(Object.assign(harness.model(response.viewId), { finalUrl: response.url }));
+    };
+    const dialogs = [];
+    harness.workbench.confirmDialog = {
+        open(options) {
+            dialogs.push(options);
+            return Promise.resolve(harness.confirmLeave !== false);
+        }
+    };
+    harness.register('clear');
+    harness.register('namespaces');
+    harness.register('add');
+    return Object.assign(harness, { posts, dialogs });
+}
+
+test('a GET form in the page navigates to its action with the form fields', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const form = fakeForm(harness, { action: 'types' }, [['filter', 'Product'], ['empty', '']]);
+
+    const event = submitEvent(form);
+    harness.document.dispatch('submit', event);
+
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(harness.loadModelCalls[0].url, base + 'types?filter=Product&empty=');
+});
+
+test('forms the router leaves to the browser', () => {
+    const harness = loadFormRouter();
+    harness.register('query', { routerReady: false });
+    harness.start();
+    const download = fakeElement({ name: 'action', value: 'download' });
+    const cases = [
+        [submitEvent(fakeForm(harness, { action: 'types' }), null, { defaultPrevented: true }), 'already handled'],
+        [submitEvent(fakeForm(harness, { action: 'server', id: 'server-form', method: 'post' })), 'the server form'],
+        [submitEvent(fakeForm(harness, { action: 'export' }), download), 'an export download'],
+        [submitEvent(fakeForm(harness, { action: 'https://elsewhere.test/x' })), 'another origin'],
+        [submitEvent(fakeForm(harness, { action: 'query', method: 'post' })), 'a route that is not router-ready'],
+        [submitEvent({ tagName: 'DIV' }), 'not a form']
+    ];
+    for (const [event, name] of cases) {
+        if (event.target.tagName === 'FORM' && name !== 'already handled') {
+            harness.outlet.contains = (node) => node === event.target;
+        }
+        const handled = event.defaultPrevented;
+        harness.document.dispatch('submit', event);
+        assert.equal(event.defaultPrevented, handled, name);
+    }
+    const outside = fakeForm(harness, { action: 'types' });
+    harness.outlet.contains = () => false;
+    const event = submitEvent(outside);
+    harness.document.dispatch('submit', event);
+    assert.equal(event.defaultPrevented, false, 'a form outside the outlet');
+    assert.equal(harness.loadModelCalls.length, 0);
+    assert.equal(harness.posts.length, 0);
+});
+
+test('a POST form is sent with the page-model Accept header and the page it redirects to is shown', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const form = fakeForm(harness, { action: 'clear', method: 'post' }, [['context', 'null']]);
+    const submitter = fakeElement({ name: 'clear', value: 'Clear' });
+
+    const event = submitEvent(form, submitter);
+    harness.document.dispatch('submit', event);
+    assert.equal(event.defaultPrevented, true);
+    const post = harness.posts[0];
+    assert.equal(post.url, base + 'clear');
+    assert.equal(post.options.method, 'POST');
+    assert.equal(post.options.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(post.options.credentials, 'same-origin');
+    assert.equal(String(post.options.body), 'context=null&clear=Clear');
+    assert.ok(post.options.signal, 'the request can be abandoned');
+    harness.respond({ url: base + 'summary', redirected: true, viewId: 'summary' });
+    await settle();
+
+    assert.equal(harness.window.location.href, base + 'summary');
+    assert.equal(harness.window.history.entries[harness.window.history.entries.length - 1][0], 'push');
+    assert.equal(harness.router.current().viewId, 'summary');
+    assert.ok(harness.log.includes('mount summary'));
+});
+
+test('a POST answered in place replaces the current entry', async () => {
+    const harness = loadFormRouter();
+    harness.window.goTo(base + 'namespaces');
+    harness.session.url = base + 'namespaces';
+    harness.start();
+    const form = fakeForm(harness, { action: 'namespaces', method: 'post' }, [['prefix', '1 bad']]);
+
+    harness.router.submit(form);
+    harness.respond({ url: base + 'namespaces', redirected: false, viewId: 'namespaces' });
+    await settle();
+
+    const last = harness.window.history.entries[harness.window.history.entries.length - 1];
+    assert.equal(last[0], 'replace');
+    assert.equal(last[2], base + 'namespaces');
+});
+
+test('a page answered by a route that is not router-ready is loaded by the browser', async () => {
+    const harness = loadFormRouter();
+    harness.register('server', { routerReady: false });
+    harness.start();
+
+    harness.router.submit(fakeForm(harness, { action: 'clear', method: 'post' }));
+    harness.respond({ url: base + 'server', redirected: true, viewId: 'server' });
+    await settle();
+
+    assert.deepEqual(harness.window.assigned, [base + 'server']);
+    assert.deepEqual(harness.disposed, ['server'], 'its model is released');
+});
+
+test('scripts submit through the router, and natively when the router does not run or cannot', () => {
+    const harness = loadFormRouter();
+    const form = fakeForm(harness, { action: 'clear', method: 'post' });
+    harness.router.submit(form);
+    assert.equal(form.submitted, 1, 'no router yet');
+
+    harness.start();
+    const elsewhere = fakeForm(harness, { action: 'https://elsewhere.test/x', method: 'post' });
+    harness.router.submit(elsewhere);
+    assert.equal(elsewhere.submitted, 1);
+    harness.router.submit(form);
+    assert.equal(form.submitted, 1);
+    assert.equal(harness.posts.length, 1);
+});
+
+test('an upload sends multipart form data and asks before the page is left while it runs', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const form = fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' },
+        [['source', 'file']]);
+
+    harness.router.submit(form);
+    const upload = harness.posts[0];
+    assert.equal(upload.options.body.constructor.name, 'FakeFormData', 'multipart forms send their FormData');
+    assert.equal(harness.window.listenerCount('beforeunload'), 1, 'a reload asks too');
+    const unload = { preventDefault() { this.prevented = true; } };
+    harness.window.dispatch('beforeunload', unload);
+    assert.equal(unload.prevented, true);
+
+    harness.confirmLeave = false;
+    assert.equal(await harness.router.navigate(base + 'types', { history: 'push' }), 'abandoned');
+    assert.equal(harness.dialogs[0].title, 'An upload is in progress. Leave and cancel it?');
+    assert.equal(upload.options.signal.aborted, false, 'declining keeps the upload');
+
+    harness.confirmLeave = true;
+    const leaving = harness.router.navigate(base + 'types', { history: 'push' });
+    await settle();
+    assert.equal(upload.options.signal.aborted, true, 'leaving cancels the upload');
+    assert.equal(harness.window.listenerCount('beforeunload'), 0);
+    await harness.answer('types', harness.model('types'));
+    assert.equal(await leaving, 'committed');
+});
+
+test('a finished upload stops guarding the page', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+
+    harness.router.submit(fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }));
+    harness.respond({ url: base + 'summary', redirected: true, viewId: 'summary' });
+    await settle();
+
+    assert.equal(harness.window.listenerCount('beforeunload'), 0);
+    harness.router.navigate(base + 'types', { history: 'push' });
+    assert.equal(harness.dialogs.length, 0, 'no question once the upload has finished');
+});
+
+test('Back during an upload asks, and declining keeps the page and its address', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    harness.router.submit(fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }));
+    harness.confirmLeave = false;
+
+    harness.window.goTo(base + 'types');
+    harness.window.dispatch('popstate', { state: null });
+    await settle();
+
+    assert.equal(harness.dialogs.length, 1);
+    assert.equal(harness.window.location.href, base + 'summary', 'the address returns to the page that stays');
+});
+
+test('Back during an upload, once the user agrees, cancels it and shows the earlier page', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    harness.router.submit(fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }));
+    const upload = harness.posts[0];
+
+    harness.window.goTo(base + 'types');
+    harness.window.dispatch('popstate', { state: null });
+    await settle();
+    assert.equal(upload.options.signal.aborted, true);
+    await harness.answer('types', harness.model('types'));
+
+    assert.equal(harness.router.current().viewId, 'types');
+});
+
+test('a form without method or action is a GET of the current page', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const form = fakeForm(harness, {}, [['q', 'x']]);
+    form.removeAttribute('method');
+
+    harness.document.dispatch('submit', submitEvent(form));
+
+    assert.equal(harness.loadModelCalls[0].url, base + 'summary?q=x');
 });

@@ -925,3 +925,30 @@ test('a running query is cancelled with a keepalive request when the page is lef
     assert.equal(navigating.requests.filter(request => request.options.keepalive).length, 0);
     assert.equal(navigating.workbench.queryPage.cancelExecutionOnLeave(), false, 'nothing is left to cancel');
 });
+
+// Plan task M10.1: a rejected form POST answers with the page to show (status 400, ending with end).
+test('a page model answered with an error status is read when the caller accepts it', async () => {
+    const queryStream = loadQueryStreamApi();
+    const records = [{ type: 'head', version: 1 }, { type: 'view', id: 'namespaces' },
+        { type: 'metadata', values: { 'error-message': 'Invalid prefix: 1 bad' } }, { type: 'end' }];
+    const response = () => {
+        const bytes = new TextEncoder().encode(records.map((record) => JSON.stringify(record) + '\n').join(''));
+        let delivered = false;
+        return { ok: false, status: 400, body: { getReader: () => ({
+            read: async () => {
+                if (delivered) { return { done: true }; }
+                delivered = true;
+                return { done: false, value: bytes };
+            },
+            cancel: async () => {}
+        }) } };
+    };
+    const seen = [];
+
+    const outcome = await queryStream.consumeNdjsonResponse(response(),
+        { allowErrorStatus: true, onRecord: (record) => seen.push(record.type) });
+    assert.equal(outcome.type, 'end');
+    assert.deepEqual(seen, ['head', 'view', 'metadata', 'end']);
+    await assert.rejects(queryStream.consumeNdjsonResponse(response(), { onRecord() {} }),
+        /Workbench request failed with HTTP status 400/, 'query streams still treat it as a failure');
+});

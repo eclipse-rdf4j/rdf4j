@@ -384,3 +384,20 @@ test('confirmation dialog waits for the typed text and resolves false on Cancel 
     confirmButton.click();
     assert.equal(await confirmed, true);
 });
+
+// Plan task M10.1: scripts submit forms through the router when it is there.
+test('submitForm hands a form to the router when there is one, and submits it natively otherwise', () => {
+    const harness = createFormBrowserHarness();
+    harness.loadScripts([]);
+    const form = harness.registerElement('form', { attributes: { action: 'clear', method: 'post' } });
+    harness.document.body.appendChild(form);
+
+    harness.context.workbench.submitForm(form);
+    assert.equal(form.submitCount, 1, 'no router: a native submit');
+
+    const routed = [];
+    harness.context.workbench.router = { submit: (submitted) => routed.push(submitted) };
+    harness.context.workbench.submitForm(form);
+    assert.deepEqual(routed, [form]);
+    assert.equal(form.submitCount, 1);
+});

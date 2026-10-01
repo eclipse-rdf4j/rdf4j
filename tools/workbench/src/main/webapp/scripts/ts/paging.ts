@@ -160,9 +160,22 @@ module workbench {
                 return;
             }
             if (name == 'Accept') {
+                // A download: the browser saves the answer as a file.
                 url = addElementValueToUrlIfPresent(url, 'download_limit');
+                document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+                return;
             }
-            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+            go(appendParamToUrl(url, name, encodeURIComponent(value)));
+        }
+
+        /** Show url: in the page when the router runs (M10.1), by a page load otherwise. */
+        function go(url: string) {
+            var router: any = (<any>workbench).router;
+            if (router && typeof router.isRunning === 'function' && router.isRunning()) {
+                router.navigate(url, { history: 'push' });
+            } else {
+                document.location.href = url;
+            }
         }
         
         class StringMap {
@@ -227,7 +240,7 @@ module workbench {
                 url += AMP + 'query=' + encodeURIComponent(workbench.getCookie('query'));
                 url += AMP + 'ref=' + encodeURIComponent(workbench.getCookie('ref'));
             }
-            document.location.href = simplifyParameters(url);
+            go(simplifyParameters(url));
         }
 
         /**

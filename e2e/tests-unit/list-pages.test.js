@@ -301,3 +301,31 @@ test('the datatype toggle starts hidden when the cookie says so and binds only i
     inside.trigger('change');
     assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
 });
+
+// Plan task M10.1: paging that leaves the Query page goes through the router when it runs.
+test('paging links navigate in the page when the router runs, and downloads still load natively', () => {
+    const navigations = [];
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=x&offset=0',
+        workbench: { router: { isRunning: () => true, navigate: (url, options) => navigations.push([url, options.history]) } }
+    });
+    const accept = harness.registerElement('select', { id: 'Accept', value: 'text/turtle' });
+    const limit = harness.registerElement('select', { id: 'limit_explore', value: '50' });
+    harness.document.body.appendChild(accept);
+    harness.document.body.appendChild(limit);
+    harness.loadPagingScripts([]);
+    const paging = harness.context.workbench.paging;
+    const start = harness.document.location.href;
+
+    paging.addPagingParam('offset', 10);
+    paging.addGraphParam('limit_explore');
+    assert.equal(navigations.length, 2);
+    assert.match(navigations[0][0], /offset=10/);
+    assert.equal(navigations[0][1], 'push');
+    assert.match(navigations[1][0], /limit_explore=50/);
+    assert.equal(harness.document.location.href, start, 'the page itself did not load anything');
+
+    paging.addGraphParam('Accept');
+    assert.equal(navigations.length, 2, 'a download is not a navigation');
+    assert.match(harness.document.location.href, /Accept=text%2Fturtle/);
+});

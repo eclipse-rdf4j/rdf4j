@@ -714,7 +714,7 @@ var workbench;
                     if (!state.terminal) {
                         throw protocolError('the response ended before an end or error record.');
                     }
-                    if (response.ok === false && state.terminal.type !== 'error') {
+                    if (response.ok === false && state.terminal.type !== 'error' && !options.allowErrorStatus) {
                         throw new Error('Workbench request failed with HTTP status ' + response.status + '.');
                     }
                     return state.terminal;
