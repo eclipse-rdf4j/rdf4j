@@ -21,6 +21,8 @@
 	--workbench-teal-dark: var(--workbench-primary-hover);
 	--workbench-danger: #b42318;
 	--workbench-danger-surface: #fff1f0;
+	--workbench-danger-hover: #912018;
+	--workbench-on-danger: #ffffff;
 	--workbench-success: #28734b;
 	--workbench-logo-plate: #ffffff;
 	--workbench-heatmap-low: #def3fb;
@@ -626,11 +628,25 @@ body.query-result-embedded-body .workbench-action--primary {
 	color: var(--workbench-primary-text);
 }
 
-body.workbench-body .workbench-action--danger,
-body.query-result-embedded-body .workbench-action--danger {
+body.workbench-body .workbench-action--danger-outline,
+body.query-result-embedded-body .workbench-action--danger-outline {
 	border-color: var(--workbench-danger);
 	background: var(--workbench-surface);
 	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-action--danger,
+body.query-result-embedded-body .workbench-action--danger {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger);
+	color: var(--workbench-on-danger);
+}
+
+body.workbench-body .workbench-action--ghost,
+body.query-result-embedded-body .workbench-action--ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--workbench-ink);
 }
 
 body.workbench-body .workbench-action--secondary,
@@ -660,11 +676,143 @@ body.query-result-embedded-body .workbench-action--secondary:hover {
 	color: var(--workbench-ink);
 }
 
+body.workbench-body .workbench-action--danger-outline:hover,
+body.query-result-embedded-body .workbench-action--danger-outline:hover {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+	color: var(--workbench-danger);
+}
+
 body.workbench-body .workbench-action--danger:hover,
 body.query-result-embedded-body .workbench-action--danger:hover {
-	border-color: var(--workbench-danger);
+	border-color: var(--workbench-danger-hover);
+	background: var(--workbench-danger-hover);
+	color: var(--workbench-on-danger);
+}
+
+body.workbench-body .workbench-action--ghost:hover,
+body.query-result-embedded-body .workbench-action--ghost:hover {
+	border-color: transparent;
 	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+/* Button component (mockup 11). Put .workbench-action and one variant on a <button>, <a> or
+ * <input type="button|submit">: --primary (the page's main action), --secondary (other actions),
+ * --ghost (icon-only toolbar buttons and toggles inside toolbars), --danger (only the final confirm
+ * button of a confirmation dialog) or --danger-outline (page-level Delete, Remove and Clear).
+ * Icon-only buttons add --icon and must carry aria-label and title. Wrapper spans around a label hit
+ * area (span.workbench-action) use the same variant classes. */
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--workbench-control-gap);
+	height: var(--workbench-control-height);
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 0 var(--workbench-control-inset);
+	border-width: 1px;
+	border-style: solid;
+	border-radius: var(--workbench-control-radius);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--primary {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-primary);
+	color: var(--workbench-primary-text);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--primary:hover:not(:disabled) {
+	border-color: var(--workbench-primary-hover);
+	background: var(--workbench-primary-hover);
+	color: var(--workbench-primary-text);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary:hover:not(:disabled),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary[aria-expanded="true"],
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary[aria-pressed="true"] {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost:hover:not(:disabled),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost[aria-expanded="true"] {
+	border-color: transparent;
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger);
+	color: var(--workbench-on-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger:hover:not(:disabled) {
+	border-color: var(--workbench-danger-hover);
+	background: var(--workbench-danger-hover);
+	color: var(--workbench-on-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger-outline {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-surface);
 	color: var(--workbench-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger-outline:hover:not(:disabled) {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+	color: var(--workbench-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action[hidden] {
+	display: none;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--icon {
+	width: var(--workbench-control-height);
+	padding: 0;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"], input[type="submit"]).workbench-action:disabled {
+	opacity: .55;
+	cursor: not-allowed;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+	:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action {
+		height: var(--workbench-touch-height);
+		min-height: var(--workbench-touch-height);
+	}
+
+	:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--icon {
+		width: var(--workbench-touch-height);
+	}
 }
 
 body.workbench-body .workbench-action:focus-within,
@@ -2004,8 +2152,10 @@ body.query-result-embedded-body .workbench-action .workbench-action-label button
 
 body.workbench-body .workbench-action--primary .workbench-action-label input,
 body.workbench-body .workbench-action--danger .workbench-action-label input,
+body.workbench-body .workbench-action--danger-outline .workbench-action-label input,
 body.query-result-embedded-body .workbench-action--primary .workbench-action-label input,
-body.query-result-embedded-body .workbench-action--danger .workbench-action-label input {
+body.query-result-embedded-body .workbench-action--danger .workbench-action-label input,
+body.query-result-embedded-body .workbench-action--danger-outline .workbench-action-label input {
 	color: inherit;
 }
 
@@ -2954,6 +3104,8 @@ html[data-theme="dark"] {
 	--workbench-teal-dark: var(--workbench-primary-hover);
 	--workbench-danger: #ff7c73;
 	--workbench-danger-surface: #391b1b;
+	--workbench-danger-hover: #ff9a93;
+	--workbench-on-danger: #1a0b0a;
 	--workbench-success: #72d5a2;
 	--workbench-focus: #73c4e2;
 	--workbench-logo-plate: #ffffff;

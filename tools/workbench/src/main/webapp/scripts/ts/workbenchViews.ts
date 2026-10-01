@@ -858,10 +858,10 @@ module workbench {
                 return '';
             }
             return h`<div class="workbench-form-actions workbench-window-controls" role="group" aria-label=${label + ' pages'}>
-                <button type="button" data-workbench-window-picker=${name} data-workbench-window-action="previous"
+                <button type="button" class="workbench-action workbench-action--secondary" data-workbench-window-picker=${name} data-workbench-window-action="previous"
                     ?disabled=${start === 0}>Previous</button>
                 <span role="status">Showing ${start + 1}–${end} of ${total} ${label}</span>
-                <button type="button" data-workbench-window-picker=${name} data-workbench-window-action="next"
+                <button type="button" class="workbench-action workbench-action--secondary" data-workbench-window-picker=${name} data-workbench-window-action="next"
                     ?disabled=${end >= total}>Next</button>
             </div>`;
         }
@@ -892,7 +892,7 @@ module workbench {
                     </select>
                     ${pickerWindow(runtime, model, 'repositories', 'repositories')}
                 </div>
-                <div id="delete-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--danger">
+                <div id="delete-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline">
                     <label class="workbench-action-hit-area">${icon(runtime, 'delete')}
                         <span class="workbench-action-label"><input type="submit" value="Delete" /></span>
                     </label></span>
@@ -937,7 +937,7 @@ module workbench {
                     <div class="workbench-form-actions">
                         <span class="workbench-action workbench-action--primary"><label class="workbench-action-hit-area">${icon(runtime, 'update')}
                             <span class="workbench-action-label"><button type="submit" value="Update">Update</button></span></label></span>
-                        <span class="workbench-action workbench-action--danger"><label class="workbench-action-hit-area">${icon(runtime, 'delete')}
+                        <span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">${icon(runtime, 'delete')}
                             <span class="workbench-action-label"><button type="submit" value="Delete" @click=${() => {
                                 const namespace = document.getElementById('namespace') as HTMLInputElement;
                                 if (namespace) { namespace.value = ''; }
@@ -1164,9 +1164,9 @@ module workbench {
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
                     <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>
-                    <button type="button" data-workbench-explore-group=${definition.key}
+                    <button type="button" class="workbench-action workbench-action--secondary" data-workbench-explore-group=${definition.key}
                         data-workbench-explore-action="previous" ?disabled=${!page.hasPrevious}>Previous</button>
-                    <button type="button" data-workbench-explore-group=${definition.key}
+                    <button type="button" class="workbench-action workbench-action--secondary" data-workbench-explore-group=${definition.key}
                         data-workbench-explore-action="next" ?disabled=${!page.hasNext}>Next</button>
                 </div>` : ''}`;
         }
@@ -1227,9 +1227,9 @@ module workbench {
                     ${total ? h`${groupedResults}${table(runtime, model, context, { linkTerms: true })}`
                         : h`<p class="workbench-empty" role="status">No results to display.</p>`}
                     <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
-                        <button id="previousX" type="button" value=${'Previous ' + total}
+                        <button id="previousX" class="workbench-action workbench-action--secondary" type="button" value=${'Previous ' + total}
                             @click=${() => invoke('workbench.paging.previousOffset', 'explore')}>Previous ${total}</button>
-                        <button id="nextX" type="button" value=${'Next ' + total}
+                        <button id="nextX" class="workbench-action workbench-action--secondary" type="button" value=${'Next ' + total}
                             @click=${() => invoke('workbench.paging.nextOffset', 'explore')}>Next ${total}</button>
                     </div>
                 </section>`;
@@ -1338,16 +1338,16 @@ module workbench {
                                     ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span>
                                 </label></span>
                             </form>
-                            <button type="button" class="saved-query-toggle" id=${urn + '-toggle'} data-query-urn=${urn}
+                            <button type="button" class="saved-query-toggle workbench-action workbench-action--secondary" id=${urn + '-toggle'} data-query-urn=${urn}
                                 value="Show">Show</button>
                             <form method="post" action="query"><input type="hidden" name="action" value="edit" />
                                 <input type="hidden" name="queryLn" value=${text(row.queryLn)} /><input type="hidden" name="query" value=${queryName} />
                                 <input type="hidden" name="ref" value="id" /><input type="hidden" name="owner" value=${owner} />
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
-                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button type="submit">Edit</button>
+                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit">Edit</button>
                             </form>
                             <form method="post" id=${urn} action=${'saved-queries?delete=' + encodeURIComponent(urn)}>
-                                <button type="button" class="saved-query-delete" data-query-owner=${owner} data-query-name=${queryName}
+                                <button type="button" class="saved-query-delete workbench-action workbench-action--danger-outline" data-query-owner=${owner} data-query-name=${queryName}
                                     data-query-urn=${urn}>Delete…</button>
                             </form>
                         </div>
@@ -1412,7 +1412,7 @@ module workbench {
             </form>
             <section id="export-results" class="workbench-island workbench-responsive-records">
                 <p class="workbench-page-meta">Statement preview</p>
-                <div class="workbench-form-actions"><button type="submit" form="export-form" name="action" value="preview">Retrieve statements</button></div>
+                <div class="workbench-form-actions"><button class="workbench-action workbench-action--secondary" type="submit" form="export-form" name="action" value="preview">Retrieve statements</button></div>
                 ${rowCount(model) ? table(runtime, model, context, { linkTerms: true })
                     : h`<p class="workbench-empty" role="status">${requested ? 'No results to display.' : 'Choose Retrieve statements to preview repository data.'}</p>`}
             </section>`;
@@ -1550,7 +1550,7 @@ module workbench {
                                 ? h`<textarea id="obj" name="obj" cols="70">${text(pageValue(model, 'obj'))}</textarea>`
                                 : h`<input id=${entry[0]} name=${entry[0]} type="text" size="48" value=${text(pageValue(model, entry[0]))} />`}</td><td></td>
                         </tr>`)}
-                        <tr><td></td><td><span class="workbench-action workbench-action--danger"><label class="workbench-action-hit-area">
+                        <tr><td></td><td><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
                             ${icon(runtime, 'remove')}<span class="workbench-action-label"><input type="submit" value="Remove" /></span>
                         </label></span></td><td></td></tr>
                     </tbody></table>
@@ -1565,7 +1565,7 @@ module workbench {
                 <form id="clear-form" class="workbench-island" method="post" action="clear">
                     <table class="dataentry"><tbody>
                         <tr><th><label for="context">Context</label></th><td><input id="context" name="context" size="48" type="text" value=${text(pageValue(model, 'context'))} /></td><td></td></tr>
-                        <tr><td></td><td><span class="workbench-action workbench-action--danger"><label class="workbench-action-hit-area">
+                        <tr><td></td><td><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
                             ${icon(runtime, 'clear')}<span class="workbench-action-label"><input type="submit" value="Clear context" /></span>
                         </label></span></td></tr>
                     </tbody></table>
@@ -1753,7 +1753,7 @@ module workbench {
                     : 'query-compare-pane query-compare-pane--primary'}>
                 <div class="query-form__row query-form__row--stacked">
                     <div class="query-editor-header"><label class="query-form__label" for=${queryId}>${compare ? 'Compare query' : 'Query'}</label>
-                        ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close" type="button"
+                        ${compare ? h`<button id="query-compare-close" class="query-compare-pane__close workbench-action workbench-action--ghost workbench-action--icon" type="button"
                             aria-label="Close comparison" title="Close comparison"
                             @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}</div>
                     <div class="query-form__field">${compare
@@ -1769,9 +1769,9 @@ module workbench {
                     <span class="query-form__label">Query explanation</span><div class="query-form__field">
                         <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
                         <div class="query-explanation-toolbar">
-                            ${compare ? h`<button id="copy-explanation-compare" class="query-explanation-copy"
+                            ${compare ? h`<button id="copy-explanation-compare" class="query-explanation-copy workbench-action workbench-action--secondary"
                                 type="button" ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy explanation</button>`
-                                : h`<button id="copy-explanation" class="query-explanation-copy"
+                                : h`<button id="copy-explanation" class="query-explanation-copy workbench-action workbench-action--secondary"
                                     type="button" ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy explanation</button>`}
                             ${compare ? '' : h`<select id="explain-format" name="explain-format"
                                 ?hidden=${allExplainFormatsDisabled}>
@@ -1782,7 +1782,7 @@ module workbench {
                             ${workbench.detailDisclosure.render(h, {
                                 id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
                                 panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
-                                ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle',
+                                ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle workbench-action workbench-action--secondary',
                                 panelClass: 'query-explanation-settings__panel',
                                 panelRole: 'group'
                             }, h`
@@ -1813,8 +1813,8 @@ module workbench {
                                                 <strong>Visible properties</strong><span id="explanation-property-count" aria-live="polite"></span>
                                             </div>
                                             <div class="query-explanation-property-config__actions">
-                                                <button id="explanation-properties-all" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
-                                                <button id="explanation-properties-none" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
+                                                <button id="explanation-properties-all" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
+                                                <button id="explanation-properties-none" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
                                             </div>
                                         </div>
                                         <div id="explanation-property-options" class="query-explanation-property-config__options"
@@ -1844,19 +1844,19 @@ module workbench {
                             style=${!explanation ? 'display:none;' : ''}>
                             <span id="primary-explain-settings" class="query-form__field--controls-group">
                                 <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
-                                    <button id="rerun-explanation" type="button"
+                                    <button id="rerun-explanation" class="workbench-action workbench-action--secondary" type="button"
                                         ?hidden=${!queryFeatureEnabled(context, 'query-rerun')}
                                         data-query-rerun-enabled=${queryFeatureEnabled(context, 'query-rerun') ? 'true' : 'false'}
                                         @click=${() => invoke('workbench.query.runExplain', null, 'rerun-explanation')}>Explain again</button>
                                     <span id="rerun-explanation-spinner" class="query-explain-spinner" aria-hidden="true"></span>
-                                    <button id="rerun-explanation-cancel" class="query-explain-cancel" type="button" disabled
+                                    <button id="rerun-explanation-cancel" class="query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
                                         ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
                                         @click=${() => invoke('workbench.query.cancelExplain')}>Cancel</button>
                                 </span>
                                 <span id="primary-explain-utility-controls" class="query-form__field--controls-group">
-                                    <button id="download-explanation" type="button" ?disabled=${!explanation}
+                                    <button id="download-explanation" class="workbench-action workbench-action--secondary" type="button" ?disabled=${!explanation}
                                         ?hidden=${!queryFeatureEnabled(context, 'explain-download')}>Download explanation</button>
-                                    <button id="compare-toggle" type="button" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}
+                                    <button id="compare-toggle" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}
                                         @click=${() => invoke('workbench.query.toggleCompareMode')}>Compare</button>
                                 </span>
                             </span>
@@ -1882,7 +1882,7 @@ module workbench {
             const saveDisclosure = workbench.detailDisclosure.renderSeparated(h, {
                 id: 'save-query-disclosure', toggleId: 'save-query-toggle', panelId: 'save-query-panel',
                 label: 'Save query', ownerClass: 'query-disclosure query-save-disclosure',
-                toggleClass: 'query-disclosure__toggle',
+                toggleClass: 'query-disclosure__toggle workbench-action workbench-action--secondary',
                 panelClass: 'query-disclosure__body query-disclosure__panel query-save-disclosure__body',
                 contentClass: 'workbench-disclosure__fields',
                 toggleHidden: !queryFeatureEnabled(context, 'query-save')
@@ -1902,7 +1902,7 @@ module workbench {
                 id: 'query-options-disclosure', toggleId: 'query-options-toggle',
                 panelId: 'query-options-panel', label: 'Options',
                 ownerClass: 'query-disclosure query-options-disclosure',
-                toggleClass: 'query-disclosure__toggle',
+                toggleClass: 'query-disclosure__toggle workbench-action workbench-action--secondary',
                 panelClass: 'query-disclosure__body query-disclosure__panel',
                 contentClass: 'workbench-disclosure__fields',
                 toggleHidden: !queryFeatureEnabled(context, 'query-options')
@@ -1953,19 +1953,19 @@ module workbench {
                                         ${icon(runtime, 'menu', 'query-sidebar-toggle__svg')}
                                     </span>
                                 </button></span></span>
-                            <button id="query-compare-copy" type="button"
+                            <button id="query-compare-copy" class="workbench-action workbench-action--secondary" type="button"
                                 ?hidden=${!queryFeatureEnabled(context, 'explain-copy')}>Copy</button>
-                            <button id="query-compare-swap" type="button"
+                            <button id="query-compare-swap" class="workbench-action workbench-action--secondary" type="button"
                                 ?hidden=${!queryFeatureEnabled(context, 'query-swap')}>Swap</button>
                             <div id="query-compare-controls" class="query-compare-toolbar__actions">
-                                <button id="explain-compare-trigger" class="query-compare-action" type="button"
+                                <button id="explain-compare-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button"
                                     data-query-refresh-enabled=${queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false'}
                                     ?hidden=${!queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context)}
                                     @click=${() => invoke('workbench.query.runCompareExplain')}>Refresh explanations</button>
-                                <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel" type="button" disabled
+                                <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
                                     ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}>
                                     <span id="explain-compare-cancel-icon" class="query-compare-action__svg--cancel" aria-hidden="true">×</span>Cancel</button>
-                                <button id="query-diff-trigger" class="query-compare-action" type="button" disabled
+                                <button id="query-diff-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button" disabled
                                     ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
                                     @click=${() => invoke('workbench.query.openDiffModal')}>
                                     <span id="query-diff-trigger-icon" class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
@@ -1978,16 +1978,16 @@ module workbench {
                             ${queryPane(runtime, { compare: true }, context)}
                         </div>
                         <div class="query-actions-toolbar workbench-action-toolbar"><div class="query-form__field query-actions-toolbar__primary workbench-action-toolbar__primary">
-                            <button id="exec" class="query-action query-action--primary" type="submit"
+                            <button id="exec" class="query-action workbench-action workbench-action--primary" type="submit"
                                 ?hidden=${!queryFeatureEnabled(context, 'query-execution')}>${icon(runtime, 'execute')}<span>Execute</span></button>
-                            <input id="query-cancel" class="query-cancel" type="button" value="Cancel" aria-hidden="true" disabled
+                            <input id="query-cancel" class="query-cancel workbench-action workbench-action--secondary" type="button" value="Cancel" aria-hidden="true" disabled
                                 ?hidden=${!queryFeatureEnabled(context, 'query-cancel')}
                                 @click=${() => invoke('workbench.query.cancelQuery')} />
-                            <button id="explain-trigger" class="query-action" type="button"
+                            <button id="explain-trigger" class="query-action workbench-action workbench-action--secondary" type="button"
                                 ?hidden=${!queryExplainEnabled(context)}
                                 @click=${() => invoke('workbench.query.runExplain', null, 'explain-trigger')}>${icon(runtime, 'explain')}<span>Explain</span></button>
                             <span id="explain-trigger-spinner" class="query-explain-spinner" aria-hidden="true"></span>
-                            <span id="explain-trigger-cancel-action" class="workbench-action workbench-action--danger query-explain-cancel"
+                            <span id="explain-trigger-cancel-action" class="workbench-action workbench-action--danger-outline query-explain-cancel"
                                 ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
                                 data-workbench-action="cancel"><span id="explain-trigger-cancel-icon" aria-hidden="true"></span>
                                 <input id="explain-trigger-cancel" type="button" value="Cancel" aria-hidden="true" disabled
@@ -2007,7 +2007,7 @@ module workbench {
                     <div class="query-results__header workbench-action-toolbar">
                         <div class="workbench-action-toolbar__primary"><h2 id="query-results-heading">Query result</h2></div>
                         <div class="workbench-action-toolbar__actions">
-                        <button id="query-results-fullscreen" class="query-results__fullscreen" type="button"
+                        <button id="query-results-fullscreen" class="query-results__fullscreen workbench-action workbench-action--secondary" type="button"
                             aria-label="Full screen" title="Full screen" hidden aria-pressed="false"
                             data-result-fullscreen-enabled=${queryFeatureEnabled(context, 'result-fullscreen') ? 'true' : 'false'}
                             @click=${() => invoke('workbench.query.toggleResultsFullscreen')}>
@@ -2025,7 +2025,7 @@ module workbench {
                 <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
                     <div class="query-diff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="query-diff-modal-title">
                         <div class="query-diff-modal__header"><div id="query-diff-modal-title" class="query-diff-modal__title">Query diff</div>
-                            <button id="query-diff-close" type="button" value="Close"
+                            <button id="query-diff-close" class="workbench-action workbench-action--secondary" type="button" value="Close"
                                 @click=${() => invoke('workbench.query.closeDiffModal')}>Close</button></div>
                         <div class="query-diff-modal__body">
                             <section class="query-diff-section query-diff-section--query"><div class="query-diff-section__title">Query</div><div id="query-diff-query" class="query-diff-view"></div></section>

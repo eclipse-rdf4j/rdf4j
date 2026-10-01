@@ -195,7 +195,7 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await setTheme(page, 'light');
 	await openPage(page, `repositories/${REPOSITORY_ID}/namespaces`);
-	const dangerStyle = await page.locator('#namespaces-form .workbench-action--danger').evaluate(action => {
+	const dangerStyle = await page.locator('#namespaces-form .workbench-action--danger-outline').evaluate(action => {
 		const style = getComputedStyle(action);
 		const input = action.querySelector('input[type="submit"]');
 		const inputStyle = getComputedStyle(input);

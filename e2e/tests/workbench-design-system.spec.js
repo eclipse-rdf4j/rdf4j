@@ -45,3 +45,17 @@ test('result headings show variable names exactly as written', async ({ page }) 
 	expect(rendered.map((cell) => cell.transform)).toEqual(['none', 'none']);
 	expect(rendered.map((cell) => cell.text)).toEqual(['num1', 'x_y']);
 });
+
+test('query page actions share one button height and one secondary border', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID);
+	const metrics = await page.evaluate(() => ['#exec', '#explain-trigger', '#save-query-toggle', '#query-options-toggle']
+		.map((selector) => {
+			const element = document.querySelector(selector);
+			const style = getComputedStyle(element);
+			return { selector, height: element.getBoundingClientRect().height, border: style.borderTopColor };
+		}));
+	const heights = metrics.map((metric) => Math.round(metric.height));
+	expect(new Set(heights).size, JSON.stringify(metrics)).toBe(1);
+	const secondaryBorders = metrics.slice(1).map((metric) => metric.border);
+	expect(new Set(secondaryBorders).size, JSON.stringify(metrics)).toBe(1);
+});

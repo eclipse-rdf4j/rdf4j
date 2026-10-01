@@ -349,29 +349,6 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     gap: var(--workbench-control-gap, 8px);
 }
 
-.query-explanation-property-config__actions button {
-    box-sizing: border-box;
-    margin: 0;
-    min-height: var(--workbench-control-height);
-    padding: 0 var(--workbench-control-inset, 12px);
-    border: 1px solid var(--workbench-rule);
-    border-radius: var(--workbench-control-radius);
-    background: var(--workbench-surface);
-    color: var(--workbench-nav);
-    cursor: pointer;
-    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
-}
-
-.query-explanation-property-config__actions button:hover {
-    border-color: var(--workbench-teal);
-    background: var(--workbench-inset);
-}
-
-.query-explanation-property-config__actions button:focus-visible {
-    outline: 2px solid var(--workbench-focus);
-    outline-offset: 2px;
-}
-
 .query-explanation-property-config__options {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -425,9 +402,6 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
         font-size: 13px;
     }
 
-    .query-explanation-property-config__actions button {
-        min-height: var(--workbench-touch-height);
-    }
 }
 
 .query-explanation--highlighted .query-explanation-line {

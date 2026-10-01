@@ -1991,7 +1991,7 @@ namespace workbench {
                     }
                 });
                 this.fullscreenButton.setAttribute('id', this.elementId('query-result-fullscreen'));
-                this.fullscreenButton.className = 'query-results__fullscreen';
+                this.fullscreenButton.className = 'query-results__fullscreen workbench-action workbench-action--secondary';
                 this.fullscreenButton.setAttribute('aria-label', 'Full screen');
                 this.fullscreenButton.setAttribute('aria-pressed', 'false');
                 this.fullscreenButton.setAttribute('data-result-fullscreen-enabled',
@@ -2020,7 +2020,7 @@ namespace workbench {
                     id: this.elementId('query-result-download-disclosure'),
                     toggleId: this.elementId('query-result-download-toggle'), panelId: downloadPanelId,
                     label: 'Download', ownerClass: 'query-result-disclosure',
-                    toggleClass: 'query-disclosure__toggle query-result-download-toggle',
+                    toggleClass: 'query-disclosure__toggle query-result-download-toggle workbench-action workbench-action--secondary',
                     panelClass: 'query-disclosure__panel query-result-download-panel'
                 });
                 this.downloadToggle = downloadDisclosure.toggle;
@@ -2030,7 +2030,7 @@ namespace workbench {
                     id: this.elementId('query-result-options-disclosure'),
                     toggleId: this.elementId('query-result-options-toggle'), panelId: optionsPanelId,
                     label: 'Options', accessibleName: 'Result options', ownerClass: 'query-result-disclosure',
-                    toggleClass: 'query-disclosure__toggle query-result-options-toggle',
+                    toggleClass: 'query-disclosure__toggle query-result-options-toggle workbench-action workbench-action--secondary',
                     panelClass: 'query-disclosure__panel query-result-options-panel'
                 });
                 this.optionsToggle = optionsDisclosure.toggle;
@@ -2058,7 +2058,7 @@ namespace workbench {
                 var downloadAction = createElement(this.document, 'div',
                     'workbench-disclosure__actions query-result-download-action');
                 var downloadButton = this.createButton('Download', () => this.submitNativeDownload());
-                downloadButton.className = 'query-result-download-button';
+                downloadButton.className = 'query-result-download-button workbench-action workbench-action--primary';
                 decorateWithWorkbenchIcon(downloadButton, 'download', 'Download');
                 downloadAction.appendChild(downloadButton);
                 downloadFields.appendChild(downloadAction);
@@ -2110,6 +2110,7 @@ namespace workbench {
                         this.options.onCancel();
                     }
                 });
+                this.cancelButton.className = 'workbench-action workbench-action--secondary';
                 this.cancelButton.hidden = true;
                 controls.appendChild(this.cancelButton);
                 this.root.appendChild(controls);
@@ -2150,7 +2151,7 @@ namespace workbench {
                         this.options.onLoadMore();
                     }
                 });
-                this.loadMoreButton.className = 'query-result-load-more';
+                this.loadMoreButton.className = 'query-result-load-more workbench-action workbench-action--secondary';
                 this.loadMoreButton.hidden = true;
                 continuation.appendChild(this.loadMoreButton);
                 this.root.appendChild(continuation);

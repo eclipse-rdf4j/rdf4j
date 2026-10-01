@@ -25,8 +25,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [ ] M0.4 Record the full Chromium browser-suite baseline (running in the background against port 18090).
 - [x] (2026-10-01 05:15Z) M1.1 Result headings show variable names exactly.
 - [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
-- [ ] M1.3 (in progress) Four button variants.
-- [ ] M1.4 One heading scale and a key/value component.
+- [x] (2026-10-01 06:45Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
+- [ ] M1.4 (in progress) One heading scale and a key/value component.
 - [ ] M1.5 One content width and flatter containers.
 - [ ] M1.6 One form layout.
 - [ ] M1.7 Callouts.
@@ -138,6 +138,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: probe output summarized in `Artifacts and Notes` ("M1.2 reviewed differences").
 - Observation (M1.2): with `workbench-refresh.css` as the first stylesheet, Chromium's preload scanner can request it before the parser has executed the blocking `workbench-theme.js`, so the first-paint spec's "before first stylesheet" probe read `data-theme = null` in 3 of 4 runs. The probe now waits until the parser has inserted the held `<link>` (which proves the earlier theme script ran) while the stylesheet response is still held.
   Evidence: the unchanged spec passed 4/4 against the old build and failed 3/4 against the new one; after the probe change it passed 15/15.
+- Observation (M1.3): `e2e/tests/query-result-toolbar-geometry.spec.js` was already failing in the M0.4 baseline run (`justify-self` of the Download toggle is `auto`, expected `start`, in its synthetic markup); it is unrelated to the button component.
+  Evidence: baseline log entry 25 at `query-result-toolbar-geometry.spec.js:60`.
 
 ## Decision Log
 
@@ -202,6 +204,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-01 / implementer.
 - Decision: browser specs written for this plan run against a development preview on port 18091 started from a copy of the server-boot jar; long full-suite runs use port 18090.
   Rationale: rebuilding replaces the jar in place; copying it keeps a running preview healthy, and two ports let a long baseline run continue while tasks are implemented.
+  Date/Author: 2026-10-01 / implementer.
+
+- Decision (M1.3): the button component is applied by putting `.workbench-action` plus a variant class directly on `<button>`, `<a>` and `<input type="button|submit">`; the existing wrapper spans (`span.workbench-action` around a label hit area) keep the same variant names. Element variants use selectors of the form `:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type=button], input[type=submit]).workbench-action--primary`, because a generic `body.workbench-body .workbench-page-surface button` rule (specificity 0,2,2) otherwise wins over a plain variant class. Page-level danger buttons were renamed from `--danger` to `--danger-outline`; `--danger` is now the filled variant reserved for the confirm button of dialogs (M6.2). New tokens `--workbench-danger-hover` and `--workbench-on-danger` exist in both themes.
+  Rationale: one set of classes for every button without rewriting the wrapper markup that legacy scripts and tests rely on.
   Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective

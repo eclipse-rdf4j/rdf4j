@@ -937,7 +937,7 @@ test('saved-query execution has an explicit streamed result mount and native edi
     assert.ok(output.includes('saved-query-results-0'));
     assert.ok(output.includes('value="exec"'));
     assert.ok(output.includes('value="edit"'));
-    assert.ok(output.includes('class="saved-query-delete"'));
+    assert.match(output, /class="saved-query-delete[ "]/);
 });
 
 test('modification and browse views preserve their action form identifiers', () => {
