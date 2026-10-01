@@ -291,7 +291,8 @@ test('table width sampling uses available rows and resets for empty results and 
 			await layout.selectOption('table');
 		}
 		await expect(result.locator('thead th')).toHaveCount(expectedHeaders.length);
-		await expect(result.locator('thead th').allTextContents()).resolves.toEqual(expectedHeaders);
+		// Tuple headers show the variable with its question mark (plan task M4.3).
+		await expect(result.locator('thead th').allTextContents()).resolves.toEqual(expectedHeaders.map(name => '?' + name));
 		return result.locator('colgroup col').evaluateAll(columns => columns.map(column =>
 			parseFloat(column.style.width)));
 	};
@@ -1565,8 +1566,9 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 	await expect(cells.nth(2)).toHaveAttribute('dir', 'ltr');
 	await expect(cells.nth(2)).toContainText('@en--ltr');
 	await expect(cells.nth(3)).toHaveAttribute('lang', 'fr');
-	await expect(cells.nth(4)).toHaveAttribute('title', 'typed-value');
-	await expect(cells.nth(5)).toHaveAttribute('title', longValue);
+	// Literal titles carry the N-Triples form (plan task M4.3).
+	await expect(cells.nth(4)).toHaveAttribute('title', '"typed-value"^^<urn:load:datatype>');
+	await expect(cells.nth(5)).toHaveAttribute('title', JSON.stringify(longValue));
 	await expect(cells.nth(6)).toHaveAttribute('aria-label', 'Unbound');
 	await expect(cells.nth(7)).toContainText('<< ex:item ex:inner');
 	await expect(cells.nth(7)).toContainText('@en--ltr');
@@ -1584,9 +1586,9 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 		await expect(explorePage.locator('#resource')).toHaveValue(exploreResources[index]);
 		const exploreRow = explorePage.locator('#explore-results table.data tbody tr');
 		await expect(exploreRow).toHaveCount(1);
-		await expect(exploreRow.locator('td[data-label="subject"]')).toContainText('urn:load:item');
-		await expect(exploreRow.locator('td[data-label="predicate"]')).toContainText('urn:load:directed-predicate');
-		await expect(exploreRow.locator('td[data-label="object"]')).toHaveText('مرحبا');
+		await expect(exploreRow.locator('td[data-label="Subject"]')).toContainText('urn:load:item');
+		await expect(exploreRow.locator('td[data-label="Predicate"]')).toContainText('urn:load:directed-predicate');
+		await expect(exploreRow.locator('td[data-label="Object"]')).toHaveText('مرحبا');
 		expect(exploreErrors).toEqual([]);
 		await explorePage.close();
 	}
@@ -1604,8 +1606,8 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 	await expect(fields.nth(1)).toHaveAttribute('dir', 'rtl');
 	await expect(fields.nth(1)).toContainText('@ar--rtl');
 	await expect(fields.nth(2)).toHaveAttribute('dir', 'ltr');
-	await expect(fields.nth(4)).toHaveAttribute('title', 'typed-value');
-	await expect(fields.nth(5)).toHaveAttribute('title', longValue);
+	await expect(fields.nth(4)).toHaveAttribute('title', '"typed-value"^^<urn:load:datatype>');
+	await expect(fields.nth(5)).toHaveAttribute('title', JSON.stringify(longValue));
 	await expect(fields.nth(6)).toHaveAttribute('aria-label', 'Unbound');
 	await expect(fields.nth(7)).toContainText('<< ex:item ex:inner');
 	const nestedExploreResource = await fields.nth(7).locator('a').evaluate(anchor =>

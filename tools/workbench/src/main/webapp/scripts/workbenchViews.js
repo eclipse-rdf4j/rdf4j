@@ -617,14 +617,14 @@ var workbench;
                 var cell = record[name];
                 if (options && options.status && (name === 'readable' || name === 'writeable')) {
                     var status_1 = name === 'readable' ? 'readable' : 'writeable';
-                    return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), name, statusIcon(runtime, (cell === true || text(cell) === 'true') ? status_1 : 'negative', (cell === true || text(cell) === 'true') ? (name === 'readable' ? 'Readable' : 'Writeable') : 'No'));
+                    return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), columnLabel(name, options), statusIcon(runtime, (cell === true || text(cell) === 'true') ? status_1 : 'negative', (cell === true || text(cell) === 'true') ? (name === 'readable' ? 'Readable' : 'Writeable') : 'No'));
                 }
                 if (options && options.repository && name === 'id') {
                     var id = text(cell);
                     var href = '../' + encodeURIComponent(id) + '/summary';
-                    return h(__makeTemplateObject(["<td data-label=", "><a href=", ">", "</a></td>"], ["<td data-label=", "><a href=", ">", "</a></td>"]), name, href, id);
+                    return h(__makeTemplateObject(["<td data-label=", "><a href=", ">", "</a></td>"], ["<td data-label=", "><a href=", ">", "</a></td>"]), columnLabel(name, options), href, id);
                 }
-                return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), name, renderTerm(runtime, cell, context, !!(options && options.linkTerms)));
+                return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), columnLabel(name, options), renderTerm(runtime, cell, context, !!(options && options.linkTerms)));
             })); }), after ? h(__makeTemplateObject(["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"], ["<tr class=\"workbench-virtual-spacer\" aria-hidden=\"true\"><td colspan=", "\n                    style=", "></td></tr>"]), Math.max(1, columns.length), 'height:' + after + 'px;padding:0;border:0') : '');
         }
         function renderTerm(runtime, value, context, link) {

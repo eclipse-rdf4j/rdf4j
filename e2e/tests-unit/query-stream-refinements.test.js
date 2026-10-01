@@ -706,17 +706,16 @@ test('RDF term output matches Workbench Explore, namespace, and datatype present
             label: 'ex:item', exploreResource: '<http://example.test/ns/item>',
             externalHref: 'http://example.test/ns/item', preformatted: false
         },
-        { label: '"plain"', exploreResource: '"plain"', externalHref: null, preformatted: false },
+        // Literal labels are their lexical values; language and datatype become tags in the cell (task M4.3).
+        { label: 'plain', exploreResource: '"plain"', externalHref: null, preformatted: false },
+        { label: 'bonjour', exploreResource: '"bonjour"@fr', externalHref: null, preformatted: false },
+        { label: 'bonjour', exploreResource: '"bonjour"@fr', externalHref: null, preformatted: false },
         {
-            label: '"bonjour"@fr', exploreResource: '"bonjour"@fr', externalHref: null, preformatted: false
-        },
-        { label: '"bonjour"', exploreResource: '"bonjour"@fr', externalHref: null, preformatted: false },
-        {
-            label: '"widget"^^kind:Code', exploreResource: '"widget"^^<http://example.test/types/Code>',
+            label: 'widget', exploreResource: '"widget"^^<http://example.test/types/Code>',
             externalHref: null, preformatted: false
         },
         {
-            label: '"widget"', exploreResource: '"widget"^^<http://example.test/types/Code>',
+            label: 'widget', exploreResource: '"widget"^^<http://example.test/types/Code>',
             externalHref: null, preformatted: false
         },
         { label: '<item/>', exploreResource: null, externalHref: null, preformatted: true },
@@ -763,21 +762,23 @@ test('typed Explore links and datatype visibility stay consistent across table a
 
     const tableLink = renderer.tableBody.children.find(
         child => child.getAttribute('data-query-row-index') === '0').querySelector('a');
-    assert.equal(tableLink.textContent, '"widget"^^kind:Code');
+    assert.equal(tableLink.textContent, 'widget');
+    assert.equal(tableLink.parentNode.querySelector('.rdf-datatype').textContent, 'kind:Code');
     assert.equal(tableLink.getAttribute('href'),
         'explore?resource=%22widget%22%5E%5E%3Chttp%3A%2F%2Fexample.test%2Ftypes%2FCode%3E');
 
     renderer.datatypeControl.checked = false;
     renderer.datatypeControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(renderer.tableBody.children.find(
-        child => child.getAttribute('data-query-row-index') === '0').querySelector('a').textContent, '"widget"');
+    const hiddenTagRow = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0');
+    assert.equal(hiddenTagRow.querySelector('a').textContent, 'widget');
+    assert.equal(hiddenTagRow.querySelector('.rdf-datatype'), null);
 
     renderer.layoutControl.value = 'records';
     renderer.layoutControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));
     const recordLink = renderer.records.children[0].querySelector('dd').querySelector('a');
-    assert.equal(recordLink.textContent, '"widget"');
+    assert.equal(recordLink.textContent, 'widget');
     assert.equal(recordLink.getAttribute('href'), tableLink.getAttribute('href'));
     renderer.dispose();
 });
@@ -801,7 +802,7 @@ test('typed result text remains inert and inline without duplicating the Workben
     await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
 
     const cell = renderer.tableBody.children.find(row => row.getAttribute('data-query-row-index') === '0').children[0];
-    assert.equal(cell.textContent, '"<img src=x onerror=alert(1)>"');
+    assert.equal(cell.textContent, '<img src=x onerror=alert(1)>');
     assert.equal(cell.querySelector('img'), null,
         'RDF literal markup must be rendered as text, never parsed as HTML');
     assert.equal(target.querySelector('#header'), null);
@@ -1884,4 +1885,44 @@ async function renderedScrollSource(capacity) {
 test('rows scroll with the page, and a result taller than the scroll capacity keeps its inner scroll element', async () => {
     assert.deepEqual(await renderedScrollSource(Number.MAX_SAFE_INTEGER), { source: 'page', compressed: false });
     assert.deepEqual(await renderedScrollSource(50), { source: 'element', compressed: true });
+});
+
+// Task M4.3: datatype and language tags, numeric cells and ?variable headings.
+test('cells show language badges, datatype tags and right-aligned numbers, and headers show ?variables', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const XSD = 'http://www.w3.org/2001/XMLSchema#';
+    const renderer = new queryStream.QueryResultRenderer(target, { initialLayout: 'table', rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['label', 'num', 'day', 'thing'] });
+    await renderer.accept({ type: 'namespaces', values: [{ prefix: 'xsd', name: XSD }] });
+    await renderer.accept({ type: 'rows', values: [[
+        { kind: 'literal', value: 'bonjour', language: 'fr' },
+        { kind: 'literal', value: '58', datatype: XSD + 'integer' },
+        { kind: 'literal', value: '2000-07-04', datatype: XSD + 'date' },
+        { kind: 'literal', value: 'plain', datatype: XSD + 'string' }
+    ]] });
+    await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
+
+    const headers = renderer.root.querySelectorAll('thead th').map(cell => cell.textContent);
+    assert.deepEqual(headers, ['?label', '?num', '?day', '?thing']);
+    const cells = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0').children;
+    assert.equal(cells[0].querySelector('a').textContent, 'bonjour');
+    assert.equal(cells[0].querySelector('.rdf-language').textContent, '@fr');
+    assert.equal(cells[1].querySelector('a').textContent, '58');
+    assert.equal(cells[1].classList.contains('rdf-numeric'), true);
+    assert.equal(cells[1].querySelector('.rdf-datatype'), null, 'numbers carry no datatype tag');
+    assert.equal(cells[2].querySelector('.rdf-datatype').textContent, 'xsd:date');
+    assert.equal(cells[3].querySelector('a').textContent, 'plain');
+    assert.equal(cells[3].querySelector('.rdf-datatype'), null, 'xsd:string never shows a tag');
+    assert.equal(cells[3].classList.contains('rdf-literal'), true);
+
+    renderer.datatypeControl.checked = false;
+    renderer.datatypeControl.trigger('change');
+    await new Promise(resolve => setImmediate(resolve));
+    const hidden = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0').children;
+    assert.equal(hidden[2].querySelector('.rdf-datatype'), null, 'Show datatypes off hides the tags');
+    renderer.dispose();
 });

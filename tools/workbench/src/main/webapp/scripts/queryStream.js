@@ -1602,12 +1602,40 @@ var workbench;
         }
         var XSD_NAMESPACE = 'http://www.w3.org/2001/XMLSchema#';
         var RDF_NAMESPACE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-        function isLexicallyDisplayedDatatype(datatype) {
-            var localName = datatype.indexOf(XSD_NAMESPACE) === 0
+        var XSD_STRING = XSD_NAMESPACE + 'string';
+        var RDF_LANG_STRING = RDF_NAMESPACE + 'langString';
+        function isNumericDatatype(datatype) {
+            var localName = datatype && datatype.indexOf(XSD_NAMESPACE) === 0
                 ? datatype.substring(XSD_NAMESPACE.length) : '';
-            return ['boolean', 'integer', 'decimal', 'double', 'date', 'dateTime', 'time', 'duration']
-                .indexOf(localName) >= 0;
+            return ['integer', 'decimal', 'float', 'double', 'int', 'long', 'short', 'byte', 'nonNegativeInteger',
+                'nonPositiveInteger', 'positiveInteger', 'negativeInteger', 'unsignedLong', 'unsignedInt',
+                'unsignedShort', 'unsignedByte'].indexOf(localName) >= 0;
         }
+        function ntriplesString(value) {
+            return '"' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"';
+        }
+        /** The N-Triples form of a term; plain strings omit ^^xsd:string. */
+        function ntriplesTerm(term) {
+            if (!term) {
+                return '';
+            }
+            if (term.kind === 'iri') {
+                return '<' + (term.value || '') + '>';
+            }
+            if (term.kind === 'bnode') {
+                var blankNode = term.value || '';
+                return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
+            }
+            if (term.kind === 'triple') {
+                return '<< ' + ntriplesTerm(term.subject) + ' ' + ntriplesTerm(term.predicate) + ' '
+                    + ntriplesTerm(term.object) + ' >>';
+            }
+            return ntriplesString(term.value || '') + (term.language
+                ? '@' + term.language + (term.direction ? '--' + term.direction : '')
+                : term.datatype && term.datatype !== XSD_STRING ? '^^<' + term.datatype + '>' : '');
+        }
+        queryStream.ntriplesTerm = ntriplesTerm;
         function exploreResource(term) {
             if (!term) {
                 return '';
@@ -1638,18 +1666,29 @@ var workbench;
             });
             return best ? best.prefix + ':' + value.substring(best.name.length) : '<' + value + '>';
         }
+        /** A term inside a quoted triple, where there is no room for tags: literals keep quotes and suffixes. */
+        function inlineTermLabel(term, config) {
+            if (!term || term.kind !== 'literal') {
+                return formatRdfTerm(term, config).label;
+            }
+            return ntriplesString(term.value || '') + (term.language
+                ? '@' + term.language + (term.direction ? '--' + term.direction : '')
+                : term.datatype && term.datatype !== XSD_STRING
+                    ? '^^' + abbreviatedIri(term.datatype, config.namespaces || []) : '');
+        }
         function formatRdfTerm(term, options) {
             var config = options || {};
             if (term === null) {
-                return { kind: 'unbound', label: '—', title: 'Unbound' };
+                return { kind: 'unbound', label: '—', title: 'Unbound', numeric: false, ntriples: '' };
             }
             if (!term) {
-                return { kind: 'unknown', label: '', title: '' };
+                return { kind: 'unknown', label: '', title: '', numeric: false, ntriples: '' };
             }
             var display = {
                 kind: term.kind,
                 label: '',
-                title: ''
+                title: '',
+                numeric: false
             };
             if (term.kind === 'iri') {
                 display.label = abbreviatedIri(term.value || '', config.namespaces || []);
@@ -1666,48 +1705,35 @@ var workbench;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }
             else if (term.kind === 'triple') {
-                display.label = '<< ' + formatRdfTerm(term.subject, config).label + ' '
-                    + formatRdfTerm(term.predicate, config).label + ' '
-                    + formatRdfTerm(term.object, config).label + ' >>';
+                display.label = '<< ' + inlineTermLabel(term.subject, config) + ' '
+                    + inlineTermLabel(term.predicate, config) + ' '
+                    + inlineTermLabel(term.object, config) + ' >>';
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }
             else {
+                // Literals show their lexical value; the renderer adds language badges and datatype tags (M4.3).
                 var literalValue = term.value || '';
-                var quotedLiteral = '"' + literalValue + '"';
+                var plainString = !term.datatype || term.datatype === XSD_STRING;
                 display.label = literalValue;
-                display.title = literalValue;
                 if (term.language) {
                     display.language = term.language;
-                    display.label = quotedLiteral + (config.showDatatypes === false ? '' : '@' + term.language
-                        + (term.direction ? '--' + term.direction : ''));
                     display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
                 }
-                else if (term.datatype) {
+                else if (term.datatype === RDF_NAMESPACE + 'XMLLiteral'
+                    || (plainString && literalValue.indexOf('\n') >= 0)) {
                     display.datatype = term.datatype;
-                    if (term.datatype === RDF_NAMESPACE + 'XMLLiteral') {
-                        display.preformatted = true;
-                    }
-                    else {
-                        display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
-                        if (isLexicallyDisplayedDatatype(term.datatype)) {
-                            display.label = literalValue;
-                        }
-                        else {
-                            display.label = quotedLiteral;
-                            if (config.showDatatypes !== false) {
-                                display.label += '^^' + abbreviatedIri(term.datatype, config.namespaces || []);
-                            }
-                        }
-                    }
-                }
-                else if (literalValue.indexOf('\n') >= 0) {
                     display.preformatted = true;
                 }
                 else {
-                    display.label = quotedLiteral;
+                    display.datatype = term.datatype;
                     display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
                 }
+                display.numeric = isNumericDatatype(term.datatype);
+            }
+            display.ntriples = ntriplesTerm(term);
+            if (term.kind === 'literal') {
+                display.title = display.ntriples;
             }
             return display;
         }
@@ -2961,12 +2987,16 @@ var workbench;
                 clearChildren(header);
                 var row = createElement(this.document, 'tr');
                 this.state.variables.forEach(function (name) {
-                    var cell = createElement(_this.document, 'th');
+                    var cell = createElement(_this.document, 'th', _this.state.view === 'tuple' ? 'query-result-variable' : '');
                     cell.scope = 'col';
-                    cell.textContent = name;
+                    cell.textContent = _this.variableLabel(name);
                     row.appendChild(cell);
                 });
                 header.appendChild(row);
+            };
+            /** Tuple results name their columns by variable, written as in the query: ?product (M4.3). */
+            QueryResultRenderer.prototype.variableLabel = function (name) {
+                return this.state.view === 'tuple' ? '?' + name : name;
             };
             QueryResultRenderer.prototype.updateTableColumnWidths = function (renderGeneration) {
                 var _this = this;
@@ -3024,6 +3054,7 @@ var workbench;
                     return;
                 }
                 this.setTableColumnWidths(widths, width);
+                this.markNumericColumns(this.columnWidthRows || []);
                 this.columnWidthAppliedWidth = width;
                 this.columnWidthPresentationSignature = presentation;
             };
@@ -3055,9 +3086,9 @@ var workbench;
                 var header = createElement(this.document, 'thead');
                 var headerRow = createElement(this.document, 'tr');
                 this.state.variables.forEach(function (name) {
-                    var cell = createElement(_this.document, 'th');
+                    var cell = createElement(_this.document, 'th', _this.state.view === 'tuple' ? 'query-result-variable' : '');
                     cell.scope = 'col';
-                    cell.textContent = name;
+                    cell.textContent = _this.variableLabel(name);
                     headerRow.appendChild(cell);
                 });
                 header.appendChild(headerRow);
@@ -3084,6 +3115,20 @@ var workbench;
                     }
                 }
                 return widths.some(function (value) { return value > 0; }) ? widths : [];
+            };
+            /** Right-align a column's header when every sampled value in it is a number (M4.3). */
+            QueryResultRenderer.prototype.markNumericColumns = function (rows) {
+                var header = this.table.querySelector('thead tr');
+                if (!header) {
+                    return;
+                }
+                for (var index = 0; index < header.children.length; index++) {
+                    var values = rows.map(function (row) { return row[index]; }).filter(function (value) { return value !== null && value !== undefined; });
+                    var numeric = values.length > 0 && values.every(function (value) { return formatRdfTerm(unpackTerm(value)).numeric; });
+                    if (header.children[index].classList) {
+                        header.children[index].classList.toggle('query-result-numeric-column', numeric);
+                    }
+                }
             };
             QueryResultRenderer.prototype.setTableColumnWidths = function (widths, viewportWidth) {
                 var _this = this;
@@ -3216,6 +3261,12 @@ var workbench;
                 if (!this.wrap) {
                     target.style.whiteSpace = 'nowrap';
                 }
+                if (display.kind === 'literal' && target.classList) {
+                    target.classList.add('rdf-literal');
+                    if (display.numeric) {
+                        target.classList.add('rdf-numeric');
+                    }
+                }
                 if (display.preformatted) {
                     var preformatted = createElement(this.document, 'pre');
                     preformatted.textContent = display.label;
@@ -3246,12 +3297,32 @@ var workbench;
                         resource.appendChild(external);
                     }
                     target.appendChild(resource);
+                    this.appendTermTags(resource, display, term && term.direction, typeof rowIndex === 'number'
+                        ? this.namespacesForRow(rowIndex) : this.state.namespaces);
                 }
                 else {
                     target.textContent = display.label;
                 }
                 if (display.language) {
                     target.setAttribute('lang', display.language);
+                }
+            };
+            /** A language badge, and a datatype tag unless the value is a string or a number (M4.3). */
+            QueryResultRenderer.prototype.appendTermTags = function (target, display, direction, namespaces) {
+                if (display.kind !== 'literal') {
+                    return;
+                }
+                if (display.language) {
+                    var language = createElement(this.document, 'span', 'rdf-language');
+                    language.textContent = '@' + display.language + (direction ? '--' + direction : '');
+                    target.appendChild(language);
+                    return;
+                }
+                if (this.showDatatypes && display.datatype && !display.numeric
+                    && display.datatype !== XSD_STRING && display.datatype !== RDF_LANG_STRING) {
+                    var datatype = createElement(this.document, 'span', 'rdf-datatype');
+                    datatype.textContent = abbreviatedIri(display.datatype, namespaces || []);
+                    target.appendChild(datatype);
                 }
             };
             QueryResultRenderer.prototype.renderRecords = function () {
@@ -3322,8 +3393,8 @@ var workbench;
                 record.appendChild(title);
                 var fields = createElement(this.document, 'dl', 'query-result-record__fields');
                 this.state.variables.forEach(function (name, valueIndex) {
-                    var key = createElement(_this.document, 'dt');
-                    key.textContent = name;
+                    var key = createElement(_this.document, 'dt', _this.state.view === 'tuple' ? 'query-result-variable' : '');
+                    key.textContent = _this.variableLabel(name);
                     var value = createElement(_this.document, 'dd');
                     _this.renderTerm(value, values[valueIndex], rowIndex);
                     fields.appendChild(key);
@@ -3617,7 +3688,8 @@ var workbench;
                     return;
                 }
                 var columns = Array.prototype.map.call(this.tableColumns.children, function (column) { return column.style.width; }).join(',');
-                var signature = this.headerSignature + '|' + columns + '|' + this.table.style.tableLayout;
+                var numericColumns = Array.prototype.map.call(head.querySelectorAll('th'), function (cell) { return cell.className; }).join(',');
+                var signature = this.headerSignature + '|' + columns + '|' + this.table.style.tableLayout + '|' + numericColumns;
                 if (signature !== this.floatingSignature) {
                     this.floatingSignature = signature;
                     this.floatingTable.textContent = '';

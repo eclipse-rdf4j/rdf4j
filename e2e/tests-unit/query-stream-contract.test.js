@@ -824,3 +824,39 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
     assert.deepEqual(leavingPage.worker.rows, []);
     assert.equal(leavingPage.target.querySelectorAll('.query-result-layout').length, 0);
 });
+
+// Task M4.3 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: literals read as values.
+test('formatRdfTerm shows literal values without quotes or datatype suffixes', () => {
+    const queryStream = loadQueryStreamApi();
+    const XSD = 'http://www.w3.org/2001/XMLSchema#';
+    const namespaces = [{ prefix: 'rdf', name: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#' }, { prefix: 'xsd', name: XSD }];
+    const format = term => queryStream.formatRdfTerm(term, { namespaces });
+
+    const plain = format({ kind: 'literal', value: 'absolvers pomades', datatype: XSD + 'string' });
+    assert.equal(plain.label, 'absolvers pomades');
+    assert.equal(plain.numeric, false);
+    assert.equal(plain.ntriples, '"absolvers pomades"');
+    assert.equal(plain.title, '"absolvers pomades"');
+
+    const french = format({ kind: 'literal', value: 'bonjour', language: 'fr' });
+    assert.equal(french.label, 'bonjour');
+    assert.equal(french.language, 'fr');
+    assert.equal(french.ntriples, '"bonjour"@fr');
+
+    const integer = format({ kind: 'literal', value: '58', datatype: XSD + 'integer' });
+    assert.equal(integer.label, '58');
+    assert.equal(integer.numeric, true);
+    assert.equal(integer.ntriples, '"58"^^<' + XSD + 'integer>');
+    assert.equal(format({ kind: 'literal', value: '1.5', datatype: XSD + 'double' }).numeric, true);
+    assert.equal(format({ kind: 'literal', value: '7', datatype: XSD + 'nonNegativeInteger' }).numeric, true);
+
+    const date = format({ kind: 'literal', value: '2000-07-04', datatype: XSD + 'date' });
+    assert.equal(date.label, '2000-07-04');
+    assert.equal(date.datatype, XSD + 'date');
+    assert.equal(date.numeric, false);
+
+    const type = format({ kind: 'iri', value: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' });
+    assert.equal(type.label, 'rdf:type');
+    assert.equal(type.numeric, false);
+    assert.equal(type.ntriples, '<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>');
+});

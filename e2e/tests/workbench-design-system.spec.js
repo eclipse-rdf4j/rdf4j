@@ -44,7 +44,8 @@ test('result headings show variable names exactly as written', async ({ page }) 
 		transform: getComputedStyle(cell).textTransform
 	})));
 	expect(rendered.map((cell) => cell.transform)).toEqual(['none', 'none']);
-	expect(rendered.map((cell) => cell.text)).toEqual(['num1', 'x_y']);
+	// Written as in the query, with the question mark (plan task M4.3).
+	expect(rendered.map((cell) => cell.text)).toEqual(['?num1', '?x_y']);
 });
 
 test('query page actions share one button height and one secondary border', async ({ page }) => {

@@ -956,6 +956,47 @@ body.query-results-fullscreen-active {
     overflow-anchor: auto;
 }
 
+/* Cells (M4.3, mockup 01): literals read as values in body ink, IRIs keep the link color, numbers align right,
+ * and language and datatype are small tags. Variable names are monospace. */
+.query-result-layout :is(td, dd).rdf-literal a {
+    color: var(--workbench-body);
+    text-decoration: none;
+}
+
+.query-result-layout :is(td, dd).rdf-literal a:hover,
+.query-result-layout :is(td, dd).rdf-literal a:focus-visible {
+    text-decoration: underline;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout table.data td.rdf-numeric,
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout table.data th.query-result-numeric-column {
+    text-align: right;
+}
+
+.query-result-layout .rdf-numeric {
+    font-variant-numeric: tabular-nums;
+}
+
+.query-result-layout .rdf-language,
+.query-result-layout .rdf-datatype {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--workbench-inset);
+    color: var(--workbench-muted);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.6;
+    vertical-align: 1px;
+    white-space: nowrap;
+}
+
+.query-result-layout .rdf-datatype,
+.query-result-layout .query-result-variable {
+    font-family: var(--workbench-code-font);
+}
+
 /* The pinned copy of the header row: zero height in the flow, so showing it never moves the table. */
 .query-result-floating-head {
     position: sticky;

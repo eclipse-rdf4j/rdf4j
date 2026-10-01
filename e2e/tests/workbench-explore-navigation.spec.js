@@ -199,7 +199,7 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(8);
 	await capture(page, 'explore-eight-records-desktop', health, { rowCount: await graphRows.count() });
 
-	const bnodeLink = page.locator('#explore-results td[data-label="object"] a')
+	const bnodeLink = page.locator('#explore-results td[data-label="Object"] a')
 		.filter({ hasText: /^_:/ }).first();
 	await expect(bnodeLink).toBeVisible();
 	const bnodeText = (await bnodeLink.innerText()).trim();
@@ -213,7 +213,7 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 	await page.goBack({ waitUntil: 'domcontentloaded' });
 	await expectExploreRows(page, 8);
 
-	const literalLink = page.locator('#explore-results td[data-label="object"] a')
+	const literalLink = page.locator('#explore-results td[data-label="Object"] a')
 		.filter({ hasText: 'Literal target' }).first();
 	await expect(literalLink).toBeVisible();
 	const literalHref = await literalLink.getAttribute('href');

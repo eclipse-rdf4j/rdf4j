@@ -197,3 +197,42 @@ test('long IRIs wrap only after / # : ? & =', async ({ page }) => {
 	expect(breaks.length, 'the IRIs are long enough to wrap').toBeGreaterThan(0);
 	expect(breaks.filter(character => !'/#:?&='.includes(character)), JSON.stringify(breaks)).toEqual([]);
 });
+
+test('results name columns by variable and show literals as values', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await runQuery(page, 'SELECT ?product ?label ?num1 ?type WHERE { ?product a ?type ; '
+		+ '<http://www.w3.org/2000/01/rdf-schema#label> ?label ; '
+		+ '<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/productPropertyNumeric1> ?num1 } LIMIT 10');
+	const headers = page.locator('#query-results thead th');
+	await expect(headers.first()).toHaveText('?product');
+	await expect(page.locator('#query-results tbody td.rdf-literal a').first()).not.toContainText('^^');
+	await expect(page.locator('#query-results tbody td.rdf-literal a').first()).not.toContainText('"');
+	await expect(page.locator('#query-results tbody td.rdf-numeric').first()).toHaveCSS('text-align', 'right');
+	await expect(headers.nth(2)).toHaveCSS('text-align', 'right');
+});
+
+test('mobile records use the table header labels and the last record is reachable', async ({ page }) => {
+	const listUrl = require('./workbench-test-helpers.js').repositoryPageUrl('NONE', 'repositories');
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(listUrl, { waitUntil: 'networkidle' });
+	const headerTexts = await page.locator('#workbench-page-surface table.data thead th').allTextContents();
+	expect(headerTexts.length).toBeGreaterThan(0);
+	for (const width of [390, 320]) {
+		await page.setViewportSize({ width, height: 844 });
+		await page.goto(listUrl, { waitUntil: 'networkidle' });
+		const labels = await page.locator('#workbench-page-surface table.data tbody tr').first().locator('td')
+			.evaluateAll(cells => cells.map(cell => {
+				// Firefox reports the unresolved attr() expression as the computed content.
+				const content = getComputedStyle(cell, '::before').content;
+				return /^attr\(/.test(content) ? cell.getAttribute('data-label') : content.replace(/^"|"$/g, '');
+			}));
+		expect(labels, `records at ${width}px`).toEqual(headerTexts.map(textContent => textContent.trim()));
+	}
+
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 844 } });
+	await runQuery(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 25');
+	await expect(page.locator('#query-results .query-result-layout')).toHaveAttribute('data-effective-layout', 'records');
+	await page.keyboard.press('End');
+	const last = page.locator('#query-results [data-query-record-index="24"]');
+	await expect(last).toBeInViewport({ ratio: 1 });
+});

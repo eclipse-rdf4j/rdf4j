@@ -48,9 +48,9 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 06:41Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
 - [x] (2026-10-01 10:56Z) M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
 - [x] (2026-10-01 12:07Z) M4.2 Column sizing without mid-word breaks (includes the "12 rows visible" check moved from M3.2).
-- [ ] M4.3 (in progress) Literal, IRI and heading rendering.
-- [ ] M4.4 Mobile records do not clip and use the same labels.
-- [ ] M5.1 Explore (mockup 05).
+- [x] (2026-10-01 13:25Z) M4.3 Literal, IRI and heading rendering.
+- [x] (2026-10-01 13:25Z) M4.4 Mobile records do not clip and use the same labels.
+- [ ] M5.1 (in progress) Explore (mockup 05).
 - [ ] M5.2 Types and Graphs (mockup 06).
 - [ ] M5.3 Repository list (mockup 12, right).
 - [ ] M5.4 Summary and Information (mockup 12, left).
@@ -278,6 +278,13 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Rationale: native page scrolling must never be fought; the End behavior keeps the "last row is reachable" acceptance.
   Date/Author: 2026-10-01 / implementer.
 
+- Decision (M4.3): `formatRdfTerm()` now returns literal labels as their lexical values for every datatype (the "lexically displayed" exception list is gone), with `numeric` and `ntriples` added; `title` of a literal is its N-Triples form, and plain strings omit `^^xsd:string` there too. The renderer adds `span.rdf-language` for language-tagged strings (always) and `span.rdf-datatype` (the abbreviated datatype) for other non-numeric, non-string datatypes while "Show datatypes" is on; numeric literals get `td.rdf-numeric` (right-aligned, tabular figures), and a column header is right-aligned when every sampled value of the column is numeric. Literal links use body ink and are underlined on hover; IRIs keep the link color. Tuple headers and record labels show `?variable` in monospace; graph results (CONSTRUCT) keep their positional names (subject, predicate, object, context) without a question mark, because they are not variables. A string with a newline now renders preformatted even when the server sends `xsd:string` (before, only datatype-less strings did).
+  Rationale: mockup 01; the server always sends a datatype, so string handling must not depend on its absence.
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M4.4): page tables label their mobile records with the same `columnLabel()` text as their headers. The query result records keep their own `dl.query-result-record__fields` grid instead of adopting `dl.workbench-kv`, whose row wrappers would change the record markup that the load-more and records specs drive; the grid already gives every row the same spacing.
+  Rationale: same outcome for the reader with less churn.
+  Date/Author: 2026-10-01 / implementer.
+
 ## Outcomes & Retrospective
 
 At the end of each milestone, add a short paragraph here: what was delivered, which acceptance checks passed, what was deferred, and what you would do differently.
@@ -285,6 +292,8 @@ At the end of each milestone, add a short paragraph here: what was delivered, wh
 M1 (2026-10-01): the shell no longer links `styles/default/screen.css`; result headings show variable names as written; one button component (primary, secondary, ghost, danger, danger-outline, icon) replaces the per-id rules on the Query page and in the result renderer; one heading scale; key/value lists replace `table.simple` on Summary and Information; browsing cards share one width (surface capped at 1200px) and form cards are 760px; Remove and Clear use stacked fields; callouts (info, warning, error) replace the gray notes and page error paragraphs; the editor overlay icons are visible 28px ghost buttons; `workbench.format.count` formats the repository size. `e2e/tests/workbench-design-system.spec.js` (5 tests) passes; the unit suite has only the 4 failures recorded in the baseline. Lesson: a computed-style probe that injects the retired stylesheet into the page is a much faster way to find what the redesign silently inherited than comparing screenshots.
 
 M3 (2026-10-01): the query page keeps the user's place. Cmd/Ctrl+Enter runs queries and updates; editors grow with their content and keep a resized height; results and explanations are tabs of one output card below the editor, so the Execute row never moves; "Query settings" and "Display" replace the two "Options"; the timeout states its unit; "Insert prefixes" replaces the destructive "Clear"; the status line, empty state, Yes/No answer and syntax-error callout follow mockup 02, and a server syntax error marks its editor line. The end-of-M2 suite run surfaced regressions from M1 and M2 (fixed in the added task M2.9), and the M3.3 run found that moving the explanation out of the form dropped its code theme, which the user then made an explicit requirement. `workbench-query-workflow.spec.js` (14 tests) passes in Chromium, Firefox and WebKit; the unit suite has only the 4 baseline failures; coverage of `query.js` rose from 83.90% to 84.79%. Deferred: the "12 rows visible" check (M4.2). Lesson: run the full browser suite at the end of every milestone, not only the specs a task names; the cheap targeted runs missed regressions in neighboring specs for a whole milestone.
+
+M4 (2026-10-01): results read like a table. Rows scroll with the page under a pinned copy of the header row, full screen fills the screen, and only results taller than the browser's scroll capacity keep an inner scroller; End reaches the last row even while row heights are still being measured. Cells wrap at word boundaries and after `/ # : ? & =` in IRIs, headers stay on one line, headers and record labels show `?variable` in monospace, literals read as values with language badges, datatype tags and right-aligned numbers, and mobile records of page tables use the header labels. `workbench-result-scrolling.spec.js` (9 tests) passes in Chromium, Firefox and WebKit; full Chromium runs after M4.2 and M4.3 found nothing outside the baseline lists beyond assertions of the old text, which were updated. Deferred: auto-scrolling a compressed result's card into view, and moving query records onto the `workbench-kv` component (see the Decision Log). Lesson: in page mode the browser must own scrolling; any compensation computed before an asynchronous step fights the user.
 
 ## Context and Orientation
 

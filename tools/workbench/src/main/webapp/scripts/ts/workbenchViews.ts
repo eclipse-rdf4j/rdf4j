@@ -817,16 +817,16 @@ module workbench {
                         const cell = record[name];
                         if (options && options.status && (name === 'readable' || name === 'writeable')) {
                             const status = name === 'readable' ? 'readable' : 'writeable';
-                            return h`<td data-label=${name}>${statusIcon(runtime,
+                            return h`<td data-label=${columnLabel(name, options)}>${statusIcon(runtime,
                                 (cell === true || text(cell) === 'true') ? status : 'negative',
                                 (cell === true || text(cell) === 'true') ? (name === 'readable' ? 'Readable' : 'Writeable') : 'No')}</td>`;
                         }
                         if (options && options.repository && name === 'id') {
                             const id = text(cell);
                             const href = '../' + encodeURIComponent(id) + '/summary';
-                            return h`<td data-label=${name}><a href=${href}>${id}</a></td>`;
+                            return h`<td data-label=${columnLabel(name, options)}><a href=${href}>${id}</a></td>`;
                         }
-                        return h`<td data-label=${name}>${renderTerm(runtime, cell, context, !!(options && options.linkTerms))}</td>`;
+                        return h`<td data-label=${columnLabel(name, options)}>${renderTerm(runtime, cell, context, !!(options && options.linkTerms))}</td>`;
                     })}
                 </tr>`)}
                 ${after ? h`<tr class="workbench-virtual-spacer" aria-hidden="true"><td colspan=${Math.max(1, columns.length)}
