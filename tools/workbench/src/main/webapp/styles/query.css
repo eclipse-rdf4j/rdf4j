@@ -168,20 +168,66 @@ body.workbench-body .query-page .error:empty {
     }
 }
 
-.yasqe .CodeMirror {
+/* Editor sizing (M3.2): the editor grows with its content from six lines (6 x 21px + 16px padding)
+ * to half the viewport; a drag handle (workbench.editorSizing) can fix another height. The selectors
+ * are prefixed so they outrank yasqe.min.css (".yasqe .CodeMirror { height: 300px }"). */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror {
     height: auto;
 }
 
-.yasqe .CodeMirror-scroll {
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror-scroll {
     height: auto;
-    min-height: 300px;
-    max-height: 55vh;
+    min-height: 142px;
+    max-height: 50vh;
     overflow-y: auto;
     overflow-x: auto;
 }
 
-body.workbench-body .query-page .yasqe .CodeMirror,
-body.workbench-body .query-page .yasqe .CodeMirror pre {
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror[data-workbench-editor-height] .CodeMirror-scroll {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
+.query-editor-resize {
+    position: relative;
+    height: 10px;
+    margin: 2px 0 0;
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.query-editor-resize::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--workbench-soft-rule);
+}
+
+.query-editor-resize:hover::before,
+.query-editor-resize:focus-visible::before,
+.query-editor-resize[data-dragging="true"]::before {
+    background: var(--workbench-rule);
+}
+
+.query-editor-resize:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 1px;
+    border-radius: 4px;
+}
+
+/* Results come into view under the sticky context bar after an execution starts. */
+.query-results {
+    scroll-margin-top: calc(var(--workbench-contextbar-height, 56px) + 16px);
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror,
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror pre {
 	font-family: var(--workbench-code-font);
 	font-size: var(--workbench-code-font-size);
 }
@@ -363,10 +409,6 @@ body.workbench-body:has(#query-page) #workbench-page-surface {
 .query-page .query-form__field--actions #query-name {
     min-width: 12rem;
     flex: 1 1 12rem;
-}
-
-.query-page .yasqe .CodeMirror-scroll {
-    min-height: 240px;
 }
 
 .query-page .yasqe,

@@ -1836,6 +1836,8 @@ module workbench {
                     }}>
                 <div id="update-editor" class="workbench-field"><label for="update">SPARQL Update</label>
                     <textarea id="update" name="update" rows="16" cols="80">${query}</textarea>
+                    <div id="update-editor-resize" class="query-editor-resize" role="separator"
+                        aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div>
                     <span id="updateString.errors" class="error" role="alert">${error}</span>
                 </div>
                 <div id="update-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
@@ -2014,7 +2016,9 @@ module workbench {
                             @click=${() => invoke('workbench.query.closeComparePane')}>${icon(runtime, 'close', 'query-compare-pane__close-icon')}</button>` : ''}</div>
                     <div class="query-form__field">${compare
                         ? h`<textarea id="query-compare" rows="16" cols="80" wrap="soft"></textarea>`
-                        : h`<textarea id="query" name="query" rows="16" cols="80" wrap="soft">${text(options.query)}</textarea>`}</div>
+                        : h`<textarea id="query" name="query" rows="16" cols="80" wrap="soft">${text(options.query)}</textarea>`}
+                        <div id=${compare ? 'query-compare-editor-resize' : 'query-editor-resize'} class="query-editor-resize"
+                            role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div></div>
                 </div>
                 <div class="query-form__row"><span class="query-form__label query-form__label--blank"></span>
                     <div class="query-form__field"><span id=${'queryString.errors' + suffix} class="error">${compare ? '' : text(options.error)}</span></div>

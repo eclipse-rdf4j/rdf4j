@@ -4599,6 +4599,11 @@ module workbench {
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
             });
+            var sizing: any = (<any>workbench).editorSizing;
+            var resizeHandle = document.getElementById(paneKey === 'compare' ? 'query-compare-editor-resize' : 'query-editor-resize');
+            if (sizing && typeof sizing.install === 'function' && resizeHandle) {
+                sizing.install(paneEditor, resizeHandle, 'rdf4j.workbench.editor-height.v1');
+            }
             paneEditor.refresh();
             setPaneQueryEditor(paneKey, paneEditor);
             return paneEditor;

@@ -34,3 +34,102 @@ test('format.count groups integers for the given locale and leaves other text un
     assert.equal(format.count('12.5', 'en-US'), '12.5');
     assert.equal(format.count('99999999999999999999', 'en-US'), '99999999999999999999');
 });
+
+function loadEditorSizing(storage) {
+    const harness = createFormBrowserHarness();
+    harness.window.innerHeight = 900;
+    if (storage !== undefined) {
+        Object.defineProperty(harness.window, 'localStorage', { configurable: true, get: storage });
+    }
+    harness.loadScripts(['yasqeHelper.js']);
+    const wrapper = harness.registerElement('div', { className: 'CodeMirror' });
+    let height = 142;
+    wrapper.getBoundingClientRect = () => ({ top: 0, left: 0, width: 600, height });
+    const sizes = [];
+    const cm = {
+        refreshes: 0,
+        getWrapperElement: () => wrapper,
+        setSize(width, value) { sizes.push(value); height = value; wrapper.style.height = value + 'px'; },
+        refresh() { this.refreshes++; }
+    };
+    const handle = harness.registerElement('div', { id: 'resize' });
+    return { harness, sizing: harness.context.workbench.editorSizing, cm, handle, wrapper, sizes,
+        setHeight(value) { height = value; } };
+}
+
+function memoryStorage() {
+    const values = new Map();
+    return {
+        values,
+        getItem: (key) => values.has(key) ? values.get(key) : null,
+        setItem: (key, value) => values.set(key, String(value)),
+        removeItem: (key) => values.delete(key)
+    };
+}
+
+test('editorSizing drags, steps, clamps, remembers and resets the editor height', () => {
+    const storage = memoryStorage();
+    const { sizing, cm, handle, wrapper, sizes, setHeight } = loadEditorSizing(() => storage);
+    assert.equal(typeof sizing.install(null, handle, 'k'), 'function');
+    const dispose = sizing.install(cm, handle, 'editor-key');
+    assert.equal(handle.getAttribute('aria-valuemin'), '142');
+    assert.deepEqual(sizes, [], 'no stored height keeps the automatic height');
+
+    handle.trigger('pointerdown', { button: 2, clientY: 0, pointerId: 1 });
+    assert.equal(handle.getAttribute('data-dragging') ?? null, null, 'only the primary button drags');
+    handle.setPointerCapture = () => {};
+    handle.releasePointerCapture = () => { throw new Error('already released'); };
+    handle.trigger('pointerdown', { button: 0, clientY: 100, pointerId: 1 });
+    assert.equal(handle.getAttribute('data-dragging'), 'true');
+    handle.trigger('pointermove', { clientY: 300 });
+    assert.equal(sizes[sizes.length - 1], 342);
+    handle.trigger('pointermove', { clientY: 5000 });
+    assert.equal(sizes[sizes.length - 1], 720, 'heights stop at 80% of the viewport');
+    handle.trigger('pointerup', { pointerId: 1 });
+    assert.equal(handle.getAttribute('data-dragging') ?? null, null);
+    assert.equal(storage.values.get('editor-key'), '720');
+    assert.equal(wrapper.getAttribute('data-workbench-editor-height'), '720');
+
+    handle.trigger('keydown', { key: 'ArrowUp' });
+    assert.equal(sizes[sizes.length - 1], 699);
+    handle.trigger('keydown', { key: 'ArrowDown' });
+    assert.equal(sizes[sizes.length - 1], 720);
+    handle.trigger('keydown', { key: 'Tab' });
+    setHeight(150);
+    handle.trigger('keydown', { key: 'ArrowUp' });
+    assert.equal(sizes[sizes.length - 1], 142, 'heights stop at six lines');
+    handle.trigger('keydown', { key: 'Escape' });
+    assert.equal(wrapper.getAttribute('data-workbench-editor-height') ?? null, null);
+    assert.equal(storage.values.has('editor-key'), false);
+    handle.trigger('dblclick');
+    assert.equal(handle.getAttribute('aria-valuenow') ?? null, null);
+    dispose();
+    handle.trigger('keydown', { key: 'ArrowDown' });
+    assert.equal(wrapper.getAttribute('data-workbench-editor-height') ?? null, null, 'disposed handles do nothing');
+});
+
+test('editorSizing restores a stored height and survives unavailable storage', () => {
+    const storage = memoryStorage();
+    storage.values.set('editor-key', '400');
+    const restored = loadEditorSizing(() => storage);
+    restored.sizing.install(restored.cm, restored.handle, 'editor-key');
+    assert.deepEqual(restored.sizes, [400]);
+    assert.equal(restored.cm.refreshes, 1);
+
+    storage.values.set('bad-key', 'not a number');
+    const invalid = loadEditorSizing(() => storage);
+    invalid.sizing.install(invalid.cm, invalid.handle, 'bad-key');
+    assert.deepEqual(invalid.sizes, []);
+
+    const blocked = loadEditorSizing(() => { throw new Error('SecurityError'); });
+    blocked.sizing.install(blocked.cm, blocked.handle, 'editor-key');
+    blocked.handle.trigger('keydown', { key: 'ArrowDown' });
+    assert.equal(blocked.sizes[blocked.sizes.length - 1], 163, 'sizing works without storage');
+
+    const missing = loadEditorSizing(() => null);
+    missing.sizing.install(missing.cm, missing.handle, 'editor-key', { minimum: 100, step: 10 });
+    missing.handle.trigger('keydown', { key: 'ArrowDown' });
+    assert.equal(missing.sizes[missing.sizes.length - 1], 152);
+    missing.handle.trigger('keydown', { key: 'Escape' });
+    assert.equal(missing.handle.getAttribute('aria-valuenow') ?? null, null);
+});

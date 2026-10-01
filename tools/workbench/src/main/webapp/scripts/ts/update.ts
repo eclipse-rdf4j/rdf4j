@@ -45,28 +45,13 @@ module workbench {
                 }
             });
 
-            var $wrapper = $(yasqe.getWrapperElement());
-
-            // Style the outer wrapper
-            $wrapper.css({
-                "fontSize": "14px",
-                "width": "900px"
-            });
-
-            // Style the actual CodeMirror elements inside YASQE
-            $wrapper.find(".CodeMirror").css({
-                "height": "auto"
-            });
-
-            $wrapper.find(".CodeMirror-scroll").css({
-                "height": "auto",
-                "max-height": "55vh",
-                "overflow-y": "auto",
-                "overflow-x": "auto"
-            });
-            // We made a change to the css wrapper element (and did so after
-            // initialization). So, force a manual update of the yasqe
-            // instance.
+            // The editor frame grows with its content like the Query editor (styles/query.css) and can be
+            // resized with the handle under it.
+            var sizing: any = (<any>workbench).editorSizing;
+            var handle = document.getElementById('update-editor-resize');
+            if (sizing && typeof sizing.install === 'function' && handle) {
+                sizing.install(yasqe, handle, 'rdf4j.workbench.update-editor-height.v1');
+            }
             yasqe.refresh();
 
             // If the text area we instantiated YASQE on has no query val,

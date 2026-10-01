@@ -87,3 +87,85 @@ test('the Execute button shows its keyboard shortcut', async ({ page }) => {
 	await expect(page.locator('#exec')).toHaveAttribute('title', /Execute \((Cmd|Ctrl)\+Enter\)/);
 	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 1');
 });
+
+test('the query editor grows with its content between six lines and half the viewport', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	const editorHeight = () => page.locator('.query-page .CodeMirror').first()
+		.evaluate(element => element.getBoundingClientRect().height);
+	await setQueryEditor(page, 'ASK { ?s ?p ?o }');
+	expect(await editorHeight()).toBeLessThanOrEqual(160);
+	const forty = Array.from({ length: 40 }, (_unused, index) => `# line ${index + 1}`).join('\n');
+	await setQueryEditor(page, forty);
+	const tall = await editorHeight();
+	expect(tall).toBeGreaterThan(300);
+	expect(tall).toBeLessThanOrEqual(452);
+});
+
+test('running a query brings a low result card up under the context bar', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 400');
+	const before = await page.locator('#query-results').evaluate(element => {
+		element.hidden = false;
+		const top = element.getBoundingClientRect().top;
+		element.hidden = true;
+		return top;
+	});
+	expect(before).toBeGreaterThan(900 * 0.4);
+	await page.locator('#exec').click();
+	await page.locator('#query-results table.data tbody tr[data-query-row-index]').first().waitFor();
+	await expect.poll(() => page.locator('#query-results').evaluate(element => Math.round(element.getBoundingClientRect().top)),
+		{ timeout: 5000 }).toBeLessThanOrEqual(56 + 16 + 2);
+	const top = await page.locator('#query-results').evaluate(element => element.getBoundingClientRect().top);
+	expect(top).toBeGreaterThanOrEqual(56);
+});
+
+test('a result card that is already high stays where it is', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 1400 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 5');
+	await page.locator('#exec').click();
+	await page.locator('#query-results table.data tbody tr[data-query-row-index]').first().waitFor();
+	await page.waitForTimeout(300);
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test('the update editor fills its frame', async ({ page }) => {
+	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+		await page.setViewportSize(viewport);
+		await page.goto(repositoryPageUrl(REPOSITORY_ID, 'update'), { waitUntil: 'networkidle' });
+		const heights = await page.locator('#update-editor').evaluate(element => ({
+			editor: element.querySelector('.CodeMirror').getBoundingClientRect().height,
+			gutters: element.querySelector('.CodeMirror-gutters').getBoundingClientRect().height,
+			scroll: element.querySelector('.CodeMirror-scroll').getBoundingClientRect().height
+		}));
+		expect(Math.abs(heights.editor - heights.gutters), JSON.stringify(heights)).toBeLessThanOrEqual(2);
+		expect(heights.scroll, JSON.stringify(heights)).toBeGreaterThanOrEqual(140);
+	}
+});
+
+test('the editor resize handle sets a height that survives a reload', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await page.evaluate(() => localStorage.removeItem('rdf4j.workbench.editor-height.v1'));
+	await setQueryEditor(page, 'ASK { ?s ?p ?o }');
+	const editor = page.locator('.query-page .CodeMirror').first();
+	const handle = page.locator('#query-editor-resize');
+	const start = await editor.evaluate(element => element.getBoundingClientRect().height);
+	const box = await handle.boundingBox();
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 200, { steps: 5 });
+	await page.mouse.up();
+	const dragged = await editor.evaluate(element => element.getBoundingClientRect().height);
+	expect(dragged).toBeGreaterThan(start + 150);
+	await handle.focus();
+	await page.keyboard.press('ArrowUp');
+	const stepped = await editor.evaluate(element => element.getBoundingClientRect().height);
+	expect(Math.round(dragged - stepped)).toBe(21);
+	await page.reload({ waitUntil: 'networkidle' });
+	await page.locator('.query-page .CodeMirror').first().waitFor();
+	const reloaded = await page.locator('.query-page .CodeMirror').first().evaluate(element => element.getBoundingClientRect().height);
+	expect(Math.abs(reloaded - stepped)).toBeLessThanOrEqual(1);
+	await page.locator('#query-editor-resize').dblclick();
+	const automatic = await page.locator('.query-page .CodeMirror').first().evaluate(element => element.getBoundingClientRect().height);
+	expect(automatic).toBeLessThan(reloaded);
+	await page.evaluate(() => localStorage.removeItem('rdf4j.workbench.editor-height.v1'));
+});

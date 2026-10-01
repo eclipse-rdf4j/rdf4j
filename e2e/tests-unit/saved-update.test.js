@@ -197,6 +197,8 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
         value: ''
     });
     harness.document.body.appendChild(update);
+    const resizeHandle = harness.registerElement('div', { id: 'update-editor-resize' });
+    harness.document.body.appendChild(resizeHandle);
 
     const yasqe = createYasqeStub(harness);
     let setupCompletersArg = null;
@@ -206,6 +208,8 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
     harness.context.workbench.yasqeHelper.setupCompleters = (namespaces) => {
         setupCompletersArg = namespaces;
     };
+    const sizingInstalls = [];
+    harness.context.workbench.editorSizing.install = (cm, handle, key) => sizingInstalls.push({ handle, key });
 
     assert.equal(harness.context.workbench.update.doSubmit(), true);
 
@@ -214,11 +218,13 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
     const instance = yasqe.state.instance;
     assert.deepEqual(setupCompletersArg, { ex: 'http://example.com/' });
     assert.match(instance.getValue(), /INSERT DATA/);
-    assert.equal(yasqe.state.wrapper.style.fontSize, '14px');
-    assert.equal(yasqe.state.wrapper.style.width, '900px');
-    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[0].style.height, 'auto');
-    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[1].style['max-height'], '55vh');
+    // Size comes from the shared editor CSS (M3.6): no inline width or height on the editor.
+    assert.equal(yasqe.state.wrapper.style.width || '', '');
+    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[0].style.height || '', '');
     assert.equal(instance.refreshCount, 1);
+    assert.equal(sizingInstalls.length, 1);
+    assert.equal(sizingInstalls[0].handle, resizeHandle);
+    assert.equal(sizingInstalls[0].key, 'rdf4j.workbench.update-editor-height.v1');
     assert.deepEqual(JSON.parse(JSON.stringify(instance.options.createShareLink())), { update: instance.getValue() });
 
     instance.options.consumeShareLink(instance, { update: 'DELETE WHERE {}' });

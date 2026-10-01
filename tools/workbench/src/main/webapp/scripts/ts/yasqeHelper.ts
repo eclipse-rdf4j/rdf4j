@@ -8,6 +8,149 @@
 
 module workbench {
 
+    export interface EditorSizingOptions {
+        /** Smallest height in pixels (six lines by default). */
+        minimum?: number;
+        /** Line height used by the arrow keys. */
+        step?: number;
+    }
+
+    /**
+     * Editor height handling shared by the Query and Update editors (M3.2). Without a stored height the
+     * editor grows with its content (CSS limits it to six lines and half the viewport); dragging the
+     * handle or pressing ArrowUp/ArrowDown on it fixes a height between six lines and 80% of the viewport,
+     * which is remembered in localStorage; double-click or Escape returns to the automatic height.
+     */
+    export module editorSizing {
+        var STORAGE_UNAVAILABLE = -1;
+
+        function readStoredHeight(storageKey: string): number {
+            try {
+                var value = window.localStorage ? window.localStorage.getItem(storageKey) : null;
+                var height = value === null ? NaN : Number(value);
+                return isFinite(height) && height > 0 ? height : STORAGE_UNAVAILABLE;
+            } catch (error) {
+                return STORAGE_UNAVAILABLE;
+            }
+        }
+
+        function storeHeight(storageKey: string, height: number): void {
+            try {
+                if (!window.localStorage) {
+                    return;
+                }
+                if (height > 0) {
+                    window.localStorage.setItem(storageKey, String(Math.round(height)));
+                } else {
+                    window.localStorage.removeItem(storageKey);
+                }
+            } catch (error) {
+                // Private windows can refuse storage; the height then lasts for this page only.
+            }
+        }
+
+        export function install(cm: any, handle: HTMLElement, storageKey: string, options?: EditorSizingOptions): () => void {
+            if (!cm || !handle) {
+                return function() {};
+            }
+            var settings = options || {};
+            var minimum = settings.minimum || 142;
+            var step = settings.step || 21;
+            var wrapper: HTMLElement = cm.getWrapperElement();
+            var maximum = function() {
+                return Math.max(minimum, Math.round(window.innerHeight * 0.8));
+            };
+            var clamp = function(height: number) {
+                return Math.max(minimum, Math.min(maximum(), Math.round(height)));
+            };
+            var currentHeight = function() {
+                return wrapper.getBoundingClientRect().height;
+            };
+            var apply = function(height: number, remember: boolean) {
+                if (height > 0) {
+                    var fixed = clamp(height);
+                    wrapper.setAttribute('data-workbench-editor-height', String(fixed));
+                    cm.setSize(null, fixed);
+                    handle.setAttribute('aria-valuenow', String(fixed));
+                    if (remember) {
+                        storeHeight(storageKey, fixed);
+                    }
+                } else {
+                    wrapper.removeAttribute('data-workbench-editor-height');
+                    wrapper.style.height = '';
+                    handle.removeAttribute('aria-valuenow');
+                    if (remember) {
+                        storeHeight(storageKey, 0);
+                    }
+                }
+                cm.refresh();
+            };
+            handle.setAttribute('aria-valuemin', String(minimum));
+            var stored = readStoredHeight(storageKey);
+            if (stored !== STORAGE_UNAVAILABLE) {
+                apply(stored, false);
+            }
+
+            var startY = 0;
+            var startHeight = 0;
+            var onPointerMove = function(event: PointerEvent) {
+                apply(startHeight + (event.clientY - startY), false);
+            };
+            var onPointerUp = function(event: PointerEvent) {
+                handle.removeAttribute('data-dragging');
+                handle.removeEventListener('pointermove', onPointerMove);
+                handle.removeEventListener('pointerup', onPointerUp);
+                handle.removeEventListener('pointercancel', onPointerUp);
+                if (handle.releasePointerCapture && event.pointerId !== undefined) {
+                    try {
+                        handle.releasePointerCapture(event.pointerId);
+                    } catch (error) {
+                        // The capture was already released by the browser.
+                    }
+                }
+                apply(currentHeight(), true);
+            };
+            var onPointerDown = function(event: PointerEvent) {
+                if (event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+                startY = event.clientY;
+                startHeight = currentHeight();
+                handle.setAttribute('data-dragging', 'true');
+                if (handle.setPointerCapture && event.pointerId !== undefined) {
+                    handle.setPointerCapture(event.pointerId);
+                }
+                handle.addEventListener('pointermove', onPointerMove);
+                handle.addEventListener('pointerup', onPointerUp);
+                handle.addEventListener('pointercancel', onPointerUp);
+            };
+            var onKeyDown = function(event: KeyboardEvent) {
+                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    apply(currentHeight() + (event.key === 'ArrowDown' ? step : -step), true);
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    apply(0, true);
+                }
+            };
+            var onDoubleClick = function() {
+                apply(0, true);
+            };
+            handle.addEventListener('pointerdown', onPointerDown);
+            handle.addEventListener('keydown', onKeyDown);
+            handle.addEventListener('dblclick', onDoubleClick);
+            return function() {
+                handle.removeEventListener('pointerdown', onPointerDown);
+                handle.removeEventListener('keydown', onKeyDown);
+                handle.removeEventListener('dblclick', onDoubleClick);
+                handle.removeEventListener('pointermove', onPointerMove);
+                handle.removeEventListener('pointerup', onPointerUp);
+                handle.removeEventListener('pointercancel', onPointerUp);
+            };
+        }
+    }
+
     export module yasqeHelper {
 
         export function setupCompleters(namespaces: any) {//namespace in form {"rdf:":"http://bla"}

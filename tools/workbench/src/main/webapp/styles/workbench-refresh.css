@@ -505,11 +505,6 @@ body.workbench-body .saved-query-row .yasqe .CodeMirror pre {
 	font-size: var(--workbench-code-font-size);
 }
 
-body.workbench-body #update-editor .CodeMirror {
-	height: min(45vh, 28rem) !important;
-	min-height: 240px;
-}
-
 body.workbench-body .query-page .yasqe .CodeMirror-lines,
 body.workbench-body #update-editor .yasqe .CodeMirror-lines,
 body.workbench-body .saved-query-row .yasqe .CodeMirror-lines {
@@ -1134,11 +1129,6 @@ body.workbench-body .workbench-responsive-records table.data td[data-label]::bef
 }
 
 @media (max-width: 600px) {
-	body.workbench-body #update-editor .CodeMirror {
-		height: 300px !important;
-		min-height: 240px;
-	}
-
 	body.workbench-body #workbench-page-surface > form,
 	body.workbench-body #workbench-page-surface > .workbench-island,
 	body.workbench-body #workbench-page-surface > #saved-queries {

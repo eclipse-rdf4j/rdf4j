@@ -40,11 +40,11 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 13:00Z) M2.7 An in-shell "not found" page (mockup 13).
 - [x] (2026-10-01 14:00Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
 - [x] (2026-10-01 14:40Z) M3.1 Cmd/Ctrl+Enter runs the query.
-- [ ] M3.2 (in progress) The editor grows with its content, can be resized, and results come into view.
-- [ ] M3.3 Results and Explanation become tabs of one card; the Execute row never moves.
+- [x] (2026-10-01 15:30Z) M3.2 The editor grows with its content, can be resized, and results come into view (the 12-visible-rows check moved to M4.2; see the Decision Log).
+- [ ] M3.3 (in progress) Results and Explanation become tabs of one card; the Execute row never moves.
 - [ ] M3.4 Clear names, units, and no silent "Clear".
 - [ ] M3.5 One status line and designed result states (mockup 02).
-- [ ] M3.6 The Update editor fills its box.
+- [x] (2026-10-01 15:30Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
 - [ ] M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
 - [ ] M4.2 Column sizing without mid-word breaks.
 - [ ] M4.3 Literal, IRI and heading rendering.
@@ -232,6 +232,13 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 
 - Decision (M2.4): the declared-but-empty `server` group is labeled "Connection" by default (it was "Server"), so that an administrator who moves items into it does not get two groups labeled "Server" next to the new `repositories` group label. `WorkbenchPolicyLoaderTest` now checks the "Server" label on the `repositories` group, and `WorkbenchFrontendSecurityTest` checks that the server user reaches the DOM only through the Lit text binding in `workbenchViews.ts` (the DOM patching in `template.ts` was removed in M2.3).
   Rationale: avoids a duplicate label in custom menus; both test changes follow behavior moved by this plan.
+  Date/Author: 2026-10-01 / implementer.
+
+- Decision (M3.2): the result card is revealed when its top edge is below 40% of the viewport (not 60%), once per execution, after the first rows, boolean answer or error have rendered (not at submit). With the editor capped at half the viewport the card's top sits between about 53% and 60% of a 900px viewport, so the 60% rule almost never fired; revealing at submit time scrolled a page that was still too short. The "at least 12 result rows visible after a 400-row query at 1440x900" check is moved to M4.2, because it also needs single-line rows and the page-scrolling table: today BSBM rows wrap to 56px and the table is a 630px inner scroller.
+  Rationale: keeps the M3.2 tests deterministic and still delivers the intent (results come into view).
+  Date/Author: 2026-10-01 / implementer.
+- Decision (M3.2/M3.6): `workbench.editorSizing` lives in `yasqeHelper.ts`, stores the Query editor height under `rdf4j.workbench.editor-height.v1` and the Update editor height under `rdf4j.workbench.update-editor-height.v1`, and marks a fixed height with `data-workbench-editor-height` on the CodeMirror wrapper so CSS can switch the scroll element from the 142px..50vh automatic range to filling the wrapper.
+  Rationale: one helper for both editors; separate keys so a tall Query editor does not resize the Update editor.
   Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective

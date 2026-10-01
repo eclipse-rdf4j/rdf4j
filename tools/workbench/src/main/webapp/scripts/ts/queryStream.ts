@@ -3916,6 +3916,30 @@ namespace workbench {
             }
         }
 
+        /**
+         * Once per execution, after its first status renders: scroll the result card into view when its top
+         * edge sits below 40% of the viewport (M3.2; see the plan's Decision Log for why not 60%). The card's
+         * scroll-margin keeps it under the context bar.
+         */
+        function revealResults(target: any): void {
+            var view = target && target.ownerDocument && target.ownerDocument.defaultView;
+            if (!view || typeof target.scrollIntoView !== 'function' || typeof target.getBoundingClientRect !== 'function') {
+                return;
+            }
+            var reveal = function() {
+                if (target.getBoundingClientRect().top <= view.innerHeight * 0.4) {
+                    return;
+                }
+                var reducedMotion = !!(view.matchMedia && view.matchMedia('(prefers-reduced-motion: reduce)').matches);
+                target.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+            };
+            if (typeof view.requestAnimationFrame === 'function') {
+                view.requestAnimationFrame(reveal);
+            } else {
+                reveal();
+            }
+        }
+
         function createExecutionController(form: any, target: any, options?: any): BoundExecutionController {
             var config = options || {};
             var renderer: QueryResultRenderer = null;
@@ -3927,6 +3951,15 @@ namespace workbench {
             var frozenBody: URLSearchParams = null;
             var frozenUrl = '';
             var batchSize = 1000000;
+            var revealPending = false;
+
+            /** Reveal the results once per execution, after its first rendered rows, answer or error. */
+            function revealOnce() {
+                if (revealPending && !disposed) {
+                    revealPending = false;
+                    revealResults(target);
+                }
+            }
 
             function setQueryRequestId(value: string) {
                 setControlValue(form, 'query-request-id', value);
@@ -4035,7 +4068,12 @@ namespace workbench {
                                 frozenBody.set('query-timeout', String(metadata['query-timeout']));
                             }
                         }
-                        return currentRenderer.accept(record);
+                        return currentRenderer.accept(record).then(() => {
+                            if (offset === 0 && (record.type === 'rows' || record.type === 'boolean'
+                                    || record.type === 'end' || record.type === 'error')) {
+                                revealOnce();
+                            }
+                        });
                     }
                 });
                 stream.then((outcome: QueryStreamOutcome) => {
@@ -4044,9 +4082,10 @@ namespace workbench {
                     }
                     if (outcome.type === 'error') {
                         return recover(requestGeneration, currentRenderer,
-                            outcome.message || 'Query failed.', outcome.code, outcome.status);
+                            outcome.message || 'Query failed.', outcome.code, outcome.status).then(revealOnce);
                     }
                     finishRequest(requestGeneration);
+                    revealOnce();
                 }, (error: any) => {
                     if (generation !== requestGeneration || disposed) {
                         return;
@@ -4094,8 +4133,10 @@ namespace workbench {
                     onCancel: () => cancel(true)
                 });
                 target.hidden = false;
+                revealPending = true;
                 if (!controlValue(form, 'query').trim()) {
                     renderer.fail('Enter a query to see results.');
+                    revealOnce();
                     return false;
                 }
                 if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000000) {
