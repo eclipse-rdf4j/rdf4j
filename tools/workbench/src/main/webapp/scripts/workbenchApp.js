@@ -646,7 +646,9 @@ var workbench;
                 // A rejected request answers with an error-message row, and Clear and Remove list graphs (M6.1).
                 count = model.rowCount;
             }
-            else if (model.viewId === 'summary' || model.viewId === 'information' || model.viewId === 'server') {
+            else if (model.viewId === 'summary' || model.viewId === 'information' || model.viewId === 'server'
+                || model.viewId === 'query') {
+                // The Query page has a row only when it opens a saved query for editing (M10.2).
                 count = Math.min(1, model.rowCount);
             }
             else if (model.viewId === 'info' && !model.metadata.workbench) {

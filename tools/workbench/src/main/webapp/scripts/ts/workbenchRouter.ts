@@ -370,7 +370,7 @@ module workbench {
                     startUpload(mine);
                 }
                 answer = fetcher(request, { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
-                    credentials: 'same-origin' }).then((response: any) => app().loadModelFromResponse(response, signal));
+                    credentials: 'same-origin' }).then((response: any) => app().loadModelFromResponse(response, signal, request));
             } else {
                 answer = app().loadModel(fetcher, request, signal);
             }
@@ -381,8 +381,9 @@ module workbench {
                         throw abandoned();
                     }
                     if (options.body) {
-                        // A redirect shows another page (a new entry); an answer in place replaces this one.
-                        history = model.finalUrl && model.finalUrl !== request ? 'push' : 'replace';
+                        // Another page (a redirect, or Saved queries' Edit answered by the Query page) is a new
+                        // entry; the same page answered again (a rejected Namespaces save) replaces this one.
+                        history = model.finalUrl === currentRoute.url.split('#')[0] ? 'replace' : 'push';
                         shownDefinition = routes.get(model.viewId);
                         if (!shownDefinition || !shownDefinition.routerReady) {
                             throw new Error('The answer is a page the router does not show: ' + model.viewId);

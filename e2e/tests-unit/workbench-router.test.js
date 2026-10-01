@@ -798,6 +798,8 @@ test('forms the router leaves to the browser', () => {
 
 test('a POST form is sent with the page-model Accept header and the page it redirects to is shown', async () => {
     const harness = loadFormRouter();
+    harness.window.goTo(base + 'clear');
+    harness.session.url = base + 'clear';
     harness.start();
     const form = fakeForm(harness, { action: 'clear', method: 'post' }, [['context', 'null']]);
     const submitter = fakeElement({ name: 'clear', value: 'Clear' });
@@ -944,4 +946,22 @@ test('a form without method or action is a GET of the current page', async () =>
     harness.document.dispatch('submit', submitEvent(form));
 
     assert.equal(harness.loadModelCalls[0].url, base + 'summary?q=x');
+});
+
+// Plan task M10.2: a form answered in place by another page (Saved queries' Edit posts to the Query page).
+test('a POST answered by another page without a redirect is a new entry', async () => {
+    const harness = loadFormRouter();
+    harness.register('saved-queries');
+    harness.register('query');
+    harness.window.goTo(base + 'saved-queries');
+    harness.session.url = base + 'saved-queries';
+    harness.start();
+
+    harness.router.submit(fakeForm(harness, { action: 'query', method: 'post' }, [['action', 'edit']]));
+    harness.respond({ url: base + 'query', redirected: false, viewId: 'query' });
+    await settle();
+
+    const last = harness.window.history.entries[harness.window.history.entries.length - 1];
+    assert.equal(last[0], 'push');
+    assert.equal(last[2], base + 'query');
 });

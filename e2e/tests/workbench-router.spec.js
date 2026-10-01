@@ -381,3 +381,29 @@ test.describe('forms through the router', () => {
 		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/add$`));
 	});
 });
+
+// Plan task M10.2: Edit on Saved queries opens the Query page in place.
+test('Edit on Saved queries opens the Query page with the saved text, without loading a document', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const queryName = `router-edit-${Date.now()}`;
+	const text = 'SELECT ?s WHERE { ?s a ?type } LIMIT 3';
+	await openRoute(page, 'query');
+	const editor = page.locator('.CodeMirror').first();
+	await editor.evaluate((element, value) => element.CodeMirror.setValue(value), text);
+	await page.locator('#save-query-toggle').press('Enter');
+	await page.locator('#query-name').fill(queryName);
+	await page.evaluate(() => window.workbench.query.handleNameChange());
+	await page.locator('#save').click();
+	await expect(page.locator('#save-feedback')).toContainText('Query saved.');
+	await openRoute(page, 'saved-queries');
+	const documents = recordDocumentRequests(page);
+
+	const row = page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) });
+	await row.getByRole('button', { name: 'Edit' }).click();
+
+	await expectRoute(page, 'query');
+	await expect.poll(() => page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.getValue()))
+		.toBe(text);
+	expect(documents).toEqual([]);
+	await expect(page.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
+});

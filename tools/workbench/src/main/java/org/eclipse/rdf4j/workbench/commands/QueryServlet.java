@@ -1174,8 +1174,8 @@ public class QueryServlet extends TransformationServlet {
 				final String queryLn = req.getParameter(EDIT_PARAMS[0]);
 				final String query = getQueryText(req);
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
-				final Literal limit = SimpleValueFactory.getInstance()
-						.createLiteral(req.getParameter(EDIT_PARAMS[3]), CoreDatatype.XSD.INTEGER);
+				// Saved queries' Edit posts no result limit; the Query page then uses its default (M10.2).
+				final Literal limit = createOptionalIntegerLiteral(req.getParameter(EDIT_PARAMS[3]));
 				final Literal queryTimeout = createOptionalIntegerLiteral(req.getParameter(EDIT_PARAMS[4]));
 				builder.result(queryLn, query, infer, limit, queryTimeout);
 				builder.end();

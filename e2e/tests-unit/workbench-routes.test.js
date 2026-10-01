@@ -874,3 +874,15 @@ test('a page model read from a response accepts an error status that still ends 
     assert.equal(model.viewId, 'namespaces');
     assert.equal(model.finalUrl, 'https://example.test/namespaces');
 });
+
+test('the Query page model of a saved query\'s Edit has its row read, so the editor shows the text', async () => {
+    const workbench = loadWorkbench();
+    const rows = [[{ kind: 'literal', value: 'SPARQL' }, { kind: 'literal', value: 'ASK {}' }]];
+    const model = { viewId: 'query', rowCount: 1, rowStore: { read: async (start, count) => rows.slice(start, count) } };
+
+    await workbench.app.prepareInitialRows(model);
+    assert.deepEqual(JSON.parse(JSON.stringify(model.rows)), JSON.parse(JSON.stringify(rows)));
+
+    const empty = { viewId: 'query', rowCount: 0, rowStore: { read: async () => { throw new Error('not read'); } } };
+    await workbench.app.prepareInitialRows(empty);
+});
