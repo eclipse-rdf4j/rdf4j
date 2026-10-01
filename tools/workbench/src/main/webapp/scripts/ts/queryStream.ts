@@ -32,6 +32,36 @@ namespace workbench {
         }
 
         var owner: Owner = null;
+        var presentationListeners: WeakMap<HTMLElement, ((enabled: boolean) => void)[]> = new WeakMap();
+
+        export function addPresentationListener(target: HTMLElement, listener: (enabled: boolean) => void): () => void {
+            var listeners = presentationListeners.get(target);
+            if (!listeners) {
+                listeners = [];
+                presentationListeners.set(target, listeners);
+            }
+            listeners.push(listener);
+            return function() {
+                var current = presentationListeners.get(target);
+                if (!current) {
+                    return;
+                }
+                var index = current.indexOf(listener);
+                if (index >= 0) {
+                    current.splice(index, 1);
+                }
+                if (!current.length) {
+                    presentationListeners.delete(target);
+                }
+            };
+        }
+
+        function notifyPresentationListeners(target: HTMLElement, enabled: boolean) {
+            var listeners = presentationListeners.get(target);
+            if (listeners) {
+                listeners.slice().forEach(listener => listener(enabled));
+            }
+        }
 
         export function currentTarget(): HTMLElement {
             return owner && owner.target;
@@ -104,6 +134,7 @@ namespace workbench {
                 if (owner.callbacks.change) {
                     owner.callbacks.change(true);
                 }
+                notifyPresentationListeners(target, true);
                 focusElement(control);
                 return;
             }
@@ -121,6 +152,7 @@ namespace workbench {
             if (actions.change) {
                 actions.change(false);
             }
+            notifyPresentationListeners(target, false);
             if (restoreFocus) {
                 if (previous && canFocus(previous.previousFocus, doc)) {
                     focusElement(previous.previousFocus);
@@ -1486,15 +1518,70 @@ namespace workbench {
         }
 
         export function chooseAutoLayout(
-                availableWidth: number, measuredColumnWidths: number[], selected?: string): string {
+                availableWidth: number, minimumColumnWidths: number[], selected?: string, wrapValues?: boolean): string {
             if (selected === 'table' || selected === 'records') {
                 return selected;
             }
-            var totalWidth = (measuredColumnWidths || []).reduce((total, width) => {
+            if (wrapValues === false) {
+                return 'table';
+            }
+            var totalWidth = (minimumColumnWidths || []).reduce((total, width) => {
                 return total + (isFinite(width) && width > 0 ? width : 0);
             }, 0);
-            return totalWidth > 0 && isFinite(availableWidth) && availableWidth > 0 && totalWidth > availableWidth
+            var visibleWidth = isFinite(availableWidth) && availableWidth > 0 ? availableWidth : 0;
+            return totalWidth > 0 && totalWidth > visibleWidth
                 ? 'records' : 'table';
+        }
+
+        export function allocateTableColumnWidths(
+                sampledWidths: number[], minimumWidths: number[], availableWidth: number, wrapValues: boolean): number[] {
+            var sample = sampledWidths || [];
+            var minimums = minimumWidths || [];
+            var count = Math.max(sample.length, minimums.length);
+            if (!count) {
+                return [];
+            }
+            var desired: number[] = [];
+            var minima: number[] = [];
+            for (var index = 0; index < count; index++) {
+                var sampledWidth = sample[index];
+                var minimumWidth = minimums[index];
+                desired.push(isFinite(sampledWidth) && sampledWidth > 0 ? sampledWidth : 0);
+                minima.push(isFinite(minimumWidth) && minimumWidth > 0 ? minimumWidth : 0);
+            }
+            var viewport = isFinite(availableWidth) && availableWidth > 0 ? availableWidth : 0;
+            var minimumTotal = minima.reduce((total, width) => total + width, 0);
+            if (wrapValues) {
+                var tableWidth = Math.max(viewport, minimumTotal);
+                var remaining = Math.max(0, tableWidth - minimumTotal);
+                var demand = desired.map((width, index) => Math.max(0, width - minima[index]));
+                var demandTotal = demand.reduce((total, width) => total + width, 0);
+                var weightTotal = demandTotal > 0 ? demandTotal : count;
+                var assigned = 0;
+                return minima.map((minimum, index) => {
+                    var weight = demandTotal > 0 ? demand[index] : 1;
+                    var width = index === count - 1
+                        ? tableWidth - assigned
+                        : minimum + remaining * weight / weightTotal;
+                    assigned += width;
+                    return width;
+                });
+            }
+
+            var widths = desired.map((width, index) => Math.max(width, minima[index]));
+            var naturalTotal = widths.reduce((total, width) => total + width, 0);
+            var noWrapTableWidth = Math.max(viewport, naturalTotal);
+            var spare = Math.max(0, noWrapTableWidth - naturalTotal);
+            var noWrapWeights = widths.map(width => width > 0 ? width : 1);
+            var noWrapWeightTotal = noWrapWeights.reduce((total, width) => total + width, 0);
+            var noWrapAssigned = 0;
+            return widths.map((width, index) => {
+                var allocated = index === count - 1
+                    ? noWrapTableWidth - noWrapAssigned
+                    : width + spare * noWrapWeights[index] / noWrapWeightTotal;
+                noWrapAssigned += allocated;
+                return allocated;
+            });
         }
 
         function nonNegativeInteger(value: any, fallback: number): number {
@@ -1770,7 +1857,6 @@ namespace workbench {
             readonly countLabel: any;
             readonly cancelButton: any;
             readonly loadMoreButton: any;
-            readonly rowPositionControl: any;
             readonly downloadToggle: any;
             readonly optionsToggle: any;
             readonly fullscreenButton: any;
@@ -1781,6 +1867,7 @@ namespace workbench {
             readonly wrapControl: any;
             private document: any;
             private table: any;
+            private tableColumns: any;
             private records: any;
             private downloadFrame: any = null;
             private booleanResult: any;
@@ -1788,6 +1875,7 @@ namespace workbench {
             private maxDomRows: number;
             private layout = 'auto';
             private wrap = true;
+            private normalWrapBeforeFullscreen: boolean = null;
             private showDatatypes = true;
             private onScroll: () => void;
             private options: QueryResultRendererOptions;
@@ -1821,6 +1909,12 @@ namespace workbench {
             private recordRenderGeneration = 0;
             private renderGeneration = 0;
             private headerSignature = '';
+            private columnWidthRows: any[][] = null;
+            private columnWidthReadCount = -1;
+            private columnWidthReadPromise: Promise<any[][]> = null;
+            private columnWidthGeneration = 0;
+            private columnWidthPresentationSignature = '';
+            private columnWidthAppliedWidth = -1;
             private disposed = false;
             private disposers: (() => void)[] = [];
             private batchState: QueryResultState = null;
@@ -2011,20 +2105,6 @@ namespace workbench {
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
                 controls.appendChild(this.countLabel);
-                this.rowPositionControl = createElement(this.document, 'input');
-                this.rowPositionControl.type = 'number';
-                this.rowPositionControl.min = '1';
-                this.rowPositionControl.step = '1';
-                this.rowPositionControl.value = '1';
-                this.rowPositionControl.setAttribute('aria-label', 'Go to loaded row');
-                this.rowPositionControl.className = 'query-result-row-position';
-                controls.appendChild(this.createLabeledControl('Go to row', this.rowPositionControl));
-                this.rowPositionControl.addEventListener('change', () => {
-                    var row = Number(this.rowPositionControl.value);
-                    if (Number.isSafeInteger(row) && row >= 1 && row <= this.state.rowCount) {
-                        this.seekRow(row - 1);
-                    }
-                }, false);
                 this.cancelButton = this.createButton('Cancel query', () => {
                     if (this.options.onCancel) {
                         this.options.onCancel();
@@ -2049,6 +2129,8 @@ namespace workbench {
                 this.tableWrap.style.overflow = 'auto';
                 this.table = createElement(this.document, 'table', 'data');
                 this.table.setAttribute('aria-label', 'Query results');
+                this.tableColumns = createElement(this.document, 'colgroup');
+                this.table.appendChild(this.tableColumns);
                 this.table.appendChild(createElement(this.document, 'thead'));
                 this.tableBody = createElement(this.document, 'tbody');
                 this.table.appendChild(this.tableBody);
@@ -2089,12 +2171,10 @@ namespace workbench {
                     this.renderAndReport();
                 }, false);
                 this.wrapControl.addEventListener('change', () => {
-                    this.retainScrollAnchor();
-                    this.wrap = this.wrapControl.checked;
-                    this.resetRowMeasurements();
-                    this.savePresentationPreferences();
-                    this.invalidateVisibleRows();
-                    this.renderAndReport();
+                    this.setWrap(this.wrapControl.checked);
+                    if (this.normalWrapBeforeFullscreen === null) {
+                        this.savePresentationPreferences();
+                    }
                 }, false);
                 this.datatypeControl.addEventListener('change', () => {
                     this.showDatatypes = this.datatypeControl.checked;
@@ -2107,6 +2187,8 @@ namespace workbench {
                 };
                 this.tableWrap.addEventListener('scroll', this.onScroll, false);
                 this.records.addEventListener('scroll', this.onScroll, false);
+                this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target,
+                    enabled => this.setFullscreenPresentation(enabled)));
                 this.installAutoLayoutObserver();
                 this.renderAndReport();
             }
@@ -2441,11 +2523,11 @@ namespace workbench {
                 this.recordRenderGeneration++;
                 this.tableWrap.removeEventListener('scroll', this.onScroll, false);
                 this.records.removeEventListener('scroll', this.onScroll, false);
-                this.disposers.forEach(dispose => dispose());
-                this.disposers = [];
                 if (this.target.getAttribute('data-fullscreen') === 'true') {
                     workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
                 }
+                this.disposers.forEach(dispose => dispose());
+                this.disposers = [];
                 if (this.legacyHeader) {
                     this.legacyHeader.hidden = this.legacyHeaderHidden;
                 }
@@ -2622,7 +2704,33 @@ namespace workbench {
             private savePresentationPreferences() {
                 var query = (workbench as any).query;
                 if (query && typeof query.applyResultPresentationState === 'function') {
-                    query.applyResultPresentationState(this.layout, this.wrap);
+                    query.applyResultPresentationState(this.layout, this.normalWrapBeforeFullscreen === null
+                        ? this.wrap : this.normalWrapBeforeFullscreen);
+                }
+            }
+
+            private setWrap(wrap: boolean) {
+                this.retainScrollAnchor();
+                this.wrap = wrap;
+                this.wrapControl.checked = wrap;
+                this.root.setAttribute('data-wrap', wrap ? 'true' : 'false');
+                this.resetRowMeasurements();
+                this.invalidateVisibleRows();
+                this.renderAndReport();
+            }
+
+            private setFullscreenPresentation(enabled: boolean) {
+                if (enabled) {
+                    if (this.normalWrapBeforeFullscreen === null) {
+                        this.normalWrapBeforeFullscreen = this.wrap;
+                    }
+                    this.setWrap(false);
+                    return;
+                }
+                if (this.normalWrapBeforeFullscreen !== null) {
+                    var normalWrap = this.normalWrapBeforeFullscreen;
+                    this.normalWrapBeforeFullscreen = null;
+                    this.setWrap(normalWrap);
                 }
             }
 
@@ -2743,9 +2851,12 @@ namespace workbench {
                     this.setSelectChoices(this.downloadFormatControl, formats, defaults['default-Accept']);
                     this.activeDownloadFormatView = state.view;
                 }
+                if (isRows) {
+                    this.renderHeaders();
+                }
                 var paging = state.getPaging(this.requestedOffset, this.requestedLimit);
                 var effectiveLayout = this.layout === 'auto'
-                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto')
+                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
                     : this.layout;
                 this.root.setAttribute('data-layout', this.layout);
                 this.setEffectiveLayout(effectiveLayout, isRows);
@@ -2787,8 +2898,6 @@ namespace workbench {
                 this.optionsToggle.hidden = !isRows
                     || !(layoutEnabled || wrapEnabled || datatypeEnabled);
                 this.countLabel.hidden = !!state.error || !this.featureEnabled('result-totals');
-                this.setControlHidden(this.rowPositionControl, !isRows || state.rowCount <= this.maxDomRows);
-                this.rowPositionControl.max = String(state.rowCount);
                 this.table.setAttribute('aria-rowcount', String(state.rowCount + 1));
                 if (state.error) {
                     this.errorResult.textContent = this.errorMessageForDisplay();
@@ -2798,14 +2907,20 @@ namespace workbench {
                 } else {
                     clearChildren(this.booleanResult);
                 }
-                if (isRows) {
-                    this.renderHeaders();
-                }
                 var rendered = Promise.resolve();
-                if (isRows && effectiveLayout === 'table') {
-                    rendered = this.renderRows();
-                } else if (isRows && effectiveLayout === 'records') {
-                    rendered = this.renderRecords();
+                if (isRows) {
+                    rendered = this.updateTableColumnWidths(generation).then(() => {
+                        if (this.disposed || generation !== this.renderGeneration) {
+                            return;
+                        }
+                        if (effectiveLayout === 'table') {
+                            return this.renderRows();
+                        }
+                        if (effectiveLayout === 'records') {
+                            return this.renderRecords();
+                        }
+                        return undefined;
+                    });
                 }
                 if (state.error) {
                     this.status.textContent = this.errorStatusText();
@@ -2840,7 +2955,7 @@ namespace workbench {
                     }
                     if (this.layout === 'auto' && isRows) {
                         var measuredLayout = chooseAutoLayout(this.resultWidth(),
-                            this.measureReadableColumnWidths(), 'auto');
+                            this.measureReadableColumnWidths(), 'auto', this.wrap);
                         if (measuredLayout !== effectiveLayout) {
                             if (requestedRow !== null && this.requestedRow === null) {
                                 this.requestedRow = requestedRow;
@@ -2861,7 +2976,18 @@ namespace workbench {
                     return;
                 }
                 this.headerSignature = signature;
-                var header = this.table.children[0];
+                this.columnWidthGeneration++;
+                this.columnWidthRows = null;
+                this.columnWidthReadCount = -1;
+                this.columnWidthReadPromise = null;
+                this.columnWidthPresentationSignature = '';
+                this.columnWidthAppliedWidth = -1;
+                clearChildren(this.tableColumns);
+                this.table.style.tableLayout = '';
+                this.table.style.width = '';
+                this.table.style.minWidth = '';
+                this.table.style.maxWidth = '';
+                var header = this.table.querySelector('thead');
                 clearChildren(header);
                 var row = createElement(this.document, 'tr');
                 this.state.variables.forEach((name: string) => {
@@ -2873,6 +2999,153 @@ namespace workbench {
                 header.appendChild(row);
             }
 
+            private updateTableColumnWidths(renderGeneration: number): Promise<void> {
+                var sampleCount = Math.min(10, this.state.rowCount);
+                if (!this.columnWidthRows || this.columnWidthRows.length !== sampleCount) {
+                    return this.readColumnWidthSample(sampleCount).then(rows => {
+                        if (this.disposed || renderGeneration !== this.renderGeneration
+                                || rows.length !== sampleCount) {
+                            return;
+                        }
+                        this.columnWidthRows = rows;
+                        this.columnWidthAppliedWidth = -1;
+                        this.columnWidthPresentationSignature = '';
+                        this.applyTableColumnWidths(renderGeneration);
+                    });
+                }
+                return Promise.resolve(this.applyTableColumnWidths(renderGeneration));
+            }
+
+            private readColumnWidthSample(count: number): Promise<any[][]> {
+                if (this.columnWidthReadPromise && this.columnWidthReadCount === count) {
+                    return this.columnWidthReadPromise;
+                }
+                var signature = this.headerSignature;
+                var schemaGeneration = this.columnWidthGeneration;
+                this.columnWidthReadCount = count;
+                var read = count === 0 ? Promise.resolve([])
+                    : this.ensureRowStore().then(store => store.read(0, count));
+                var pending: Promise<any[][]>;
+                pending = read.then(rows => {
+                    if (!this.disposed && schemaGeneration === this.columnWidthGeneration
+                            && signature === this.headerSignature && this.columnWidthReadPromise === pending) {
+                        this.columnWidthRows = rows;
+                        this.columnWidthReadCount = -1;
+                        this.columnWidthReadPromise = null;
+                    }
+                    return rows;
+                });
+                this.columnWidthReadPromise = pending;
+                return pending;
+            }
+
+            private applyTableColumnWidths(renderGeneration: number): void {
+                if (this.disposed || renderGeneration !== this.renderGeneration) {
+                    return;
+                }
+                var width = this.resultWidth();
+                var presentation = (this.wrap ? 'wrap' : 'nowrap')
+                    + ':' + (this.showDatatypes ? 'datatypes' : 'plain');
+                if (this.columnWidthAppliedWidth === width
+                        && this.columnWidthPresentationSignature === presentation) {
+                    return;
+                }
+                var widths = this.measureInitialColumnWidths(this.columnWidthRows || [], width);
+                if (this.disposed || renderGeneration !== this.renderGeneration) {
+                    return;
+                }
+                this.setTableColumnWidths(widths, width);
+                this.columnWidthAppliedWidth = width;
+                this.columnWidthPresentationSignature = presentation;
+            }
+
+            private measureInitialColumnWidths(rows: any[][], viewportWidth: number): number[] {
+                var columnCount = this.state.variables.length;
+                if (!columnCount) {
+                    return [];
+                }
+                var measurement = createElement(this.document, 'div', 'query-result-column-measurement');
+                measurement.setAttribute('aria-hidden', 'true');
+                measurement.style.position = 'fixed';
+                measurement.style.left = '-100000px';
+                measurement.style.top = '0';
+                measurement.style.width = Math.max(0, viewportWidth) + 'px';
+                measurement.style.minWidth = '0';
+                measurement.style.maxWidth = Math.max(0, viewportWidth) + 'px';
+                measurement.style.visibility = 'hidden';
+                measurement.style.pointerEvents = 'none';
+
+                var measurementWrap = createElement(this.document, 'div', 'query-result-table-wrap');
+                measurementWrap.style.width = Math.max(0, viewportWidth) + 'px';
+                measurementWrap.style.minWidth = '0';
+                measurementWrap.style.maxWidth = Math.max(0, viewportWidth) + 'px';
+                var probe = createElement(this.document, 'table', 'data');
+                probe.style.width = this.wrap ? Math.max(0, viewportWidth) + 'px' : 'max-content';
+                probe.style.minWidth = this.wrap ? Math.max(0, viewportWidth) + 'px' : '0';
+                probe.style.maxWidth = this.wrap ? Math.max(0, viewportWidth) + 'px' : 'none';
+                probe.style.tableLayout = 'auto';
+                var header = createElement(this.document, 'thead');
+                var headerRow = createElement(this.document, 'tr');
+                this.state.variables.forEach((name: string) => {
+                    var cell = createElement(this.document, 'th');
+                    cell.scope = 'col';
+                    cell.textContent = name;
+                    headerRow.appendChild(cell);
+                });
+                header.appendChild(headerRow);
+                probe.appendChild(header);
+                var body = createElement(this.document, 'tbody');
+                rows.forEach((values, index) => body.appendChild(this.createTableRow(index, values)));
+                probe.appendChild(body);
+                measurementWrap.appendChild(probe);
+                measurement.appendChild(measurementWrap);
+                this.root.appendChild(measurement);
+
+                var widths: number[] = [];
+                try {
+                    var cells = headerRow.children;
+                    for (var index = 0; index < cells.length; index++) {
+                        var rectangle = cells[index].getBoundingClientRect
+                            ? cells[index].getBoundingClientRect() : null;
+                        var measured = rectangle ? rectangle.width : cells[index].offsetWidth;
+                        widths.push(isFinite(measured) && measured > 0 ? measured : 0);
+                    }
+                } finally {
+                    if (measurement.parentNode === this.root) {
+                        this.root.removeChild(measurement);
+                    }
+                }
+                return widths.some(value => value > 0) ? widths : [];
+            }
+
+            private setTableColumnWidths(widths: number[], viewportWidth: number) {
+                clearChildren(this.tableColumns);
+                if (!widths.length || !widths.some(value => value > 0)) {
+                    this.table.style.tableLayout = '';
+                    this.table.style.width = '';
+                    this.table.style.minWidth = '';
+                    this.table.style.maxWidth = '';
+                    return;
+                }
+                var allocatedWidths = allocateTableColumnWidths(widths,
+                    this.measureReadableColumnWidths(), viewportWidth, this.wrap);
+                var tableWidth = allocatedWidths.reduce((total, value) => total + value, 0);
+                var assignedWidth = 0;
+                allocatedWidths.forEach((allocatedWidth, index) => {
+                    var column = createElement(this.document, 'col');
+                    var columnWidth = index === allocatedWidths.length - 1
+                        ? tableWidth - assignedWidth
+                        : allocatedWidth;
+                    column.style.width = columnWidth + 'px';
+                    assignedWidth += columnWidth;
+                    this.tableColumns.appendChild(column);
+                });
+                this.table.style.tableLayout = 'fixed';
+                this.table.style.width = tableWidth + 'px';
+                this.table.style.minWidth = tableWidth + 'px';
+                this.table.style.maxWidth = 'none';
+            }
+
             private renderRows(): Promise<void> {
                 if (this.root.getAttribute('data-effective-layout') !== 'table'
                         || (this.state.view !== 'tuple' && this.state.view !== 'graph') || this.state.rowCount === 0) {
@@ -2880,7 +3153,7 @@ namespace workbench {
                     return Promise.resolve();
                 }
                 var generation = ++this.rowRenderGeneration;
-                var headerHeight = this.measureElementHeight(this.table.children[0]);
+                var headerHeight = this.measureElementHeight(this.table.querySelector('thead'));
                 this.rowCoordinates.setCapacity(Math.max(1, this.tableScrollCapacity - headerHeight));
                 var viewportHeight = Math.max(1,
                     (this.tableWrap.clientHeight || this.measureRowEstimate() * 24) - headerHeight);
@@ -3206,12 +3479,6 @@ namespace workbench {
                 return heights.range(this.logicalPosition(scrollport, coordinates, position), 0, 0, 1).start;
             }
 
-            seekRow(index: number) {
-                this.reflowAnchor = null;
-                this.requestedRow = Math.max(0, Math.min(this.state.rowCount - 1, Math.floor(index)));
-                this.renderAndReport();
-            }
-
             private prepareWindow(scrollport: any, heights: MeasuredRowHeights,
                     coordinates: ResultScrollCoordinates, viewportHeight: number): any {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
@@ -3234,9 +3501,6 @@ namespace workbench {
                 position.physical = scrollTop;
                 var logical = position.logical;
                 var range = heights.range(logical, viewportHeight, 4, this.maxDomRows);
-                if (this.document.activeElement !== this.rowPositionControl) {
-                    this.rowPositionControl.value = String(anchor + 1);
-                }
                 return { range: range, scrollTop: scrollTop, anchor: anchor, within: within,
                     requestedRow: requestedRow, reflowAnchor: reflowAnchor,
                     atEnd: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
@@ -3361,6 +3625,12 @@ namespace workbench {
                 var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
                 var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
                 var characterWidth = isFinite(fontSize) && fontSize > 0 ? fontSize * 0.55 : 8;
+                var rootStyle = view && view.getComputedStyle ? view.getComputedStyle(this.root) : null;
+                var characterBudget = rootStyle && typeof rootStyle.getPropertyValue === 'function'
+                    ? parseFloat(rootStyle.getPropertyValue('--query-result-readable-column-characters')) : NaN;
+                if (!isFinite(characterBudget) || characterBudget <= 0) {
+                    characterBudget = 16;
+                }
                 var canvas = this.document.createElement('canvas');
                 var context = canvas.getContext && canvas.getContext('2d');
                 if (context && tableStyle) {
@@ -3373,9 +3643,64 @@ namespace workbench {
                     var style = view && view.getComputedStyle ? view.getComputedStyle(cell) : null;
                     var padding = style
                         ? (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) : 0;
-                    widths.push(characterWidth * 16 + padding + 2);
+                    var minimumContentWidth = characterWidth * characterBudget;
+                    var headerText = cell.textContent || '';
+                    if (context && headerText) {
+                        context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
+                        var headerTextWidth = this.measureRenderedHeaderText(headerText, style, context);
+                        minimumContentWidth = Math.max(minimumContentWidth, headerTextWidth);
+                    }
+                    widths.push(minimumContentWidth + padding + 2);
                 }
                 return widths;
+            }
+
+            private measureRenderedHeaderText(text: string, style: CSSStyleDeclaration | null,
+                    context: CanvasRenderingContext2D): number {
+                var container = this.root;
+                if (container && this.document.createElement && container.appendChild
+                        && container.removeChild) {
+                    var probe = this.document.createElement('span');
+                    var probeStyle = <any>probe.style;
+                    var computedStyle = <any>style;
+                    var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
+                        'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
+                        'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
+                        'textRendering', 'direction'];
+                    textProperties.forEach((property) => {
+                        if (computedStyle && computedStyle[property]) {
+                            probeStyle[property] = computedStyle[property];
+                        }
+                    });
+                    probeStyle.position = 'fixed';
+                    probeStyle.left = '-10000px';
+                    probeStyle.top = '-10000px';
+                    probeStyle.visibility = 'hidden';
+                    probeStyle.display = 'inline-block';
+                    probeStyle.whiteSpace = 'pre';
+                    probeStyle.width = 'max-content';
+                    probeStyle.minWidth = '0';
+                    probeStyle.maxWidth = 'none';
+                    probe.textContent = text;
+                    container.appendChild(probe);
+                    try {
+                        var renderedWidth = probe.getBoundingClientRect().width;
+                        if (isFinite(renderedWidth) && renderedWidth > 0) {
+                            return renderedWidth;
+                        }
+                    } finally {
+                        container.removeChild(probe);
+                    }
+                }
+                if (context) {
+                    var fallbackWidth = context.measureText(text).width;
+                    var letterSpacing = style ? parseFloat(style.letterSpacing) : NaN;
+                    if (isFinite(letterSpacing) && text.length > 1) {
+                        fallbackWidth += letterSpacing * (text.length - 1);
+                    }
+                    return fallbackWidth;
+                }
+                return 0;
             }
 
             private installAutoLayoutObserver() {

@@ -633,11 +633,11 @@ test('records layout scrolls through loaded rows with bounded DOM and no local p
     assert.equal(renderer.records.children.length <= 12, true);
     assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '20'), true,
         'scrolling should materialize a later record window from the loaded row store');
-    renderer.rowPositionControl.value = '25';
-    renderer.rowPositionControl.trigger('change');
+    renderer.records.scrollTop = 24 * 20;
+    renderer.records.trigger('scroll');
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '24'), true,
-        'Go to row can seek to a precise loaded record');
+        'scrolling can reach a precise loaded record without a row locator');
 });
 
 test('record titles retain their global positions across appended batches', async () => {

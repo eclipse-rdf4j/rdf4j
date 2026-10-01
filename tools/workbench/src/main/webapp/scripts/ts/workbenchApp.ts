@@ -571,7 +571,9 @@ module workbench {
                 return promises[url];
             }
             promises[url] = new Promise<void>((resolve, reject) => {
-                const script = existing || document.createElement('script');
+                // An unmarked node may have already emitted an error before deferred bootstrap starts.
+                // Only a successful marker or our tracked promise proves that its load is reusable.
+                const script = document.createElement('script');
                 script.src = url;
                 script.async = false;
                 script.onload = () => {
@@ -579,11 +581,7 @@ module workbench {
                     resolve();
                 };
                 script.onerror = () => reject(new Error('Unable to load Workbench script ' + url));
-                if (!existing) {
-                    (document.head || document.body).appendChild(script);
-                } else if (existing.getAttribute('data-workbench-loaded') === 'true') {
-                    resolve();
-                }
+                (document.head || document.body).appendChild(script);
             });
             return promises[url];
         }

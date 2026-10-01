@@ -525,7 +525,9 @@ var workbench;
                 return promises[url];
             }
             promises[url] = new Promise(function (resolve, reject) {
-                var script = existing || document.createElement('script');
+                // An unmarked node may have already emitted an error before deferred bootstrap starts.
+                // Only a successful marker or our tracked promise proves that its load is reusable.
+                var script = document.createElement('script');
                 script.src = url;
                 script.async = false;
                 script.onload = function () {
@@ -533,12 +535,7 @@ var workbench;
                     resolve();
                 };
                 script.onerror = function () { return reject(new Error('Unable to load Workbench script ' + url)); };
-                if (!existing) {
-                    (document.head || document.body).appendChild(script);
-                }
-                else if (existing.getAttribute('data-workbench-loaded') === 'true') {
-                    resolve();
-                }
+                (document.head || document.body).appendChild(script);
             });
             return promises[url];
         }

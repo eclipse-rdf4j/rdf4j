@@ -21,8 +21,15 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.http.HttpServletRequest;
@@ -50,11 +57,44 @@ class WorkbenchHtmlShellTest {
 		assertThat(body.toString())
 				.contains("data-workbench-view=\"summary\"")
 				.contains("data-workbench-base-path=\"/rdf4j-workbench\"")
+				.contains("<meta name=\"rdf4j-workbench-theme-default\" content=\"system\">")
+				.contains("<meta name=\"color-scheme\" content=\"light dark\">")
 				.contains("/rdf4j-workbench/styles/query.css")
 				.contains("/rdf4j-workbench/scripts/workbenchApp.js")
 				.doesNotContain("/transformations", ".xsl");
+		assertThat(body.toString().indexOf("/scripts/workbench-theme.js"))
+				.isLessThan(body.toString().indexOf("/styles/default/screen.css"));
 		verify(response).setHeader("Cache-Control", "no-cache, no-store");
 		verify(response).addHeader("Vary", "Accept");
+	}
+
+	@Test
+	void sharesTheValidatedDeploymentThemeAcrossEveryShellWriterBeforeStylesheets() throws Exception {
+		MockServletContext servletContext = new MockServletContext();
+		Properties properties = new Properties();
+		properties.setProperty("theme.deployment-default", "dark");
+		servletContext.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(properties, Set.of()));
+
+		List<String> documents = List.of(
+				captureShell(servletContext,
+						(request, response, config) -> WorkbenchHtmlShell.write(request, response, config, "summary")),
+				captureShell(servletContext,
+						(request, response, config) -> WorkbenchHtmlShell.writeQueryExecutionShell(request, response,
+								config,
+								"query")),
+				captureShell(servletContext,
+						(request, response, config) -> WorkbenchHtmlShell.writeInitialPageModel(request, response,
+								config,
+								"summary", new byte[] { 1 })));
+
+		for (String document : documents) {
+			assertThat(document)
+					.contains("<meta name=\"rdf4j-workbench-theme-default\" content=\"dark\">")
+					.contains("<meta name=\"color-scheme\" content=\"dark\">");
+			assertThat(document.indexOf("/scripts/workbench-theme.js"))
+					.isLessThan(document.indexOf("/styles/default/screen.css"));
+		}
 	}
 
 	@Test
@@ -70,5 +110,24 @@ class WorkbenchHtmlShellTest {
 
 		assertThat(body.toString()).contains("data-workbench-base-path=\"/rdf4j-workbench\"")
 				.contains("/rdf4j-workbench/scripts/workbenchApp.js");
+	}
+
+	private static String captureShell(MockServletContext servletContext, ShellWriter shellWriter) throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ServletConfig config = mock(ServletConfig.class);
+		StringWriter body = new StringWriter();
+		when(request.getContextPath()).thenReturn("/rdf4j-workbench");
+		when(request.getParameterMap()).thenReturn(Map.of());
+		when(config.getServletContext()).thenReturn(servletContext);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		shellWriter.write(request, response, config);
+		return body.toString();
+	}
+
+	@FunctionalInterface
+	private interface ShellWriter {
+		void write(HttpServletRequest request, HttpServletResponse response, ServletConfig config) throws Exception;
 	}
 }

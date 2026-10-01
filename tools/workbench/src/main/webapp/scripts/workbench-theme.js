@@ -4,6 +4,7 @@
 	var preferenceKey = 'rdf4j-workbench-theme';
 	var validThemes = ['system', 'light', 'dark'];
 	var root = document.documentElement;
+	var colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
 	var media = typeof window.matchMedia === 'function'
 		? window.matchMedia('(prefers-color-scheme: dark)') : null;
 	var defaultMeta = document.querySelector('meta[name="rdf4j-workbench-theme-default"]');
@@ -36,8 +37,12 @@
 	}
 
 	function applyTheme() {
+		var resolvedTheme = preference === 'system' ? systemTheme() : preference;
 		if (root && root.setAttribute) {
-			root.setAttribute('data-theme', preference === 'system' ? systemTheme() : preference);
+			root.setAttribute('data-theme', resolvedTheme);
+		}
+		if (colorSchemeMeta && colorSchemeMeta.setAttribute) {
+			colorSchemeMeta.setAttribute('content', resolvedTheme);
 		}
 	}
 
@@ -140,5 +145,9 @@
 		document.addEventListener('DOMContentLoaded', function () { connectControl(); }, { once: true });
 	} else {
 		connectControl();
+	}
+
+	if (document.currentScript && document.currentScript.setAttribute) {
+		document.currentScript.setAttribute('data-workbench-loaded', 'true');
 	}
 }());

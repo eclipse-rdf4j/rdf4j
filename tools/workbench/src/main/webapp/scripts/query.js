@@ -2672,6 +2672,7 @@ var workbench;
                     type: 'rdf4j-query-display-state',
                     layout: resultPresentationLayout,
                     wrap: resultPresentationWrap,
+                    fullscreen: isResultsFullscreen(),
                     queryRequestId: activeQueryRequestId || ''
                 }, targetOrigin);
             }
@@ -2999,6 +3000,11 @@ var workbench;
                 }
                 var displayLayout = data.layout === 'table' || data.layout === 'records' || data.layout === 'auto'
                     ? data.layout : resultPresentationLayout;
+                if (data.fullscreen === true) {
+                    // Legacy result controls send temporary fullscreen wrap state. Keep only its layout.
+                    resultPresentationLayout = displayLayout;
+                    return;
+                }
                 applyResultPresentationState(displayLayout, data.wrap !== false);
                 return;
             }

@@ -95,20 +95,24 @@ workbench.addLoad(function createPageLoaded() {
         var advancedFields = document.createElement('div');
         advancedFields.className = 'workbench-disclosure__fields workbench-advanced-fields';
         disclosure.content.appendChild(advancedFields);
+        var advancedItems = [];
         for (var j = 0; j < rowsToMove.length; j++) {
             var row = rowsToMove[j];
             var field = document.createElement('div');
             field.className = 'workbench-disclosure__field workbench-advanced__field';
+            var fieldLabel = '';
             var heading = row.querySelector('th');
             if (heading) {
                 var label = heading.querySelector('label');
                 if (label) {
+                    fieldLabel = label.textContent ? label.textContent.trim() : '';
                     field.appendChild(label);
                 }
                 else if (heading.textContent && heading.textContent.trim()) {
-                    var labelText = document.createElement('span');
-                    labelText.textContent = heading.textContent.trim();
-                    field.appendChild(labelText);
+                    fieldLabel = heading.textContent.trim();
+                    var fieldHeading = document.createElement('span');
+                    fieldHeading.textContent = fieldLabel;
+                    field.appendChild(fieldHeading);
                 }
             }
             var controls = document.createElement('div');
@@ -122,9 +126,126 @@ workbench.addLoad(function createPageLoaded() {
             if (controls.childNodes.length) {
                 field.appendChild(controls);
             }
-            advancedFields.appendChild(field);
+            advancedItems.push({ field: field, label: fieldLabel, order: j });
             if (row.parentNode) {
                 row.parentNode.removeChild(row);
+            }
+        }
+        function firstField(node) {
+            if (node.entries.length) {
+                return node.entries[0].field;
+            }
+            for (var childIndex = 0; childIndex < node.children.length; childIndex++) {
+                var field = firstField(node.children[childIndex]);
+                if (field) {
+                    return field;
+                }
+            }
+            return null;
+        }
+        function appendPrefixBranch(parent, node) {
+            var groupNode = node;
+            while (groupNode.entries.length === 0 && groupNode.children.length === 1
+                && groupNode.children[0].total === groupNode.total) {
+                groupNode = groupNode.children[0];
+            }
+            if (groupNode.total < 2) {
+                var onlyField = firstField(groupNode);
+                if (onlyField) {
+                    parent.appendChild(onlyField);
+                }
+                return;
+            }
+            var group = document.createElement('fieldset');
+            group.className = 'workbench-advanced__group';
+            group.setAttribute('data-workbench-config-group', groupNode.label);
+            var legend = document.createElement('legend');
+            legend.className = 'workbench-advanced__group-title';
+            legend.textContent = groupNode.label;
+            group.appendChild(legend);
+            var groupFields = document.createElement('div');
+            groupFields.className = 'workbench-advanced__group-fields';
+            group.appendChild(groupFields);
+            var actions = [];
+            for (var entryIndex = 0; entryIndex < groupNode.entries.length; entryIndex++) {
+                actions.push({ entry: groupNode.entries[entryIndex], order: groupNode.entries[entryIndex].order });
+            }
+            for (var groupChildIndex = 0; groupChildIndex < groupNode.children.length; groupChildIndex++) {
+                var child = groupNode.children[groupChildIndex];
+                actions.push({ node: child, order: child.firstOrder });
+            }
+            actions.sort(function (left, right) { return left.order - right.order; });
+            for (var actionIndex = 0; actionIndex < actions.length; actionIndex++) {
+                var action = actions[actionIndex];
+                if (action.entry) {
+                    groupFields.appendChild(action.entry.field);
+                }
+                else if (action.node.total > 1) {
+                    appendPrefixBranch(groupFields, action.node);
+                }
+                else {
+                    var childField = firstField(action.node);
+                    if (childField) {
+                        groupFields.appendChild(childField);
+                    }
+                }
+            }
+            parent.appendChild(group);
+        }
+        var prefixRoot = { entries: [], children: [] };
+        for (var itemIndex = 0; itemIndex < advancedItems.length; itemIndex++) {
+            var item = advancedItems[itemIndex];
+            var words = item.label ? item.label.trim().split(/\s+/) : [];
+            var node = prefixRoot;
+            if (!words.length) {
+                node.entries.push(item);
+                continue;
+            }
+            for (var wordIndex = 0; wordIndex < words.length; wordIndex++) {
+                var normalizedWord = words[wordIndex].toLowerCase();
+                var next = null;
+                for (var candidateIndex = 0; candidateIndex < node.children.length; candidateIndex++) {
+                    if (node.children[candidateIndex].word === normalizedWord) {
+                        next = node.children[candidateIndex];
+                        break;
+                    }
+                }
+                if (!next) {
+                    next = {
+                        word: normalizedWord,
+                        label: words.slice(0, wordIndex + 1).join(' '),
+                        entries: [], children: [], total: 0, firstOrder: item.order
+                    };
+                    node.children.push(next);
+                }
+                next.total++;
+                next.firstOrder = Math.min(next.firstOrder, item.order);
+                node = next;
+            }
+            node.entries.push(item);
+        }
+        var topLevelActions = [];
+        for (var rootEntryIndex = 0; rootEntryIndex < prefixRoot.entries.length; rootEntryIndex++) {
+            topLevelActions.push({ entry: prefixRoot.entries[rootEntryIndex], order: prefixRoot.entries[rootEntryIndex].order });
+        }
+        for (var rootChildIndex = 0; rootChildIndex < prefixRoot.children.length; rootChildIndex++) {
+            var rootChild = prefixRoot.children[rootChildIndex];
+            topLevelActions.push({ node: rootChild, order: rootChild.firstOrder });
+        }
+        topLevelActions.sort(function (left, right) { return left.order - right.order; });
+        for (var topLevelIndex = 0; topLevelIndex < topLevelActions.length; topLevelIndex++) {
+            var topLevelAction = topLevelActions[topLevelIndex];
+            if (topLevelAction.entry) {
+                advancedFields.appendChild(topLevelAction.entry.field);
+            }
+            else if (topLevelAction.node.total > 1) {
+                appendPrefixBranch(advancedFields, topLevelAction.node);
+            }
+            else {
+                var topLevelField = firstField(topLevelAction.node);
+                if (topLevelField) {
+                    advancedFields.appendChild(topLevelField);
+                }
             }
         }
         table.parentNode.insertBefore(disclosure.owner, table.nextSibling);

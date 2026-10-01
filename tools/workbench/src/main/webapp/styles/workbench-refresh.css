@@ -1048,7 +1048,9 @@ body.workbench-body .workbench-responsive-records table.data td[data-label]::bef
 }
 
 html {
-	background: var(--workbench-canvas);
+	color-scheme: light;
+	background-color: var(--workbench-canvas);
+	background-image: none;
 }
 
 html:has(body.query-result-embedded-body) {
@@ -2201,7 +2203,12 @@ body.workbench-body .workbench-page-surface details.workbench-options > .workben
 }
 
 body.workbench-body form[action="create"] .workbench-advanced-fields {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	align-items: start;
+	align-content: start;
+	gap: var(--workbench-form-gap);
+	width: 100%;
 }
 
 body.workbench-body form[action="create"] .workbench-advanced__field,
@@ -2209,6 +2216,50 @@ body.workbench-body form[action="create"] .workbench-advanced__control {
 	box-sizing: border-box;
 	min-width: 0;
 	max-width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__field {
+	grid-column: 1 / -1;
+	width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group {
+	box-sizing: border-box;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	gap: var(--workbench-field-gap);
+	min-width: 0;
+	max-width: 100%;
+	width: 100%;
+	margin: 0;
+	padding: 8px 12px 12px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group-title {
+	box-sizing: border-box;
+	max-width: 100%;
+	margin: 0;
+	padding: 0 4px;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 700;
+	line-height: 1.25;
+	white-space: normal;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group-fields {
+	box-sizing: border-box;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	gap: var(--workbench-form-gap);
+	min-width: 0;
+	max-width: 100%;
+	width: 100%;
 }
 
 body.workbench-body form[action="create"] .workbench-advanced__control {

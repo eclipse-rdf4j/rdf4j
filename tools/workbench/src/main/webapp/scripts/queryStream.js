@@ -17,6 +17,35 @@ var workbench;
     var resultFullscreen;
     (function (resultFullscreen) {
         var owner = null;
+        var presentationListeners = new WeakMap();
+        function addPresentationListener(target, listener) {
+            var listeners = presentationListeners.get(target);
+            if (!listeners) {
+                listeners = [];
+                presentationListeners.set(target, listeners);
+            }
+            listeners.push(listener);
+            return function () {
+                var current = presentationListeners.get(target);
+                if (!current) {
+                    return;
+                }
+                var index = current.indexOf(listener);
+                if (index >= 0) {
+                    current.splice(index, 1);
+                }
+                if (!current.length) {
+                    presentationListeners.delete(target);
+                }
+            };
+        }
+        resultFullscreen.addPresentationListener = addPresentationListener;
+        function notifyPresentationListeners(target, enabled) {
+            var listeners = presentationListeners.get(target);
+            if (listeners) {
+                listeners.slice().forEach(function (listener) { return listener(enabled); });
+            }
+        }
         function currentTarget() {
             return owner && owner.target;
         }
@@ -85,6 +114,7 @@ var workbench;
                 if (owner.callbacks.change) {
                     owner.callbacks.change(true);
                 }
+                notifyPresentationListeners(target, true);
                 focusElement(control);
                 return;
             }
@@ -102,6 +132,7 @@ var workbench;
             if (actions.change) {
                 actions.change(false);
             }
+            notifyPresentationListeners(target, false);
             if (restoreFocus) {
                 if (previous && canFocus(previous.previousFocus, doc)) {
                     focusElement(previous.previousFocus);
@@ -1356,17 +1387,70 @@ var workbench;
             return MeasuredRowHeights;
         }());
         queryStream.MeasuredRowHeights = MeasuredRowHeights;
-        function chooseAutoLayout(availableWidth, measuredColumnWidths, selected) {
+        function chooseAutoLayout(availableWidth, minimumColumnWidths, selected, wrapValues) {
             if (selected === 'table' || selected === 'records') {
                 return selected;
             }
-            var totalWidth = (measuredColumnWidths || []).reduce(function (total, width) {
+            if (wrapValues === false) {
+                return 'table';
+            }
+            var totalWidth = (minimumColumnWidths || []).reduce(function (total, width) {
                 return total + (isFinite(width) && width > 0 ? width : 0);
             }, 0);
-            return totalWidth > 0 && isFinite(availableWidth) && availableWidth > 0 && totalWidth > availableWidth
+            var visibleWidth = isFinite(availableWidth) && availableWidth > 0 ? availableWidth : 0;
+            return totalWidth > 0 && totalWidth > visibleWidth
                 ? 'records' : 'table';
         }
         queryStream.chooseAutoLayout = chooseAutoLayout;
+        function allocateTableColumnWidths(sampledWidths, minimumWidths, availableWidth, wrapValues) {
+            var sample = sampledWidths || [];
+            var minimums = minimumWidths || [];
+            var count = Math.max(sample.length, minimums.length);
+            if (!count) {
+                return [];
+            }
+            var desired = [];
+            var minima = [];
+            for (var index = 0; index < count; index++) {
+                var sampledWidth = sample[index];
+                var minimumWidth = minimums[index];
+                desired.push(isFinite(sampledWidth) && sampledWidth > 0 ? sampledWidth : 0);
+                minima.push(isFinite(minimumWidth) && minimumWidth > 0 ? minimumWidth : 0);
+            }
+            var viewport = isFinite(availableWidth) && availableWidth > 0 ? availableWidth : 0;
+            var minimumTotal = minima.reduce(function (total, width) { return total + width; }, 0);
+            if (wrapValues) {
+                var tableWidth = Math.max(viewport, minimumTotal);
+                var remaining = Math.max(0, tableWidth - minimumTotal);
+                var demand = desired.map(function (width, index) { return Math.max(0, width - minima[index]); });
+                var demandTotal = demand.reduce(function (total, width) { return total + width; }, 0);
+                var weightTotal = demandTotal > 0 ? demandTotal : count;
+                var assigned = 0;
+                return minima.map(function (minimum, index) {
+                    var weight = demandTotal > 0 ? demand[index] : 1;
+                    var width = index === count - 1
+                        ? tableWidth - assigned
+                        : minimum + remaining * weight / weightTotal;
+                    assigned += width;
+                    return width;
+                });
+            }
+            var widths = desired.map(function (width, index) { return Math.max(width, minima[index]); });
+            var naturalTotal = widths.reduce(function (total, width) { return total + width; }, 0);
+            var noWrapTableWidth = Math.max(viewport, naturalTotal);
+            var spare = Math.max(0, noWrapTableWidth - naturalTotal);
+            var noWrapWeights = widths.map(function (width) { return width > 0 ? width : 1; });
+            var noWrapWeightTotal = noWrapWeights.reduce(function (total, width) { return total + width; }, 0);
+            var noWrapAssigned = 0;
+            return widths.map(function (width, index) {
+                var allocated = index === count - 1
+                    ? noWrapTableWidth - noWrapAssigned
+                    : width + spare * noWrapWeights[index] / noWrapWeightTotal;
+                noWrapAssigned += allocated;
+                return allocated;
+            });
+        }
+        queryStream.allocateTableColumnWidths = allocateTableColumnWidths;
         function nonNegativeInteger(value, fallback) {
             var parsed = typeof value === 'number' ? value
                 : (typeof value === 'string' && value.trim() ? Number(value) : NaN);
@@ -1587,6 +1671,7 @@ var workbench;
                 this.downloadFrame = null;
                 this.layout = 'auto';
                 this.wrap = true;
+                this.normalWrapBeforeFullscreen = null;
                 this.showDatatypes = true;
                 this.activeDownloadFormatView = '';
                 this.rowStore = null;
@@ -1609,6 +1694,12 @@ var workbench;
                 this.recordRenderGeneration = 0;
                 this.renderGeneration = 0;
                 this.headerSignature = '';
+                this.columnWidthRows = null;
+                this.columnWidthReadCount = -1;
+                this.columnWidthReadPromise = null;
+                this.columnWidthGeneration = 0;
+                this.columnWidthPresentationSignature = '';
+                this.columnWidthAppliedWidth = -1;
                 this.disposed = false;
                 this.disposers = [];
                 this.batchState = null;
@@ -1780,20 +1871,6 @@ var workbench;
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
                 controls.appendChild(this.countLabel);
-                this.rowPositionControl = createElement(this.document, 'input');
-                this.rowPositionControl.type = 'number';
-                this.rowPositionControl.min = '1';
-                this.rowPositionControl.step = '1';
-                this.rowPositionControl.value = '1';
-                this.rowPositionControl.setAttribute('aria-label', 'Go to loaded row');
-                this.rowPositionControl.className = 'query-result-row-position';
-                controls.appendChild(this.createLabeledControl('Go to row', this.rowPositionControl));
-                this.rowPositionControl.addEventListener('change', function () {
-                    var row = Number(_this.rowPositionControl.value);
-                    if (Number.isSafeInteger(row) && row >= 1 && row <= _this.state.rowCount) {
-                        _this.seekRow(row - 1);
-                    }
-                }, false);
                 this.cancelButton = this.createButton('Cancel query', function () {
                     if (_this.options.onCancel) {
                         _this.options.onCancel();
@@ -1816,6 +1893,8 @@ var workbench;
                 this.tableWrap.style.overflow = 'auto';
                 this.table = createElement(this.document, 'table', 'data');
                 this.table.setAttribute('aria-label', 'Query results');
+                this.tableColumns = createElement(this.document, 'colgroup');
+                this.table.appendChild(this.tableColumns);
                 this.table.appendChild(createElement(this.document, 'thead'));
                 this.tableBody = createElement(this.document, 'tbody');
                 this.table.appendChild(this.tableBody);
@@ -1854,12 +1933,10 @@ var workbench;
                     _this.renderAndReport();
                 }, false);
                 this.wrapControl.addEventListener('change', function () {
-                    _this.retainScrollAnchor();
-                    _this.wrap = _this.wrapControl.checked;
-                    _this.resetRowMeasurements();
-                    _this.savePresentationPreferences();
-                    _this.invalidateVisibleRows();
-                    _this.renderAndReport();
+                    _this.setWrap(_this.wrapControl.checked);
+                    if (_this.normalWrapBeforeFullscreen === null) {
+                        _this.savePresentationPreferences();
+                    }
                 }, false);
                 this.datatypeControl.addEventListener('change', function () {
                     _this.showDatatypes = _this.datatypeControl.checked;
@@ -1872,6 +1949,7 @@ var workbench;
                 };
                 this.tableWrap.addEventListener('scroll', this.onScroll, false);
                 this.records.addEventListener('scroll', this.onScroll, false);
+                this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target, function (enabled) { return _this.setFullscreenPresentation(enabled); }));
                 this.installAutoLayoutObserver();
                 this.renderAndReport();
             }
@@ -2206,11 +2284,11 @@ var workbench;
                 this.recordRenderGeneration++;
                 this.tableWrap.removeEventListener('scroll', this.onScroll, false);
                 this.records.removeEventListener('scroll', this.onScroll, false);
-                this.disposers.forEach(function (dispose) { return dispose(); });
-                this.disposers = [];
                 if (this.target.getAttribute('data-fullscreen') === 'true') {
                     workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
                 }
+                this.disposers.forEach(function (dispose) { return dispose(); });
+                this.disposers = [];
                 if (this.legacyHeader) {
                     this.legacyHeader.hidden = this.legacyHeaderHidden;
                 }
@@ -2375,7 +2453,31 @@ var workbench;
             QueryResultRenderer.prototype.savePresentationPreferences = function () {
                 var query = workbench.query;
                 if (query && typeof query.applyResultPresentationState === 'function') {
-                    query.applyResultPresentationState(this.layout, this.wrap);
+                    query.applyResultPresentationState(this.layout, this.normalWrapBeforeFullscreen === null
+                        ? this.wrap : this.normalWrapBeforeFullscreen);
+                }
+            };
+            QueryResultRenderer.prototype.setWrap = function (wrap) {
+                this.retainScrollAnchor();
+                this.wrap = wrap;
+                this.wrapControl.checked = wrap;
+                this.root.setAttribute('data-wrap', wrap ? 'true' : 'false');
+                this.resetRowMeasurements();
+                this.invalidateVisibleRows();
+                this.renderAndReport();
+            };
+            QueryResultRenderer.prototype.setFullscreenPresentation = function (enabled) {
+                if (enabled) {
+                    if (this.normalWrapBeforeFullscreen === null) {
+                        this.normalWrapBeforeFullscreen = this.wrap;
+                    }
+                    this.setWrap(false);
+                    return;
+                }
+                if (this.normalWrapBeforeFullscreen !== null) {
+                    var normalWrap = this.normalWrapBeforeFullscreen;
+                    this.normalWrapBeforeFullscreen = null;
+                    this.setWrap(normalWrap);
                 }
             };
             QueryResultRenderer.prototype.submitNativeDownload = function () {
@@ -2496,9 +2598,12 @@ var workbench;
                     this.setSelectChoices(this.downloadFormatControl, formats, defaults['default-Accept']);
                     this.activeDownloadFormatView = state.view;
                 }
+                if (isRows) {
+                    this.renderHeaders();
+                }
                 var paging = state.getPaging(this.requestedOffset, this.requestedLimit);
                 var effectiveLayout = this.layout === 'auto'
-                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto')
+                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
                     : this.layout;
                 this.root.setAttribute('data-layout', this.layout);
                 this.setEffectiveLayout(effectiveLayout, isRows);
@@ -2539,8 +2644,6 @@ var workbench;
                 this.optionsToggle.hidden = !isRows
                     || !(layoutEnabled || wrapEnabled || datatypeEnabled);
                 this.countLabel.hidden = !!state.error || !this.featureEnabled('result-totals');
-                this.setControlHidden(this.rowPositionControl, !isRows || state.rowCount <= this.maxDomRows);
-                this.rowPositionControl.max = String(state.rowCount);
                 this.table.setAttribute('aria-rowcount', String(state.rowCount + 1));
                 if (state.error) {
                     this.errorResult.textContent = this.errorMessageForDisplay();
@@ -2551,15 +2654,20 @@ var workbench;
                 else {
                     clearChildren(this.booleanResult);
                 }
-                if (isRows) {
-                    this.renderHeaders();
-                }
                 var rendered = Promise.resolve();
-                if (isRows && effectiveLayout === 'table') {
-                    rendered = this.renderRows();
-                }
-                else if (isRows && effectiveLayout === 'records') {
-                    rendered = this.renderRecords();
+                if (isRows) {
+                    rendered = this.updateTableColumnWidths(generation).then(function () {
+                        if (_this.disposed || generation !== _this.renderGeneration) {
+                            return;
+                        }
+                        if (effectiveLayout === 'table') {
+                            return _this.renderRows();
+                        }
+                        if (effectiveLayout === 'records') {
+                            return _this.renderRecords();
+                        }
+                        return undefined;
+                    });
                 }
                 if (state.error) {
                     this.status.textContent = this.errorStatusText();
@@ -2600,7 +2708,7 @@ var workbench;
                         return;
                     }
                     if (_this.layout === 'auto' && isRows) {
-                        var measuredLayout = chooseAutoLayout(_this.resultWidth(), _this.measureReadableColumnWidths(), 'auto');
+                        var measuredLayout = chooseAutoLayout(_this.resultWidth(), _this.measureReadableColumnWidths(), 'auto', _this.wrap);
                         if (measuredLayout !== effectiveLayout) {
                             if (requestedRow !== null && _this.requestedRow === null) {
                                 _this.requestedRow = requestedRow;
@@ -2621,7 +2729,18 @@ var workbench;
                     return;
                 }
                 this.headerSignature = signature;
-                var header = this.table.children[0];
+                this.columnWidthGeneration++;
+                this.columnWidthRows = null;
+                this.columnWidthReadCount = -1;
+                this.columnWidthReadPromise = null;
+                this.columnWidthPresentationSignature = '';
+                this.columnWidthAppliedWidth = -1;
+                clearChildren(this.tableColumns);
+                this.table.style.tableLayout = '';
+                this.table.style.width = '';
+                this.table.style.minWidth = '';
+                this.table.style.maxWidth = '';
+                var header = this.table.querySelector('thead');
                 clearChildren(header);
                 var row = createElement(this.document, 'tr');
                 this.state.variables.forEach(function (name) {
@@ -2632,6 +2751,150 @@ var workbench;
                 });
                 header.appendChild(row);
             };
+            QueryResultRenderer.prototype.updateTableColumnWidths = function (renderGeneration) {
+                var _this = this;
+                var sampleCount = Math.min(10, this.state.rowCount);
+                if (!this.columnWidthRows || this.columnWidthRows.length !== sampleCount) {
+                    return this.readColumnWidthSample(sampleCount).then(function (rows) {
+                        if (_this.disposed || renderGeneration !== _this.renderGeneration
+                            || rows.length !== sampleCount) {
+                            return;
+                        }
+                        _this.columnWidthRows = rows;
+                        _this.columnWidthAppliedWidth = -1;
+                        _this.columnWidthPresentationSignature = '';
+                        _this.applyTableColumnWidths(renderGeneration);
+                    });
+                }
+                return Promise.resolve(this.applyTableColumnWidths(renderGeneration));
+            };
+            QueryResultRenderer.prototype.readColumnWidthSample = function (count) {
+                var _this = this;
+                if (this.columnWidthReadPromise && this.columnWidthReadCount === count) {
+                    return this.columnWidthReadPromise;
+                }
+                var signature = this.headerSignature;
+                var schemaGeneration = this.columnWidthGeneration;
+                this.columnWidthReadCount = count;
+                var read = count === 0 ? Promise.resolve([])
+                    : this.ensureRowStore().then(function (store) { return store.read(0, count); });
+                var pending;
+                pending = read.then(function (rows) {
+                    if (!_this.disposed && schemaGeneration === _this.columnWidthGeneration
+                        && signature === _this.headerSignature && _this.columnWidthReadPromise === pending) {
+                        _this.columnWidthRows = rows;
+                        _this.columnWidthReadCount = -1;
+                        _this.columnWidthReadPromise = null;
+                    }
+                    return rows;
+                });
+                this.columnWidthReadPromise = pending;
+                return pending;
+            };
+            QueryResultRenderer.prototype.applyTableColumnWidths = function (renderGeneration) {
+                if (this.disposed || renderGeneration !== this.renderGeneration) {
+                    return;
+                }
+                var width = this.resultWidth();
+                var presentation = (this.wrap ? 'wrap' : 'nowrap')
+                    + ':' + (this.showDatatypes ? 'datatypes' : 'plain');
+                if (this.columnWidthAppliedWidth === width
+                    && this.columnWidthPresentationSignature === presentation) {
+                    return;
+                }
+                var widths = this.measureInitialColumnWidths(this.columnWidthRows || [], width);
+                if (this.disposed || renderGeneration !== this.renderGeneration) {
+                    return;
+                }
+                this.setTableColumnWidths(widths, width);
+                this.columnWidthAppliedWidth = width;
+                this.columnWidthPresentationSignature = presentation;
+            };
+            QueryResultRenderer.prototype.measureInitialColumnWidths = function (rows, viewportWidth) {
+                var _this = this;
+                var columnCount = this.state.variables.length;
+                if (!columnCount) {
+                    return [];
+                }
+                var measurement = createElement(this.document, 'div', 'query-result-column-measurement');
+                measurement.setAttribute('aria-hidden', 'true');
+                measurement.style.position = 'fixed';
+                measurement.style.left = '-100000px';
+                measurement.style.top = '0';
+                measurement.style.width = Math.max(0, viewportWidth) + 'px';
+                measurement.style.minWidth = '0';
+                measurement.style.maxWidth = Math.max(0, viewportWidth) + 'px';
+                measurement.style.visibility = 'hidden';
+                measurement.style.pointerEvents = 'none';
+                var measurementWrap = createElement(this.document, 'div', 'query-result-table-wrap');
+                measurementWrap.style.width = Math.max(0, viewportWidth) + 'px';
+                measurementWrap.style.minWidth = '0';
+                measurementWrap.style.maxWidth = Math.max(0, viewportWidth) + 'px';
+                var probe = createElement(this.document, 'table', 'data');
+                probe.style.width = this.wrap ? Math.max(0, viewportWidth) + 'px' : 'max-content';
+                probe.style.minWidth = this.wrap ? Math.max(0, viewportWidth) + 'px' : '0';
+                probe.style.maxWidth = this.wrap ? Math.max(0, viewportWidth) + 'px' : 'none';
+                probe.style.tableLayout = 'auto';
+                var header = createElement(this.document, 'thead');
+                var headerRow = createElement(this.document, 'tr');
+                this.state.variables.forEach(function (name) {
+                    var cell = createElement(_this.document, 'th');
+                    cell.scope = 'col';
+                    cell.textContent = name;
+                    headerRow.appendChild(cell);
+                });
+                header.appendChild(headerRow);
+                probe.appendChild(header);
+                var body = createElement(this.document, 'tbody');
+                rows.forEach(function (values, index) { return body.appendChild(_this.createTableRow(index, values)); });
+                probe.appendChild(body);
+                measurementWrap.appendChild(probe);
+                measurement.appendChild(measurementWrap);
+                this.root.appendChild(measurement);
+                var widths = [];
+                try {
+                    var cells = headerRow.children;
+                    for (var index = 0; index < cells.length; index++) {
+                        var rectangle = cells[index].getBoundingClientRect
+                            ? cells[index].getBoundingClientRect() : null;
+                        var measured = rectangle ? rectangle.width : cells[index].offsetWidth;
+                        widths.push(isFinite(measured) && measured > 0 ? measured : 0);
+                    }
+                }
+                finally {
+                    if (measurement.parentNode === this.root) {
+                        this.root.removeChild(measurement);
+                    }
+                }
+                return widths.some(function (value) { return value > 0; }) ? widths : [];
+            };
+            QueryResultRenderer.prototype.setTableColumnWidths = function (widths, viewportWidth) {
+                var _this = this;
+                clearChildren(this.tableColumns);
+                if (!widths.length || !widths.some(function (value) { return value > 0; })) {
+                    this.table.style.tableLayout = '';
+                    this.table.style.width = '';
+                    this.table.style.minWidth = '';
+                    this.table.style.maxWidth = '';
+                    return;
+                }
+                var allocatedWidths = allocateTableColumnWidths(widths, this.measureReadableColumnWidths(), viewportWidth, this.wrap);
+                var tableWidth = allocatedWidths.reduce(function (total, value) { return total + value; }, 0);
+                var assignedWidth = 0;
+                allocatedWidths.forEach(function (allocatedWidth, index) {
+                    var column = createElement(_this.document, 'col');
+                    var columnWidth = index === allocatedWidths.length - 1
+                        ? tableWidth - assignedWidth
+                        : allocatedWidth;
+                    column.style.width = columnWidth + 'px';
+                    assignedWidth += columnWidth;
+                    _this.tableColumns.appendChild(column);
+                });
+                this.table.style.tableLayout = 'fixed';
+                this.table.style.width = tableWidth + 'px';
+                this.table.style.minWidth = tableWidth + 'px';
+                this.table.style.maxWidth = 'none';
+            };
             QueryResultRenderer.prototype.renderRows = function () {
                 var _this = this;
                 if (this.root.getAttribute('data-effective-layout') !== 'table'
@@ -2640,7 +2903,7 @@ var workbench;
                     return Promise.resolve();
                 }
                 var generation = ++this.rowRenderGeneration;
-                var headerHeight = this.measureElementHeight(this.table.children[0]);
+                var headerHeight = this.measureElementHeight(this.table.querySelector('thead'));
                 this.rowCoordinates.setCapacity(Math.max(1, this.tableScrollCapacity - headerHeight));
                 var viewportHeight = Math.max(1, (this.tableWrap.clientHeight || this.measureRowEstimate() * 24) - headerHeight);
                 var geometry = this.prepareWindow(this.tableWrap, this.rowHeights, this.rowCoordinates, viewportHeight);
@@ -2955,11 +3218,6 @@ var workbench;
                 var position = records ? this.recordPosition : this.tablePosition;
                 return heights.range(this.logicalPosition(scrollport, coordinates, position), 0, 0, 1).start;
             };
-            QueryResultRenderer.prototype.seekRow = function (index) {
-                this.reflowAnchor = null;
-                this.requestedRow = Math.max(0, Math.min(this.state.rowCount - 1, Math.floor(index)));
-                this.renderAndReport();
-            };
             QueryResultRenderer.prototype.prepareWindow = function (scrollport, heights, coordinates, viewportHeight) {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
                 var oldLogical = this.logicalPosition(scrollport, coordinates, position);
@@ -2982,9 +3240,6 @@ var workbench;
                 position.physical = scrollTop;
                 var logical = position.logical;
                 var range = heights.range(logical, viewportHeight, 4, this.maxDomRows);
-                if (this.document.activeElement !== this.rowPositionControl) {
-                    this.rowPositionControl.value = String(anchor + 1);
-                }
                 return { range: range, scrollTop: scrollTop, anchor: anchor, within: within,
                     requestedRow: requestedRow, reflowAnchor: reflowAnchor,
                     atEnd: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
@@ -3098,6 +3353,12 @@ var workbench;
                 var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
                 var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
                 var characterWidth = isFinite(fontSize) && fontSize > 0 ? fontSize * 0.55 : 8;
+                var rootStyle = view && view.getComputedStyle ? view.getComputedStyle(this.root) : null;
+                var characterBudget = rootStyle && typeof rootStyle.getPropertyValue === 'function'
+                    ? parseFloat(rootStyle.getPropertyValue('--query-result-readable-column-characters')) : NaN;
+                if (!isFinite(characterBudget) || characterBudget <= 0) {
+                    characterBudget = 16;
+                }
                 var canvas = this.document.createElement('canvas');
                 var context = canvas.getContext && canvas.getContext('2d');
                 if (context && tableStyle) {
@@ -3110,9 +3371,63 @@ var workbench;
                     var style = view && view.getComputedStyle ? view.getComputedStyle(cell) : null;
                     var padding = style
                         ? (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) : 0;
-                    widths.push(characterWidth * 16 + padding + 2);
+                    var minimumContentWidth = characterWidth * characterBudget;
+                    var headerText = cell.textContent || '';
+                    if (context && headerText) {
+                        context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
+                        var headerTextWidth = this.measureRenderedHeaderText(headerText, style, context);
+                        minimumContentWidth = Math.max(minimumContentWidth, headerTextWidth);
+                    }
+                    widths.push(minimumContentWidth + padding + 2);
                 }
                 return widths;
+            };
+            QueryResultRenderer.prototype.measureRenderedHeaderText = function (text, style, context) {
+                var container = this.root;
+                if (container && this.document.createElement && container.appendChild
+                    && container.removeChild) {
+                    var probe = this.document.createElement('span');
+                    var probeStyle = probe.style;
+                    var computedStyle = style;
+                    var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
+                        'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
+                        'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
+                        'textRendering', 'direction'];
+                    textProperties.forEach(function (property) {
+                        if (computedStyle && computedStyle[property]) {
+                            probeStyle[property] = computedStyle[property];
+                        }
+                    });
+                    probeStyle.position = 'fixed';
+                    probeStyle.left = '-10000px';
+                    probeStyle.top = '-10000px';
+                    probeStyle.visibility = 'hidden';
+                    probeStyle.display = 'inline-block';
+                    probeStyle.whiteSpace = 'pre';
+                    probeStyle.width = 'max-content';
+                    probeStyle.minWidth = '0';
+                    probeStyle.maxWidth = 'none';
+                    probe.textContent = text;
+                    container.appendChild(probe);
+                    try {
+                        var renderedWidth = probe.getBoundingClientRect().width;
+                        if (isFinite(renderedWidth) && renderedWidth > 0) {
+                            return renderedWidth;
+                        }
+                    }
+                    finally {
+                        container.removeChild(probe);
+                    }
+                }
+                if (context) {
+                    var fallbackWidth = context.measureText(text).width;
+                    var letterSpacing = style ? parseFloat(style.letterSpacing) : NaN;
+                    if (isFinite(letterSpacing) && text.length > 1) {
+                        fallbackWidth += letterSpacing * (text.length - 1);
+                    }
+                    return fallbackWidth;
+                }
+                return 0;
             };
             QueryResultRenderer.prototype.installAutoLayoutObserver = function () {
                 var _this = this;

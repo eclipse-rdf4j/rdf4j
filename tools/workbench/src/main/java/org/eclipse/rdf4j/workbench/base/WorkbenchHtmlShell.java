@@ -19,9 +19,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 
 import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.ObjectMapper;
@@ -55,6 +57,8 @@ public final class WorkbenchHtmlShell {
 			String viewId, String initialPost, String initialModel) throws IOException {
 		WorkbenchPageProtocol.configureDynamicPageResponse(response);
 		String basePath = getBasePath(request, config);
+		String themeDefault = getDeploymentThemeDefault(config);
+		String colorScheme = "system".equals(themeDefault) ? "light dark" : themeDefault;
 		String repositoryId = (String) request.getAttribute(WorkbenchPageProtocol.REPOSITORY_ID_ATTRIBUTE);
 		response.setCharacterEncoding("UTF-8");
 		response.setContentType("text/html; charset=UTF-8");
@@ -62,6 +66,13 @@ public final class WorkbenchHtmlShell {
 		writer.write("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">");
 		writer.write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
 		writer.write("<title>RDF4J Workbench</title>");
+		writer.write("<meta name=\"color-scheme\" content=\"");
+		writer.write(colorScheme);
+		writer.write("\"><meta name=\"rdf4j-workbench-theme-default\" content=\"");
+		writer.write(escape(themeDefault));
+		writer.write("\"><script src=\"");
+		writer.write(escape(basePath));
+		writer.write("/scripts/workbench-theme.js\"></script>");
 		writer.write("<link rel=\"stylesheet\" href=\"");
 		writer.write(escape(basePath));
 		writer.write("/styles/default/screen.css\">");
@@ -101,6 +112,17 @@ public final class WorkbenchHtmlShell {
 		writer.write(escape(basePath));
 		writer.write("/scripts/workbenchApp.js\" defer></script>");
 		writer.write("</body></html>");
+	}
+
+	private static String getDeploymentThemeDefault(ServletConfig config) throws IOException {
+		if (config == null || config.getServletContext() == null) {
+			return "system";
+		}
+		try {
+			return WorkbenchPolicyLoader.getPolicy(config.getServletContext(), null).getDeploymentThemeDefault();
+		} catch (ServletException e) {
+			throw new IOException("Unable to resolve the Workbench deployment theme", e);
+		}
 	}
 
 	private static String getBasePath(HttpServletRequest request, ServletConfig config) {

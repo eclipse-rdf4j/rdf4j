@@ -16,6 +16,7 @@
     var targetWindow: Window = embedded ? window.parent : window.opener;
     var queryRequestId: string = marker && marker.getAttribute('data-query-request-id');
     var fullscreenEnabled = false;
+    var normalWrapBeforeFullscreen: boolean = null;
 
     function targetOrigin(): string {
         var origin = window.location.origin;
@@ -70,8 +71,21 @@
             if (data.queryRequestId && queryRequestId && data.queryRequestId !== queryRequestId) {
                 return;
             }
-            fullscreenEnabled = data.enabled === true;
-            setFullscreenButtonState(fullscreenEnabled);
+            var enabled = data.enabled === true;
+            if (enabled && !fullscreenEnabled) {
+                var wrapControl = <HTMLInputElement>document.getElementById('result-wrap-values');
+                normalWrapBeforeFullscreen = !wrapControl || wrapControl.checked;
+                fullscreenEnabled = true;
+                var layoutControl = <HTMLSelectElement>document.getElementById('result-layout');
+                applyPresentation(layoutControl ? layoutControl.value : 'auto', false);
+            } else if (!enabled && fullscreenEnabled) {
+                fullscreenEnabled = false;
+                var restoreWrap = normalWrapBeforeFullscreen !== null ? normalWrapBeforeFullscreen : true;
+                normalWrapBeforeFullscreen = null;
+                var currentLayout = <HTMLSelectElement>document.getElementById('result-layout');
+                applyPresentation(currentLayout ? currentLayout.value : 'auto', restoreWrap);
+            }
+            setFullscreenButtonState(enabled);
         }, false);
         window.addEventListener('keydown', function(event: KeyboardEvent) {
             if (event.key === 'Escape' && fullscreenEnabled) {
@@ -88,32 +102,91 @@
         return document.getElementById('query-result-layout');
     }
 
-    function readableColumnBudget(table: HTMLElement): number {
+    function measureRenderedHeaderText(text: string, style: CSSStyleDeclaration,
+            context: CanvasRenderingContext2D): number {
+        var container = getPresentationRoot() || document.body || document.documentElement;
+        if (container && document.createElement && container.appendChild && container.removeChild) {
+            var probe = document.createElement('span');
+            var probeStyle = <any>probe.style;
+            var computedStyle = <any>style;
+            var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
+                'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
+                'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
+                'textRendering', 'direction'];
+            textProperties.forEach(property => {
+                if (computedStyle && computedStyle[property]) {
+                    probeStyle[property] = computedStyle[property];
+                }
+            });
+            probeStyle.position = 'fixed';
+            probeStyle.left = '-10000px';
+            probeStyle.top = '-10000px';
+            probeStyle.visibility = 'hidden';
+            probeStyle.display = 'inline-block';
+            probeStyle.whiteSpace = 'pre';
+            probeStyle.width = 'max-content';
+            probeStyle.minWidth = '0';
+            probeStyle.maxWidth = 'none';
+            probe.textContent = text;
+            container.appendChild(probe);
+            try {
+                var renderedWidth = probe.getBoundingClientRect().width;
+                if (isFinite(renderedWidth) && renderedWidth > 0) {
+                    return renderedWidth;
+                }
+            } finally {
+                container.removeChild(probe);
+            }
+        }
+        if (context) {
+            var fallbackWidth = context.measureText(text).width;
+            var letterSpacing = parseFloat(style.letterSpacing);
+            if (isFinite(letterSpacing) && text.length > 1) {
+                fallbackWidth += letterSpacing * (text.length - 1);
+            }
+            return fallbackWidth;
+        }
+        return 0;
+    }
+
+    function readableColumnWidths(table: HTMLElement): number[] {
         var header = table.querySelector('thead tr');
         if (!header || !header.children.length) {
-            return 0;
+            return [];
         }
         var tableStyle = getComputedStyle(table);
         var fontSize = parseFloat(tableStyle.fontSize) || 14;
         var characterWidth = fontSize * 0.55;
+        var root = getPresentationRoot();
+        var rootStyle = root ? getComputedStyle(root) : null;
+        var characterBudget = root
+            && rootStyle && typeof rootStyle.getPropertyValue === 'function'
+            ? parseFloat(rootStyle.getPropertyValue('--query-result-readable-column-characters')) : NaN;
+        if (!isFinite(characterBudget) || characterBudget <= 0) {
+            characterBudget = 16;
+        }
         var canvas = document.createElement('canvas');
         var context = canvas.getContext && canvas.getContext('2d');
         if (context) {
             context.font = tableStyle.font;
             characterWidth = context.measureText('0').width || characterWidth;
         }
-        var budget = 0;
+        var widths = [];
         for (var i = 0; i < header.children.length; i++) {
             var cell = <HTMLElement>header.children[i];
             var cellStyle = getComputedStyle(cell);
             var horizontalPadding = (parseFloat(cellStyle.paddingLeft) || 0)
                 + (parseFloat(cellStyle.paddingRight) || 0);
-            // Sixteen characters is the minimum readable width for a value
-            // column. Auto switches to records when all columns cannot meet
-            // that budget in the available frame width.
-            budget += characterWidth * 16 + horizontalPadding + 2;
+            var minimumContentWidth = characterWidth * characterBudget;
+            var headerText = cell.textContent || '';
+            if (context && headerText) {
+                context.font = cellStyle.font || tableStyle.font;
+                var headerTextWidth = measureRenderedHeaderText(headerText, cellStyle, context);
+                minimumContentWidth = Math.max(minimumContentWidth, headerTextWidth);
+            }
+            widths.push(minimumContentWidth + horizontalPadding + 2);
         }
-        return budget;
+        return widths;
     }
 
     function applyPresentation(layout: string, wrap: boolean) {
@@ -140,8 +213,19 @@
         var records = document.getElementById('query-result-records');
         var effectiveLayout = layout;
         if (layout === 'auto' && table && tableWrap) {
-            var readableWidth = readableColumnBudget(<HTMLElement>table);
-            effectiveLayout = readableWidth > tableWrap.clientWidth ? 'records' : 'table';
+            var minimumWidths = readableColumnWidths(<HTMLElement>table);
+            var readableWidth = minimumWidths.reduce((total, width) => total + width, 0);
+            var availableWidth = root.clientWidth || root.getBoundingClientRect().width || 0;
+            effectiveLayout = wrap === false || readableWidth <= availableWidth ? 'table' : 'records';
+        }
+        if (table) {
+            var header = table.querySelector('thead tr');
+            var minimumWidths = readableColumnWidths(<HTMLElement>table);
+            if (header) {
+                for (var index = 0; index < header.children.length; index++) {
+                    (<HTMLElement>header.children[index]).style.minWidth = minimumWidths[index] + 'px';
+                }
+            }
         }
         root.setAttribute('data-effective-layout', effectiveLayout);
         if (tableWrap) {
@@ -159,7 +243,8 @@
             type: 'rdf4j-query-display-state',
             queryRequestId: queryRequestId || '',
             layout: layoutControl ? layoutControl.value : 'auto',
-            wrap: !wrapControl || wrapControl.checked
+            wrap: !wrapControl || wrapControl.checked,
+            fullscreen: fullscreenEnabled
         });
     }
 
@@ -183,15 +268,15 @@
         }
         applyPresentation(layoutControl ? layoutControl.value : 'auto', !wrapControl || wrapControl.checked);
         if ((<any>window).ResizeObserver) {
-            var tableWrap = document.getElementById('query-result-table-wrap');
-            if (tableWrap) {
+            var presentationRoot = getPresentationRoot();
+            if (presentationRoot) {
                 var observer = new (<any>window).ResizeObserver(function() {
                     var selectedLayout = layoutControl ? layoutControl.value : 'auto';
                     if (selectedLayout === 'auto') {
                         applyPresentation(selectedLayout, !wrapControl || wrapControl.checked);
                     }
                 });
-                observer.observe(tableWrap);
+                observer.observe(presentationRoot);
             }
         }
         window.addEventListener('resize', function() {
@@ -211,7 +296,10 @@
             if (data.queryRequestId && queryRequestId && data.queryRequestId !== queryRequestId) {
                 return;
             }
-            applyPresentation(data.layout || 'auto', data.wrap !== false);
+            var wrapControl = <HTMLInputElement>document.getElementById('result-wrap-values');
+            var fullscreenDisplay = fullscreenEnabled || data.fullscreen === true;
+            applyPresentation(data.layout || 'auto', fullscreenDisplay && wrapControl
+                ? wrapControl.checked : data.wrap !== false);
         }, false);
     }
 

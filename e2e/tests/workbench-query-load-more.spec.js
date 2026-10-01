@@ -19,6 +19,7 @@ const { test, expect } = require('@playwright/test');
 const PREVIEW_GENERATION = process.env.RDF4J_PREVIEW_GENERATION || 'unrecorded';
 const BROWSER_EVIDENCE_DIR = path.join(os.tmpdir(), 'rdf4j7-workbench-loadmore-20260930',
 	`browser-final-${PREVIEW_GENERATION}`);
+const COLUMN_MINIMUM_EVIDENCE_DIR = path.join(os.tmpdir(), 'rdf4j7-workbench-column-minimum-20261001');
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
 	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
@@ -192,6 +193,681 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 	}
 });
 
+test('virtual table column boundaries stay fixed when native scrolling mounts later long values',
+	async ({ page }, testInfo) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await setBatchSize(page, 10);
+	await setEditor(page, resultColumnWidthQuery(10));
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	const result = page.locator('#query-results .query-result-layout');
+	await expectCompletedRows(result.locator('.query-result-status'), 10, 10);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	await result.locator('select[name="result-layout"]').selectOption('table');
+	const tableWrap = result.locator('.query-result-table-wrap');
+	await expect(tableWrap.locator('thead th')).toHaveCount(2);
+	const firstTenBoundaries = await readTableColumnBoundaries(tableWrap);
+
+	await setBatchSize(page, 120);
+	await setEditor(page, resultColumnWidthQuery(120));
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(2);
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
+	const fullResultOptions = result.locator('.query-result-toolbar__disclosures button')
+		.filter({ hasText: 'Options' });
+	await fullResultOptions.click();
+	await result.locator('select[name="result-layout"]').selectOption('table');
+	const initialBoundaries = await readTableColumnBoundaries(tableWrap);
+
+	await scrollToResultEnd(tableWrap, page);
+	await expect(tableWrap.locator('tbody tr[data-query-row-index="119"]')).toHaveCount(1);
+	const lastBoundaries = await readTableColumnBoundaries(tableWrap);
+	await scrollToResultStart(tableWrap, page);
+	await expect(tableWrap.locator('tbody tr[data-query-row-index="0"]')).toHaveCount(1);
+	const returnedBoundaries = await readTableColumnBoundaries(tableWrap);
+	await page.setViewportSize({ width: 960, height: 720 });
+	const resizedTableWidth = await tableWrap.locator('table').evaluate(table =>
+		table.closest('.query-result-layout').clientWidth);
+	await expect.poll(() => tableWrap.locator('table').evaluate((table, targetWidth) =>
+		Math.abs(parseFloat(table.style.width) - targetWidth), resizedTableWidth))
+		.toBeLessThanOrEqual(1);
+	const resizedBoundaries = await readTableColumnBoundaries(tableWrap);
+	await scrollToResultEnd(tableWrap, page);
+	await expect(tableWrap.locator('tbody tr[data-query-row-index="119"]')).toHaveCount(1);
+	const resizedLastBoundaries = await readTableColumnBoundaries(tableWrap);
+	await scrollToResultStart(tableWrap, page);
+	const resizedReturnedBoundaries = await readTableColumnBoundaries(tableWrap);
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await expect.poll(() => tableWrap.locator('table').evaluate(table =>
+		Math.abs(parseFloat(table.style.width) - table.closest('.query-result-layout').clientWidth)))
+		.toBeLessThanOrEqual(1);
+	const restoredViewportBoundaries = await readTableColumnBoundaries(tableWrap);
+
+	await testInfo.attach('query-column-width-scroll.json', {
+		body: Buffer.from(JSON.stringify({ firstTenBoundaries, initialBoundaries,
+			lastBoundaries, returnedBoundaries, resizedBoundaries, resizedLastBoundaries,
+			resizedReturnedBoundaries, restoredViewportBoundaries }, null, 2)),
+		contentType: 'application/json'
+	});
+	expect({ initialBoundaries, lastBoundaries, returnedBoundaries },
+		'headers and the first ten logical rows must determine every result window width')
+		.toEqual({ initialBoundaries: firstTenBoundaries, lastBoundaries: firstTenBoundaries,
+			returnedBoundaries: firstTenBoundaries });
+	expect(resizedLastBoundaries,
+		'resizing may reapply the same sample, but later virtual rows cannot change it').toEqual(resizedBoundaries);
+	expect(resizedReturnedBoundaries).toEqual(resizedBoundaries);
+	expect(restoredViewportBoundaries).toEqual(initialBoundaries);
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'query-column-widths-main.png');
+	}
+	expect(monitor.executions).toHaveLength(2);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('table width sampling uses available rows and resets for empty results and new schemas', async ({ page }) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	const result = page.locator('#query-results .query-result-layout');
+	const runTableQuery = async (query, requestCount, expectedRows, expectedHeaders) => {
+		await setEditor(page, query);
+		await page.locator('#exec').click();
+		await expect.poll(() => monitor.executions.length).toBe(requestCount);
+		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+		await expectCompletedRows(result.locator('.query-result-status'), expectedRows, expectedRows);
+		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+		const layout = result.locator('select[name="result-layout"]');
+		if (!await layout.isVisible()) {
+			await options.click();
+		}
+		await layout.selectOption('table');
+		await expect(result.locator('thead th')).toHaveCount(expectedHeaders.length);
+		await expect(result.locator('thead th').allTextContents()).resolves.toEqual(expectedHeaders);
+		return result.locator('colgroup col').evaluateAll(columns => columns.map(column =>
+			parseFloat(column.style.width)));
+	};
+
+	const sampledWidths = await runTableQuery(
+		'SELECT ?number ?label WHERE { VALUES (?number ?label) { '
+		+ '(1 "x") (2 "short") (3 "the third available row sets the measured sample width") } }',
+		1, 3, ['number', 'label']);
+	expect(sampledWidths).toHaveLength(2);
+	expect(sampledWidths[1]).toBeGreaterThan(sampledWidths[0]);
+
+	const headerOnlyWidths = await runTableQuery(
+		'SELECT ?number ?label WHERE { FILTER(false) }', 2, 0, ['number', 'label']);
+	expect(headerOnlyWidths).toHaveLength(2);
+	expect(headerOnlyWidths[1]).toBeLessThan(sampledWidths[1]);
+
+	const changedSchemaWidths = await runTableQuery(
+		'SELECT ?identifier ?description ?kind WHERE { VALUES (?identifier ?description ?kind) { '
+		+ '(1 "a" <urn:kind:a>) (2 "b" <urn:kind:b>) } }',
+		3, 2, ['identifier', 'description', 'kind']);
+	expect(changedSchemaWidths).toHaveLength(3);
+	expect(changedSchemaWidths.every(width => Number.isFinite(width) && width > 0)).toBe(true);
+	expect(monitor.executions).toHaveLength(3);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('wrapped table columns meet the shared readable minimum when the budget fits', async ({ page }, testInfo) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const values = Array.from({ length: 30 }, (_unused, index) => {
+		const description = index < 10
+			? `sample-${index}-long-value-${'readable-column-'.repeat(24)}`
+			: `later-${index}-${'unmeasured-value-'.repeat(32)}`;
+		return `(${index} "${description}" <urn:kind:${index}>)`;
+	}).join(' ');
+	await setEditor(page, `SELECT ?id ?description ?kind WHERE { VALUES (?id ?description ?kind) { ${values} } } ORDER BY ?id`);
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	const result = page.locator('#query-results .query-result-layout');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 30, 30);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	const layout = result.locator('select[name="result-layout"]');
+	await layout.selectOption('auto');
+	const wrap = result.locator('input[name="result-wrap-values"]');
+	if (!await wrap.isChecked()) {
+		await wrap.check();
+	}
+	await expect(result).toHaveAttribute('data-layout', 'auto');
+	await expect(result).toHaveAttribute('data-wrap', 'true');
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	const geometry = await result.evaluate(root => {
+		const table = root.querySelector('.query-result-table-wrap table');
+		const headers = Array.from(table.querySelectorAll('thead th'));
+		const characterCount = parseFloat(getComputedStyle(root)
+			.getPropertyValue('--query-result-readable-column-characters')) || 16;
+		const tableStyle = getComputedStyle(table);
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
+		if (context) {
+			context.font = tableStyle.font;
+		}
+		const characterWidth = context?.measureText('0').width || parseFloat(tableStyle.fontSize) * 0.55;
+		return {
+			availableWidth: root.clientWidth,
+			tableWidth: table.getBoundingClientRect().width,
+			columnWidths: headers.map(header => header.getBoundingClientRect().width),
+			minimumWidths: headers.map(header => {
+				const style = getComputedStyle(header);
+				return characterWidth * characterCount + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2;
+			})
+		};
+	});
+	await testInfo.attach('query-column-minimum-green.json', {
+		body: Buffer.from(JSON.stringify(geometry, null, 2)),
+		contentType: 'application/json'
+	});
+	console.log('[query-column-minimum-green] ' + JSON.stringify(geometry));
+	if (testInfo.project.name === 'chromium') {
+		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'column-minimum-green-desktop.png') });
+	}
+	expect(geometry.minimumWidths.reduce((total, width) => total + width, 0),
+		'all per-column minima fit in the available result width').toBeLessThanOrEqual(geometry.availableWidth + 1);
+	geometry.columnWidths.forEach((width, index) => {
+		expect(width, `column ${index} should be at least ${geometry.minimumWidths[index]}px`)
+			.toBeGreaterThanOrEqual(geometry.minimumWidths[index] - 1);
+	});
+	expect(geometry.tableWidth).toBeLessThanOrEqual(geometry.availableWidth + 1);
+	expect(monitor.executions).toHaveLength(1);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('Auto accounts for unwrapped variable headers when applying column minima', async ({ page }, testInfo) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await page.setViewportSize({ width: 900, height: 900 });
+	const longVariable = 'workbench_long_result_variable_name_that_remains_unwrapped_for_readability';
+	await setEditor(page, `SELECT ?${longVariable} ?label ?kind WHERE { VALUES (?${longVariable} ?label ?kind) { `
+		+ '("value"^^<urn:datatype:Label> "label" <urn:kind:value>) } }');
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	const result = page.locator('#query-results .query-result-layout');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 1, 1);
+	await result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' }).click();
+	const layout = result.locator('select[name="result-layout"]');
+	const wrap = result.locator('input[name="result-wrap-values"]');
+	await layout.selectOption('auto');
+	if (!await wrap.isChecked()) {
+		await wrap.check();
+	}
+	const readGeometry = () => result.evaluate(root => {
+		const table = root.querySelector('.query-result-table-wrap table');
+		const headers = Array.from(table.querySelectorAll('thead th'));
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
+		const tableStyle = getComputedStyle(table);
+		if (context) context.font = tableStyle.font;
+		const characterWidth = context ? context.measureText('0').width : parseFloat(tableStyle.fontSize) * 0.55;
+		const characterCount = parseFloat(getComputedStyle(root)
+			.getPropertyValue('--query-result-readable-column-characters')) || 16;
+		const textBounds = headers.map(header => {
+			const range = document.createRange();
+			range.selectNodeContents(header);
+			const bounds = range.getBoundingClientRect();
+			return { left: bounds.left, right: bounds.right, width: bounds.width };
+		});
+		const cells = headers.map(header => {
+			const bounds = header.getBoundingClientRect();
+			const style = getComputedStyle(header);
+			const headerText = header.textContent || '';
+			let textWidth = 0;
+			if (context) {
+				context.font = style.font || tableStyle.font;
+				textWidth = context.measureText(headerText).width;
+				const letterSpacing = parseFloat(style.letterSpacing);
+				if (Number.isFinite(letterSpacing) && headerText.length > 1) {
+					textWidth += letterSpacing * (headerText.length - 1);
+				}
+			}
+			const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+			return { left: bounds.left, right: bounds.right, width: bounds.width,
+				minimumContentWidth: Math.max(characterWidth * characterCount, textWidth),
+				padding, textWidth, textTransform: style.textTransform,
+				requiredWidth: Math.max(characterWidth * characterCount, textWidth) + padding + 2 };
+		});
+		return {
+			availableWidth: root.clientWidth,
+			effectiveLayout: root.getAttribute('data-effective-layout'),
+			wrap: root.getAttribute('data-wrap'),
+			textBounds,
+			cells,
+			requiredWidths: cells.map(cell => cell.requiredWidth),
+			tableLayout: getComputedStyle(table).tableLayout,
+			tableWidth: table.getBoundingClientRect().width,
+			tableScrollWidth: root.querySelector('.query-result-table-wrap').scrollWidth,
+			tableClientWidth: root.querySelector('.query-result-table-wrap').clientWidth
+		};
+	});
+	const verifyGeometry = geometry => {
+		const headerMinimumsFit = geometry.requiredWidths.reduce((total, width) => total + width, 0)
+			<= geometry.availableWidth + 1;
+		if (geometry.wrap === 'true') {
+			expect(geometry.effectiveLayout).toBe(headerMinimumsFit ? 'table' : 'records');
+		} else {
+			expect(geometry.effectiveLayout).toBe('table');
+		}
+		if (geometry.effectiveLayout === 'table') {
+			geometry.cells.forEach((cell, index) => {
+				expect(cell.width, `header ${index} should fit its intrinsic minimum`)
+					.toBeGreaterThanOrEqual(geometry.requiredWidths[index] - 1);
+				if (geometry.textBounds[index].width > 0) {
+					expect(geometry.textBounds[index].right, `header ${index} should not paint into the next column`)
+						.toBeLessThanOrEqual(cell.right + 1);
+				}
+			});
+		}
+		return headerMinimumsFit;
+	};
+	let geometry = await readGeometry();
+	await testInfo.attach('unwrapped-variable-header-geometry.json', {
+		body: Buffer.from(JSON.stringify(geometry, null, 2)),
+		contentType: 'application/json'
+	});
+	console.log('[unwrapped-variable-header-geometry] ' + JSON.stringify(geometry));
+	expect(geometry.cells[0].textTransform).toBe('capitalize');
+	if (testInfo.project.name === 'webkit' && geometry.cells.some((cell, index) =>
+		geometry.textBounds[index].right > cell.right + 1)) {
+		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'long-header-webkit-current.png') });
+	}
+	verifyGeometry(geometry);
+	const initialRequiredWidths = geometry.requiredWidths;
+	const datatype = result.locator('input[name="show-datatypes"]');
+	if (await datatype.isChecked()) {
+		const datatypeValue = result.locator('tbody tr[data-query-row-index="0"] td').first();
+		const formattedValue = await datatypeValue.textContent();
+		await datatype.uncheck();
+		await expect(datatypeValue).not.toHaveText(formattedValue);
+		geometry = await readGeometry();
+		verifyGeometry(geometry);
+		expect(geometry.requiredWidths).toEqual(initialRequiredWidths,
+			'datatype display changes must not change the unwrapped header minimum');
+	}
+	const rawMinimumTotal = geometry.requiredWidths.reduce((total, width) => total + width, 0);
+	const renderedMinimumTotal = geometry.cells.reduce((total, cell, index) => total
+		+ Math.max(cell.minimumContentWidth, geometry.textBounds[index].width) + cell.padding + 2, 0);
+	expect(renderedMinimumTotal).toBeGreaterThan(rawMinimumTotal + 0.1,
+		'the lowercase leading w must expand when CSS capitalizes the variable header');
+	const viewportOffset = await result.evaluate(root => window.innerWidth - root.clientWidth);
+	const boundaryViewport = Math.ceil(rawMinimumTotal + viewportOffset);
+	const boundaryRootWidth = boundaryViewport - viewportOffset;
+	expect(boundaryRootWidth).toBeGreaterThanOrEqual(rawMinimumTotal - 0.1,
+		'the boundary viewport should fit the raw-text minimum');
+	expect(boundaryRootWidth).toBeLessThan(renderedMinimumTotal,
+		'the boundary viewport should not fit the CSS-rendered header minimum');
+	await page.setViewportSize({ width: boundaryViewport, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	const actualBoundary = await result.evaluate(root => ({
+		viewportWidth: window.innerWidth,
+		rootWidth: root.clientWidth,
+		effectiveLayout: root.getAttribute('data-effective-layout')
+	}));
+	console.log('[capitalized-header-boundary] ' + JSON.stringify({
+		expectedBoundary: { rawMinimumTotal, renderedMinimumTotal, boundaryViewport, boundaryRootWidth },
+		actual: actualBoundary
+	}));
+	expect(actualBoundary.rootWidth).toBe(boundaryRootWidth,
+		'the browser viewport must land at the measured CSS-rendered column boundary');
+	await page.setViewportSize({ width: 900, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	geometry = await readGeometry();
+	verifyGeometry(geometry);
+	expect(geometry.requiredWidths).toEqual(initialRequiredWidths,
+		'restoring width after the transformed-header boundary should recover the same schema minima');
+	await page.setViewportSize({ width: 550, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	geometry = await readGeometry();
+	expect(geometry.availableWidth).toBeLessThan(610);
+	expect(verifyGeometry(geometry)).toBe(false,
+		'the narrow wrapped viewport should not meet the long header minimum sum');
+	const cardLabelGeometry = await result.locator('.query-result-record').evaluate(record => {
+		const label = record.querySelector('dt');
+		const value = label.nextElementSibling;
+		const bounds = label.getBoundingClientRect();
+		const valueBounds = value.getBoundingClientRect();
+		const range = document.createRange();
+		range.selectNodeContents(label);
+		const textRights = Array.from(range.getClientRects(), rect => rect.right);
+		return {
+			labelRight: bounds.right,
+			valueLeft: valueBounds.left,
+			maxTextRight: Math.max(...textRights),
+			textRightCount: textRights.length
+		};
+	});
+	await testInfo.attach('long-header-card-label-geometry.json', {
+		body: Buffer.from(JSON.stringify(cardLabelGeometry, null, 2)),
+		contentType: 'application/json'
+	});
+	console.log('[long-header-card-label] ' + JSON.stringify(cardLabelGeometry));
+	expect(cardLabelGeometry.maxTextRight).toBeLessThanOrEqual(cardLabelGeometry.labelRight + 1,
+		'long variable labels in Records must wrap inside the label track without covering values');
+	if (testInfo.project.name === 'webkit') {
+		await result.locator('.query-result-records').scrollIntoViewIfNeeded();
+		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'long-header-mobile-current.png') });
+	}
+	await wrap.uncheck();
+	await expect(result).toHaveAttribute('data-wrap', 'false');
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	geometry = await readGeometry();
+	verifyGeometry(geometry);
+	expect(geometry.tableScrollWidth).toBeGreaterThan(geometry.tableClientWidth,
+		'no-wrap Auto should keep the header-safe table horizontally scrollable');
+	await wrap.check();
+	await expect(result).toHaveAttribute('data-wrap', 'true');
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	geometry = await readGeometry();
+	verifyGeometry(geometry);
+	await page.setViewportSize({ width: 900, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	geometry = await readGeometry();
+	verifyGeometry(geometry);
+	expect(geometry.requiredWidths).toEqual(initialRequiredWidths,
+		'narrow-to-wide recovery should reuse stable schema header minima');
+	const legacyTableGeometry = await page.evaluate(({ longVariable, minimumWidths }) => {
+		const fixture = document.createElement('section');
+		fixture.className = 'workbench-page-surface query-result-embedded';
+		Object.assign(fixture.style, {
+			position: 'fixed', left: '0', top: '0', width: '900px', visibility: 'hidden', pointerEvents: 'none'
+		});
+		const tableWrap = document.createElement('div');
+		tableWrap.className = 'query-result-table-wrap';
+		tableWrap.style.width = '900px';
+		const table = document.createElement('table');
+		table.className = 'data';
+		table.style.width = '900px';
+		const head = document.createElement('thead');
+		const row = document.createElement('tr');
+		[longVariable, 'label', 'kind'].forEach((name, index) => {
+			const cell = document.createElement('th');
+			cell.textContent = name;
+			cell.style.minWidth = minimumWidths[index] + 'px';
+			row.appendChild(cell);
+		});
+		head.appendChild(row);
+		table.appendChild(head);
+		tableWrap.appendChild(table);
+		fixture.appendChild(tableWrap);
+		document.body.appendChild(fixture);
+		const result = {
+			tableLayout: getComputedStyle(table).tableLayout,
+			columnWidths: Array.from(row.children, cell => cell.getBoundingClientRect().width),
+			minimumWidths: Array.from(row.children, cell => parseFloat(cell.style.minWidth))
+		};
+		fixture.remove();
+		return result;
+	}, { longVariable, minimumWidths: initialRequiredWidths });
+	console.log('[legacy-auto-header-minimum] ' + JSON.stringify(legacyTableGeometry));
+	expect(legacyTableGeometry.tableLayout).toBe('auto',
+		'the legacy embedded table uses the browser auto-layout path');
+	legacyTableGeometry.columnWidths.forEach((width, index) => {
+		expect(width, `legacy column ${index} should honor inline min-width under auto layout`)
+			.toBeGreaterThanOrEqual(legacyTableGeometry.minimumWidths[index] - 1);
+	});
+	if (testInfo.project.name === 'webkit') {
+		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'long-header-webkit-green.png') });
+	}
+	expect(monitor.executions).toHaveLength(1);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('Auto uses cards below the wrapped column minimum and tables for no-wrap', async ({ page }, testInfo) => {
+	test.setTimeout(90000);
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await page.setViewportSize({ width: 1280, height: 900 });
+	const values = Array.from({ length: 30 }, (_unused, index) =>
+		`(${index} "sample-${index}" <urn:kind:${index}>)`).join(' ');
+	const query = `SELECT ?id ?description ?kind WHERE { VALUES (?id ?description ?kind) { ${values} } } ORDER BY ?id`;
+	await setEditor(page, query);
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	const result = page.locator('#query-results .query-result-layout');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 30, 30);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	const layout = result.locator('select[name="result-layout"]');
+	const wrap = result.locator('input[name="result-wrap-values"]');
+	await layout.selectOption('auto');
+	if (!await wrap.isChecked()) {
+		await wrap.check();
+	}
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	const wideGeometry = await result.evaluate(root => {
+		const table = root.querySelector('.query-result-table-wrap table');
+		return {
+			rootWidth: root.clientWidth,
+			tableWidth: table.getBoundingClientRect().width,
+			columnWidths: Array.from(table.querySelectorAll('thead th'), cell => cell.getBoundingClientRect().width)
+		};
+	});
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	await expect(result.locator('.query-result-records')).toBeVisible();
+	if (testInfo.project.name === 'chromium') {
+		await page.screenshot({ path: path.join(COLUMN_MINIMUM_EVIDENCE_DIR, 'auto-minimum-mobile-records.png') });
+	}
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'table',
+		'Auto should recover to Table when the visible root grows enough for every minimum');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	await wrap.uncheck();
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	await expect(result).toHaveAttribute('data-wrap', 'false');
+	const noWrapGeometry = await result.locator('.query-result-table-wrap').evaluate(element => ({
+		viewportWidth: element.clientWidth,
+		scrollWidth: element.scrollWidth,
+		columns: Array.from(element.querySelectorAll('thead th'), cell => cell.getBoundingClientRect().width)
+	}));
+	expect(noWrapGeometry.scrollWidth).toBeGreaterThan(noWrapGeometry.viewportWidth,
+		'no-wrap Auto should retain readable columns in a horizontally scrollable table');
+	await wrap.check();
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	await layout.selectOption('table');
+	await expect(result).toHaveAttribute('data-effective-layout', 'table',
+		'explicit Table remains selected when its minimum widths exceed the viewport');
+	await layout.selectOption('records');
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	await layout.selectOption('auto');
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	const fullscreen = result.locator('.query-results__fullscreen');
+	await fullscreen.click();
+	await expect(result).toHaveAttribute('data-wrap', 'false');
+	await expect(result).toHaveAttribute('data-effective-layout', 'table',
+		'fullscreen Auto should use the no-wrap table even below the normal wrapped minimum');
+	await page.keyboard.press('Escape');
+	await expect(result).toHaveAttribute('data-wrap', 'true');
+	await expect(result).toHaveAttribute('data-effective-layout', 'records',
+		'fullscreen exit should restore the normal Auto card choice');
+
+	const queryName = `auto-column-minimum-${Date.now().toString(36)}`;
+	await saveQueryNamed(page, query, queryName);
+	await page.setViewportSize({ width: 390, height: 844 });
+	const savedRow = page.locator('.saved-query-row').filter({ hasText: queryName });
+	const savedForm = savedRow.locator('form[data-workbench-query-execution]');
+	await savedForm.locator('input[type="submit"]').click();
+	await expect.poll(() => monitor.executions.length).toBe(2);
+	const savedResultMount = savedRow.locator('.query-results');
+	const savedResult = savedRow.locator('.query-results .query-result-layout');
+	await expect(savedResultMount).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(savedResult.locator('.query-result-status'), 30, 30);
+	await savedResult.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' }).click();
+	const savedLayout = savedResult.locator('select[name="result-layout"]');
+	const savedWrap = savedResult.locator('input[name="result-wrap-values"]');
+	await savedLayout.selectOption('auto');
+	if (!await savedWrap.isChecked()) {
+		await savedWrap.check();
+	}
+	const savedAutoGeometry = await savedResult.evaluate(root => {
+		const table = root.querySelector('.query-result-table-wrap table');
+		const characterCount = parseFloat(getComputedStyle(root)
+			.getPropertyValue('--query-result-readable-column-characters')) || 16;
+		const tableStyle = getComputedStyle(table);
+		const canvas = document.createElement('canvas');
+		const context = canvas.getContext('2d');
+		if (context) context.font = tableStyle.font;
+		const characterWidth = context?.measureText('0').width || parseFloat(tableStyle.fontSize) * 0.55;
+		const minimumWidths = Array.from(table.querySelectorAll('thead th'), cell => {
+			const style = getComputedStyle(cell);
+			return characterWidth * characterCount + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2;
+		});
+		return { viewport: window.innerWidth, rootWidth: root.clientWidth,
+			rootRectWidth: root.getBoundingClientRect().width, mountRectWidth: root.parentElement.clientWidth,
+			tableWidth: table.getBoundingClientRect().width, minimumWidths,
+			wrap: root.getAttribute('data-wrap'), layout: root.getAttribute('data-layout'),
+			effectiveLayout: root.getAttribute('data-effective-layout') };
+	});
+	console.log('[saved-auto-column-minimum] ' + JSON.stringify(savedAutoGeometry));
+	await expect(savedResult).toHaveAttribute('data-effective-layout', 'records',
+		'saved results should use the same wrapped minimum policy as the main result');
+	await savedWrap.uncheck();
+	await expect(savedResult).toHaveAttribute('data-effective-layout', 'table',
+		'saved Auto results should retain a horizontally scrollable table when wrapping is disabled');
+	await savedLayout.selectOption('auto');
+	await savedResult.locator('.query-results__fullscreen').click();
+	await expect(savedResult).toHaveAttribute('data-wrap', 'false');
+	await expect(savedResult).toHaveAttribute('data-effective-layout', 'table');
+	await page.keyboard.press('Escape');
+	await expect(savedResult).toHaveAttribute('data-wrap', 'false',
+		'saved fullscreen exit should restore the prior no-wrap preference');
+	await testInfo.attach('query-auto-column-minimum.json', {
+		body: Buffer.from(JSON.stringify({ wideGeometry, noWrapGeometry }, null, 2)),
+		contentType: 'application/json'
+	});
+	expect(wideGeometry.columnWidths.every(width => width > 0)).toBe(true);
+	expect(wideGeometry.tableWidth).toBeLessThanOrEqual(wideGeometry.rootWidth + 1);
+	expect(monitor.executions).toHaveLength(2);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('wrap-enabled width sample keeps long first-ten values within the result viewport', async ({ page }, testInfo) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await page.setViewportSize({ width: 974, height: 820 });
+	const values = Array.from({ length: 120 }, (_unused, index) => {
+		const label = index === 0 ? 'wide-sample '.repeat(80) : `short-${index}`;
+		return `(${index} "${label}")`;
+	}).join(' ');
+	await setEditor(page, `SELECT ?number ?label WHERE { VALUES (?number ?label) { ${values} } } ORDER BY ?number`);
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	const result = page.locator('#query-results .query-result-layout');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	await result.locator('select[name="result-layout"]').selectOption('table');
+	const wrapValues = result.locator('input[name="result-wrap-values"]');
+	if (!await wrapValues.isChecked()) {
+		await wrapValues.check();
+	}
+	await expect(result).toHaveAttribute('data-wrap', 'true');
+	const tableWrap = result.locator('.query-result-table-wrap');
+	const geometry = await tableWrap.evaluate(element => ({
+		viewportWidth: element.clientWidth,
+		tableWidth: element.querySelector('table').getBoundingClientRect().width,
+		columnWidths: Array.from(element.querySelectorAll('colgroup col'), column =>
+			parseFloat(column.style.width))
+	}));
+	expect(geometry.tableWidth,
+		'wrapping must constrain first-ten content to the same width as the visible result viewport')
+		.toBeLessThanOrEqual(geometry.viewportWidth + 1);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect.poll(async () => {
+		const mobileGeometry = await tableWrap.evaluate(element => ({
+			viewportWidth: element.clientWidth,
+			tableWidth: element.querySelector('table').getBoundingClientRect().width
+		}));
+		return mobileGeometry.tableWidth <= mobileGeometry.viewportWidth + 1;
+	}).toBe(true);
+	const mobileGeometry = await tableWrap.evaluate(element => ({
+		viewportWidth: element.clientWidth,
+		tableWidth: element.querySelector('table').getBoundingClientRect().width,
+		tableDisplay: getComputedStyle(element.querySelector('table')).display
+	}));
+	expect(mobileGeometry.tableDisplay).toBe('table');
+	const mobileHeaderLines = await tableWrap.locator('thead th').evaluateAll(cells => cells.map(cell => {
+		const range = document.createRange();
+		range.selectNodeContents(cell);
+		return range.getClientRects().length;
+	}));
+	expect(mobileHeaderLines,
+		'column headings must remain readable while wrapped result values use narrow viewport widths')
+		.toEqual([1, 1]);
+	await testInfo.attach('query-column-width-wrap.json', {
+		body: Buffer.from(JSON.stringify({ desktop: geometry, mobile: mobileGeometry, mobileHeaderLines }, null, 2)),
+		contentType: 'application/json'
+	});
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'query-column-width-wrap-mobile.png');
+	}
+	expect(monitor.executions).toHaveLength(1);
+	expect(monitor.errors).toEqual([]);
+});
+
+test('nowrap values in later non-final columns stay inside their cells', async ({ page }, testInfo) => {
+	const monitor = monitorExecutions(page);
+	await openQueryPage(page);
+	await page.setViewportSize({ width: 974, height: 820 });
+	await setBatchSize(page, 120);
+	const values = Array.from({ length: 120 }, (_unused, index) => {
+		const comment = index >= 100 ? `later-long-${index} ${'overflow-value '.repeat(40)}` : `short-${index}`;
+		return `(${index} "${comment}" <urn:kind:${index}>)`;
+	}).join(' ');
+	await setEditor(page, `SELECT ?number ?comment ?kind WHERE { VALUES (?number ?comment ?kind) { ${values} } } ORDER BY ?number`);
+	await page.locator('#exec').click();
+	await expect.poll(() => monitor.executions.length).toBe(1);
+	const result = page.locator('#query-results .query-result-layout');
+	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	await result.locator('select[name="result-layout"]').selectOption('table');
+	const wrapValues = result.locator('input[name="result-wrap-values"]');
+	if (await wrapValues.isChecked()) {
+		await wrapValues.uncheck();
+	}
+	await expect(result).toHaveAttribute('data-wrap', 'false');
+	const tableWrap = result.locator('.query-result-table-wrap');
+	await scrollToResultEnd(tableWrap, page);
+	const overlap = await tableWrap.locator('tbody tr[data-query-row-index="119"] td').nth(1).evaluate(cell => {
+		const range = document.createRange();
+		range.selectNodeContents(cell);
+		const textBounds = range.getBoundingClientRect();
+		const cellBounds = cell.getBoundingClientRect();
+		const nextCellBounds = cell.nextElementSibling.getBoundingClientRect();
+		return { textRight: textBounds.right, cellRight: cellBounds.right, nextCellLeft: nextCellBounds.left,
+			computedOverflow: getComputedStyle(cell).overflow,
+			computedTextOverflow: getComputedStyle(cell).textOverflow,
+			fullValueRetained: cell.title.includes('overflow-value') };
+	});
+	await testInfo.attach('query-column-width-nowrap-overflow.json', {
+		body: Buffer.from(JSON.stringify(overlap, null, 2)),
+		contentType: 'application/json'
+	});
+	expect(overlap.textRight).toBeGreaterThan(overlap.nextCellLeft);
+	expect(overlap.computedOverflow,
+		'a late literal extending past its locked column must be clipped instead of painting over its neighbor')
+		.toBe('hidden');
+	expect(overlap.computedTextOverflow).toBe('ellipsis');
+	expect(overlap.fullValueRetained).toBe(true);
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'query-column-width-nowrap-overflow.png');
+	}
+	expect(monitor.executions).toHaveLength(1);
+	expect(monitor.errors).toEqual([]);
+});
+
 test('main query Load more appends batches, freezes the query, and keeps the virtual window bounded', async ({ page }, testInfo) => {
 	test.setTimeout(90000);
 	const monitor = monitorExecutions(page);
@@ -243,28 +919,26 @@ test('main query Load more appends batches, freezes the query, and keeps the vir
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const tableWrap = result.locator('.query-result-table-wrap');
 	await expect.poll(() => tableWrap.locator('tbody tr[data-query-row-index]').count()).toBeLessThanOrEqual(80);
-	await expect(result.locator('.query-result-row-position')).toBeVisible();
-	await tableWrap.evaluate(element => {
-		element.scrollTop = element.scrollHeight;
-		element.dispatchEvent(new Event('scroll'));
-	});
+	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
+	await scrollToResultEnd(tableWrap, page);
 	await expect.poll(async () => tableWrap.locator('tbody tr[data-query-row-index]').evaluateAll(rows =>
 		Math.max(...rows.map(row => Number(row.getAttribute('data-query-row-index')))))).toBeGreaterThanOrEqual(200);
-	const rowLocator = result.locator('.query-result-row-position');
-	await rowLocator.fill('205');
-	await rowLocator.press('Tab');
 	await expect(tableWrap.locator('tbody tr[data-query-row-index="204"]')).toHaveCount(1);
 	const tableMetrics = await tableWrap.evaluate(element => ({
 		dataRows: element.querySelectorAll('tbody tr[data-query-row-index]').length,
 		rowsIncludingSpacers: element.querySelectorAll('tbody tr').length,
 		resultDomNodes: element.closest('.query-result-layout').querySelectorAll('*').length
 	}));
+	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
 	expect(tableMetrics.dataRows).toBeLessThanOrEqual(80);
 	expect(tableMetrics.rowsIncludingSpacers).toBeLessThanOrEqual(82);
 	await testInfo.attach('query-load-more-window.json', {
 		body: Buffer.from(JSON.stringify({ offsets, tableMetrics }, null, 2)),
 		contentType: 'application/json'
 	});
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'main-table-row-scroll-205.png');
+	}
 	expect(monitor.errors).toEqual([]);
 });
 
@@ -402,7 +1076,7 @@ test('cancelled execution clears busy state and a new Execute starts cleanly', a
 	expect(monitor.errors).toEqual([]);
 });
 
-test('mobile result layouts append, seek locally, and remain in the viewport', async ({ page }) => {
+test('mobile result layouts append and scroll locally within the viewport', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await openQueryPage(page);
@@ -430,32 +1104,34 @@ test('mobile result layouts append, seek locally, and remain in the viewport', a
 	}
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
 
-	const seekEvidence = [];
+	const scrollEvidence = [];
 	for (const width of [390, 320]) {
 		await page.setViewportSize({ width, height: 844 });
 		await layout.selectOption('records');
-		const position = result.locator('.query-result-row-position');
-		await position.fill('120');
-		await position.press('Tab');
-		const recordState = await waitForSettledRow(result.locator('.query-result-records'),
+		const records = result.locator('.query-result-records');
+		await scrollToResultEnd(records, page);
+		const recordState = await waitForStableVisibleRow(records,
 			'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120, `mobile-${width}`, test.info());
-		seekEvidence.push({ width, layout: 'records', ...recordState });
+		scrollEvidence.push({ width, layout: 'records', ...recordState });
 		await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
 		await layout.selectOption('table');
-		await position.fill('1');
-		await position.press('Tab');
-		const tableState = await waitForSettledRow(result.locator('.query-result-table-wrap'),
+		const table = result.locator('.query-result-table-wrap');
+		await scrollToResultStart(table, page);
+		const tableState = await waitForStableVisibleRow(table,
 			'tbody tr[data-query-row-index="0"]', 'tbody tr[data-query-row-index]', 'table', 1,
-			`mobile-${width}`, test.info());
-		seekEvidence.push({ width, layout: 'table', ...tableState });
+			`mobile-${width}`, testInfo);
+		scrollEvidence.push({ width, layout: 'table', ...tableState });
 	}
+	await testInfo.attach('mobile-result-scroll-120.json', {
+		body: Buffer.from(JSON.stringify(scrollEvidence, null, 2)), contentType: 'application/json'
+	});
 	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-offset'))).toEqual(['0', '40', '80']);
 	expect(monitor.executions).toHaveLength(3);
 	expect(monitor.errors).toEqual([]);
 });
 
-test('keyboard row seeking reaches first, middle, and last rows in table and records layouts', async ({ page }, testInfo) => {
+test('main Table and Records reach first, middle, and last rows through native scrolling', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
 	await page.setViewportSize({ width: 1280, height: 720 });
 	await page.goto(REVIEW_QUERY_URL, { waitUntil: 'domcontentloaded' });
@@ -467,44 +1143,54 @@ test('keyboard row seeking reaches first, middle, and last rows in table and rec
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	const result = page.locator('#query-results .query-result-layout');
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
-	const implementation = await page.evaluate(() => ({
-		commitScrollMethod: typeof window.workbench?.queryStream?.QueryResultRenderer?.prototype?.commitScroll
-	}));
-	expect(implementation.commitScrollMethod).toBe('function');
+	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
+	await expect(page.getByRole('spinbutton', { name: 'Go to loaded row' })).toHaveCount(0);
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
-	const position = result.locator('.query-result-row-position');
-	const seekEvidence = [];
+	const scrollEvidence = [];
 	for (const presentation of ['table', 'records']) {
 		await layout.selectOption(presentation);
 		const scrollport = result.locator(presentation === 'table'
 			? '.query-result-table-wrap' : '.query-result-records');
 		const rowSelector = presentation === 'table'
 			? 'tbody tr[data-query-row-index]' : '[data-query-record-index]';
-		for (const rowNumber of [1, 60, 120]) {
-			await position.fill(String(rowNumber));
-			await position.press('Enter');
-			await position.blur();
-			const targetIndex = rowNumber - 1;
-			const targetSelector = presentation === 'table'
-				? `tbody tr[data-query-row-index="${targetIndex}"]`
-				: `[data-query-record-index="${targetIndex}"]`;
-			const geometry = await waitForSettledRow(scrollport, targetSelector, rowSelector,
-				presentation, rowNumber, 'Enter-and-blur', testInfo);
-			seekEvidence.push({ presentation, rowNumber, interaction: 'Enter-and-blur', ...geometry });
-			console.log(`[keyboard-row-seek] ${JSON.stringify({ presentation, rowNumber, ...geometry })}`);
-			expect(geometry.targetVisible, `${presentation} row ${rowNumber} should intersect its scrollport`).toBe(true);
-		}
+		await scrollToResultStart(scrollport, page);
+		const first = await waitForStableVisibleRow(scrollport,
+			presentation === 'table' ? 'tbody tr[data-query-row-index="0"]' : '[data-query-record-index="0"]',
+			rowSelector, presentation, 1, 'Home-from-native-scroll', testInfo);
+		expect(first.targetVisible, `${presentation} should render its first loaded row`).toBe(true);
+
+		await scrollToResultMiddle(scrollport, page);
+		const middle = await waitForStableVisibleRow(scrollport,
+			presentation === 'table' ? 'tbody tr[data-query-row-index="59"]' : '[data-query-record-index="59"]',
+			rowSelector, presentation, 60, 'native-middle-scroll', testInfo);
+		expect(middle.targetVisible, `${presentation} should render a middle loaded row`).toBe(true);
+
+		await scrollport.focus();
+		await page.keyboard.press('End');
+		const last = await waitForStableVisibleRow(scrollport,
+			presentation === 'table' ? 'tbody tr[data-query-row-index="119"]' : '[data-query-record-index="119"]',
+			rowSelector, presentation, 120, 'keyboard-End', testInfo);
+		expect(last.targetVisible, `${presentation} End should render the final loaded row`).toBe(true);
+		await page.keyboard.press('Home');
+		const home = await waitForStableVisibleRow(scrollport,
+			presentation === 'table' ? 'tbody tr[data-query-row-index="0"]' : '[data-query-record-index="0"]',
+			rowSelector, presentation, 1, 'keyboard-Home', testInfo);
+		expect(home.targetVisible, `${presentation} Home should return to the first loaded row`).toBe(true);
+		scrollEvidence.push({ presentation, first, middle, last, home });
 	}
-	await testInfo.attach('keyboard-row-seek-120.json', {
-		body: Buffer.from(JSON.stringify(seekEvidence, null, 2)), contentType: 'application/json'
+	await testInfo.attach('native-result-scroll-120.json', {
+		body: Buffer.from(JSON.stringify(scrollEvidence, null, 2)), contentType: 'application/json'
 	});
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'main-result-records-scroll-120.png');
+	}
 	expect(monitor.executions).toHaveLength(1);
 	expect(monitor.errors).toEqual([]);
 });
 
-test('Auto table keeps the sought last row visible across desktop and mobile resizing', async ({ page }, testInfo) => {
+test('Auto table keeps the bottom scroll anchor visible across desktop and mobile resizing', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
 	await page.setViewportSize({ width: 1280, height: 720 });
 	await page.goto(REVIEW_QUERY_URL, { waitUntil: 'domcontentloaded' });
@@ -522,7 +1208,6 @@ test('Auto table keeps the sought last row visible across desktop and mobile res
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await expect(layout).toHaveValue('auto');
-	const position = result.locator('.query-result-row-position');
 	async function visibleAutoOwner() {
 		let owner;
 		let previousSignature = '';
@@ -568,30 +1253,30 @@ test('Auto table keeps the sought last row visible across desktop and mobile res
 		}, { message: 'Auto should commit a visible result scrollport after resize' }).toMatch(/^(table|records)$/);
 		return owner;
 	}
-	async function seekVisibleAutoRow(interaction) {
+	async function waitForLastVisibleAutoRow(interaction, scrollToEnd) {
 		const owner = await visibleAutoOwner();
 		const { effectiveLayout, scrollport } = owner;
+		if (scrollToEnd) {
+			await scrollToResultEnd(scrollport, page);
+		}
 		const targetSelector = effectiveLayout === 'table'
 			? 'tbody tr[data-query-row-index="119"]' : '[data-query-record-index="119"]';
 		const rowSelector = effectiveLayout === 'table'
 			? 'tbody tr[data-query-row-index]' : '[data-query-record-index]';
-		const geometry = await waitForSettledRow(scrollport, targetSelector, rowSelector,
+		const geometry = await waitForStableVisibleRow(scrollport, targetSelector, rowSelector,
 			`auto-${effectiveLayout}`, 120, interaction, testInfo);
-		console.log(`[auto-resize-row-seek] ${JSON.stringify({ interaction, effectiveLayout, ...geometry })}`);
 		expect(geometry.targetVisible, `${interaction} row 120 should intersect the active ${effectiveLayout} scrollport`).toBe(true);
 		expect(geometry.renderedIndexes.length).toBeGreaterThan(0);
 		expect(geometry.renderedIndexes.length).toBeLessThan(120);
 		return { effectiveLayout, ...geometry };
 	}
-	await position.fill('120');
-	await position.press('Tab');
-	const desktop = await seekVisibleAutoRow('desktop-1280x720');
+	const desktop = await waitForLastVisibleAutoRow('desktop-1280x720', true);
 	expect(desktop.effectiveLayout).toBe('table');
 
 	await page.setViewportSize({ width: 390, height: 844 });
-	const mobile = await seekVisibleAutoRow('mobile-390x844');
+	const mobile = await waitForLastVisibleAutoRow('mobile-390x844', false);
 	await page.setViewportSize({ width: 1280, height: 720 });
-	const restored = await seekVisibleAutoRow('desktop-return-1280x720');
+	const restored = await waitForLastVisibleAutoRow('desktop-return-1280x720', false);
 	expect(restored.effectiveLayout).toBe('table');
 
 	await layout.selectOption('records');
@@ -599,27 +1284,26 @@ test('Auto table keeps the sought last row visible across desktop and mobile res
 		const bounds = await result.locator('.query-result-records').boundingBox();
 		return !!bounds && bounds.width > 0 && bounds.height > 0;
 	}, { message: 'Records scrollport should be visible after selecting that layout' }).toBe(true);
-	const recordsPosition = result.locator('.query-result-row-position');
-	await recordsPosition.fill('120');
-	await recordsPosition.press('Tab');
-	const recordsDesktop = await waitForSettledRow(result.locator('.query-result-records'),
+	const recordsScrollport = result.locator('.query-result-records');
+	await scrollToResultEnd(recordsScrollport, page);
+	const recordsDesktop = await waitForStableVisibleRow(recordsScrollport,
 		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
 		'records-desktop-1280x720', testInfo);
 	expect(recordsDesktop.targetVisible).toBe(true);
 	expect(recordsDesktop.renderedIndexes.length).toBeLessThan(120);
 	await page.setViewportSize({ width: 390, height: 844 });
-	const recordsMobile = await waitForSettledRow(result.locator('.query-result-records'),
+	const recordsMobile = await waitForStableVisibleRow(recordsScrollport,
 		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
 		'records-mobile-390x844', testInfo);
 	expect(recordsMobile.targetVisible).toBe(true);
 	expect(recordsMobile.renderedIndexes.length).toBeLessThan(120);
 	await page.setViewportSize({ width: 1280, height: 720 });
-	const recordsRestored = await waitForSettledRow(result.locator('.query-result-records'),
+	const recordsRestored = await waitForStableVisibleRow(recordsScrollport,
 		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
 		'records-return-1280x720', testInfo);
 	expect(recordsRestored.targetVisible).toBe(true);
 	expect(recordsRestored.renderedIndexes.length).toBeLessThan(120);
-	await testInfo.attach('auto-table-resize-seek.json', {
+	await testInfo.attach('auto-table-scroll-anchor-120.json', {
 		body: Buffer.from(JSON.stringify({ desktop, mobile, restored, recordsDesktop, recordsMobile, recordsRestored }, null, 2)),
 		contentType: 'application/json'
 	});
@@ -627,62 +1311,69 @@ test('Auto table keeps the sought last row visible across desktop and mobile res
 	expect(monitor.errors).toEqual([]);
 });
 
-test('native Tab-only typing seeks the middle and final rows in both layouts', async ({ page }, testInfo) => {
+test('saved streamed result widths use the first ten rows across batches and layouts', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
-	await page.setViewportSize({ width: 1280, height: 720 });
-	await page.goto(REVIEW_QUERY_URL, { waitUntil: 'domcontentloaded' });
-	await page.locator('#query-form').waitFor({ state: 'visible', timeout: 15000 });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await setEditor(page, 'SELECT ?s ?p ?o WHERE { ?s ?p ?o } ORDER BY ?s');
-	await page.locator('#exec').click();
+	const query = resultColumnWidthQuery(120);
+	const queryName = `column-widths-saved-${Date.now().toString(36)}`;
+	await saveQueryNamed(page, query, queryName);
+	const row = page.locator('.saved-query-row').filter({ hasText: queryName });
+	const form = row.locator('form[data-workbench-query-execution]');
+	await addSavedBatchSize(form, 40);
+	await form.locator('input[type="submit"]').click();
 	await expect.poll(() => monitor.executions.length).toBe(1);
-	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
-	const result = page.locator('#query-results .query-result-layout');
-	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
-	const implementation = await page.evaluate(() => ({
-		commitScrollMethod: typeof window.workbench?.queryStream?.QueryResultRenderer?.prototype?.commitScroll
-	}));
-	expect(implementation.commitScrollMethod).toBe('function');
+	const resultMount = row.locator('.query-results');
+	const result = row.locator('.query-results .query-result-layout');
+	await expect(resultMount).toHaveAttribute('aria-busy', 'false');
+	await expectCompletedRows(result.locator('.query-result-status'), 40, 120);
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
-	const position = result.locator('.query-result-row-position');
-	const selectAllShortcut = process.platform === 'darwin' ? 'Meta+A' : 'Control+A';
-	const seekEvidence = [];
-	for (const presentation of ['table', 'records']) {
-		await layout.selectOption(presentation);
-		const scrollport = result.locator(presentation === 'table'
-			? '.query-result-table-wrap' : '.query-result-records');
-		const rowSelector = presentation === 'table'
-			? 'tbody tr[data-query-row-index]' : '[data-query-record-index]';
-		for (const rowNumber of [60, 120]) {
-			await position.click();
-			await position.press(selectAllShortcut);
-			await position.pressSequentially(String(rowNumber));
-			await position.press('Tab');
-			const targetIndex = rowNumber - 1;
-			const targetSelector = presentation === 'table'
-				? `tbody tr[data-query-row-index="${targetIndex}"]`
-				: `[data-query-record-index="${targetIndex}"]`;
-			const geometry = await waitForSettledRow(scrollport, targetSelector, rowSelector,
-				presentation, rowNumber, 'Tab-only', testInfo);
-			seekEvidence.push({ presentation, rowNumber, interaction: 'Tab-only', ...geometry });
-			console.log(`[keyboard-row-seek-tab-only] ${JSON.stringify({ presentation, rowNumber, ...geometry })}`);
-			expect(geometry.targetVisible, `${presentation} row ${rowNumber} should intersect its scrollport`).toBe(true);
-		}
+	await layout.selectOption('table');
+	const tableWrap = result.locator('.query-result-table-wrap');
+	const initialBoundaries = await readTableColumnBoundaries(tableWrap);
+
+	for (const [requestCount, loadedRows] of [[2, 80], [3, 120]]) {
+		await result.locator('.query-result-load-more').click();
+		await expect.poll(() => monitor.executions.length).toBe(requestCount);
+		await expect(resultMount).toHaveAttribute('aria-busy', 'false');
+		await expectCompletedRows(result.locator('.query-result-status'), loadedRows, 120);
+		expect(await readTableColumnBoundaries(tableWrap),
+			'saved Load more batches must preserve the first-ten width sample').toEqual(initialBoundaries);
 	}
-	await testInfo.attach('keyboard-row-seek-tab-only.json', {
-		body: Buffer.from(JSON.stringify({ implementation, seekEvidence }, null, 2)),
+
+	await scrollToResultEnd(tableWrap, page);
+	const lastRow = await waitForStableVisibleRow(tableWrap,
+		'tbody tr[data-query-row-index="119"]', 'tbody tr[data-query-row-index]',
+		'table', 120, 'saved-query-column-width-scroll-end', testInfo);
+	expect(lastRow.targetVisible).toBe(true);
+	const lastBoundaries = await readTableColumnBoundaries(tableWrap);
+	expect(lastBoundaries).toEqual(initialBoundaries);
+	if (testInfo.project.name === 'chromium') {
+		await saveBrowserScreenshot(page, testInfo, 'saved-query-column-widths.png');
+	}
+
+	await layout.selectOption('records');
+	await expect(result).toHaveAttribute('data-effective-layout', 'records');
+	await layout.selectOption('table');
+	await expect(result).toHaveAttribute('data-effective-layout', 'table');
+	await expect(tableWrap.locator('thead th')).toHaveCount(2);
+	expect(await readTableColumnBoundaries(tableWrap),
+		'Records-to-Table switching must keep the saved result width sample').toEqual(initialBoundaries);
+	await testInfo.attach('saved-query-column-widths.json', {
+		body: Buffer.from(JSON.stringify({ initialBoundaries, lastBoundaries,
+			viewportWidth: await page.evaluate(() => window.innerWidth) }, null, 2)),
 		contentType: 'application/json'
 	});
-	expect(monitor.executions).toHaveLength(1);
+	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-offset')))
+		.toEqual(['0', '40', '80']);
+	expect(monitor.executions).toHaveLength(3);
 	expect(monitor.errors).toEqual([]);
 });
 
-test('saved query execution uses the same Load more flow and omits Rows Per Page', async ({ page }) => {
+test('saved query Load more keeps 120 rows scrollable in Table and Records', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
 	await openQueryPage(page);
-	const query = valuesQuery(3);
+	const query = valuesQuery(120);
 	await setEditor(page, query);
 	await page.locator('#save-query-toggle').click();
 	const queryName = `load-more-saved-${Date.now().toString(36)}`;
@@ -705,30 +1396,60 @@ test('saved query execution uses the same Load more flow and omits Rows Per Page
 	const form = row.locator('form[data-workbench-query-execution]');
 	await expect(form.locator('[name="limit_query"]')).toHaveCount(0);
 	await expect(row).not.toContainText(/Rows Per Page/i);
-	await form.evaluate(element => {
-		const batchSize = document.createElement('input');
-		batchSize.type = 'hidden';
-		batchSize.name = 'batch-size';
-		batchSize.value = '2';
-		element.appendChild(batchSize);
-	});
+	await addSavedBatchSize(form, 40);
 
 	await form.locator('input[type="submit"]').click();
 	await expect.poll(() => monitor.executions.length).toBe(1);
 	const result = row.locator('.query-results .query-result-layout');
 	const resultMount = row.locator('.query-results');
 	await expect(resultMount).toHaveAttribute('aria-busy', 'false');
-	await expectCompletedRows(result.locator('.query-result-status'), 2, 3);
+	await expectCompletedRows(result.locator('.query-result-status'), 40, 120);
 	await expect(result.locator('.query-result-load-more')).toBeVisible();
-	await result.locator('.query-result-load-more').click();
-	await expect.poll(() => monitor.executions.length).toBe(2);
-	await expect(resultMount).toHaveAttribute('aria-busy', 'false');
-	await expectCompletedRows(result.locator('.query-result-status'), 3, 3);
+	for (const [requestCount, loadedRows] of [[2, 80], [3, 120]]) {
+		await result.locator('.query-result-load-more').click();
+		await expect.poll(() => monitor.executions.length).toBe(requestCount);
+		await expect(resultMount).toHaveAttribute('aria-busy', 'false');
+		await expectCompletedRows(result.locator('.query-result-status'), loadedRows, 120);
+	}
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
-	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-offset'))).toEqual(['0', '2']);
-	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-size'))).toEqual(['2', '2']);
-	await expect(result.locator('tbody tr[data-query-row-index]')).toHaveCount(3);
+	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-offset')))
+		.toEqual(['0', '40', '80']);
+	expect(monitor.executions.map(execution => fieldValue(execution, 'batch-size')))
+		.toEqual(['40', '40', '40']);
+	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
 	await expect(result.getByRole('button', { name: /Next|Previous/i })).toHaveCount(0);
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	await options.click();
+	const layout = result.locator('select[name="result-layout"]');
+	const tableWrap = result.locator('.query-result-table-wrap');
+	const savedScrollEvidence = [];
+	for (const presentation of ['table', 'records']) {
+		await layout.selectOption(presentation);
+		const scrollport = result.locator(presentation === 'table'
+			? '.query-result-table-wrap' : '.query-result-records');
+		const rowSelector = presentation === 'table'
+			? 'tbody tr[data-query-row-index]' : '[data-query-record-index]';
+		const targetSelector = presentation === 'table'
+			? 'tbody tr[data-query-row-index="119"]' : '[data-query-record-index="119"]';
+		await expect(result).toHaveAttribute('data-effective-layout', presentation);
+		await expect(scrollport.locator(rowSelector).first()).toBeVisible();
+		await scrollToResultEnd(scrollport, page);
+		const geometry = await waitForStableVisibleRow(scrollport, targetSelector, rowSelector,
+			presentation, 120, 'saved-query-scroll-to-end', testInfo);
+		expect(geometry.targetVisible, `${presentation} saved results should scroll to row 120`).toBe(true);
+		expect(geometry.renderedIndexes.length).toBeLessThan(120);
+		savedScrollEvidence.push({ presentation, geometry });
+		if (testInfo.project.name === 'chromium') {
+			await saveBrowserScreenshot(page, testInfo, `saved-results-${presentation}-120.png`);
+		}
+	}
+	await layout.selectOption('table');
+	await scrollToResultStart(tableWrap, page);
+	await expect(tableWrap.locator('tbody tr[data-query-row-index="0"]')).toHaveCount(1);
+	await testInfo.attach('saved-result-scroll-120.json', {
+		body: Buffer.from(JSON.stringify(savedScrollEvidence, null, 2)), contentType: 'application/json'
+	});
+	expect(monitor.executions).toHaveLength(3);
 	expect(monitor.errors).toEqual([]);
 });
 
@@ -980,6 +1701,17 @@ function valuesQuery(count) {
 	return `SELECT ?number ?item WHERE { VALUES (?number ?item) { ${values} } } ORDER BY ?number`;
 }
 
+function resultColumnWidthQuery(count) {
+	const firstTen = ['x', 'two', 'three', 'four', '5', 'six', 'seven', 'eight', 'nine', 'ten'];
+	const values = Array.from({ length: count }, (_unused, index) => {
+		const value = index < firstTen.length ? firstTen[index]
+			: index === 10 ? `eleventh-row-${'medium-value-'.repeat(5)}`
+				: index < 100 ? `later-${index}` : `late-${index}-${'wide-value-'.repeat(24)}`;
+		return `(${index} "${value}")`;
+	}).join(' ');
+	return `SELECT ?number ?label WHERE { VALUES (?number ?label) { ${values} } } ORDER BY ?number`;
+}
+
 function monitorExecutions(page) {
 	const monitor = { errors: [], executions: [] };
 	page.on('pageerror', error => monitor.errors.push(error.message));
@@ -1033,7 +1765,139 @@ async function expectCompletedRows(status, loadedRows, totalRows) {
 		`^${loadedRows} loaded rows of ${totalRows} results\\. Complete query: \\d+ ms\\.$`));
 }
 
-async function readRowSeekState(scrollport, targetSelector, rowSelector) {
+async function scrollToResultEnd(scrollport, page) {
+	await expect(scrollport).toBeVisible();
+	await scrollport.hover();
+	let state = await readResultScrollProgress(scrollport);
+	let usedKeyboardFallback = false;
+	for (let attempt = 0; attempt < 24 && !state.lastVisible; attempt++) {
+		await scrollport.hover();
+		const previous = state;
+		await page.mouse.wheel(0, Math.max(450, Math.floor(state.clientHeight * 0.75)));
+		const advanced = await expect.poll(async () => {
+			state = await readResultScrollProgress(scrollport);
+			return state.lastVisible || state.scrollTop > previous.scrollTop || state.lastIndex > previous.lastIndex;
+		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
+		if (!advanced) {
+			await scrollport.focus();
+			await scrollport.press('PageDown');
+			state = await readResultScrollProgress(scrollport);
+			if (!state.lastVisible && state.scrollTop === previous.scrollTop
+					&& state.lastIndex === previous.lastIndex) {
+				await scrollport.press('End');
+			}
+			usedKeyboardFallback = true;
+		}
+		state = await readResultScrollProgress(scrollport);
+		if (usedKeyboardFallback && !state.lastVisible
+				&& state.scrollTop === previous.scrollTop && state.lastIndex === previous.lastIndex) {
+			break;
+		}
+	}
+	expect(state.lastVisible, `native wheel input should bring the final result row into view: ${JSON.stringify(state)}`)
+		.toBe(true);
+	if (usedKeyboardFallback) {
+		console.log('[native-scroll-edge-fallback] End key was needed after wheel progress stopped');
+	}
+}
+
+async function scrollToResultStart(scrollport, page) {
+	await expect(scrollport).toBeVisible();
+	await scrollport.hover();
+	let state = await readResultScrollProgress(scrollport);
+	let usedKeyboardFallback = false;
+	for (let attempt = 0; attempt < 24 && !state.firstVisible; attempt++) {
+		await scrollport.hover();
+		const previous = state;
+		await page.mouse.wheel(0, -Math.max(450, Math.floor(state.clientHeight * 0.75)));
+		const advanced = await expect.poll(async () => {
+			state = await readResultScrollProgress(scrollport);
+			return state.firstVisible || state.scrollTop < previous.scrollTop || state.firstIndex < previous.firstIndex;
+		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
+		if (!advanced) {
+			await scrollport.focus();
+			await scrollport.press('PageUp');
+			state = await readResultScrollProgress(scrollport);
+			if (!state.firstVisible && state.scrollTop === previous.scrollTop
+					&& state.firstIndex === previous.firstIndex) {
+				await scrollport.press('Home');
+			}
+			usedKeyboardFallback = true;
+		}
+		state = await readResultScrollProgress(scrollport);
+		if (usedKeyboardFallback && !state.firstVisible
+				&& state.scrollTop === previous.scrollTop && state.firstIndex === previous.firstIndex) {
+			break;
+		}
+	}
+	expect(state.firstVisible, `native wheel input should bring the first result row into view: ${JSON.stringify(state)}`)
+		.toBe(true);
+	if (usedKeyboardFallback) {
+		console.log('[native-scroll-edge-fallback] Home key was needed after wheel progress stopped');
+	}
+}
+
+async function readResultScrollProgress(scrollport) {
+	return scrollport.evaluate(element => {
+		const isRecords = element.matches('.query-result-records');
+		const result = element.closest('.query-result-layout');
+		const table = element.querySelector('table[aria-rowcount]');
+		const status = result?.querySelector('.query-result-status')?.textContent || '';
+		const loadedRows = Number(status.match(/^(\d+) loaded rows/)?.[1] || 0);
+		const totalRows = table ? Math.max(0, Number(table.getAttribute('aria-rowcount')) - 1) : loadedRows;
+		const indexName = isRecords ? 'data-query-record-index' : 'data-query-row-index';
+		const rowSelector = isRecords ? '[data-query-record-index]' : 'tr[data-query-row-index]';
+		const indexes = Array.from(element.querySelectorAll(rowSelector), row => Number(row.getAttribute(indexName)));
+		const viewport = element.getBoundingClientRect();
+		const viewportTop = viewport.top + element.clientTop;
+		const viewportBottom = viewportTop + element.clientHeight;
+		const firstRow = totalRows ? element.querySelector(`${isRecords ? '[data-query-record-index' : 'tr[data-query-row-index'}="0"]`)
+			: null;
+		const lastRow = totalRows ? element.querySelector(`${isRecords ? '[data-query-record-index' : 'tr[data-query-row-index'}="${totalRows - 1}"]`)
+			: null;
+		const intersectsViewport = row => {
+			if (!row) {
+				return false;
+			}
+			const bounds = row.getBoundingClientRect();
+			return bounds.bottom > viewportTop && bounds.top < viewportBottom;
+		};
+		return {
+			scrollTop: element.scrollTop,
+			maximum: Math.max(0, element.scrollHeight - element.clientHeight),
+			clientHeight: element.clientHeight,
+			firstIndex: indexes.length ? Math.min(...indexes) : -1,
+			lastIndex: indexes.length ? Math.max(...indexes) : -1,
+			totalRows,
+			firstVisible: intersectsViewport(firstRow),
+			lastVisible: intersectsViewport(lastRow)
+		};
+	});
+}
+
+async function readTableColumnBoundaries(scrollport) {
+	return scrollport.locator('thead th').evaluateAll(cells => {
+		const table = cells[0]?.closest('table');
+		const tableLeft = table?.getBoundingClientRect().left || 0;
+		return cells.flatMap(cell => {
+			const rect = cell.getBoundingClientRect();
+			return [rect.left, rect.right].map(value => Math.round((value - tableLeft) * 100) / 100);
+		});
+	});
+}
+
+async function scrollToResultMiddle(scrollport, page) {
+	await expect(scrollport).toBeVisible();
+	await scrollport.hover();
+	const start = await scrollport.evaluate(element => element.scrollTop);
+	const middleDelta = await scrollport.evaluate(element =>
+		Math.floor((element.scrollHeight - element.clientHeight) / 2));
+	await page.mouse.wheel(0, middleDelta);
+	await expect.poll(() => scrollport.evaluate(element => element.scrollTop))
+		.toBeGreaterThan(start);
+}
+
+async function readRowScrollState(scrollport, targetSelector, rowSelector) {
 	return scrollport.evaluate((element, selectors) => {
 		const rows = Array.from(element.querySelectorAll(selectors.rowSelector));
 		const getIndex = row => Number(row.getAttribute(element.matches('.query-result-records')
@@ -1042,8 +1906,7 @@ async function readRowSeekState(scrollport, targetSelector, rowSelector) {
 		const target = targetElement && targetElement.getBoundingClientRect();
 		const bounds = element.getBoundingClientRect();
 		return {
-			commitScrollMethod: typeof window.workbench?.queryStream?.QueryResultRenderer?.prototype?.commitScroll,
-			rowPositionValue: document.querySelector('.query-result-row-position').value,
+			rowNavigationControlCount: document.querySelectorAll('.query-result-row-position').length,
 			resultStatus: element.closest('.query-result-layout')?.querySelector('.query-result-status')?.textContent,
 			scrollTop: element.scrollTop,
 			scrollHeight: element.scrollHeight,
@@ -1071,13 +1934,13 @@ async function readRowSeekState(scrollport, targetSelector, rowSelector) {
 	}, { targetSelector, rowSelector });
 }
 
-async function waitForSettledRow(scrollport, targetSelector, rowSelector, presentation, rowNumber,
+async function waitForStableVisibleRow(scrollport, targetSelector, rowSelector, presentation, rowNumber,
 		interaction, testInfo) {
 	let previousGeometry = '';
 	let stableVisibleSamples = 0;
 	try {
 		await expect.poll(async () => {
-			const state = await readRowSeekState(scrollport, targetSelector, rowSelector);
+			const state = await readRowScrollState(scrollport, targetSelector, rowSelector);
 			const geometry = JSON.stringify([state.scrollTop, state.firstRenderedIndex,
 				state.lastRenderedIndex, state.target && state.target.top, state.target && state.target.bottom]);
 			stableVisibleSamples = state.targetVisible && geometry === previousGeometry
@@ -1085,18 +1948,18 @@ async function waitForSettledRow(scrollport, targetSelector, rowSelector, presen
 			previousGeometry = geometry;
 			return stableVisibleSamples >= 2;
 		}, {
-			message: `${presentation} ${interaction} seek should render row ${rowNumber}`
+			message: `${presentation} ${interaction} should render row ${rowNumber}`
 		}).toBe(true);
 	} catch (error) {
-		const failureState = await readRowSeekState(scrollport, targetSelector, rowSelector);
+		const failureState = await readRowScrollState(scrollport, targetSelector, rowSelector);
 		const failureEvidence = { presentation, rowNumber, interaction, ...failureState };
-		console.log(`[keyboard-row-seek-failed] ${JSON.stringify(failureEvidence)}`);
-		await testInfo.attach(`keyboard-row-seek-${presentation}-${interaction}-${rowNumber}-failure.json`, {
+		console.log(`[native-result-scroll-failed] ${JSON.stringify(failureEvidence)}`);
+		await testInfo.attach(`native-result-scroll-${presentation}-${interaction}-${rowNumber}-failure.json`, {
 			body: Buffer.from(JSON.stringify(failureEvidence, null, 2)), contentType: 'application/json'
 		});
 		throw error;
 	}
-	return readRowSeekState(scrollport, targetSelector, rowSelector);
+	return readRowScrollState(scrollport, targetSelector, rowSelector);
 }
 
 function fieldValue(execution, name) {

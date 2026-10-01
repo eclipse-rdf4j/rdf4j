@@ -51,6 +51,25 @@ function submitQuery(options = {}) {
     return { harness, requestId, previousFrame, submittedByPost };
 }
 
+test('parent keeps fullscreen-only embedded wrap messages out of normal preferences', () => {
+    const { harness, requestId } = submitQuery({ queryScriptPath: compileQuerySource() });
+    const frame = harness.getResultFrame();
+    const query = harness.context.workbench.query;
+    query.applyResultPresentationState('table', false);
+
+    harness.emitResultMessage(frame.contentWindow, {
+        type: 'rdf4j-query-display-state',
+        queryRequestId: requestId,
+        layout: 'records',
+        wrap: true,
+        fullscreen: true
+    });
+
+    const state = query.getResultPresentationState();
+    assert.equal(state.layout, 'records', 'the parent accepts the fullscreen layout update');
+    assert.equal(state.wrap, false, 'the parent retains the normal wrap preference');
+});
+
 test('short query GET targets a fresh embedded result frame without opening a popup', () => {
     const { harness, previousFrame } = submitQuery({ serverRequestIds: ['query-1', 'query-2'] });
     const parentHref = harness.document.location.href;
@@ -542,6 +561,176 @@ test('embedded result page script posts completion to its parent window', () => 
     assert.equal(messages.length, 1);
     assert.equal(messages[0].origin, 'http://localhost:8080');
     assert.equal(messages[0].message.queryRequestId, 'query-embedded-1');
+});
+
+test('legacy embedded results keep fullscreen wrapping temporary across layout messages', () => {
+    for (const normalWrap of [true, false]) {
+        const messages = [];
+        const parentWindow = {
+            postMessage(message, origin) {
+                messages.push({ message, origin });
+            }
+        };
+        const resultHarness = createScriptHarness({
+            href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+            window: { parent: parentWindow }
+        });
+        const marker = resultHarness.registerElement('meta', {
+            id: 'rdf4j-query-result',
+            attributes: { 'data-query-request-id': 'query-fullscreen' }
+        });
+        const root = resultHarness.registerElement('div', {
+            id: 'query-result-layout',
+            attributes: { 'data-layout': 'auto', 'data-wrap': normalWrap ? 'true' : 'false' }
+        });
+        const layout = resultHarness.registerElement('select', { id: 'result-layout', value: 'auto' });
+        const wrap = resultHarness.registerElement('input', {
+            id: 'result-wrap-values', type: 'checkbox', checked: normalWrap
+        });
+        [marker, root, layout, wrap].forEach(element => resultHarness.document.body.appendChild(element));
+        resultHarness.runScript('tools/workbench/src/main/webapp/scripts/queryResult.js');
+
+        resultHarness.window.trigger('message', {
+            origin: 'http://localhost:8080',
+            source: parentWindow,
+            data: { type: 'rdf4j-query-fullscreen-state', queryRequestId: 'query-fullscreen', enabled: true }
+        });
+        assert.equal(root.getAttribute('data-wrap'), 'false', 'fullscreen entry disables legacy result wrapping');
+        assert.equal(wrap.checked, false, 'the legacy checkbox reflects fullscreen no-wrap');
+
+        wrap.checked = true;
+        wrap.trigger('change');
+        assert.equal(root.getAttribute('data-wrap'), 'true', 'the legacy checkbox remains usable in fullscreen');
+        assert.equal(messages.at(-1).message.fullscreen, true,
+            'legacy result updates identify temporary fullscreen presentation');
+
+        resultHarness.window.trigger('message', {
+            origin: 'http://localhost:8080',
+            source: parentWindow,
+            data: { type: 'rdf4j-query-display-state', queryRequestId: 'query-fullscreen',
+                layout: 'records', wrap: normalWrap, fullscreen: true }
+        });
+        assert.equal(layout.value, 'records');
+        assert.equal(wrap.checked, true, 'a parent layout update must preserve a temporary wrap toggle');
+
+        resultHarness.window.trigger('message', {
+            origin: 'http://localhost:8080',
+            source: parentWindow,
+            data: { type: 'rdf4j-query-fullscreen-state', queryRequestId: 'query-fullscreen', enabled: false }
+        });
+        assert.equal(root.getAttribute('data-wrap'), normalWrap ? 'true' : 'false',
+            'fullscreen exit restores the previous legacy result preference');
+        assert.equal(wrap.checked, normalWrap);
+    }
+});
+
+test('legacy Auto uses the shared column minimum and visible root width', () => {
+    let observedRoot;
+    let resizeObserverCallback;
+    const parentWindow = { postMessage() {} };
+    const resultHarness = createScriptHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        window: {
+            parent: parentWindow,
+            ResizeObserver: class {
+                constructor(callback) { resizeObserverCallback = callback; }
+                observe(element) { observedRoot = element; }
+                disconnect() {}
+            }
+        },
+        globals: {
+            getComputedStyle(element) {
+                const style = Object.assign({
+                    font: '14px sans-serif', fontSize: '14px', paddingLeft: '0px', paddingRight: '0px'
+                }, element && element.style || {});
+                style.getPropertyValue = name => element && element.style && element.style[name] || '';
+                return style;
+            }
+        }
+    });
+    const createElement = resultHarness.document.createElement.bind(resultHarness.document);
+    resultHarness.document.createElement = tagName => {
+        const element = createElement(tagName);
+        if (String(tagName).toLowerCase() === 'canvas') {
+            element.getContext = () => ({
+                font: '',
+                measureText(text) {
+                    return { width: Array.from(String(text)).reduce((width, character) =>
+                        width + (character === 'W' ? 20 : 10), 0) };
+                }
+            });
+        } else if (String(tagName).toLowerCase() === 'span') {
+            element.getBoundingClientRect = () => {
+                const rawText = element.textContent || '';
+                const renderedText = element.style.textTransform === 'capitalize'
+                    ? rawText.replace(/^w/, 'W') : rawText;
+                const width = Array.from(renderedText).reduce((total, character) =>
+                    total + (character === 'W' ? 20 : 10), 0);
+                return { top: 0, left: 0, width, height: 14 };
+            };
+        }
+        return element;
+    };
+    const marker = resultHarness.registerElement('meta', {
+        id: 'rdf4j-query-result', attributes: { 'data-query-request-id': 'query-minimum' }
+    });
+    const root = resultHarness.registerElement('div', {
+        id: 'query-result-layout', attributes: { 'data-layout': 'auto', 'data-wrap': 'true' }
+    });
+    root.clientWidth = 350;
+    const layout = resultHarness.registerElement('select', { id: 'result-layout', value: 'auto' });
+    const wrap = resultHarness.registerElement('input', {
+        id: 'result-wrap-values', type: 'checkbox', checked: true
+    });
+    const tableWrap = resultHarness.registerElement('div', { id: 'query-result-table-wrap' });
+    tableWrap.clientWidth = 0;
+    const table = resultHarness.registerElement('table', { className: 'data' });
+    const head = resultHarness.registerElement('thead', {});
+    const row = resultHarness.registerElement('tr', {});
+    const longHeader = 'workbench_long_variable_name_that_exceeds_the_shared_budget';
+    const headers = ['id', longHeader, 'kind'].map(text => {
+        const cell = resultHarness.registerElement('th', {
+            textContent: text,
+            style: text === longHeader ? { textTransform: 'capitalize' } : {}
+        });
+        row.appendChild(cell);
+        return cell;
+    });
+    head.appendChild(row);
+    table.appendChild(head);
+    tableWrap.appendChild(table);
+    const records = resultHarness.registerElement('div', { id: 'query-result-records', hidden: true });
+    [marker, root, layout, wrap, tableWrap, records].forEach(element => resultHarness.document.body.appendChild(element));
+    root.appendChild(tableWrap);
+    root.appendChild(records);
+
+    resultHarness.runScript('tools/workbench/src/main/webapp/scripts/queryResult.js');
+
+    assert.equal(root.getAttribute('data-effective-layout'), 'records',
+        'wrapped Auto should choose cards when the summed column minimum exceeds the visible root width');
+    assert.ok(parseFloat(headers[0].style.minWidth) > 0,
+        'the legacy table should retain the same per-column minimum even when hidden');
+    assert.equal(observedRoot, root,
+        'resize observation must use the stable visible owner instead of a hidden table wrapper');
+
+    root.clientWidth = 1200;
+    resizeObserverCallback();
+    assert.equal(root.getAttribute('data-effective-layout'), 'table',
+        'widening a result in Records should recover to Table using the root width');
+    assert.ok(parseFloat(headers[1].style.minWidth) >= longHeader.length * 10,
+        'legacy header minima must include intrinsic nowrap text width in addition to the 16-character budget');
+    assert.ok(parseFloat(headers[1].style.minWidth) >= longHeader.length * 10 + 12,
+        'legacy header minima must measure CSS-capitalized text without relying on border slack');
+
+    root.clientWidth = 200;
+    wrap.checked = false;
+    wrap.trigger('change');
+    assert.equal(root.getAttribute('data-effective-layout'), 'table',
+        'Auto should keep a horizontally scrollable table when wrapping is disabled');
+    layout.value = 'records';
+    layout.trigger('change');
+    assert.equal(root.getAttribute('data-effective-layout'), 'records',
+        'an explicit Records choice should remain authoritative');
 });
 
 test('embedded paging announces a fresh result request and preserves the result mode', () => {

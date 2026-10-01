@@ -335,7 +335,7 @@ test('progressive row writes coalesce visible rendering rather than rereading fo
 
 for (const layout of ['table', 'records']) {
   for (const overflow of ['clamp', 'collapse']) {
-    test(`${layout} ${overflow} scroll capacity keeps precise wheel and keyboard row access`, async () => {
+    test(`${layout} ${overflow} scroll capacity keeps wheel and keyboard row access`, async () => {
         const { api, document } = loadApi();
         const createElement = document.createElement.bind(document);
         document.createElement = name => {
@@ -357,9 +357,13 @@ for (const layout of ['table', 'records']) {
         const target = document.createElement('section');
         document.body.appendChild(target);
         const rows = Array.from({ length: 3000 }, () => [null]);
+        const reads = [];
         const renderer = new api.QueryResultRenderer(target, {
             initialLayout: layout, maxDomRows: 8, rowStore: {
-                async append() { return rows.length; }, async read(start, count) { return rows.slice(start, start + count); },
+                async append() { return rows.length; }, async read(start, count) {
+                    reads.push([start, count]);
+                    return rows.slice(start, start + count);
+                },
                 async count() { return rows.length; }, async truncate() {}, async dispose() {}
             }
         });
@@ -368,27 +372,32 @@ for (const layout of ['table', 'records']) {
         for (const record of batch([], 0, false).slice(0, 4)) await renderer.accept(record);
         await renderer.accept({ type: 'rows', values: rows });
         await renderer.accept({ type: 'end', metadata: { 'total-result-count': rows.length } });
-        renderer.rowPositionControl.value = '1001';
-        renderer.rowPositionControl.trigger('change');
-        await settle();
-        assert.equal(renderer.rowPositionControl.value, '1001');
+        assert.equal(reads[reads.length - 1][0], 0, 'the initial window should start at the first loaded row');
         const spacers = scrollport.querySelectorAll('[data-query-spacer]');
         assert.ok(spacers.reduce((sum, spacer) => sum + (parseFloat(spacer.style.height) || 0), 0) > 0,
             'hidden loaded rows need usable physical scroll extent after oversized blocks collapse');
-        const wheel = scrollport.trigger('wheel', { deltaY: 24, deltaMode: 0 });
+        const wheel = scrollport.trigger('wheel', { deltaY: 20000, deltaMode: 0 });
         assert.equal(wheel.defaultPrevented, true, 'wheel steps must retain natural logical distances above the pixel cap');
         await settle();
-        assert.equal(renderer.rowPositionControl.value, '1002');
-        const key = scrollport.trigger('keydown', { key: 'ArrowUp' });
-        assert.equal(key.defaultPrevented, true);
+        const beforeWheel = reads[reads.length - 1];
+        assert.ok(beforeWheel[0] >= 800 && beforeWheel[0] < 1200,
+            `wheel scrolling should request a middle virtual window; got ${beforeWheel}`);
+        const nextWheel = scrollport.trigger('wheel', { deltaY: 240, deltaMode: 0 });
+        assert.equal(nextWheel.defaultPrevented, true);
         await settle();
-        assert.equal(renderer.rowPositionControl.value, '1001');
-        scrollport.trigger('keydown', { key: 'End' });
+        const afterWheel = reads[reads.length - 1];
+        assert.ok(afterWheel[0] > beforeWheel[0],
+            'wheel scrolling should advance the virtualized window through loaded rows');
+        const end = scrollport.trigger('keydown', { key: 'End' });
+        assert.equal(end.defaultPrevented, true, 'End should move the native result scrollport to its loaded tail');
         await settle();
-        const attribute = layout === 'table' ? 'data-query-row-index' : 'data-query-record-index';
-        const nodes = layout === 'table' ? renderer.tableBody.children : scrollport.children;
-        const indexes = nodes.map(node => node.getAttribute(attribute)).filter(value => value !== undefined).map(Number);
-        assert.ok(indexes.includes(2999));
+        const lastWindow = reads[reads.length - 1];
+        assert.ok(lastWindow[0] <= 2999 && lastWindow[0] + lastWindow[1] > 2999,
+            'End should request a virtual window containing the last loaded row');
+        const home = scrollport.trigger('keydown', { key: 'Home' });
+        assert.equal(home.defaultPrevented, true, 'Home should return to the start of the loaded result');
+        await settle();
+        assert.equal(reads[reads.length - 1][0], 0, 'Home should request the first loaded row window');
         renderer.dispose();
     });
   }

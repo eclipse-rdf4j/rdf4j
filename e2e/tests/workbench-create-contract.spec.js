@@ -40,6 +40,98 @@ test.describe('repository creation contracts', () => {
 		}
 	});
 
+	test('groups LMDB advanced settings by their longest shared label prefix', async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=lmdb`, {
+			waitUntil: 'domcontentloaded'
+		});
+
+		const form = page.locator('form[action="create"]');
+		await expect(form, 'the create route should render a repository form').toBeVisible();
+		const advanced = form.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
+		const toggle = advanced.locator(':scope > .workbench-disclosure__toggle');
+		const controlsBeforeOpen = await snapshotForm(form);
+		await toggle.press('Enter');
+
+		const groupNames = (await advanced.locator('.workbench-advanced__group > legend').allTextContents())
+			.map(name => name.trim());
+		expect(groupNames, 'shared word prefixes should become nested groups').toEqual(expect.arrayContaining([
+			'Query',
+			'Triple',
+			'Value',
+			'Namespace',
+			'Sketch estimator',
+			'Sketch estimator context',
+			'Sketch estimator throttle',
+			'Optimizer sampling',
+			'Optimizer sampling max',
+			'Background raw sampling',
+			'Slow query',
+			'Slow query log'
+		]));
+
+		const standaloneFields = await advanced.locator('.workbench-advanced__field').evaluateAll(fields =>
+			fields.map(field => ({
+				label: field.querySelector(':scope > label, :scope > span')?.textContent.trim(),
+				topLevel: field.parentElement.classList.contains('workbench-advanced-fields')
+			})).filter(field => [
+				'Bulk operation size', 'Auto grow', 'Page cardinality estimator', 'Inline literals', 'Force sync', 'No readahead'
+			].includes(field.label)));
+		expect(standaloneFields, 'true singleton settings should remain outside empty groups').toEqual([
+			{ label: 'Bulk operation size', topLevel: true },
+			{ label: 'Auto grow', topLevel: true },
+			{ label: 'Page cardinality estimator', topLevel: true },
+			{ label: 'Inline literals', topLevel: true },
+			{ label: 'Force sync', topLevel: true },
+			{ label: 'No readahead', topLevel: true }
+		]);
+
+		const assertOneSettingPerRow = async () => {
+			const fieldLayout = await advanced.locator('.workbench-advanced__field').evaluateAll(fields =>
+				fields.map(field => {
+				const rect = field.getBoundingClientRect();
+				const parent = field.parentElement.getBoundingClientRect();
+				return { label: field.querySelector(':scope > label, :scope > span')?.textContent.trim(), top: rect.top,
+					width: rect.width, parentWidth: parent.width };
+				}));
+			expect(fieldLayout.length, 'every configuration should retain its own field row').toBeGreaterThan(0);
+			expect(new Set(fieldLayout.map(field => Math.round(field.top))).size,
+				'each advanced configuration should occupy its own row').toBe(fieldLayout.length);
+			for (const field of fieldLayout) {
+				expect(field.width, `${field.label} should span its group row`).toBeGreaterThanOrEqual(field.parentWidth * 0.95);
+			}
+		};
+		await assertOneSettingPerRow();
+
+		for (const group of await advanced.locator('.workbench-advanced__group').all()) {
+			expect(await group.locator('.workbench-advanced__field').count(),
+				'groups must contain at least two settings').toBeGreaterThanOrEqual(2);
+		}
+		await expect.poll(() => snapshotForm(form)).toEqual(controlsBeforeOpen);
+
+		await page.setViewportSize({ width: 390, height: 900 });
+		await assertOneSettingPerRow();
+		await expect.poll(() => snapshotForm(form)).toEqual(controlsBeforeOpen);
+
+		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`, {
+			waitUntil: 'domcontentloaded'
+		});
+		const switchedForm = page.locator('form[action="create"]');
+		await expect(switchedForm).toBeVisible();
+		await expect(switchedForm.locator('input[id^="lmdb_"]')).toHaveCount(0);
+		const memoryAdvanced = switchedForm.locator('.workbench-advanced[data-workbench-detail-disclosure="true"]');
+		if (await memoryAdvanced.count()) {
+			await memoryAdvanced.locator(':scope > .workbench-disclosure__toggle').press('Enter');
+			const memoryNames = (await memoryAdvanced.locator('.workbench-advanced__group > legend').allTextContents())
+				.map(name => name.trim());
+			expect(memoryNames).not.toContain('Sketch estimator');
+			for (const group of await memoryAdvanced.locator('.workbench-advanced__group').all()) {
+				expect(await group.locator('.workbench-advanced__field').count(),
+					'memory groups must not be empty or single-setting wrappers').toBeGreaterThanOrEqual(2);
+			}
+		}
+	});
+
     test('preserves every field and default while Advanced settings opens', async ({ page }) => {
         for (const type of CREATION_TYPES) {
             await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=${type}`, {

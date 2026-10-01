@@ -139,28 +139,145 @@ test('shared fullscreen ownership switches targets, enforces policy, and unlocks
         'a disabled fullscreen policy cannot activate the target');
     assert.equal(manager.currentTarget(), null);
 
-    manager.set(first.target, first.control, true);
+    const firstRenderer = new queryStream.QueryResultRenderer(first.target, {
+        initialWrap: true, rowStore: inMemoryRowStore()
+    });
+    const secondRenderer = new queryStream.QueryResultRenderer(second.target, {
+        initialWrap: true, rowStore: inMemoryRowStore()
+    });
+
+    manager.set(first.target, firstRenderer.fullscreenButton, true);
+    assert.equal(firstRenderer.root.getAttribute('data-wrap'), 'false',
+        'the first owner uses fullscreen presentation while active');
     assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), true);
-    manager.set(second.target, second.control, true);
+    manager.set(second.target, secondRenderer.fullscreenButton, true);
     assert.equal(manager.isFullscreen(first.target), false, 'only the latest result owns fullscreen');
     assert.equal(manager.isFullscreen(second.target), true);
     assert.equal(manager.currentTarget(), second.target);
+    assert.equal(firstRenderer.root.getAttribute('data-wrap'), 'true',
+        'handing fullscreen to another result restores the previous owner preference');
+    assert.equal(secondRenderer.root.getAttribute('data-wrap'), 'false',
+        'the new fullscreen owner receives the no-wrap presentation');
     assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), true,
         'switching result owners preserves the shared scroll lock');
-    manager.set(second.target, second.control, false, false);
+    manager.set(second.target, secondRenderer.fullscreenButton, false, false);
+    assert.equal(secondRenderer.root.getAttribute('data-wrap'), 'true',
+        'leaving fullscreen restores the second owner preference');
     assert.equal(first.doc.body.classList.contains('query-results-fullscreen-active'), false,
         'exiting the active owner releases the scroll lock');
     assert.equal(manager.currentTarget(), null);
+    firstRenderer.dispose();
+    secondRenderer.dispose();
 
     const disposal = createFullscreenFixture();
-    const renderer = new queryStream.QueryResultRenderer(disposal.target, { rowStore: inMemoryRowStore() });
+    const renderer = new queryStream.QueryResultRenderer(disposal.target, {
+        initialWrap: true, rowStore: inMemoryRowStore()
+    });
     manager.set(disposal.target, renderer.fullscreenButton, true);
+    assert.equal(renderer.root.getAttribute('data-wrap'), 'false');
     renderer.dispose();
     assert.equal(manager.isFullscreen(disposal.target), false,
         'disposing a streamed result exits fullscreen on its owned target');
+    assert.equal(renderer.root.getAttribute('data-wrap'), 'true',
+        'disposing a renderer restores its pre-fullscreen presentation before teardown');
     assert.equal(disposal.doc.body.classList.contains('query-results-fullscreen-active'), false,
         'renderer disposal releases its body scroll lock');
     assert.equal(manager.currentTarget(), null);
+    const replacement = new queryStream.QueryResultRenderer(disposal.target, {
+        initialWrap: true, rowStore: inMemoryRowStore()
+    });
+    assert.equal(replacement.root.getAttribute('data-wrap'), 'true',
+        'a replacement renderer starts from normal presentation after disposal');
+    replacement.dispose();
+});
+
+test('fullscreen starts no-wrap and restores normal wrapping without saving temporary toggles', async () => {
+    for (const normalWrap of [true, false]) {
+        const preferenceChanges = [];
+        const workbench = {
+            query: {
+                getResultPresentationState: () => ({ layout: 'auto', wrap: normalWrap }),
+                applyResultPresentationState: (layout, wrap) => preferenceChanges.push({ layout, wrap })
+            }
+        };
+        const queryStream = loadQueryStreamApi(workbench);
+        const document = new FakeDocument();
+        document.contains = element => element === document.body || document.elements.includes(element);
+        const createElement = document.createElement.bind(document);
+        document.createElement = tagName => {
+            const element = createElement(tagName);
+            element.hasAttribute = name => element.attributes.has(name);
+            element.closest = () => null;
+            return element;
+        };
+        const keyHandlers = new Map();
+        document.defaultView = {
+            addEventListener(type, listener) {
+                if (type === 'keydown') keyHandlers.set(type, listener);
+            },
+            removeEventListener(type, listener) {
+                if (keyHandlers.get(type) === listener) keyHandlers.delete(type);
+            }
+        };
+        const target = document.createElement('section');
+        document.body.appendChild(target);
+        const renderer = new queryStream.QueryResultRenderer(target, {
+            initialWrap: normalWrap,
+            rowStore: inMemoryRowStore()
+        });
+        await renderer.accept({ type: 'view', id: 'tuple' });
+        await renderer.accept({ type: 'vars', values: ['value'] });
+        await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'long result value' }]] });
+        await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
+
+        const manager = queryStream.__testResultFullscreen;
+        manager.set(target, renderer.fullscreenButton, true, false);
+        assert.equal(renderer.root.getAttribute('data-wrap'), 'false',
+            'fullscreen should begin with result values unwrapped');
+        assert.equal(renderer.wrapControl.checked, false,
+            'the Wrap values checkbox should match the no-wrap fullscreen presentation');
+
+        renderer.wrapControl.checked = true;
+        renderer.wrapControl.trigger('change');
+        assert.equal(renderer.root.getAttribute('data-wrap'), 'true',
+            'the user can enable wrapping while fullscreen');
+        assert.equal(renderer.wrapControl.checked, true);
+        assert.deepEqual(preferenceChanges, [],
+            'fullscreen-only wrap changes must not overwrite the normal-view preference');
+
+        renderer.layoutControl.value = 'records';
+        renderer.layoutControl.trigger('change');
+        assert.deepEqual(preferenceChanges, [{ layout: 'records', wrap: normalWrap }],
+            'a fullscreen layout change must preserve the normal-view wrap preference');
+
+        if (normalWrap) {
+            const escape = {
+                key: 'Escape',
+                defaultPrevented: false,
+                prevented: false,
+                preventDefault() { this.prevented = true; }
+            };
+            keyHandlers.get('keydown')(escape);
+            assert.equal(escape.prevented, true, 'Escape should exit fullscreen through the shared owner');
+        } else {
+            manager.set(target, renderer.fullscreenButton, false, false);
+        }
+        assert.equal(renderer.root.getAttribute('data-wrap'), normalWrap ? 'true' : 'false',
+            'fullscreen exit should restore the previous normal wrapping preference');
+        assert.equal(renderer.wrapControl.checked, normalWrap,
+            'the restored checkbox should match the previous normal wrapping preference');
+        assert.deepEqual(preferenceChanges, [{ layout: 'records', wrap: normalWrap }],
+            'restoring normal presentation must not write the temporary fullscreen state');
+
+        renderer.wrapControl.checked = !normalWrap;
+        renderer.wrapControl.trigger('change');
+        assert.deepEqual(preferenceChanges, [
+            { layout: 'records', wrap: normalWrap },
+            { layout: 'records', wrap: !normalWrap }
+        ],
+            'normal-view wrap changes should still update the normal preference');
+        renderer.dispose();
+    }
 });
 
 class InMemoryWorker {
@@ -220,6 +337,57 @@ function inMemoryRowStore() {
         async dispose() { rows = []; }
     };
 }
+
+test('virtualized Table and Records views omit user row-navigation controls', async () => {
+    const queryStream = loadQueryStreamApi();
+    const observed = [];
+    for (const targetId of ['query-results', 'saved-query-results-0']) {
+        for (const initialLayout of ['table', 'records']) {
+            const document = new FakeDocument();
+            const target = document.createElement('section');
+            target.setAttribute('id', targetId);
+            document.body.appendChild(target);
+            const renderer = new queryStream.QueryResultRenderer(target, {
+                initialLayout,
+                maxDomRows: 20,
+                rowStore: inMemoryRowStore()
+            });
+            try {
+                renderer.beginBatch(0);
+                await renderer.accept({ type: 'head', version: 1 });
+                await renderer.accept({ type: 'view', id: 'tuple' });
+                await renderer.accept({ type: 'vars', values: ['value'] });
+                await renderer.accept({ type: 'rows', values: Array.from({ length: 81 }, (_, index) => [
+                    { kind: 'literal', value: String(index + 1) }
+                ]) });
+                await renderer.accept({ type: 'end', metadata: {
+                    'result-offset': 0,
+                    'result-limit': 81,
+                    'result-batch-count': 81,
+                    'result-has-more': false,
+                    'result-next-offset': 81,
+                    'total-result-count': 81
+                } });
+                const controls = renderer.root.querySelectorAll('.query-result-row-position');
+                const labels = renderer.root.querySelectorAll('label').filter(label =>
+                    label.textContent.trim() === 'Go to row');
+                const namedInputs = renderer.root.querySelectorAll('input').filter(input =>
+                    input.getAttribute('aria-label') === 'Go to loaded row');
+                observed.push({ targetId, layout: initialLayout, rowCount: renderer.state.rowCount,
+                    controls: controls.length, labels: labels.length, namedInputs: namedInputs.length });
+            } finally {
+                renderer.dispose();
+            }
+        }
+    }
+
+    assert.deepEqual(observed, [
+        { targetId: 'query-results', layout: 'table', rowCount: 81, controls: 0, labels: 0, namedInputs: 0 },
+        { targetId: 'query-results', layout: 'records', rowCount: 81, controls: 0, labels: 0, namedInputs: 0 },
+        { targetId: 'saved-query-results-0', layout: 'table', rowCount: 81, controls: 0, labels: 0, namedInputs: 0 },
+        { targetId: 'saved-query-results-0', layout: 'records', rowCount: 81, controls: 0, labels: 0, namedInputs: 0 }
+    ], 'main and saved virtualized result renderers should not expose Go to row UI or names');
+});
 
 test('generic NDJSON reader awaits each route-data callback before reading further', async () => {
     const queryStream = loadQueryStreamApi();
@@ -431,8 +599,39 @@ test('automatic layout chooses by measured readable width instead of variable co
 
     assert.equal(queryStream.chooseAutoLayout(340, [92, 118, 105]), 'table');
     assert.equal(queryStream.chooseAutoLayout(300, [92, 118, 105]), 'records');
+    assert.equal(queryStream.chooseAutoLayout(315, [92, 118, 105], 'auto', true), 'table',
+        'the exact readable minimum boundary should remain a table');
+    assert.equal(queryStream.chooseAutoLayout(314.99, [92, 118, 105], 'auto', true), 'records',
+        'wrapped Auto should use records only below the total minimum');
+    assert.equal(queryStream.chooseAutoLayout(0, [92, 118, 105], 'auto', true), 'records',
+        'a result with no visible width cannot satisfy wrapped per-column minimums');
+    assert.equal(queryStream.chooseAutoLayout(1, [92, 118, 105], 'auto', false), 'table',
+        'no-wrap Auto should retain a horizontally scrollable table below the minimum');
+    assert.equal(queryStream.chooseAutoLayout(1, [92, 118, 105], 'table', true), 'table',
+        'an explicit Table selection should remain selected below the minimum');
     assert.equal(queryStream.chooseAutoLayout(340, [92, 118, 105], 'records'), 'records',
         'explicit layout selection must take precedence over automatic measurement');
+});
+
+test('table column allocation honors every minimum and distributes wrapped width by sample demand', () => {
+    const queryStream = loadQueryStreamApi();
+    assert.equal(typeof queryStream.allocateTableColumnWidths, 'function');
+
+    const asymmetric = Array.from(queryStream.allocateTableColumnWidths([32, 1038, 64], [150, 150, 150], 1134, true));
+    assert.deepEqual(asymmetric, [150, 834, 150],
+        'a short identifier and another short column must leave useful width for the sampled long value');
+    assert.equal(asymmetric.reduce((sum, width) => sum + width, 0), 1134,
+        'a wrapped table should use the available width when all minima fit');
+    assert.equal(asymmetric.every(width => width >= 150), true,
+        'each wrapped column should meet its minimum');
+
+    const tight = Array.from(queryStream.allocateTableColumnWidths([10, 500], [100, 100], 200, true));
+    assert.deepEqual(tight, [100, 100], 'the minimum equality boundary should allocate exactly the minimums');
+    const explicitOverflow = Array.from(queryStream.allocateTableColumnWidths([10, 500], [100, 100], 150, true));
+    assert.deepEqual(explicitOverflow, [100, 100],
+        'an explicitly selected narrow table should keep readable minima and scroll instead of shrinking');
+    const noWrap = Array.from(queryStream.allocateTableColumnWidths([25, 60], [100, 100], 150, false));
+    assert.deepEqual(noWrap, [100, 100], 'no-wrap columns should preserve minima when the viewport is narrow');
 });
 
 test('typed terms retain explore links, namespace abbreviations, nested triples, and datatype toggle', () => {
@@ -530,7 +729,9 @@ test('XML and multiline literals render as preformatted text in table cells', as
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
-    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        initialLayout: 'table', rowStore: inMemoryRowStore()
+    });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['xml', 'multiline'] });
     await renderer.accept({ type: 'rows', values: [[
@@ -549,7 +750,9 @@ test('typed Explore links and datatype visibility stay consistent across table a
     const document = new FakeDocument();
     const target = document.createElement('section');
     document.body.appendChild(target);
-    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        initialLayout: 'table', rowStore: inMemoryRowStore()
+    });
     await renderer.accept({ type: 'view', id: 'tuple' });
     await renderer.accept({ type: 'vars', values: ['code'] });
     await renderer.accept({ type: 'namespaces', values: [{ prefix: 'kind', name: 'http://example.test/types/' }] });
@@ -585,7 +788,9 @@ test('typed result text remains inert and inline without duplicating the Workben
     const target = document.createElement('section');
     target.setAttribute('id', 'query-results');
     document.body.appendChild(target);
-    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    const renderer = new queryStream.QueryResultRenderer(target, {
+        initialLayout: 'table', rowStore: inMemoryRowStore()
+    });
     const hostileLiteral = '<img src=x onerror=alert(1)>';
 
     assert.match(renderer.root.className, /query-result-embedded/,
@@ -1231,18 +1436,18 @@ test('partial Records stay scrollable without paging and keep Load more hidden',
     assert.match(renderer.status.textContent, /Incomplete results: 5 rows/);
     assert.equal(renderer.records.children.length <= 4, true,
         'partial record markup stays bounded to a small visible window with overscan');
-    assert.equal(renderer.rowPositionControl.hidden, false,
-        'the precise row locator remains available for retained partial results');
+    assert.equal(renderer.root.querySelectorAll('.query-result-row-position').length, 0,
+        'retained partial results do not expose a row locator');
     assert.equal(renderer.loadMoreButton.hidden, true,
         'an incomplete stream without valid terminal continuation cannot expose Load more');
     assert.equal(renderer.root.querySelectorAll('button').some(button => /Next|Previous/.test(button.textContent)), false,
         'partial results do not expose result or record page controls');
-    renderer.rowPositionControl.value = '5';
-    renderer.rowPositionControl.trigger('change');
+    renderer.records.scrollTop = 80;
+    renderer.records.trigger('scroll');
     await new Promise(resolve => setImmediate(resolve));
 
     assert.equal(renderer.records.children.some(record => record.getAttribute('data-query-record-index') === '4'), true,
-        'the row locator can inspect retained partial rows without page navigation');
+        'scrolling can inspect retained partial rows without page navigation');
     renderer.dispose();
 });
 

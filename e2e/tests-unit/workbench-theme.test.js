@@ -14,6 +14,13 @@ function loadTheme(defaultTheme, storedTheme) {
     if (storedTheme !== undefined && storedTheme !== null) {
         values.set('rdf4j-workbench-theme', storedTheme);
     }
+    const scriptAttributes = {};
+    const colorSchemeMeta = {
+        content: 'light dark',
+        setAttribute(name, value) {
+            if (name === 'content') { this.content = value; }
+        }
+    };
     const root = {
         setAttribute(name, value) { attributes[name] = value; }
     };
@@ -26,10 +33,15 @@ function loadTheme(defaultTheme, storedTheme) {
     const controls = [];
     const document = {
         documentElement: root,
+        currentScript: {
+            setAttribute(name, value) { scriptAttributes[name] = value; }
+        },
         readyState: 'complete',
         querySelector(selector) {
-            if (selector !== 'meta[name="rdf4j-workbench-theme-default"]') { return null; }
-            return { getAttribute: () => defaultTheme };
+            if (selector === 'meta[name="rdf4j-workbench-theme-default"]') {
+                return { getAttribute: () => defaultTheme };
+            }
+            return selector === 'meta[name="color-scheme"]' ? colorSchemeMeta : null;
         },
         getElementById() { return controls.length ? controls[controls.length - 1] : null; }
     };
@@ -48,9 +60,11 @@ function loadTheme(defaultTheme, storedTheme) {
 
     return {
         attributes,
+        colorSchemeMeta,
         controls,
         media,
         mediaListeners,
+        scriptAttributes,
         values,
         window,
         addControl() {
@@ -77,6 +91,8 @@ function loadTheme(defaultTheme, storedTheme) {
 test('theme lifecycle binds late controls and keeps explicit System separate from configured default', () => {
     const state = loadTheme('dark', null);
     assert.equal(state.attributes['data-theme'], 'dark');
+    assert.equal(state.colorSchemeMeta.content, 'dark');
+    assert.equal(state.scriptAttributes['data-workbench-loaded'], 'true');
 
     const control = state.addControl();
     assert.equal(typeof state.window.RDF4JWorkbenchTheme.connectControl, 'function');
@@ -87,15 +103,18 @@ test('theme lifecycle binds late controls and keeps explicit System separate fro
     control.dispatch('change');
     assert.equal(state.values.get('rdf4j-workbench-theme'), 'system');
     assert.equal(state.attributes['data-theme'], 'dark');
+    assert.equal(state.colorSchemeMeta.content, 'dark');
 
     state.media.matches = false;
     state.mediaListeners.forEach((listener) => listener({ matches: false }));
     assert.equal(state.attributes['data-theme'], 'light');
+    assert.equal(state.colorSchemeMeta.content, 'light');
     assert.equal(control.value, 'system');
 
     state.dispatchStorage({ key: 'rdf4j-workbench-theme', newValue: 'dark' });
     assert.equal(control.value, 'dark');
     assert.equal(state.attributes['data-theme'], 'dark');
+    assert.equal(state.colorSchemeMeta.content, 'dark');
 });
 
 test('theme lifecycle updates a late-bound control on storage changes and resets to configured default', () => {
@@ -104,10 +123,12 @@ test('theme lifecycle updates a late-bound control on storage changes and resets
     assert.equal(typeof state.window.RDF4JWorkbenchTheme.connectControl, 'function');
     state.window.RDF4JWorkbenchTheme.connectControl();
     assert.equal(control.value, 'light');
+    assert.equal(state.colorSchemeMeta.content, 'light');
 
     state.dispatchStorage({ key: 'other-key', newValue: 'dark' });
     assert.equal(control.value, 'light');
     state.dispatchStorage({ key: 'rdf4j-workbench-theme', newValue: null });
     assert.equal(control.value, 'dark');
     assert.equal(state.attributes['data-theme'], 'dark');
+    assert.equal(state.colorSchemeMeta.content, 'dark');
 });
