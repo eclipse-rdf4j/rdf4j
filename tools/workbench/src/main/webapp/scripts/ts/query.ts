@@ -5131,7 +5131,7 @@ workbench.addLoad(function queryPageLoaded() {
     });
     $(document).click(function(event) {
         if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
-            && $(event.target).closest('#explanation-settings').length === 0) {
+            && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
             workbench.query.setExplanationSettingsOpen(false);
         }
     });

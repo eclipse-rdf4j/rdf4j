@@ -19,33 +19,33 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-09-30 21:00Z) Design review performed against a local build; findings recorded in `Surprises & Discoveries`.
 - [x] (2026-09-30 23:55Z) Plan, mockups and helper scripts written (`design/workbench-app-shell-plan-20260930/`).
 - [x] (2026-10-01) Plan revised after an independent review of its references against the code.
-- [x] (2026-10-01 04:40Z) M0.1 Start a preview server on port 18090 and seed the `bsbm` review repository (a second development preview runs on 18091; see `Surprises & Discoveries`).
-- [x] (2026-10-01 05:00Z) M0.2 Record the baseline of the unit tests, the coverage gate and the Java tests (completed; the full Chromium browser-suite baseline is recorded separately below).
-- [x] (2026-10-01 05:10Z) M0.3 Confirm the in-flight column-width and dark-mode plans are committed, and have this plan and its design folder committed.
-- [x] (2026-10-01 11:10Z) M0.4 Record the full Chromium browser-suite baseline: 159 passed, 139 failed, 1 skipped in 1.2 hours (list in `initial-evidence.txt` and `logs/m0-browser-baseline-failures.txt`).
-- [x] (2026-10-01 05:15Z) M1.1 Result headings show variable names exactly.
-- [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
-- [x] (2026-10-01 06:45Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
-- [x] (2026-10-01 07:05Z) M1.4 One heading scale and a key/value component.
-- [x] (2026-10-01 07:30Z) M1.5 One content width and flatter containers (the Remove and Clear warnings now sit inside their form card).
-- [x] (2026-10-01 07:50Z) M1.6 One form layout (Remove and Clear use `.workbench-field-stack`; the create forms keep their stacked `table.dataentry` markup, which `create.ts` reads).
-- [x] (2026-10-01 08:10Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
-- [x] (2026-10-01 08:30Z) M1.8 Visible editor overlay icons and formatted numbers.
-- [x] (2026-10-01 09:00Z) M2.1 One navigation model everywhere.
-- [x] (2026-10-01 09:40Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
-- [x] (2026-10-01 10:40Z) M2.3 A compact context bar with switchers (mockups 01 and 04).
-- [x] (2026-10-01 11:45Z) M2.4 Regroup the menu and make it sticky.
-- [x] (2026-10-01 12:00Z) M2.5 Dark-mode logo (`design/workbench-app-shell-plan-20260930/make-dark-logos.cjs` recolored 2,026 and 2,213 pixels).
-- [x] (2026-10-01 12:15Z) M2.6 Page titles.
-- [x] (2026-10-01 13:00Z) M2.7 An in-shell "not found" page (mockup 13).
-- [x] (2026-10-01 14:00Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
-- [ ] M2.9 (added after the end-of-M2 suite run) Fix the regressions that run found and update the specs that assert removed designs.
-- [x] (2026-10-01 14:40Z) M3.1 Cmd/Ctrl+Enter runs the query.
-- [x] (2026-10-01 15:30Z) M3.2 The editor grows with its content, can be resized, and results come into view (the 12-visible-rows check moved to M4.2; see the Decision Log).
-- [ ] M3.3 (in progress) Results and Explanation become tabs of one card; the Execute row never moves.
+- [x] (2026-10-01 04:36Z) M0.1 Start a preview server on port 18090 and seed the `bsbm` review repository (a second development preview runs on 18091; see `Surprises & Discoveries`).
+- [x] (2026-10-01 04:42Z) M0.2 Record the baseline of the unit tests, the coverage gate and the Java tests (completed; the full Chromium browser-suite baseline is recorded separately below).
+- [x] (2026-10-01 04:45Z) M0.3 Confirm the in-flight column-width and dark-mode plans are committed, and have this plan and its design folder committed.
+- [x] (2026-10-01 05:52Z) M0.4 Record the full Chromium browser-suite baseline: 159 passed, 139 failed, 1 skipped in 1.2 hours (list in `initial-evidence.txt` and `logs/m0-browser-baseline-failures.txt`).
+- [x] (2026-10-01 04:45Z) M1.1 Result headings show variable names exactly.
+- [x] (2026-10-01 04:59Z) M1.2 Stop loading `styles/default/screen.css`.
+- [x] (2026-10-01 05:05Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
+- [x] (2026-10-01 05:08Z) M1.4 One heading scale and a key/value component.
+- [x] (2026-10-01 05:12Z) M1.5 One content width and flatter containers (the Remove and Clear warnings now sit inside their form card).
+- [x] (2026-10-01 05:15Z) M1.6 One form layout (Remove and Clear use `.workbench-field-stack`; the create forms keep their stacked `table.dataentry` markup, which `create.ts` reads).
+- [x] (2026-10-01 05:17Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
+- [x] (2026-10-01 05:21Z) M1.8 Visible editor overlay icons and formatted numbers.
+- [x] (2026-10-01 05:26Z) M2.1 One navigation model everywhere.
+- [x] (2026-10-01 05:36Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
+- [x] (2026-10-01 05:47Z) M2.3 A compact context bar with switchers (mockups 01 and 04).
+- [x] (2026-10-01 05:58Z) M2.4 Regroup the menu and make it sticky.
+- [x] (2026-10-01 06:00Z) M2.5 Dark-mode logo (`design/workbench-app-shell-plan-20260930/make-dark-logos.cjs` recolored 2,026 and 2,213 pixels).
+- [x] (2026-10-01 06:03Z) M2.6 Page titles.
+- [x] (2026-10-01 06:10Z) M2.7 An in-shell "not found" page (mockup 13).
+- [x] (2026-10-01 06:18Z) M2.8 A compact mobile header and a menu sheet (mockup 14).
+- [ ] M2.9 (in progress) (added after the end-of-M2 suite run) Fix the regressions that run found and update the specs that assert removed designs.
+- [x] (2026-10-01 06:27Z) M3.1 Cmd/Ctrl+Enter runs the query.
+- [x] (2026-10-01 06:41Z) M3.2 The editor grows with its content, can be resized, and results come into view (the 12-visible-rows check moved to M4.2; see the Decision Log).
+- [x] (2026-10-01 09:30Z) M3.3 Results and Explanation become tabs of one card; the Execute row never moves (controls of the active tab sit in the first row of its panel; see the Decision Log).
 - [ ] M3.4 Clear names, units, and no silent "Clear".
 - [ ] M3.5 One status line and designed result states (mockup 02).
-- [x] (2026-10-01 15:30Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
+- [x] (2026-10-01 06:41Z) M3.6 The Update editor fills its box (done together with M3.2, because removing the generic 300px editor minimum exposed it).
 - [ ] M4.1 Results scroll with the page, with a pinned header; full screen fills the screen.
 - [ ] M4.2 Column sizing without mid-word breaks.
 - [ ] M4.3 Literal, IRI and heading rendering.
@@ -161,6 +161,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: the M3.3 RED/GREEN entries in `initial-evidence.txt`.
 - Observation (M3.3): the explanation's code theme (`--query-code-*` variables: surface, border, ink, connector colors for the plan pipes) was defined on `.query-form`; moving the explanation out of the form into the output card silently dropped its surface, border and pipe colors. The variables are now defined on `.query-form, .query-output`; a computed-style comparison against the M2 jar shows identical values in both themes and `workbench-query-workflow.spec.js` "the explanation keeps its code theme and the pipes that connect plan nodes" pins it.
   Evidence: before/after probe: background, border, ink, connector colors and 95 connector tokens identical for a join query.
+- Observation (M3.3): the plan's progress timestamps written before M3.3 did not match the commits; they were corrected to the UTC commit times (`git log --date=format-local` with `TZ=UTC`).
+- Observation (M3.3): with the Config disclosure rendered inline in the Explanation toolbar, opening it made its group taller and wider, so the action group (Copy, Download, Compare, Explain again) dropped to the middle of the panel (`workbench-spacing-system.spec.js` S8: Copy moved from y=545 to y=657 at 1440px). Config now uses `workbench.detailDisclosure.renderSeparated`: the toggle stays in the toolbar and the panel opens in `.query-explanation-settings-track` below the toolbar row, the same pattern as Save query and Options; the outside-click handler in `query.ts` also treats clicks inside `#explanation-settings-panel` as inside. S8's "peers at or above the Config row" assertion encoded the old order (Copy before Config); it now asserts that opening Config moves no peer.
+  Evidence: S8 and S9 pass in Chromium, Firefox and WebKit.
+- Observation (M3.3 affected-spec run on Chromium, 160 tests in 18 spec files): 97 failed, 1 skipped, 62 passed; by test name every failure is in the M0 baseline or the end-of-M2 list except three, all resolved (the "flat hierarchy" spec now measures the card border on `#query-output`; S8 above; "compare navigation follows the responsive menu" timed out once under load and passes on rerun). `workbench.spec.js` and `server.spec.js` hard-code `localhost:8080` and fail in this environment.
 - Observation (M2.8): the sidebar container `#workbench-navigation-disclosure` is now a plain `<nav>` (no summary, no `open` state); below 900px it is hidden and the same policy menu renders a second time inside the modal `<dialog id="workbench-menu-sheet">` (ids prefixed `workbench-sheet-nav-` so they stay unique; the menu entries are computed once per shell render so the "menu unavailable" error logs once). Only one copy is ever visible, so the accessibility tree has one menu. `query.ts` compare mode only manipulates the old disclosure when a `details#workbench-navigation-disclosure` exists. Specs that opened the old "Menu" summary now open the sheet with `#workbench-menu-button`.
   Evidence: `workbench-shell.spec.js` "on a phone the header is one compact bar and the menu opens as a sheet" (title top 72px at 390 and 320 wide).
 

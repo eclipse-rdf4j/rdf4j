@@ -2086,6 +2086,51 @@ module workbench {
                             : h`<option value=${level.value} ?hidden=${true} ?disabled=${true} ?selected=${false}>Timed</option>`;
                 }
             };
+            // Config keeps its toggle in the toolbar and opens its panel in a track below the toolbar row,
+            // so an open panel never moves the other toolbar controls.
+            const explanationSettings = workbench.detailDisclosure.renderSeparated(h, {
+                id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
+                panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
+                ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle workbench-action workbench-action--secondary',
+                panelClass: 'query-explanation-settings__panel',
+                panelRole: 'group'
+            }, h`
+                    <div class="query-explanation-settings__section" ?hidden=${allHighlightingDisabled}>
+                        <div class="query-explanation-settings__header"><strong>Highlighting</strong></div>
+                        <div class="query-explanation-settings__highlighting">
+                            <span id="explanation-highlight-mode" class="query-explanation-highlight-mode" role="radiogroup"
+                                aria-label="Text explanation highlighting" ?hidden=${allHighlightingDisabled}>
+                                <label class="workbench-choice" for="explanation-highlight-syntax"
+                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')}>
+                                    <input id="explanation-highlight-syntax" name="explanation-highlight-mode" type="radio" value="syntax" checked
+                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')} />
+                                    <span>Normal</span>
+                                </label>
+                                <label class="workbench-choice" for="explanation-highlight-hotspot"
+                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')}>
+                                    <input id="explanation-highlight-hotspot" name="explanation-highlight-mode" type="radio" value="hotspot"
+                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')} />
+                                    <span>Heatmap</span>
+                                </label>
+                            </span><span id="explanation-hotspot-legend" aria-live="polite"></span>
+                        </div>
+                    </div>
+                    <div id="explanation-property-config" class="query-explanation-settings__section query-explanation-property-config"
+                        ?hidden=${!propertySelectionEnabled}>
+                        <div class="query-explanation-property-config__header">
+                            <div class="query-explanation-property-config__title">
+                                <strong>Visible properties</strong><span id="explanation-property-count" aria-live="polite"></span>
+                            </div>
+                            <div class="query-explanation-property-config__actions">
+                                <button id="explanation-properties-all" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
+                                <button id="explanation-properties-none" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
+                            </div>
+                        </div>
+                        <div id="explanation-property-options" class="query-explanation-property-config__options"
+                            role="group" aria-label="Visible query plan properties"></div>
+                        <p class="query-explanation-property-config__hint">Plan structure always remains visible.</p>
+                    </div>
+                `);
             return h`<div id="query-explanation-panel" class="query-output__panel query-explanation-panel" role="tabpanel"
                     aria-labelledby="query-output-tab-explanation" tabindex="0" ?hidden=${!explanation}>
                 <div class="query-explanation-toolbar workbench-action-toolbar">
@@ -2096,49 +2141,7 @@ module workbench {
                             ?hidden=${allExplainFormatsDisabled}>
                             ${explainFormats.map(formatOption)}
                         </select>
-                            ${workbench.detailDisclosure.render(h, {
-                                id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
-                                panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
-                                ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle workbench-action workbench-action--secondary',
-                                panelClass: 'query-explanation-settings__panel',
-                                panelRole: 'group'
-                            }, h`
-                                    <div class="query-explanation-settings__section" ?hidden=${allHighlightingDisabled}>
-                                        <div class="query-explanation-settings__header"><strong>Highlighting</strong></div>
-                                        <div class="query-explanation-settings__highlighting">
-                                            <span id="explanation-highlight-mode" class="query-explanation-highlight-mode" role="radiogroup"
-                                                aria-label="Text explanation highlighting" ?hidden=${allHighlightingDisabled}>
-                                                <label class="workbench-choice" for="explanation-highlight-syntax"
-                                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')}>
-                                                    <input id="explanation-highlight-syntax" name="explanation-highlight-mode" type="radio" value="syntax" checked
-                                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-syntax')} />
-                                                    <span>Normal</span>
-                                                </label>
-                                                <label class="workbench-choice" for="explanation-highlight-hotspot"
-                                                    ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')}>
-                                                    <input id="explanation-highlight-hotspot" name="explanation-highlight-mode" type="radio" value="hotspot"
-                                                        ?hidden=${!queryFeatureEnabled(context, 'explain-highlight-hotspot')} />
-                                                    <span>Heatmap</span>
-                                                </label>
-                                            </span><span id="explanation-hotspot-legend" aria-live="polite"></span>
-                                        </div>
-                                    </div>
-                                    <div id="explanation-property-config" class="query-explanation-settings__section query-explanation-property-config"
-                                        ?hidden=${!propertySelectionEnabled}>
-                                        <div class="query-explanation-property-config__header">
-                                            <div class="query-explanation-property-config__title">
-                                                <strong>Visible properties</strong><span id="explanation-property-count" aria-live="polite"></span>
-                                            </div>
-                                            <div class="query-explanation-property-config__actions">
-                                                <button id="explanation-properties-all" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>All</button>
-                                                <button id="explanation-properties-none" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!propertySelectionEnabled}>None</button>
-                                            </div>
-                                        </div>
-                                        <div id="explanation-property-options" class="query-explanation-property-config__options"
-                                            role="group" aria-label="Visible query plan properties"></div>
-                                        <p class="query-explanation-property-config__hint">Plan structure always remains visible.</p>
-                                    </div>
-                            `)}
+                        ${explanationSettings.owner}
                     </div>
                     <div id="query-explanation-controls-row" class="query-explanation-controls-row-class query-explanation-toolbar__actions"
                         ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
@@ -2186,6 +2189,7 @@ module workbench {
                         </div>
                     </div>
                 </div>
+                <div class="query-explanation-settings-track">${explanationSettings.panel}</div>
                 <div class="query-explanation-columns">
                     ${explanationColumn(runtime, false, explanation, selectedFormat, context)}
                     ${explanationColumn(runtime, true, '', selectedFormat, context)}

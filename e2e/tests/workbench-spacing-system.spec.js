@@ -425,19 +425,22 @@ SELECT ?s WHERE { ?s ?p ?o } LIMIT 2`.trim();
 test('S8 expanded disclosures preserve peer alignment', async ({ page }, info) => {
 	for (const variant of VARIANTS) {
 		await open(page, 'query', variant); await explain(page);
+		const peerSelectors = ['#copy-explanation', '#explain-format', '#explain-level'];
+		const documentTops = () => Promise.all(peerSelectors.map(async selector =>
+			(await bounds(page.locator(selector))).top + await page.evaluate(() => scrollY)));
 		const before = await bounds(page.locator('#copy-explanation'));
 		const beforeDocumentTop = before.top + await page.evaluate(() => scrollY);
+		const peersBefore = await documentTops();
 		await page.locator('#explanation-settings-toggle').click(); await settled(page);
 		const config = await bounds(page.locator('#explanation-settings-toggle'));
-		const peers = await Promise.all(['#copy-explanation', '#explain-format', '#explain-level']
-			.map(selector => bounds(page.locator(selector))));
+		const peers = await Promise.all(peerSelectors.map(selector => bounds(page.locator(selector))));
 		await evidence(page, info, `S8-open-${variant.width}-${variant.theme}`, { before, config, peers });
-		for (const peer of peers) {
-			// Controls may wrap at small widths, but an expanding sibling cannot move
-			// an existing peer into the vertical middle of its panel.
-			expect(peer.top, 'Explanation peers remain at the trigger row or an earlier wrapped row')
-				.toBeLessThanOrEqual(config.top + 0.5);
-		}
+		const peersAfter = await documentTops();
+		peersAfter.forEach((top, index) => {
+			// Controls may wrap at small widths (the toolbar order is level, format, Config, Copy), but an
+			// expanding sibling cannot move an existing peer into the vertical middle of its panel.
+			closeTo(top, peersBefore[index], `${peerSelectors[index]} stays on its toolbar row while Config is open`);
+		});
 		closeTo(peers[0].top + await page.evaluate(() => scrollY), beforeDocumentTop,
 			'Copy document position after Config reveal');
 		await page.keyboard.press('Escape'); await settled(page);

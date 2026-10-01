@@ -87,7 +87,8 @@ test.beforeEach(async ({ page, request }) => {
 test('desktop query surfaces use flat hierarchy and readable controls', async ({ page }) => {
     const metrics = await page.evaluate(() => {
         const execute = document.querySelector('#exec');
-        const results = document.querySelector('#query-results');
+        // The result card is the output card that holds the Results and Explanation tabs.
+        const results = document.querySelector('#query-output');
         const bodyStyle = getComputedStyle(document.body);
         const resultsStyle = getComputedStyle(results);
         const executeBounds = execute.getBoundingClientRect();
