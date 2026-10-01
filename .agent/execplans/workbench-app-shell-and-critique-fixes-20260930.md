@@ -72,8 +72,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 21:27Z) M10.1 Submit forms without reloading the document.
 - [x] (2026-10-01 21:36Z) M10.2 Saved-query Edit opens the Query page in place.
 - [x] (2026-10-01 22:02Z) M11.1 Load the graph renderer only when needed.
-- [ ] M11.2 (in progress) Prefetch route code.
-- [ ] M11.3 Keep the Query route alive.
+- [x] (2026-10-01 22:04Z) M11.2 Prefetch route code.
+- [ ] M11.3 (in progress) Keep the Query route alive.
 - [ ] M12.1 Migrate tests that assumed full page loads.
 - [ ] M12.2 Final review and retrospective.
 - [ ] M13.1 The menu starts at the top (user request).

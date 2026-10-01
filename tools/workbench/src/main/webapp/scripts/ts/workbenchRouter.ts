@@ -63,6 +63,9 @@ module workbench {
             instance: routes.RouteInstance } = null;
         /** The navigation (its generation) that is uploading a file, or 0. */
         let uploading = 0;
+        /** How long the pointer or focus must stay on a link before its route's scripts load (M11.2). */
+        const prefetchDelayMillis = 50;
+        let prefetchTimer: any = null;
 
         export function isRunning(): boolean {
             return running;
@@ -216,6 +219,41 @@ module workbench {
             navigate(url.href, { history: 'push' });
         }
 
+        /** The router-ready link an event happened in, if any. */
+        function routedLink(event: any): URL {
+            const target = event.target;
+            const anchor = target && typeof target.closest === 'function' ? target.closest('a[href]') : null;
+            if (!anchor) {
+                return null;
+            }
+            const url = new URL(anchor.href);
+            return routable(url) ? url : null;
+        }
+
+        /**
+         * Load a route's model-independent scripts once the pointer or keyboard focus has stayed on its link for
+         * 50 ms, so they are there when the link is followed. Page models are never prefetched (they are no-store
+         * and take a worker-backed row store).
+         */
+        function onPrefetch(event: any): void {
+            const windowObject: any = window;
+            const connection = windowObject.navigator && windowObject.navigator.connection;
+            const url = connection && connection.saveData ? null : routedLink(event);
+            if (!url) {
+                return;
+            }
+            clearTimeout(prefetchTimer);
+            prefetchTimer = setTimeout(() => {
+                app().loadScripts(routes.get(viewIdOf(url)).baseScripts());
+            }, prefetchDelayMillis);
+        }
+
+        function onPrefetchCancel(event: any): void {
+            if (routedLink(event)) {
+                clearTimeout(prefetchTimer);
+            }
+        }
+
         function onPopState(): void {
             const windowObject: any = window;
             const url = new URL(windowObject.location.href);
@@ -326,6 +364,9 @@ module workbench {
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
             windowObject.document.addEventListener('submit', onSubmit, false);
+            windowObject.document.addEventListener('pointerover', onPrefetch, false);
+            windowObject.document.addEventListener('focusin', onPrefetch, false);
+            windowObject.document.addEventListener('pointerout', onPrefetchCancel, false);
             windowObject.addEventListener('popstate', onPopState, false);
             windowObject.addEventListener('pagehide', onPageHide, false);
         }

@@ -430,3 +430,20 @@ test('the Query page loads the graph renderer only when a DOT explanation is sho
 	await expect(page.locator('#query-explanation-dot-view svg').first()).toBeVisible({ timeout: 15000 });
 	expect(renderer).toHaveLength(1);
 });
+
+// Plan task M11.2: route code is prefetched when its link is hovered.
+test('hovering the Query menu link loads the Query page script before any click', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await openRoute(page, 'summary');
+	const scripts = [];
+	page.on('request', (request) => {
+		if (request.url().endsWith('/scripts/query.js')) {
+			scripts.push(request.url());
+		}
+	});
+
+	await menuLink(page, 'Query').hover();
+
+	await expect.poll(() => scripts.length).toBe(1);
+	await expect(page).toHaveURL(new RegExp('/summary$'));
+});

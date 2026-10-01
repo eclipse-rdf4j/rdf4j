@@ -283,6 +283,8 @@ test('the router is not running until bootstrap starts it, and starts only once'
 
     assert.equal(harness.router.isRunning(), true);
     assert.equal(harness.document.listenerCount('click'), 1);
+    assert.equal(harness.document.listenerCount('pointerover'), 1);
+    assert.equal(harness.document.listenerCount('focusin'), 1);
     assert.equal(harness.window.listenerCount('popstate'), 1);
     assert.equal(harness.window.listenerCount('pagehide'), 1);
     assert.deepEqual({ ...harness.router.current() },
@@ -964,4 +966,47 @@ test('a POST answered by another page without a redirect is a new entry', async 
     const last = harness.window.history.entries[harness.window.history.entries.length - 1];
     assert.equal(last[0], 'push');
     assert.equal(last[2], base + 'query');
+});
+
+// Plan task M11.2: a route's scripts load when the pointer or keyboard focus reaches its link.
+test('hovering or focusing a link prefetches its route scripts after 50 ms', async () => {
+    const harness = loadRouter();
+    harness.register('explore', { baseScripts: ['paging.js', 'explore.js'] });
+    harness.start();
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const over = (anchor, type) => ({ type, target: { closest: (selector) => (selector === 'a[href]' ? anchor : null) } });
+    const explore = link(base + 'explore?resource=x');
+    const scripts = () => harness.log.filter((line) => line.startsWith('scripts'));
+
+    harness.document.dispatch('pointerover', over(explore, 'pointerover'));
+    assert.deepEqual(scripts(), [], 'not at once');
+    await wait(70);
+    assert.deepEqual(scripts(), ['scripts paging.js,explore.js']);
+
+    harness.document.dispatch('focusin', over(explore, 'focusin'));
+    await wait(70);
+    assert.equal(scripts().length, 2, 'loading again costs nothing: loadScripts skips loaded scripts');
+
+    harness.document.dispatch('pointerover', over(explore, 'pointerover'));
+    harness.document.dispatch('pointerout', over(explore, 'pointerout'));
+    await wait(70);
+    assert.equal(scripts().length, 2, 'a pointer that only passes over does not prefetch');
+
+    harness.document.dispatch('pointerover', over(link('https://elsewhere.test/x'), 'pointerover'));
+    harness.document.dispatch('pointerover', { type: 'pointerover', target: {} });
+    harness.document.dispatch('pointerout', { type: 'pointerout', target: {} });
+    await wait(70);
+    assert.equal(scripts().length, 2, 'links the router does not handle are not prefetched');
+});
+
+test('nothing is prefetched when the browser asks to save data', async () => {
+    const harness = loadRouter();
+    harness.window.navigator = { connection: { saveData: true } };
+    harness.start();
+
+    harness.document.dispatch('pointerover', { type: 'pointerover',
+        target: { closest: () => link(base + 'types') } });
+    await new Promise((resolve) => setTimeout(resolve, 70));
+
+    assert.equal(harness.log.filter((line) => line.startsWith('scripts')).length, 0);
 });
