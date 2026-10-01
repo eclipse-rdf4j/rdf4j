@@ -126,7 +126,7 @@ test('390px opened settings keep controls inside their panels', async ({ page })
     await page.getByText(/^Save query$/i).first().click();
     await page.getByText(/^Options$/i).first().click();
     await frame.getByText(/^Download$/i).first().click();
-    await frame.getByText(/^Result options$/i).first().click();
+    await frame.getByText(/^Result display options$/i).first().click();
     const metrics = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,

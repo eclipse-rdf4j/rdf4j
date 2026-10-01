@@ -120,7 +120,7 @@ test('executes a typed SELECT once and keeps result controls interactive', async
 	await expect(result.locator('table.data tbody')).toContainText('second');
 	assertOneStreamingPost(monitor);
 
-	const optionsToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const optionsToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await optionsToggle.click();
 	await expect(optionsToggle).toHaveAttribute('aria-expanded', 'true');
 	const layout = result.locator('select[name="result-layout"]');
@@ -185,7 +185,7 @@ test('streams 20000 query results before completion with a bounded table window'
 	await expect(result.locator('.query-result-status')).toHaveText(`${rowCount} results.`);
 	await assertOneStreamingPost(monitor);
 
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await layout.selectOption('table');

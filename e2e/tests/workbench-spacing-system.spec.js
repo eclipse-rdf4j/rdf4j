@@ -215,7 +215,7 @@ test('S2 related actions use rendered spacing and align edges', async ({ page },
 		await open(page, 'query', variant);
 		const primary = await actionRects(page.locator('.query-actions-toolbar__primary'));
 		const disclosures = [await bounds(page.locator('#save-query-toggle')), await bounds(page.locator('#query-options-toggle'))]
-			.map((rect, index) => ({ ...rect, label: index ? 'Options' : 'Save query' }));
+			.map((rect, index) => ({ ...rect, label: index ? 'Query settings' : 'Save query' }));
 		const editor = await bounds(page.locator('#query-primary-pane .CodeMirror'));
 		await evidence(page, info, `S2-actions-${variant.width}-${variant.theme}`, { primary, disclosures, editor });
 		relatedPairs(primary);

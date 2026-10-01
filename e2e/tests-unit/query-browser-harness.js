@@ -1,3 +1,4 @@
+const assert = require('node:assert/strict');
 const { createAjaxRequest, createScriptHarness, parseRequestData } = require('./script-harness.js');
 
 function appendOption(registerElement, select, value, text, selected) {
@@ -76,6 +77,20 @@ function createYasqeStub(registerElement) {
                     },
                     setValue(value) {
                         textarea.value = value;
+                    },
+                    getDoc() {
+                        return {
+                            replaceRange(text, from, to) {
+                                // The script runs in another VM realm, so compare fields, not objects.
+                                assert.deepEqual([from.line, from.ch, to.line, to.ch], [0, 0, 0, 0],
+                                    'the stub only inserts at the start');
+                                textarea.value = text + (textarea.value || '');
+                                instance.triggerChange();
+                            }
+                        };
+                    },
+                    focus() {
+                        instance.focused = true;
                     },
                     toTextArea() {
                         instance.closed = true;

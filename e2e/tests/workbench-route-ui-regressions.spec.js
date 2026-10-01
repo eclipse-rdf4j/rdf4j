@@ -302,7 +302,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	console.log('QUERY_RESULT_ICONS_RED', JSON.stringify(resultIconState));
 	expect.soft(resultIconState.downloadNameCount, 'query result Download has a computed accessible name').toBe(1);
 	expect.soft(resultIconState.downloadIcon).toBe('download');
-	expect.soft(resultIconState.optionsName).toBe('Result options');
+	expect.soft(resultIconState.optionsName).toBe('Result display options');
 	expect.soft(resultIconState.optionsIcon).toBe('chevron');
 	await expect(resultOptions).toBeVisible({ timeout: 20_000 });
 	await resultOptions.click();

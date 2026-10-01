@@ -190,7 +190,7 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 		'an interrupted stream must not publish a completion-only full count').toBe(false);
 	await expect(status).toContainText(/Partial results: \d+ rows received before the query timed out\./);
 	await expect(page.locator('#query-results [role="alert"]'))
-		.toContainText(/Increase Query timeout in Options and run it again\./);
+		.toContainText(/Increase the timeout in Query settings and run it again\./);
 	expect(alertLayout.scrollWidth, 'the full timeout recovery instruction must fit the mobile alert').toBeLessThanOrEqual(
 		alertLayout.clientWidth
 	);
@@ -371,11 +371,11 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	expect(terminal.type).toBe('error');
 	expect(terminal.code).toBe('incomplete');
 	expect(terminal.message).toMatch(/visible results are incomplete/i);
-	expect(terminal.message).toMatch(/if the query timed out, increase Query timeout/i);
+	expect(terminal.message).toMatch(/if the query timed out, increase the timeout in Query settings/i);
 	expect(terminal.message).not.toMatch(/timed out after 1 second/i);
 	expect(records.some(record => record.type === 'end')).toBe(false);
 	expect(status).toMatch(/Incomplete results: \d+ rows received before the result stream ended\./);
-	expect(alert).toMatch(/increase Query timeout in Options and run it again\./i);
+	expect(alert).toMatch(/increase the timeout in Query settings and run it again\./i);
 	expect(alert).not.toMatch(/QueryEvaluationException|EOFException/);
 	expect(evidence.countVisible).toBe(false);
 	expect(evidence.downloadVisible).toBe(false);

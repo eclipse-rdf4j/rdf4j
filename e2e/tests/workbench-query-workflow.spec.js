@@ -244,3 +244,22 @@ test('the explanation keeps its code theme and the pipes that connect plan nodes
 		expect(look.connectorColor, `${colorScheme}: connectors use their own muted color`).not.toBe(look.ink);
 	}
 });
+
+test('Insert prefixes adds the repository namespaces once, at the top of the editor', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, '');
+	await page.locator('#query-options-toggle').click();
+	const insert = page.getByRole('button', { name: 'Insert prefixes' });
+	await insert.click();
+	const editorValue = () => page.locator('.query-page .CodeMirror').first().evaluate(element => element.CodeMirror.getValue());
+	const first = await editorValue();
+	expect(first).toMatch(/^PREFIX [\w.-]*: <[^>]+>/);
+	const lines = first.split('\n').filter(line => line.startsWith('PREFIX '));
+	expect(lines.length).toBeGreaterThan(0);
+	expect(new Set(lines).size).toBe(lines.length);
+	await insert.click();
+	expect(await editorValue()).toBe(first);
+	await expect(page.getByText('Query settings', { exact: true })).toBeVisible();
+	await expect(page.locator('label[for="query-timeout"]')).toHaveText('Timeout');
+	await expect(page.locator('#query-timeout-field')).toContainText('seconds');
+});

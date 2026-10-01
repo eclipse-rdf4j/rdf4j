@@ -2583,6 +2583,27 @@ body.workbench-body .workbench-page-surface input[type="number"] {
 	max-inline-size: 100%;
 }
 
+/* A number input followed by its unit, such as "Timeout [60] seconds" (M3.4). */
+body.workbench-body .workbench-input-unit {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-input-unit__suffix {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-field__help {
+	margin: 0;
+	color: var(--workbench-muted);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
 body.workbench-body .workbench-page-surface input[type="submit"],
 body.workbench-body .workbench-page-surface input[type="button"],
 body.workbench-body .workbench-page-surface button {

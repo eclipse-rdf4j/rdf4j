@@ -24,10 +24,8 @@ test('query page load initializes editors, fetches saved query text, and hydrate
     assert.equal(harness.getProperty('download-explanation', 'disabled'), false);
 });
 
-test('query utilities cover namespace reset, name validation, query language switch, save, and submit branches', () => {
-    const harness = createQueryBrowserHarness({
-        confirmResponses: [false, true]
-    });
+test('query utilities cover name validation, query language switch, save, and submit branches', () => {
+    const harness = createQueryBrowserHarness();
 
     harness.runPageLoad();
 
@@ -40,13 +38,6 @@ test('query utilities cover namespace reset, name validation, query language swi
     harness.context.workbench.query.handleNameChange();
     harness.advanceTimers(0);
     assert.equal(harness.getProperty('save', 'disabled'), false);
-
-    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
-    harness.context.workbench.query.resetNamespaces();
-    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
-
-    harness.context.workbench.query.resetNamespaces();
-    assert.match(harness.context.workbench.query.getQueryValue(), /PREFIX ex:/);
 
     const primaryEditor = harness.yasqeState.instances.query;
     harness.setValue('queryLn', 'SERQL');
@@ -79,34 +70,6 @@ test('query utilities cover namespace reset, name validation, query language swi
     assert.equal(harness.getProperty('include-query-text', 'value'), 'true');
     assert.equal(harness.alerts.length, 0);
     assert.equal(harness.document.lastSubmittedForm.getAttribute('target'), 'query-results-frame');
-});
-
-test('disabled namespace reset action does not clear the editor', () => {
-    const harness = createQueryBrowserHarness({ confirmResponses: [true] });
-
-    harness.runPageLoad();
-    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
-    const resetButton = harness.registerElement('input', {
-        id: 'query-reset-namespaces',
-        attributes: { 'data-editor-namespaces-enabled': 'false' }
-    });
-    harness.document.body.appendChild(resetButton);
-
-    harness.context.workbench.query.resetNamespaces();
-
-    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
-    assert.equal(harness.confirms.length, 0);
-});
-
-test('namespace reset remains enabled when no policy control is rendered', () => {
-    const harness = createQueryBrowserHarness({ confirmResponses: [true] });
-    harness.runPageLoad();
-    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
-
-    harness.context.workbench.query.resetNamespaces();
-
-    assert.equal(harness.confirms.length, 1);
-    assert.notEqual(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
 });
 
 test('disabled editor fullscreen hides YASQE control and blocks F11', () => {
@@ -843,4 +806,34 @@ test('the output card helpers do nothing on a page without the card', () => {
     harness.context.workbench.query.showOutputTab('explanation');
     harness.context.workbench.query.updateResultsBadge({ rows: true, rowCount: 1, total: 1 });
     assert.equal(harness.document.getElementById('query-output'), null);
+});
+
+test('Insert prefixes adds the missing repository namespaces at the top without asking', () => {
+    const harness = createQueryBrowserHarness({
+        sparqlNamespaces: { ex: 'http://example.com/', rdfs: 'http://www.w3.org/2000/01/rdf-schema#' }
+    });
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('PREFIX ex: <http://example.com/>\nSELECT * WHERE { ?s ?p ?o }');
+
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.confirms.length, 0, 'inserting prefixes is undoable and needs no confirmation');
+    const query = harness.context.workbench.query.getQueryValue();
+    assert.equal(query.split('\n')[0], 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>');
+    assert.equal((query.match(/PREFIX ex:/g) || []).length, 1, 'a declared prefix is not inserted again');
+
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.context.workbench.query.getQueryValue(), query, 'a second press inserts nothing');
+});
+
+test('Insert prefixes does nothing when the editor-namespaces policy is off', () => {
+    const harness = createQueryBrowserHarness({ sparqlNamespaces: { rdfs: 'http://www.w3.org/2000/01/rdf-schema#' } });
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE { ?s ?p ?o }');
+    const button = harness.registerElement('button', {
+        id: 'query-insert-prefixes',
+        attributes: { 'data-editor-namespaces-enabled': 'false' }
+    });
+    harness.document.body.appendChild(button);
+    harness.context.workbench.query.insertPrefixes();
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE { ?s ?p ?o }');
 });

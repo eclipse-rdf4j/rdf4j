@@ -1046,7 +1046,7 @@ test('query route renders the existing streaming form and result targets', () =>
             `${id} should have a complete disclosure button`);
         return markup.substring(start, end);
     };
-    for (const [id, label] of [['save-query-toggle', 'Save query'], ['query-options-toggle', 'Options']]) {
+    for (const [id, label] of [['save-query-toggle', 'Save query'], ['query-options-toggle', 'Query settings']]) {
         const button = disclosureToggle(id);
         const labelPosition = button.indexOf(
             `class="workbench-disclosure__toggle-label">${label}</span>`);

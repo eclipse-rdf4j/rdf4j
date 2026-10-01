@@ -171,7 +171,7 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 		expect(new URLSearchParams(requestBody).get('query')).toBe(valuesQuery(3));
 		expect(new URLSearchParams(requestBody).get('batch-size')).toBe('2');
 
-		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 		await options.click();
 		await result.locator('select[name="result-layout"]').selectOption('records');
 		await expect(result.locator('[data-query-record-index="0"]')).toContainText('loaded-zero');
@@ -204,7 +204,7 @@ test('virtual table column boundaries stay fixed when native scrolling mounts la
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	const result = page.locator('#query-results .query-result-layout');
 	await expectCompletedRows(result.locator('.query-result-status'), 10, 10);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const tableWrap = result.locator('.query-result-table-wrap');
@@ -218,7 +218,7 @@ test('virtual table column boundaries stay fixed when native scrolling mounts la
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
 	const fullResultOptions = result.locator('.query-result-toolbar__disclosures button')
-		.filter({ hasText: 'Options' });
+		.filter({ hasText: 'Display' });
 	await fullResultOptions.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const initialBoundaries = await readTableColumnBoundaries(tableWrap);
@@ -278,7 +278,7 @@ test('table width sampling uses available rows and resets for empty results and 
 		await expect.poll(() => monitor.executions.length).toBe(requestCount);
 		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 		await expectCompletedRows(result.locator('.query-result-status'), expectedRows, expectedRows);
-		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+		const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 		const layout = result.locator('select[name="result-layout"]');
 		if (!await layout.isVisible()) {
 			await options.click();
@@ -328,7 +328,7 @@ test('wrapped table columns meet the shared readable minimum when the budget fit
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 30, 30);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await layout.selectOption('auto');
@@ -392,7 +392,7 @@ test('Auto accounts for unwrapped variable headers when applying column minima',
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 1, 1);
-	await result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' }).click();
+	await result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' }).click();
 	const layout = result.locator('select[name="result-layout"]');
 	const wrap = result.locator('input[name="result-wrap-values"]');
 	await layout.selectOption('auto');
@@ -613,7 +613,7 @@ test('Auto uses cards below the wrapped column minimum and tables for no-wrap', 
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 30, 30);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	const wrap = result.locator('input[name="result-wrap-values"]');
@@ -681,7 +681,7 @@ test('Auto uses cards below the wrapped column minimum and tables for no-wrap', 
 	const savedResult = savedRow.locator('.query-results .query-result-layout');
 	await expect(savedResultMount).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(savedResult.locator('.query-result-status'), 30, 30);
-	await savedResult.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' }).click();
+	await savedResult.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' }).click();
 	const savedLayout = savedResult.locator('select[name="result-layout"]');
 	const savedWrap = savedResult.locator('input[name="result-wrap-values"]');
 	await savedLayout.selectOption('auto');
@@ -744,7 +744,7 @@ test('wrap-enabled width sample keeps long first-ten values within the result vi
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const wrapValues = result.locator('input[name="result-wrap-values"]');
@@ -810,7 +810,7 @@ test('nowrap values in later non-final columns stay inside their cells', async (
 	const result = page.locator('#query-results .query-result-layout');
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const wrapValues = result.locator('input[name="result-wrap-values"]');
@@ -894,7 +894,7 @@ test('main query Load more appends batches, freezes the query, and keeps the vir
 	await expect(result.locator('select[name="stream-result-limit"]')).toHaveCount(0);
 	await expect(result.locator('.query-result-navigation__label')).toHaveText('205 loaded rows of 205');
 
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	const tableWrap = result.locator('.query-result-table-wrap');
@@ -1068,7 +1068,7 @@ test('mobile result layouts append and scroll locally within the viewport', asyn
 	const result = mount.locator('.query-result-layout');
 	await expect(mount).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 40, 120);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await layout.selectOption('records');
@@ -1125,7 +1125,7 @@ test('main Table and Records reach first, middle, and last rows through native s
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
 	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
 	await expect(page.getByRole('spinbutton', { name: 'Go to loaded row' })).toHaveCount(0);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	const scrollEvidence = [];
@@ -1184,7 +1184,7 @@ test('Auto table keeps the bottom scroll anchor visible across desktop and mobil
 	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
 	const firstRow = result.locator('tbody tr[data-query-row-index="0"]');
 	await expect(firstRow).toContainText('Long readable fixture');
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await expect(layout).toHaveValue('auto');
@@ -1305,7 +1305,7 @@ test('saved streamed result widths use the first ten rows across batches and lay
 	const result = row.locator('.query-results .query-result-layout');
 	await expect(resultMount).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 40, 120);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await layout.selectOption('table');
@@ -1398,7 +1398,7 @@ test('saved query Load more keeps 120 rows scrollable in Table and Records', asy
 		.toEqual(['40', '40', '40']);
 	await expect(result.locator('.query-result-row-position')).toHaveCount(0);
 	await expect(result.getByRole('button', { name: /Next|Previous/i })).toHaveCount(0);
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	const tableWrap = result.locator('.query-result-table-wrap');
@@ -1541,7 +1541,7 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	await expectCompletedRows(result.locator('.query-result-status'), 1, 2);
 	await expect(result.locator('.query-result-load-more')).toBeVisible();
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Options' });
+	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
 	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('table');
 	await result.locator('.query-result-load-more').click();

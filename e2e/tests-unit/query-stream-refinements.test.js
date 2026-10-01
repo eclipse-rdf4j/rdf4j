@@ -1152,6 +1152,9 @@ test('query result toolbar toggles expose stable semantic classes', () => {
         'Download styling must target a semantic class emitted by the renderer');
     assert.equal(renderer.optionsToggle.classList.contains('query-result-options-toggle'), true,
         'Options styling must target a semantic class emitted by the renderer');
+    assert.equal(renderer.optionsToggle.textContent.trim(), 'Display',
+        'the result disclosure is labeled Display, not the Options of the query settings');
+    assert.equal(renderer.optionsToggle.getAttribute('aria-label'), 'Result display options');
     renderer.dispose();
 });
 
@@ -1305,7 +1308,7 @@ test('empty tuple and streamed error results retain distinct accessible states',
 
 test('streamed timeout after rows is marked partial without completion-only result controls', async () => {
     const queryStream = loadQueryStreamApi();
-    const timeoutMessage = 'Query timed out after 1 second. Increase the Query timeout in Options and run again.';
+    const timeoutMessage = 'Query timed out. Increase the timeout in Query settings and run it again.';
     const eofMessage = 'org.eclipse.rdf4j.query.QueryEvaluationException: java.io.EOFException';
     const cancelledMessage = 'Query cancelled.';
 
@@ -1380,7 +1383,7 @@ test('streamed timeout after rows is marked partial without completion-only resu
         partialRowsRetained: timeout.rows === 2 && genericEof.rows === 2,
         incompleteEofIsSanitized: genericEof.errorMessagePreserved && genericEof.errorCode !== 'timeout'
             && /visible results are incomplete/i.test(genericEof.visibleError)
-            && /increase query timeout/i.test(genericEof.visibleError)
+            && /increase the timeout in query settings/i.test(genericEof.visibleError)
             && !/java\.io|eofexception|queryevaluationexception/i.test(genericEof.visibleError)
             && !/^query timed out\b/i.test(genericEof.statusText + ' ' + genericEof.visibleError),
         errorsAreNotSuccessfulCompletion: !timeout.complete && !genericEof.complete && !cancelled.complete,

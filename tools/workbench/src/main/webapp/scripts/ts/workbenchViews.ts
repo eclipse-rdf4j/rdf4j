@@ -48,7 +48,8 @@ module workbench {
         swap: 'M4 7h14m-4-4 4 4-4 4M20 17H6m4 4-4-4 4-4',
         menu: 'M4 6h16M4 12h16M4 18h16',
         user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
-        search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5'
+        search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
+        sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0'
     };
 
     function actionIconPath(name: string): string {
@@ -2232,16 +2233,20 @@ module workbench {
                 </div>`);
             const optionsDisclosure = workbench.detailDisclosure.renderSeparated(h, {
                 id: 'query-options-disclosure', toggleId: 'query-options-toggle',
-                panelId: 'query-options-panel', label: 'Options',
+                panelId: 'query-options-panel', label: 'Query settings', icon: icon(runtime, 'sliders'),
                 ownerClass: 'query-disclosure query-options-disclosure',
                 toggleClass: 'query-disclosure__toggle workbench-action workbench-action--secondary',
                 panelClass: 'query-disclosure__body query-disclosure__panel',
                 contentClass: 'workbench-disclosure__fields',
                 toggleHidden: !queryFeatureEnabled(context, 'query-options')
-            }, h`<div class="workbench-disclosure__field">
-                    <label for="query-timeout">Query timeout</label>
-                    <input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
-                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')} />
+            }, h`<div id="query-timeout-field" class="workbench-disclosure__field query-timeout-field"
+                    ?hidden=${!queryFeatureEnabled(context, 'query-timeout')}>
+                    <label for="query-timeout">Timeout</label>
+                    <div class="workbench-input-unit"><input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
+                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')}
+                        aria-describedby="query-timeout-unit query-timeout-help" /><span id="query-timeout-unit"
+                        class="workbench-input-unit__suffix">seconds</span></div>
+                    <p id="query-timeout-help" class="workbench-field__help">0 means no limit</p>
                 </div>
                 <div class="workbench-disclosure__field">
                     <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
@@ -2249,10 +2254,12 @@ module workbench {
                         ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
                         <span>Include inferred statements</span></label>
                 </div>
-                <div class="workbench-disclosure__actions query-disclosure__actions"><input id="query-reset-namespaces" type="button" value="Clear"
+                <div class="workbench-disclosure__actions query-disclosure__actions"><button id="query-insert-prefixes"
+                    class="workbench-action workbench-action--secondary" type="button"
+                    title="Add a PREFIX line for every repository namespace the query does not declare yet"
                     data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
-                    @click=${() => invoke('workbench.query.resetNamespaces')} /></div>`);
+                    @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
             return h`<div id="query-page" class="query-page"
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"

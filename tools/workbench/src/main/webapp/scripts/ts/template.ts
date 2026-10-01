@@ -18,6 +18,8 @@ module workbench {
         expanded?: boolean;
         toggleHidden?: boolean;
         hidden?: boolean;
+        /** Optional icon template shown before the toggle label. */
+        icon?: any;
     }
 
     export interface DetailDisclosureElements {
@@ -41,7 +43,7 @@ module workbench {
                     class=${classes('workbench-disclosure__toggle', options.toggleClass || '')}
                     aria-controls=${options.panelId} aria-expanded=${expanded ? 'true' : 'false'}
                     aria-label=${options.accessibleName || options.label} ?hidden=${!!options.toggleHidden}>
-                    <span class="workbench-disclosure__toggle-label">${options.label}</span>
+                    ${options.icon || ''}<span class="workbench-disclosure__toggle-label">${options.label}</span>
                     <svg class="workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron"
                         data-workbench-icon="chevron" viewBox="0 0 24 24" width="16" height="16"
                         focusable="false" aria-hidden="true"><path d=${chevronPath}></path></svg>

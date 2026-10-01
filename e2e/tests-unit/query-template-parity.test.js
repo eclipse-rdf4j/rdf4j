@@ -162,7 +162,7 @@ test('query-page feature policy hides configured controls without rendering resu
         ['id="save-query-toggle"', 'query saving'],
         ['id="query-timeout"', 'query timeout'],
         ['id="infer"', 'inferred statements'],
-        ['id="query-reset-namespaces"', 'namespace reset']
+        ['id="query-insert-prefixes"', 'prefix insertion']
     ];
     hiddenBindings.forEach(([selector, description]) => {
         const hiddenValue = dynamicAttributeValue(page, selector, '\\?hidden');
@@ -325,7 +325,7 @@ test('individual query feature policies hide their matching controls and explana
         ['id="query-compare-swap"', 'query-swap'],
         ['id="rerun-explanation"', 'query-rerun'],
         ['id="query-sidebar-toggle"', 'editor-sidebar'],
-        ['id="query-reset-namespaces"', 'editor-namespaces'],
+        ['id="query-insert-prefixes"', 'editor-namespaces'],
         ['id="explain-format"', 'explain-format-text'],
         ['id="explain-level"', 'explain-level-optimized'],
         ['id="copy-explanation"', 'explain-copy'],
@@ -404,4 +404,27 @@ test('query text stays a Lit text binding instead of becoming executable markup'
     assert.equal(queryBinding.value, dangerousQuery);
     assert.ok(!queryBinding.before.includes(dangerousQuery));
     assert.ok(!queryBinding.after.includes(dangerousQuery));
+});
+
+function templateText(page) {
+    return page.templates.map(template => template.strings.map((value, index) => value
+        + (index < template.values.length && ['string', 'number'].includes(typeof template.values[index])
+            ? String(template.values[index]) : '')).join('')).join('');
+}
+
+test('query settings, timeout and prefix insertion use clear names and units', () => {
+    const page = queryTemplate();
+    const values = page.bindings.map(binding => binding.value).filter(value => typeof value === 'string');
+    assert.equal(values.includes('Query settings'), true, 'the query disclosure is labeled Query settings');
+    assert.equal(values.includes('Options'), false, 'no disclosure on the query page is labeled Options');
+    const text = templateText(page);
+    assert.match(text, /<label[^>]*for="query-timeout"[^>]*>Timeout<\/label>/);
+    assert.match(text, /seconds/);
+    assert.match(text, /0 means no limit/);
+    assert.doesNotMatch(text, /value="Clear"/);
+    assert.match(text, /Insert prefixes/);
+
+    const disabled = queryTemplate({ queryFeatures: { 'query-timeout': false } });
+    assert.equal(dynamicAttributeValue(disabled, 'id="query-timeout-field"', '\\?hidden'), true,
+        'a disabled timeout hides its whole field, label included');
 });

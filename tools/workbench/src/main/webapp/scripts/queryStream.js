@@ -1809,7 +1809,7 @@ var workbench;
                 var optionsDisclosure = workbench.detailDisclosure.create(this.document, {
                     id: this.elementId('query-result-options-disclosure'),
                     toggleId: this.elementId('query-result-options-toggle'), panelId: optionsPanelId,
-                    label: 'Options', accessibleName: 'Result options', ownerClass: 'query-result-disclosure',
+                    label: 'Display', accessibleName: 'Result display options', ownerClass: 'query-result-disclosure',
                     toggleClass: 'query-disclosure__toggle query-result-options-toggle workbench-action workbench-action--secondary',
                     panelClass: 'query-disclosure__panel query-result-options-panel'
                 });
@@ -2224,7 +2224,7 @@ var workbench;
                 if (error.code === 'incomplete' || this.state.rowCount > 0
                     || /(?:EOFException|QueryEvaluationException)/i.test(error.message)) {
                     return 'The result stream ended before the query completed. The visible results are incomplete. '
-                        + 'If the query timed out, increase Query timeout in Options and run it again.';
+                        + 'If the query timed out, increase the timeout in Query settings and run it again.';
                 }
                 return error.message;
             };

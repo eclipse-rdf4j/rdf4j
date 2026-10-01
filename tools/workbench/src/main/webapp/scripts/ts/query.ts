@@ -24,7 +24,6 @@ module workbench {
         /**
          * Holds the current selected query language.
          */
-        var currentQueryLn = '';
         var yasqe: YASQE_Instance = null;
         var compareYasqe: YASQE_Instance = null;
         var vizRenderer: any = null;
@@ -1040,50 +1039,49 @@ module workbench {
         }
 
         /**
-         * Populate reasonable default name space declarations into the query text area.
-         * The server has provided the declaration text in hidden elements.
-         */
-        export function loadNamespaces() {
-            function toggleNamespaces() {
-                workbench.query.setQueryValue(namespaces.text());
-                currentQueryLn = queryLn;
-            }
-
-            var query: string = workbench.query.getQueryValue();
-            var queryLn = $('#queryLn').val();
-            var namespaces = $('#' + queryLn + '-namespaces');
-            var last = $('#' + currentQueryLn + '-namespaces');
-            if (namespaces.length) {
-                if (!query || query.trim().length == 0) {
-                    toggleNamespaces();
-                }
-                if (last.length && (query == last.text())) {
-                    toggleNamespaces();
-                }
-            }
-        }
-
-        /**
          *Fires when the query language is changed
          */
         export function onQlChange() {
-            workbench.query.loadNamespaces();
             workbench.query.updateYasqe();
         }
+
         /**
-         * Invoked by the "clear" button. After confirming with the user,
-         * clears the query text and loads the current repository and query
-         * language name space declarations.
+         * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
+         * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
          */
-        export function resetNamespaces() {
-            if (!isEditorNamespaceResetEnabled()) {
+        export function insertPrefixes() {
+            if (!isPrefixInsertionEnabled()) {
                 return;
             }
-            if (confirm('Click OK to clear the current query text and replace' +
-                'it with the ' + $('#queryLn').val() +
-                ' namespace declarations.')) {
-                workbench.query.setQueryValue('');
-                workbench.query.loadNamespaces();
+            var namespaces: { [prefix: string]: string } = typeof sparqlNamespaces === 'object' && sparqlNamespaces
+                ? sparqlNamespaces : {};
+            var query = getPaneRawQueryValue('primary');
+            var declared: { [prefix: string]: boolean } = {};
+            var declaration = /^\s*PREFIX\s+([^:\s]*):/gim;
+            var match: RegExpExecArray;
+            while ((match = declaration.exec(query)) !== null) {
+                declared[match[1]] = true;
+            }
+            var lines = Object.keys(namespaces).map(function(key: string) {
+                var prefix = key.charAt(key.length - 1) === ':' ? key.slice(0, -1) : key;
+                return { prefix: prefix, line: 'PREFIX ' + prefix + ': <' + namespaces[key] + '>' };
+            }).filter(function(entry: any) {
+                return !declared[entry.prefix];
+            }).sort(function(left: any, right: any) {
+                return left.prefix < right.prefix ? -1 : left.prefix > right.prefix ? 1 : 0;
+            }).map(function(entry: any) {
+                return entry.line;
+            });
+            if (!lines.length) {
+                return;
+            }
+            var text = lines.join('\n') + '\n';
+            if (yasqe) {
+                var start = { line: 0, ch: 0 };
+                yasqe.getDoc().replaceRange(text, start, start);
+                yasqe.focus();
+            } else {
+                setPaneQueryValue('primary', text + query);
             }
         }
 
@@ -3124,8 +3122,8 @@ module workbench {
             return !!button && button.getAttribute('data-query-refresh-enabled') !== 'false';
         }
 
-        function isEditorNamespaceResetEnabled(): boolean {
-            var button = <HTMLInputElement>document.getElementById('query-reset-namespaces');
+        function isPrefixInsertionEnabled(): boolean {
+            var button = <HTMLElement>document.getElementById('query-insert-prefixes');
             return !button || button.getAttribute('data-editor-namespaces-enabled') !== 'false';
         }
 
@@ -4879,7 +4877,6 @@ module workbench {
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
                     compareSidebarOpen: compareSidebarOpen,
-                    currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
                     explanationHighlightMode: explanationHighlightMode,
                     explanationHiddenProperties: explanationHiddenProperties,
@@ -4891,7 +4888,6 @@ module workbench {
             },
             resetInternalState: function() {
                 clearActiveQuery();
-                currentQueryLn = '';
                 yasqe = null;
                 compareYasqe = null;
                 vizRenderer = null;
@@ -4955,9 +4951,6 @@ module workbench {
                 }
                 if ('compareSidebarOpen' in state) {
                     compareSidebarOpen = state.compareSidebarOpen;
-                }
-                if ('currentQueryLn' in state) {
-                    currentQueryLn = state.currentQueryLn;
                 }
                 if ('diffNotReadyLabel' in state) {
                     diffNotReadyLabel = state.diffNotReadyLabel;
@@ -5077,7 +5070,6 @@ workbench.addLoad(function queryPageLoaded() {
             }
         }
     }
-    workbench.query.loadNamespaces();
 
     // Trim the query text area contents of any leading and/or trailing
     // whitespace.
