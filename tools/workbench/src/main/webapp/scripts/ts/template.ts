@@ -176,6 +176,29 @@ module workbench {
         }
     }
 
+    /** Number formatting shared by the Workbench pages. */
+    export module format {
+        /**
+         * Formats an integer (number or digit string) with Intl.NumberFormat for the given locale
+         * (the browser locale when omitted); any other value is returned unchanged as text.
+         */
+        export function count(value: any, locale?: string): string {
+            if (value === null || typeof value === 'undefined') {
+                return '';
+            }
+            var text = String(value);
+            var trimmed = text.trim();
+            if (!/^-?\d+$/.test(trimmed)) {
+                return text;
+            }
+            var number = Number(trimmed);
+            if (!isFinite(number) || Math.abs(number) > 9007199254740991) {
+                return text;
+            }
+            return new Intl.NumberFormat(locale).format(number);
+        }
+    }
+
     var requestIdCounter = 0;
 
     var motionDisclosureDuration = 180;

@@ -30,8 +30,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 07:30Z) M1.5 One content width and flatter containers (the Remove and Clear warnings now sit inside their form card).
 - [x] (2026-10-01 07:50Z) M1.6 One form layout (Remove and Clear use `.workbench-field-stack`; the create forms keep their stacked `table.dataentry` markup, which `create.ts` reads).
 - [x] (2026-10-01 08:10Z) M1.7 Callouts (Lit helper `callout()` in `workbenchViews.ts`, DOM helper `workbench.createCallout(document, kind, body, title?)`; page error messages on Remove, Clear, Add, Explore and Namespaces use the error variant).
-- [ ] M1.8 (in progress) Visible editor overlay icons and formatted numbers.
-- [ ] M2.1 One navigation model everywhere.
+- [x] (2026-10-01 08:30Z) M1.8 Visible editor overlay icons and formatted numbers.
+- [ ] M2.1 (in progress) One navigation model everywhere.
 - [ ] M2.2 Split the shell from the page outlet (behavior-neutral refactor).
 - [ ] M2.3 A compact context bar with switchers (mockups 01 and 04).
 - [ ] M2.4 Regroup the menu and make it sticky.
@@ -140,6 +140,8 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: the unchanged spec passed 4/4 against the old build and failed 3/4 against the new one; after the probe change it passed 15/15.
 - Observation (M1.3): `e2e/tests/query-result-toolbar-geometry.spec.js` was already failing in the M0.4 baseline run (`justify-self` of the Download toggle is `auto`, expected `start`, in its synthetic markup); it is unrelated to the button component.
   Evidence: baseline log entry 25 at `query-result-toolbar-geometry.spec.js:60`.
+- Observation (M1.8): the editor overlay icons were nearly invisible because YASQE draws them in 100-unit view boxes and the redesign stroked them with `stroke-width: 1.75px` in view-box units, which renders at 0.3px when the icon is 18px wide. `vector-effect: non-scaling-stroke` on the icon paths fixes it.
+  Evidence: probe before the change: `scale 0.18, stroke-width 1.75px, vector-effect none` (effective 0.315px).
 
 ## Decision Log
 
@@ -210,9 +212,15 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Rationale: one set of classes for every button without rewriting the wrapper markup that legacy scripts and tests rely on.
   Date/Author: 2026-10-01 / implementer.
 
+- Decision (M1.8): `workbench.format.count` formats integers only (digit strings or numbers within the safe integer range) and returns any other value unchanged. Summary's repository size uses it now; the query status line and the result badges adopt it in M3.5, which rewrites those strings anyway, so their tests change only once.
+  Rationale: avoids changing the same status-line assertions twice.
+  Date/Author: 2026-10-01 / implementer.
+
 ## Outcomes & Retrospective
 
-Nothing has been implemented yet. At the end of each milestone, add a short paragraph here: what was delivered, which acceptance checks passed, what was deferred, and what you would do differently.
+At the end of each milestone, add a short paragraph here: what was delivered, which acceptance checks passed, what was deferred, and what you would do differently.
+
+M1 (2026-10-01): the shell no longer links `styles/default/screen.css`; result headings show variable names as written; one button component (primary, secondary, ghost, danger, danger-outline, icon) replaces the per-id rules on the Query page and in the result renderer; one heading scale; key/value lists replace `table.simple` on Summary and Information; browsing cards share one width (surface capped at 1200px) and form cards are 760px; Remove and Clear use stacked fields; callouts (info, warning, error) replace the gray notes and page error paragraphs; the editor overlay icons are visible 28px ghost buttons; `workbench.format.count` formats the repository size. `e2e/tests/workbench-design-system.spec.js` (5 tests) passes; the unit suite has only the 4 failures recorded in the baseline. Lesson: a computed-style probe that injects the retired stylesheet into the page is a much faster way to find what the redesign silently inherited than comparing screenshots.
 
 ## Context and Orientation
 

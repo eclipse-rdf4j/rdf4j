@@ -546,27 +546,53 @@ body.workbench-body .saved-query-row .yasqe .CodeMirror-scroll {
 	min-height: 0;
 }
 
+/* Editor overlay buttons (share link, full screen) are 28px ghost buttons (M1.8, mockup 01). YASQE's
+ * icons use 100-unit view boxes, so their strokes must not scale with the view box. */
 body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg,
 body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg,
 body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg {
+	box-sizing: border-box;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 20px;
-	height: 20px;
+	width: 28px;
+	height: 28px;
+	margin-left: 4px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 6px;
+	background: var(--workbench-surface);
 	color: var(--workbench-muted);
+	cursor: pointer;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg:focus-visible,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg:focus-visible,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg:focus-visible {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
 }
 
 body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg svg,
 body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg svg,
 body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg svg {
-	width: 18px;
-	height: 18px;
+	width: 16px;
+	height: 16px;
 	fill: none !important;
 	stroke: currentColor !important;
 	stroke-linecap: round;
 	stroke-linejoin: round;
-	stroke-width: 1.75px;
+	stroke-width: 1.5px;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg svg *,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg svg *,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg svg * {
+	vector-effect: non-scaling-stroke;
+	stroke-width: 1.5px;
 }
 
 body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg *,

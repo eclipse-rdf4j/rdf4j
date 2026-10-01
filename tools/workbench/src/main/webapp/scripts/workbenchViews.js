@@ -214,6 +214,12 @@ var workbench;
             }
             return typeof term.value === 'undefined' ? '' : String(term.value);
         }
+        /** Formats integer counts with workbench.format.count (template.ts) when it is loaded. */
+        function formatCount(value, context) {
+            var format = workbench.format;
+            var raw = text(value);
+            return format && typeof format.count === 'function' ? format.count(raw, context.locale) : raw;
+        }
         function field(record, name, fallback) {
             if (record && typeof record[name] !== 'undefined') {
                 return record[name];
@@ -611,7 +617,7 @@ var workbench;
                 ['Repository location', field(row, 'location')],
                 ['Server', field(row, 'server')]
             ], 'workbench-summary-location'), simpleSection(runtime, 'Repository Size', [
-                ['Repository size', field(row, 'size')],
+                ['Repository size', formatCount(field(row, 'size'), context)],
                 ['Named contexts', field(row, 'contexts')]
             ], 'workbench-summary-size'), config ? h(__makeTemplateObject(["<section class=\"workbench-island workbench-summary-config\">\n                    <details id=\"summary-config-model\" class=\"workbench-options\">\n                        <summary>Config Model", "</summary>\n                        <pre role=\"region\">", "</pre>\n                    </details>\n                </section>"], ["<section class=\"workbench-island workbench-summary-config\">\n                    <details id=\"summary-config-model\" class=\"workbench-options\">\n                        <summary>Config Model", "</summary>\n                        <pre role=\"region\">", "</pre>\n                    </details>\n                </section>"]), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), config) : '');
         }

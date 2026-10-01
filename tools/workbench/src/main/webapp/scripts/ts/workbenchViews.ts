@@ -151,6 +151,8 @@ module workbench {
             executionFormId?: string;
             resultsMountId?: string;
             rowRegions?: RowRegions;
+            /** Locale for number formatting; the browser locale when omitted. */
+            locale?: string;
         }
 
         // The outer template owns each region's Node; a separate Lit root owns its contents.
@@ -229,6 +231,13 @@ module workbench {
                     + termText(term.object) + ' >>';
             }
             return typeof term.value === 'undefined' ? '' : String(term.value);
+        }
+
+        /** Formats integer counts with workbench.format.count (template.ts) when it is loaded. */
+        function formatCount(value: any, context: ViewContext): string {
+            const format = (workbench as any).format;
+            const raw = text(value);
+            return format && typeof format.count === 'function' ? format.count(raw, context.locale) : raw;
         }
 
         function field(record: any, name: string, fallback?: string): any {
@@ -745,7 +754,7 @@ module workbench {
                     ['Server', field(row, 'server')]
                 ], 'workbench-summary-location')}
                 ${simpleSection(runtime, 'Repository Size', [
-                    ['Repository size', field(row, 'size')],
+                    ['Repository size', formatCount(field(row, 'size'), context)],
                     ['Named contexts', field(row, 'contexts')]
                 ], 'workbench-summary-size')}
                 ${config ? h`<section class="workbench-island workbench-summary-config">

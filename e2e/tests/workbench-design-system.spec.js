@@ -135,3 +135,42 @@ test('Remove and Clear stack labels above equally wide fields', async ({ page })
 		expect(new Set(layout.widths).size, `${view} ${JSON.stringify(layout.widths)}`).toBe(1);
 	}
 });
+
+test('editor overlay icons are drawn visibly as 28px ghost buttons', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID);
+	const metrics = await page.evaluate(() => {
+		const channel = (value) => {
+			const normalized = value / 255;
+			return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+		};
+		const luminance = (rgb) => {
+			const [r, g, b] = rgb.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+			return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+		};
+		return ['.yasqe_share', '.yasqe_fullscreenBtn'].map((selector) => {
+			const button = document.querySelector(selector);
+			const svg = button.querySelector('svg');
+			const path = svg.querySelector('path');
+			const pathStyle = getComputedStyle(path);
+			const viewBox = svg.viewBox.baseVal;
+			const scale = viewBox && viewBox.width ? svg.getBoundingClientRect().width / viewBox.width : 1;
+			const effectiveStroke = parseFloat(pathStyle.strokeWidth)
+				* (pathStyle.vectorEffect === 'non-scaling-stroke' ? 1 : scale);
+			const background = getComputedStyle(document.querySelector('.CodeMirror')).backgroundColor;
+			const foreground = pathStyle.stroke;
+			const lighter = Math.max(luminance(foreground), luminance(background));
+			const darker = Math.min(luminance(foreground), luminance(background));
+			return {
+				selector,
+				size: Math.round(button.getBoundingClientRect().width),
+				effectiveStroke,
+				contrast: (lighter + 0.05) / (darker + 0.05)
+			};
+		});
+	});
+	for (const metric of metrics) {
+		expect(metric.contrast, JSON.stringify(metric)).toBeGreaterThanOrEqual(3);
+		expect(metric.effectiveStroke, JSON.stringify(metric)).toBeGreaterThanOrEqual(1);
+		expect(metric.size, JSON.stringify(metric)).toBe(28);
+	}
+});

@@ -129,6 +129,30 @@ var workbench;
         }
         detailDisclosure.bindAll = bindAll;
     })(detailDisclosure = workbench.detailDisclosure || (workbench.detailDisclosure = {}));
+    /** Number formatting shared by the Workbench pages. */
+    var format;
+    (function (format) {
+        /**
+         * Formats an integer (number or digit string) with Intl.NumberFormat for the given locale
+         * (the browser locale when omitted); any other value is returned unchanged as text.
+         */
+        function count(value, locale) {
+            if (value === null || typeof value === 'undefined') {
+                return '';
+            }
+            var text = String(value);
+            var trimmed = text.trim();
+            if (!/^-?\d+$/.test(trimmed)) {
+                return text;
+            }
+            var number = Number(trimmed);
+            if (!isFinite(number) || Math.abs(number) > 9007199254740991) {
+                return text;
+            }
+            return new Intl.NumberFormat(locale).format(number);
+        }
+        format.count = count;
+    })(format = workbench.format || (workbench.format = {}));
     var requestIdCounter = 0;
     var motionDisclosureDuration = 180;
     var motionLayoutDuration = 220;
