@@ -864,6 +864,103 @@ var workbench;
         }
         var explorePageSize = 40;
         var rdfsNamespace = 'http://www.w3.org/2000/01/rdf-schema#';
+        var rdfNamespace = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+        /** Pages that fit in one row window are grouped by role; larger pages keep the single windowed table. */
+        var exploreGroupedRowLimit = 80;
+        var exploreRoles = [
+            { key: 'outgoing', title: 'Outgoing', columns: ['predicate', 'object'] },
+            { key: 'incoming', title: 'Incoming', columns: ['subject', 'predicate'] },
+            { key: 'predicate', title: 'Used as predicate', columns: ['subject', 'object'] },
+            { key: 'graph', title: 'Graph contents', columns: ['subject', 'predicate', 'object'] }
+        ];
+        function ntriples(term) {
+            var stream = workbench.queryStream;
+            return stream && typeof stream.ntriplesTerm === 'function' ? stream.ntriplesTerm(term) : text(term);
+        }
+        /** The explored resource in N-Triples form: the server's resolved value, or the typed text when it already
+         *  is N-Triples. */
+        function exploreResourceKey(model) {
+            var resolved = text(pageValue(model, 'explore-resource'));
+            if (resolved) {
+                return resolved;
+            }
+            var typed = text(pageValue(model, 'resource')).trim();
+            return /^(?:<|_:|"|<<)/.test(typed) ? typed : '';
+        }
+        function exploreNamespaces(model) {
+            var map = model.namespaceMap || {};
+            return Object.keys(map).map(function (prefix) { return ({
+                prefix: prefix.charAt(prefix.length - 1) === ':' ? prefix.slice(0, -1) : prefix,
+                name: map[prefix]
+            }); });
+        }
+        /** One Explore cell, formatted like a query result cell (M4.3): prefixed names, values, tags. */
+        function exploreTerm(runtime, term, namespaces) {
+            var h = runtime.html;
+            var stream = workbench.queryStream;
+            if (!term || typeof term !== 'object' || !term.kind || !stream || typeof stream.formatRdfTerm !== 'function') {
+                return text(term);
+            }
+            var display = stream.formatRdfTerm(term, { namespaces: namespaces });
+            var tags = display.kind !== 'literal' ? ''
+                : display.language ? h(__makeTemplateObject(["<span class=\"rdf-language\">@", "", "</span>"], ["<span class=\"rdf-language\">@", "", "</span>"]), display.language, term.direction ? '--' + term.direction : '') : stream.showsDatatypeTag(display)
+                    ? h(__makeTemplateObject(["<span class=\"rdf-datatype\">", "</span>"], ["<span class=\"rdf-datatype\">", "</span>"]), stream.abbreviateIri(display.datatype, namespaces)) : '';
+            var value = display.exploreHref
+                ? h(__makeTemplateObject(["<a href=", " title=", ">", "</a>"], ["<a href=", " title=", ">", "</a>"]), display.exploreHref, display.title, display.label) : h(__makeTemplateObject(["<span title=", ">", "</span>"], ["<span title=", ">", "</span>"]), display.title, display.label);
+            return h(__makeTemplateObject(["<div class=\"resource\">", "", "</div>"], ["<div class=\"resource\">", "", "</div>"]), value, tags);
+        }
+        function exploreGraphLabel(term, namespaces) {
+            if (!term) {
+                return 'Default graph';
+            }
+            var stream = workbench.queryStream;
+            return stream && typeof stream.formatRdfTerm === 'function'
+                ? stream.formatRdfTerm(term, { namespaces: namespaces }).label : text(term);
+        }
+        /** The four role groups: Outgoing, Incoming, Used as predicate and Graph contents (mockup 05). */
+        function exploreRoleGroups(runtime, model, roles) {
+            var h = runtime.html;
+            var namespaces = exploreNamespaces(model);
+            var index = function (name) { return model.vars.indexOf(name); };
+            return exploreRoles.filter(function (role) { return roles[role.key].length; }).map(function (role) {
+                var entries = roles[role.key];
+                var rows = entries.map(function (entry) { return entry.values; });
+                var graphs = rows.map(function (row) { return index('context') >= 0 ? row[index('context')] : null; });
+                var graphKeys = graphs.map(function (graph) { return graph ? ntriples(graph) : ''; });
+                var oneGraph = role.key === 'graph' || graphKeys.every(function (key) { return key === graphKeys[0]; });
+                var columns = role.columns.concat(oneGraph ? [] : ['context']);
+                var headingId = 'explore-group-' + role.key;
+                return h(__makeTemplateObject(["<section class=\"explore-group\" data-explore-role=", " aria-labelledby=", ">\n                    <h3 id=", " class=\"explore-group__title\">", "\n                        <span class=\"explore-group__count\">", "</span>\n                        ", "</h3>\n                    <table class=\"data\">\n                        <thead><tr>", "</tr></thead>\n                        <tbody>", "</tbody>\n                    </table>\n                </section>"], ["<section class=\"explore-group\" data-explore-role=", " aria-labelledby=", ">\n                    <h3 id=", " class=\"explore-group__title\">", "\n                        <span class=\"explore-group__count\">", "</span>\n                        ", "</h3>\n                    <table class=\"data\">\n                        <thead><tr>", "</tr></thead>\n                        <tbody>", "</tbody>\n                    </table>\n                </section>"]), role.key, headingId, headingId, role.title, rows.length, oneGraph && role.key !== 'graph'
+                    ? h(__makeTemplateObject(["<span class=\"explore-group__graph\">Graph: ", "</span>"], ["<span class=\"explore-group__graph\">Graph: ", "</span>"]), exploreGraphLabel(graphs[0], namespaces)) : '', columns.map(function (name) { return h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), name === 'context' ? 'Graph' : columnLabel(name)); }), entries.map(function (entry) { return entry.values; }).map(function (row, position) { return h(__makeTemplateObject(["<tr\n                            data-workbench-row-index=", ">", "</tr>"], ["<tr\n                            data-workbench-row-index=", ">", "</tr>"]), entries[position].index, columns.map(function (name) { return h(__makeTemplateObject(["<td\n                            data-label=", ">", "</td>"], ["<td\n                            data-label=", ">", "</td>"]), name === 'context' ? 'Graph' : columnLabel(name), name === 'context' && !row[index(name)]
+                    ? 'Default graph' : exploreTerm(runtime, row[index(name)], namespaces)); })); }));
+            });
+        }
+        /** The explored resource: label, IRI with Copy, types as chips, comment and "Query this resource". */
+        function exploreResourceCard(runtime, model, summary, resource) {
+            var h = runtime.html;
+            var namespaces = exploreNamespaces(model);
+            var key = exploreResourceKey(model) || resource;
+            var isIri = /^<[^<]/.test(key);
+            var comment = summary.comment ? text(summary.comment) : '';
+            var types = summary.types || [];
+            var copy = function () {
+                var clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+                if (clipboard && typeof clipboard.writeText === 'function') {
+                    clipboard.writeText(isIri ? key.slice(1, -1) : key);
+                }
+            };
+            var toggleComment = function (event) {
+                var button = event.currentTarget;
+                var card = button && button.closest ? button.closest('.explore-resource-card') : null;
+                var paragraph = card ? card.querySelector('.explore-resource-card__comment') : null;
+                if (paragraph) {
+                    var expanded = paragraph.classList.toggle('is-expanded');
+                    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                    button.textContent = expanded ? 'Show less' : 'Show more';
+                }
+            };
+            return h(__makeTemplateObject(["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"], ["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"]), summary.label ? h(__makeTemplateObject(["<h2>", "</h2>"], ["<h2>", "</h2>"]), text(summary.label)) : '', isIri ? key.slice(1, -1) : key, copy, icon(runtime, 'copy'), types.length ? h(__makeTemplateObject(["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"], ["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"]), types.map(function (type) { return h(__makeTemplateObject(["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"], ["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"]), 'explore?resource=' + encodeURIComponent(ntriples(type)), exploreGraphLabel(type, namespaces)); })) : '', comment ? h(__makeTemplateObject(["<p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", ""], ["<p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", ""]), comment, comment.length > 240 ? h(__makeTemplateObject(["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"], ["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"]), toggleComment) : '') : '', isIri ? h(__makeTemplateObject(["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"], ["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"]), 'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }'), icon(runtime, 'query')) : '');
+        }
         var exploreGroups = [
             { key: 'superClasses', title: 'Super Classes', predicate: rdfsNamespace + 'subClassOf', field: 'object' },
             { key: 'subClasses', title: 'Sub Classes', predicate: rdfsNamespace + 'subClassOf', field: 'subject' },
@@ -894,8 +991,14 @@ var workbench;
                     cursor: states[group.key].cursor
                 };
             });
+            var key = exploreResourceKey(model);
             return {
                 groups: groups,
+                resourceKey: key,
+                // Rows grouped by the role the explored resource plays, for pages small enough to list (M5.1).
+                roles: key && rowCount(model) <= exploreGroupedRowLimit
+                    ? { outgoing: [], predicate: [], incoming: [], graph: [] } : null,
+                types: [],
                 labelCount: 0,
                 label: null,
                 commentCount: 0,
@@ -937,16 +1040,33 @@ var workbench;
             var subjectIndex = model.vars.indexOf('subject');
             var predicateIndex = model.vars.indexOf('predicate');
             var objectIndex = model.vars.indexOf('object');
+            var contextIndex = model.vars.indexOf('context');
+            var key = accumulator.resourceKey;
+            var matches = function (term) { return !!key && !!term && ntriples(term) === key; };
             rows.forEach(function (row, offset) {
                 var subject = subjectIndex >= 0 ? row[subjectIndex] : null;
                 var predicate = predicateIndex >= 0 ? text(row[predicateIndex]) : '';
                 var object = objectIndex >= 0 ? row[objectIndex] : null;
                 var rowIndex = start + offset;
-                if (predicate === rdfsNamespace + 'label') {
+                // Another resource's label must not become the heading: only rows about the explored resource count.
+                var aboutResource = !key || matches(subject);
+                if (accumulator.roles) {
+                    var role = matches(subject) ? 'outgoing'
+                        : predicateIndex >= 0 && matches(row[predicateIndex]) ? 'predicate'
+                            : matches(object) ? 'incoming'
+                                : contextIndex >= 0 && matches(row[contextIndex]) ? 'graph' : null;
+                    if (role) {
+                        accumulator.roles[role].push({ values: row, index: rowIndex });
+                    }
+                }
+                if (aboutResource && predicate === rdfNamespace + 'type' && object) {
+                    accumulator.types.push(object);
+                }
+                if (predicate === rdfsNamespace + 'label' && aboutResource) {
                     accumulator.labelCount++;
                     accumulator.label = object;
                 }
-                else if (predicate === rdfsNamespace + 'comment') {
+                else if (predicate === rdfsNamespace + 'comment' && aboutResource) {
                     accumulator.commentCount++;
                     accumulator.comment = object;
                 }
@@ -1001,6 +1121,8 @@ var workbench;
             return {
                 label: accumulator.labelCount === 1 ? accumulator.label : null,
                 comment: accumulator.commentCount === 1 ? accumulator.comment : null,
+                roles: accumulator.roles,
+                types: accumulator.types,
                 subclassCount: accumulator.subclassCount,
                 domainCount: accumulator.domainCount,
                 subPropertyCount: accumulator.subPropertyCount,
@@ -1083,11 +1205,19 @@ var workbench;
             }
             var groupedResults = summary.subclassCount || summary.domainCount || summary.rangeCount
                 ? h(__makeTemplateObject(["<div class=\"workbench-explore-groups\">\n                    ", "\n                    ", "\n                </div>"], ["<div class=\"workbench-explore-groups\">\n                    ", "\n                    ", "\n                </div>"]), classGroups.some(function (group) { return !!group; }) ? h(__makeTemplateObject(["<div>", "</div>"], ["<div>", "</div>"]), classGroups) : '', propertyGroups.some(function (group) { return !!group; }) ? h(__makeTemplateObject(["<div>", "</div>"], ["<div>", "</div>"]), propertyGroups) : '') : '';
-            return h(__makeTemplateObject(["", "\n                ", "\n                ", "", "\n                <p id=\"explore-resource-summary\" class=\"workbench-page-meta\" ?hidden=", ">\n                    <span id=\"explore-resource-value\">", "</span><span id=\"explore-result-count\">", "</span>\n                </p>\n                <form id=\"explore-form\" class=\"workbench-island\" action=\"explore\">\n                    <input id=\"workbench-total-result-count\" type=\"hidden\"\n                        value=", " />\n                    <div id=\"explore-controls\"><div id=\"explore-resource-field\" class=\"workbench-field\">\n                        <label for=\"resource\">Resource</label><input id=\"resource\" name=\"resource\" size=\"48\" type=\"text\" value=", " />\n                    </div>\n                    ", "\n                    </div>\n                </form>\n                <section id=\"explore-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                    <div id=\"explore-pagination\" class=\"workbench-form-actions\" ?hidden=", ">\n                        <button id=\"previousX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Previous ", "</button>\n                        <button id=\"nextX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Next ", "</button>\n                    </div>\n                </section>"], ["", "\n                ", "\n                ", "", "\n                <p id=\"explore-resource-summary\" class=\"workbench-page-meta\" ?hidden=", ">\n                    <span id=\"explore-resource-value\">", "</span><span id=\"explore-result-count\">", "</span>\n                </p>\n                <form id=\"explore-form\" class=\"workbench-island\" action=\"explore\">\n                    <input id=\"workbench-total-result-count\" type=\"hidden\"\n                        value=", " />\n                    <div id=\"explore-controls\"><div id=\"explore-resource-field\" class=\"workbench-field\">\n                        <label for=\"resource\">Resource</label><input id=\"resource\" name=\"resource\" size=\"48\" type=\"text\" value=", " />\n                    </div>\n                    ", "\n                    </div>\n                </form>\n                <section id=\"explore-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                    <div id=\"explore-pagination\" class=\"workbench-form-actions\" ?hidden=", ">\n                        <button id=\"previousX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Previous ", "</button>\n                        <button id=\"nextX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Next ", "</button>\n                    </div>\n                </section>"]), resultLimited ? h(__makeTemplateObject(["<p id=\"result-limited\">The results shown maybe truncated.</p>"], ["<p id=\"result-limited\">The results shown maybe truncated.</p>"])) : '', errorCallout(runtime, model), summary.label ? h(__makeTemplateObject(["<h2>", "</h2>"], ["<h2>", "</h2>"]), text(summary.label)) : '', summary.comment ? h(__makeTemplateObject(["<p class=\"workbench-prose\">", "</p>"], ["<p class=\"workbench-prose\">", "</p>"]), text(summary.comment)) : '', !resource, resource, total, text(pageValue(model, 'total-result-count')), resource, workbench.detailDisclosure.render(h, {
+            // Group only when every row of the page has a role; anything unexpected keeps the plain table.
+            // Display keeps its toggle in the form row and opens its panel in a track below the row.
+            var exploreDisplay = workbench.detailDisclosure.renderSeparated(h, {
                 id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
-                panelId: 'explore-result-options-panel', label: 'Result options',
+                panelId: 'explore-result-options-panel', label: 'Display', accessibleName: 'Result display options',
                 ownerClass: 'workbench-options workbench-form-subgroup'
-            }, h(__makeTemplateObject(["<div class=\"workbench-field workbench-disclosure__field\"><label for=\"limit_explore\">Result limit</label>\n                            ", "\n                        </div><label class=\"workbench-check\" for=\"explore-show-datatypes\">\n                            <input id=\"explore-show-datatypes\" type=\"checkbox\" name=\"show-datatypes\" value=\"show-dataypes\" checked />\n                            <span>Show datatypes</span></label>"], ["<div class=\"workbench-field workbench-disclosure__field\"><label for=\"limit_explore\">Result limit</label>\n                            ", "\n                        </div><label class=\"workbench-check\" for=\"explore-show-datatypes\">\n                            <input id=\"explore-show-datatypes\" type=\"checkbox\" name=\"show-datatypes\" value=\"show-dataypes\" checked />\n                            <span>Show datatypes</span></label>"]), limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100'))), total ? h(__makeTemplateObject(["", "", ""], ["", "", ""]), groupedResults, table(runtime, model, context, { linkTerms: true })) : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">No results to display.</p>"], ["<p class=\"workbench-empty\" role=\"status\">No results to display.</p>"])), total === 0, 'Previous ' + total, function () { return invoke('workbench.paging.previousOffset', 'explore'); }, total, 'Next ' + total, function () { return invoke('workbench.paging.nextOffset', 'explore'); }, total);
+            }, h(__makeTemplateObject(["<div class=\"workbench-field workbench-disclosure__field\"><label for=\"limit_explore\">Result limit</label>\n                    ", "\n                </div><label class=\"workbench-check\" for=\"explore-show-datatypes\">\n                    <input id=\"explore-show-datatypes\" type=\"checkbox\" name=\"show-datatypes\" value=\"show-dataypes\" checked />\n                    <span>Show datatypes</span></label>"], ["<div class=\"workbench-field workbench-disclosure__field\"><label for=\"limit_explore\">Result limit</label>\n                    ", "\n                </div><label class=\"workbench-check\" for=\"explore-show-datatypes\">\n                    <input id=\"explore-show-datatypes\" type=\"checkbox\" name=\"show-datatypes\" value=\"show-dataypes\" checked />\n                    <span>Show datatypes</span></label>"]), limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')));
+            var roles = summary.roles;
+            var groupedRows = roles ? exploreRoles.reduce(function (sum, role) { return sum + roles[role.key].length; }, 0) : 0;
+            var grouped = !!roles && !!total && groupedRows === total;
+            return h(__makeTemplateObject(["<form id=\"explore-form\" class=\"workbench-island explore-form\" action=\"explore\">\n                    <input id=\"workbench-total-result-count\" type=\"hidden\"\n                        value=", " />\n                    <div id=\"explore-controls\"><div id=\"explore-resource-field\" class=\"workbench-field\">\n                        <label for=\"resource\">Resource</label>\n                        <div class=\"workbench-search-field\">", "<input id=\"resource\"\n                            name=\"resource\" size=\"48\" type=\"text\" value=", " spellcheck=\"false\"\n                            placeholder=\"<http://\u2026>, prefix:name, _:node or &quot;literal&quot;\" /></div>\n                    </div>\n                    <button id=\"explore-submit\" class=\"workbench-action workbench-action--primary\" type=\"submit\">Explore</button>\n                    ", "\n                    </div>\n                    <div class=\"workbench-action-toolbar__panels workbench-disclosure-track\">", "</div>\n                </form>\n                ", "\n                ", "\n                ", "\n                <p id=\"explore-resource-summary\" class=\"workbench-page-meta\" ?hidden=", ">\n                    <span id=\"explore-resource-value\" hidden>", "</span><span id=\"explore-result-count\">", "</span>\n                </p>\n                <section id=\"explore-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                    <div id=\"explore-pagination\" class=\"workbench-form-actions\" ?hidden=", ">\n                        <button id=\"previousX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Previous ", "</button>\n                        <button id=\"nextX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Next ", "</button>\n                    </div>\n                </section>"], ["<form id=\"explore-form\" class=\"workbench-island explore-form\" action=\"explore\">\n                    <input id=\"workbench-total-result-count\" type=\"hidden\"\n                        value=", " />\n                    <div id=\"explore-controls\"><div id=\"explore-resource-field\" class=\"workbench-field\">\n                        <label for=\"resource\">Resource</label>\n                        <div class=\"workbench-search-field\">", "<input id=\"resource\"\n                            name=\"resource\" size=\"48\" type=\"text\" value=", " spellcheck=\"false\"\n                            placeholder=\"<http://\u2026>, prefix:name, _:node or &quot;literal&quot;\" /></div>\n                    </div>\n                    <button id=\"explore-submit\" class=\"workbench-action workbench-action--primary\" type=\"submit\">Explore</button>\n                    ", "\n                    </div>\n                    <div class=\"workbench-action-toolbar__panels workbench-disclosure-track\">", "</div>\n                </form>\n                ", "\n                ", "\n                ", "\n                <p id=\"explore-resource-summary\" class=\"workbench-page-meta\" ?hidden=", ">\n                    <span id=\"explore-resource-value\" hidden>", "</span><span id=\"explore-result-count\">", "</span>\n                </p>\n                <section id=\"explore-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                    <div id=\"explore-pagination\" class=\"workbench-form-actions\" ?hidden=", ">\n                        <button id=\"previousX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Previous ", "</button>\n                        <button id=\"nextX\" class=\"workbench-action workbench-action--secondary\" type=\"button\" value=", "\n                            @click=", ">Next ", "</button>\n                    </div>\n                </section>"]), text(pageValue(model, 'total-result-count')), icon(runtime, 'search', 'workbench-search-field__icon'), resource, exploreDisplay.owner, exploreDisplay.panel, resultLimited ? h(__makeTemplateObject(["<p id=\"result-limited\">The results shown maybe truncated.</p>"], ["<p id=\"result-limited\">The results shown maybe truncated.</p>"])) : '', errorCallout(runtime, model), resource || exploreResourceKey(model)
+                ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model)) : '', !resource, resource, total, total ? h(__makeTemplateObject(["", "", ""], ["", "", ""]), groupedResults, grouped ? exploreRoleGroups(runtime, model, roles)
+                : table(runtime, model, context, { linkTerms: true })) : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">No results to display.</p>"], ["<p class=\"workbench-empty\" role=\"status\">No results to display.</p>"])), total === 0, 'Previous ' + total, function () { return invoke('workbench.paging.previousOffset', 'explore'); }, total, 'Next ' + total, function () { return invoke('workbench.paging.nextOffset', 'explore'); }, total);
         }
         function limitSelect(runtime, id, _context, selected) {
             var h = runtime.html;

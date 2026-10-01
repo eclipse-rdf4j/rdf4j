@@ -1205,6 +1205,134 @@ module workbench {
 
         const explorePageSize = 40;
         const rdfsNamespace = 'http://www.w3.org/2000/01/rdf-schema#';
+        const rdfNamespace = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+        /** Pages that fit in one row window are grouped by role; larger pages keep the single windowed table. */
+        const exploreGroupedRowLimit = 80;
+        const exploreRoles: any[] = [
+            { key: 'outgoing', title: 'Outgoing', columns: ['predicate', 'object'] },
+            { key: 'incoming', title: 'Incoming', columns: ['subject', 'predicate'] },
+            { key: 'predicate', title: 'Used as predicate', columns: ['subject', 'object'] },
+            { key: 'graph', title: 'Graph contents', columns: ['subject', 'predicate', 'object'] }
+        ];
+
+        function ntriples(term: any): string {
+            const stream = workbench.queryStream as any;
+            return stream && typeof stream.ntriplesTerm === 'function' ? stream.ntriplesTerm(term) : text(term);
+        }
+
+        /** The explored resource in N-Triples form: the server's resolved value, or the typed text when it already
+         *  is N-Triples. */
+        function exploreResourceKey(model: PageModel): string {
+            const resolved = text(pageValue(model, 'explore-resource'));
+            if (resolved) {
+                return resolved;
+            }
+            const typed = text(pageValue(model, 'resource')).trim();
+            return /^(?:<|_:|"|<<)/.test(typed) ? typed : '';
+        }
+
+        function exploreNamespaces(model: PageModel): { prefix: string; name: string }[] {
+            const map: any = model.namespaceMap || {};
+            return Object.keys(map).map((prefix: string) => ({
+                prefix: prefix.charAt(prefix.length - 1) === ':' ? prefix.slice(0, -1) : prefix,
+                name: map[prefix]
+            }));
+        }
+
+        /** One Explore cell, formatted like a query result cell (M4.3): prefixed names, values, tags. */
+        function exploreTerm(runtime: LitRuntime, term: any, namespaces: any[]): any {
+            const h = runtime.html;
+            const stream = workbench.queryStream as any;
+            if (!term || typeof term !== 'object' || !term.kind || !stream || typeof stream.formatRdfTerm !== 'function') {
+                return text(term);
+            }
+            const display = stream.formatRdfTerm(term, { namespaces });
+            const tags = display.kind !== 'literal' ? ''
+                : display.language ? h`<span class="rdf-language">@${display.language}${term.direction ? '--' + term.direction : ''}</span>`
+                    : stream.showsDatatypeTag(display)
+                        ? h`<span class="rdf-datatype">${stream.abbreviateIri(display.datatype, namespaces)}</span>` : '';
+            const value = display.exploreHref
+                ? h`<a href=${display.exploreHref} title=${display.title}>${display.label}</a>`
+                : h`<span title=${display.title}>${display.label}</span>`;
+            return h`<div class="resource">${value}${tags}</div>`;
+        }
+
+        function exploreGraphLabel(term: any, namespaces: any[]): string {
+            if (!term) {
+                return 'Default graph';
+            }
+            const stream = workbench.queryStream as any;
+            return stream && typeof stream.formatRdfTerm === 'function'
+                ? stream.formatRdfTerm(term, { namespaces }).label : text(term);
+        }
+
+        /** The four role groups: Outgoing, Incoming, Used as predicate and Graph contents (mockup 05). */
+        function exploreRoleGroups(runtime: LitRuntime, model: PageModel, roles: any): any {
+            const h = runtime.html;
+            const namespaces = exploreNamespaces(model);
+            const index = (name: string) => model.vars.indexOf(name);
+            return exploreRoles.filter((role: any) => roles[role.key].length).map((role: any) => {
+                const entries: any[] = roles[role.key];
+                const rows: any[][] = entries.map((entry: any) => entry.values);
+                const graphs = rows.map(row => index('context') >= 0 ? row[index('context')] : null);
+                const graphKeys = graphs.map(graph => graph ? ntriples(graph) : '');
+                const oneGraph = role.key === 'graph' || graphKeys.every(key => key === graphKeys[0]);
+                const columns = role.columns.concat(oneGraph ? [] : ['context']);
+                const headingId = 'explore-group-' + role.key;
+                return h`<section class="explore-group" data-explore-role=${role.key} aria-labelledby=${headingId}>
+                    <h3 id=${headingId} class="explore-group__title">${role.title}
+                        <span class="explore-group__count">${rows.length}</span>
+                        ${oneGraph && role.key !== 'graph'
+                            ? h`<span class="explore-group__graph">Graph: ${exploreGraphLabel(graphs[0], namespaces)}</span>` : ''}</h3>
+                    <table class="data">
+                        <thead><tr>${columns.map((name: string) => h`<th scope="col">${name === 'context' ? 'Graph' : columnLabel(name)}</th>`)}</tr></thead>
+                        <tbody>${entries.map((entry: any) => entry.values).map((row: any[], position: number) => h`<tr
+                            data-workbench-row-index=${entries[position].index}>${columns.map((name: string) => h`<td
+                            data-label=${name === 'context' ? 'Graph' : columnLabel(name)}>${name === 'context' && !row[index(name)]
+                                ? 'Default graph' : exploreTerm(runtime, row[index(name)], namespaces)}</td>`)}</tr>`)}</tbody>
+                    </table>
+                </section>`;
+            });
+        }
+
+        /** The explored resource: label, IRI with Copy, types as chips, comment and "Query this resource". */
+        function exploreResourceCard(runtime: LitRuntime, model: PageModel, summary: any, resource: string): any {
+            const h = runtime.html;
+            const namespaces = exploreNamespaces(model);
+            const key = exploreResourceKey(model) || resource;
+            const isIri = /^<[^<]/.test(key);
+            const comment = summary.comment ? text(summary.comment) : '';
+            const types = summary.types || [];
+            const copy = () => {
+                const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+                if (clipboard && typeof clipboard.writeText === 'function') {
+                    clipboard.writeText(isIri ? key.slice(1, -1) : key);
+                }
+            };
+            const toggleComment = (event: any) => {
+                const button = event.currentTarget;
+                const card = button && button.closest ? button.closest('.explore-resource-card') : null;
+                const paragraph = card ? card.querySelector('.explore-resource-card__comment') : null;
+                if (paragraph) {
+                    const expanded = paragraph.classList.toggle('is-expanded');
+                    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+                    button.textContent = expanded ? 'Show less' : 'Show more';
+                }
+            };
+            return h`<section id="explore-resource-card" class="workbench-island explore-resource-card" aria-label="Explored resource">
+                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}
+                <div class="explore-resource-card__iri"><code id="explore-resource-iri">${isIri ? key.slice(1, -1) : key}</code>
+                    <button class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
+                        aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
+                ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => h`<li>
+                    <a class="explore-chip" href=${'explore?resource=' + encodeURIComponent(ntriples(type))}>${exploreGraphLabel(type, namespaces)}</a></li>`)}</ul>` : ''}
+                ${comment ? h`<p class="explore-resource-card__comment workbench-prose">${comment}</p>
+                    ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
+                        aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}` : ''}
+                ${isIri ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
+                    href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
+            </section>`;
+        }
         const exploreGroups: any[] = [
             { key: 'superClasses', title: 'Super Classes', predicate: rdfsNamespace + 'subClassOf', field: 'object' },
             { key: 'subClasses', title: 'Sub Classes', predicate: rdfsNamespace + 'subClassOf', field: 'subject' },
@@ -1237,8 +1365,14 @@ module workbench {
                     cursor: states[group.key].cursor
                 };
             });
+            const key = exploreResourceKey(model);
             return {
                 groups,
+                resourceKey: key,
+                // Rows grouped by the role the explored resource plays, for pages small enough to list (M5.1).
+                roles: key && rowCount(model) <= exploreGroupedRowLimit
+                    ? { outgoing: [], predicate: [], incoming: [], graph: [] } : null,
+                types: [],
                 labelCount: 0,
                 label: null,
                 commentCount: 0,
@@ -1283,15 +1417,32 @@ module workbench {
             const subjectIndex = model.vars.indexOf('subject');
             const predicateIndex = model.vars.indexOf('predicate');
             const objectIndex = model.vars.indexOf('object');
+            const contextIndex = model.vars.indexOf('context');
+            const key = accumulator.resourceKey;
+            const matches = (term: any) => !!key && !!term && ntriples(term) === key;
             rows.forEach((row: any[], offset: number) => {
                 const subject = subjectIndex >= 0 ? row[subjectIndex] : null;
                 const predicate = predicateIndex >= 0 ? text(row[predicateIndex]) : '';
                 const object = objectIndex >= 0 ? row[objectIndex] : null;
                 const rowIndex = start + offset;
-                if (predicate === rdfsNamespace + 'label') {
+                // Another resource's label must not become the heading: only rows about the explored resource count.
+                const aboutResource = !key || matches(subject);
+                if (accumulator.roles) {
+                    const role = matches(subject) ? 'outgoing'
+                        : predicateIndex >= 0 && matches(row[predicateIndex]) ? 'predicate'
+                            : matches(object) ? 'incoming'
+                                : contextIndex >= 0 && matches(row[contextIndex]) ? 'graph' : null;
+                    if (role) {
+                        accumulator.roles[role].push({ values: row, index: rowIndex });
+                    }
+                }
+                if (aboutResource && predicate === rdfNamespace + 'type' && object) {
+                    accumulator.types.push(object);
+                }
+                if (predicate === rdfsNamespace + 'label' && aboutResource) {
                     accumulator.labelCount++;
                     accumulator.label = object;
-                } else if (predicate === rdfsNamespace + 'comment') {
+                } else if (predicate === rdfsNamespace + 'comment' && aboutResource) {
                     accumulator.commentCount++;
                     accumulator.comment = object;
                 } else if (predicate === rdfsNamespace + 'subClassOf') {
@@ -1343,6 +1494,8 @@ module workbench {
             return {
                 label: accumulator.labelCount === 1 ? accumulator.label : null,
                 comment: accumulator.commentCount === 1 ? accumulator.comment : null,
+                roles: accumulator.roles,
+                types: accumulator.types,
                 subclassCount: accumulator.subclassCount,
                 domainCount: accumulator.domainCount,
                 subPropertyCount: accumulator.subPropertyCount,
@@ -1445,31 +1598,44 @@ module workbench {
                     ${classGroups.some((group: any) => !!group) ? h`<div>${classGroups}</div>` : ''}
                     ${propertyGroups.some((group: any) => !!group) ? h`<div>${propertyGroups}</div>` : ''}
                 </div>` : '';
-            return h`${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
-                ${errorCallout(runtime, model)}
-                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}${summary.comment ? h`<p class="workbench-prose">${text(summary.comment)}</p>` : ''}
-                <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
-                    <span id="explore-resource-value">${resource}</span><span id="explore-result-count">${total}</span>
-                </p>
-                <form id="explore-form" class="workbench-island" action="explore">
+            // Group only when every row of the page has a role; anything unexpected keeps the plain table.
+            // Display keeps its toggle in the form row and opens its panel in a track below the row.
+            const exploreDisplay = workbench.detailDisclosure.renderSeparated(h, {
+                id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
+                panelId: 'explore-result-options-panel', label: 'Display', accessibleName: 'Result display options',
+                ownerClass: 'workbench-options workbench-form-subgroup'
+            }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
+                    ${limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')}
+                </div><label class="workbench-check" for="explore-show-datatypes">
+                    <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked />
+                    <span>Show datatypes</span></label>`);
+            const roles = summary.roles;
+            const groupedRows = roles ? exploreRoles.reduce((sum: number, role: any) => sum + roles[role.key].length, 0) : 0;
+            const grouped = !!roles && !!total && groupedRows === total;
+            return h`<form id="explore-form" class="workbench-island explore-form" action="explore">
                     <input id="workbench-total-result-count" type="hidden"
                         value=${text(pageValue(model, 'total-result-count'))} />
                     <div id="explore-controls"><div id="explore-resource-field" class="workbench-field">
-                        <label for="resource">Resource</label><input id="resource" name="resource" size="48" type="text" value=${resource} />
+                        <label for="resource">Resource</label>
+                        <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input id="resource"
+                            name="resource" size="48" type="text" value=${resource} spellcheck="false"
+                            placeholder="<http://…>, prefix:name, _:node or &quot;literal&quot;" /></div>
                     </div>
-                    ${workbench.detailDisclosure.render(h, {
-                        id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
-                        panelId: 'explore-result-options-panel', label: 'Result options',
-                        ownerClass: 'workbench-options workbench-form-subgroup'
-                    }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
-                            ${limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')}
-                        </div><label class="workbench-check" for="explore-show-datatypes">
-                            <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked />
-                            <span>Show datatypes</span></label>`)}
+                    <button id="explore-submit" class="workbench-action workbench-action--primary" type="submit">Explore</button>
+                    ${exploreDisplay.owner}
                     </div>
+                    <div class="workbench-action-toolbar__panels workbench-disclosure-track">${exploreDisplay.panel}</div>
                 </form>
+                ${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
+                ${errorCallout(runtime, model)}
+                ${resource || exploreResourceKey(model)
+                    ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model)) : ''}
+                <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
+                    <span id="explore-resource-value" hidden>${resource}</span><span id="explore-result-count">${total}</span>
+                </p>
                 <section id="explore-results" class="workbench-island workbench-responsive-records">
-                    ${total ? h`${groupedResults}${table(runtime, model, context, { linkTerms: true })}`
+                    ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, roles)
+                        : table(runtime, model, context, { linkTerms: true })}`
                         : h`<p class="workbench-empty" role="status">No results to display.</p>`}
                     <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
                         <button id="previousX" class="workbench-action workbench-action--secondary" type="button" value=${'Previous ' + total}

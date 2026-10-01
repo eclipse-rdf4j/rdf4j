@@ -243,7 +243,10 @@ test('populated fixture keeps list pages and Explore readable', async ({ page })
 	});
 	await expect(page.locator('#explore-results table.data tr, #explore-results table.simple tr')).not.toHaveCount(0);
 	const text = await page.locator('#explore-results').innerText();
-	expect(text).toContain('ex:alice');
+	// Rows about the explored resource are grouped by role, so the tables show its neighbours by prefixed name and
+	// the resource itself is named in the card above them (plan task M5.1).
+	expect(text).toMatch(/\bex:\w+/);
+	await expect(page.locator('#explore-resource-iri')).toContainText('example.org/alice');
 	await expect(page.locator('#explore-results a[href*="example.org"]')).not.toHaveCount(0);
 });
 

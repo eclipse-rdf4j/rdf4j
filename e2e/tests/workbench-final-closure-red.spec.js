@@ -555,7 +555,7 @@ test('Explore uses a short heading and separate readable resource metadata', asy
 	const metadata = page.locator('#explore-resource-summary');
 	await expect(metadata).toBeVisible();
 	await expect(metadata).toContainText('http://example.org/alice');
-	await expect(metadata).toContainText(/1-\d+ of \d+/);
+	await expect(metadata).toContainText(/Rows 1–\d+ of \d+/);
 	await expect(page.locator('#explore-pagination')).toHaveCount(1);
 	await expect(page.locator('.explore-pagination__label')).toHaveCount(0);
 	await expect(page.locator('#previousX')).toBeDisabled();
@@ -575,7 +575,7 @@ test('Explore keeps an empty offset page recoverable with previous navigation', 
 	await expect(page.locator('.explore-pagination__label')).toHaveCount(0);
 	await expect(page.locator('#previousX')).toBeEnabled();
 	await expect(page.locator('#nextX')).toBeDisabled();
-	await expect(page.locator('#explore-result-count')).toHaveText('0 of 2');
+	await expect(page.locator('#explore-result-count')).toHaveText('Rows 0 of 2');
 	await expect(page.locator('#explore-results table.data')).toBeHidden();
 	await page.locator('#previousX').click();
 	await expect(page.locator('#explore-results table.data tbody tr')).not.toHaveCount(0);

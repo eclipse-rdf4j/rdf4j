@@ -252,6 +252,8 @@ test('owned row regions initialize from preloaded summaries and stay isolated be
         { kind: 'iri', value: 'urn:range:initial' }
     ];
     const model = modelFor('explore', [row]);
+    // A row about another resource keeps the windowed table (rows about the resource are grouped by role instead).
+    model.metadata = { resource: '<urn:example:other>' };
     model.rowStore = { async read() { return [row]; } };
     const first = windowHarness(workbench, window, model);
     assert.doesNotThrow(() => workbench.views.render(first.mount, model, context, first.renderer),
@@ -399,19 +401,19 @@ test('Explore empty resources show an empty result without opening a row window'
 
 const countCases = [
     { name: 'short page with a stale total cookie',
-        total: 8, returned: 8, limit: 100, offset: 0, cookie: '1', range: '1-8 of 8' },
+        total: 8, returned: 8, limit: 100, offset: 0, cookie: '1', range: 'Rows 1–8 of 8' },
     { name: 'first finite page with no total cookie',
-        total: 300, returned: 100, limit: 100, offset: 0, cookie: '', range: '1-100 of 300' },
+        total: 300, returned: 100, limit: 100, offset: 0, cookie: '', range: 'Rows 1–100 of 300' },
     { name: 'middle finite page',
-        total: 300, returned: 100, limit: 100, offset: 100, cookie: '1', range: '101-200 of 300' },
+        total: 300, returned: 100, limit: 100, offset: 100, cookie: '1', range: 'Rows 101–200 of 300' },
     { name: 'last finite page',
-        total: 250, returned: 50, limit: 100, offset: 200, cookie: '1', range: '201-250 of 250' },
+        total: 250, returned: 50, limit: 100, offset: 200, cookie: '1', range: 'Rows 201–250 of 250' },
     { name: 'All results with an irrelevant offset',
-        total: 300, returned: 300, limit: 0, offset: 200, cookie: '1', range: '1-300 of 300' },
+        total: 300, returned: 300, limit: 0, offset: 200, cookie: '1', range: 'Rows 1–300 of 300' },
     { name: 'empty resource with a stale total cookie',
-        total: 0, returned: 0, limit: 100, offset: 0, cookie: '300', range: '0' },
+        total: 0, returned: 0, limit: 100, offset: 0, cookie: '300', range: 'No rows' },
     { name: 'empty page past the final offset',
-        total: 300, returned: 0, limit: 100, offset: 400, cookie: '1', range: '0 of 300' }
+        total: 300, returned: 0, limit: 100, offset: 400, cookie: '1', range: 'Rows 0 of 300' }
 ];
 
 for (const example of countCases) {
@@ -559,3 +561,43 @@ for (const viewId of ['repositories', 'contexts']) {
         dispose();
     });
 }
+
+// Task M5.1 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: Explore groups rows by role.
+test('Explore groups rows by the role the resource plays and shows prefixed names', () => {
+    const { workbench } = loadWorkbench();
+    const iri = value => ({ kind: 'iri', value });
+    const ex = 'http://example.org/';
+    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
+    const item = iri(ex + 'item');
+    const graph = iri(ex + 'graph');
+    const rows = [
+        [item, iri(rdfs + 'label'), { kind: 'literal', value: 'Item label' }, graph],
+        [item, iri(ex + 'price'), { kind: 'literal', value: '12', datatype: 'http://www.w3.org/2001/XMLSchema#integer' }, graph],
+        [iri(ex + 'other'), iri(ex + 'link'), item, graph],
+        [iri(ex + 'a'), item, iri(ex + 'b'), graph],
+        [iri(ex + 'x'), iri(ex + 'y'), iri(ex + 'z'), item]
+    ];
+    const model = modelFor('explore', rows);
+    model.vars = ['subject', 'predicate', 'object', 'context'];
+    model.namespaceMap = { 'ex:': ex, 'rdfs:': rdfs };
+    model.metadata = { resource: 'ex:item', 'explore-resource': '<' + ex + 'item>', 'total-result-count': rows.length };
+    const mount = {};
+    workbench.views.render(mount, model, context, runtime());
+    const markup = flatten(routeTemplate(workbench, mount));
+    const group = role => {
+        const match = new RegExp(`data-explore-role="?${role}"?[\\s>]`).exec(markup);
+        const start = match ? match.index : -1;
+        assert.ok(start >= 0, `the ${role} group is rendered`);
+        const end = markup.indexOf('</section>', start);
+        return markup.substring(start, end);
+    };
+    assert.match(group('outgoing'), /Outgoing/);
+    assert.match(group('incoming'), /Incoming/);
+    assert.match(group('predicate'), /Used as predicate/);
+    assert.match(group('graph'), /Graph contents/);
+    assert.match(group('outgoing'), />rdfs:label</, 'predicates use the repository prefixes');
+    assert.match(group('outgoing'), /Graph: ex:graph/, 'one graph is named in the group header');
+    const outgoingHeaders = Array.from(group('outgoing').matchAll(/<th[^>]*>([^<]*)<\/th>/g)).map(match => match[1].trim());
+    assert.deepEqual(outgoingHeaders, ['Predicate', 'Object'], 'no Graph column when every row shares one graph');
+    assert.match(markup, /<h2[^>]*>Item label<\/h2>/, 'the label of the explored resource is the heading');
+});

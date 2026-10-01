@@ -1666,6 +1666,17 @@ var workbench;
             });
             return best ? best.prefix + ':' + value.substring(best.name.length) : '<' + value + '>';
         }
+        /** An IRI written with the longest matching namespace prefix, or in angle brackets. */
+        function abbreviateIri(value, namespaces) {
+            return abbreviatedIri(value, namespaces);
+        }
+        queryStream.abbreviateIri = abbreviateIri;
+        /** True when a literal's datatype deserves a visible tag: not a string and not a number (M4.3). */
+        function showsDatatypeTag(display) {
+            return display.kind === 'literal' && !!display.datatype && !display.numeric && !display.language
+                && display.datatype !== XSD_STRING && display.datatype !== RDF_LANG_STRING;
+        }
+        queryStream.showsDatatypeTag = showsDatatypeTag;
         /** A term inside a quoted triple, where there is no room for tags: literals keep quotes and suffixes. */
         function inlineTermLabel(term, config) {
             if (!term || term.kind !== 'literal') {
@@ -3318,8 +3329,7 @@ var workbench;
                     target.appendChild(language);
                     return;
                 }
-                if (this.showDatatypes && display.datatype && !display.numeric
-                    && display.datatype !== XSD_STRING && display.datatype !== RDF_LANG_STRING) {
+                if (this.showDatatypes && showsDatatypeTag(display)) {
                     var datatype = createElement(this.document, 'span', 'rdf-datatype');
                     datatype.textContent = abbreviatedIri(display.datatype, namespaces || []);
                     target.appendChild(datatype);

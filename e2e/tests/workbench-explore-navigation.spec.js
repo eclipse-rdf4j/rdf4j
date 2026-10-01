@@ -195,7 +195,7 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
 	const graphRows = await expectExploreRows(page, 8);
 	await assertPageHealth(page, health, 'explore');
-	await expect(page.locator('#explore-result-count')).toHaveText('1-8 of 8');
+	await expect(page.locator('#explore-result-count')).toHaveText('Rows 1–8 of 8');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(8);
 	await capture(page, 'explore-eight-records-desktop', health, { rowCount: await graphRows.count() });
 
@@ -275,7 +275,7 @@ test('invalid and empty resources render useful states and browser Back recovers
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
 	await expect(page.locator('#explore-results .workbench-empty')).toHaveText('No results to display.');
 	await expect(page.locator('#explore-results table.data tbody tr[data-workbench-row-index]')).toHaveCount(0);
-	await expect(page.locator('#explore-result-count')).toHaveText('0');
+	await expect(page.locator('#explore-result-count')).toHaveText('No rows');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(0);
 	await assertPageHealth(page, recoveryHealth, 'explore');
 	await capture(page, 'explore-empty-resource-desktop', recoveryHealth, { emptyResource });
@@ -293,7 +293,7 @@ test('finite Explore pages retain the true total through the final window', asyn
 	const rows = page.locator('#explore-results table.data tbody tr[data-workbench-row-index]');
 	await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);
 	await expect(page.locator('#explore-results .workbench-pending-row')).toHaveCount(0);
-	await expect(page.locator('#explore-result-count')).toHaveText('1-100 of 300');
+	await expect(page.locator('#explore-result-count')).toHaveText('Rows 1–100 of 300');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
 	await expect(page.locator('#previousX')).toBeDisabled();
 	await expect(page.locator('#nextX')).toBeEnabled();
@@ -312,7 +312,7 @@ test('finite Explore pages retain the true total through the final window', asyn
 	await page.locator('#nextX').click();
 	await navigation;
 	await expect(page).toHaveURL(/(?:\?|&)offset=100(?:&|$)/);
-	await expect(page.locator('#explore-result-count')).toHaveText('101-200 of 300');
+	await expect(page.locator('#explore-result-count')).toHaveText('Rows 101–200 of 300');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
 	await expect(rows.first()).toContainText('large row 100');
 	indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
@@ -331,7 +331,7 @@ test('finite Explore pages retain the true total through the final window', asyn
 	await page.locator('#nextX').click();
 	await navigation;
 	await expect(page).toHaveURL(/(?:\?|&)offset=200(?:&|$)/);
-	await expect(page.locator('#explore-result-count')).toHaveText('201-300 of 300');
+	await expect(page.locator('#explore-result-count')).toHaveText('Rows 201–300 of 300');
 	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
 	await expect(rows.first()).toContainText('large row 200');
 	indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));

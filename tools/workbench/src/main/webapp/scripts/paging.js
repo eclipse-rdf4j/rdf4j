@@ -450,13 +450,10 @@ var workbench;
                     ((exdays == null) ? "" :
                         "; expires=" + exdate.toUTCString());
             }
+            /** Datatype tags (span.rdf-datatype) are hidden by a page class, so no cell needs re-rendering. */
             function setShow(show) {
                 setCookie('show-datatypes', show, 365);
-                var data = show ? 'data-longform' : 'data-shortform';
-                $('div.resource[' + data + ']').each(function () {
-                    var me = $(this);
-                    me.find('a:first').text(decodeURIComponent(me.attr(data)));
-                });
+                document.body.classList.toggle('workbench-hide-datatypes', !show);
             }
             DataTypeVisibility.setShow = setShow;
         })(DataTypeVisibility || (DataTypeVisibility = {}));

@@ -2583,6 +2583,162 @@ body.workbench-body .workbench-page-surface input[type="number"] {
 	max-inline-size: 100%;
 }
 
+/* Explore (M5.1, mockup 05): the resource form on one row, a resource card, and role groups. */
+body.workbench-body .explore-form #explore-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--workbench-space-subgroup) var(--workbench-control-gap);
+}
+
+body.workbench-body .explore-form #explore-controls > * {
+	margin: 0;
+}
+
+body.workbench-body .explore-form #explore-resource-field {
+	flex: 1 1 320px;
+	min-width: 0;
+}
+
+body.workbench-body .workbench-search-field {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+/* :is(form, #workbench-search-field) carries an id's specificity, so this outranks the generic text-input rule
+ * (body ... input:not(...) x5) wherever a search field sits inside a form. */
+body.workbench-body .workbench-page-surface :is(form, #workbench-search-field) .workbench-search-field > input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: none;
+	padding-left: 34px;
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body #explore-resource-value[hidden] {
+	display: none;
+}
+
+body.workbench-body .workbench-search-field__icon {
+	position: absolute;
+	left: 10px;
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: var(--workbench-muted);
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+	pointer-events: none;
+}
+
+body.workbench-body .explore-resource-card {
+	display: grid;
+	gap: 10px;
+	justify-items: start;
+}
+
+body.workbench-body .explore-resource-card > h2 {
+	margin: 0;
+}
+
+body.workbench-body .explore-resource-card__iri {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 100%;
+}
+
+body.workbench-body .explore-resource-card__iri > code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	color: var(--workbench-body);
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body .explore-resource-card__types {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .explore-chip {
+	display: inline-block;
+	padding: 2px 10px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	font-size: 12px;
+	text-decoration: none;
+}
+
+body.workbench-body .explore-resource-card__comment {
+	display: -webkit-box;
+	max-width: 72ch;
+	margin: 0;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	color: var(--workbench-body);
+}
+
+body.workbench-body .explore-resource-card__comment.is-expanded {
+	display: block;
+}
+
+body.workbench-body .explore-group + .explore-group {
+	margin-top: var(--workbench-space-section);
+}
+
+body.workbench-body .explore-group__title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+
+body.workbench-body .explore-group__count {
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+body.workbench-body .explore-group__graph {
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-weight: 400;
+}
+
+body.workbench-body .workbench-page-surface .rdf-language,
+body.workbench-body .workbench-page-surface .rdf-datatype {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 5px;
+	border-radius: 4px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 11px;
+	line-height: 1.6;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-page-surface .rdf-datatype {
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body.workbench-hide-datatypes .workbench-page-surface .rdf-datatype {
+	display: none;
+}
+
 /* A number input followed by its unit, such as "Timeout [60] seconds" (M3.4). */
 body.workbench-body .workbench-input-unit {
 	display: inline-flex;

@@ -105,9 +105,9 @@ workbench.addLoad(function() {
 
         // Truncate range if close to end.
         last = have_total_count ? Math.min(total_result_count, last) : last;
-        var range = first + '-' + last;
+        var range = 'Rows ' + first + '–' + last;
         if (empty_page) {
-            range = have_total_count ? '0 of ' + total_result_count : '0';
+            range = have_total_count ? 'Rows 0 of ' + total_result_count : 'No rows';
         }
         else if (have_total_count) {
             range = range + ' of ' + total_result_count;

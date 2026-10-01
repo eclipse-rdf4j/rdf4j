@@ -138,7 +138,7 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     assert.equal(shellList.parentNode, popover, 'shell lists outside the page surface stay mounted');
     assert.equal(harness.heading.textContent, 'Explore');
     assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
-    assert.equal(harness.document.getElementById('explore-result-count').textContent, '3-6 of 9');
+    assert.equal(harness.document.getElementById('explore-result-count').textContent, 'Rows 3–6 of 9');
     assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
 });
 
@@ -223,13 +223,15 @@ test('paging helpers cover url, query, and cookie branches', () => {
     paging.addLimit('query');
     assert.equal(harness.document.lastSubmittedForm.formControls.find((control) => control.name === 'limit_query').value, '7');
 
+    // Datatype tags are hidden with a page class; cells are not rewritten (plan task M5.1).
     showDataType.checked = false;
     paging.setShowDataTypesCheckboxAndSetChangeEvent();
     assert.equal(showDataType.checked, false);
-    assert.equal(link.textContent, 'ex:short');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), true);
+    assert.equal(link.textContent, 'placeholder', 'cell text is left alone');
     showDataType.checked = true;
     showDataType.trigger('change');
-    assert.equal(link.textContent, 'http://example.com/long');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
     assert.match(harness.document.cookie, /show-datatypes=true/);
 });
 

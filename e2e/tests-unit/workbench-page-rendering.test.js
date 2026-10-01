@@ -1908,7 +1908,8 @@ test('page tables label their columns for people instead of showing raw variable
         rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
         rowCount: 1, metadata: { resource: '<urn:s>' }
     }, context, runtime);
-    assert.deepEqual(headings(explore), ['Subject', 'Predicate', 'Object', 'Context']);
+    // Rows about the explored resource are grouped by role; the Outgoing table names its two columns.
+    assert.deepEqual(headings(explore), ['Predicate', 'Object']);
 });
 
 test('summary and information render key/value lists instead of simple tables', () => {

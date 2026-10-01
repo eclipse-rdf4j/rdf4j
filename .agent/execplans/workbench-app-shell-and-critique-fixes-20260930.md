@@ -50,8 +50,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 12:07Z) M4.2 Column sizing without mid-word breaks (includes the "12 rows visible" check moved from M3.2).
 - [x] (2026-10-01 13:25Z) M4.3 Literal, IRI and heading rendering.
 - [x] (2026-10-01 13:25Z) M4.4 Mobile records do not clip and use the same labels.
-- [ ] M5.1 (in progress) Explore (mockup 05).
-- [ ] M5.2 Types and Graphs (mockup 06).
+- [x] (2026-10-01 13:47Z) M5.1 Explore (mockup 05).
+- [ ] M5.2 (in progress) Types and Graphs (mockup 06).
 - [ ] M5.3 Repository list (mockup 12, right).
 - [ ] M5.4 Summary and Information (mockup 12, left).
 - [ ] M5.5 Add RDF and Export.
@@ -283,6 +283,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-01 / implementer.
 - Decision (M4.4): page tables label their mobile records with the same `columnLabel()` text as their headers. The query result records keep their own `dl.query-result-record__fields` grid instead of adopting `dl.workbench-kv`, whose row wrappers would change the record markup that the load-more and records specs drive; the grid already gives every row the same spacing.
   Rationale: same outcome for the reader with less churn.
+  Date/Author: 2026-10-01 / implementer.
+
+- Decision (M5.1): Explore groups rows by role only for pages of at most 80 rows (one row window) where every row has a role; larger pages and pages with rows the client cannot place keep the windowed table, because existing specs require 100-row and "All" pages to stay virtualized. Grouped rows keep `data-workbench-row-index` (their position on the page). A row that matches several roles goes to the first in the server's pass order (subject, predicate, object, context). The resource card shows the server's resolved resource (`explore-resource` metadata, N-Triples), because the page model carries no `resource` value of its own. "Show datatypes" now toggles `body.workbench-hide-datatypes`, which hides `span.rdf-datatype`; the `data-longform` path is gone. Display opens its panel in a track below the form row, like Save query and Config. The count reads "Rows 1–44 of 44" ("No rows" for an empty page). Unchanged pre-existing behavior: `workbench-explore-navigation.spec.js` "invalid and empty resources ..." fails in Firefox on the M3 build too, because Firefox does not report the expected console error. Coverage gate: `paging.js` keeps exactly the uncovered lines it had at M3.5 (its percentages fall from 92.45% to 92.41% only because covered code was removed); `query.js` was not edited and measures 84.34% to 84.53% between identical runs, so its run-to-run variation is not a regression.
+  Rationale: keeps the windowing guarantees while giving typical resources the mockup 05 layout.
   Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective

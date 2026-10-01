@@ -621,10 +621,17 @@ test('S4 Explore separates the resource field from result settings', async ({ pa
 		for (const expanded of [false, true]) {
 			if (expanded) { await page.locator('#explore-result-options-toggle').click(); await settled(page); }
 			const measurement = { resource: await bounds(page.locator('#explore-resource-field')),
+				input: await bounds(page.locator('#resource')),
 				trigger: await bounds(page.locator('#explore-result-options-toggle')) };
 			await evidence(page, info, `S4-explore-${expanded}-${variant.width}-${variant.theme}`, measurement);
-			closeTo(measurement.trigger.top - measurement.resource.bottom, ROLES.subgroup,
-				'Explore resource → optional result settings');
+			// The resource form is one row (plan task M5.1): Display sits beside the input, aligned to it, or wraps
+			// below the field with the subgroup gap on narrow screens.
+			if (measurement.trigger.top < measurement.resource.bottom) {
+				closeTo(measurement.trigger.bottom, measurement.input.bottom, 'Display aligns with the resource input');
+			} else {
+				closeTo(measurement.trigger.top - measurement.resource.bottom, ROLES.subgroup,
+					'Explore resource → optional result settings');
+			}
 		}
 	}
 });
