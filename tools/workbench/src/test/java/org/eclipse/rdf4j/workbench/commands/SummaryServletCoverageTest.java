@@ -14,18 +14,15 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.lang.reflect.Method;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 
 import org.eclipse.rdf4j.repository.Repository;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -42,43 +39,25 @@ class SummaryServletCoverageTest {
 	File tempDir;
 
 	@Test
-	void serviceKeepsRenderingWhenStatisticsCollectionIsInterrupted() throws Exception {
+	void serviceRendersTheRepositoryWithoutCountingIt() throws Exception {
 		SummaryServlet servlet = new SummaryServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
 		RepositoryManager manager = mock(RepositoryManager.class);
 		RepositoryInfo info = new RepositoryInfo();
 		info.setId("memory");
 		info.setDescription("Memory repo");
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 
-		when(repository.getConnection()).thenReturn(connection);
 		servlet.setRepository(repository);
 		servlet.setRepositoryManager(manager);
 		servlet.setRepositoryInfo(info);
 
-		Thread.currentThread().interrupt();
-		try {
-			servlet.service(builder);
-		} finally {
-			Thread.interrupted();
-		}
+		servlet.service(builder);
 
-		verify(builder).result(eq("memory"), eq("Memory repo"), isNull(), isNull(), nullable(String.class),
-				nullable(String.class));
+		// The counts are requested separately (plan task M13.3), so the page never opens a connection.
+		verify(builder).result(eq("memory"), eq("Memory repo"), isNull(), isNull(), isNull(), isNull());
 		verify(builder).end();
-	}
-
-	@Test
-	void privateHelpersCoverTimeoutExecutionAndInterruptedBranches() {
-		SummaryServlet servlet = new SummaryServlet();
-
-		assertThat(invokeGetResult(servlet, "repository size.", cancelledFuture()))
-				.isEqualTo("Timed out while requesting repository size.");
-		assertThat(invokeGetResult(servlet, "repository size.", executionFailureFuture()))
-				.isEqualTo("Exception occured while requesting repository size.");
-		assertThat(invokeGetResult(servlet, "repository size.", interruptedFuture()))
-				.isEqualTo("Unexpected interruption while requesting repository size.");
+		verify(repository, never()).getConnection();
 	}
 
 	@Test
@@ -126,11 +105,6 @@ class SummaryServletCoverageTest {
 		assertThat(invokeGetEffectiveConfigTurtle(servlet)).isNull();
 	}
 
-	private static String invokeGetResult(SummaryServlet servlet, String itemRequested, Future<String> future) {
-		return (String) invoke(servlet, "getResult", new Class<?>[] { String.class, Future.class }, itemRequested,
-				future);
-	}
-
 	private static String invokeGetServer(SummaryServlet servlet) {
 		return (String) invoke(servlet, "getServer", new Class<?>[0]);
 	}
@@ -147,92 +121,5 @@ class SummaryServletCoverageTest {
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Could not invoke " + methodName, e);
 		}
-	}
-
-	private static Future<String> cancelledFuture() {
-		return new Future<>() {
-			@Override
-			public boolean cancel(boolean mayInterruptIfRunning) {
-				return false;
-			}
-
-			@Override
-			public boolean isCancelled() {
-				return true;
-			}
-
-			@Override
-			public boolean isDone() {
-				return true;
-			}
-
-			@Override
-			public String get() {
-				throw new AssertionError("get() should not be called for cancelled futures");
-			}
-
-			@Override
-			public String get(long timeout, java.util.concurrent.TimeUnit unit) {
-				throw new AssertionError("Timed get() should not be called");
-			}
-		};
-	}
-
-	private static Future<String> executionFailureFuture() {
-		return new Future<>() {
-			@Override
-			public boolean cancel(boolean mayInterruptIfRunning) {
-				return false;
-			}
-
-			@Override
-			public boolean isCancelled() {
-				return false;
-			}
-
-			@Override
-			public boolean isDone() {
-				return true;
-			}
-
-			@Override
-			public String get() throws ExecutionException {
-				throw new ExecutionException(new IllegalStateException("boom"));
-			}
-
-			@Override
-			public String get(long timeout, java.util.concurrent.TimeUnit unit) throws ExecutionException {
-				throw new ExecutionException(new IllegalStateException("boom"));
-			}
-		};
-	}
-
-	private static Future<String> interruptedFuture() {
-		return new Future<>() {
-			@Override
-			public boolean cancel(boolean mayInterruptIfRunning) {
-				return false;
-			}
-
-			@Override
-			public boolean isCancelled() {
-				return false;
-			}
-
-			@Override
-			public boolean isDone() {
-				return true;
-			}
-
-			@Override
-			public String get() throws InterruptedException {
-				throw new InterruptedException("interrupted");
-			}
-
-			@Override
-			public String get(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
-				throw new InterruptedException("interrupted");
-			}
-		};
 	}
 }

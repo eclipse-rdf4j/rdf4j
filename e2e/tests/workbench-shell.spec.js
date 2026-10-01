@@ -17,7 +17,8 @@ const {
 	deleteRepository,
 	repositoryPageUrl,
 	serverBaseUrl,
-	uniqueRepositoryId
+	uniqueRepositoryId,
+	waitForRoute
 } = require('./workbench-test-helpers.js');
 
 const REPOSITORY_ID = uniqueRepositoryId('workbench-shell');
@@ -126,6 +127,32 @@ test('the menu does not move when the page starts to scroll', async ({ page }) =
 	const first = await page.locator('#navigation a').first().boundingBox();
 	expect(first.y, 'the first menu link is below the context bar').toBeGreaterThanOrEqual(bar.y + bar.height);
 	expect(first.y + first.height).toBeLessThanOrEqual(900);
+});
+
+// Plan task M13.3 (user request): Summary shows the repository at once and counts it afterwards, for up to two seconds.
+test('Summary shows the repository before its counts arrive', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	let release;
+	const held = new Promise((resolve) => { release = resolve; });
+	const countRequests = [];
+	await page.route((url) => url.pathname.endsWith('/summary') && url.searchParams.get('counts') === 'true', async (route) => {
+		countRequests.push(route.request().url());
+		await held;
+		await route.continue();
+	});
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'summary');
+	const value = (label) => page.locator('#workbench-summary .workbench-kv__row').filter({
+		has: page.locator('dt', { hasText: new RegExp(`^${label}$`) })
+	}).locator('dd');
+	await expect(value('ID')).toHaveText(REPOSITORY_ID);
+	await expect(value('Statements')).toHaveText('Counting…');
+	await expect(value('Named graphs')).toHaveText('Counting…');
+	expect(countRequests).toHaveLength(1);
+
+	release();
+	await expect(value('Statements')).toHaveText(/^[\d,]+$/);
+	await expect(value('Named graphs')).toHaveText('2');
 });
 
 test('menu groups are labeled the same way, with Query first', async ({ page }) => {

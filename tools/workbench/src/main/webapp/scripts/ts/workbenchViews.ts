@@ -915,6 +915,14 @@ module workbench {
                 const content = text(value);
                 return content ? h`<code>${content}</code>` : '';
             };
+            // The counts arrive after the page (M13.3); a page model that already has them shows them at once.
+            const counts = pageCounts(model);
+            const count = (name: string) => {
+                const value = name in counts.values ? counts.values[name] : field(row, name);
+                if (text(value)) { return formatCount(value, context); }
+                return counts.state === 'counting' ? 'Counting…'
+                    : h`<span title=${counts.state === 'timed-out' ? countedPages.summary.timedOut : 'No count is available'}>—</span>`;
+            };
             return h`<section id="workbench-summary" class="workbench-island workbench-summary">
                 <h2>Repository</h2>
                 ${keyValueList(runtime, [
@@ -925,8 +933,8 @@ module workbench {
                 ])}
                 <h2>Size</h2>
                 ${keyValueList(runtime, [
-                    ['Statements', formatCount(field(row, 'size'), context)],
-                    ['Named graphs', formatCount(field(row, 'contexts'), context)]
+                    ['Statements', count('size')],
+                    ['Named graphs', count('contexts')]
                 ])}
                 ${config ? h`<details id="summary-config-model" class="workbench-options workbench-summary-config">
                     <summary>Configuration (Turtle)${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
@@ -2564,12 +2572,31 @@ module workbench {
 
         /** "N statements", or "—" when the server could not count within its budget. */
         /**
-         * Clear (M13.2): counts requested with counts=true once the page is shown, so the page never waits for them.
-         * The server stops counting after its budget and says so with counts-timed-out; counts that finished are kept.
-         * Values are keyed by graph in N-Triples, '' for the default graph and '*' for the whole repository.
+         * Clear (M13.2) and Summary (M13.3): counts requested with counts=true once the page is shown, so the page never
+         * waits for them. The server stops counting after its budget and says so with counts-timed-out; counts that
+         * finished are kept. Clear keys its values by graph in N-Triples, '' for the default graph and '*' for the whole
+         * repository; Summary by 'size' and 'contexts'.
          */
-        const countedPages: { [viewId: string]: { timedOut: string } } = {
-            clear: { timedOut: 'Counting took longer than five seconds' }
+        const countedPages: { [viewId: string]: { timedOut: string; absorb(answer: PageModel, rows: any[][],
+                                                                            values: { [key: string]: any }): void } } = {
+            clear: {
+                timedOut: 'Counting took longer than five seconds',
+                absorb(answer: PageModel, rows: any[][], values: { [key: string]: any }): void {
+                    rows.forEach((row: any[]) => {
+                        if (text(row[1])) { values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
+                    });
+                    const size = meta(answer, 'repository-size');
+                    if (text(size)) { values['*'] = size; }
+                }
+            },
+            summary: {
+                timedOut: 'Counting took longer than two seconds',
+                absorb(_answer: PageModel, rows: any[][], values: { [key: string]: any }): void {
+                    const row = rows[0] || [];
+                    if (text(row[0])) { values.size = row[0]; }
+                    if (text(row[1])) { values.contexts = row[1]; }
+                }
+            }
         };
 
         interface PageCounts {
@@ -2606,11 +2633,7 @@ module workbench {
             app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
                 .then((answer: PageModel) => answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                     answer.rowStore.dispose();
-                    rows.forEach((row: any[]) => {
-                        if (text(row[1])) { counts.values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
-                    });
-                    const size = meta(answer, 'repository-size');
-                    if (text(size)) { counts.values['*'] = size; }
+                    countedPages[model.viewId].absorb(answer, rows, counts.values);
                     counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
                 }))
                 .then(null, () => { counts.state = 'failed'; })

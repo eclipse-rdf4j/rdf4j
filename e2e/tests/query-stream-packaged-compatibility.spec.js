@@ -439,10 +439,8 @@ test('loads the complete Explain, Compare, and Diff query route dependencies', a
 	});
 	await openQueryPage(page, monitor);
 	const dependencyAudit = await page.evaluate(() => {
-		const requiredScripts = [
-			'queryCancelPolicy.js', 'diff.min.js', 'viz/viz.js', 'viz/full.render.js',
-			'svg-pan-zoom.min.js', 'queryExplanationHighlighter.js'
-		];
+		// The graph renderer (viz.js, full.render.js, svg-pan-zoom) loads with the first DOT explanation (plan task M11.1).
+		const requiredScripts = ['queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js'];
 		const loaded = requiredScripts.filter(name => Array.from(document.scripts).some(script =>
 			script.src.endsWith('/scripts/' + name) && script.getAttribute('data-workbench-loaded') === 'true'));
 		return {
@@ -461,8 +459,8 @@ test('loads the complete Explain, Compare, and Diff query route dependencies', a
 	expect(dependencyAudit.queryCancelPolicy).toBe(true);
 	expect(dependencyAudit.queryExplanationHighlighter).toBe(true);
 	expect(dependencyAudit.diff).toBe(true);
-	expect(dependencyAudit.viz).toBe(true);
-	expect(dependencyAudit.svgPanZoom).toBe(true);
+	expect(dependencyAudit.viz).toBe(false);
+	expect(dependencyAudit.svgPanZoom).toBe(false);
 	await setEditor(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
 	await page.locator('#explain-trigger').click();
 	await waitForStableExplanation(page, '#query-explanation', monitor);

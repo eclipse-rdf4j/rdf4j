@@ -77,8 +77,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [ ] M12.1 Migrate tests that assumed full page loads. Code committed (9a32a0d6bb); `mvnf tools/workbench` passed; waiting for the Chromium, Firefox and WebKit suite runs.
 - [x] (2026-10-01 23:24Z) M13.1 The menu starts at the top (user request).
 - [x] (2026-10-01 23:32Z) M13.2 Clear counts asynchronously, with a 5 second budget (user request).
-- [ ] M13.3 (in progress) Summary counts asynchronously, with a short budget (user request).
-- [ ] M13.4 Query results stay visible per repository and tab (user request).
+- [x] (2026-10-01 23:52Z) M13.3 Summary counts asynchronously, with a short budget (user request).
+- [ ] M13.4 (in progress) Query results stay visible per repository and tab (user request).
 - [ ] M13.5 Queries keep running in the background (user request).
 - [ ] M13.6 Review every warning for alignment and padding (user request).
 - [ ] M12.2 Final review and retrospective (moved after M13, see `Decision Log`).
@@ -370,6 +370,9 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Decision (M13.2): Clear's page data lists the graphs and the default graph with empty counts and answers at once; `counts=true` answers the same rows with counts, counted on their own connection by `BrowseList.statementCounts(repository, contexts, budgetMillis)` (the repository size, the default graph, then each graph), plus `repository-size`, and sets `counts-timed-out` when the 5,000 ms budget ran out, keeping the counts that finished. The view requests the counts from `bindRowWindows()` (whose early return for pages without row windows now starts `loadPageCounts()`), shows "Counting…" in each option until they arrive and "—" for a count that did not finish, with a note under the field when counting timed out; the confirmation dialog uses the count when it is known. `ClearServlet(long)` takes a shorter budget for tests.
   Rationale: the same request pattern as Types and Graphs (M5.2); keeping finished counts makes a slow graph cost only its own count.
   Date/Author: 2026-10-02 / implementer.
+- Decision (M13.3): Summary's page data shows the repository with empty `size` and `contexts`; `counts=true` answers `size, contexts` (the number of statements and of named graphs), counted on their own connection within 2,000 ms (`BrowseList.COUNT_BUDGET_MILLIS`, the Types and Graphs budget), with `counts-timed-out` when the budget ran out. The view shares Clear's `loadPageCounts()` (each counted page now has an `absorb` that files the answer) and shows "Counting…", then the counts or "—". Summary's own thread pool, which was never shut down, is gone. Both counted pages keep a count only when its thread was not interrupted (`BrowseList.keep`): the first Summary implementation answered a named graph count of 0 that an interrupted listing had returned after the budget.
+  Date/Author: 2026-10-02 / implementer.
+- Observation (end of M10/M11 Chromium run, M11.3 build): 232 passed, 140 failed, 1 skipped. Six failures were not on the M0/M2 lists: the packaged-compatibility dependency test still expected the graph renderer at Query route load (M11.1 made it lazy; the spec now expects it absent until a DOT explanation), the Explore virtualization test (the in-place fallback fixed in M12.1), and four layout tests that pass on the M12.1 build (`workbench-spacing-system.spec.js` S12 failed once inside the run and passes alone, three times in a row).
 
 ## Outcomes & Retrospective
 

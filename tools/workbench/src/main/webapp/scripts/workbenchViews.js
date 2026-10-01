@@ -693,14 +693,24 @@ var workbench;
                 var content = text(value);
                 return content ? h(__makeTemplateObject(["<code>", "</code>"], ["<code>", "</code>"]), content) : '';
             };
+            // The counts arrive after the page (M13.3); a page model that already has them shows them at once.
+            var counts = pageCounts(model);
+            var count = function (name) {
+                var value = name in counts.values ? counts.values[name] : field(row, name);
+                if (text(value)) {
+                    return formatCount(value, context);
+                }
+                return counts.state === 'counting' ? 'Counting…'
+                    : h(__makeTemplateObject(["<span title=", ">\u2014</span>"], ["<span title=", ">\u2014</span>"]), counts.state === 'timed-out' ? countedPages.summary.timedOut : 'No count is available');
+            };
             return h(__makeTemplateObject(["<section id=\"workbench-summary\" class=\"workbench-island workbench-summary\">\n                <h2>Repository</h2>\n                ", "\n                <h2>Size</h2>\n                ", "\n                ", "\n            </section>"], ["<section id=\"workbench-summary\" class=\"workbench-island workbench-summary\">\n                <h2>Repository</h2>\n                ", "\n                <h2>Size</h2>\n                ", "\n                ", "\n            </section>"]), keyValueList(runtime, [
                 ['ID', code(field(row, 'id'))],
                 ['Title', field(row, 'description')],
                 ['Location', code(field(row, 'location'))],
                 ['Server', code(field(row, 'server'))]
             ]), keyValueList(runtime, [
-                ['Statements', formatCount(field(row, 'size'), context)],
-                ['Named graphs', formatCount(field(row, 'contexts'), context)]
+                ['Statements', count('size')],
+                ['Named graphs', count('contexts')]
             ]), config ? h(__makeTemplateObject(["<details id=\"summary-config-model\" class=\"workbench-options workbench-summary-config\">\n                    <summary>Configuration (Turtle)", "</summary>\n                    <pre role=\"region\">", "</pre>\n                </details>"], ["<details id=\"summary-config-model\" class=\"workbench-options workbench-summary-config\">\n                    <summary>Configuration (Turtle)", "</summary>\n                    <pre role=\"region\">", "</pre>\n                </details>"]), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), config) : '');
         }
         function informationPage(runtime, model) {
@@ -1863,12 +1873,38 @@ var workbench;
         }
         /** "N statements", or "—" when the server could not count within its budget. */
         /**
-         * Clear (M13.2): counts requested with counts=true once the page is shown, so the page never waits for them.
-         * The server stops counting after its budget and says so with counts-timed-out; counts that finished are kept.
-         * Values are keyed by graph in N-Triples, '' for the default graph and '*' for the whole repository.
+         * Clear (M13.2) and Summary (M13.3): counts requested with counts=true once the page is shown, so the page never
+         * waits for them. The server stops counting after its budget and says so with counts-timed-out; counts that
+         * finished are kept. Clear keys its values by graph in N-Triples, '' for the default graph and '*' for the whole
+         * repository; Summary by 'size' and 'contexts'.
          */
         var countedPages = {
-            clear: { timedOut: 'Counting took longer than five seconds' }
+            clear: {
+                timedOut: 'Counting took longer than five seconds',
+                absorb: function (answer, rows, values) {
+                    rows.forEach(function (row) {
+                        if (text(row[1])) {
+                            values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                        }
+                    });
+                    var size = meta(answer, 'repository-size');
+                    if (text(size)) {
+                        values['*'] = size;
+                    }
+                }
+            },
+            summary: {
+                timedOut: 'Counting took longer than two seconds',
+                absorb: function (_answer, rows, values) {
+                    var row = rows[0] || [];
+                    if (text(row[0])) {
+                        values.size = row[0];
+                    }
+                    if (text(row[1])) {
+                        values.contexts = row[1];
+                    }
+                }
+            }
         };
         function pageCounts(model) {
             var holder = model;
@@ -1896,15 +1932,7 @@ var workbench;
             app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
                 .then(function (answer) { return answer.rowStore.read(0, answer.rowCount).then(function (rows) {
                 answer.rowStore.dispose();
-                rows.forEach(function (row) {
-                    if (text(row[1])) {
-                        counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
-                    }
-                });
-                var size = meta(answer, 'repository-size');
-                if (text(size)) {
-                    counts.values['*'] = size;
-                }
+                countedPages[model.viewId].absorb(answer, rows, counts.values);
                 counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
             }); })
                 .then(null, function () { counts.state = 'failed'; })

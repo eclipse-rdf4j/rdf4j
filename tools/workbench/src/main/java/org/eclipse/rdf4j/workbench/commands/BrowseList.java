@@ -142,18 +142,28 @@ final class BrowseList {
 		Map<String, Long> counts = new ConcurrentHashMap<>();
 		Optional<Boolean> finished = withinBudget(() -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
-				counts.put(REPOSITORY, connection.size());
-				counts.put(DEFAULT_GRAPH, connection.size((Resource) null));
+				keep(counts, REPOSITORY, connection.size());
+				keep(counts, DEFAULT_GRAPH, connection.size((Resource) null));
 				for (Resource context : contexts) {
 					if (Thread.currentThread().isInterrupted()) {
 						throw new InterruptedException("Statement counts were abandoned");
 					}
-					counts.put(key(context), connection.size(context));
+					keep(counts, key(context), connection.size(context));
 				}
 			}
 			return Boolean.TRUE;
 		}, budgetMillis);
 		return new StatementCounts(new HashMap<>(counts), finished.isEmpty());
+	}
+
+	/**
+	 * Keeps a count unless counting was abandoned meanwhile: a count interrupted by {@link #withinBudget} may return
+	 * early with a wrong value, and the answer must not show it.
+	 */
+	static <K> void keep(Map<K, Long> counts, K key, long count) {
+		if (!Thread.currentThread().isInterrupted()) {
+			counts.put(key, count);
+		}
 	}
 
 	static String key(Resource context) {
