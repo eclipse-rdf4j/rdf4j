@@ -26,7 +26,7 @@ const OTHER_ID = uniqueRepositoryId('workbench-shell-other');
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async ({ request }) => {
-	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID);
+	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID, { graphs: ['bsbm', 'spl'] });
 	await createSeededRepository(request, serverBaseUrl(), OTHER_ID, { graphs: [] });
 });
 
@@ -90,4 +90,34 @@ test('the repository switcher works with the keyboard only', async ({ page }) =>
 	await expect(page.locator(`#workbench-repository-options a[data-repository-id="${OTHER_ID}"]`)).toBeFocused();
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(new RegExp(`/repositories/${OTHER_ID}/types$`));
+});
+
+test('the menu stays in view while a long page scrolls', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'networkidle' });
+	await expect(page.locator('#types-results tbody tr').nth(5)).toBeAttached();
+	await page.waitForFunction(() => {
+		window.scrollTo(0, document.documentElement.scrollHeight);
+		return window.scrollY > 600;
+	});
+	const query = page.locator('#navigation a[data-workbench-nav-href$="/query"], #navigation a[data-workbench-nav-href="query"]').first();
+	const box = await query.boundingBox();
+	expect(box, 'the Query menu link is rendered').not.toBeNull();
+	expect(box.y).toBeGreaterThanOrEqual(0);
+	expect(box.y + box.height).toBeLessThanOrEqual(900);
+});
+
+test('menu groups are labeled the same way, with Query first', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
+	const groups = await page.locator('#navigation .workbench-nav-group').evaluateAll(elements => elements.map(group => ({
+		label: group.querySelector('.workbench-nav-group__label').textContent.trim(),
+		disclosure: Boolean(group.querySelector('details')),
+		items: Array.from(group.querySelectorAll('a, span.disabled')).map(item => item.textContent.trim())
+	})));
+	expect(groups.map(group => group.label)).toEqual(['Repository', 'Data', 'Server', 'System']);
+	expect(groups.every(group => !group.disclosure)).toBe(true);
+	expect(groups[0].items[0]).toBe('Query');
+	expect(groups[0].items).toContain('Graphs');
+	expect(groups[3].items).toEqual(['Information']);
 });

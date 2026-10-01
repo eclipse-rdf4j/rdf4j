@@ -481,56 +481,54 @@ module workbench {
             return !!item.disabled || (!!readRoutes[id] && !readable) || (!!writeRoutes[id] && !writeable);
         }
 
+        /** Groups with more items than this keep a disclosure so long custom menus stay manageable. */
+        const navigationDisclosureThreshold = 12;
+
+        function navigationItem(runtime: LitRuntime, context: ViewContext, info: any, item: any,
+                                groupLabel: string, active: string): any {
+            const h = runtime.html;
+            const id = text(item.id || item['menu-item-id']);
+            const label = text(item.label || item['menu-item-label'] || id);
+            const href = item.href || item['menu-item-href'] || urlFor(context, id);
+            return h`<li class=${active === id ? 'current' : ''}>
+                ${isDisabled(item, info)
+                    ? h`<span class="disabled" title=${groupLabel}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
+                    : h`<a href=${href} data-workbench-nav-href=${href}
+                        title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}>
+                        ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}
+                    </a>`}
+            </li>`;
+        }
+
+        /** Every group renders the same way: a non-interactive label followed by its items (M2.4). */
         function navigation(context: ViewContext, active: string, runtime: LitRuntime): any {
             const h = runtime.html;
             const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
-            return menuEntries(context).map((group: any) => {
+            return menuEntries(context).filter((group: any) => (group.items || []).length > 0).map((group: any) => {
                 const items = group.items || [];
                 const groupId = text(group.id || group['menu-group-id'] || 'workbench');
                 const groupLabel = text(group.label || group['menu-group-label'] || 'Workbench');
-                if (items.length === 1) {
-                    const item = items[0];
-                    const id = text(item.id || item['menu-item-id']);
-                    const label = text(item.label || item['menu-item-label'] || id);
-                    const disabled = isDisabled(item, info);
-                    return h`<li class="workbench-nav-group workbench-nav-group--single"
-                            data-workbench-menu-group=${groupId} data-workbench-menu-label=${groupLabel}>
-                        ${disabled
-                            ? h`<span class="disabled" title=${groupLabel}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
-                            : h`<a href=${item.href || item['menu-item-href'] || urlFor(context, id)}
-                                    data-workbench-nav-href=${item.href || item['menu-item-href'] || urlFor(context, id)}
-                                    title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}>
-                                ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}
-                            </a>`}
+                const list = h`<ul id=${'workbench-nav-items-' + groupId} class="group" aria-labelledby=${'workbench-nav-label-' + groupId}>
+                    ${items.map((item: any) => navigationItem(runtime, context, info, item, groupLabel, active))}
+                </ul>`;
+                if (items.length > navigationDisclosureThreshold) {
+                    const containsActive = items.some((item: any) => text(item.id || item['menu-item-id']) === active);
+                    return h`<li class="workbench-nav-group workbench-nav-group--long" data-workbench-menu-group=${groupId}
+                            data-workbench-menu-label=${groupLabel}>
+                        <details class="workbench-nav-group__disclosure" ?open=${containsActive}>
+                            <summary id=${'workbench-nav-summary-' + groupId} aria-controls=${'workbench-nav-items-' + groupId}
+                                    class="workbench-nav-group__summary">
+                                <span id=${'workbench-nav-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
+                                ${icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron')}
+                            </summary>
+                            ${list}
+                        </details>
                     </li>`;
                 }
-                const containsActive = items.some((item: any) => text(item.id || item['menu-item-id']) === active);
                 return h`<li class="workbench-nav-group" data-workbench-menu-group=${groupId}
                         data-workbench-menu-label=${groupLabel}>
-                    <details class="workbench-nav-group__disclosure" ?open=${containsActive}>
-                        <summary id=${'workbench-nav-summary-' + groupId}
-                                aria-controls=${'workbench-nav-items-' + groupId}
-                                class="query-nav-group-label workbench-nav-group__summary">
-                            ${icon(runtime, group.icon || group['menu-group-icon'] || 'modify')}
-                            <span class="workbench-nav-group__label">${groupLabel}</span>
-                            ${icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron')}
-                        </summary>
-                        <ul id=${'workbench-nav-items-' + groupId} class="group" aria-label=${groupLabel}>
-                            ${items.map((item: any) => {
-                                const id = text(item.id || item['menu-item-id']);
-                                const label = text(item.label || item['menu-item-label'] || id);
-                                const href = item.href || item['menu-item-href'] || urlFor(context, id);
-                                return h`<li class=${active === id ? 'current' : ''}>
-                                    ${isDisabled(item, info)
-                                        ? h`<span class="disabled" title=${groupLabel}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
-                                        : h`<a href=${href} data-workbench-nav-href=${href}
-                                            title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}>
-                                            ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}
-                                        </a>`}
-                                </li>`;
-                            })}
-                        </ul>
-                    </details>
+                    <span id=${'workbench-nav-label-' + groupId} class="workbench-nav-group__label">${groupLabel}</span>
+                    ${list}
                 </li>`;
             });
         }

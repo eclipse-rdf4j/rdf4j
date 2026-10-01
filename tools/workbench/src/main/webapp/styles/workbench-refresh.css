@@ -1703,10 +1703,40 @@ body.workbench-body #navigation.workbench-nav > ul > li:last-child {
 }
 
 body.workbench-body #navigation.workbench-nav ul.group {
-	margin: 3px 0 0;
-	padding-left: 8px;
-	border-left: 1px solid var(--workbench-soft-rule);
+	margin: 2px 0 0;
+	padding: 0;
+	border: 0;
 	font-size: 13px;
+}
+
+/* Menu groups (M2.4): an uppercase 11px label that is not interactive, followed by its items. */
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__label {
+	display: block;
+	padding: 12px 8px 4px;
+	color: var(--workbench-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	line-height: 1.3;
+	text-transform: uppercase;
+}
+
+body.workbench-body #navigation.workbench-nav > ul > li:first-child > .workbench-nav-group__label {
+	padding-top: 4px;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .workbench-nav-group__label {
+	padding: 0;
+}
+
+@media (min-width: 901px) {
+	/* The menu stays in view while long pages scroll. */
+	body.workbench-body .workbench-navigation-disclosure {
+		position: sticky;
+		top: calc(var(--workbench-contextbar-height) + 24px);
+		max-height: calc(100vh - var(--workbench-contextbar-height) - 48px);
+		overflow: auto;
+	}
 }
 
 body.workbench-body #navigation.workbench-nav ul.group li {

@@ -22,7 +22,7 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 04:40Z) M0.1 Start a preview server on port 18090 and seed the `bsbm` review repository (a second development preview runs on 18091; see `Surprises & Discoveries`).
 - [x] (2026-10-01 05:00Z) M0.2 Record the baseline of the unit tests, the coverage gate and the Java tests (completed; the full Chromium browser-suite baseline is recorded separately below).
 - [x] (2026-10-01 05:10Z) M0.3 Confirm the in-flight column-width and dark-mode plans are committed, and have this plan and its design folder committed.
-- [ ] M0.4 Record the full Chromium browser-suite baseline (running in the background against port 18090).
+- [x] (2026-10-01 11:10Z) M0.4 Record the full Chromium browser-suite baseline: 159 passed, 139 failed, 1 skipped in 1.2 hours (list in `initial-evidence.txt` and `logs/m0-browser-baseline-failures.txt`).
 - [x] (2026-10-01 05:15Z) M1.1 Result headings show variable names exactly.
 - [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
 - [x] (2026-10-01 06:45Z) M1.3 Four button variants (plus `--danger-outline`; see the Decision Log).
@@ -34,8 +34,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 09:00Z) M2.1 One navigation model everywhere.
 - [x] (2026-10-01 09:40Z) M2.2 Split the shell from the page outlet (behavior-neutral refactor).
 - [x] (2026-10-01 10:40Z) M2.3 A compact context bar with switchers (mockups 01 and 04).
-- [ ] M2.4 (in progress) Regroup the menu and make it sticky.
-- [ ] M2.5 Dark-mode logo.
+- [x] (2026-10-01 11:45Z) M2.4 Regroup the menu and make it sticky.
+- [ ] M2.5 (in progress) Dark-mode logo.
 - [ ] M2.6 Page titles.
 - [ ] M2.7 An in-shell "not found" page (mockup 13).
 - [ ] M2.8 A compact mobile header and a menu sheet (mockup 14).
@@ -224,6 +224,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 
 - Decision (M1.8): `workbench.format.count` formats integers only (digit strings or numbers within the safe integer range) and returns any other value unchanged. Summary's repository size uses it now; the query status line and the result badges adopt it in M3.5, which rewrites those strings anyway, so their tests change only once.
   Rationale: avoids changing the same status-line assertions twice.
+  Date/Author: 2026-10-01 / implementer.
+
+- Decision (M2.4): the declared-but-empty `server` group is labeled "Connection" by default (it was "Server"), so that an administrator who moves items into it does not get two groups labeled "Server" next to the new `repositories` group label. `WorkbenchPolicyLoaderTest` now checks the "Server" label on the `repositories` group, and `WorkbenchFrontendSecurityTest` checks that the server user reaches the DOM only through the Lit text binding in `workbenchViews.ts` (the DOM patching in `template.ts` was removed in M2.3).
+  Rationale: avoids a duplicate label in custom menus; both test changes follow behavior moved by this plan.
   Date/Author: 2026-10-01 / implementer.
 
 ## Outcomes & Retrospective
@@ -974,7 +978,7 @@ M1.2 reviewed differences (before: preview with `screen.css`, after: without it;
     Rules re-created as component rules: html scrollbar-gutter, header/simple/dataentry table collapse and
       left-aligned th, simple-table cell padding, logo vertical alignment, a.resourceURL hover (query.css).
 
-Release-note draft (update as tasks land): "The Workbench now keeps its header and menu on screen while you move between pages, loads pages without reloading the browser, runs queries with Cmd/Ctrl+Enter, shows results that scroll with the page, and asks for confirmation before clearing, removing or deleting data. The default menu is regrouped into Repository, Data and Server; custom menu configurations are unchanged."
+Release-note draft (update as tasks land): "The Workbench now keeps its header and menu on screen while you move between pages, loads pages without reloading the browser, runs queries with Cmd/Ctrl+Enter, shows results that scroll with the page, and asks for confirmation before clearing, removing or deleting data. The default menu is regrouped into Repository (Query first), Data, Server and System; custom menu configurations are unchanged. Default menu labels that changed: group explore "Explore" became "Repository", modify "Modify" became "Data", repositories "Repositories" became "Server"; items "Contexts" became "Graphs", "Add" became "Add RDF", "Update" became "SPARQL Update", and "Server" became "Connection" (now in the Server group). Export moved from the Explore group to Data. Group and page ids and URLs are unchanged."
 
 ## Interfaces and Dependencies
 
