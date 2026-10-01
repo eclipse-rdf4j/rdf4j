@@ -1061,6 +1061,36 @@ html:has(body.query-result-embedded-body) {
 	display: contents;
 }
 
+/* Base layer that replaces the retired pre-redesign stylesheet (styles/default/screen.css).
+ * Keep it to component rules; element-wide resets belong to the components that need them. */
+html {
+	scrollbar-gutter: stable;
+}
+
+body.workbench-body #contentheader.workbench-context table,
+body.workbench-body table.simple,
+body.workbench-body table.dataentry {
+	border-collapse: collapse;
+}
+
+body.workbench-body #contentheader.workbench-context th,
+body.workbench-body table.simple th,
+body.workbench-body table.dataentry th {
+	text-align: left;
+	vertical-align: top;
+}
+
+body.workbench-body table.simple th,
+body.workbench-body table.simple td {
+	padding: 0 5px 0 0;
+	vertical-align: top;
+}
+
+body.workbench-body #logo.workbench-brand img {
+	vertical-align: middle;
+}
+
+
 body.workbench-body {
 	display: grid;
 	grid-template-columns: calc(var(--workbench-sidebar-width) + var(--workbench-desktop-gutter)) minmax(0, 1fr);

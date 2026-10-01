@@ -455,6 +455,14 @@ var workbench;
         function workbenchData(context) {
             return normalizeWorkbench(context.workbench, context.linked && context.linked.info);
         }
+        /** People-facing column label for a page table; options.labels overrides the default. */
+        function columnLabel(name, options) {
+            var labels = options && options.labels;
+            if (labels && typeof labels[name] === 'string') {
+                return labels[name];
+            }
+            return name ? name.charAt(0).toUpperCase() + name.substring(1) : name;
+        }
         function table(runtime, model, context, options) {
             var h = runtime.html;
             var columns = model.vars || [];
@@ -468,7 +476,7 @@ var workbench;
                 }
                 regions.renderTableRows = function () { return runtime.render(tableRows(runtime, model, context, options, records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody); };
             }
-            return h(__makeTemplateObject(["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"], ["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"]), model.rowStore && total ? 'true' : runtime.nothing, columns.length ? h(__makeTemplateObject(["<thead><tr>", "</tr></thead>"], ["<thead><tr>", "</tr></thead>"]), columns.map(function (name) { return h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), name); })) : '', regions ? regions.tableBody
+            return h(__makeTemplateObject(["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"], ["<table class=\"data\" data-workbench-row-table=", ">\n                ", "\n                ", "\n            </table>"]), model.rowStore && total ? 'true' : runtime.nothing, columns.length ? h(__makeTemplateObject(["<thead><tr>", "</tr></thead>"], ["<thead><tr>", "</tr></thead>"]), columns.map(function (name) { return h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), columnLabel(name, options)); })) : '', regions ? regions.tableBody
                 : h(__makeTemplateObject(["<tbody>", "</tbody>"], ["<tbody>", "</tbody>"]), tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)));
         }
         function tableRows(runtime, model, context, options, allRows, start, total, emptyText) {

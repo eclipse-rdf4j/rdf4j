@@ -24,8 +24,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 05:10Z) M0.3 Confirm the in-flight column-width and dark-mode plans are committed, and have this plan and its design folder committed.
 - [ ] M0.4 Record the full Chromium browser-suite baseline (running in the background against port 18090).
 - [x] (2026-10-01 05:15Z) M1.1 Result headings show variable names exactly.
-- [ ] M1.2 (in progress) Stop loading `styles/default/screen.css`.
-- [ ] M1.3 Four button variants.
+- [x] (2026-10-01 06:10Z) M1.2 Stop loading `styles/default/screen.css`.
+- [ ] M1.3 (in progress) Four button variants.
 - [ ] M1.4 One heading scale and a key/value component.
 - [ ] M1.5 One content width and flatter containers.
 - [ ] M1.6 One form layout.
@@ -134,6 +134,10 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Evidence: `curl .../repositories/bsbm/size` returned `0` after a restart.
 - Observation (implementation, 2026-10-01): many existing browser specs do not create their own repository; they expect repositories such as `testrepo1`, `query-refresh-layout`, `query-final-live`, `query-refinement-baseline-20260923-2365` or `embeddedrepo` to exist, and several default to port 8080 or 8091. A full-suite run against a fresh preview therefore fails those specs for environmental reasons; the browser baseline (M0.4) separates those from real failures.
   Evidence: `grep -L beforeAll e2e/tests/*.spec.js`.
+- Observation (M1.2): `rg -l "default/screen.css"` outside build output finds the Workbench shell and its test, `e2e/tests/workbench-theme-first-paint.spec.js`, `tools/server/src/main/webapp/WEB-INF/includes/stylesheets.html.jspf` (the RDF4J Server's own pages link their own copy under `tools/server`), `tools/server-boot/.../Rdf4jServerWorkbenchApplicationTest.java` (asserts that `/rdf4j-workbench/styles/default/screen.css` is still served, so the file stays), and old logs. A computed-style probe (inject the legacy sheet into a page rendered without it and diff every element) showed what the redesign still inherited: header and simple-table `border-collapse`/left-aligned `th`, the label colons, `h2` nowrap and padding, `form { margin: 1.12em 0 }` from `w3-html40-recommended.css` (the Query card lost about 16px of bottom space), white `table.data td` backgrounds (visible as white cells in dark mode before the change), `vertical-align: middle` on inputs, and the capitalized page-table headers (`readable`, `id`, `subject` came out lower-case without it).
+  Evidence: probe output summarized in `Artifacts and Notes` ("M1.2 reviewed differences").
+- Observation (M1.2): with `workbench-refresh.css` as the first stylesheet, Chromium's preload scanner can request it before the parser has executed the blocking `workbench-theme.js`, so the first-paint spec's "before first stylesheet" probe read `data-theme = null` in 3 of 4 runs. The probe now waits until the parser has inserted the held `<link>` (which proves the earlier theme script ran) while the stylesheet response is still held.
+  Evidence: the unchanged spec passed 4/4 against the old build and failed 3/4 against the new one; after the probe change it passed 15/15.
 
 ## Decision Log
 
@@ -934,6 +938,17 @@ Design review evidence (2026-09-30, preview on port 18090):
     document.title on query, summary, types, repositories -> "RDF4J Workbench"
 
 Files created with this plan: `design/workbench-app-shell-plan-20260930/mockups.html` (mockup source), `render-mockups.cjs` (renders it to `mockups/*.png`), `seed-review-repository.sh` (review data), and `capture-routes.cjs` (route screenshots for before/after comparisons).
+
+M1.2 reviewed differences (before: preview with `screen.css`, after: without it; 17 routes x desktop-light, desktop-dark, mobile-light; `node diff-shots.cjs`):
+
+    most routes: 0.06% to 0.5% changed pixels (header context table, logo alignment)
+    summary, information: 4% to 11% (label colons removed, section h2 padding removed: intended)
+    explore, types, contexts, namespaces, repositories: header text now comes from column labels
+      ("Subject", "Readable"), no longer from text-transform; dark mode table cells lose the legacy white
+      background (intended)
+    query: about 0.4% (the form's legacy 1.12em margin is gone, the card is 16px shorter: intended)
+    Rules re-created as component rules: html scrollbar-gutter, header/simple/dataentry table collapse and
+      left-aligned th, simple-table cell padding, logo vertical alignment, a.resourceURL hover (query.css).
 
 Release-note draft (update as tasks land): "The Workbench now keeps its header and menu on screen while you move between pages, loads pages without reloading the browser, runs queries with Cmd/Ctrl+Enter, shows results that scroll with the page, and asks for confirmation before clearing, removing or deleting data. The default menu is regrouped into Repository, Data and Server; custom menu configurations are unchanged."
 

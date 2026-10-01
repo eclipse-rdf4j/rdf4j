@@ -916,6 +916,17 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     color: var(--query-muted);
 }
 
+/* External-link arrow beside result IRIs: shown on hover or keyboard focus only. */
+.query-result-embedded a.resourceURL {
+    margin-left: 8px;
+    visibility: hidden;
+}
+
+.query-result-embedded div.resource:hover > a.resourceURL,
+.query-result-embedded div.resource:focus-within > a.resourceURL {
+    visibility: visible;
+}
+
 .query-result-embedded .queryResult {
     box-sizing: border-box;
     margin: 1rem 0;

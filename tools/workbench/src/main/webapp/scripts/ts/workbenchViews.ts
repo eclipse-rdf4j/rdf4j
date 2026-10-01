@@ -558,6 +558,15 @@ module workbench {
             return normalizeWorkbench(context.workbench, context.linked && context.linked.info);
         }
 
+        /** People-facing column label for a page table; options.labels overrides the default. */
+        function columnLabel(name: string, options?: any): string {
+            const labels = options && options.labels;
+            if (labels && typeof labels[name] === 'string') {
+                return labels[name];
+            }
+            return name ? name.charAt(0).toUpperCase() + name.substring(1) : name;
+        }
+
         function table(runtime: LitRuntime, model: PageModel, context: ViewContext,
                        options?: any): any {
             const h = runtime.html;
@@ -572,7 +581,7 @@ module workbench {
                     records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody);
             }
             return h`<table class="data" data-workbench-row-table=${model.rowStore && total ? 'true' : runtime.nothing}>
-                ${columns.length ? h`<thead><tr>${columns.map((name: string) => h`<th scope="col">${name}</th>`)}</tr></thead>` : ''}
+                ${columns.length ? h`<thead><tr>${columns.map((name: string) => h`<th scope="col">${columnLabel(name, options)}</th>`)}</tr></thead>` : ''}
                 ${regions ? regions.tableBody
                     : h`<tbody>${tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)}</tbody>`}
             </table>`;

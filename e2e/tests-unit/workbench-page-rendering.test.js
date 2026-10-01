@@ -1880,3 +1880,25 @@ test('delete repository choices expose bounded row-window navigation', () => {
     assert.ok(output.includes('repo-49'));
     assert.ok(!output.includes('repo-50'), 'later repository options must not be materialized in the DOM');
 });
+
+test('page tables label their columns for people instead of showing raw variable names', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const headings = (template) => {
+        const markup = flattenTemplateMarkup(template);
+        return Array.from(markup.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)).map((match) => match[1].trim());
+    };
+    const repositories = workbench.views.pageTemplate({
+        viewId: 'repositories', vars: ['readable', 'writeable', 'id', 'description', 'location'],
+        rows: [[true, true, 'repo-1', 'Repository one', 'http://example.test/repositories/repo-1']],
+        rowCount: 1, metadata: {}
+    }, context, runtime);
+    assert.deepEqual(headings(repositories), ['Readable', 'Writeable', 'Id', 'Description', 'Location']);
+    const explore = workbench.views.pageTemplate({
+        viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
+        rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
+        rowCount: 1, metadata: { resource: '<urn:s>' }
+    }, context, runtime);
+    assert.deepEqual(headings(explore), ['Subject', 'Predicate', 'Object', 'Context']);
+});
