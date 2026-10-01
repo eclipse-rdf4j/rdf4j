@@ -107,6 +107,27 @@ test('the menu stays in view while a long page scrolls', async ({ page }) => {
 	expect(box.y + box.height).toBeLessThanOrEqual(900);
 });
 
+// Plan task M13.1 (user request): the menu rests where it sticks, so it does not move when the page starts to scroll.
+test('the menu does not move when the page starts to scroll', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'networkidle' });
+	await expect(page.locator('#types-results tbody tr').nth(5)).toBeAttached();
+	const menu = page.locator('#workbench-navigation-disclosure');
+	const top = async (scrollY) => {
+		await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+		await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollY);
+		return (await menu.boundingBox()).y;
+	};
+	const resting = await top(0);
+	for (const scrollY of [50, 200, 1000]) {
+		expect(Math.abs((await top(scrollY)) - resting), `menu top after scrolling ${scrollY}px`).toBeLessThanOrEqual(1);
+	}
+	const bar = await page.locator('#workbench-contextbar').boundingBox();
+	const first = await page.locator('#navigation a').first().boundingBox();
+	expect(first.y, 'the first menu link is below the context bar').toBeGreaterThanOrEqual(bar.y + bar.height);
+	expect(first.y + first.height).toBeLessThanOrEqual(900);
+});
+
 test('menu groups are labeled the same way, with Query first', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });

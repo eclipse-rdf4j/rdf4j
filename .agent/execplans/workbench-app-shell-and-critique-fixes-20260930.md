@@ -74,14 +74,14 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-01 22:02Z) M11.1 Load the graph renderer only when needed.
 - [x] (2026-10-01 22:04Z) M11.2 Prefetch route code.
 - [x] (2026-10-01 22:36Z) M11.3 Keep the Query route alive.
-- [ ] M12.1 (in progress) Migrate tests that assumed full page loads.
-- [ ] M12.2 Final review and retrospective.
-- [ ] M13.1 The menu starts at the top (user request).
-- [ ] M13.2 Clear counts asynchronously, with a 5 second budget (user request).
+- [ ] M12.1 Migrate tests that assumed full page loads. Code committed (9a32a0d6bb); `mvnf tools/workbench` passed; waiting for the Chromium, Firefox and WebKit suite runs.
+- [x] (2026-10-01 23:24Z) M13.1 The menu starts at the top (user request).
+- [ ] M13.2 (in progress) Clear counts asynchronously, with a 5 second budget (user request).
 - [ ] M13.3 Summary counts asynchronously, with a short budget (user request).
 - [ ] M13.4 Query results stay visible per repository and tab (user request).
 - [ ] M13.5 Queries keep running in the background (user request).
 - [ ] M13.6 Review every warning for alignment and padding (user request).
+- [ ] M12.2 Final review and retrospective (moved after M13, see `Decision Log`).
 
 ## Surprises & Discoveries
 
@@ -361,6 +361,11 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-02 / implementer.
 - Decision (M12.1): `waitForRoute(page, viewId, { url })` in `workbench-test-helpers.js` waits for the URL first when given (a form's next step shows the same view, whose outlet is already marked ready) and then for `#workbench-outlet[data-workbench-route=<view>][data-workbench-route-ready=true]`; the router changes the URL and marks the outlet not ready in the same synchronous commit, so the wait cannot pass on the page being left. The only `waitForNavigation` left is the `?router=off` variant of the inline Add model test. `prepareLegacyLoadBarrier()` stays: no route uses it any more, but `template.js` still registers the shell's own load routines (hiding the noscript notice, reduced-motion listener, `decorateDocument`) with `workbench.addLoad`, and those must run after bootstrap has rendered the shell; its unit tests (first page load) stay as they are. `routeScripts()` was a two-line wrapper and is inlined into `installRouteRuntime()`.
   Rationale: the remaining barrier serves the shell rather than the transition, and removing it would mean moving `template.js`'s public `addLoad` contract.
+  Date/Author: 2026-10-02 / implementer.
+- Decision (2026-10-02, during M12.1): the final review (M12.2) runs after M13 instead of before it, and M13.1 starts while the three-engine suite runs of M12.1 (about two hours) finish.
+  Rationale: a final review before the user's additions would have to be repeated after them; the suite runs need no attention until they end.
+  Date/Author: 2026-10-02 / implementer.
+- Decision (M13.1): the sidebar menu loses its 16px top margin. It rested at 96px (context bar 56px, the layout's 24px gap, then the margin) but sticks at `top: calc(var(--workbench-contextbar-height) + 24px)`, 80px, so the first 16px of scrolling moved it up before it stuck. Resting at 80px matches the sticky position and mockup 01, which places the menu 24px under the context bar.
   Date/Author: 2026-10-02 / implementer.
 
 ## Outcomes & Retrospective

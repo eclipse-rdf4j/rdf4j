@@ -1739,7 +1739,8 @@ body.workbench-body .workbench-navigation-disclosure {
 	position: static;
 	box-sizing: border-box;
 	width: var(--workbench-sidebar-width);
-	margin: 16px 0 0 var(--workbench-desktop-gutter);
+	/* No top margin: the menu rests where it sticks (top below), so it does not move when the page scrolls (M13.1). */
+	margin: 0 0 0 var(--workbench-desktop-gutter);
 	border: 1px solid var(--workbench-soft-rule);
 	border-radius: var(--workbench-radius);
 	background: var(--workbench-surface);
