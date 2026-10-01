@@ -263,13 +263,15 @@ for (const variant of VARIANTS) {
 		for (const route of ['summary', 'namespaces', 'contexts', 'types', 'explore', 'export', 'saved-queries']) {
 			await open(page, route, variant, EMPTY); await capture(page, info, route, 'empty'); await reveals(page, info, `empty-${route}`);
 		}
-		for (const [route, repository] of [['delete', 'NONE'], ['namespaces', PICKER]]) {
-			await open(page, route, variant, repository);
-			await page.locator('[data-workbench-window-action=next]').click();
-			await capture(page, info, route, 'picker-next-window');
-			await page.locator('[data-workbench-window-action=previous]').click();
-			await capture(page, info, route, 'picker-previous-window');
-		}
+		await open(page, 'delete', variant, 'NONE');
+		await page.locator('[data-workbench-window-action=next]').click();
+		await capture(page, info, 'delete', 'picker-next-window');
+		await page.locator('[data-workbench-window-action=previous]').click();
+		await capture(page, info, 'delete', 'picker-previous-window');
+		// Namespaces lists every prefix and filters in the page (M6.3) instead of paging a picker.
+		await open(page, 'namespaces', variant, PICKER);
+		await page.locator('#namespaces-filter').fill('p1');
+		await capture(page, info, 'namespaces', 'filtered');
 		for (const resource of ['Class', 'property']) {
 			await open(page, `explore?resource=${encodeURIComponent(`<urn:spacing:${resource}>`)}`, variant);
 			await page.locator('#explore-result-options-toggle').click(); await page.locator('#limit_explore').selectOption('0');

@@ -98,8 +98,21 @@ test('browsing pages share one content width and form pages share one form width
 	for (const geometry of rights) {
 		expect(Math.abs(geometry.right - firstRight), JSON.stringify(rights)).toBeLessThanOrEqual(1);
 	}
+	// Export (redesigned on user request, 2026-10-01) puts its download card beside the preview, so the two
+	// cards together take the browsing width.
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'networkidle' });
+	const exportCards = await page.evaluate(() => {
+		const surface = document.querySelector('#workbench-page-surface').getBoundingClientRect();
+		const cards = Array.from(document.querySelectorAll('#workbench-page-surface .export-card'))
+			.map((card) => card.getBoundingClientRect());
+		return { surfaceLeft: surface.left, left: Math.min(...cards.map((card) => card.left)),
+			right: Math.max(...cards.map((card) => card.right)), count: cards.length };
+	});
+	expect(exportCards.count, JSON.stringify(exportCards)).toBe(2);
+	expect(Math.abs(exportCards.left - exportCards.surfaceLeft), JSON.stringify(exportCards)).toBeLessThanOrEqual(1);
+	expect(Math.abs(exportCards.right - firstRight), JSON.stringify(exportCards)).toBeLessThanOrEqual(1);
 	const forms = [`${REPOSITORY_ID}/add`, `${REPOSITORY_ID}/remove`, `${REPOSITORY_ID}/clear`,
-		`${REPOSITORY_ID}/export`, 'NONE/create', 'NONE/delete', 'NONE/server'];
+		'NONE/create', 'NONE/delete', 'NONE/server'];
 	for (const path of forms) {
 		const [repositoryId, view] = path.split('/');
 		await page.goto(repositoryPageUrl(repositoryId, view), { waitUntil: 'networkidle' });
