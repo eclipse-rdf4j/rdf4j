@@ -223,7 +223,10 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
+	private final MapGrowthPolicy growthPolicy;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
+	private final ThreadLocal<Boolean> safeAllocationResize = new ThreadLocal<>();
+	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
 	private volatile Runnable resizeCheckpointListener = () -> {
 	};
 	private boolean invalidateRevisionOnCommit = false;
@@ -282,6 +285,7 @@ class ValueStore extends AbstractValueFactory {
 		this.forceSync = config.getForceSync();
 		this.noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
+		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
@@ -1065,7 +1069,7 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			txnManager.deactivate();
 			try {
-				long newMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize,
+				long newMapSize = growthPolicy.grownMapSize(mapSize, pageSize,
 						Math.max(requiredBytes, LmdbUtil.MIN_FREE_SPACE));
 				if (growthAttempt != null) {
 					growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
@@ -1425,19 +1429,53 @@ class ValueStore extends AbstractValueFactory {
 		return false;
 	}
 
+	boolean isSafeAllocationResize() {
+		return Boolean.TRUE.equals(safeAllocationResize.get());
+	}
+
+	private void resizeForAllocation(long txn, long requiredSize) throws IOException {
+		// These allocation sites own copied key/value bytes and resolve the replacement writer only after resize.
+		// Collision cursors, index maintenance and retired-ID continuations retain native handles and are excluded.
+		safeAllocationResize.set(Boolean.TRUE);
+		try {
+			resizeMap(txn, requiredSize);
+		} finally {
+			safeAllocationResize.remove();
+		}
+	}
+
 	private void resizeMap(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
-			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
+			long occupied = LmdbUtil.getNewSize(pageSize, txn, 0L);
+			if (growthPolicy.requiresGrowth(mapSize, occupied, requiredSize) && mapGrowthRequestListener != null) {
+				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
+						saturatedEstimateAdd(occupied, requiredSize), false);
+			}
+			if (growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize)) {
+				if (mapGrowthRequestListener != null) {
+					mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
+							saturatedEstimateAdd(occupied, requiredSize), true);
+				}
 				if (replayDecision != null && !replayDecision.track) {
 					growForTransactionRetry(requiredSize, null);
 				}
-				LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+				LmdbSailStore.MapGrowthAttempt growthAttempt;
+				try {
+					growthAttempt = beginMapGrowthAttempt();
+				} catch (LmdbTransactionRetryException unsafeContinuation) {
+					growForTransactionRetry(requiredSize, unsafeContinuation);
+					throw unsafeContinuation;
+				}
 				try (growthAttempt) {
 					if (growthAttempt != null) {
 						growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
 					}
 					// map is full, resize
 					requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+					if (growthAttempt != null) {
+						requiredSize = growthAttempt.projectedUsedBytes(LmdbSailStore.MapResizeKind.VALUE_STORE,
+								requiredSize);
+					}
 					boolean activeWriteTxn = writeTxn != 0;
 					if (activeWriteTxn) {
 						// LMDB requires the active writer transaction to be committed before changing the map size.
@@ -1466,26 +1504,30 @@ class ValueStore extends AbstractValueFactory {
 						txnManager.deactivate();
 
 						long oldMapSize = mapSize;
-						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
+						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
 
-						logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
+						logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
 
 						if (growthAttempt != null) {
 							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
 						}
-						E(mdb_env_set_mapsize(env, mapSize));
+						E(mdb_env_set_mapsize(env, grownSize));
+						mapSize = grownSize;
 						if (activeWriteTxn) {
 							startTransaction(false);
 						}
 
-						txnManager.activate();
 					} finally {
-						lockManager.unlockWrite(stamp);
-						if (readLocked) {
-							try {
-								lockManager.readLock();
-							} catch (InterruptedException e) {
-								throw new IOException(e);
+						try {
+							txnManager.activate();
+						} finally {
+							lockManager.unlockWrite(stamp);
+							if (readLocked) {
+								try {
+									lockManager.readLock();
+								} catch (InterruptedException e) {
+									throw new IOException(e);
+								}
 							}
 						}
 					}
@@ -1495,7 +1537,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void growForTransactionRetry(long requiredSize, Throwable cause) throws IOException {
-		LmdbTransactionRetryException retry = replayDecision.capacityFailure("ValueStore", cause);
+		LmdbTransactionRetryException retry = replayDecision == null
+				? new LmdbTransactionRetryException("ValueStore", cause)
+				: replayDecision.capacityFailure("ValueStore", cause);
 		long projectedBytes = writeTxn == 0 ? saturatedEstimateAdd(committedHighWaterBytes, requiredSize)
 				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize);
 		// No dictionary checkpoint may publish this transaction's prefix when its replay was omitted.
@@ -1505,6 +1549,14 @@ class ValueStore extends AbstractValueFactory {
 			if (cleanupFailure != retry) {
 				retry.addSuppressed(cleanupFailure);
 			}
+		}
+		if (mapGrowthRequestListener != null) {
+			try {
+				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE, projectedBytes, true);
+			} catch (IOException | RuntimeException growthFailure) {
+				retry.addSuppressed(growthFailure);
+			}
+			throw retry;
 		}
 		try {
 			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
@@ -1527,6 +1579,14 @@ class ValueStore extends AbstractValueFactory {
 
 	long committedHighWaterBytes() {
 		return committedHighWaterBytes;
+	}
+
+	long mapSizeBytes() {
+		return mapSize;
+	}
+
+	boolean retainsGrowthReserve() throws IOException {
+		return growthPolicy.retainsGrowthReserve(mapSize, occupiedBytes());
 	}
 
 	long mutationGeneration() {
@@ -1582,20 +1642,24 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
-		if (!autoGrow || estimatedWriteBytes <= 0L) {
+		if (!autoGrow) {
 			return false;
 		}
+		return growthPolicy.requiresGrowth(mapSize, occupiedBytes(), estimatedWriteBytes);
+	}
+
+	long occupiedBytes() throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
-			return LmdbUtil.requiresResizeAtPage(mapSize, pageSize, nextPageNo, estimatedWriteBytes);
+			return saturatedEstimateMultiply(nextPageNo, pageSize);
 		}
 	}
 
 	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
 			throws IOException {
-		if (!autoGrow || estimatedWriteBytes <= 0L || writeTxn != 0) {
+		if (!autoGrow || writeTxn != 0) {
 			return false;
 		}
 		StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -1620,7 +1684,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 				long currentFootprint = saturatedEstimateMultiply(nextPageNo, pageSize);
 				long projectedFootprint = saturatedEstimateAdd(currentFootprint, estimatedWriteBytes);
-				long resizedMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedFootprint);
+				long resizedMapSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedFootprint);
 				if (growthAttempt != null) {
 					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
 				}
@@ -1687,6 +1751,10 @@ class ValueStore extends AbstractValueFactory {
 
 	void setMapGrowthAttemptSupplier(LmdbSailStore.MapGrowthAttemptSupplier supplier) {
 		mapGrowthAttemptSupplier = supplier;
+	}
+
+	void setMapGrowthRequestListener(LmdbSailStore.MapGrowthRequestListener listener) {
+		mapGrowthRequestListener = listener;
 	}
 
 	void setResizeCheckpointListener(Runnable resizeCheckpointListener) {
@@ -1814,7 +1882,7 @@ class ValueStore extends AbstractValueFactory {
 					return null;
 				}
 				// id was not found, create a new one
-				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+				resizeForAllocation(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
@@ -1856,7 +1924,7 @@ class ValueStore extends AbstractValueFactory {
 						return null;
 					}
 
-					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+					resizeForAllocation(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 					long newId = nextId(data[0]);
 					writeTransaction((stack2, writeTxn) -> {
@@ -2646,18 +2714,16 @@ class ValueStore extends AbstractValueFactory {
 		for (int attempt = 0;; attempt++) {
 			try {
 				var lockManager = txnManager.lockManager();
-				long stamp = lockManager.readLock();
+				long stamp = txnManager.acquireReadBarrier();
 				hasReadLock.set(Boolean.TRUE);
 				try {
-					try (Txn txn = txnManager.createReadTxn(); MemoryStack stack = stackPush()) {
+					try (Txn txn = txnManager.createReadTxnUnderReadLock(); MemoryStack stack = stackPush()) {
 						return transaction.exec(stack, txn.get());
 					}
 				} finally {
 					hasReadLock.remove();
 					lockManager.unlockRead(stamp);
 				}
-			} catch (InterruptedException e) {
-				throw new IOException(e);
 			} catch (ReadersFullException e) {
 				if (attempt > 0) {
 					throw e;
@@ -2853,7 +2919,7 @@ class ValueStore extends AbstractValueFactory {
 			// wrap into read txn as resizeMap expects an active surrounding read txn
 			readTransaction(env, (stack1, txn1) -> {
 				// contains IDs for data types and namespaces which are freed by garbage collecting literals and URIs
-				resizeMap(writeTxn, 2L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
+				resizeMap(writeTxn, estimateGcWriteBytes(ids.size()));
 
 				final Collection<Long> finalIds = ids;
 				final Collection<Long> finalNextIds = nextIds;
@@ -2895,6 +2961,10 @@ class ValueStore extends AbstractValueFactory {
 				return null;
 			});
 		}
+	}
+
+	static long estimateGcWriteBytes(int idCount) {
+		return 2L * idCount * (1L + Long.BYTES + 2L + Long.BYTES);
 	}
 
 	protected void deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,
@@ -3469,22 +3539,48 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
-		if (env != 0) {
-			if (writeTxn == 0) {
-				flushPendingHashUpdates();
+		try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+			Throwable failure = null;
+			if (env != 0) {
+				if (writeTxn == 0) {
+					try {
+						flushPendingHashUpdates();
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					}
+				}
+				try {
+					// This rollback path only aborts the active writer and clears in-memory state; it does not
+					// reacquire
+					// the transaction manager's native-operation barrier.
+					endTransaction(false, false);
+				} catch (Throwable closeFailure) {
+					failure = appendFailure(failure, closeFailure);
+				}
+				try {
+					txnManager.closeUnderExclusiveLock();
+				} catch (Throwable closeFailure) {
+					failure = appendFailure(failure, closeFailure);
+				}
+				long environment = env;
+				try {
+					closeEnvironment(environment);
+				} catch (Throwable closeFailure) {
+					failure = appendFailure(failure, closeFailure);
+				} finally {
+					env = 0;
+				}
 			}
-			txnManager.close();
-			endTransaction(false, false);
-			closeEnvironment(env);
-			env = 0;
-		}
-		if (hashFile != null) {
-			try {
-				hashFile.close();
-			} catch (IOException e) {
-				logger.warn("Could not close LMDB hash cache", e);
+			if (hashFile != null) {
+				try {
+					hashFile.close();
+				} catch (IOException e) {
+					logger.warn("Could not close LMDB hash cache", e);
+				} finally {
+					hashFile = null;
+				}
 			}
-			hashFile = null;
+			rethrowFailure(failure);
 		}
 	}
 

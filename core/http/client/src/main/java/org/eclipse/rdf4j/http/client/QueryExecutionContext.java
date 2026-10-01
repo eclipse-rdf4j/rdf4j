@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 
 /**
@@ -32,6 +33,7 @@ public final class QueryExecutionContext {
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
 	private static final ThreadLocal<ReplaySafepoint> REPLAY_SAFEPOINT = new ThreadLocal<>();
 	private static final ThreadLocal<ReplayDeferral> REPLAY_DEFERRAL = new ThreadLocal<>();
+	private static final ThreadLocal<InstalledReplayContext> INSTALLED_REPLAY_CONTEXT = new ThreadLocal<>();
 	private static volatile boolean heavyOperatorExecutionEnabled = true;
 	private static volatile int checkpointCalls;
 
@@ -81,12 +83,19 @@ public final class QueryExecutionContext {
 
 	/** Installs an optional cooperative map-growth checkpoint for the current query evaluation. */
 	public static Activation activateReplaySafepoint(Runnable checkpoint) {
+		return activateReplaySafepoint(checkpoint, null);
+	}
+
+	/** Adds an opaque admission capability to work explicitly dispatched with the captured query context. */
+	public static Activation activateReplaySafepoint(Runnable checkpoint, Supplier<WorkerScope> workerScopeCapture) {
 		ReplaySafepoint previous = REPLAY_SAFEPOINT.get();
-		ReplaySafepoint next = new ReplaySafepoint(Objects.requireNonNull(checkpoint, "Checkpoint was null"), previous);
+		ReplaySafepoint next = new ReplaySafepoint(Objects.requireNonNull(checkpoint, "Checkpoint was null"), previous,
+				workerScopeCapture);
 		REPLAY_SAFEPOINT.set(next);
 		return () -> {
 			if (next.active.compareAndSet(true, false)) {
 				next.checkpoint.set(null);
+				next.workerScopeCapture = null;
 			}
 			if (REPLAY_SAFEPOINT.get() == next) {
 				if (previous == null) {
@@ -119,7 +128,24 @@ public final class QueryExecutionContext {
 	public static ReplayContext captureReplayContext() {
 		ReplaySafepoint safepoint = copyActiveReplaySafepoints(REPLAY_SAFEPOINT.get());
 		ReplayDeferral deferral = copyActiveReplayDeferrals(REPLAY_DEFERRAL.get());
-		return safepoint == null && deferral == null ? null : new ReplayContext(safepoint, deferral);
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		List<WorkerScope> workerScopes = null;
+		for (ReplaySafepoint scope = safepoint; scope != null; scope = scope.previous) {
+			Supplier<WorkerScope> capture = scope.scopeOwner.workerScopeCapture;
+			if (capture != null && scope.active.get()) {
+				WorkerScope captured = capture.get();
+				if (captured != null) {
+					if (workerScopes == null) {
+						workerScopes = new ArrayList<>();
+					}
+					workerScopes.add(captured);
+				}
+			}
+		}
+		return safepoint == null && deferral == null && deadline == null
+				? null
+				: new ReplayContext(safepoint, deferral, deadline,
+						workerScopes == null ? List.of() : List.copyOf(workerScopes.reversed()));
 	}
 
 	/** Checks whether the current evaluation should cooperatively abandon its unobserved read attempt. */
@@ -192,14 +218,28 @@ public final class QueryExecutionContext {
 		void close();
 	}
 
+	/** A capability captured from an admitted query; activation validates its owning attempt on the worker. */
+	@FunctionalInterface
+	public interface WorkerScope {
+		Activation activate();
+	}
+
+	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, ReplayDeferral deferral) {
+	}
+
 	/** A captured replay checkpoint stack that can be installed around one unit of worker-thread work. */
 	public static final class ReplayContext {
 		private final ReplaySafepoint safepoint;
 		private final ReplayDeferral deferral;
+		private final QueryExecutionDeadline deadline;
+		private final List<WorkerScope> workerScopes;
 
-		private ReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral) {
+		private ReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral, QueryExecutionDeadline deadline,
+				List<WorkerScope> workerScopes) {
 			this.safepoint = safepoint;
 			this.deferral = deferral;
+			this.deadline = deadline;
+			this.workerScopes = workerScopes;
 		}
 
 		/** Runs an integer-returning operation with this context installed, then restores the worker's context. */
@@ -207,14 +247,11 @@ public final class QueryExecutionContext {
 			Objects.requireNonNull(action, "Action was null");
 			ReplaySafepoint previousSafepoint = REPLAY_SAFEPOINT.get();
 			ReplayDeferral previousDeferral = REPLAY_DEFERRAL.get();
-			if (previousSafepoint == safepoint && previousDeferral == deferral) {
+			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.getAsInt();
 			}
-			setReplayContext(safepoint, deferral);
-			try {
+			try (Activation ignored = install(previousSafepoint, previousDeferral)) {
 				return action.getAsInt();
-			} finally {
-				setReplayContext(previousSafepoint, previousDeferral);
 			}
 		}
 
@@ -236,15 +273,84 @@ public final class QueryExecutionContext {
 		private <T> T withContext(Supplier<T> action) {
 			ReplaySafepoint previousSafepoint = REPLAY_SAFEPOINT.get();
 			ReplayDeferral previousDeferral = REPLAY_DEFERRAL.get();
-			if (previousSafepoint == safepoint && previousDeferral == deferral) {
+			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.get();
 			}
+			try (Activation ignored = install(previousSafepoint, previousDeferral)) {
+				return action.get();
+			}
+		}
+
+		private Activation install(ReplaySafepoint previousSafepoint, ReplayDeferral previousDeferral) {
+			InstalledReplayContext previousContext = INSTALLED_REPLAY_CONTEXT.get();
+			QueryExecutionDeadline.Scope deadlineScope = QueryExecutionDeadline.enterScopedContext(deadline);
+			List<Activation> activations = workerScopes.isEmpty() ? List.of() : new ArrayList<>(workerScopes.size());
 			setReplayContext(safepoint, deferral);
 			try {
-				return action.get();
-			} finally {
-				setReplayContext(previousSafepoint, previousDeferral);
+				for (WorkerScope scope : workerScopes) {
+					activations.add(Objects.requireNonNull(scope.activate(), "Worker scope activation was null"));
+				}
+				INSTALLED_REPLAY_CONTEXT
+						.set(new InstalledReplayContext(this, REPLAY_SAFEPOINT.get(), REPLAY_DEFERRAL.get()));
+			} catch (RuntimeException | Error failure) {
+				try {
+					closeWorkerScopes(activations, failure);
+				} finally {
+					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope);
+				}
+				throw failure;
 			}
+			return () -> {
+				try {
+					closeWorkerScopes(activations, null);
+				} finally {
+					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope);
+				}
+			};
+		}
+
+		private static void restore(ReplaySafepoint safepoint, ReplayDeferral deferral,
+				InstalledReplayContext previousContext, QueryExecutionDeadline.Scope deadlineScope) {
+			setReplayContext(safepoint, deferral);
+			if (previousContext == null) {
+				INSTALLED_REPLAY_CONTEXT.remove();
+			} else {
+				INSTALLED_REPLAY_CONTEXT.set(previousContext);
+			}
+			deadlineScope.close();
+		}
+
+		private static void closeWorkerScopes(List<Activation> activations, Throwable primary) {
+			Throwable failure = primary;
+			for (int i = activations.size() - 1; i >= 0; i--) {
+				try {
+					activations.get(i).close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure == null) {
+						failure = closeFailure;
+					} else if (failure != closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+			}
+			if (primary == null && failure != null) {
+				if (failure instanceof RuntimeException runtime) {
+					throw runtime;
+				}
+				throw (Error) failure;
+			}
+		}
+
+		private boolean isCurrentContext(ReplaySafepoint currentSafepoint, ReplayDeferral currentDeferral) {
+			if (QueryExecutionDeadline.current() != deadline) {
+				return false;
+			}
+			if (currentSafepoint == safepoint && currentDeferral == deferral && workerScopes.isEmpty()) {
+				return true;
+			}
+			InstalledReplayContext installed = INSTALLED_REPLAY_CONTEXT.get();
+			return installed != null && installed.context() == this && installed.safepoint() == currentSafepoint
+					&& installed.deferral() == currentDeferral;
 		}
 	}
 
@@ -283,7 +389,7 @@ public final class QueryExecutionContext {
 		ReplaySafepoint result = null;
 		for (int i = activeScopes.size() - 1; i >= 0; i--) {
 			ReplaySafepoint scope = activeScopes.get(i);
-			result = new ReplaySafepoint(scope.checkpoint, scope.active, result);
+			result = new ReplaySafepoint(scope.checkpoint, scope.active, result, scope.scopeOwner);
 		}
 		return result;
 	}
@@ -335,16 +441,24 @@ public final class QueryExecutionContext {
 		private final AtomicReference<Runnable> checkpoint;
 		private final ReplaySafepoint previous;
 		private final AtomicBoolean active;
+		private final ReplaySafepoint scopeOwner;
+		private volatile Supplier<WorkerScope> workerScopeCapture;
 
-		private ReplaySafepoint(Runnable checkpoint, ReplaySafepoint previous) {
-			this(new AtomicReference<>(checkpoint), new AtomicBoolean(true), previous);
+		private ReplaySafepoint(Runnable checkpoint, ReplaySafepoint previous,
+				Supplier<WorkerScope> workerScopeCapture) {
+			this.checkpoint = new AtomicReference<>(checkpoint);
+			this.active = new AtomicBoolean(true);
+			this.previous = previous;
+			this.scopeOwner = this;
+			this.workerScopeCapture = workerScopeCapture;
 		}
 
 		private ReplaySafepoint(AtomicReference<Runnable> checkpoint, AtomicBoolean active,
-				ReplaySafepoint previous) {
+				ReplaySafepoint previous, ReplaySafepoint scopeOwner) {
 			this.checkpoint = checkpoint;
 			this.active = active;
 			this.previous = previous;
+			this.scopeOwner = scopeOwner;
 		}
 	}
 

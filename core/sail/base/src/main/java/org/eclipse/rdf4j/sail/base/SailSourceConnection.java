@@ -492,6 +492,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return store.getInferredSailSource();
 	}
 
+	/**
+	 * Returns whether the current read belongs to this connection's active transaction branch. A retained result from
+	 * an earlier transaction can provide its own read source and admission without inheriting a later transaction's
+	 * buffered changes. Such sources are used directly, including after transaction completion, because their retained
+	 * admission already owns the read lifetime.
+	 */
+	protected boolean useTransactionReadBranch() {
+		return true;
+	}
+
 	private SailDataset acquireDataset(SailSource source, IsolationLevel level) throws SailException {
 		return withDatasetAcquisition(level, () -> source.dataset(level));
 	}
@@ -884,10 +894,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
-			if (op == null && !datasets.containsKey(null)) {
+			if (op == null && (!explicitSinks.containsKey(null)
+					|| hasConnectionListeners() && !datasets.containsKey(null))) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, acquireDataset(source, getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				// Pure insertion consumes no read view. A listener needs the dataset to preserve duplicate
+				// notifications.
+				if (hasConnectionListeners() && !datasets.containsKey(null)) {
+					datasets.put(null, acquireDataset(source, getIsolationLevel()));
+				}
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(op);
 			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
@@ -908,7 +925,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (op == null && !datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
 				datasets.put(null, acquireDataset(source, getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(op);
 			remove(subj, pred, obj, false, datasets.get(op), explicitSinks.get(op), contexts);
@@ -1127,7 +1146,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (!datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
 				datasets.put(null, acquireDataset(source, getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(null);
 			if (this.hasConnectionListeners()) {
@@ -1252,6 +1273,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * @throws SailException
 	 */
 	private SailSource branch(IncludeInferred includeinferred) throws SailException {
+		if (!useTransactionReadBranch()) {
+			SailSource retainedSource = switch (includeinferred) {
+			case all -> new UnionSailSource(getInferredSailSource(), getExplicitSailSource());
+			case inferredOnly -> getInferredSailSource();
+			case explicitOnly -> getExplicitSailSource();
+			};
+			return new DelegatingSailSource(retainedSource, false);
+		}
 		boolean active = isActive();
 		IsolationLevel level = getIsolationLevel();
 		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);

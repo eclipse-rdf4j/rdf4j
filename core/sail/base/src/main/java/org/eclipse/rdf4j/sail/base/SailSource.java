@@ -96,6 +96,27 @@ public interface SailSource extends SailClosable {
 		void fail();
 	}
 
+	/** Ownership of buffered work, retained until that work is published or discarded. */
+	@InternalUseOnly
+	record WriteIntent(Object owner, SailClosable lease) implements SailClosable {
+		@Override
+		public void close() {
+			lease.close();
+		}
+	}
+
+	/** Resolves an internal descendant's owner before it mutates a buffer. */
+	@InternalUseOnly
+	default Object writeIntentOwner(Object requestedOwner) {
+		return requestedOwner;
+	}
+
+	/** Registers logical write intent without acquiring a native writer or publishing any data. */
+	@InternalUseOnly
+	default WriteIntent beginWriteIntent(Object writeOwner) throws SailException {
+		return null;
+	}
+
 	/** A snapshot of the logical write inputs used to reserve capacity before branch preparation. */
 	@InternalUseOnly
 	record WritePreflight(List<Statement> statements, List<NamespaceUpdate> addedNamespaces,
@@ -349,6 +370,12 @@ public interface SailSource extends SailClosable {
 	default SailClosable beginPublication() throws SailException {
 		return () -> {
 		};
+	}
+
+	/** Coordinates branch bookkeeping within the exact dataset acquisition already admitted by the backing source. */
+	@InternalUseOnly
+	default SailClosable beginDatasetPublication() throws SailException {
+		return beginPublication();
 	}
 
 	/** Starts publication under the supplied logical writer identity. */

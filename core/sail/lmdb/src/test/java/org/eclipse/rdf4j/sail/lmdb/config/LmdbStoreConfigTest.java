@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -26,6 +28,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -81,6 +84,8 @@ class LmdbStoreConfigTest {
 
 	private static final IRI MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
 
+	private static final IRI MAP_GROWTH_THRESHOLD = LmdbStoreSchema.MAP_GROWTH_THRESHOLD;
+
 	private static final IRI READ_ONLY_REPLAY_MAX_RETRIES = LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES;
 
 	@Test
@@ -112,6 +117,11 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
+	void mapGrowthThresholdDefaultsToSeventyFivePercent() {
+		assertThat(new LmdbStoreConfig().getMapGrowthThreshold()).isEqualTo(0.75d);
+	}
+
+	@Test
 	void readOnlyReplayMaxRetriesDefaultsToThree() {
 		assertThat(invokeIntGetter(new LmdbStoreConfig(), "getReadOnlyReplayMaxRetries")).isEqualTo(3);
 	}
@@ -122,6 +132,61 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeLongSetter(config, "setMapGrowthReadDrainTimeoutMillis", 12_345L)).isSameAs(config);
 		assertThat(invokeLongGetter(config, "getMapGrowthReadDrainTimeoutMillis")).isEqualTo(12_345L);
+	}
+
+	@Test
+	void mapGrowthThresholdCanBeConfiguredFluentlyAndIsPerInstance() {
+		LmdbStoreConfig configured = new LmdbStoreConfig();
+		LmdbStoreConfig independent = new LmdbStoreConfig();
+
+		assertThat(configured.setMapGrowthThreshold(0.625d)).isSameAs(configured);
+		assertThat(configured.getMapGrowthThreshold()).isEqualTo(0.625d);
+		assertThat(independent.getMapGrowthThreshold()).isEqualTo(0.75d);
+	}
+
+	@ParameterizedTest
+	@ValueSource(doubles = { 0.0d, 1.0d, -0.01d, 1.01d, Double.NaN, Double.POSITIVE_INFINITY,
+			Double.NEGATIVE_INFINITY })
+	void mapGrowthThresholdMustBeFiniteAndStrictlyBetweenZeroAndOne(double threshold) {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> new LmdbStoreConfig().setMapGrowthThreshold(threshold));
+
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, MAP_GROWTH_THRESHOLD, Values.literal(threshold))
+				.build();
+		assertThatExceptionOfType(SailConfigException.class)
+				.isThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode));
+	}
+
+	@ParameterizedTest
+	@ValueSource(doubles = { 0.25d, 0.5d, 0.75d, 0.9d })
+	void testThatLmdbStoreConfigParseAndExportMapGrowthThreshold(double threshold) {
+		testParseAndExport(
+				MAP_GROWTH_THRESHOLD,
+				Values.literal(threshold),
+				LmdbStoreConfig::getMapGrowthThreshold,
+				threshold,
+				threshold != LmdbStoreConfig.MAP_GROWTH_THRESHOLD
+		);
+	}
+
+	@Test
+	void mapGrowthThresholdPropertyIsPreservedWhenParsedAndExported() {
+		final BNode implNode = bnode();
+		final IRI property = Values.iri(LmdbStoreSchema.NAMESPACE + "mapGrowthThreshold");
+		final Literal threshold = Values.literal(0.625d);
+		final Model configModel = new ModelBuilder()
+				.add(implNode, property, threshold)
+				.build();
+
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, property, threshold)).isTrue();
 	}
 
 	@Test

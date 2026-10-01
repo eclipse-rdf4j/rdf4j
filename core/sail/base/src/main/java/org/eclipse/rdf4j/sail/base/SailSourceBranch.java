@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -36,6 +37,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,11 +56,15 @@ class SailSourceBranch implements SailSource {
 	 * Used to prevent changes to this object's field from multiple threads.
 	 */
 	private final ReentrantLock semaphore = new ReentrantLock();
+	private final Map<Changeset, SailWriteContinuation.Scope> preparedContinuations = new IdentityHashMap<>();
+	private int suspendedWrites;
 
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
 	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
+	/** Leases transferred with shallow models; pending sinks retain their own leases until merge or close. */
+	private final ArrayDeque<WriteIntent> bufferedWriteIntents = new ArrayDeque<>();
 
 	/**
 	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
@@ -191,8 +198,10 @@ class SailSourceBranch implements SailSource {
 		SailSink toCloseSerializable;
 		SailSink toClosePrepared;
 		SailClosable toClosePreflight;
+		List<WriteIntent> discardedPendingIntents = new ArrayList<>();
 		semaphore.lock();
 		try {
+			checkWriteNotSuspended();
 			if (closed) {
 				return;
 			}
@@ -207,6 +216,13 @@ class SailSourceBranch implements SailSource {
 			toClosePrepared = prepared;
 			prepared = null;
 			toClosePreflight = detachWritePreflights();
+			failure = closeBufferedWriteIntents(failure);
+			for (Changeset change : pending) {
+				WriteIntent intent = change.takeWriteIntent();
+				if (intent != null) {
+					discardedPendingIntents.add(intent);
+				}
+			}
 		} finally {
 			semaphore.unlock();
 		}
@@ -215,6 +231,9 @@ class SailSourceBranch implements SailSource {
 			failure = closeResource(failure, toClosePrepared);
 		}
 		failure = closeResource(failure, toClosePreflight);
+		for (WriteIntent intent : discardedPendingIntents) {
+			failure = closeResource(failure, intent);
+		}
 		if (failure != null) {
 			rethrow(failure);
 		}
@@ -224,6 +243,7 @@ class SailSourceBranch implements SailSource {
 	public void abandonUnobserved() throws SailException {
 		semaphore.lock();
 		try {
+			checkWriteNotSuspended();
 			abandoned = true;
 			for (SnapshotLease lease : observerSnapshots.values()) {
 				lease.abandoned = true;
@@ -330,10 +350,53 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailSink sink(IsolationLevel level) throws SailException {
+		checkWriteContinuationAdmission();
 		Changeset changeset = new Changeset() {
 
 			private boolean prepared;
 			private SailClosable preparedWrite;
+			private final Object fallbackWriteOwner = new Object();
+			private volatile WriteIntent writeIntent;
+			private Object admittedWriteOwner;
+			private boolean sinkClosed;
+
+			@Override
+			protected void beforeWriteIntent() {
+				if (!tracksWriteIntent() || writeIntent != null) {
+					return;
+				}
+				checkWriteContinuationAdmission();
+				Object owner = writeIntentOwner(fallbackWriteOwner);
+				WriteIntent registration = backingSource.beginWriteIntent(owner);
+				boolean retained = false;
+				try {
+					synchronized (this) {
+						if (sinkClosed || SailSourceBranch.this.closed) {
+							throw new SailException("SailSourceBranch sink is closed");
+						}
+						if (writeIntent == null) {
+							writeIntent = registration;
+							admittedWriteOwner = owner;
+							retained = true;
+						}
+					}
+				} finally {
+					if (!retained && registration != null) {
+						registration.close();
+					}
+				}
+			}
+
+			@Override
+			protected synchronized WriteIntent takeWriteIntent() {
+				WriteIntent result = writeIntent;
+				writeIntent = null;
+				return result;
+			}
+
+			private Object pendingWriteOwner() {
+				return admittedWriteOwner == null ? writePreflightOwner : admittedWriteOwner;
+			}
 
 			@Override
 			protected boolean tracksWriteIntent() {
@@ -348,7 +411,7 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void prepare() throws SailException {
 				if (prepared) {
-					try (SailClosable publication = SailSourceBranch.this.beginPublication()) {
+					try (SailClosable publication = SailSourceBranch.this.beginPublication(pendingWriteOwner())) {
 						super.prepare();
 					}
 					return;
@@ -362,9 +425,9 @@ class SailSourceBranch implements SailSource {
 						// prepared-write or
 						// publication reservations. Growth coordination may need the branch's complete write estimate.
 						SailSourceBranch.this.ensureWritePreflight();
-						reservation = SailSourceBranch.this.beginPreparedWrite();
+						reservation = SailSourceBranch.this.beginPreparedWrite(pendingWriteOwner());
 					}
-					try (SailClosable publication = SailSourceBranch.this.beginPublication()) {
+					try (SailClosable publication = SailSourceBranch.this.beginPublication(pendingWriteOwner())) {
 						preparedChangeset(this);
 						branchLockHeld = true;
 						super.prepare();
@@ -394,6 +457,9 @@ class SailSourceBranch implements SailSource {
 			@Override
 			public void close() throws SailException {
 				Throwable failure = null;
+				synchronized (this) {
+					sinkClosed = true;
+				}
 				try {
 					// ´this´ Changeset should have been removed from `pending` already, unless we are rolling back a
 					// transaction in which case we need to remove it when closing the Changeset.
@@ -419,6 +485,7 @@ class SailSourceBranch implements SailSource {
 				SailClosable toClosePreparedWrite = preparedWrite;
 				preparedWrite = null;
 				failure = closeResource(failure, toClosePreparedWrite);
+				failure = closeResource(failure, takeWriteIntent());
 				try {
 					autoFlush();
 				} catch (RuntimeException | Error closeFailure) {
@@ -549,7 +616,7 @@ class SailSourceBranch implements SailSource {
 			long generation;
 
 			SailDataset cachedObserver = null;
-			try (SailClosable publication = backingSource.beginPublication()) {
+			try (SailClosable publication = backingSource.beginDatasetPublication()) {
 				semaphore.lock();
 				try {
 					if (closed) {
@@ -609,7 +676,7 @@ class SailSourceBranch implements SailSource {
 				boolean candidateUsable = false;
 				Throwable observerFailure = null;
 				try {
-					try (SailClosable publication = backingSource.beginPublication()) {
+					try (SailClosable publication = backingSource.beginDatasetPublication()) {
 						candidateUsable = isSnapshotUsable(admitted, level);
 						if (candidateUsable) {
 							semaphore.lock();
@@ -704,7 +771,7 @@ class SailSourceBranch implements SailSource {
 			boolean candidateUsable = false;
 			Throwable observerFailure = null;
 			try {
-				try (SailClosable publication = backingSource.beginPublication()) {
+				try (SailClosable publication = backingSource.beginDatasetPublication()) {
 					candidateUsable = isSnapshotUsable(admitted, level);
 					if (candidateUsable) {
 						semaphore.lock();
@@ -891,8 +958,25 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void awaitSnapshotAdmission(SnapshotAdmission admission) throws SailException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		try {
-			admission.completed.await();
+			if (deadline == null) {
+				admission.completed.await();
+			} else {
+				while (admission.completed.getCount() != 0) {
+					long remainingNanos = deadline.remainingNanos();
+					if (remainingNanos == 0) {
+						throw new QueryInterruptedException("Query evaluation took too long");
+					}
+					if (!admission.completed.await(remainingNanos, TimeUnit.NANOSECONDS)
+							&& deadline.remainingNanos() == 0) {
+						throw new QueryInterruptedException("Query evaluation took too long");
+					}
+				}
+				if (deadline.remainingNanos() == 0) {
+					throw new QueryInterruptedException("Query evaluation took too long");
+				}
+			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new SailException("Interrupted while waiting for a snapshot generation", e);
@@ -965,7 +1049,12 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailClosable beginPublication() throws SailException {
-		return beginPublicationForOwner(writePreflightOwner);
+		return beginPublicationForOwner(bufferedPublicationOwner());
+	}
+
+	@Override
+	public SailClosable beginDatasetPublication() throws SailException {
+		return backingSource.beginDatasetPublication();
 	}
 
 	@Override
@@ -975,7 +1064,33 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailClosable tryBeginPublication() throws SailException {
-		return tryBeginPublicationForOwner(writePreflightOwner);
+		return tryBeginPublicationForOwner(bufferedPublicationOwner());
+	}
+
+	private Object bufferedPublicationOwner() {
+		if (writePreflightOwner != null) {
+			return writePreflightOwner;
+		}
+		Object current = backingSource.writeIntentOwner(null);
+		if (current != null) {
+			return current;
+		}
+		semaphore.lock();
+		try {
+			return bufferedWriteIntents.isEmpty() ? null : bufferedWriteIntents.getFirst().owner();
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	@Override
+	public Object writeIntentOwner(Object requestedOwner) {
+		return backingSource.writeIntentOwner(owner(requestedOwner));
+	}
+
+	@Override
+	public WriteIntent beginWriteIntent(Object writeOwner) {
+		return backingSource.beginWriteIntent(owner(writeOwner));
 	}
 
 	@Override
@@ -1030,6 +1145,7 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void prepare() throws SailException {
+		checkWriteContinuationAdmission();
 		try {
 			ensureWritePreflight();
 			try (SailClosable publication = beginPublication()) {
@@ -1332,11 +1448,12 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public void flush() throws SailException {
+		checkWriteContinuationAdmission();
 		boolean startedPreflight = ensureWritePreflight();
 		try {
 			try (SailClosable publication = beginPublication()) {
 				semaphore.lock();
-				try {
+				try (SailWriteContinuation.Scope continuation = writeContinuation()) {
 					flushLocked();
 				} catch (Throwable failure) {
 					SailSource.failPublication(publication);
@@ -1369,6 +1486,10 @@ class SailSourceBranch implements SailSource {
 			}
 			retireSnapshot();
 			closeWritePreflight();
+			Throwable failure = closeBufferedWriteIntents(null);
+			if (failure != null) {
+				rethrow(failure);
+			}
 		}
 	}
 
@@ -1385,6 +1506,14 @@ class SailSourceBranch implements SailSource {
 			failure = addFailure(failure, retireFailure);
 		}
 		failure = closeWritePreflight(failure);
+		failure = closeBufferedWriteIntents(failure);
+		return failure;
+	}
+
+	private Throwable closeBufferedWriteIntents(Throwable failure) {
+		while (!bufferedWriteIntents.isEmpty()) {
+			failure = closeResource(failure, bufferedWriteIntents.removeFirst());
+		}
 		return failure;
 	}
 
@@ -1457,6 +1586,13 @@ class SailSourceBranch implements SailSource {
 
 	void preparedChangeset(Changeset changeset) {
 		semaphore.lock();
+		try {
+			checkWriteNotSuspended();
+			preparedContinuations.put(changeset, writeContinuation());
+		} catch (RuntimeException | Error failure) {
+			semaphore.unlock();
+			throw failure;
+		}
 	}
 
 	void merge(Changeset change) {
@@ -1469,10 +1605,15 @@ class SailSourceBranch implements SailSource {
 	}
 
 	void mergeLocked(Changeset change) {
+		checkWriteNotSuspended();
 		pending.remove(change);
 		if (isChanged(change)) {
 			Changeset merged;
 			changes.add(change.shallowClone());
+			WriteIntent intent = change.takeWriteIntent();
+			if (intent != null) {
+				bufferedWriteIntents.addLast(intent);
+			}
 			compressChanges();
 			merged = changes.getLast();
 
@@ -1487,7 +1628,34 @@ class SailSourceBranch implements SailSource {
 	}
 
 	void closeChangeset(Changeset changeset) {
-		semaphore.unlock();
+		try {
+			checkWriteNotSuspended();
+			SailWriteContinuation.Scope continuation = preparedContinuations.remove(changeset);
+			if (continuation != null) {
+				continuation.close();
+			}
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	private SailWriteContinuation.Scope writeContinuation() {
+		return SailWriteContinuation.enter(semaphore, () -> suspendedWrites++, () -> suspendedWrites--);
+	}
+
+	private void checkWriteNotSuspended() {
+		if (suspendedWrites != 0) {
+			throw new SailConflictException("A suspended buffered write cannot mutate, close, or publish its suffix");
+		}
+	}
+
+	private void checkWriteContinuationAdmission() {
+		semaphore.lock();
+		try {
+			checkWriteNotSuspended();
+		} finally {
+			semaphore.unlock();
+		}
 	}
 
 	void compressChanges() {
@@ -1546,7 +1714,7 @@ class SailSourceBranch implements SailSource {
 			boolean eligible = false;
 			if (semaphore.tryLock()) {
 				try {
-					eligible = observers.isEmpty() && !changes.isEmpty();
+					eligible = suspendedWrites == 0 && observers.isEmpty() && !changes.isEmpty();
 				} finally {
 					semaphore.unlock();
 				}
@@ -1574,8 +1742,8 @@ class SailSourceBranch implements SailSource {
 			boolean flushed = false;
 			try (publication) {
 				if (semaphore.tryLock()) {
-					try {
-						if (observers.isEmpty()) {
+					try (SailWriteContinuation.Scope continuation = writeContinuation()) {
+						if (suspendedWrites == 0 && observers.isEmpty()) {
 							try {
 								flushLocked();
 								flushed = true;
@@ -1616,6 +1784,11 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void flush(SailSink sink) throws SailException {
+		if (sink instanceof Changeset destination) {
+			// The optimized model transfer bypasses the ordinary mutation methods. Establish the destination's
+			// intent under this publication owner before either branch lock or the retained model changes hands.
+			destination.beforeWriteIntent();
+		}
 		try {
 			semaphore.lock();
 			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset

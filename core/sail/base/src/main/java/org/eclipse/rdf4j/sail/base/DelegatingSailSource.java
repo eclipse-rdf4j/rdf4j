@@ -101,6 +101,16 @@ class DelegatingSailSource implements SailSource {
 	}
 
 	@Override
+	public Object writeIntentOwner(Object requestedOwner) {
+		return delegate.writeIntentOwner(requestedOwner);
+	}
+
+	@Override
+	public WriteIntent beginWriteIntent(Object writeOwner) {
+		return delegate.beginWriteIntent(writeOwner);
+	}
+
+	@Override
 	public SailClosable beginWriteWarning() throws SailException {
 		return delegate.beginWriteWarning();
 	}
@@ -168,6 +178,11 @@ class DelegatingSailSource implements SailSource {
 	@Override
 	public SailClosable beginPublication() throws SailException {
 		return delegate.beginPublication();
+	}
+
+	@Override
+	public SailClosable beginDatasetPublication() throws SailException {
+		return delegate.beginDatasetPublication();
 	}
 
 	@Override

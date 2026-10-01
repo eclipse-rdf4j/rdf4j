@@ -29,6 +29,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -325,14 +326,18 @@ public class TxnManagerTest {
 	@Test
 	void priorityWaitersAreInterruptedAndWokenOnClose(@TempDir Path dataDir) throws Exception {
 		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
-				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+				ExecutorService executor = Executors.newFixedThreadPool(4)) {
 			fixture.hold(TxnManager.POOL_SIZE - 1);
 			CountDownLatch entered = new CountDownLatch(1);
 			CountDownLatch release = new CountDownLatch(1);
 			try {
 				Future<Void> holder = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> {
+					long transactionId = mdb_txn_id(txn);
+					assertNotEquals(0L, txn, "the priority callback must hold a live native transaction");
 					entered.countDown();
 					await(release);
+					assertEquals(transactionId, mdb_txn_id(txn),
+							"close must keep the active native transaction alive until its callback exits");
 					return null;
 				}));
 				assertTrue(entered.await(5, TimeUnit.SECONDS));
@@ -355,15 +360,25 @@ public class TxnManagerTest {
 				Future<Long> ordinary = executor.submit(() -> fixture.manager.doWith((stack, txn) -> txn));
 				assertThrows(TimeoutException.class, () -> priority.get(200, TimeUnit.MILLISECONDS));
 				assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS));
-				fixture.closeManager();
+				CountDownLatch closeStarted = new CountDownLatch(1);
+				Future<Void> closing = executor.submit(() -> {
+					closeStarted.countDown();
+					fixture.closeManager();
+					return null;
+				});
+				assertTrue(closeStarted.await(5, TimeUnit.SECONDS));
 				for (Future<Long> waiter : List.of(priority, ordinary)) {
 					ExecutionException failure = assertThrows(ExecutionException.class,
 							() -> waiter.get(5, TimeUnit.SECONDS));
 					assertTrue(failure.getCause() instanceof IOException);
 					assertTrue(failure.getCause().getMessage().contains("closed"));
 				}
+				assertFalse(holder.isDone(), "close must still be waiting for its active native holder");
+				assertThrows(TimeoutException.class, () -> closing.get(200, TimeUnit.MILLISECONDS),
+						"close must retain the exclusive native barrier until the holder exits");
 				release.countDown();
 				holder.get(5, TimeUnit.SECONDS);
+				closing.get(5, TimeUnit.SECONDS);
 			} finally {
 				release.countDown();
 				executor.shutdownNow();

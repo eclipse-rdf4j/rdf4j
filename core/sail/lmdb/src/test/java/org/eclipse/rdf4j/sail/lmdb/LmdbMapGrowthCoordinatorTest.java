@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -30,6 +32,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -40,10 +43,14 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -52,6 +59,165 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbMapGrowthCoordinatorTest {
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void queryDeadlineIncludesWaitingForAnUnfinishedPublication(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir, 30_000L);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		var publication = store.getBackingStore().getExplicitSailSource().beginPublication();
+		var executor = Executors.newSingleThreadExecutor();
+		CountDownLatch evaluating = new CountDownLatch(1);
+		try {
+			Future<?> query = executor.submit(() -> {
+				try (RepositoryConnection reader = repository.getConnection()) {
+					var prepared = reader.prepareTupleQuery("SELECT ?s WHERE { ?s ?p ?o }");
+					prepared.setMaxExecutionTime(1);
+					evaluating.countDown();
+					try (var result = prepared.evaluate()) {
+						result.hasNext();
+					}
+				}
+			});
+			assertTrue(evaluating.await(2, TimeUnit.SECONDS));
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> query.get(3, TimeUnit.SECONDS),
+					"the original query deadline must wake publication admission before publication completes");
+			Throwable cause = failure.getCause();
+			while (cause != null && !(cause instanceof QueryInterruptedException)) {
+				cause = cause.getCause();
+			}
+			assertTrue(cause instanceof QueryInterruptedException, "waiting must retain the query timeout exception");
+			assertEquals("Query evaluation took too long", cause.getMessage());
+		} finally {
+			publication.close();
+			executor.shutdownNow();
+			executor.awaitTermination(3, TimeUnit.SECONDS);
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void queryDeadlineIncludesWaitingWhilePreparedWriterHoldsGrowthGate(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir, 30_000L);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		Object preparedWriteOwner = new Object();
+		var preparedWrite = store.getBackingStore().getExplicitSailSource().beginPreparedWrite(preparedWriteOwner);
+		LmdbSailStore.MapGrowthAttempt warning = null;
+		var executor = Executors.newSingleThreadExecutor();
+		CountDownLatch evaluating = new CountDownLatch(1);
+		try {
+			warning = store.getBackingStore().beginMapGrowthWarning(preparedWriteOwner);
+			assertTrue(store.getBackingStore().growthAdmissionClosed(),
+					"the prepared writer must keep DRAIN_WRITERS closed while the query deadline runs");
+			Future<?> query = executor.submit(() -> {
+				try (RepositoryConnection reader = repository.getConnection()) {
+					var prepared = reader.prepareTupleQuery("SELECT ?s WHERE { ?s ?p ?o }");
+					prepared.setMaxExecutionTime(1);
+					evaluating.countDown();
+					try (var result = prepared.evaluate()) {
+						result.hasNext();
+					}
+				}
+			});
+			assertTrue(evaluating.await(2, TimeUnit.SECONDS));
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> query.get(3, TimeUnit.SECONDS),
+					"the original query deadline must wake prepared-write admission before its reservation closes");
+			Throwable cause = failure.getCause();
+			while (cause != null && !(cause instanceof QueryInterruptedException)) {
+				cause = cause.getCause();
+			}
+			assertTrue(cause instanceof QueryInterruptedException, "waiting must retain the query timeout exception");
+			assertEquals("Query evaluation took too long", cause.getMessage());
+		} finally {
+			if (warning != null) {
+				warning.close();
+			}
+			preparedWrite.close();
+			executor.shutdownNow();
+			executor.awaitTermination(3, TimeUnit.SECONDS);
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setMapGrowthThreshold(0.01d)
+				.setMapGrowthReadDrainTimeoutMillis(0L);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		ValueFactory values = repository.getValueFactory();
+		IRI predicate = values.createIRI("urn:phased-growth:predicate");
+		IRI laterSubject = values.createIRI("urn:phased-growth:after-reopen");
+		try (RepositoryConnection reader = repository.getConnection()) {
+			reader.add(values.createIRI("urn:phased-growth:initial"), predicate, values.createLiteral("initial"));
+			try (TupleQueryResult result = reader.prepareTupleQuery(
+					"SELECT ?s WHERE { ?s <urn:phased-growth:predicate> ?o }").evaluate()) {
+				try (RepositoryConnection writer = repository.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					for (int i = 0; i < 1_500; i++) {
+						writer.add(values.createIRI("urn:phased-growth:buffered:" + i), predicate,
+								values.createLiteral(i + "-" + "payload".repeat(150)));
+					}
+					writer.commit();
+				}
+				// Begin waits for the growth gate. The old unobserved result must already own its replacement
+				// paired epoch when this writer is allowed to publish.
+				try (RepositoryConnection writer = repository.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					MapGrowthMetrics.Snapshot metrics = store.getBackingStore().growthMetricsSnapshot();
+					assertTrue(metrics.tripleStoreResizes() + metrics.valueStoreResizes() > 0,
+							"the capacity regression must cross a native map growth");
+					assertTrue(metrics.replayAccepted() > 0, "the old unobserved query must be eligible for replay");
+					writer.add(laterSubject, predicate, values.createLiteral("after growth"));
+					writer.commit();
+				}
+				int rows = 0;
+				while (result.hasNext()) {
+					assertFalse(laterSubject.equals(result.next().getValue("s")),
+							"replay must bind its replacement epoch before a newly admitted writer can advance it");
+					rows++;
+				}
+				assertEquals(1_501, rows, "the replay must include the writer that drained before the resize");
+			}
+			// The reserved epoch belongs to that result only. Independent queries must acquire the newer commit.
+			for (IsolationLevel level : new IsolationLevel[] { IsolationLevels.READ_COMMITTED,
+					IsolationLevels.SNAPSHOT_READ }) {
+				try (RepositoryConnection independent = repository.getConnection()) {
+					independent.begin(level);
+					assertTrue(independent.hasStatement(laterSubject, predicate, null, false));
+					independent.rollback();
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 5, unit = TimeUnit.SECONDS)
+	void zeroReaderGraceStillDrainsExistingWriters(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir, 0);
+		try {
+			store.init();
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.clear();
+				assertTrue(store.getBackingStore().growthAdmissionClosed(),
+						"zero reader grace must not admit new transactions before the existing writer finishes");
+				writer.rollback();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@Test
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -132,6 +298,184 @@ class LmdbMapGrowthCoordinatorTest {
 	}
 
 	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void bufferedSourceOwnerCanFlushDuringSnapshotClearWarning(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir, 5_000L);
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:lmdb:buffered-source-warning:subject");
+		IRI predicate = valueFactory.createIRI("urn:lmdb:buffered-source-warning:predicate");
+		var object = valueFactory.createLiteral("buffered before the warning");
+		ExecutorService ownerWorker = Executors.newSingleThreadExecutor();
+		AtomicReference<SailSource> sourceRef = new AtomicReference<>();
+		AtomicReference<SailSink> sinkRef = new AtomicReference<>();
+		SailConnection warningWriter = null;
+		Future<?> sourceFlush = null;
+		boolean warningWriterRolledBack = false;
+		boolean completedDuringWarning = false;
+		boolean completedAfterRollback = false;
+		boolean statementPublished = false;
+		try {
+			store.init();
+			ownerWorker.submit(() -> {
+				SailSource source = store.getSailStore().getExplicitSailSource().fork(Thread.currentThread());
+				SailSink sink = source.sink(IsolationLevels.NONE);
+				sink.approve(subject, predicate, object, null);
+				sourceRef.set(source);
+				sinkRef.set(sink);
+				return null;
+			}).get(5, TimeUnit.SECONDS);
+
+			warningWriter = store.getConnection();
+			warningWriter.begin(IsolationLevels.SNAPSHOT);
+			warningWriter.clear();
+			assertTrue(store.getBackingStore().growthAdmissionClosed(),
+					"the active public clear must close admission before the earlier buffered source is flushed");
+
+			SailSource source = sourceRef.get();
+			SailSink sink = sinkRef.get();
+			sourceFlush = ownerWorker.submit(() -> {
+				sink.flush();
+				sink.close();
+				source.prepare();
+				source.flush();
+				return null;
+			});
+			try {
+				sourceFlush.get(2, TimeUnit.SECONDS);
+				completedDuringWarning = true;
+			} catch (TimeoutException expectedIfAdmissionBlocksTheBufferedOwner) {
+				// Roll back the warning writer below, then check that the pending source still publishes its statement.
+			}
+
+			warningWriter.rollback();
+			warningWriterRolledBack = true;
+			try {
+				sourceFlush.get(3, TimeUnit.SECONDS);
+				completedAfterRollback = true;
+			} catch (TimeoutException stillBlockedAfterRollback) {
+				sourceFlush.cancel(true);
+			}
+			if (completedAfterRollback) {
+				try (SailConnection reader = store.getConnection()) {
+					reader.begin(IsolationLevels.SNAPSHOT_READ);
+					statementPublished = reader.hasStatement(subject, predicate, object, false);
+					reader.rollback();
+				}
+			}
+
+			assertTrue(completedDuringWarning,
+					"a buffered source owner admitted before the public clear must finish before that writer rolls back");
+			assertTrue(completedAfterRollback,
+					"the clear writer rollback must release the buffered source owner if it did not finish earlier");
+			assertTrue(statementPublished,
+					"the buffered source statement must publish after the concurrent clear writer rolls back");
+		} finally {
+			if (warningWriter != null && !warningWriterRolledBack) {
+				warningWriter.rollback();
+			}
+			if (warningWriter != null) {
+				warningWriter.close();
+			}
+			if (sourceFlush != null && !sourceFlush.isDone()) {
+				sourceFlush.cancel(true);
+			}
+			ownerWorker.shutdownNow();
+			assertTrue(ownerWorker.awaitTermination(3, TimeUnit.SECONDS),
+					"the buffered source owner worker must terminate after rollback");
+			SailSink sink = sinkRef.get();
+			if (sink != null) {
+				sink.close();
+			}
+			SailSource source = sourceRef.get();
+			if (source != null) {
+				source.close();
+			}
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void closingDirectSinkWakesParkedAsyncTripleStoreWorker(@TempDir Path dataDir) throws Exception {
+		CountDownLatch nativeWritesCompleted = new CountDownLatch(2);
+		AtomicReference<Thread> nativeWriterThread = new AtomicReference<>();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(1);
+		LmdbSailStore.TripleStoreFactory tripleStoreFactory = (tripleDir, properties, storeConfig,
+				values) -> new TripleStore(
+						tripleDir, properties, storeConfig, values) {
+					@Override
+					public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts,
+							int count, boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+						super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+								addedIndexConsumer);
+						nativeWriterThread.set(Thread.currentThread());
+						nativeWritesCompleted.countDown();
+					}
+				};
+		LmdbSailStore store = new LmdbSailStore(dataDir.toFile(), new StoreProperties(), config, false,
+				ValueStore::new, tripleStoreFactory);
+		ExecutorService owner = Executors.newSingleThreadExecutor();
+		AtomicReference<SailSink> sinkReference = new AtomicReference<>();
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:uncommitted");
+		IRI secondSubject = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:uncommitted-second");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:predicate");
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(subject, predicate,
+						SimpleValueFactory.getInstance().createLiteral("discarded"));
+		Statement secondStatement = SimpleValueFactory.getInstance()
+				.createStatement(secondSubject, predicate,
+						SimpleValueFactory.getInstance().createLiteral("discarded-second"));
+		Future<?> close = null;
+		try {
+			owner.submit(() -> {
+				SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE);
+				sinkReference.set(sink);
+				sink.approveAll(Set.of(statement, secondStatement), Set.of());
+			}).get(3, TimeUnit.SECONDS);
+			assertTrue(nativeWritesCompleted.await(3, TimeUnit.SECONDS),
+					"the asynchronous TripleStore worker must finish the buffered native writes");
+			Thread nativeWriter = nativeWriterThread.get();
+			assertTrue(nativeWriter != null, "the native bulk write must capture its actual worker thread");
+			awaitThreadWaiting(nativeWriter);
+
+			SailSink sink = sinkReference.get();
+			close = owner.submit(sink::close);
+			close.get(2, TimeUnit.SECONDS);
+
+			try (SailDataset reader = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends Statement> statements = reader.getStatements(null, predicate, null)) {
+				assertFalse(statements.hasNext(),
+						"closing an unflushed direct sink must roll back every completed write");
+			}
+			IRI nextSubject = SimpleValueFactory.getInstance().createIRI("urn:async-rollback:next");
+			try (SailSink writer = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				writer.approve(nextSubject, predicate, SimpleValueFactory.getInstance().createLiteral("committed"),
+						null);
+				writer.flush();
+			}
+			try (SailDataset reader = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends Statement> statements = reader.getStatements(nextSubject, predicate,
+							null)) {
+				assertTrue(statements.hasNext(), "a new unrelated direct writer must publish after rollback completes");
+			}
+		} finally {
+			store.close();
+			owner.shutdownNow();
+			assertTrue(owner.awaitTermination(3, TimeUnit.SECONDS),
+					"the direct sink owner must finish after store shutdown signals async progress");
+		}
+	}
+
+	private static void awaitThreadWaiting(Thread thread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+		while (thread.isAlive() && thread.getState() != Thread.State.WAITING && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertEquals(Thread.State.WAITING, thread.getState(),
+				"the native writer must be parked on its empty async operation queue before rollback");
+	}
+
+	@Test
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
 	void preexistingAttemptsCanOpenViewsDuringWarningButNewAttemptsWait(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir, 5_000);
@@ -141,6 +485,7 @@ class LmdbMapGrowthCoordinatorTest {
 		Object arrivalOwner = new Object();
 		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadlineNanos, attempts, views) -> true;
 		LmdbSailStore.ReadAttemptLease writerAttempt = registerOwnedReadAttempt(backing, writerOwner, observer);
+		writerAttempt.markWriteIntent();
 		LmdbSailStore.ReadAttemptLease existingReaderAttempt = backing.registerReadAttempt(observer);
 		LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner);
 		ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -162,6 +507,7 @@ class LmdbMapGrowthCoordinatorTest {
 			newAttemptAdmittedDuringWarning = completesWithin(arrivalFuture, 100, TimeUnit.MILLISECONDS);
 		} finally {
 			warning.close();
+			writerAttempt.completeTransaction();
 			writerView = writerViewFuture.get(2, TimeUnit.SECONDS);
 			readerView = readerViewFuture.get(2, TimeUnit.SECONDS);
 			arrivalAttempt = arrivalFuture.get(2, TimeUnit.SECONDS);
@@ -744,22 +1090,18 @@ class LmdbMapGrowthCoordinatorTest {
 		store.init();
 		try {
 			LmdbSailStore backing = store.getBackingStore();
-			long before = System.nanoTime();
-			LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(new Object());
-			long after = System.nanoTime();
-			if (expectedTimeoutMillis == 0) {
-				assertNull(warning, "zero must disable the advisory warning");
-				assertFalse(backing.growthAdmissionClosed(), "disabled warning must leave admission open");
-				return;
-			}
-
-			assertTrue(warning != null, "a positive timeout must create an advisory warning");
-			try (warning) {
-				long expectedNanos = TimeUnit.MILLISECONDS.toNanos(expectedTimeoutMillis);
-				assertTrue(warning.deadlineNanos() >= before + expectedNanos,
-						"warning deadline must not be shorter than the configured timeout");
-				assertTrue(warning.deadlineNanos() <= after + expectedNanos,
-						"warning deadline must be measured when the warning starts");
+			Object owner = new Object();
+			LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(owner,
+					(kind, token, deadline, attempts, views) -> false);
+			writer.markWriteIntent();
+			try (LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(owner)) {
+				assertTrue(warning != null, "every reader grace setting must preserve writer admission closure");
+				assertTrue(backing.growthAdmissionClosed(), "the admitted writer must hold the warning open");
+				assertEquals(Long.MAX_VALUE, warning.deadlineNanos(),
+						"the " + expectedTimeoutMillis + " ms reader grace must remain unset while a writer is active");
+			} finally {
+				writer.completeTransaction();
+				writer.close();
 			}
 		} finally {
 			store.shutDown();

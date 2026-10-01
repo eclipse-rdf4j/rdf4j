@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.junit.jupiter.api.Test;
 
 class QueryCircuitBreakerTest {
@@ -535,6 +536,152 @@ class QueryCircuitBreakerTest {
 			assertNull(executor.submit(QueryExecutionContext::captureReplayContext).get(1, TimeUnit.SECONDS),
 					"a persistent worker must not capture a closed query's replay context");
 		} finally {
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	void replayContextCapturesDeadlineWithoutReplayScopes() throws Exception {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1));
+		QueryExecutionContext.ReplayContext replayContext;
+
+		try {
+			executor.submit(() -> {
+			}).get(1, TimeUnit.SECONDS);
+
+			try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				replayContext = QueryExecutionContext.captureReplayContext();
+				assertNotNull(replayContext,
+						"a deadline alone must be captured for pre-existing worker execution");
+			}
+
+			executor.submit(() -> {
+				assertNull(QueryExecutionDeadline.current());
+				assertSame(deadline, replayContext.get(QueryExecutionDeadline::current));
+				assertNull(QueryExecutionDeadline.current(), "get must restore an empty worker deadline");
+
+				assertEquals(1, replayContext.getAsInt(() -> QueryExecutionDeadline.current() == deadline ? 1 : 0));
+				assertNull(QueryExecutionDeadline.current(), "getAsInt must restore an empty worker deadline");
+
+				AtomicReference<QueryExecutionDeadline> runDeadline = new AtomicReference<>();
+				replayContext.run(() -> runDeadline.set(QueryExecutionDeadline.current()));
+				assertSame(deadline, runDeadline.get());
+				assertNull(QueryExecutionDeadline.current(), "run must restore an empty worker deadline");
+
+				IllegalStateException failure = new IllegalStateException("captured operation failed");
+				assertSame(failure, assertThrows(IllegalStateException.class, () -> replayContext.get(() -> {
+					assertSame(deadline, QueryExecutionDeadline.current());
+					throw failure;
+				})));
+				assertNull(QueryExecutionDeadline.current(), "get must restore the worker deadline after failure");
+
+				assertSame(failure, assertThrows(IllegalStateException.class, () -> replayContext.getAsInt(() -> {
+					assertSame(deadline, QueryExecutionDeadline.current());
+					throw failure;
+				})));
+				assertNull(QueryExecutionDeadline.current(), "getAsInt must restore the worker deadline after failure");
+
+				assertSame(failure, assertThrows(IllegalStateException.class, () -> replayContext.run(() -> {
+					assertSame(deadline, QueryExecutionDeadline.current());
+					throw failure;
+				})));
+				assertNull(QueryExecutionDeadline.current(), "run must restore the worker deadline after failure");
+			}).get(1, TimeUnit.SECONDS);
+		} finally {
+			deadline.close();
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	void replayContextWithoutDeadlineMasksWorkerDeadline() throws Exception {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		QueryExecutionDeadline workerDeadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1));
+		QueryExecutionContext.ReplayContext replayContext;
+
+		try {
+			executor.submit(() -> {
+			}).get(1, TimeUnit.SECONDS);
+
+			try (QueryExecutionContext.Activation safepoint = QueryExecutionContext.activateReplaySafepoint(() -> {
+			})) {
+				replayContext = QueryExecutionContext.captureReplayContext();
+				assertNotNull(replayContext);
+			}
+
+			executor.submit(() -> {
+				try (QueryExecutionDeadline.Scope prior = workerDeadline.enter()) {
+					assertSame(workerDeadline, QueryExecutionDeadline.current());
+					replayContext.get(() -> {
+						assertNull(QueryExecutionDeadline.current(),
+								"captured work without a deadline must mask an unrelated worker deadline");
+						return null;
+					});
+					assertSame(workerDeadline, QueryExecutionDeadline.current(),
+							"closing captured work must restore the worker's deadline");
+				}
+				assertNull(QueryExecutionDeadline.current());
+			}).get(1, TimeUnit.SECONDS);
+		} finally {
+			workerDeadline.close();
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	void nestedReplayContextsRestoreThePriorWorkerDeadline() throws Exception {
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		QueryExecutionDeadline outerDeadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1));
+		QueryExecutionDeadline innerDeadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1));
+		QueryExecutionDeadline workerDeadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1));
+		QueryExecutionContext.ReplayContext outerContext;
+		QueryExecutionContext.ReplayContext innerContext;
+
+		try {
+			executor.submit(() -> {
+			}).get(1, TimeUnit.SECONDS);
+
+			try (QueryExecutionDeadline.Scope outer = outerDeadline.enter()) {
+				outerContext = QueryExecutionContext.captureReplayContext();
+				assertNotNull(outerContext);
+				try (QueryExecutionDeadline.Scope inner = innerDeadline.enter()) {
+					innerContext = QueryExecutionContext.captureReplayContext();
+					assertNotNull(innerContext);
+				}
+			}
+
+			executor.submit(() -> {
+				try (QueryExecutionDeadline.Scope prior = workerDeadline.enter()) {
+					assertSame(workerDeadline, QueryExecutionDeadline.current());
+					outerContext.get(() -> {
+						assertSame(outerDeadline, QueryExecutionDeadline.current());
+						assertEquals(1, innerContext.getAsInt(
+								() -> QueryExecutionDeadline.current() == innerDeadline ? 1 : 0));
+						assertSame(outerDeadline, QueryExecutionDeadline.current(),
+								"nested replay context must restore its parent deadline");
+
+						IllegalArgumentException failure = new IllegalArgumentException("nested operation failed");
+						assertSame(failure, assertThrows(IllegalArgumentException.class, () -> innerContext.run(() -> {
+							assertSame(innerDeadline, QueryExecutionDeadline.current());
+							throw failure;
+						})));
+						assertSame(outerDeadline, QueryExecutionDeadline.current(),
+								"failed nested replay context must restore its parent deadline");
+						return null;
+					});
+					assertSame(workerDeadline, QueryExecutionDeadline.current(),
+							"outer replay context must restore the worker's prior deadline");
+				}
+				assertNull(QueryExecutionDeadline.current(), "worker deadline scope must restore its previous context");
+			}).get(1, TimeUnit.SECONDS);
+		} finally {
+			outerDeadline.close();
+			innerDeadline.close();
+			workerDeadline.close();
 			executor.shutdownNow();
 			assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS));
 		}

@@ -14,11 +14,34 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.nio.file.Path;
+
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class TxnReplayPolicyTest {
 
 	private static final long MIB = 1024L * 1024;
+	private static final long MAP_SIZE = 64L * MIB;
+
+	@TempDir
+	Path directory;
+
+	@Test
+	void configuredGrowthThresholdControlsWarmedStoreReplayAdmission() throws Exception {
+		File lowThresholdDirectory = directory.resolve("low-threshold").toFile();
+		File highThresholdDirectory = directory.resolve("high-threshold").toFile();
+		seedPairedStore(lowThresholdDirectory);
+		seedPairedStore(highThresholdDirectory);
+
+		assertTrue(nextStoreTransactionTracksReplay(lowThresholdDirectory, 0.10d),
+				"a low per-store threshold must retain replay tracking above its half-threshold occupancy");
+		assertFalse(nextStoreTransactionTracksReplay(highThresholdDirectory, 0.90d),
+				"a high per-store threshold may omit replay tracking at the same relative occupancy");
+	}
 
 	@Test
 	void bothMapsMustReachTheMinimumAndHaveKnownHistory() {
@@ -123,6 +146,19 @@ class TxnReplayPolicyTest {
 		assertTrue(policy.shouldTrack(Long.MAX_VALUE, -1, Long.MAX_VALUE, 1));
 	}
 
+	@Test
+	void configuredThresholdScalesFillHysteresisBounds() {
+		TxnReplayPolicy policy = new TxnReplayPolicy(0.20d);
+		warm(policy, TxnReplayPolicy.HISTORY_LENGTH, 4096, 4096);
+
+		assertFalse(policy.shouldTrack(100 * MIB, 10 * MIB, 100 * MIB, 10 * MIB),
+				"admission may omit replay at the configured half-threshold boundary");
+		assertFalse(policy.shouldTrack(100 * MIB, 15 * MIB, 100 * MIB, 15 * MIB),
+				"an active skip remains below the configured three-quarter exit boundary");
+		assertTrue(policy.shouldTrack(100 * MIB, 15 * MIB + 1, 100 * MIB, 15 * MIB + 1),
+				"an active skip exits above the configured three-quarter boundary");
+	}
+
 	private static void warm(TxnReplayPolicy policy, int count, long tripleGrowth, long valueGrowth) {
 		warm(policy, count, tripleGrowth, valueGrowth, true);
 	}
@@ -131,5 +167,48 @@ class TxnReplayPolicyTest {
 		for (int i = 0; i < count; i++) {
 			policy.committed(tripleGrowth, true, valueGrowth, true, tracked);
 		}
+	}
+
+	private static void seedPairedStore(File directory) throws Exception {
+		LmdbStoreConfig config = storeConfig(0.90d);
+		ValueStore values = new ValueStore(new File(directory, "values"), config);
+		try (TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+			triples.startTransaction();
+			values.startTransaction(true);
+			long largeValue = values.storeValue(Values.literal("seed-" + "x".repeat(4 * (int) MIB)));
+			long predicate = values.storeValue(Values.iri("urn:predicate"));
+			triples.storeTriple(largeValue, predicate, largeValue, 0, true);
+			values.commit();
+			triples.commit();
+		} finally {
+			values.close();
+		}
+	}
+
+	private static boolean nextStoreTransactionTracksReplay(File directory, double threshold) throws Exception {
+		LmdbStoreConfig config = storeConfig(threshold);
+		ValueStore values = new ValueStore(new File(directory, "values"), config);
+		try (TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+			for (int i = 0; i < TxnReplayPolicy.HISTORY_LENGTH; i++) {
+				triples.startTransaction();
+				values.startTransaction(true);
+				long subject = values.storeValue(Values.iri("urn:warm:subject:" + i));
+				long predicate = values.storeValue(Values.iri("urn:warm:predicate:" + i));
+				long object = values.storeValue(Values.literal("warm object " + i));
+				triples.storeTriple(subject, predicate, object, 0, true);
+				values.commit();
+				triples.commit();
+			}
+			return triples.prepareReplayDecision().track;
+		} finally {
+			values.close();
+		}
+	}
+
+	private static LmdbStoreConfig storeConfig(double threshold) {
+		return new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(MAP_SIZE)
+				.setValueDBSize(MAP_SIZE)
+				.setMapGrowthThreshold(threshold);
 	}
 }

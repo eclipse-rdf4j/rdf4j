@@ -39,8 +39,26 @@ class LmdbMapGrowthMetricsTest {
 		metrics.recordAdmissionWait(0);
 		metrics.recordAdmissionWait(7_500_000L);
 
-		assertEquals(new MapGrowthMetrics.Snapshot(2, 1, 5, 2, 1, 1, 7_500_000L, 0, 1, 1, 1),
-				metrics.snapshot());
+		MapGrowthMetrics.Snapshot snapshot = metrics.snapshot();
+		assertEquals(2, snapshot.growthEpisodes());
+		assertEquals(1, snapshot.forcedInvalidationEpisodes());
+		assertEquals(5, snapshot.forcedInvalidatedViews());
+		assertEquals(2, snapshot.replayRequests());
+		assertEquals(1, snapshot.replayAccepted());
+		assertEquals(1, snapshot.admissionWaitCount());
+		assertEquals(7_500_000L, snapshot.admissionWaitNanos());
+		assertEquals(0, snapshot.currentAdmissionWaiters());
+		assertEquals(1, snapshot.tripleStoreResizes());
+		assertEquals(1, snapshot.valueStoreResizes());
+		assertEquals(1, snapshot.fallbackResizes());
+		assertEquals(LmdbSailStore.GrowthPhase.OPEN, snapshot.currentPhase());
+		assertEquals(0, snapshot.maximumWriterWaitNanos());
+		assertEquals(0, snapshot.admissionTimeouts());
+		assertEquals(0, snapshot.emergencyAttempts());
+		assertEquals(0, snapshot.emergencySuccesses());
+		assertEquals(0, snapshot.emergencyFailures());
+		assertEquals(0, snapshot.reservedReplays());
+		assertEquals(0, snapshot.cancelledReplays());
 	}
 
 	@Test

@@ -619,12 +619,19 @@ class LmdbCrashRecoveryTest {
 		Path witness = createExternalWitness(testWorkDir, "autogrow-cut-witness");
 		assertWitnessStoreIsIndependent(witness);
 		LmdbStoreConfig config = durableConfig().setTripleDBSize(4096 * 10L);
+		StoreTransaction transaction;
 		try (ChildProcessSession child = new ChildProcessSession(
 				startWriter(storeDir, PausePoint.AFTER_MAP_GROWTH_REPLAY, config))) {
 			assertEquals("READY", child.readLine());
+			String mapSizeMessage = child.readLine();
+			assertTrue(mapSizeMessage.startsWith("INITIAL_TRIPLE_MAP_SIZE:"),
+					"the child must expose its certified starting map size before constructing the hard-capacity write");
+			long initialTripleMapSize = Long.parseLong(
+					mapSizeMessage.substring("INITIAL_TRIPLE_MAP_SIZE:".length()));
+			transaction = autogrowTransaction(initialTripleMapSize);
 			assertEquals("MAP_GROWTH_REPLAY_RETURNED", child.readLine(150, TimeUnit.SECONDS),
-					"a small triple map must force complete journal replay before the transaction's final commit");
-			appendAndForceWitness(witness, "INVOKED\t" + autogrowTransaction().witnessRecord());
+					"the map-sized namespace write must force native MAP_FULL and complete journal replay before commit");
+			appendAndForceWitness(witness, "INVOKED\t" + transaction.witnessRecord());
 			child.terminate();
 		}
 
@@ -632,8 +639,8 @@ class LmdbCrashRecoveryTest {
 		System.out.println("CRASH_DURABILITY_ARTIFACT:" + preservedImage);
 		assertFalse(replayJournalFiles(storeDir).isEmpty(),
 				"The abrupt process stop must leave the in-progress non-recovery journal as an orphan");
-		RecoveryState recovery = readRecoveryState(storeDir, autogrowTransaction().additions().get(0));
-		verifyAtomicTransactionOutcome(Set.of(), null, autogrowTransaction(), recovery.statements(),
+		RecoveryState recovery = readRecoveryState(storeDir, transaction.additions().get(0));
+		verifyAtomicTransactionOutcome(Set.of(), null, transaction, recovery.statements(),
 				recovery.namespace(), recovery.indexCounts(), preservedImage);
 		assertTrue(replayJournalFiles(storeDir).isEmpty(),
 				"Opening the store after a process death must remove only the abandoned replay journal");
@@ -1165,9 +1172,11 @@ class LmdbCrashRecoveryTest {
 				"urn:crash:final:");
 	}
 
-	private static StoreTransaction autogrowTransaction() {
+	private static StoreTransaction autogrowTransaction(long initialTripleMapSize) {
 		return new StoreTransaction("autogrow-1", generatedStatements("urn:crash:autogrow:",
-				AUTOGROW_TRANSACTION_SIZE), List.of(), null);
+				AUTOGROW_TRANSACTION_SIZE), List.of(),
+				"urn:crash:autogrow:growth-namespace:"
+						+ "n".repeat(Math.toIntExact(initialTripleMapSize)));
 	}
 
 	private static StoreTransaction mixedAutogrowBaseline() {
@@ -1330,12 +1339,13 @@ class LmdbCrashRecoveryTest {
 					throw new AssertionError("The triple commit pause point was not reached");
 				}
 				if (pausePoint == PausePoint.AFTER_MAP_GROWTH_REPLAY) {
-					StoreTransaction transaction = autogrowTransaction();
+					long initialTripleMapSize = ((PausingLmdbStore) store).tripleMapSizeBytes();
+					System.out.println("CRASHLAB:INITIAL_TRIPLE_MAP_SIZE:" + initialTripleMapSize);
+					System.out.flush();
+					StoreTransaction transaction = autogrowTransaction(initialTripleMapSize);
 					try (SailConnection connection = store.getConnection()) {
 						connection.begin(IsolationLevels.SNAPSHOT);
-						for (Statement statement : transaction.additions()) {
-							addStatement(connection, statement);
-						}
+						apply(connection, transaction);
 						connection.commit();
 					}
 					throw new AssertionError("The full map-growth replay pause point was not reached");
@@ -1399,6 +1409,7 @@ class LmdbCrashRecoveryTest {
 
 		private final PausePoint pausePoint;
 		private final AtomicBoolean pauseArmed = new AtomicBoolean();
+		private TripleStore tripleStore;
 
 		private PausingLmdbStore(Path dataDir, LmdbStoreConfig config, PausePoint pausePoint) {
 			super(dataDir.toFile(), config);
@@ -1410,10 +1421,17 @@ class LmdbCrashRecoveryTest {
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 			LmdbSailStore backingStore = new LmdbSailStore(dataDir, properties, config,
 					sketchBasedJoinEstimatorEnabled, ValueStore::new,
-					(dir, storeProperties, storeConfig, valueStore) -> new PausingTripleStore(dir, storeProperties,
-							storeConfig, valueStore, pausePoint, pauseArmed));
+					(dir, storeProperties, storeConfig, valueStore) -> {
+						tripleStore = new PausingTripleStore(dir, storeProperties, storeConfig, valueStore, pausePoint,
+								pauseArmed);
+						return tripleStore;
+					});
 			backingStore.enableMultiThreading = false;
 			return backingStore;
+		}
+
+		private long tripleMapSizeBytes() {
+			return Objects.requireNonNull(tripleStore, "backing TripleStore must be initialized").mapSizeBytes();
 		}
 
 		private void armPause() {

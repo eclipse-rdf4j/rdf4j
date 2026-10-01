@@ -219,3 +219,11 @@ conservative successful allocation history may omit tracking; unexpected exhaust
 recovery retains tracking. See
 [LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/) for retry guidance,
 reader lifetime, and persistence details.
+
+The per-store `mapGrowthThreshold` setting (default `0.75`) controls the soft allocated-page fullness trigger for
+closing admission and scheduling phased map growth. It also guides growth sizing below that trigger. The threshold
+measures allocated high-water pages rather than live RDF statements, and must be finite and strictly between `0` and
+`1`. `mapGrowthReadDrainTimeoutMillis` (default `30000`) is the reader grace after logical writers finish; setting it
+to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waiters keep the
+query's original deadline, and waits without a deadline remain interruptible. See the transaction and recovery guide
+for the phased behavior and retry details.

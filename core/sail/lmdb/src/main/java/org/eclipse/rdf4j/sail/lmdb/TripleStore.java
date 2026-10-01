@@ -175,11 +175,14 @@ class TripleStore implements Closeable {
 
 	long env;
 	long writeTxn;
+	/** Retains the writer's allocation after a failed native commit has consumed its transaction handle. */
+	private long replayProjectedUsedBytes;
 	private final int mainDbi;
 	private final int contextsDbi;
 	private final int namespacesDbi;
 	private int pageSize;
 	private final boolean autoGrow;
+	private final MapGrowthPolicy growthPolicy;
 	private final boolean pageWalkingEstimatorEnabled;
 	private volatile long mapSize;
 	private volatile long committedHighWaterBytes;
@@ -188,6 +191,7 @@ class TripleStore implements Closeable {
 	private TxnReplayPolicy.Decision replayDecision;
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
+	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
@@ -238,6 +242,7 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
+		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
 		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
 				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
@@ -340,7 +345,7 @@ class TripleStore implements Closeable {
 				pageEstimator.configureIndexes(fieldSequences);
 			}
 			refreshCommittedHighWater();
-			replayPolicy = new TxnReplayPolicy();
+			replayPolicy = new TxnReplayPolicy(config.getMapGrowthThreshold());
 			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
 		} catch (IOException e) {
 			cleanupAfterInitializationFailure(e);
@@ -835,7 +840,13 @@ class TripleStore implements Closeable {
 	}
 
 	private void growMapForReindex() throws IOException {
-		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+		LmdbSailStore.MapGrowthAttempt growthAttempt;
+		try {
+			growthAttempt = beginMapGrowthAttempt();
+		} catch (LmdbTransactionRetryException unsafeContinuation) {
+			growForTransactionRetry(0L, unsafeContinuation);
+			throw unsafeContinuation;
+		}
 		try (growthAttempt) {
 			if (growthAttempt != null) {
 				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
@@ -855,7 +866,7 @@ class TripleStore implements Closeable {
 		}
 		try {
 			txnManager.deactivate();
-			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+			mapSize = growthPolicy.grownMapSize(mapSize, pageSize, 0);
 			if (growthAttempt != null) {
 				growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			}
@@ -903,35 +914,72 @@ class TripleStore implements Closeable {
 
 	@Override
 	public void close() throws IOException {
-		if (env != 0) {
-			endTransaction(false);
+		try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+			if (env == 0) {
+				return;
+			}
 
-			List<Throwable> caughtExceptions = new ArrayList<>();
+			Throwable failure = null;
+			long environment = env;
+			try {
+				endTransaction(false);
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			}
+			try {
+				txnManager.closeUnderExclusiveLock();
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			}
 			if (pageEstimator != null) {
 				try {
 					pageEstimator.close();
-				} catch (Throwable e) {
-					logger.warn("Failed to close page estimator", e);
-					caughtExceptions.add(e);
+				} catch (Throwable closeFailure) {
+					logger.warn("Failed to close page estimator", closeFailure);
+					failure = appendCloseFailure(failure, closeFailure);
 				}
 			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
-				} catch (Throwable e) {
+				} catch (Throwable closeFailure) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
-					caughtExceptions.add(e);
+					failure = appendCloseFailure(failure, closeFailure);
 				}
 			}
-
-			txnManager.close();
-
-			environmentLifecycle.close(env);
-			env = 0;
-
-			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.getFirst());
+			try {
+				environmentLifecycle.close(environment);
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			} finally {
+				env = 0;
 			}
+			rethrowCloseFailure(failure);
+		}
+	}
+
+	private static Throwable appendCloseFailure(Throwable failure, Throwable closeFailure) {
+		if (failure == null) {
+			return closeFailure;
+		}
+		if (failure != closeFailure) {
+			failure.addSuppressed(closeFailure);
+		}
+		return failure;
+	}
+
+	private static void rethrowCloseFailure(Throwable failure) throws IOException {
+		if (failure instanceof IOException ioException) {
+			throw ioException;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IOException(failure);
 		}
 	}
 
@@ -1490,7 +1538,8 @@ class TripleStore implements Closeable {
 
 	private boolean requiresResize(long estimatedWriteBytes) {
 		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, estimatedWriteBytes);
+			return growthPolicy.hardCapacityRequired(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
+					estimatedWriteBytes);
 		} else {
 			return false;
 		}
@@ -1520,20 +1569,36 @@ class TripleStore implements Closeable {
 	}
 
 	boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
-		if (!autoGrow || estimatedWriteBytes <= 0L) {
+		if (!autoGrow) {
 			return false;
 		}
+		return growthPolicy.requiresGrowth(mapSize, occupiedBytes(), estimatedWriteBytes);
+	}
+
+	long occupiedBytes() throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
-			return LmdbUtil.requiresResizeAtPage(mapSize, pageSize, nextPageNo, estimatedWriteBytes);
+			return saturatedMultiply(nextPageNo, pageSize);
 		}
+	}
+
+	long mapSizeBytes() {
+		return mapSize;
+	}
+
+	boolean retainsGrowthReserve() throws IOException {
+		return growthPolicy.retainsGrowthReserve(mapSize, occupiedBytes());
+	}
+
+	long committedHighWaterBytes() {
+		return committedHighWaterBytes;
 	}
 
 	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
 			throws IOException {
-		if (!autoGrow || estimatedWriteBytes <= 0L || writeTxn != 0) {
+		if (!autoGrow || writeTxn != 0) {
 			return false;
 		}
 		StampedLongAdderLockManager lockManager = txnManager.lockManager();
@@ -1558,7 +1623,7 @@ class TripleStore implements Closeable {
 				}
 				long currentFootprint = saturatedMultiply(nextPageNo, pageSize);
 				long projectedFootprint = saturatedAdd(currentFootprint, estimatedWriteBytes);
-				long resizedMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedFootprint);
+				long resizedMapSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedFootprint);
 				if (growthAttempt != null) {
 					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 				}
@@ -1585,7 +1650,12 @@ class TripleStore implements Closeable {
 		if (usesReplayJournal()) {
 			ensureMutationJournal();
 		}
+		if (autoGrow && growthPolicy.requiresGrowth(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
+				estimatedWriteBytes)) {
+			requestMapGrowth(estimatedWriteBytes, false);
+		}
 		if (requiresResize(estimatedWriteBytes)) {
+			requestMapGrowth(estimatedWriteBytes, true);
 			if (!usesReplayJournal()) {
 				growForTransactionRetry(estimatedWriteBytes, null);
 			} else {
@@ -1644,10 +1714,25 @@ class TripleStore implements Closeable {
 
 	/** Grows capacity for a complete caller retry; a missing prefix can never be replayed. */
 	private void growForTransactionRetry(long requiredBytes, Throwable cause) throws IOException {
-		LmdbTransactionRetryException retry = replayDecision.capacityFailure("TripleStore", cause);
+		LmdbTransactionRetryException retry = replayDecision == null
+				? new LmdbTransactionRetryException("TripleStore", cause)
+				: replayDecision.capacityFailure("TripleStore", cause);
 		markMutationFailure(retry);
 		long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
 				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredBytes);
+		if (mapGrowthRequestListener != null) {
+			try {
+				closeAlignedWriteCursors();
+				if (writeTxn != 0) {
+					mdb_txn_abort(writeTxn);
+					writeTxn = 0;
+				}
+				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.TRIPLE_STORE, projectedBytes, true);
+			} catch (IOException | RuntimeException cleanupFailure) {
+				retry.addSuppressed(cleanupFailure);
+			}
+			throw retry;
+		}
 		try {
 			closeAlignedWriteCursors();
 			if (writeTxn != 0) {
@@ -1663,7 +1748,7 @@ class TripleStore implements Closeable {
 				try {
 					txnManager.deactivate();
 					try {
-						long grownSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, projectedBytes);
+						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedBytes);
 						if (growthAttempt != null) {
 							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 						}
@@ -1709,6 +1794,7 @@ class TripleStore implements Closeable {
 		if (!usesReplayJournal()) {
 			growForTransactionRetry(0L, new MapFullException());
 		}
+		requestMapGrowth(0L, true);
 		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
 		try (growthAttempt) {
 			if (growthAttempt != null) {
@@ -1737,15 +1823,23 @@ class TripleStore implements Closeable {
 		try {
 			txnManager.deactivate();
 			if (writeTxn != 0) {
+				replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+						LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
 				mdb_txn_abort(writeTxn);
 				writeTxn = 0;
 			}
 			while (true) {
-				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
+				long projectedUsedBytes = Math.max(committedHighWaterBytes, replayProjectedUsedBytes);
+				if (growthAttempt != null) {
+					projectedUsedBytes = growthAttempt.projectedUsedBytes(LmdbSailStore.MapResizeKind.TRIPLE_STORE,
+							projectedUsedBytes);
+				}
+				long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedUsedBytes);
 				if (growthAttempt != null) {
 					growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 				}
-				E(setMapSize(mapSize));
+				E(setMapSize(grownSize));
+				mapSize = grownSize;
 				beginNativeWriteTransaction();
 				try {
 					mutationJournal.replay(new TxnMutationJournal.ReplayAction() {
@@ -1772,9 +1866,18 @@ class TripleStore implements Closeable {
 							writeNamespaceSnapshotBytes(snapshot);
 						}
 					});
+					long replayedUse = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
+					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes, replayedUse);
+					if (!growthPolicy.retainsGrowthReserve(mapSize, replayedUse)) {
+						mdb_txn_abort(writeTxn);
+						writeTxn = 0L;
+						continue;
+					}
 					afterMapGrowthReplay();
 					break;
 				} catch (MapFullException mapFull) {
+					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+							LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
 					mdb_txn_abort(writeTxn);
 					writeTxn = 0;
 				}
@@ -1818,6 +1921,19 @@ class TripleStore implements Closeable {
 
 	void setMapGrowthAttemptSupplier(LmdbSailStore.MapGrowthAttemptSupplier supplier) {
 		mapGrowthAttemptSupplier = supplier;
+	}
+
+	void setMapGrowthRequestListener(LmdbSailStore.MapGrowthRequestListener listener) {
+		mapGrowthRequestListener = listener;
+	}
+
+	private void requestMapGrowth(long requiredBytes, boolean exhausted) throws IOException {
+		LmdbSailStore.MapGrowthRequestListener listener = mapGrowthRequestListener;
+		if (listener != null) {
+			long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
+					: LmdbUtil.getNewSize(pageSize, writeTxn, requiredBytes);
+			listener.request(LmdbSailStore.MapResizeKind.TRIPLE_STORE, projectedBytes, exhausted);
+		}
 	}
 
 	/** Test seam for observing a complete replay before its single authoritative commit. */
@@ -2457,6 +2573,7 @@ class TripleStore implements Closeable {
 			valueStore.setReplayDecision(decision);
 		}
 		beginNativeWriteTransaction();
+		replayProjectedUsedBytes = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
 	}
 
 	private void refreshCommittedHighWater() throws IOException {
@@ -2507,6 +2624,8 @@ class TripleStore implements Closeable {
 							try {
 								closeAlignedWriteCursors();
 								long transaction = writeTxn;
+								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+										LmdbUtil.getNewSize(pageSize, transaction, 0L));
 								writeTxn = 0;
 								result = commitWriteTransaction(transaction);
 								if (result == MDB_SUCCESS) {

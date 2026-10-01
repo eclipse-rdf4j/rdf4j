@@ -65,7 +65,9 @@ class LmdbMapGrowthReplayLifecycleTest {
 	private static final IRI FIRST_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:first-predicate");
 	private static final IRI SECOND_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:second-predicate");
 	private static final IRI GROWTH_PREDICATE = VF.createIRI("urn:lmdb:replay-lifecycle:growth-predicate");
-	private static final long INITIAL_MAP_SIZE = 4096L * 10L;
+	private static final long INITIAL_MAP_SIZE = 32L * 1024L * 1024L;
+	private static final double GROWTH_THRESHOLD = 0.10d;
+	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 	private static final int PARALLEL_SORT_INPUT_ROWS = 10_000;
 
 	@Test
@@ -84,6 +86,9 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			try (RepositoryConnection reader = repository.getConnection()) {
 				reader.begin(IsolationLevels.SNAPSHOT);
 				TupleQueryResult first = reader.prepareTupleQuery(selectValues(FIRST_SUBJECT, FIRST_PREDICATE))
@@ -93,14 +98,15 @@ class LmdbMapGrowthReplayLifecycleTest {
 				try (first; second) {
 					try (SailConnection writer = store.getConnection()) {
 						writer.begin(IsolationLevels.SNAPSHOT);
-						addGrowthStatements(writer);
+						addGrowthStatements(writer, initialMapSize);
 						writer.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("after-growth-first"));
 						writer.addStatement(SECOND_SUBJECT, SECOND_PREDICATE, VF.createLiteral("after-growth-second"));
 						writer.commit();
 					}
+					awaitGrowthEpisode(backingStore, before);
+					awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 					assertTrue(mapSize(tripleStore) > initialMapSize,
-							"the writer must force real TripleStore growth with both results still unconsumed");
-
+							"the writer must complete real TripleStore growth while both results remain unconsumed");
 					assertThat(readValues(first)).containsExactlyInAnyOrder("before-first", "after-growth-first");
 					long replacementMapSize = mapSize(tripleStore);
 
@@ -139,14 +145,23 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			try (SailConnection reader = store.getConnection()) {
 				reader.begin(IsolationLevels.SERIALIZABLE);
 				try (CloseableIteration<? extends Statement> results = reader.getStatements(observedSubject,
 						FIRST_PREDICATE, null, false)) {
 					try (SailConnection growthWriter = store.getConnection()) {
 						growthWriter.begin(IsolationLevels.SNAPSHOT);
-						addGrowthStatements(growthWriter);
+						addGrowthStatements(growthWriter, initialMapSize);
 						growthWriter.commit();
+					}
+					awaitGrowthEpisode(backingStore, before);
+					try (SailConnection barrier = store.getConnection()) {
+						barrier.begin(IsolationLevels.SNAPSHOT);
+						assertEquals(namespace, barrier.getNamespace("growth-demand"));
+						barrier.rollback();
 					}
 					assertTrue(mapSize(tripleStore) > initialMapSize,
 							"the unobserved SERIALIZABLE result must span actual TripleStore growth");
@@ -187,8 +202,9 @@ class LmdbMapGrowthReplayLifecycleTest {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(64L * 1024L * 1024L)
-				.setMapGrowthReadDrainTimeoutMillis(10_000)
+				.setValueDBSize(128L * 1024L * 1024L)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
+				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -205,6 +221,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			assertFalse(backingStore.growthAdmissionClosed(), "the store must start outside a growth episode");
 			Future<List<String>> query = executor.submit(() -> {
@@ -229,7 +246,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter);
+					addGrowthStatements(growthWriter, initialMapSize);
 					growthWriter.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("z-after"));
 					growthWriter.commit();
 				}
@@ -241,6 +258,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 			writer.get(20, TimeUnit.SECONDS);
 			List<String> values = query.get(20, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
 			assertThat(values).containsExactlyInAnyOrder("a-before", "b-before", "z-after");
@@ -278,7 +296,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(64L * 1024L * 1024L)
+				.setValueDBSize(128L * 1024L * 1024L)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(5_000)
 				.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
@@ -298,6 +317,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<List<String>> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
@@ -320,7 +340,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter, 50_000);
+					addGrowthStatements(growthWriter, initialMapSize, 50_000);
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:cooperative:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
@@ -335,6 +355,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 			writer.get(20, TimeUnit.SECONDS);
 			List<String> values = query.get(20, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
 			assertEquals(PARALLEL_SORT_INPUT_ROWS + 1, values.size(),
@@ -375,7 +396,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(INITIAL_MAP_SIZE)
-				.setValueDBSize(64L * 1024L * 1024L)
+				.setValueDBSize(128L * 1024L * 1024L)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(5_000)
 				.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
@@ -395,6 +417,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			String namespace = growthNamespace(initialMapSize);
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<String> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
@@ -416,7 +439,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			Future<?> writer = executor.submit(() -> {
 				try (SailConnection growthWriter = store.getConnection()) {
 					growthWriter.begin(IsolationLevels.SNAPSHOT);
-					addGrowthStatements(growthWriter);
+					addGrowthStatements(growthWriter, initialMapSize);
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:aggregate:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
@@ -425,7 +448,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 				return null;
 			});
 			awaitStartedGrowthAdmissionClosure(backingStore, before, writer);
-			// Admission closes before replay is asynchronously accepted; count callbacks only after that handoff.
+			// Publication succeeds before replay is asynchronously accepted; count callbacks only after that handoff.
 			awaitReplayAccepted(backingStore, before, writer);
 			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
 					"the aggregate must be accepted for replay before post-growth callbacks are counted");
@@ -434,6 +457,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 			writer.get(20, TimeUnit.SECONDS);
 			String count = query.get(20, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
 			assertEquals("2001", count, "the replacement aggregate must include the published row once");
@@ -464,35 +488,68 @@ class LmdbMapGrowthReplayLifecycleTest {
 		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(INITIAL_MAP_SIZE)
+				.setValueDBSize(32L * 1024L * 1024L)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setAutoGrow(true));
 	}
 
-	private static void addGrowthStatements(SailConnection writer) throws Exception {
-		addGrowthStatements(writer, 10_000);
+	private static String growthNamespace(long initialMapSize) {
+		int namespaceBytes = Math.toIntExact(Math.round(initialMapSize * SOFT_GROWTH_DEMAND_RATIO));
+		return "urn:lmdb:replay-lifecycle:growth-namespace:" + "n".repeat(namespaceBytes);
 	}
 
-	private static void addGrowthStatements(SailConnection writer, int count) throws Exception {
+	private static void addGrowthStatements(SailConnection writer, long initialMapSize) throws Exception {
+		addGrowthStatements(writer, initialMapSize, 10_000);
+	}
+
+	private static void addGrowthStatements(SailConnection writer, long initialMapSize, int count) throws Exception {
+		writer.setNamespace("growth-demand", growthNamespace(initialMapSize));
 		for (int i = 0; i < count; i++) {
 			writer.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:growth:" + i), GROWTH_PREDICATE,
 					VF.createLiteral("filler"));
 		}
 	}
 
+	private static void awaitTripleStoreGrowth(SailRepository repository, TripleStore tripleStore,
+			long initialMapSize, String namespace) throws Exception {
+		try (RepositoryConnection barrier = repository.getConnection()) {
+			barrier.begin(IsolationLevels.SNAPSHOT);
+			assertEquals(namespace, barrier.getNamespace("growth-demand"),
+					"the independent snapshot must observe the complete namespace publication");
+			barrier.rollback();
+		}
+		assertTrue(mapSize(tripleStore) > initialMapSize,
+				"the independent begin/rollback must finish pending TripleStore growth");
+	}
+
+	private static void awaitGrowthEpisode(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().growthEpisodes() <= before.growthEpisodes()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the published namespace did not start a soft map-growth episode");
+			}
+			Thread.onSpinWait();
+		}
+	}
+
 	private static void awaitStartedGrowthAdmissionClosure(LmdbSailStore backingStore,
 			MapGrowthMetrics.Snapshot before, Future<?> writer) throws Exception {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		boolean writerCompleted = false;
 		while (true) {
 			MapGrowthMetrics.Snapshot current = backingStore.growthMetricsSnapshot();
 			if (current.growthEpisodes() > before.growthEpisodes() && backingStore.growthAdmissionClosed()) {
 				return;
 			}
-			if (writer.isDone()) {
+			if (!writerCompleted && writer.isDone()) {
 				writer.get();
-				throw new AssertionError("the writer completed without starting a growth episode");
+				writerCompleted = true;
 			}
 			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("timed out waiting for a started growth episode with admission closed");
+				throw new AssertionError(writerCompleted
+						? "the completed writer did not start a growth episode with admission closed"
+						: "timed out waiting for a started growth episode with admission closed");
 			}
 			Thread.yield();
 		}
@@ -500,12 +557,9 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 	private static void awaitReplayAccepted(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before,
 			Future<?> writer) throws Exception {
+		writer.get(20, TimeUnit.SECONDS);
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (backingStore.growthMetricsSnapshot().replayAccepted() == before.replayAccepted()) {
-			if (writer.isDone()) {
-				writer.get();
-				throw new AssertionError("the writer completed before the query replay was accepted");
-			}
 			if (System.nanoTime() >= deadlineNanos) {
 				throw new AssertionError("timed out waiting for the query replay to be accepted");
 			}

@@ -75,21 +75,39 @@ The same message identifies `ValueStore` when the dictionary exhausted its capac
 all statements and namespace changes in a fresh transaction. Further writes or commit attempts in the failed logical
 transaction retain that retry error until rollback; retrying only its last operation would discard earlier intent.
 
-Buffered write intent can open an advisory admission warning when its approximate size suggests that either map may
-need more space or a buffered operation has no exact estimate. The warning only closes admission; it does not snapshot
-the model, drain readers, or resize. At branch preflight, before publication, LMDB estimates the space needed for the
-buffered changes in each environment and grows any map predicted to need more space. This is not a capacity guarantee:
-native write costs may exceed the estimate or include work it cannot size exactly. Later exhaustion therefore uses
-complete TripleStore replay or proactive dictionary growth when tracked; an unexpected native dictionary map-full
-error can still fail that tracked transaction. When tracking was omitted, the whole-transaction retry above applies.
-Configure the
-coordination window with
-`LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `30000` milliseconds) and eligible read retries with
-`LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`). The timeout covers the warning, preflight, and drain
-episode when a warning remains active through preflight; if the warning expires while the write is still being buffered,
-admission reopens until a later preflight starts a new episode if growth coordination is still needed. Setting the timeout
-to `0` disables the advisory warning and leaves no reader-drain grace at preflight. Setting the retry limit to `0`
-disables automatic replay.
+Buffered write intent can start a managed growth episode when projected allocated-page use reaches the configured soft
+threshold or a buffered operation has no exact estimate. The episode closes admission to new connection transactions and
+standalone queries, including new writers, and schedules phased growth rather than resizing synchronously at branch
+preflight. Already active logical writers finish first; this writer drain has no growth timeout. Existing readers may
+upgrade to writers during that phase. Upgrades after the transition to reader draining fail with a retryable transaction
+conflict. During ordinary growth, the coordinator starts the configured reader grace after the last logical writer
+finishes publication and cleanup.
+
+Projected estimates cannot guarantee capacity: native write costs can exceed them or include work that cannot be sized
+exactly. Unexpected exhaustion therefore still uses complete TripleStore replay or proactive dictionary growth when
+tracked; an unexpected native ValueStore map-full error can still fail a tracked transaction. When tracking was omitted,
+the whole-transaction retry above applies. If an already admitted writer exhausts capacity before it finishes, emergency
+growth is attempted only when its internal continuation, journal and dictionary checkpoint can preserve all writer
+observations and borrowers. It suspends that writer and starts a separate reader grace. An open reader can delay the writer
+and all new admissions for that grace. At its end, observed or otherwise nonreplayable readonly work is cancelled; eligible
+unobserved work is parked for replay. Native calls must quiesce safely before the mappings change, so the grace bounds the
+cancellation request rather than forced termination. The store grows the environments whose projected write needs more
+capacity and reserves fresh paired epochs for eligible replays before reopening admission. Replay execution continues
+lazily. Emergency recovery resumes internal mutations without rerunning application, SPARQL, SERVICE or custom-function
+code. An unsafe continuation or incomplete journal requires rollback and retry of the entire exhausted transaction;
+other writers remain protected.
+
+Configure the per-store soft allocated-page fullness trigger with `LmdbStoreConfig.setMapGrowthThreshold(...)` (default
+`0.75`). It also guides sizing below the trigger and measures allocated high-water pages, not live statement count.
+Configure the reader grace with `LmdbStoreConfig.setMapGrowthReadDrainTimeoutMillis(...)` (default `30000`
+milliseconds). Ordinary growth starts it after logical writers finish; emergency growth starts its own grace while the
+exhausted writer is suspended. Native work that remains after the grace still has to quiesce safely. Queries keep
+their original maximum execution time across admission, execution, lazy result consumption and replay. Waiting consumes
+that same budget without restarting it. Without a query timeout, admission waits interruptibly until growth finishes or
+the store shuts down. Starting a transaction has no independent transaction timeout. Setting
+the reader grace to `0` skips the grace period but does not disable the early admission warning or the writer drain.
+Configure eligible read retries with `LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`); setting the retry
+limit to `0` disables automatic replay.
 
 An admitted read view holds a native reader in each environment until its final owning lease is released. A
 `SNAPSHOT`/`SERIALIZABLE` connection can keep that transaction view after an individual result or dataset closes. The

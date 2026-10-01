@@ -131,6 +131,11 @@ public class LmdbStoreSchema {
 
 	public final static IRI MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
 
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#mapGrowthThreshold</tt>
+	 */
+	public final static IRI MAP_GROWTH_THRESHOLD;
+
 	public final static IRI READ_ONLY_REPLAY_MAX_RETRIES;
 
 	/**
@@ -171,6 +176,7 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
 		MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE, "mapGrowthReadDrainTimeoutMillis");
+		MAP_GROWTH_THRESHOLD = factory.createIRI(NAMESPACE, "mapGrowthThreshold");
 		READ_ONLY_REPLAY_MAX_RETRIES = factory.createIRI(NAMESPACE, "readOnlyReplayMaxRetries");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}

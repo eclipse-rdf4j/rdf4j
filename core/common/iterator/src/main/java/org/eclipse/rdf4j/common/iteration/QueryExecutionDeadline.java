@@ -85,12 +85,30 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	}
 
 	/**
+	 * Installs the supplied deadline for the current thread, clearing any previous deadline when {@code deadline} is
+	 * {@code null}. The returned scope restores the previous deadline when closed.
+	 * <p>
+	 * This is intended for scoped context propagation. Use {@link #enter(QueryExecutionDeadline)} when a null deadline
+	 * should leave the current thread's deadline unchanged.
+	 *
+	 * @param deadline the deadline to install, or {@code null} to temporarily clear the current deadline
+	 * @return a scope that restores the previous deadline
+	 */
+	public static Scope enterScopedContext(QueryExecutionDeadline deadline) {
+		QueryExecutionDeadline previous = CURRENT.get();
+		if (deadline == null) {
+			CURRENT.remove();
+		} else {
+			CURRENT.set(deadline);
+		}
+		return new Scope(previous);
+	}
+
+	/**
 	 * Enters this deadline's thread-local scope and restores the previous scope when closed.
 	 */
 	public Scope enter() {
-		QueryExecutionDeadline previous = CURRENT.get();
-		CURRENT.set(this);
-		return new Scope(previous);
+		return enterScopedContext(this);
 	}
 
 	/**

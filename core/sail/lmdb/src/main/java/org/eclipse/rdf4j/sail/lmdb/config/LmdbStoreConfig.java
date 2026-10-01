@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -64,6 +66,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
 
 	public static final long MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = 30_000L;
+
+	/**
+	 * The default allocated-page fullness threshold for scheduling map growth.
+	 */
+	public static final double MAP_GROWTH_THRESHOLD = 0.75d;
 
 	public static final int READ_ONLY_REPLAY_MAX_RETRIES = 3;
 
@@ -135,6 +142,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private long backgroundRawSamplingMaxMillisPerCycle = BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
 
 	private long mapGrowthReadDrainTimeoutMillis = MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	private double mapGrowthThreshold = MAP_GROWTH_THRESHOLD;
 
 	private int readOnlyReplayMaxRetries = READ_ONLY_REPLAY_MAX_RETRIES;
 
@@ -434,6 +443,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * The soft allocated-page fullness fraction that starts admission closure and schedules phased map growth. The
+	 * value must be finite and strictly between {@code 0.0} and {@code 1.0}.
+	 */
+	public double getMapGrowthThreshold() {
+		return mapGrowthThreshold;
+	}
+
+	public LmdbStoreConfig setMapGrowthThreshold(double mapGrowthThreshold) {
+		if (!Double.isFinite(mapGrowthThreshold) || mapGrowthThreshold <= 0.0d || mapGrowthThreshold >= 1.0d) {
+			throw new IllegalArgumentException(
+					"mapGrowthThreshold must be finite and strictly between 0.0 and 1.0, but was "
+							+ mapGrowthThreshold);
+		}
+		this.mapGrowthThreshold = mapGrowthThreshold;
+		return this;
+	}
+
 	public int getReadOnlyReplayMaxRetries() {
 		return readOnlyReplayMaxRetries;
 	}
@@ -548,6 +575,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (mapGrowthReadDrainTimeoutMillis != MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS) {
 			m.add(implNode, LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS,
 					vf.createLiteral(mapGrowthReadDrainTimeoutMillis));
+		}
+		if (mapGrowthThreshold != MAP_GROWTH_THRESHOLD) {
+			m.add(implNode, LmdbStoreSchema.MAP_GROWTH_THRESHOLD, vf.createLiteral(mapGrowthThreshold));
 		}
 		if (readOnlyReplayMaxRetries != READ_ONLY_REPLAY_MAX_RETRIES) {
 			m.add(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES,
@@ -802,6 +832,19 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					.ifPresent(lit -> setMapGrowthReadDrainTimeoutMillis(parseLong(lit,
 							LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS)));
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.MAP_GROWTH_THRESHOLD, null))
+					.ifPresent(lit -> {
+						double threshold = parseDouble(lit, LmdbStoreSchema.MAP_GROWTH_THRESHOLD);
+						try {
+							setMapGrowthThreshold(threshold);
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Finite double value strictly between 0.0 and 1.0 required for "
+											+ LmdbStoreSchema.MAP_GROWTH_THRESHOLD + " property, found " + lit,
+									e);
+						}
+					});
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES, null))
 					.ifPresent(lit -> setReadOnlyReplayMaxRetries(parseInt(lit,
 							LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES)));
@@ -823,6 +866,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			return lit.longValue();
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseDouble(Literal lit, IRI property) {
+		try {
+			return lit.doubleValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
 		}
 	}
 }

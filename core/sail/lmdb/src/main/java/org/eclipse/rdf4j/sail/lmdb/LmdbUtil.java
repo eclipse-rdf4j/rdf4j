@@ -31,6 +31,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 import java.io.IOException;
 import java.nio.IntBuffer;
 
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -206,39 +207,25 @@ final class LmdbUtil {
 	 * @return the new map size
 	 */
 	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize) {
-		if (pageSize <= 0) {
-			throw new IllegalArgumentException("pageSize must be positive");
-		}
-		long doubled = saturatedMultiply(Math.max(0L, mapSize), 2L);
-		long requiredWithReserve = saturatedAdd(Math.max(0L, requiredSize), MIN_FREE_SPACE);
-		int targetUsagePercentage = Math.max(1, Math.min(PERCENTAGE_FULL_TRIGGERS_RESIZE, 100));
-		long requiredAtThreshold;
-		if (requiredWithReserve > Long.MAX_VALUE / 100L) {
-			requiredAtThreshold = Long.MAX_VALUE;
-		} else {
-			long scaledRequired = requiredWithReserve * 100L;
-			// Leave the estimate strictly below the trigger. When the requested size lands exactly on the percentage
-			// boundary, a ceil alone would still trigger another growth on the next write.
-			requiredAtThreshold = saturatedAdd(scaledRequired / targetUsagePercentage, 1L);
-		}
-		return alignUpToPage(Math.max(doubled, requiredAtThreshold), pageSize);
+		return autoGrowMapSize(mapSize, pageSize, requiredSize, LmdbStoreConfig.MAP_GROWTH_THRESHOLD);
+	}
+
+	/**
+	 * Computes a new map size using the supplied fullness threshold.
+	 *
+	 * @param mapSize      the current map size
+	 * @param pageSize     the page size
+	 * @param requiredSize the projected used size after the write
+	 * @param growthRatio  the maximum fullness ratio for the projected size and free-space reserve
+	 * @return the new page-aligned map size
+	 */
+	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize, double growthRatio) {
+		return new MapGrowthPolicy(growthRatio).grownMapSize(mapSize, pageSize, requiredSize);
 	}
 
 	public static long getNewSize(int pageSize, long txn, long requiredSize) {
 		long nextPgno = mdbTxnMtNextPgno(txn);
 		return saturatedAdd(saturatedMultiply(nextPgno, pageSize), requiredSize);
-	}
-
-	private static long alignUpToPage(long size, long pageSize) {
-		long remainder = size % pageSize;
-		if (remainder == 0) {
-			return size;
-		}
-		long increment = pageSize - remainder;
-		if (Long.MAX_VALUE - size < increment) {
-			return Long.MAX_VALUE - Long.MAX_VALUE % pageSize;
-		}
-		return size + increment;
 	}
 
 	static long saturatedAdd(long left, long right) {

@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
@@ -56,7 +57,8 @@ import org.eclipse.rdf4j.sail.SailException;
 public abstract class Changeset implements SailSink, ModelFactory {
 	private static final long WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES = 256L * 1024L;
 
-	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
+	private ModelWriteState modelWriteState = new ModelWriteState();
+	AdderBasedReadWriteLock readWriteLock = modelWriteState.readWriteLock;
 	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
 	Semaphore prependLock = new Semaphore(1);
 
@@ -140,6 +142,15 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * sized precisely. Implementations must treat the signal as advisory and take a complete snapshot before preflight.
 	 */
 	protected void writeIntentChanged() {
+	}
+
+	/** Called before any write, including an operation that leaves the buffered contents unchanged. */
+	protected void beforeWriteIntent() {
+	}
+
+	/** Transfers buffered ownership to the branch that now owns this changeset's shallow model. */
+	protected SailSource.WriteIntent takeWriteIntent() {
+		return null;
 	}
 
 	long getApproximateWriteIntentBytes() {
@@ -234,16 +245,21 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void close() throws SailException {
-		closed = true;
-		refbacks = null;
-		prepend = null;
-		observed = null;
-		approved = null;
-		deprecated = null;
-		approvedContexts = null;
-		deprecatedContexts = null;
-		addedNamespaces = null;
-		removedPrefixes = null;
+		long writeLock = acquireModelWriteLock();
+		try {
+			closed = true;
+			refbacks = null;
+			prepend = null;
+			observed = null;
+			approved = null;
+			deprecated = null;
+			approvedContexts = null;
+			deprecatedContexts = null;
+			addedNamespaces = null;
+			removedPrefixes = null;
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
 	}
 
 	@Override
@@ -363,13 +379,15 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void setNamespace(String prefix, String name) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		assert !closed;
 
 		long approximateBytes = tracksWriteIntent()
 				? saturatedAdd(64L, saturatedMultiply((long) prefix.length() + name.length(), 4L))
 				: 0L;
 		boolean signalWritePreflight = false;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (removedPrefixes == null) {
 				removedPrefixes = new HashSet<>();
@@ -391,9 +409,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void removeNamespace(String prefix) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		assert !closed;
 		boolean signalWritePreflight;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (addedNamespaces != null) {
 				addedNamespaces.remove(prefix);
@@ -415,10 +435,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clearNamespaces() {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		assert !closed;
 		boolean signalWritePreflight;
 
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			namespaceCleared = true;
 
@@ -442,7 +464,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailConflictException {
 		assert !closed;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (observed == null) {
 				observed = new HashSet<>();
@@ -467,7 +489,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			throws SailConflictException {
 
 		assert !closed;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (observed == null) {
 				observed = new HashSet<>();
@@ -484,7 +506,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	@Override
 	public void observeAll(Set<SimpleStatementPattern> observed) {
 		assert !closed;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (this.observed == null) {
 				this.observed = new HashSet<>(observed);
@@ -498,8 +520,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clear(Resource... contexts) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		boolean signalWritePreflight;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (contexts != null && contexts.length == 0) {
 				statementCleared = true;
@@ -539,11 +563,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approve(Statement statement) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 
 		assert !closed;
 		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
 		boolean signalWritePreflight = false;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 
 			if (deprecated != null) {
@@ -578,10 +604,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecate(Statement statement) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		assert !closed;
 		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
 		boolean signalWritePreflight = false;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (approved != null) {
 				approved.remove(statement);
@@ -651,6 +679,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		assert !from.closed;
 
+		// The models below are shared by shallow clones, so their lock and suspended-write state must be shared too.
+		// Reference-back lifecycle locks remain per changeset because those references are not shared models.
+		this.modelWriteState = from.modelWriteState;
+		this.readWriteLock = modelWriteState.readWriteLock;
 		this.sinkIsolationLevel = from.sinkIsolationLevel;
 		this.observed = from.observed;
 		this.approved = from.approved;
@@ -1025,7 +1057,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		} catch (ConcurrentModificationException ignored) {
 		}
 
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 			if (approved != null) {
 				approved.remove(next);
@@ -1050,13 +1082,19 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			return;
 		}
 
-		boolean readLock = readWriteLock.readLock();
-		try {
+		boolean[] readLock = { readWriteLock.readLock() };
+		try (SailWriteContinuation.Scope continuation = modelContinuation(readLock)) {
 			if (approved != null) {
 				sink.approveAll(approved, approvedContexts);
 			}
 		} finally {
-			readWriteLock.unlockReader(readLock);
+			try {
+				if (readLock[0]) {
+					readWriteLock.unlockReader(readLock[0]);
+				}
+			} finally {
+				modelWriteState.unregisterContinuationReadLock(readLock);
+			}
 		}
 	}
 
@@ -1065,13 +1103,54 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			return;
 		}
 
-		boolean readLock = readWriteLock.readLock();
-		try {
+		boolean[] readLock = { readWriteLock.readLock() };
+		try (SailWriteContinuation.Scope continuation = modelContinuation(readLock)) {
 			if (deprecated != null) {
 				sink.deprecateAll(deprecated);
 			}
 		} finally {
-			readWriteLock.unlockReader(readLock);
+			try {
+				if (readLock[0]) {
+					readWriteLock.unlockReader(readLock[0]);
+				}
+			} finally {
+				modelWriteState.unregisterContinuationReadLock(readLock);
+			}
+		}
+	}
+
+	private SailWriteContinuation.Scope modelContinuation(boolean[] readLock) {
+		if (!SailWriteContinuation.isPresent()) {
+			return null;
+		}
+		modelWriteState.registerContinuationReadLock(readLock);
+		try {
+			return SailWriteContinuation.enter(modelWriteState, modelWriteState::suspendContinuationReadLocks,
+					modelWriteState.suspendedWriteModels::incrementAndGet,
+					modelWriteState.suspendedWriteModels::decrementAndGet);
+		} catch (RuntimeException | Error failure) {
+			modelWriteState.unregisterContinuationReadLock(readLock);
+			throw failure;
+		}
+	}
+
+	private void checkWriteContinuation() {
+		if (modelWriteState.suspendedWriteModels.get() != 0) {
+			throw new SailConflictException("A suspended changeset cannot mutate or close its retained model");
+		}
+	}
+
+	private long acquireModelWriteLock() {
+		checkWriteContinuation();
+		long stamp = readWriteLock.writeLock();
+		try {
+			// A caller may have queued behind the flushing model before suspension released its read lock.
+			// Recheck after acquisition so that queued callers cannot change the retained prefix or suffix.
+			checkWriteContinuation();
+			return stamp;
+		} catch (RuntimeException | Error failure) {
+			readWriteLock.unlockWriter(stamp);
+			throw failure;
 		}
 	}
 
@@ -1094,6 +1173,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approveAll(Set<Statement> approve, Set<Resource> approveContexts) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		long approximateBytes = 0L;
 		if (tracksWriteIntent()) {
 			for (Statement statement : approve) {
@@ -1101,7 +1182,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			}
 		}
 		boolean signalWritePreflight = false;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 
 			if (deprecated != null) {
@@ -1131,6 +1212,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecateAll(Set<Statement> deprecate) {
+		checkWriteContinuation();
+		beforeWriteIntent();
 		long approximateBytes = 0L;
 		if (tracksWriteIntent()) {
 			for (Statement statement : deprecate) {
@@ -1138,7 +1221,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			}
 		}
 		boolean signalWritePreflight = false;
-		long writeLock = readWriteLock.writeLock();
+		long writeLock = acquireModelWriteLock();
 		try {
 
 			if (approved != null) {
@@ -1165,6 +1248,51 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 		if (signalWritePreflight) {
 			writeIntentChanged();
+		}
+	}
+
+	private static final class ModelWriteState {
+		private final AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
+		private final AtomicInteger suspendedWriteModels = new AtomicInteger();
+		private final ThreadLocal<List<boolean[]>> continuationReadLocks = ThreadLocal.withInitial(ArrayList::new);
+
+		private void registerContinuationReadLock(boolean[] readLock) {
+			continuationReadLocks.get().add(readLock);
+		}
+
+		private void unregisterContinuationReadLock(boolean[] readLock) {
+			List<boolean[]> active = continuationReadLocks.get();
+			for (int i = active.size() - 1; i >= 0; i--) {
+				if (active.get(i) == readLock) {
+					active.remove(i);
+					break;
+				}
+			}
+			if (active.isEmpty()) {
+				continuationReadLocks.remove();
+			}
+		}
+
+		private Runnable suspendContinuationReadLocks() {
+			List<boolean[]> active = List.copyOf(continuationReadLocks.get());
+			if (active.isEmpty()) {
+				throw new IllegalStateException("No changeset model read lock is registered for this continuation");
+			}
+			for (boolean[] readLock : active) {
+				if (!readLock[0]) {
+					throw new IllegalStateException("A changeset model read lock is already suspended");
+				}
+			}
+			for (int i = active.size() - 1; i >= 0; i--) {
+				boolean[] readLock = active.get(i);
+				readWriteLock.unlockReader(readLock[0]);
+				readLock[0] = false;
+			}
+			return () -> {
+				for (boolean[] readLock : active) {
+					readLock[0] = readWriteLock.readLock();
+				}
+			};
 		}
 	}
 

@@ -70,7 +70,6 @@ import org.openjdk.jmh.annotations.Warmup;
 @Threads(1)
 public class LmdbMixedMapGrowthBenchmark {
 
-	private static final int WRITE_STATEMENT_COUNT = 8_000;
 	private static final int LITERAL_LENGTH = 1_024;
 	private static final int SHORT_READERS = 3;
 	private static final int UNOBSERVED_READERS = 1;
@@ -97,6 +96,12 @@ public class LmdbMixedMapGrowthBenchmark {
 	@Param({ "short", "longObserved", "underestimated" })
 	public String readerScenario;
 
+	@Param({ "8000", "64000" })
+	public int writeStatementCount;
+
+	@Param({ "-1", "100" })
+	public long mapGrowthReadDrainTimeoutMillis;
+
 	private List<Statement> growthStatements;
 	private Path dataDirectory;
 	private LmdbStore store;
@@ -106,8 +111,8 @@ public class LmdbMixedMapGrowthBenchmark {
 	@Setup(Level.Trial)
 	public void prepareGrowthStatements() {
 		String literalPrefix = "x".repeat(LITERAL_LENGTH);
-		growthStatements = new ArrayList<>(WRITE_STATEMENT_COUNT);
-		for (int i = 0; i < WRITE_STATEMENT_COUNT; i++) {
+		growthStatements = new ArrayList<>(writeStatementCount);
+		for (int i = 0; i < writeStatementCount; i++) {
 			growthStatements.add(VALUE_FACTORY.createStatement(
 					Values.iri("urn:rdf4j:lmdb-growth:subject:" + i),
 					GROWTH_PREDICATE,
@@ -123,6 +128,9 @@ public class LmdbMixedMapGrowthBenchmark {
 				.setForceSync(false)
 				.setTripleDBSize(mapSize)
 				.setValueDBSize(mapSize);
+		if (mapGrowthReadDrainTimeoutMillis >= 0) {
+			config.setMapGrowthReadDrainTimeoutMillis(mapGrowthReadDrainTimeoutMillis);
+		}
 		// Let the common short readers drain under the store default; only the separate long-observed case forces early
 		// invalidation to report its conflict behavior.
 		if ("longObserved".equals(readerScenario)) {

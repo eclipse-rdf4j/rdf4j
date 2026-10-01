@@ -28,6 +28,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -58,6 +59,9 @@ import com.sun.net.httpserver.HttpServer;
 
 class LmdbStandaloneQueryReplayTest {
 
+	private static final long GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
+	private static final double GROWTH_THRESHOLD = 0.10d;
+	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:standalone-query-replay:subject");
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:standalone-query-replay:value");
@@ -83,6 +87,8 @@ class LmdbStandaloneQueryReplayTest {
 
 				TripleStore tripleStore = tripleStoreOf(store);
 				long initialMapSize = mapSize(tripleStore);
+				LmdbSailStore backingStore = store.getBackingStore();
+				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 				Future<Boolean> query = executor.submit(() -> {
 					try (RepositoryConnection reader = repository.getConnection()) {
 						String queryString = "ASK WHERE { <" + SUBJECT + "> <" + SERVICE_PREDICATE + "> <"
@@ -93,12 +99,13 @@ class LmdbStandaloneQueryReplayTest {
 				});
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
-				growStore(repository, tripleStore, initialMapSize);
+				String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
 				serviceGate.releaseFirstRequest();
 				assertThat(serviceGate.awaitSecondRequest()).isTrue();
 				serviceGate.releaseAllRequests();
 
 				assertThat(query.get(15, TimeUnit.SECONDS)).isTrue();
+				awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(2);
 			} finally {
 				serviceGate.releaseAllRequests();
@@ -127,6 +134,8 @@ class LmdbStandaloneQueryReplayTest {
 
 				TripleStore tripleStore = tripleStoreOf(store);
 				long initialMapSize = mapSize(tripleStore);
+				LmdbSailStore backingStore = store.getBackingStore();
+				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 				Future<List<Statement>> query = executor.submit(() -> {
 					try (RepositoryConnection reader = repository.getConnection()) {
 						String queryString = "CONSTRUCT { <" + SUBJECT + "> <" + VALUE_PREDICATE
@@ -144,7 +153,7 @@ class LmdbStandaloneQueryReplayTest {
 				});
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
-				growStore(repository, tripleStore, initialMapSize);
+				String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
 				serviceGate.releaseFirstRequest();
 				assertThat(serviceGate.awaitSecondRequest()).isTrue();
 				serviceGate.releaseAllRequests();
@@ -152,6 +161,7 @@ class LmdbStandaloneQueryReplayTest {
 				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder(
 						VF.createStatement(SUBJECT, VALUE_PREDICATE, Values.literal("before")),
 						VF.createStatement(SUBJECT, VALUE_PREDICATE, Values.literal("after")));
+				awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(2);
 			} finally {
 				serviceGate.releaseAllRequests();
@@ -183,6 +193,8 @@ class LmdbStandaloneQueryReplayTest {
 
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<List<String>> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + VALUE_PREDICATE
@@ -199,12 +211,13 @@ class LmdbStandaloneQueryReplayTest {
 			});
 
 			assertThat(function.awaitFirstInvocation()).isTrue();
-			growStore(repository, tripleStore, initialMapSize);
+			String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
 			assertThat(function.invocationCount()).isEqualTo(1);
 			function.releaseFirstInvocation();
 			assertThat(function.awaitRepeatedInvocation()).isTrue();
 
 			assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder("before", "after");
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			assertThat(function.invocationCount()).isGreaterThan(1);
 		} finally {
 			function.releaseFirstInvocation();
@@ -227,25 +240,62 @@ class LmdbStandaloneQueryReplayTest {
 	private static LmdbStore newStore(Path dataDirectory) {
 		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096 * 10)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150));
 	}
 
-	private static void growStore(SailRepository repository, TripleStore tripleStore, long initialMapSize)
-			throws Exception {
+	private static String publishGrowth(SailRepository repository, long initialMapSize,
+			LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) throws Exception {
 		Model growth = new LinkedHashModel();
+		int namespaceBytes = Math.toIntExact(Math.round(initialMapSize * SOFT_GROWTH_DEMAND_RATIO));
+		String namespace = "urn:rdf4j:standalone-query-replay:growth-namespace:" + "n".repeat(namespaceBytes);
 		for (int i = 0; i < 10_000; i++) {
 			growth.add(Values.iri("urn:rdf4j:standalone-query-replay:growth:" + i), GROWTH_PREDICATE,
 					Values.literal("growth"));
 		}
 		try (RepositoryConnection writer = repository.getConnection()) {
-			writer.begin();
+			writer.begin(IsolationLevels.SNAPSHOT);
+			writer.setNamespace("growth-demand", namespace);
 			writer.add(growth);
 			writer.add(SUBJECT, VALUE_PREDICATE, Values.literal("after"));
 			writer.commit();
 		}
+		awaitGrowthEpisode(backingStore, before);
+		awaitReplayAccepted(backingStore, before);
+		return namespace;
+	}
+
+	private static void awaitTripleStoreGrowth(SailRepository repository, TripleStore tripleStore, long initialMapSize,
+			String namespace) throws Exception {
+		try (RepositoryConnection barrier = repository.getConnection()) {
+			barrier.begin(IsolationLevels.SNAPSHOT);
+			assertThat(barrier.getNamespace("growth-demand")).isEqualTo(namespace);
+			barrier.rollback();
+		}
 		assertThat(mapSize(tripleStore)).as("the concurrent writer must grow TripleStore")
 				.isGreaterThan(initialMapSize);
+	}
+
+	private static void awaitGrowthEpisode(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().growthEpisodes() <= before.growthEpisodes()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the published namespace did not start a soft map-growth episode");
+			}
+			Thread.onSpinWait();
+		}
+	}
+
+	private static void awaitReplayAccepted(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().replayAccepted() <= before.replayAccepted()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the soft growth episode did not accept the blocked read for replay");
+			}
+			Thread.onSpinWait();
+		}
 	}
 
 	private static String servicePattern(ServiceGate serviceGate) {

@@ -55,6 +55,9 @@ class LmdbReplayExposureContractTest {
 	private static final String SUBJECT = "urn:lmdb-replay-exposure:subject";
 	private static final String PREDICATE = "urn:lmdb-replay-exposure:predicate";
 	private static final String GROWTH_PREDICATE = "urn:lmdb-replay-exposure:growth";
+	private static final long GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
+	private static final double GROWTH_THRESHOLD = 0.10d;
+	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -64,8 +67,9 @@ class LmdbReplayExposureContractTest {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
-				.setValueDBSize(1024L * 1024L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setReadOnlyReplayMaxRetries(0));
 		SailRepository repository = new SailRepository(store);
@@ -79,6 +83,8 @@ class LmdbReplayExposureContractTest {
 
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
@@ -96,11 +102,14 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the query must reach the deterministic replay barrier");
-			growStore(repository);
-			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
+			String namespace = publishGrowth(repository, initialMapSize, "standalone-growth", 10_000);
+			awaitGrowthEpisode(backingStore, before);
+			awaitForcedInvalidatedView(backingStore, before);
 			function.releaseFirstInvocation();
 
 			Throwable failure = query.get(15, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
 			assertNotNull(failure, "zero configured retries must fail instead of silently reopening the query");
 			assertTrue(hasMapResizeConflict(failure),
 					"the exhausted replay attempt must report typed map invalidation");
@@ -125,31 +134,32 @@ class LmdbReplayExposureContractTest {
 	void falseBooleanQueryObservationPreventsSnapshotAttemptReplay(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(0)
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (RepositoryConnection reader = repository.getConnection()) {
 			reader.begin(IsolationLevels.SNAPSHOT);
-			long initialMapSize = mapSize(tripleStoreOf(store));
+			TripleStore tripleStore = tripleStoreOf(store);
+			long initialMapSize = mapSize(tripleStore);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			BooleanQuery emptyAsk = reader.prepareBooleanQuery(QueryLanguage.SPARQL,
 					"ASK WHERE { <urn:lmdb-replay-exposure:absent> <" + PREDICATE + "> ?value }");
 			assertFalse(emptyAsk.evaluate(), "the ASK query must expose its false scalar result before growth");
 
+			String namespace;
 			try (RepositoryConnection writer = repository.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
-				for (int index = 0; index < 10_000; index++) {
-					writer.add(VF.createIRI("urn:lmdb-replay-exposure:growth:" + index),
-							VF.createIRI(GROWTH_PREDICATE), VF.createLiteral("growth"));
-				}
+				namespace = addTripleStoreGrowthDemand(writer, initialMapSize, "false-result", 10_000);
 				writer.add(VF.createIRI("urn:lmdb-replay-exposure:absent"), VF.createIRI(PREDICATE),
 						VF.createLiteral("published"));
 				writer.commit();
 			}
-			assertTrue(mapSize(tripleStoreOf(store)) > initialMapSize,
-					"the writer must complete TripleStore map growth after the false result was exposed");
-
+			awaitGrowthEpisode(backingStore, before);
 			SailConnection sailConnection = ((SailRepositoryConnection) reader).getSailConnection();
 			SailConflictException conflict = assertThrows(SailConflictException.class,
 					() -> sailConnection.hasStatement(VF.createIRI("urn:lmdb-replay-exposure:absent"),
@@ -160,6 +170,9 @@ class LmdbReplayExposureContractTest {
 			assertEquals(LmdbSailStore.MapResizeKind.TRIPLE_STORE,
 					((LmdbSailStore.MapResizeConflictException) conflict).kind());
 			reader.rollback();
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize,
+					"the writer must complete TripleStore map growth after the false result was exposed");
 		} finally {
 			repository.shutDown();
 		}
@@ -170,23 +183,27 @@ class LmdbReplayExposureContractTest {
 	void emptyTupleResultHasNextObservationPreventsSnapshotReplay(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(0)
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (RepositoryConnection reader = repository.getConnection()) {
 			reader.begin(IsolationLevels.SNAPSHOT);
-			long initialMapSize = mapSize(tripleStoreOf(store));
+			TripleStore tripleStore = tripleStoreOf(store);
+			long initialMapSize = mapSize(tripleStore);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			try (TupleQueryResult emptyResult = reader.prepareTupleQuery(
 					"SELECT ?value WHERE { <urn:lmdb-replay-exposure:empty> <" + PREDICATE + "> ?value }")
 					.evaluate()) {
 				assertFalse(emptyResult.hasNext(), "hasNext(false) must expose the empty result to the caller");
 			}
 
-			growStore(repository, "empty-result");
-			assertTrue(mapSize(tripleStoreOf(store)) > initialMapSize,
-					"the writer must complete TripleStore map growth after the empty result escaped");
+			String namespace = publishGrowth(repository, initialMapSize, "empty-result", 10_000);
+			awaitGrowthEpisode(backingStore, before);
 
 			SailConnection sailConnection = ((SailRepositoryConnection) reader).getSailConnection();
 			SailConflictException conflict = assertThrows(SailConflictException.class,
@@ -196,6 +213,9 @@ class LmdbReplayExposureContractTest {
 			assertTrue(conflict instanceof LmdbSailStore.MapResizeConflictException,
 					"the observed empty attempt must retain typed map-growth invalidation");
 			reader.rollback();
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize,
+					"the writer must complete TripleStore map growth after the empty result escaped");
 		} finally {
 			repository.shutDown();
 		}
@@ -209,7 +229,9 @@ class LmdbReplayExposureContractTest {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setReadOnlyReplayMaxRetries(1));
 		SailRepository repository = new SailRepository(store);
@@ -223,6 +245,8 @@ class LmdbReplayExposureContractTest {
 
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
@@ -240,19 +264,25 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the initial query attempt must reach its barrier");
-			growStore(repository, "retry-cap-first", 10_000);
-			assertTrue(mapSize(tripleStore) > initialMapSize, "the first writer must grow TripleStore");
+			String namespace = publishGrowth(repository, initialMapSize, "retry-cap-first", 10_000);
+			awaitGrowthEpisode(backingStore, before);
+			awaitReplayAccepted(backingStore, before);
 			function.releaseFirstInvocation();
 
 			assertTrue(function.awaitSecondInvocation(), "the configured single retry must reopen the query once");
 			ValueStore valueStore = valueStoreOf(store);
 			long firstGrowthValueMapSize = mapSize(valueStore);
+			MapGrowthMetrics.Snapshot beforeSecondGrowth = backingStore.growthMetricsSnapshot();
 			growValueStore(repository);
-			assertTrue(mapSize(valueStore) > firstGrowthValueMapSize,
-					"the second writer must grow ValueStore while the replayed attempt is active");
+			awaitGrowthEpisode(backingStore, beforeSecondGrowth);
+			awaitForcedInvalidatedView(backingStore, beforeSecondGrowth);
 			function.releaseSecondInvocation();
 
 			Throwable failure = query.get(20, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize, "the first writer must grow TripleStore");
+			assertTrue(mapSize(valueStore) > firstGrowthValueMapSize,
+					"the second writer must grow ValueStore after publishing while the replayed attempt is active");
 			assertNotNull(failure, "exceeding the retry cap must fail rather than return a later-snapshot result");
 			assertTrue(hasMapResizeConflict(failure),
 					"the result invalidated after its one allowed replay must report typed map invalidation");
@@ -283,7 +313,9 @@ class LmdbReplayExposureContractTest {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
@@ -295,10 +327,10 @@ class LmdbReplayExposureContractTest {
 				seed.add(VF.createIRI(SUBJECT), VF.createIRI(PREDICATE), VF.createLiteral("seed"));
 			}
 
-			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
-			long replayAcceptedBefore = backingStore.growthMetricsSnapshot().replayAccepted();
+			LmdbSailStore backingStore = store.getBackingStore();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
@@ -316,13 +348,16 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the initial query attempt must reach its barrier");
-			growStore(repository, "unrelated-failure", 10_000);
-			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
-			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > replayAcceptedBefore,
+			String namespace = publishGrowth(repository, initialMapSize, "unrelated-failure", 10_000);
+			awaitGrowthEpisode(backingStore, before);
+			awaitReplayAccepted(backingStore, before);
+			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
 					"the growth episode must accept a replay request while the custom function is blocked");
 			function.releaseFirstInvocation();
 
 			Throwable failure = query.get(15, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
 			assertNotNull(failure, "an unrelated evaluation failure must not be replaced by successful replay");
 			IllegalStateException originalFailure = findCause(failure, IllegalStateException.class);
 			assertNotNull(originalFailure, "the original custom-function failure must propagate");
@@ -350,7 +385,9 @@ class LmdbReplayExposureContractTest {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(4096L * 10L)
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(150)
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
@@ -365,7 +402,7 @@ class LmdbReplayExposureContractTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
-			long replayAcceptedBefore = backingStore.growthMetricsSnapshot().replayAccepted();
+			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
 			Future<Throwable> query = queryExecutor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					String queryString = "SELECT ?value WHERE { <" + SUBJECT + "> <" + PREDICATE
@@ -383,13 +420,16 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the query must reach the deterministic cancellation barrier");
-			growStore(repository, "query-cancel", 10_000);
-			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
-			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > replayAcceptedBefore,
+			String namespace = publishGrowth(repository, initialMapSize, "query-cancel", 10_000);
+			awaitGrowthEpisode(backingStore, before);
+			awaitReplayAccepted(backingStore, before);
+			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
 					"the growth episode must accept replay while the callback is blocked");
 			function.releaseFirstInvocation();
 
 			Throwable failure = query.get(15, TimeUnit.SECONDS);
+			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
+			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
 			assertNotNull(failure, "query cancellation must not be replaced with a replayed successful result");
 			assertNotNull(findCause(failure, QueryInterruptedException.class),
 					"the original query cancellation must propagate through evaluation wrappers");
@@ -430,23 +470,75 @@ class LmdbReplayExposureContractTest {
 		return null;
 	}
 
-	private static void growStore(SailRepository repository) {
-		growStore(repository, "standalone-growth", 10_000);
-	}
-
-	private static void growStore(SailRepository repository, String batch) {
-		growStore(repository, batch, 10_000);
-	}
-
-	private static void growStore(SailRepository repository, String batch, int statementCount) {
+	private static String publishGrowth(SailRepository repository, long initialMapSize, String batch,
+			int statementCount)
+			throws Exception {
+		String namespace;
 		try (RepositoryConnection writer = repository.getConnection()) {
 			writer.begin(IsolationLevels.SNAPSHOT);
-			for (int index = 0; index < statementCount; index++) {
-				writer.add(VF.createIRI("urn:lmdb-replay-exposure:" + batch + ":" + index),
-						VF.createIRI(GROWTH_PREDICATE), VF.createLiteral("growth"));
-			}
+			namespace = addTripleStoreGrowthDemand(writer, initialMapSize, batch, statementCount);
 			writer.add(VF.createIRI(SUBJECT), VF.createIRI(PREDICATE), VF.createLiteral(batch));
 			writer.commit();
+		}
+		return namespace;
+	}
+
+	private static String addTripleStoreGrowthDemand(RepositoryConnection writer, long initialMapSize, String batch,
+			int statementCount) {
+		String namespace = growthNamespace(batch, initialMapSize);
+		writer.setNamespace("growth-demand", namespace);
+		for (int index = 0; index < statementCount; index++) {
+			writer.add(VF.createIRI("urn:lmdb-replay-exposure:" + batch + ":" + index),
+					VF.createIRI(GROWTH_PREDICATE), VF.createLiteral("growth"));
+		}
+		return namespace;
+	}
+
+	private static String growthNamespace(String batch, long initialMapSize) {
+		int namespaceBytes = Math.toIntExact(Math.round(initialMapSize * SOFT_GROWTH_DEMAND_RATIO));
+		return "urn:lmdb-replay-exposure:" + batch + ":" + "n".repeat(namespaceBytes);
+	}
+
+	private static void awaitTripleStoreGrowth(SailRepository repository, TripleStore tripleStore, long initialMapSize,
+			String namespace) throws Exception {
+		try (RepositoryConnection barrier = repository.getConnection()) {
+			barrier.begin(IsolationLevels.SNAPSHOT);
+			assertEquals(namespace, barrier.getNamespace("growth-demand"),
+					"the independent snapshot must observe the complete namespace publication");
+			barrier.rollback();
+		}
+		assertTrue(mapSize(tripleStore) > initialMapSize,
+				"the independent begin/rollback must finish pending TripleStore growth");
+	}
+
+	private static void awaitGrowthEpisode(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().growthEpisodes() <= before.growthEpisodes()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the published namespace did not start a soft map-growth episode");
+			}
+			Thread.onSpinWait();
+		}
+	}
+
+	private static void awaitReplayAccepted(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().replayAccepted() <= before.replayAccepted()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the soft growth episode did not accept the blocked read for replay");
+			}
+			Thread.onSpinWait();
+		}
+	}
+
+	private static void awaitForcedInvalidatedView(LmdbSailStore backingStore,
+			MapGrowthMetrics.Snapshot before) {
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (backingStore.growthMetricsSnapshot().forcedInvalidatedViews() <= before.forcedInvalidatedViews()) {
+			if (System.nanoTime() >= deadlineNanos) {
+				throw new AssertionError("the exhausted read attempt was not classified for forced invalidation");
+			}
+			Thread.onSpinWait();
 		}
 	}
 

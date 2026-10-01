@@ -159,9 +159,11 @@ class ValueStoreTermIndexRecoveryTest {
 
 	@Test
 	@Timeout(value = 240, unit = TimeUnit.SECONDS)
-	void termIndexRebuildUsesPreReservedMapAndReopensFromCommittedTerms(@TempDir Path storeDir) throws Exception {
-		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE);
-		long initialMapSize = valueMapSize(storeDir.resolve("values"));
+	void termIndexRebuildGrowsBeyondCertifiedReserveAndReopensFromCommittedTerms(@TempDir Path storeDir)
+			throws Exception {
+		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE, 20);
+		long initialMapSize = first.valueMapSizeBytes();
+		long initialOccupiedBytes = first.valueOccupiedBytes();
 		assertTrue(initialMapSize > smallMapConfig().getValueDBSize(),
 				"the buffered seed write must reserve map capacity before the native term-index rebuild");
 
@@ -172,9 +174,12 @@ class ValueStoreTermIndexRecoveryTest {
 		assertTrue(output.contains("VALUE_TERM_INDEX_REBUILD_COMPLETE"),
 				"the child must finish its complete native reindex: " + output);
 
-		long grownMapSize = valueMapSize(storeDir.resolve("values"));
-		assertEquals(initialMapSize, grownMapSize,
-				"the pre-reserved capacity must also hold the complete native term-index rebuild");
+		MapSnapshot rebuiltMap = liveValueMapSnapshot(output);
+		long grownMapSize = rebuiltMap.mapSizeBytes();
+		assertTrue(grownMapSize >= initialMapSize * 2L,
+				"the complete native term-index rebuild must grow its map when demand exceeds certified reserve; initial map/occupied="
+						+ initialMapSize + "/" + initialOccupiedBytes + ", after rebuild=" + grownMapSize + "/"
+						+ rebuiltMap.occupiedBytes());
 
 		long[] exactOpscKey;
 		LmdbStore reopened = new LmdbStore(storeDir.toFile(), legacyConfig());
@@ -343,23 +348,34 @@ class ValueStoreTermIndexRecoveryTest {
 	}
 
 	private static Seed seedStore(Path storeDir, LmdbStoreConfig config, int count) throws Exception {
+		return seedStore(storeDir, config, count, count);
+	}
+
+	private static Seed seedStore(Path storeDir, LmdbStoreConfig config, int count, int batchSize) throws Exception {
 		Seed first = null;
 		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
 		store.init();
 		try (SailConnection connection = store.getConnection()) {
-			connection.begin(IsolationLevels.SNAPSHOT);
-			for (int i = 0; i < count; i++) {
-				IRI innerSubject = VF.createIRI("urn:value-term-index:inner-subject:" + i);
-				IRI outerSubject = VF.createIRI("urn:value-term-index:outer-subject:" + i);
-				IRI carrier = VF.createIRI("urn:value-term-index:carrier:" + i);
-				TripleTerm inner = VF.createTripleTerm(innerSubject, PREDICATE, VF.createLiteral("nested-leaf:" + i));
-				TripleTerm outer = VF.createTripleTerm(outerSubject, PREDICATE, inner);
-				connection.addStatement(carrier, PREDICATE, outer, GRAPH);
-				if (i == 0) {
-					first = new Seed(carrier, outer, inner);
+			for (int batchStart = 0; batchStart < count; batchStart += batchSize) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				int batchEnd = Math.min(count, batchStart + batchSize);
+				for (int i = batchStart; i < batchEnd; i++) {
+					IRI innerSubject = VF.createIRI("urn:value-term-index:inner-subject:" + i);
+					IRI outerSubject = VF.createIRI("urn:value-term-index:outer-subject:" + i);
+					IRI carrier = VF.createIRI("urn:value-term-index:carrier:" + i);
+					TripleTerm inner = VF.createTripleTerm(innerSubject, PREDICATE,
+							VF.createLiteral("nested-leaf:" + i));
+					TripleTerm outer = VF.createTripleTerm(outerSubject, PREDICATE, inner);
+					connection.addStatement(carrier, PREDICATE, outer, GRAPH);
+					if (i == 0) {
+						first = new Seed(carrier, outer, inner, 0, 0);
+					}
 				}
+				connection.commit();
 			}
-			connection.commit();
+			ValueStore valueStore = (ValueStore) store.getValueFactory();
+			first = new Seed(first.carrier(), first.outer(), first.inner(), valueStore.mapSizeBytes(),
+					valueStore.occupiedBytes());
 		} finally {
 			store.shutDown();
 		}
@@ -533,6 +549,18 @@ class ValueStoreTermIndexRecoveryTest {
 		}
 	}
 
+	private static MapSnapshot liveValueMapSnapshot(String output) {
+		String prefix = "VALUE_TERM_INDEX_REBUILD_LIVE_MAP=";
+		String snapshot = output.lines()
+				.filter(line -> line.startsWith(prefix))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(
+						"the rebuild child must report its live map and occupancy: " + output));
+		String[] measurements = snapshot.substring(prefix.length()).split(",", -1);
+		assertEquals(2, measurements.length, "the rebuild child must report both live map size and occupancy");
+		return new MapSnapshot(Long.parseLong(measurements[0]), Long.parseLong(measurements[1]));
+	}
+
 	private static void createOrphanTermIndexDatabases(Path environmentDirectory, String... indexSpecs)
 			throws IOException {
 		long environment = NULL;
@@ -646,6 +674,9 @@ class ValueStoreTermIndexRecoveryTest {
 					.setForceSync(true);
 			LmdbStore store = new LmdbStore(Path.of(args[0]).toFile(), config);
 			store.init();
+			ValueStore valueStore = (ValueStore) store.getValueFactory();
+			System.out.println("VALUE_TERM_INDEX_REBUILD_LIVE_MAP=" + valueStore.mapSizeBytes() + ","
+					+ valueStore.occupiedBytes());
 			store.shutDown();
 			System.out.println("VALUE_TERM_INDEX_REBUILD_COMPLETE");
 		}
@@ -837,6 +868,10 @@ class ValueStoreTermIndexRecoveryTest {
 		}
 	}
 
-	private record Seed(IRI carrier, TripleTerm outer, TripleTerm inner) {
+	private record Seed(IRI carrier, TripleTerm outer, TripleTerm inner, long valueMapSizeBytes,
+			long valueOccupiedBytes) {
+	}
+
+	private record MapSnapshot(long mapSizeBytes, long occupiedBytes) {
 	}
 }

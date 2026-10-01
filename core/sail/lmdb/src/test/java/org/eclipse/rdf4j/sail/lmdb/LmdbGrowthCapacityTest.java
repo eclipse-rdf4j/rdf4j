@@ -27,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -34,8 +36,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -79,6 +83,105 @@ class LmdbGrowthCapacityTest {
 		assertEquals(0L, grownMapSize % pageSize, "the final map size must align to the native page size");
 		assertTrue(estimatedWithReserve * 100L < grownMapSize * LmdbUtil.PERCENTAGE_FULL_TRIGGERS_RESIZE,
 				"the predicted write and recent-allocation reserve must remain below the resize threshold");
+	}
+
+	@Test
+	void mapGrowthLeavesTheEstimatedWriteAndReserveBelowTheDefaultThreshold() {
+		long pageSize = 4096L;
+		long currentMapSize = 1024L * 1024L;
+		long estimatedUsedBytesAfterWrite = 16L * LmdbUtil.MIN_FREE_SPACE;
+
+		long grownMapSize = LmdbUtil.autoGrowMapSize(currentMapSize, pageSize, estimatedUsedBytesAfterWrite);
+		long estimatedWithReserve = estimatedUsedBytesAfterWrite + LmdbUtil.MIN_FREE_SPACE;
+
+		assertTrue(estimatedWithReserve < grownMapSize * LmdbStoreConfig.MAP_GROWTH_THRESHOLD,
+				"the predicted write and reserve must remain strictly below the default 75% threshold");
+	}
+
+	@Test
+	void mapGrowthPolicyUsesACeilingWatermarkForOccupiedAndProjectedBytes() {
+		long mebibyte = 1024L * 1024L;
+		long mapBytes = 16L * mebibyte - 1L;
+		long watermarkBytes = 12L * mebibyte;
+		MapGrowthPolicy policy = new MapGrowthPolicy(0.75d);
+
+		assertFalse(policy.requiresGrowth(mapBytes, watermarkBytes - 1L, 0L),
+				"the rounded-up watermark is not reached one byte below its ceiling");
+		assertTrue(policy.requiresGrowth(mapBytes, watermarkBytes, 0L),
+				"allocated pages at the ceiling watermark must start growth");
+		assertFalse(policy.requiresGrowth(mapBytes, 10L * mebibyte, 2L * mebibyte - 1L),
+				"projected allocation below the watermark must not start soft growth");
+		assertTrue(policy.requiresGrowth(mapBytes, 10L * mebibyte, 2L * mebibyte),
+				"projected allocation at the watermark must start soft growth");
+		assertFalse(policy.requiresGrowth(32L * mebibyte, 10L * mebibyte, 2L * mebibyte),
+				"changing map size must recompute the cached watermark");
+	}
+
+	@Test
+	void mapGrowthPolicyKeepsHardReserveSeparateFromSoftThreshold() {
+		long mebibyte = 1024L * 1024L;
+		long mapBytes = 8L * mebibyte;
+		long occupiedBytes = 2L * mebibyte;
+		long remainingBytes = mapBytes - occupiedBytes;
+		MapGrowthPolicy policy = new MapGrowthPolicy(0.75d);
+
+		assertFalse(policy.hardCapacityRequired(mapBytes, occupiedBytes,
+				remainingBytes - LmdbUtil.MIN_FREE_SPACE));
+		assertTrue(policy.hardCapacityRequired(mapBytes, occupiedBytes,
+				remainingBytes - LmdbUtil.MIN_FREE_SPACE + 1L));
+		assertTrue(policy.hardCapacityRequired(mapBytes, mapBytes, 0L));
+		assertTrue(policy.hardCapacityRequired(Long.MAX_VALUE, 0L, Long.MAX_VALUE),
+				"an overflowing projected reserve must never be reported as available capacity");
+	}
+
+	@Test
+	void mapGrowthPolicyAcceptsOnlyFiniteRatiosInsideTheOpenUnitInterval() {
+		new MapGrowthPolicy(Double.MIN_VALUE);
+		new MapGrowthPolicy(Math.nextDown(1.0d));
+
+		for (double invalidRatio : new double[] { 0.0d, 1.0d, -0.01d, 1.01d, Double.NaN,
+				Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY }) {
+			assertThrows(IllegalArgumentException.class, () -> new MapGrowthPolicy(invalidRatio));
+		}
+	}
+
+	@Test
+	void mapGrowthPolicyReturnsPageAlignedTargetsWithStrictProjectedHeadroom() {
+		long mebibyte = 1024L * 1024L;
+		long pageBytes = 4096L;
+		long oldMapBytes = 4L * mebibyte;
+		long projectedUsedBytes = 6L * mebibyte;
+		long projectedWithReserve = projectedUsedBytes + LmdbUtil.MIN_FREE_SPACE;
+
+		long grownMapBytes = new MapGrowthPolicy(0.75d).grownMapSize(oldMapBytes, pageBytes, projectedUsedBytes);
+		assertEquals(0L, grownMapBytes % pageBytes);
+		assertTrue(grownMapBytes >= oldMapBytes * 2L);
+		assertTrue(projectedWithReserve < grownMapBytes * 0.75d,
+				"projected allocation and reserve must remain strictly below the threshold");
+
+		long exactBoundaryTarget = new MapGrowthPolicy(0.75d).grownMapSize(pageBytes, pageBytes, mebibyte);
+		assertEquals(2_101_248L, exactBoundaryTarget,
+				"an exact ratio boundary must advance to the next page before growth is accepted");
+
+		long halfThresholdTarget = LmdbUtil.autoGrowMapSize(pageBytes, pageBytes, mebibyte, 0.5d);
+		assertTrue(mebibyte + LmdbUtil.MIN_FREE_SPACE < halfThresholdTarget * 0.5d);
+
+		MapGrowthPolicy nearOnePolicy = new MapGrowthPolicy(Math.nextDown(1.0d));
+		long nearOneTarget = nearOnePolicy.grownMapSize(oldMapBytes, pageBytes, projectedUsedBytes);
+		assertEquals(0L, nearOneTarget % pageBytes);
+		assertTrue(projectedWithReserve < nearOneTarget * Math.nextDown(1.0d));
+	}
+
+	@Test
+	void mapGrowthPolicyRejectsUnrepresentableTargetsInsteadOfSaturating() {
+		MapGrowthPolicy policy = new MapGrowthPolicy(0.75d);
+		assertThrows(IllegalArgumentException.class,
+				() -> policy.grownMapSize(4096L, 4096L, Long.MAX_VALUE));
+		assertThrows(IllegalArgumentException.class,
+				() -> policy.grownMapSize(Long.MAX_VALUE / 2L + 1L, 4096L, 0L));
+		assertThrows(IllegalArgumentException.class,
+				() -> new MapGrowthPolicy(Double.MIN_VALUE).grownMapSize(4096L, 4096L, 0L));
+		assertThrows(IllegalArgumentException.class, () -> policy.grownMapSize(4096L, 0L, 0L));
 	}
 
 	@Test
@@ -170,7 +273,7 @@ class LmdbGrowthCapacityTest {
 	}
 
 	@Test
-	void bufferedWholeWritePreflightGrowsBothMapsBeforeBranchPreparation(@TempDir File dataDir) throws Exception {
+	void bufferedStatementAndNamespacePublicationGrowTheRequiredMaps(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L)
@@ -182,23 +285,45 @@ class LmdbGrowthCapacityTest {
 			LmdbSailStore backingStore = store.getBackingStore();
 			long initialTripleMapSize = mapSize(backingStore, "tripleStore");
 			long initialValueMapSize = mapSize(backingStore, "valueStore");
+			String largeNamespace = "urn:growth-namespace:" + "n".repeat(Math.toIntExact(initialTripleMapSize));
 
 			try (RepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
-				for (int index = 0; index < 10_000; index++) {
-					connection.add(VF.createIRI("urn:growth-subject:" + index),
-							VF.createIRI("urn:growth-predicate"),
-							VF.createLiteral("growth-object:" + index));
+				try {
+					connection.setNamespace("growth", largeNamespace);
+					for (int index = 0; index < 10_000; index++) {
+						connection.add(VF.createIRI("urn:growth-subject:" + index),
+								VF.createIRI("urn:growth-predicate"),
+								VF.createLiteral("growth-object:" + index));
+					}
+
+					connection.prepare();
+
+					assertEquals(initialTripleMapSize, mapSize(backingStore, "tripleStore"),
+							"buffered preparation must not resize the TripleStore before publication");
+					assertEquals(initialValueMapSize, mapSize(backingStore, "valueStore"),
+							"buffered preparation must not resize the ValueStore before publication");
+					assertTrue(backingStore.growthAdmissionClosed(),
+							"preparation must keep admission closed until the buffered writer publishes or cleans up");
+
+					connection.commit();
+				} finally {
+					if (connection.isActive()) {
+						connection.rollback();
+					}
 				}
-
-				connection.prepare();
-
-				assertTrue(mapSize(backingStore, "tripleStore") > initialTripleMapSize,
-						"preparing the complete buffered branch write must grow the TripleStore map first");
-				assertTrue(mapSize(backingStore, "valueStore") > initialValueMapSize,
-						"preparing the complete buffered branch write must grow the ValueStore map first");
-				connection.rollback();
 			}
+
+			try (RepositoryConnection reader = repository.getConnection()) {
+				assertEquals(10_000L, reader.size(),
+						"a fresh public read after commit must observe the complete published batch");
+				assertEquals(largeNamespace, reader.getNamespace("growth"),
+						"the complete buffered namespace value must be published with the statement batch");
+			}
+			assertTrue(mapSize(backingStore, "tripleStore") > initialTripleMapSize,
+					"the TripleStore map must grow after the committed batch is published");
+			assertTrue(mapSize(backingStore, "valueStore") > initialValueMapSize,
+					"the ValueStore map must grow after the committed batch is published");
 		} finally {
 			repository.shutDown();
 		}
@@ -263,7 +388,7 @@ class LmdbGrowthCapacityTest {
 
 	@Test
 	@Timeout(value = 8, unit = TimeUnit.SECONDS)
-	void staleBufferedWarningReopensAdmissionWhileWriterRemainsActive(@TempDir File dataDir) throws Exception {
+	void bufferedWriterPhaseDoesNotExpireWhileReaderWaits(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L)
@@ -273,22 +398,42 @@ class LmdbGrowthCapacityTest {
 		repository.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
-			try (RepositoryConnection writer = repository.getConnection()) {
-				writer.begin();
-				writer.add(VF.createIRI("urn:warning-expiry:subject"), VF.createIRI("urn:warning-expiry:predicate"),
-						VF.createLiteral("x".repeat(1024 * 1024)));
-				assertTrue(backingStore.growthAdmissionClosed(),
-						"the oversized buffered write must initially close admission");
+			ExecutorService readerExecutor = Executors.newSingleThreadExecutor();
+			try {
+				try (RepositoryConnection writer = repository.getConnection()) {
+					try {
+						writer.begin();
+						writer.add(VF.createIRI("urn:warning-expiry:subject"),
+								VF.createIRI("urn:warning-expiry:predicate"),
+								VF.createLiteral("x".repeat(1024 * 1024)));
+						assertTrue(backingStore.growthAdmissionClosed(),
+								"the oversized buffered write must close admission");
+						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-				awaitGrowthAdmissionOpen(backingStore);
-				assertFalse(backingStore.growthAdmissionClosed(),
-						"warning expiry must reopen admission before the writer prepares or rolls back");
-				assertTrue(writer.isActive(), "warning expiry must not roll back the still-open writer");
-				try (RepositoryConnection reader = repository.getConnection()) {
-					assertFalse(reader.getStatements(null, null, null).hasNext(),
-							"new reads must be admitted after the bounded warning expires");
+						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+						Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
+								deadlineReaderStarted, 750);
+						assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
+								"the deadline-bound reader must start");
+						awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
+						assertReaderDeadlineExpires(deadlineReader);
+						assertTrue(writer.isActive(), "reader timeout must not finish the buffered writer");
+						assertTrue(backingStore.growthAdmissionClosed(),
+								"the active writer phase must remain closed after a reader deadline expires");
+						assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
+								"the reader timeout must not replace or expire the writer's growth episode");
+
+						assertRollbackReleasesAdmission(writer, readerExecutor, repository, backingStore);
+					} finally {
+						if (writer.isActive()) {
+							writer.rollback();
+						}
+					}
 				}
-				writer.rollback();
+			} finally {
+				readerExecutor.shutdownNow();
+				assertTrue(readerExecutor.awaitTermination(5, TimeUnit.SECONDS),
+						"deadline-bound and released readers must terminate");
 			}
 		} finally {
 			repository.shutDown();
@@ -297,7 +442,7 @@ class LmdbGrowthCapacityTest {
 
 	@Test
 	@Timeout(value = 8, unit = TimeUnit.SECONDS)
-	void expiredBufferedWarningCanBeStartedAgainAfterMoreWrites(@TempDir File dataDir) throws Exception {
+	void additionalBufferedWriteRetainsWriterPhaseForWaitingReader(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L)
@@ -307,24 +452,46 @@ class LmdbGrowthCapacityTest {
 		repository.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
-			try (RepositoryConnection writer = repository.getConnection()) {
-				writer.begin();
-				writer.add(VF.createIRI("urn:warning-restart:subject:1"),
-						VF.createIRI("urn:warning-restart:predicate"),
-						VF.createLiteral("x".repeat(1024 * 1024)));
-				assertTrue(backingStore.growthAdmissionClosed(),
-						"the first oversized buffered write must start an admission warning");
+			ExecutorService readerExecutor = Executors.newSingleThreadExecutor();
+			try {
+				try (RepositoryConnection writer = repository.getConnection()) {
+					try {
+						writer.begin();
+						writer.add(VF.createIRI("urn:warning-restart:subject:1"),
+								VF.createIRI("urn:warning-restart:predicate"),
+								VF.createLiteral("x".repeat(1024 * 1024)));
+						assertTrue(backingStore.growthAdmissionClosed(),
+								"the first oversized buffered write must start an admission phase");
+						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-				awaitGrowthAdmissionOpen(backingStore);
-				assertFalse(backingStore.growthAdmissionClosed(),
-						"the first warning must expire before more writes are added");
+						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+						Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
+								deadlineReaderStarted, 750);
+						assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
+								"the deadline-bound reader must start");
+						awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
 
-				writer.add(VF.createIRI("urn:warning-restart:subject:2"),
-						VF.createIRI("urn:warning-restart:predicate"),
-						VF.createLiteral("y".repeat(1024 * 1024)));
-				assertTrue(backingStore.growthAdmissionClosed(),
-						"crossing a later buffered-write threshold must start a fresh warning after expiry");
-				writer.rollback();
+						writer.add(VF.createIRI("urn:warning-restart:subject:2"),
+								VF.createIRI("urn:warning-restart:predicate"),
+								VF.createLiteral("y".repeat(1024 * 1024)));
+						assertReaderDeadlineExpires(deadlineReader);
+						assertTrue(backingStore.growthAdmissionClosed(),
+								"a later buffered write must keep the same writer phase active");
+						assertTrue(writer.isActive(), "reader timeout must not finish the buffered writer");
+						assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
+								"a later buffered write must not create a new warning episode");
+
+						assertRollbackReleasesAdmission(writer, readerExecutor, repository, backingStore);
+					} finally {
+						if (writer.isActive()) {
+							writer.rollback();
+						}
+					}
+				}
+			} finally {
+				readerExecutor.shutdownNow();
+				assertTrue(readerExecutor.awaitTermination(5, TimeUnit.SECONDS),
+						"deadline-bound and released readers must terminate");
 			}
 		} finally {
 			repository.shutDown();
@@ -333,7 +500,7 @@ class LmdbGrowthCapacityTest {
 
 	@Test
 	@Timeout(value = 8, unit = TimeUnit.SECONDS)
-	void laterWriteRenewsWarningWithoutAnInterveningAdmissionProbe(@TempDir File dataDir) throws Exception {
+	void laterBufferedWriteRetainsWarningAfterReaderDeadline(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096L * 64L)
 				.setValueDBSize(4096L * 64L)
@@ -341,21 +508,45 @@ class LmdbGrowthCapacityTest {
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		LmdbSailStore backingStore = store.getBackingStore();
+		ExecutorService readerExecutor = Executors.newSingleThreadExecutor();
 		try (RepositoryConnection writer = repository.getConnection()) {
-			writer.begin();
-			writer.add(VF.createIRI("urn:warning-no-probe:subject:1"),
-					VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("x".repeat(1024 * 1024)));
+			try {
+				writer.begin();
+				writer.add(VF.createIRI("urn:warning-no-probe:subject:1"),
+						VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("x".repeat(1024 * 1024)));
+				long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-			// Let the bounded warning expire without querying coordinator admission or metrics, both of which perform
-			// lazy expiry as a side effect.
-			TimeUnit.MILLISECONDS.sleep(350);
+				CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+				Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
+						deadlineReaderStarted, 750);
+				assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
+						"the deadline-bound reader must start");
+				awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
+				assertReaderDeadlineExpires(deadlineReader);
+				assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
+						"the reader's own deadline must not expire the writer's growth episode");
 
-			writer.add(VF.createIRI("urn:warning-no-probe:subject:2"),
-					VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("y".repeat(1024 * 1024)));
-			assertTrue(store.getBackingStore().growthAdmissionClosed(),
-					"the later write must start a fresh warning even when no reader probes admission after expiry");
-			writer.rollback();
+				writer.add(VF.createIRI("urn:warning-no-probe:subject:2"),
+						VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("y".repeat(1024 * 1024)));
+				assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
+						"a later buffered write must retain the original growth episode after the reader times out");
+				assertTrue(backingStore.growthAdmissionClosed(),
+						"admission must remain closed while the buffered writer owns the growth phase");
+				assertTrue(writer.isActive(), "reader timeout must not finish the buffered writer");
+				assertTrue(backingStore.growthAdmissionClosed(),
+						"reader timeout must not reopen admission while the writer remains active");
+
+				assertRollbackReleasesAdmission(writer, readerExecutor, repository, backingStore);
+			} finally {
+				if (writer.isActive()) {
+					writer.rollback();
+				}
+			}
 		} finally {
+			readerExecutor.shutdownNow();
+			assertTrue(readerExecutor.awaitTermination(5, TimeUnit.SECONDS),
+					"deadline-bound and released readers must terminate");
 			repository.shutDown();
 		}
 	}
@@ -500,23 +691,73 @@ class LmdbGrowthCapacityTest {
 	}
 
 	private static void awaitCurrentAdmissionWaiter(LmdbSailStore store) throws InterruptedException {
+		awaitCurrentAdmissionWaiter(store, null);
+	}
+
+	private static void awaitCurrentAdmissionWaiter(LmdbSailStore store, Future<?> operation)
+			throws InterruptedException {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 		while (store.growthMetricsSnapshot().currentAdmissionWaiters() == 0) {
+			if (operation != null && operation.isDone()) {
+				throw new AssertionError(
+						"The reader completed without waiting at the closed map-growth admission gate");
+			}
 			if (System.nanoTime() >= deadlineNanos) {
 				throw new AssertionError("No reader entered the closed map-growth admission gate");
 			}
-			TimeUnit.MILLISECONDS.sleep(1);
+			Thread.yield();
 		}
 	}
 
-	private static void awaitGrowthAdmissionOpen(LmdbSailStore store) throws InterruptedException {
-		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-		while (store.growthAdmissionClosed()) {
-			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("The expired buffered warning did not reopen admission");
+	private static Future<Boolean> submitDeadlineBoundRead(ExecutorService readerExecutor,
+			SailRepository repository, CountDownLatch readerStarted, long deadlineMillis) {
+		return readerExecutor.submit(() -> {
+			readerStarted.countDown();
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(deadlineMillis);
+					QueryExecutionDeadline.Scope ignored = deadline.enter();
+					RepositoryConnection reader = repository.getConnection()) {
+				try (var statements = reader.getStatements(null, null, null)) {
+					return statements.hasNext();
+				}
 			}
-			TimeUnit.MILLISECONDS.sleep(1);
+		});
+	}
+
+	private static void assertReaderDeadlineExpires(Future<?> reader) throws Exception {
+		ExecutionException failure = assertThrows(ExecutionException.class,
+				() -> reader.get(3, TimeUnit.SECONDS),
+				"a reader must wait until its own query deadline instead of the writer warning expiring");
+		assertTrue(hasCause(failure, QueryInterruptedException.class),
+				"the blocked reader must fail with its query interruption");
+	}
+
+	private static void assertRollbackReleasesAdmission(RepositoryConnection writer, ExecutorService readerExecutor,
+			SailRepository repository, LmdbSailStore backingStore) throws Exception {
+		CountDownLatch releasedReaderStarted = new CountDownLatch(1);
+		Future<Boolean> releasedReader = readerExecutor.submit(() -> {
+			releasedReaderStarted.countDown();
+			try (RepositoryConnection reader = repository.getConnection();
+					var statements = reader.getStatements(null, null, null)) {
+				return statements.hasNext();
+			}
+		});
+		assertTrue(releasedReaderStarted.await(5, TimeUnit.SECONDS), "the remaining reader must start");
+		awaitCurrentAdmissionWaiter(backingStore, releasedReader);
+		writer.rollback();
+		assertFalse(releasedReader.get(5, TimeUnit.SECONDS),
+				"rolling back the writer must release the remaining admission");
+		assertEquals(0, backingStore.growthMetricsSnapshot().currentAdmissionWaiters(),
+				"rollback must release all blocked admissions");
+		assertFalse(backingStore.growthAdmissionClosed(), "rollback must close the writer's growth phase");
+	}
+
+	private static boolean hasCause(Throwable failure, Class<? extends Throwable> type) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (type.isInstance(cause)) {
+				return true;
+			}
 		}
+		return false;
 	}
 
 	private static long mapSize(LmdbSailStore backingStore, String storeFieldName) throws ReflectiveOperationException {

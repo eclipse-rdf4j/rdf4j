@@ -33,20 +33,36 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -58,6 +74,209 @@ class AdaptiveReplayIntegrationTest {
 
 	@TempDir
 	File directory;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void consumedCommitReplayReleasesPublicationLocksBeforeReaderCleanup(boolean midFlush) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(64L * 1024 * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(100L)
+				.setBulkOperationSize(4);
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		AtomicReference<LmdbSailStore.ReadAttemptLease> attempt = new AtomicReference<>();
+		AtomicReference<LmdbSailStore.ReadView> view = new AtomicReference<>();
+		CountDownLatch cleanupCompleted = new CountDownLatch(1);
+		AtomicInteger applicationWrites = new AtomicInteger();
+		LmdbSailStore backing = store.getBackingStore();
+		long growthEpisodesBeforeWrite = backing.growthMetricsSnapshot().growthEpisodes();
+		var cleanupExecutor = Executors.newVirtualThreadPerTaskExecutor();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> {
+			// Reader cleanup legitimately needs sink state. A native commit recovery must release the caller's
+			// publication locks before waiting for this cleanup, even when the native writer runs on its worker.
+			var cleanup = cleanupExecutor.submit(() -> {
+				backing.snapshotNamespacesForCheckpointOwner(new Object());
+				LmdbSailStore.ReadView retiring = view.getAndSet(null);
+				if (retiring != null) {
+					retiring.close();
+				}
+				attempt.get().close();
+				cleanupCompleted.countDown();
+			});
+			assertDoesNotThrow(() -> cleanup.get(2, TimeUnit.SECONDS),
+					"the suspended publication must let reader cleanup acquire its lock");
+			return true;
+		};
+		try {
+			attempt.set(backing.registerReadAttempt(observer));
+			view.set(backing.createTransactionReadView(observer, attempt.get()));
+			AtomicInteger successfulRetryValidations = new AtomicInteger();
+			AtomicReference<AssertionError> successfulRetryValidationFailure = new AtomicReference<>();
+			store.triples.replayValidation = () -> {
+				assertEquals(0L, cleanupCompleted.getCount(),
+						"reader cleanup must finish before the retained native prefix is replayed");
+				assertTrue(backing.growthAdmissionClosed(),
+						"native emergency growth must keep new readers out until the retained prefix is published");
+			};
+			store.triples.successfulRetryValidation = () -> {
+				successfulRetryValidations.incrementAndGet();
+				try {
+					assertEquals(0L, cleanupCompleted.getCount(),
+							"reader cleanup must finish before the successful retry commit");
+					assertTrue(backing.growthAdmissionClosed(),
+							"native emergency growth must keep new readers out until the logical writer publication completes");
+				} catch (AssertionError failure) {
+					successfulRetryValidationFailure.set(failure);
+				}
+			};
+			try (var writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				if (midFlush) {
+					store.triples.failContextCall = 2;
+				}
+				for (int i = 0; i < 20; i++) {
+					applicationWrites.incrementAndGet();
+					writer.add(Values.iri("urn:emergency-prefix:" + i), Values.iri("urn:predicate"),
+							Values.literal("value " + i), Values.iri("urn:emergency-context"));
+				}
+				writer.setNamespace("prefix", "urn:emergency-prefix:");
+				assertEquals(growthEpisodesBeforeWrite, backing.growthMetricsSnapshot().growthEpisodes(),
+						"the forced native failure must test emergency growth without a preceding soft warning");
+				store.triples.failNextCommit = !midFlush;
+				writer.commit();
+				assertEquals(1, successfulRetryValidations.get(),
+						"the assertion must run after the successful native retry and before publication returns");
+				if (successfulRetryValidationFailure.get() != null) {
+					throw successfulRetryValidationFailure.get();
+				}
+				assertEquals(20, applicationWrites.get(), "internal replay must not repeat application writes");
+				assertEquals(20, writer.size(), "the complete retained prefix must publish exactly once");
+				assertEquals("urn:emergency-prefix:", writer.getNamespace("prefix"));
+				for (int i = 0; i < 20; i++) {
+					assertTrue(writer.hasStatement(Values.iri("urn:emergency-prefix:" + i),
+							Values.iri("urn:predicate"), Values.literal("value " + i), false),
+							"replayed dictionary IDs must resolve to the original values");
+				}
+			}
+		} finally {
+			LmdbSailStore.ReadView retiring = view.getAndSet(null);
+			if (retiring != null) {
+				retiring.close();
+			}
+			if (attempt.get() != null) {
+				attempt.get().close();
+			}
+			repository.shutDown();
+			cleanupExecutor.close();
+		}
+	}
+
+	@Test
+	@Timeout(value = 12, unit = TimeUnit.SECONDS)
+	void asyncNativeGrowthUsesTheFlushCallersDeadlineRatherThanItsPhysicalTransactionDeadline() throws Exception {
+		LmdbStoreConfig config = largeConfig().setBulkOperationSize(1)
+				.setMapGrowthReadDrainTimeoutMillis(2_000L);
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, config);
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		SailSource source = backing.getExplicitSailSource();
+		Resource subject = Values.iri("urn:async-deadline:subject");
+		IRI predicate = Values.iri("urn:async-deadline:predicate");
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement pinnedStatement = valueFactory.createStatement(subject, predicate, Values.literal("pinned"));
+		Statement firstWrite = valueFactory.createStatement(subject, predicate, Values.literal("first"));
+		Statement secondWrite = valueFactory.createStatement(Values.iri("urn:async-deadline:second"), predicate,
+				Values.literal("second"));
+		try (SailSink seed = source.sink(IsolationLevels.NONE)) {
+			seed.approveAll(Set.of(pinnedStatement), Set.of());
+			seed.flush();
+		}
+
+		SailDataset pinnedDataset = source.dataset(IsolationLevels.SNAPSHOT_READ);
+		CloseableIteration<? extends Statement> pinnedRows = pinnedDataset.getStatements(
+				pinnedStatement.getSubject(), pinnedStatement.getPredicate(), pinnedStatement.getObject());
+		AtomicReference<Thread> bulkWorker = new AtomicReference<>();
+		CountDownLatch bulkWritesCompleted = new CountDownLatch(2);
+		store.triples.bulkWorker = bulkWorker;
+		store.triples.bulkWritesCompleted = bulkWritesCompleted;
+		SailSink writer = source.sink(IsolationLevels.NONE);
+		ExecutorService ownerExecutor = Executors.newSingleThreadExecutor();
+		Future<?> flush = null;
+		QueryInterruptedException timelyFailure = null;
+		Throwable deadlineAssertionFailure = null;
+		AtomicReference<Boolean> pinnedClosed = new AtomicReference<>(false);
+		AutoCloseable releasePinned = () -> {
+			if (pinnedClosed.compareAndSet(false, true)) {
+				try {
+					pinnedRows.close();
+				} finally {
+					pinnedDataset.close();
+				}
+			}
+		};
+		try {
+			assertTrue(pinnedRows.hasNext(), "the distinct reader must retain its native snapshot");
+			ownerExecutor.submit(() -> {
+				writer.approveAll(Set.of(firstWrite, secondWrite), Set.of());
+				return null;
+			}).get(5, TimeUnit.SECONDS);
+			assertTrue(bulkWritesCompleted.await(5, TimeUnit.SECONDS),
+					"both bulk operations must finish on the asynchronous TripleStore worker before flush begins");
+			assertNotNull(bulkWorker.get(), "the completion callback must run on the native writer worker");
+			store.triples.failNextCommit = true;
+			flush = ownerExecutor.submit(() -> {
+				try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(250);
+						QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+					writer.flush();
+				}
+				return null;
+			});
+			try {
+				flush.get(1, TimeUnit.SECONDS);
+				deadlineAssertionFailure = new AssertionError(
+						"flush must time out while the distinct native reader is still held");
+			} catch (ExecutionException failure) {
+				timelyFailure = queryInterruptedCause(failure);
+				if (timelyFailure == null || !"Query evaluation took too long".equals(timelyFailure.getMessage())) {
+					deadlineAssertionFailure = failure;
+				}
+			} catch (TimeoutException ignoredDeadline) {
+				deadlineAssertionFailure = new AssertionError(
+						"flush must observe its 250 ms deadline before the 2 second native reader grace expires",
+						ignoredDeadline);
+			}
+		} finally {
+			releasePinned.close();
+			if (flush != null) {
+				try {
+					flush.get(4, TimeUnit.SECONDS);
+				} catch (ExecutionException completedAfterDeadline) {
+					QueryInterruptedException laterFailure = queryInterruptedCause(completedAfterDeadline);
+					if (deadlineAssertionFailure == null && (laterFailure == null
+							|| !"Query evaluation took too long".equals(laterFailure.getMessage()))) {
+						deadlineAssertionFailure = completedAfterDeadline;
+					}
+				} catch (TimeoutException cleanupTimeout) {
+					if (deadlineAssertionFailure == null) {
+						deadlineAssertionFailure = cleanupTimeout;
+					}
+				}
+			}
+			writer.close();
+			ownerExecutor.shutdown();
+			assertTrue(ownerExecutor.awaitTermination(3, TimeUnit.SECONDS),
+					"the direct sink owner executor must finish after the reader is released");
+			store.shutDown();
+		}
+		if (deadlineAssertionFailure != null) {
+			throw new AssertionError("native growth must obey the active flush operation's deadline",
+					deadlineAssertionFailure);
+		}
+		assertNotNull(timelyFailure, "the flush must fail with the active query deadline");
+		assertEquals("Query evaluation took too long", timelyFailure.getMessage());
+	}
 
 	@Test
 	void warmedLargePairedMapsOmitReplaySpillForPendingNamespaceWrite() throws Exception {
@@ -930,6 +1149,15 @@ class AdaptiveReplayIntegrationTest {
 		return null;
 	}
 
+	private static QueryInterruptedException queryInterruptedCause(Throwable failure) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof QueryInterruptedException interrupted) {
+				return interrupted;
+			}
+		}
+		return null;
+	}
+
 	private static LmdbStoreConfig largeConfig() {
 		return new LmdbStoreConfig("spoc,posc").setTripleDBSize(64L * 1024 * 1024)
 				.setValueDBSize(64L * 1024 * 1024)
@@ -962,6 +1190,10 @@ class AdaptiveReplayIntegrationTest {
 
 	private static final class FaultyTripleStore extends TripleStore {
 		private volatile boolean failNextCommit;
+		private volatile Runnable replayValidation;
+		private volatile Runnable successfulRetryValidation;
+		private volatile AtomicReference<Thread> bulkWorker;
+		private volatile CountDownLatch bulkWritesCompleted;
 		private int failContextCall;
 		private volatile CountDownLatch delayedStartEntered;
 		private volatile CountDownLatch resumeDelayedStart;
@@ -969,6 +1201,18 @@ class AdaptiveReplayIntegrationTest {
 		FaultyTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config, ValueStore values)
 				throws IOException {
 			super(directory, properties, config, values);
+		}
+
+		@Override
+		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			AtomicReference<Thread> worker = bulkWorker;
+			CountDownLatch completed = bulkWritesCompleted;
+			if (worker != null && completed != null) {
+				worker.set(Thread.currentThread());
+				completed.countDown();
+			}
 		}
 
 		@Override
@@ -991,6 +1235,25 @@ class AdaptiveReplayIntegrationTest {
 				return MDB_MAP_FULL;
 			}
 			return super.commitWriteTransaction(transaction);
+		}
+
+		@Override
+		public void commit() throws IOException {
+			super.commit();
+			Runnable validation = successfulRetryValidation;
+			if (validation != null) {
+				successfulRetryValidation = null;
+				validation.run();
+			}
+		}
+
+		@Override
+		protected void afterMapGrowthReplay() throws IOException {
+			Runnable validation = replayValidation;
+			if (validation != null) {
+				validation.run();
+			}
+			super.afterMapGrowthReplay();
 		}
 
 		@Override
