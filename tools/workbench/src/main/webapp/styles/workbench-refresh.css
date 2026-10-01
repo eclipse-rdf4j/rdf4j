@@ -1752,12 +1752,39 @@ body.workbench-body .workbench-page-surface:has(.workbench-summary-location) {
 	box-shadow: none;
 }
 
-body.workbench-body .workbench-form-grid {
+/* One form layout (M1.6): every field is a .workbench-field (label, control, helper; 4px apart),
+ * fields are 12px apart in a .workbench-field-stack, short paired fields share a two-column
+ * .workbench-field-grid (also spelled .workbench-form-grid), and every text control in a form card
+ * spans the card's content box. */
+body.workbench-body .workbench-field-stack {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(min-content, max-content));
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--workbench-form-gap);
+}
+
+body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
-	width: fit-content;
-	max-width: min(100%, 760px);
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-form-card .workbench-field > :is(input:not([type]), input[type="text"], input[type="url"], input[type="number"], input[type="password"], textarea, select) {
+	box-sizing: border-box;
+	align-self: stretch;
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-form-card .workbench-field > .workbench-select-control {
+	display: block;
+	align-self: stretch;
+	width: 100%;
+}
+
+body.workbench-body .workbench-form-card .workbench-field > .workbench-select-control > select {
+	width: 100%;
 }
 
 body.workbench-body #export-form .workbench-form-grid {
@@ -1837,7 +1864,7 @@ body.workbench-body .workbench-field {
 	min-width: 0;
 }
 
-body.workbench-body .workbench-field > input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="number"]),
+body.workbench-body .workbench-field > input:where(:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="number"])),
 body.workbench-body .workbench-field > select,
 body.workbench-body .workbench-field > textarea {
 	align-self: flex-start;
@@ -2734,7 +2761,7 @@ body.workbench-body .saved-query-row > table.data[id$="-metadata"] td:last-of-ty
 		padding: 16px;
 	}
 
-	body.workbench-body .workbench-form-grid {
+	body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--workbench-form-gap);
 	}

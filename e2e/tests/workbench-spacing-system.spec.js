@@ -641,7 +641,7 @@ test('S1 S3 S4 stacked legacy forms retain field and action rhythm', async ({ pa
 					}) });
 			}
 			const [action] = await actionRects(page.locator(`#${route}-form`));
-			const fieldRegion = await bounds(page.locator(`#${route}-form table.dataentry`));
+			const fieldRegion = await bounds(page.locator(`#${route}-form .workbench-field-stack`));
 			const measurement = { route, fields, action, fieldRegion };
 			measurements.push(measurement);
 			await evidence(page, info, `S1-S3-S4-${route}-${variant.width}-${variant.theme}`, measurement);

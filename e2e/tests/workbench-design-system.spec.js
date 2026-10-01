@@ -108,3 +108,30 @@ test('browsing pages share one content width and form pages share one form width
 			.toBeLessThanOrEqual(1);
 	}
 });
+
+test('Remove and Clear stack labels above equally wide fields', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	for (const view of ['remove', 'clear']) {
+		await page.goto(repositoryPageUrl(REPOSITORY_ID, view), { waitUntil: 'networkidle' });
+		const form = page.locator(`#${view}-form`);
+		await form.waitFor();
+		const layout = await form.evaluate((element) => {
+			const labels = Array.from(element.querySelectorAll('label[for]')).map((label) => {
+				const control = document.getElementById(label.getAttribute('for'));
+				return {
+					for: label.getAttribute('for'),
+					labelBottom: label.getBoundingClientRect().bottom,
+					controlTop: control ? control.getBoundingClientRect().top : null
+				};
+			}).filter((entry) => entry.controlTop !== null);
+			const widths = Array.from(element.querySelectorAll('input[type="text"], textarea'))
+				.map((control) => Math.round(control.getBoundingClientRect().width));
+			return { labels, widths };
+		});
+		expect(layout.labels.length, view).toBeGreaterThan(0);
+		for (const entry of layout.labels) {
+			expect(entry.labelBottom, `${view} ${entry.for}`).toBeLessThanOrEqual(entry.controlTop);
+		}
+		expect(new Set(layout.widths).size, `${view} ${JSON.stringify(layout.widths)}`).toBe(1);
+	}
+});

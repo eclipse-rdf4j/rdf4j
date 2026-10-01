@@ -1549,16 +1549,16 @@ module workbench {
                         <li>Literal: <tt>"Hello"</tt>, <tt>"Hello"@en</tt>, or <tt>"Hello"^^&lt;http://bar.com/foo&gt;</tt></li></ul>
                 </details>
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
-                    <table class="dataentry"><tbody>
-                        ${[['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map((entry: string[]) => h`<tr>
-                            <th><label for=${entry[0]}>${entry[1]}</label></th><td>${entry[2] === 'textarea'
-                                ? h`<textarea id="obj" name="obj" cols="70">${text(pageValue(model, 'obj'))}</textarea>`
-                                : h`<input id=${entry[0]} name=${entry[0]} type="text" size="48" value=${text(pageValue(model, entry[0]))} />`}</td><td></td>
-                        </tr>`)}
-                        <tr><td></td><td><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
-                            ${icon(runtime, 'remove')}<span class="workbench-action-label"><input type="submit" value="Remove" /></span>
-                        </label></span></td><td></td></tr>
-                    </tbody></table>
+                    <div class="workbench-field-stack">
+                        ${[['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map((entry: string[]) => h`<div class="workbench-field">
+                            <label for=${entry[0]}>${entry[1]}</label>${entry[2] === 'textarea'
+                                ? h`<textarea id="obj" name="obj" rows="3">${text(pageValue(model, 'obj'))}</textarea>`
+                                : h`<input id=${entry[0]} name=${entry[0]} type="text" value=${text(pageValue(model, entry[0]))} />`}
+                        </div>`)}
+                    </div>
+                    <div class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
+                        ${icon(runtime, 'remove')}<span class="workbench-action-label"><input type="submit" value="Remove" /></span>
+                    </label></span></div>
                 </form>`;
         }
 
@@ -1568,12 +1568,13 @@ module workbench {
                 ${context.repositoryId === 'SYSTEM' ? h`<p class="WARN">The SYSTEM repository is intended for system use.</p>` : ''}
                 <p id="clear-warning" class="WARN" role="alert">Clearing without a context removes every statement in this repository.</p>
                 ${pageValue(model, 'error-message') ? h`<p class="error" role="alert">${text(pageValue(model, 'error-message'))}</p>` : ''}
-                    <table class="dataentry"><tbody>
-                        <tr><th><label for="context">Context</label></th><td><input id="context" name="context" size="48" type="text" value=${text(pageValue(model, 'context'))} /></td><td></td></tr>
-                        <tr><td></td><td><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
-                            ${icon(runtime, 'clear')}<span class="workbench-action-label"><input type="submit" value="Clear context" /></span>
-                        </label></span></td></tr>
-                    </tbody></table>
+                    <div class="workbench-field-stack">
+                        <div class="workbench-field"><label for="context">Context</label>
+                            <input id="context" name="context" type="text" value=${text(pageValue(model, 'context'))} /></div>
+                    </div>
+                    <div class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
+                        ${icon(runtime, 'clear')}<span class="workbench-action-label"><input type="submit" value="Clear context" /></span>
+                    </label></span></div>
                 </form>`;
         }
 
