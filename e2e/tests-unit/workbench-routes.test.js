@@ -552,3 +552,170 @@ test('page decorations install each native disclosure once and release only what
     assert.equal(typeof workbench.detailDisclosure.bindOwner(null), 'function');
     assert.equal(typeof workbench.detailDisclosure.bindAll({}), 'function');
 });
+
+// Plan task M8.1: what workbench.app gives the router.
+
+function streamOf(workbench, outcome) {
+    const disposed = [];
+    workbench.queryStream = {
+        async recoverPendingRowStores() {},
+        markCurrentRowStoresForRecovery() {},
+        async createRowStore() {
+            const rows = [];
+            return {
+                async append(batch) { rows.push(...batch); return rows.length; },
+                async read(start, count) { return rows.slice(start, start + count); },
+                async count() { return rows.length; },
+                async dispose() { disposed.push(true); }
+            };
+        },
+        async consumeNdjsonResponse(response, options) {
+            workbench.lastStreamOptions = options;
+            for (const record of response.records) {
+                await options.onRecord(record);
+            }
+            return outcome || { type: 'end' };
+        }
+    };
+    return disposed;
+}
+
+const contextsEvents = [
+    { type: 'head', version: 1 },
+    { type: 'view', id: 'contexts' },
+    { type: 'vars', values: ['context'] },
+    { type: 'end' }
+];
+
+test('loadModel sends the abort signal and records the URL the answer came from', async () => {
+    const workbench = loadWorkbench();
+    streamOf(workbench);
+    const controller = new AbortController();
+    let options = null;
+    const fetcher = (url, fetchOptions) => {
+        options = fetchOptions;
+        return Promise.resolve({ ok: true, url: 'https://example.test/final/contexts', records: contextsEvents });
+    };
+
+    const model = await workbench.app.loadModel(fetcher, 'https://example.test/start/contexts', controller.signal);
+
+    assert.equal(options.signal, controller.signal);
+    assert.equal(workbench.lastStreamOptions.signal, controller.signal);
+    assert.equal(model.finalUrl, 'https://example.test/final/contexts');
+    const plain = await workbench.app.loadModel(() => Promise.resolve({ ok: true, records: contextsEvents }),
+        'https://example.test/start/contexts');
+    assert.equal(plain.finalUrl, 'https://example.test/start/contexts', 'without response.url the requested URL');
+});
+
+test('loadModel rejects an abandoned answer with an AbortError and releases its rows', async () => {
+    const workbench = loadWorkbench();
+    const disposed = streamOf(workbench, { type: 'stale' });
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(workbench.app.loadModel(() => Promise.resolve({ ok: true, records: [] }),
+        'https://example.test/contexts', controller.signal), (error) => error.name === 'AbortError');
+    assert.equal(disposed.length, 1);
+});
+
+test('completeModel loads what a page needs before it is shown', async () => {
+    const workbench = loadWorkbench();
+    streamOf(workbench);
+    const requested = [];
+    const info = [{ type: 'head', version: 1 }, { type: 'view', id: 'info' }, { type: 'vars', values: [] },
+        { type: 'end', metadata: { workbench: { server: 'https://example.test/rdf4j-server' } } }];
+    const fetcher = (url) => {
+        requested.push(url);
+        return Promise.resolve({ ok: true, records: info });
+    };
+    const controller = new AbortController();
+    const page = { viewId: 'summary', links: ['info'], linked: {}, rowCount: 0, metadata: {} };
+
+    await workbench.app.completeModel(fetcher, 'https://example.test/workbench/repositories/repo-1/summary', page,
+        '/workbench', controller.signal);
+    assert.deepEqual(requested, ['https://example.test/workbench/repositories/repo-1/info']);
+    assert.equal(workbench.lastStreamOptions.signal, controller.signal, 'linked models share the signal');
+    assert.equal(page.workbench.server, 'https://example.test/rdf4j-server');
+
+    requested.length = 0;
+    const missing = { viewId: 'summary', links: [], linked: {}, metadata: {},
+        error: { status: 404, code: 'repository-not-found', message: 'No repository' } };
+    await workbench.app.completeModel(fetcher, 'https://example.test/workbench/repositories/gone/summary', missing,
+        '/workbench');
+    assert.deepEqual(requested, ['https://example.test/workbench/repositories/NONE/info'],
+        'an unknown repository takes the shell from the server');
+
+    requested.length = 0;
+    const failed = { viewId: 'summary', links: ['info'], linked: {}, metadata: {},
+        error: { status: 500, code: '', message: 'Store closed' } };
+    assert.equal(await workbench.app.completeModel(fetcher, 'https://example.test/x', failed, '/workbench'), failed);
+    assert.deepEqual(requested, [], 'another error loads nothing more');
+});
+
+test('viewContext describes the page to the views', () => {
+    const workbench = loadWorkbench();
+    const mount = { getAttribute: (name) => (name === 'data-workbench-base-path' ? '/workbench/' : null) };
+    const model = { viewId: 'summary', linked: { info: {} }, workbench: { server: 's' } };
+
+    const context = workbench.app.viewContext(mount, model,
+        'https://example.test/workbench/repositories/my%20repo/summary', 'runtime');
+    assert.equal(context.basePath, '/workbench');
+    assert.equal(context.repositoryId, 'my repo');
+    assert.equal(context.missingRepositoryId, undefined);
+    assert.equal(context.pageModel, model);
+    assert.equal(context.runtime, 'runtime');
+    assert.equal(context.executionFormId, 'query-form');
+
+    const missing = workbench.app.viewContext(mount, { viewId: 'summary', error: { code: 'repository-not-found' } },
+        'https://example.test/workbench/repositories/gone/summary', 'runtime');
+    assert.equal(missing.repositoryId, '');
+    assert.equal(missing.missingRepositoryId, 'gone');
+    assert.deepEqual({ ...missing.workbench }, {});
+});
+
+test('bootstrap starts the router with the mounted route unless the page asks for router=off', async () => {
+    for (const [query, started] of [['', true], ['?router=off', false]]) {
+        const { window, mount, dependencies } = page('contexts');
+        window.location.href += query;
+        const workbench = loadWorkbench(window);
+        installTestStream(workbench);
+        workbench.views.render = () => ({ status: 'rendered' });
+        workbench.views.bindContextBar = () => 'context bar disposer';
+        const sessions = [];
+        workbench.router = { start: (session) => sessions.push(session) };
+
+        await workbench.app.bootstrap(mount, dependencies);
+
+        assert.equal(sessions.length, started ? 1 : 0, query || 'no query');
+        if (started) {
+            assert.equal(sessions[0].mount, mount);
+            assert.equal(sessions[0].basePath, '/workbench');
+            assert.equal(sessions[0].url, 'https://example.test/workbench/repositories/repo-1/contexts');
+            assert.equal(sessions[0].model.viewId, 'contexts');
+            assert.equal(typeof sessions[0].instance.dispose, 'function');
+            assert.equal(sessions[0].contextBar, 'context bar disposer');
+            assert.equal(typeof sessions[0].fetcher, 'function');
+        }
+    }
+});
+
+test('loadScripts loads route scripts in order from the Workbench script folder', async () => {
+    const { window, mount, dependencies } = page('contexts');
+    const appended = [];
+    Object.assign(window.document, {
+        createElement() { return { setAttribute() {}, getAttribute() { return null; } }; },
+        querySelector() { return null; },
+        head: { appendChild(script) { appended.push(script.src); script.onload(); } }
+    });
+    const workbench = loadWorkbench(window);
+    installTestStream(workbench);
+    workbench.addLoad = () => {};
+    window.jQuery = {};
+    workbench.views.render = () => ({ status: 'rendered' });
+    await workbench.app.bootstrap(mount, Object.assign({}, dependencies, { skipScripts: false }));
+    appended.length = 0;
+
+    await workbench.app.loadScripts(['paging.js', 'explore.js']);
+
+    assert.deepEqual(appended, ['/workbench/scripts/paging.js', '/workbench/scripts/explore.js']);
+});

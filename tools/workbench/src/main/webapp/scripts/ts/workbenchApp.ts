@@ -1,5 +1,6 @@
 /// <reference path="workbenchViews.ts" />
 /// <reference path="workbenchRoutes.ts" />
+/// <reference path="workbenchRouter.ts" />
 /// <reference lib="es2015.promise" />
 
 // WARNING: Do not edit the generated workbenchApp.js file. Edit this source
@@ -29,6 +30,8 @@ module workbench {
         workbench?: any;
         /** Set when the page model ends in an error record after its view, for example repository-not-found. */
         error?: { status: number; code: string; message: string };
+        /** The URL the page model was answered from, after redirects (M8.1). */
+        finalUrl?: string;
     }
 
     export interface LitRuntime {
@@ -484,8 +487,20 @@ module workbench {
             return type.toLowerCase().indexOf(ACCEPT) === 0;
         }
 
-        /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
-        export function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string): Promise<PageModel> {
+        /** The error a navigation that was given up (an aborted signal) rejects with. */
+        function abortError(): Error {
+            const error = new Error('The Workbench page request was abandoned.');
+            error.name = 'AbortError';
+            return error;
+        }
+
+        /**
+         * Load the page model at url (NDJSON page protocol) into a new worker-backed row store. With a signal
+         * the request can be abandoned (it then rejects with an AbortError); model.finalUrl is where the answer
+         * came from after redirects.
+         */
+        export function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
+                                  signal?: AbortSignal): Promise<PageModel> {
             const stream = queryStream();
             return stream.createRowStore().then((rowStore: any) => {
                 const model = newPageModel(rowStore);
@@ -493,18 +508,24 @@ module workbench {
                     rowsSeen: boolean; error: Error | null } = {
                     haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
                 };
-                return fetcher(url, {
-                    headers: { Accept: ACCEPT },
-                    credentials: 'same-origin'
-                }).then((response: any) => {
+                const request: any = { headers: { Accept: ACCEPT }, credentials: 'same-origin' };
+                if (signal) {
+                    request.signal = signal;
+                }
+                return fetcher(url, request).then((response: any) => {
                     if (!response || response.ok === false && !isPageProtocolResponse(response)) {
                         const status = response && response.status ? ' (' + response.status + ')' : '';
                         throw new Error('Unable to load Workbench page data' + status);
                     }
+                    model.finalUrl = response.url || url;
                     return stream.consumeNdjsonResponse(response, {
+                        signal,
                         onRecord: (record: any) => acceptPageRecord(model, state, record)
                     });
                 }).then((outcome: any) => {
+                    if (outcome && outcome.type === 'stale') {
+                        throw abortError();
+                    }
                     if (model.error) {
                         // An error after the view is part of the page (for example an unknown repository).
                         return rowStore.count().then((rowCount: number) => {
@@ -554,9 +575,9 @@ module workbench {
 
         /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
         export function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
-                                     model: PageModel, explicitPaths?: string[]): Promise<void> {
+                                     model: PageModel, explicitPaths?: string[], signal?: AbortSignal): Promise<void> {
             const paths = explicitPaths || requestedLinkedModels(model);
-            return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path))
+            return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path), signal)
                 .then((linked) => {
                     if (linked.error) {
                         return linked.rowStore.dispose().then(() => { throw new Error(linked.error.message); });
@@ -579,6 +600,24 @@ module workbench {
                     model.workbench = info.workbench || info.metadata.workbench || {};
                 }
             });
+        }
+
+        /**
+         * Load what a page needs before it is shown: its linked models and the rows it renders directly. A
+         * repository that does not exist takes its shell from the server-level Info model; any other error page
+         * is returned as it is.
+         */
+        export function completeModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
+                                      model: PageModel, basePath: string, signal?: AbortSignal): Promise<PageModel> {
+            if (model.error) {
+                if (model.error.code !== 'repository-not-found') {
+                    return Promise.resolve(model);
+                }
+                return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(() => model);
+            }
+            return linkedModels(fetcher, url, model, undefined, signal)
+                .then(() => prepareInitialRows(model))
+                .then(() => model);
         }
 
         function scriptUrl(basePath: string, name: string): string {
@@ -623,7 +662,8 @@ module workbench {
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             let sequence: Promise<void> = Promise.resolve();
-            ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbench-theme.js'].forEach((name) => {
+            ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'workbench-theme.js']
+                .forEach((name) => {
                 sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
             });
             return sequence.then(() => {
@@ -929,6 +969,36 @@ module workbench {
             return match ? decodeURIComponent(match[1]) : '';
         }
 
+        /** The view context of a page: where the Workbench lives, which repository it shows and its models. */
+        export function viewContext(mount: any, model: PageModel, url: string, runtime: LitRuntime,
+                                    repositoryId?: string): any {
+            const notFound = !!model.error && model.error.code === 'repository-not-found';
+            return {
+                basePath: basePathFor(mount),
+                repositoryId: notFound ? '' : (repositoryId === undefined ? repositoryIdFromUrl(url) : repositoryId),
+                missingRepositoryId: notFound ? repositoryIdFromUrl(url) : undefined,
+                workbench: model.workbench || {},
+                linked: model.linked,
+                pageModel: model,
+                runtime,
+                executionFormId: 'query-form',
+                resultsMountId: 'query-results'
+            };
+        }
+
+        /** Where bootstrap found the Workbench scripts, so routes can load theirs later (loadScripts). */
+        let scriptSource: { basePath: string; dependencies: any } = { basePath: '', dependencies: null };
+
+        /** Load Workbench scripts in order; scripts already loaded are not loaded again. */
+        export function loadScripts(names: string[]): Promise<void> {
+            let sequence = Promise.resolve();
+            names.forEach((name) => {
+                sequence = sequence.then(() => loadClassicScript(scriptUrl(scriptSource.basePath, name),
+                    scriptSource.dependencies));
+            });
+            return sequence;
+        }
+
         /** Show a failure as an error callout in the outlet when the shell exists, otherwise in the mount. */
         export function renderFailure(mount: any, error: any): void {
             const views: any = workbench.views;
@@ -993,16 +1063,13 @@ module workbench {
                     if (model.viewId !== viewId) {
                         throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                     }
-                    if (model.error) {
-                        if (model.error.code !== 'repository-not-found') {
-                            return model.rowStore.dispose().then(() => { throw new Error(model.error.message); });
-                        }
-                        // The repository does not exist: take the shell's server, menu and policy from NONE.
-                        return linkedModels(fetcher, notFoundInfoUrl(basePath, currentUrl), model, ['info'])
-                            .then(() => model);
+                    if (model.error && model.error.code !== 'repository-not-found') {
+                        return model.rowStore.dispose().then(() => { throw new Error(model.error.message); });
                     }
-                    return linkedModels(fetcher, currentUrl, model).then(() => prepareInitialRows(model)).then(() => {
-                        configureNamespaces(model);
+                    return completeModel(fetcher, currentUrl, model, basePath).then(() => {
+                        if (!model.error) {
+                            configureNamespaces(model);
+                        }
                         return model;
                     });
                 }).then((model) => Promise.all([
@@ -1013,22 +1080,11 @@ module workbench {
                 if (document && document.body && document.body.classList) {
                     document.body.classList.add('workbench-body');
                 }
-                const notFound = !!state.model.error && state.model.error.code === 'repository-not-found';
-                const context: any = {
-                    basePath: basePathFor(mount),
-                    repositoryId: notFound ? '' : attribute(mount, 'data-workbench-repository-id'),
-                    missingRepositoryId: notFound ? repositoryIdFromUrl(currentUrl) : undefined,
-                    workbench: state.model.workbench || {},
-                    linked: state.model.linked,
-                    pageModel: state.model,
-                    runtime: state.runtime,
-                    executionFormId: 'query-form',
-                    resultsMountId: 'query-results'
-                };
+                const context = viewContext(mount, state.model, currentUrl, state.runtime,
+                    attribute(mount, 'data-workbench-repository-id'));
                 const rendered = workbench.views.render(mount, state.model, context, state.runtime);
-                if (workbench.views.bindContextBar) {
-                    workbench.views.bindContextBar(mount, context);
-                }
+                const contextBar = workbench.views.bindContextBar
+                    ? workbench.views.bindContextBar(mount, context) : undefined;
                 configureTheme(mount, context.workbench);
                 if (document && document.getElementById && document.getElementById('noscript-message')) {
                     document.getElementById('noscript-message').style.display = 'none';
@@ -1046,12 +1102,14 @@ module workbench {
                 // A router-ready route mounts its scripts itself, so they load first; the other routes start
                 // their scripts in the legacy load handlers, after their rows are bound (M7.2).
                 const scriptsFirst = !!definition && definition.routerReady;
-                const loadScripts = () => installRouteRuntime(basePath, viewId, state.model, dependencies);
-                return (scriptsFirst ? loadScripts() : Promise.resolve())
+                const loadRouteScripts = () => installRouteRuntime(basePath, viewId, state.model, dependencies);
+                let mounted: routes.RouteInstance = null;
+                return (scriptsFirst ? loadRouteScripts() : Promise.resolve())
                     .then(() => definition ? definition.mount(routeContext) : routes.defaultMount(routeContext))
                     .then((instance) => Promise.resolve(instance.ready).then(() => {
+                        mounted = instance;
                         disposeOnPagehide(instance);
-                        return scriptsFirst ? undefined : loadScripts();
+                        return scriptsFirst ? undefined : loadRouteScripts();
                     }))
                     .then(() => {
                         const runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
@@ -1089,6 +1147,12 @@ module workbench {
                             }
                         }
                         restoreScrollPosition(targetWindow, scrollToRestore);
+                        // ?router=off starts the Workbench without in-page navigation (debugging, M8.1).
+                        const router: any = (workbench as any).router;
+                        if (router && new URL(currentUrl).searchParams.get('router') !== 'off') {
+                            router.start({ mount, runtime: state.runtime, basePath, fetcher, url: currentUrl,
+                                model: state.model, instance: mounted, contextBar });
+                        }
                         return { status: 'rendered', model: state.model, rendered };
                     });
             }).catch((error) => {
@@ -1099,6 +1163,7 @@ module workbench {
 
         export function bootstrap(mount: any, dependencies?: any): Promise<any> {
             const basePath = basePathFor(mount);
+            scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => queryStream().recoverPendingRowStores())
                 .then(() => bootstrapAfterRecovery(mount, dependencies, basePath), (error: any) => {

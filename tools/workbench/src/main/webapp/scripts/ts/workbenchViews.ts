@@ -3160,6 +3160,10 @@ module workbench {
             if (isRepositoryNotFound(model)) {
                 return repositoryNotFoundPage(runtime, context);
             }
+            if (model.error) {
+                // A page the router could not load (M8.1) shows its error inside the shell.
+                return callout(runtime, 'error', model.error.message, 'Unable to load this Workbench page.');
+            }
             switch (model.viewId) {
                 case 'summary': return summaryPage(runtime, model, context);
                 case 'information': return informationPage(runtime, model);

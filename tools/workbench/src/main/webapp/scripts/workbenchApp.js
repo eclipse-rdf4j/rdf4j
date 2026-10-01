@@ -1,5 +1,6 @@
 /// <reference path="workbenchViews.ts" />
 /// <reference path="workbenchRoutes.ts" />
+/// <reference path="workbenchRouter.ts" />
 /// <reference lib="es2015.promise" />
 // WARNING: Do not edit the generated workbenchApp.js file. Edit this source
 // and run the Workbench TypeScript compiler instead.
@@ -442,26 +443,42 @@ var workbench;
             var type = headers && typeof headers.get === 'function' ? String(headers.get('content-type') || '') : '';
             return type.toLowerCase().indexOf(app.ACCEPT) === 0;
         }
-        /** Load the page model at url (NDJSON page protocol) into a new worker-backed row store. */
-        function loadModel(fetcher, url) {
+        /** The error a navigation that was given up (an aborted signal) rejects with. */
+        function abortError() {
+            var error = new Error('The Workbench page request was abandoned.');
+            error.name = 'AbortError';
+            return error;
+        }
+        /**
+         * Load the page model at url (NDJSON page protocol) into a new worker-backed row store. With a signal
+         * the request can be abandoned (it then rejects with an AbortError); model.finalUrl is where the answer
+         * came from after redirects.
+         */
+        function loadModel(fetcher, url, signal) {
             var stream = queryStream();
             return stream.createRowStore().then(function (rowStore) {
                 var model = newPageModel(rowStore);
                 var state = {
                     haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
                 };
-                return fetcher(url, {
-                    headers: { Accept: app.ACCEPT },
-                    credentials: 'same-origin'
-                }).then(function (response) {
+                var request = { headers: { Accept: app.ACCEPT }, credentials: 'same-origin' };
+                if (signal) {
+                    request.signal = signal;
+                }
+                return fetcher(url, request).then(function (response) {
                     if (!response || response.ok === false && !isPageProtocolResponse(response)) {
                         var status_1 = response && response.status ? ' (' + response.status + ')' : '';
                         throw new Error('Unable to load Workbench page data' + status_1);
                     }
+                    model.finalUrl = response.url || url;
                     return stream.consumeNdjsonResponse(response, {
+                        signal: signal,
                         onRecord: function (record) { return acceptPageRecord(model, state, record); }
                     });
                 }).then(function (outcome) {
+                    if (outcome && outcome.type === 'stale') {
+                        throw abortError();
+                    }
                     if (model.error) {
                         // An error after the view is part of the page (for example an unknown repository).
                         return rowStore.count().then(function (rowCount) {
@@ -508,9 +525,9 @@ var workbench;
             return new URL(basePath + '/repositories/NONE/', currentUrl).toString();
         }
         /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
-        function linkedModels(fetcher, currentUrl, model, explicitPaths) {
+        function linkedModels(fetcher, currentUrl, model, explicitPaths, signal) {
             var paths = explicitPaths || requestedLinkedModels(model);
-            return Promise.all(paths.map(function (path) { return loadModel(fetcher, linkedUrl(currentUrl, path))
+            return Promise.all(paths.map(function (path) { return loadModel(fetcher, linkedUrl(currentUrl, path), signal)
                 .then(function (linked) {
                 if (linked.error) {
                     return linked.rowStore.dispose().then(function () { throw new Error(linked.error.message); });
@@ -535,6 +552,23 @@ var workbench;
             });
         }
         app.linkedModels = linkedModels;
+        /**
+         * Load what a page needs before it is shown: its linked models and the rows it renders directly. A
+         * repository that does not exist takes its shell from the server-level Info model; any other error page
+         * is returned as it is.
+         */
+        function completeModel(fetcher, url, model, basePath, signal) {
+            if (model.error) {
+                if (model.error.code !== 'repository-not-found') {
+                    return Promise.resolve(model);
+                }
+                return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(function () { return model; });
+            }
+            return linkedModels(fetcher, url, model, undefined, signal)
+                .then(function () { return prepareInitialRows(model); })
+                .then(function () { return model; });
+        }
+        app.completeModel = completeModel;
         function scriptUrl(basePath, name) {
             return basePath + '/scripts/' + name;
         }
@@ -575,7 +609,8 @@ var workbench;
         }
         function loadSharedRuntime(basePath, dependencies) {
             var sequence = Promise.resolve();
-            ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbench-theme.js'].forEach(function (name) {
+            ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'workbench-theme.js']
+                .forEach(function (name) {
                 sequence = sequence.then(function () { return loadClassicScript(scriptUrl(basePath, name), dependencies); });
             });
             return sequence.then(function () {
@@ -874,6 +909,33 @@ var workbench;
             var match = /\/repositories\/([^\/?#]+)/.exec(new URL(url).pathname);
             return match ? decodeURIComponent(match[1]) : '';
         }
+        /** The view context of a page: where the Workbench lives, which repository it shows and its models. */
+        function viewContext(mount, model, url, runtime, repositoryId) {
+            var notFound = !!model.error && model.error.code === 'repository-not-found';
+            return {
+                basePath: basePathFor(mount),
+                repositoryId: notFound ? '' : (repositoryId === undefined ? repositoryIdFromUrl(url) : repositoryId),
+                missingRepositoryId: notFound ? repositoryIdFromUrl(url) : undefined,
+                workbench: model.workbench || {},
+                linked: model.linked,
+                pageModel: model,
+                runtime: runtime,
+                executionFormId: 'query-form',
+                resultsMountId: 'query-results'
+            };
+        }
+        app.viewContext = viewContext;
+        /** Where bootstrap found the Workbench scripts, so routes can load theirs later (loadScripts). */
+        var scriptSource = { basePath: '', dependencies: null };
+        /** Load Workbench scripts in order; scripts already loaded are not loaded again. */
+        function loadScripts(names) {
+            var sequence = Promise.resolve();
+            names.forEach(function (name) {
+                sequence = sequence.then(function () { return loadClassicScript(scriptUrl(scriptSource.basePath, name), scriptSource.dependencies); });
+            });
+            return sequence;
+        }
+        app.loadScripts = loadScripts;
         /** Show a failure as an error callout in the outlet when the shell exists, otherwise in the mount. */
         function renderFailure(mount, error) {
             var views = workbench.views;
@@ -940,16 +1002,13 @@ var workbench;
                 if (model.viewId !== viewId) {
                     throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                 }
-                if (model.error) {
-                    if (model.error.code !== 'repository-not-found') {
-                        return model.rowStore.dispose().then(function () { throw new Error(model.error.message); });
-                    }
-                    // The repository does not exist: take the shell's server, menu and policy from NONE.
-                    return linkedModels(fetcher, notFoundInfoUrl(basePath, currentUrl), model, ['info'])
-                        .then(function () { return model; });
+                if (model.error && model.error.code !== 'repository-not-found') {
+                    return model.rowStore.dispose().then(function () { throw new Error(model.error.message); });
                 }
-                return linkedModels(fetcher, currentUrl, model).then(function () { return prepareInitialRows(model); }).then(function () {
-                    configureNamespaces(model);
+                return completeModel(fetcher, currentUrl, model, basePath).then(function () {
+                    if (!model.error) {
+                        configureNamespaces(model);
+                    }
                     return model;
                 });
             }).then(function (model) { return Promise.all([
@@ -960,22 +1019,10 @@ var workbench;
                 if (document && document.body && document.body.classList) {
                     document.body.classList.add('workbench-body');
                 }
-                var notFound = !!state.model.error && state.model.error.code === 'repository-not-found';
-                var context = {
-                    basePath: basePathFor(mount),
-                    repositoryId: notFound ? '' : attribute(mount, 'data-workbench-repository-id'),
-                    missingRepositoryId: notFound ? repositoryIdFromUrl(currentUrl) : undefined,
-                    workbench: state.model.workbench || {},
-                    linked: state.model.linked,
-                    pageModel: state.model,
-                    runtime: state.runtime,
-                    executionFormId: 'query-form',
-                    resultsMountId: 'query-results'
-                };
+                var context = viewContext(mount, state.model, currentUrl, state.runtime, attribute(mount, 'data-workbench-repository-id'));
                 var rendered = workbench.views.render(mount, state.model, context, state.runtime);
-                if (workbench.views.bindContextBar) {
-                    workbench.views.bindContextBar(mount, context);
-                }
+                var contextBar = workbench.views.bindContextBar
+                    ? workbench.views.bindContextBar(mount, context) : undefined;
                 configureTheme(mount, context.workbench);
                 if (document && document.getElementById && document.getElementById('noscript-message')) {
                     document.getElementById('noscript-message').style.display = 'none';
@@ -993,12 +1040,14 @@ var workbench;
                 // A router-ready route mounts its scripts itself, so they load first; the other routes start
                 // their scripts in the legacy load handlers, after their rows are bound (M7.2).
                 var scriptsFirst = !!definition && definition.routerReady;
-                var loadScripts = function () { return installRouteRuntime(basePath, viewId, state.model, dependencies); };
-                return (scriptsFirst ? loadScripts() : Promise.resolve())
+                var loadRouteScripts = function () { return installRouteRuntime(basePath, viewId, state.model, dependencies); };
+                var mounted = null;
+                return (scriptsFirst ? loadRouteScripts() : Promise.resolve())
                     .then(function () { return definition ? definition.mount(routeContext) : workbench.routes.defaultMount(routeContext); })
                     .then(function (instance) { return Promise.resolve(instance.ready).then(function () {
+                    mounted = instance;
                     disposeOnPagehide(instance);
-                    return scriptsFirst ? undefined : loadScripts();
+                    return scriptsFirst ? undefined : loadRouteScripts();
                 }); })
                     .then(function () {
                     var runLegacyLoadHandlers = prepareLegacyLoadBarrier(mount);
@@ -1042,6 +1091,12 @@ var workbench;
                         }
                     }
                     restoreScrollPosition(targetWindow, scrollToRestore);
+                    // ?router=off starts the Workbench without in-page navigation (debugging, M8.1).
+                    var router = workbench.router;
+                    if (router && new URL(currentUrl).searchParams.get('router') !== 'off') {
+                        router.start({ mount: mount, runtime: state.runtime, basePath: basePath, fetcher: fetcher, url: currentUrl,
+                            model: state.model, instance: mounted, contextBar: contextBar });
+                    }
                     return { status: 'rendered', model: state.model, rendered: rendered };
                 });
             }).catch(function (error) {
@@ -1051,6 +1106,7 @@ var workbench;
         }
         function bootstrap(mount, dependencies) {
             var basePath = basePathFor(mount);
+            scriptSource = { basePath: basePath, dependencies: dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(function () { return queryStream().recoverPendingRowStores(); })
                 .then(function () { return bootstrapAfterRecovery(mount, dependencies, basePath); }, function (error) {
