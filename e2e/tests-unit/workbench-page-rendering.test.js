@@ -583,7 +583,8 @@ test('representative non-query templates keep Workbench form and table hooks', (
             viewId: 'namespaces',
             vars: ['prefix', 'namespace'],
             rows: [['ex', 'urn:example:']],
-            expected: ['id="namespaces-form"', 'name="prefix"', 'id="prefix-select"', 'id="namespaces-results"']
+            // Plan task M6.3: no form above the table; rows are edited in place.
+            expected: ['id="namespaces-results"', 'id="namespaces-filter"', 'Add namespace', 'urn:example:']
         },
         {
             viewId: 'contexts',
@@ -777,7 +778,7 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
             expected: ['delete-form', 'name="id"', 'repo-1'] }],
         ['namespaces', { vars: ['prefix', 'namespace'], rows: [['ex', 'urn:example:']],
             pickerRows: [['ex', 'urn:example:']], rowCount: 1,
-            expected: ['namespaces-form', 'prefix-select', 'urn:example:'] }],
+            expected: ['namespaces-results', 'namespaces-filter', 'urn:example:'] }],
         ['contexts', { vars: ['context'], rows: [['urn:graph']], expected: ['contexts-results', 'urn:graph'] }],
         ['types', { vars: ['type', 'count'], rows: [['urn:Type', '3']], expected: ['types-results', 'urn:Type'] }],
         ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']],

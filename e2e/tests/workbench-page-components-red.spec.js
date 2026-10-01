@@ -65,7 +65,8 @@ test('data and administration pages expose stable islands and action regions', a
     await expect(page.locator('#update-actions')).toHaveCount(1);
 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/namespaces`, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#namespaces-form')).toHaveCount(1);
+    // Plan task M6.3: no form above the namespace table; a filter sits in the card header.
+    await expect(page.locator('#namespaces-filter')).toHaveCount(1);
     await expect(page.locator('#namespaces-results')).toHaveCount(1);
 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore`, { waitUntil: 'domcontentloaded' });

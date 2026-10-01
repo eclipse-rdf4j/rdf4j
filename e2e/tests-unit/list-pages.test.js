@@ -25,36 +25,6 @@ function compilePagingSource() {
     return outputPath;
 }
 
-function option(harness, select, value, text, selected) {
-    const element = harness.registerElement('option', {
-        value,
-        textContent: text,
-        selected: !!selected,
-        attributes: { value }
-    });
-    select.appendChild(element);
-    if (selected) {
-        select.value = value;
-    }
-    return element;
-}
-
-test('namespaces page copies selected prefix and namespace', () => {
-    const harness = createListBrowserHarness();
-    const select = harness.registerElement('select', { id: 'prefix-select', value: 'http://xmlns.com/foaf/0.1/' });
-    const prefix = harness.registerElement('input', { id: 'prefix' });
-    const namespace = harness.registerElement('input', { id: 'namespace' });
-    option(harness, select, 'http://example.com/', 'ex', false);
-    option(harness, select, 'http://xmlns.com/foaf/0.1/', 'foaf', true);
-    [select, prefix, namespace].forEach((element) => harness.document.body.appendChild(element));
-
-    harness.loadPagingScripts(['namespaces.js']);
-    harness.context.workbench.namespaces.updatePrefix();
-
-    assert.equal(prefix.value, 'foaf');
-    assert.equal(namespace.value, 'http://xmlns.com/foaf/0.1/');
-});
-
 test('export page defaults to its own preview limit instead of the Explore limit cookie', () => {
 	const harness = createListBrowserHarness({
 		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/export'

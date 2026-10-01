@@ -741,8 +741,10 @@ test('execute and explain actions reuse one icon metaphor across query forms', a
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/update`);
 	const updateExecute = await readShape(page.locator('#update-actions .workbench-action-icon'));
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/namespaces`);
-	const namespaceUpdate = page.locator('#namespaces-form .workbench-action--primary .workbench-action-icon');
-	await expect(namespaceUpdate).toHaveClass(/workbench-action-icon--update/);
+	// Namespaces are saved from their row (plan task M6.3), with a check mark rather than the execute triangle.
+	await page.getByRole('button', { name: 'Add namespace' }).click();
+	const namespaceUpdate = page.locator('#namespaces-results .workbench-namespace-edit button[aria-label="Save"] .workbench-action-icon');
+	await expect(namespaceUpdate).toHaveClass(/workbench-action-icon--check/);
 	const namespaceUpdateShape = await readShape(namespaceUpdate);
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/saved-queries`);
 	const savedRow = page.locator('.saved-query-row').filter({ hasText: savedName });

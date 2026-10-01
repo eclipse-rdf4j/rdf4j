@@ -76,3 +76,56 @@ test('Deleting a saved query asks in a dialog that works with the keyboard alone
 	await page.keyboard.press('Enter');
 	await expect(page.locator('.saved-query-row').filter({ has: page.locator('h2', { hasText: queryName }) })).toHaveCount(0);
 });
+
+/** The repository's namespace for a prefix, read through the server's REST API ('' when it has none). */
+async function namespaceOf(request, prefix) {
+	const response = await request.get(`${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}/namespaces/${prefix}`);
+	return response.ok() ? (await response.text()).trim() : '';
+}
+
+test('Namespaces start with empty fields, edit in the row and delete only after confirmation', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'namespaces'), { waitUntil: 'domcontentloaded' });
+	const card = page.locator('#namespaces-results');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Namespaces');
+	const inputs = page.locator('#workbench-page-surface input[type="text"], #workbench-page-surface input[type="search"]');
+	await expect(inputs).toHaveCount(1);
+	await expect(inputs).toHaveValue('');
+	const prefixes = await card.locator('tbody tr td:first-child').allInnerTexts();
+	expect(prefixes.length).toBeGreaterThan(5);
+	expect(prefixes).toEqual([...prefixes].sort());
+
+	await card.locator('#namespaces-filter').fill('foaf');
+	await expect(card.locator('tbody tr')).toHaveCount(1);
+	await card.locator('#namespaces-filter').fill('');
+
+	const dc = card.locator('tbody tr').filter({ has: page.locator('td:first-child', { hasText: /^dc$/ }) });
+	await dc.getByRole('button', { name: 'Edit dc' }).click();
+	const editing = card.locator('tbody tr.workbench-namespace-edit');
+	await expect(editing.getByRole('textbox', { name: 'Prefix' })).toHaveValue('dc');
+	await expect(editing.getByRole('textbox', { name: 'Prefix' })).toBeFocused();
+	await editing.getByRole('textbox', { name: 'Prefix' }).fill('dc11');
+	await editing.getByRole('button', { name: 'Save' }).click();
+	await expect(card.locator('td:first-child', { hasText: /^dc11$/ })).toHaveCount(1);
+	expect(await namespaceOf(request, 'dc11')).toBe('http://purl.org/dc/elements/1.1/');
+	expect(await namespaceOf(request, 'dc')).toBe('');
+
+	await card.getByRole('button', { name: 'Add namespace' }).click();
+	const added = card.locator('tbody tr').first();
+	await added.getByRole('textbox', { name: 'Prefix' }).fill('tst');
+	await added.getByRole('textbox', { name: 'Namespace' }).fill('http://example.org/test#');
+	await added.getByRole('button', { name: 'Save' }).click();
+	await expect(card.locator('td:first-child', { hasText: /^tst$/ })).toHaveCount(1);
+	expect(await namespaceOf(request, 'tst')).toBe('http://example.org/test#');
+
+	const tst = card.locator('tbody tr').filter({ has: page.locator('td:first-child', { hasText: /^tst$/ }) });
+	await tst.getByRole('button', { name: 'Delete tst' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Delete prefix tst?' });
+	await expect(dialog).toContainText('http://example.org/test#');
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	expect(await namespaceOf(request, 'tst')).toBe('http://example.org/test#');
+	await tst.getByRole('button', { name: 'Delete tst' }).click();
+	await dialog.getByRole('button', { name: 'Delete prefix' }).click();
+	await expect(card.locator('td:first-child', { hasText: /^tst$/ })).toHaveCount(0);
+	expect(await namespaceOf(request, 'tst')).toBe('');
+});

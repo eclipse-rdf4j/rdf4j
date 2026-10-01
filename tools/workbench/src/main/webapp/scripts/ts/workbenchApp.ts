@@ -639,6 +639,9 @@ module workbench {
             if (model.viewId === 'create' || model.viewId === 'add') {
                 // These rows describe form fields and select choices, not a data result table.
                 count = model.rowCount;
+            } else if (model.viewId === 'namespaces') {
+                // The namespace list is small and filtered in the page (M6.3).
+                count = model.rowCount;
             } else if (model.viewId === 'clear' || model.viewId === 'remove' || model.viewId === 'update') {
                 // A rejected request answers with an error-message row, and Clear and Remove list graphs (M6.1).
                 count = model.rowCount;
@@ -864,7 +867,6 @@ module workbench {
                     }
                     return [];
                 case 'delete': return ['delete.js'];
-                case 'namespaces': return ['namespaces.js'];
                 case 'explore': return ['paging.js', 'explore.js'];
                 case 'saved-queries':
                     return ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'];

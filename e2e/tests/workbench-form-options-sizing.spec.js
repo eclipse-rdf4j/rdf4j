@@ -344,10 +344,6 @@ test.describe('Workbench configuration and option sizing', () => {
 		geometry.baseUri = await routePage.locator('#baseURI').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		geometry.context = await routePage.locator('#context').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		await routePage.close();
-		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/namespaces`);
-		geometry.prefix = await routePage.locator('#prefix').evaluate(element => Math.round(element.getBoundingClientRect().width));
-		geometry.namespace = await routePage.locator('#namespace').evaluate(element => Math.round(element.getBoundingClientRect().width));
-		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`);
 		const exportOptions = routePage.locator('#export-result-options');
 		if (!(await exportOptions.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
@@ -368,8 +364,7 @@ test.describe('Workbench configuration and option sizing', () => {
 		if (geometry.url < 320 || geometry.url > 560) violations.push(`URL ${geometry.url}px`);
 		if (geometry.baseUri < 320 || geometry.baseUri > 600) violations.push(`base URI ${geometry.baseUri}px`);
 		if (geometry.context < 320 || geometry.context > 600) violations.push(`context ${geometry.context}px`);
-		if (geometry.prefix >= 140) violations.push(`namespace prefix ${geometry.prefix}px`);
-		if (geometry.namespace < 320 || geometry.namespace > 600) violations.push(`namespace URI ${geometry.namespace}px`);
+		// Namespaces are edited in their table row since plan task M6.3, so the old form widths no longer apply.
 		if (geometry.exportLimit >= 200) violations.push(`export result limit ${geometry.exportLimit}px`);
 		if (geometry.timeout >= 120) violations.push(`query timeout ${geometry.timeout}px`);
 		expect(violations, `Mis-sized semantic controls: ${violations.join('; ')}`).toEqual([]);

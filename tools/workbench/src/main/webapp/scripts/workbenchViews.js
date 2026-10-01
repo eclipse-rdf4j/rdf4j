@@ -64,7 +64,8 @@ var workbench;
         user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
         search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
         sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
-        more: 'M6 12h.01M12 12h.01M18 12h.01'
+        more: 'M6 12h.01M12 12h.01M18 12h.01',
+        check: 'm5 12 5 5 9-10'
     };
     function actionIconPath(name) {
         return actionIconCatalog[name] || actionIconCatalog.add;
@@ -861,27 +862,94 @@ var workbench;
             }, !selectedId, selectedId && !selectedVisible && selectedRepository
                 ? h(__makeTemplateObject(["<option value=", " selected>", " \u2014 ", "</option>"], ["<option value=", " selected>", " \u2014 ", "</option>"]), selectedId, text(selectedRepository.id), text(selectedRepository.description)) : '', options.map(function (row) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"], ["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"]), text(row.id), text(row.id) === selectedId, text(row.id), text(row.description)); }), pickerWindow(runtime, model, 'repositories', 'repositories'), icon(runtime, 'delete'));
         }
+        function namespaceEditor(model) {
+            var holder = model;
+            if (!holder.namespaceEditor) {
+                holder.namespaceEditor = { editing: null, adding: false, filter: '' };
+            }
+            return holder.namespaceEditor;
+        }
+        /** Posts a namespace change; the server answers with a redirect to the listing or the listing and an error. */
+        function postNamespaces(document, fields) {
+            var form = document.createElement('form');
+            form.method = 'post';
+            form.action = 'namespaces';
+            form.hidden = true;
+            Object.keys(fields).forEach(function (name) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = fields[name];
+                form.appendChild(input);
+            });
+            document.body.appendChild(form);
+            form.submit();
+        }
+        /** Namespaces (M6.3, mockup 07): rows in prefix order, edited in place; no field is prefilled from a row. */
         function namespacesPage(runtime, model, context) {
             var h = runtime.html;
-            var entries = recordsFromRows(model, model.pickerRows || []);
-            var selectedNamespace = text(model.metadata.selectedNamespaceValue || pageValue(model, 'namespace'));
-            var selectedEntry = model.metadata.selectedNamespace;
-            var selectedVisible = entries.some(function (row) { return text(row.namespace) === selectedNamespace; });
-            return h(__makeTemplateObject(["", "\n                <form id=\"namespaces-form\" class=\"workbench-island\" action=\"namespaces\" method=\"post\">\n                    <div class=\"workbench-form-grid\">\n                        <div class=\"workbench-field\"><label for=\"prefix\">Prefix</label>\n                            <div class=\"workbench-inline-controls\">\n                                <input type=\"text\" id=\"prefix\" name=\"prefix\" size=\"8\" value=", " />\n                                <select id=\"prefix-select\" data-workbench-window-picker=\"namespaces\" @change=", ">\n                                    <option value=\"\" ?selected=", "></option>\n                                    ", "\n                                    ", "\n                                </select>\n                                ", "\n                            </div>\n                        </div>\n                        <div class=\"workbench-field\"><label for=\"namespace\">Namespace</label>\n                            <input type=\"text\" id=\"namespace\" name=\"namespace\" size=\"48\" value=", " />\n                        </div>\n                    </div>\n                    <div class=\"workbench-form-actions\">\n                        <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">", "\n                            <span class=\"workbench-action-label\"><button type=\"submit\" value=\"Update\">Update</button></span></label></span>\n                        <span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">", "\n                            <span class=\"workbench-action-label\"><button type=\"submit\" value=\"Delete\" @click=", ">Delete</button></span></label></span>\n                    </div>\n                </form>\n                <section id=\"namespaces-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                </section>"], ["", "\n                <form id=\"namespaces-form\" class=\"workbench-island\" action=\"namespaces\" method=\"post\">\n                    <div class=\"workbench-form-grid\">\n                        <div class=\"workbench-field\"><label for=\"prefix\">Prefix</label>\n                            <div class=\"workbench-inline-controls\">\n                                <input type=\"text\" id=\"prefix\" name=\"prefix\" size=\"8\" value=", " />\n                                <select id=\"prefix-select\" data-workbench-window-picker=\"namespaces\" @change=", ">\n                                    <option value=\"\" ?selected=", "></option>\n                                    ", "\n                                    ", "\n                                </select>\n                                ", "\n                            </div>\n                        </div>\n                        <div class=\"workbench-field\"><label for=\"namespace\">Namespace</label>\n                            <input type=\"text\" id=\"namespace\" name=\"namespace\" size=\"48\" value=", " />\n                        </div>\n                    </div>\n                    <div class=\"workbench-form-actions\">\n                        <span class=\"workbench-action workbench-action--primary\"><label class=\"workbench-action-hit-area\">", "\n                            <span class=\"workbench-action-label\"><button type=\"submit\" value=\"Update\">Update</button></span></label></span>\n                        <span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">", "\n                            <span class=\"workbench-action-label\"><button type=\"submit\" value=\"Delete\" @click=", ">Delete</button></span></label></span>\n                    </div>\n                </form>\n                <section id=\"namespaces-results\" class=\"workbench-island workbench-responsive-records\">\n                    ", "\n                </section>"]), errorCallout(runtime, model), text(pageValue(model, 'prefix')), function (event) {
-                var selected = entries.filter(function (row) { return text(row.namespace) === event.target.value; })[0];
-                model.metadata.selectedNamespaceValue = event.target.value;
-                model.metadata.selectedNamespace = selected || null;
-                var globalWorkbench = window.workbench;
-                if (globalWorkbench.namespaces && globalWorkbench.namespaces.updatePrefix) {
-                    globalWorkbench.namespaces.updatePrefix();
+            var state = namespaceEditor(model);
+            var rows = records(model).map(function (record) { return ({ prefix: text(record.prefix), namespace: text(record.namespace) }); });
+            var needle = state.filter.trim().toLowerCase();
+            var visible = rows.filter(function (row) { return !needle || row.prefix.toLowerCase().indexOf(needle) >= 0
+                || row.namespace.toLowerCase().indexOf(needle) >= 0; });
+            var rerender = function (event, focusEditor) {
+                var outlet = event.currentTarget.closest('.workbench-outlet');
+                if (outlet) {
+                    render(outlet, model, context, runtime);
+                    var first = focusEditor ? outlet.querySelector('.workbench-namespace-edit input') : null;
+                    if (first) {
+                        first.focus();
+                    }
                 }
-            }, !selectedNamespace, selectedNamespace && !selectedVisible && selectedEntry
-                ? h(__makeTemplateObject(["<option value=", " selected>", "</option>"], ["<option value=", " selected>", "</option>"]), selectedNamespace, text(selectedEntry.prefix)) : '', entries.map(function (row) { return h(__makeTemplateObject(["<option value=", "\n                                        ?selected=", ">", "</option>"], ["<option value=", "\n                                        ?selected=", ">", "</option>"]), text(row.namespace), text(row.namespace) === selectedNamespace, text(row.prefix)); }), pickerWindow(runtime, model, 'namespaces', 'namespaces'), text(pageValue(model, 'namespace')), icon(runtime, 'update'), icon(runtime, 'delete'), function () {
-                var namespace = document.getElementById('namespace');
-                if (namespace) {
-                    namespace.value = '';
+            };
+            var label = function (prefix) { return prefix || '(default)'; };
+            var save = function (event, row) {
+                var inputs = event.currentTarget.closest('tr').querySelectorAll('input');
+                var fields = { action: 'save', prefix: inputs[0].value.trim(), namespace: inputs[1].value.trim() };
+                if (row) {
+                    fields.previousPrefix = row.prefix;
                 }
-            }, table(runtime, model, context, { emptyText: 'No results to display.' }));
+                postNamespaces(event.currentTarget.ownerDocument, fields);
+            };
+            var cancel = function (event) {
+                state.editing = null;
+                state.adding = false;
+                rerender(event);
+            };
+            var editKeys = function (event, row) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    save(event, row);
+                }
+                else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    cancel(event);
+                }
+            };
+            var editRow = function (row) { return h(__makeTemplateObject(["<tr class=\"workbench-namespace-edit\">\n                <td data-label=\"Prefix\"><input type=\"text\" aria-label=\"Prefix\" value=", "\n                    autocomplete=\"off\" spellcheck=\"false\" @keydown=", " /></td>\n                <td data-label=\"Namespace\"><input type=\"text\" aria-label=\"Namespace\" value=", "\n                    autocomplete=\"off\" spellcheck=\"false\" @keydown=", " /></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><button type=\"button\"\n                        class=\"workbench-action workbench-action--primary workbench-action--icon\" aria-label=\"Save\" title=\"Save\"\n                        @click=", ">", "</button><button type=\"button\"\n                        class=\"workbench-action workbench-action--secondary workbench-action--icon\" aria-label=\"Cancel\" title=\"Cancel\"\n                        @click=", ">", "</button></td>\n            </tr>"], ["<tr class=\"workbench-namespace-edit\">\n                <td data-label=\"Prefix\"><input type=\"text\" aria-label=\"Prefix\" value=", "\n                    autocomplete=\"off\" spellcheck=\"false\" @keydown=", " /></td>\n                <td data-label=\"Namespace\"><input type=\"text\" aria-label=\"Namespace\" value=", "\n                    autocomplete=\"off\" spellcheck=\"false\" @keydown=", " /></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><button type=\"button\"\n                        class=\"workbench-action workbench-action--primary workbench-action--icon\" aria-label=\"Save\" title=\"Save\"\n                        @click=", ">", "</button><button type=\"button\"\n                        class=\"workbench-action workbench-action--secondary workbench-action--icon\" aria-label=\"Cancel\" title=\"Cancel\"\n                        @click=", ">", "</button></td>\n            </tr>"]), row ? row.prefix : '', function (event) { return editKeys(event, row); }, row ? row.namespace : '', function (event) { return editKeys(event, row); }, function (event) { return save(event, row); }, icon(runtime, 'check'), cancel, icon(runtime, 'close')); };
+            var viewRow = function (row) { return h(__makeTemplateObject(["<tr>\n                <td data-label=\"Prefix\"><code>", "</code></td>\n                <td data-label=\"Namespace\"><code>", "</code></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><button type=\"button\"\n                        class=\"workbench-action workbench-action--ghost workbench-action--icon\" aria-label=", "\n                        title=\"Edit\" @click=", ">", "</button><button type=\"button\"\n                        class=\"workbench-action workbench-action--ghost workbench-action--icon workbench-namespace-delete\"\n                        aria-label=", " title=\"Delete\" @click=", ">", "</button></td>\n            </tr>"], ["<tr>\n                <td data-label=\"Prefix\"><code>", "</code></td>\n                <td data-label=\"Namespace\"><code>", "</code></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><button type=\"button\"\n                        class=\"workbench-action workbench-action--ghost workbench-action--icon\" aria-label=", "\n                        title=\"Edit\" @click=", ">", "</button><button type=\"button\"\n                        class=\"workbench-action workbench-action--ghost workbench-action--icon workbench-namespace-delete\"\n                        aria-label=", " title=\"Delete\" @click=", ">", "</button></td>\n            </tr>"]), row.prefix, row.namespace, 'Edit ' + label(row.prefix), function (event) {
+                state.editing = row.prefix;
+                state.adding = false;
+                rerender(event, true);
+            }, icon(runtime, 'edit'), 'Delete ' + label(row.prefix), function (event) {
+                var document = event.currentTarget.ownerDocument;
+                var dialog = workbench.confirmDialog;
+                dialog.open({ title: 'Delete prefix ' + label(row.prefix) + '?', body: row.namespace,
+                    confirmLabel: 'Delete prefix', danger: true }).then(function (confirmed) {
+                    if (confirmed) {
+                        postNamespaces(document, { action: 'delete', prefix: row.prefix });
+                    }
+                });
+            }, icon(runtime, 'delete')); };
+            return h(__makeTemplateObject(["", "<section id=\"namespaces-results\"\n                    class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Namespaces</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <form class=\"workbench-browse-card__filter\" role=\"search\" @submit=", ">\n                        <label class=\"workbench-visually-hidden\" for=\"namespaces-filter\">Filter prefixes or IRIs</label>\n                        <div class=\"workbench-search-field\">", "<input\n                            type=\"text\" id=\"namespaces-filter\" placeholder=\"Filter prefixes or IRIs\" autocomplete=\"off\"\n                            spellcheck=\"false\" @input=", " /></div>\n                    </form>\n                    <button type=\"button\" class=\"workbench-action workbench-action--primary workbench-browse-card__action\"\n                        @click=", ">", "<span>Add namespace</span></button>\n                </div>\n                <table class=\"data workbench-namespaces-table\">\n                    <thead><tr><th scope=\"col\">Prefix</th><th scope=\"col\">Namespace</th>\n                        <th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th></tr></thead>\n                    <tbody>\n                        ", "\n                        ", "\n                        ", "\n                    </tbody>\n                </table>\n            </section>"], ["", "<section id=\"namespaces-results\"\n                    class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Namespaces</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <form class=\"workbench-browse-card__filter\" role=\"search\" @submit=", ">\n                        <label class=\"workbench-visually-hidden\" for=\"namespaces-filter\">Filter prefixes or IRIs</label>\n                        <div class=\"workbench-search-field\">", "<input\n                            type=\"text\" id=\"namespaces-filter\" placeholder=\"Filter prefixes or IRIs\" autocomplete=\"off\"\n                            spellcheck=\"false\" @input=", " /></div>\n                    </form>\n                    <button type=\"button\" class=\"workbench-action workbench-action--primary workbench-browse-card__action\"\n                        @click=", ">", "<span>Add namespace</span></button>\n                </div>\n                <table class=\"data workbench-namespaces-table\">\n                    <thead><tr><th scope=\"col\">Prefix</th><th scope=\"col\">Namespace</th>\n                        <th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th></tr></thead>\n                    <tbody>\n                        ", "\n                        ", "\n                        ", "\n                    </tbody>\n                </table>\n            </section>"]), errorCallout(runtime, model), formatCount(String(rows.length), context), function (event) { return event.preventDefault(); }, icon(runtime, 'search', 'workbench-search-field__icon'), function (event) {
+                state.filter = event.currentTarget.value;
+                rerender(event);
+            }, function (event) {
+                state.adding = true;
+                state.editing = null;
+                rerender(event, true);
+            }, icon(runtime, 'add'), state.adding ? editRow(null) : '', visible.map(function (row) { return state.editing === row.prefix ? editRow(row) : viewRow(row); }), !visible.length && !state.adding ? h(__makeTemplateObject(["<tr class=\"workbench-empty-row\"><td role=\"status\" colspan=\"3\">", "</td></tr>"], ["<tr class=\"workbench-empty-row\"><td role=\"status\" colspan=\"3\">", "</td></tr>"]), rows.length ? 'No namespaces match this filter.' : 'No namespaces.') : '');
         }
         /** Types and Graphs (M5.2, mockup 06): what each list shows and the column its counts fill in. */
         var browseLists = {

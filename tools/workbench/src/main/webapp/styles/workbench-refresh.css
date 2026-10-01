@@ -3012,6 +3012,34 @@ body.workbench-body .workbench-popover__menu a.workbench-popover__danger {
 	color: var(--workbench-danger);
 }
 
+/* Namespaces (M6.3, mockup 07): prefixes and IRIs in monospace, row actions on hover or focus, editing in the row. */
+body.workbench-body .workbench-namespaces-table code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-code-font-size);
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-namespaces-table td:first-child {
+	width: 22%;
+}
+
+body.workbench-body .workbench-namespaces-table .workbench-namespace-edit > td {
+	background: var(--workbench-inset);
+}
+
+body.workbench-body #workbench-page-surface .workbench-namespaces-table .workbench-namespace-edit input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: none;
+	font-family: var(--workbench-code-font);
+}
+
+@media (hover: hover) and (min-width: 601px) {
+	body.workbench-body .workbench-namespaces-table tbody tr:not(:hover):not(:focus-within) .workbench-row-actions > .workbench-action--ghost {
+		opacity: 0;
+	}
+}
+
 /* Record layout on phones: the filter takes the full width and the row actions sit on their own line. */
 @media (max-width: 600px) {
 	body.workbench-body .workbench-browse-card__filter {
@@ -3030,7 +3058,8 @@ body.workbench-body .workbench-popover__menu a.workbench-popover__danger {
 		padding: 4px 0 0;
 	}
 
-	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions::before {
+	/* [data-label] outranks the record layout's td[data-label]::before rule, which comes later in this file. */
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions[data-label]::before {
 		display: none;
 	}
 

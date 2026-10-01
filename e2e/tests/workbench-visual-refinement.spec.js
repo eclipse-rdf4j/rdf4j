@@ -194,8 +194,9 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await setTheme(page, 'light');
-	await openPage(page, `repositories/${REPOSITORY_ID}/namespaces`);
-	const dangerStyle = await page.locator('#namespaces-form .workbench-action--danger-outline').evaluate(action => {
+	// The outlined danger action lives on Remove since Namespaces became an in-row editor (plan task M6.3).
+	await openPage(page, `repositories/${REPOSITORY_ID}/remove`);
+	const dangerStyle = await page.locator('#remove-form .workbench-action--danger-outline').evaluate(action => {
 		const style = getComputedStyle(action);
 		const input = action.querySelector('input[type="submit"]');
 		const inputStyle = getComputedStyle(input);
@@ -217,7 +218,7 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 			surface
 		};
 	});
-	console.log(`NAMESPACE_DANGER_STYLE ${JSON.stringify(dangerStyle)}`);
+	console.log(`REMOVE_DANGER_STYLE ${JSON.stringify(dangerStyle)}`);
 	expect.soft(dangerStyle.color).toBe(dangerStyle.danger);
 	expect.soft(dangerStyle.inputColor).toBe(dangerStyle.danger);
 	expect.soft(dangerStyle.inputBackgroundColor).toBe('rgba(0, 0, 0, 0)');
