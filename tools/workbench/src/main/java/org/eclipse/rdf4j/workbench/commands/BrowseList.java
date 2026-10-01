@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -23,7 +27,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
@@ -46,6 +54,12 @@ final class BrowseList {
 	static final int COUNT_BUDGET_SECONDS = (int) TimeUnit.MILLISECONDS.toSeconds(COUNT_BUDGET_MILLIS);
 
 	static final Comparator<Value> BY_NAME = Comparator.comparing(Value::stringValue);
+
+	/** {@link #statementCounts} key of the whole repository. */
+	static final String REPOSITORY = "*";
+
+	/** {@link #statementCounts} key of the default graph. */
+	static final String DEFAULT_GRAPH = "";
 
 	private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
 		Thread thread = new Thread(runnable, "rdf4j-workbench-counts");
@@ -91,7 +105,7 @@ final class BrowseList {
 	<T> Optional<T> withinBudget(Callable<T> count) throws Exception {
 		Future<T> future = executor.submit(count);
 		try {
-			return Optional.of(future.get(COUNT_BUDGET_MILLIS, TimeUnit.MILLISECONDS));
+			return Optional.ofNullable(future.get(COUNT_BUDGET_MILLIS, TimeUnit.MILLISECONDS));
 		} catch (TimeoutException e) {
 			future.cancel(true);
 			return Optional.empty();
@@ -102,6 +116,34 @@ final class BrowseList {
 			}
 			throw e;
 		}
+	}
+
+	/**
+	 * Counts the statements of the whole repository, the default graph and each of the given graphs, in that order, on
+	 * its own connection and within the budget.
+	 *
+	 * @return the counts that finished, keyed by {@link #REPOSITORY}, {@link #DEFAULT_GRAPH} or the graph in N-Triples
+	 */
+	Map<String, Long> statementCounts(Repository repository, List<Resource> contexts) throws Exception {
+		Map<String, Long> counts = new ConcurrentHashMap<>();
+		withinBudget(() -> {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				counts.put(REPOSITORY, connection.size());
+				counts.put(DEFAULT_GRAPH, connection.size((Resource) null));
+				for (Resource context : contexts) {
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedException("Statement counts were abandoned");
+					}
+					counts.put(key(context), connection.size(context));
+				}
+			}
+			return null;
+		});
+		return new HashMap<>(counts);
+	}
+
+	static String key(Resource context) {
+		return context == null ? DEFAULT_GRAPH : NTriplesUtil.toNTriplesString(context);
 	}
 
 	void shutdown() {

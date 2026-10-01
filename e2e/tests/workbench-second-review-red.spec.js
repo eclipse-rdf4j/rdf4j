@@ -58,8 +58,9 @@ test('shared actions expose semantic classes and composed outline icons', async 
 	expect(actions.background).toBe('rgb(15, 118, 110)');
 
 	await page.goto(`${REPOSITORY_BASE_URL}/clear`, { waitUntil: 'domcontentloaded' });
-	const clearAction = page.locator('#clear-form input[type="submit"]');
-	await expect(clearAction.locator('xpath=ancestor::span[contains(@class, "workbench-action--danger")]')).toHaveClass(/workbench-action--danger/);
+	// Clear's button is a danger action that names its target (plan task M6.4).
+	const clearAction = page.locator('#clear-form button[type="submit"]');
+	await expect(clearAction).toHaveClass(/workbench-action--danger/);
 	await expect(clearAction).not.toHaveCSS('background-color', 'rgb(15, 118, 110)');
 });
 

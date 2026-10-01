@@ -616,8 +616,10 @@ async function exerciseMutations(page, request, evidence) {
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/clear`, { waitUntil: 'domcontentloaded' });
 		await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'clear');
 		await expect(page.locator('#clear-warning')).toBeVisible();
-		await page.locator('#context').fill('<urn:route-parity:people>');
-		await page.locator('#clear-form input[type="submit"]').click();
+		// Clear chooses a listed graph and confirms in a dialog (plan task M6.4).
+		await page.locator('#context').selectOption('<urn:route-parity:people>');
+		await page.locator('#clear-form button[type="submit"]').click();
+		await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
 		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 2 };

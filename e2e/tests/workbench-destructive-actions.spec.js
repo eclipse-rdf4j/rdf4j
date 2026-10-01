@@ -129,3 +129,58 @@ test('Namespaces start with empty fields, edit in the row and delete only after 
 	await expect(card.locator('td:first-child', { hasText: /^tst$/ })).toHaveCount(0);
 	expect(await namespaceOf(request, 'tst')).toBe('');
 });
+
+/** The number of statements in the repository or one of its graphs, read through the server's REST API. */
+async function sizeOf(request, context) {
+	const query = context === undefined ? '' : `?context=${encodeURIComponent(context)}`;
+	const response = await request.get(`${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}/size${query}`);
+	return Number((await response.text()).trim());
+}
+
+// Keep this test last: it clears the repository.
+test('Clear lists the graphs with their sizes and asks before clearing a graph or everything', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const spl = '<http://example.org/graph/spl>';
+	const bsbm = '<http://example.org/graph/bsbm>';
+	await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'clear')}?context=${encodeURIComponent(spl)}`,
+		{ waitUntil: 'domcontentloaded' });
+	const target = page.locator('#clear-form select[name="context"]');
+	await expect(target).toHaveValue(spl);
+	const options = await target.locator('option').allInnerTexts();
+	expect(options[0]).toMatch(/^Entire repository — [\d,]+ statements$/);
+	expect(options[1]).toMatch(/^Default graph — [\d,]+ statements?$/);
+	expect(options.slice(2)).toEqual([
+		expect.stringMatching(/^http:\/\/example\.org\/graph\/bsbm — [\d,]+ statements$/),
+		expect.stringMatching(/^http:\/\/example\.org\/graph\/spl — [\d,]+ statements$/)
+	]);
+	const action = page.locator('#clear-form button[type="submit"]');
+	await expect(action).toHaveText('Clear graph…');
+
+	const bsbmSize = await sizeOf(request, bsbm);
+	await action.click();
+	const graphDialog = page.getByRole('dialog', { name: 'Clear graph?' });
+	await expect(graphDialog).toContainText('http://example.org/graph/spl');
+	await graphDialog.getByRole('button', { name: 'Clear graph' }).click();
+	await expect(page).toHaveURL(/\/summary$/);
+	expect(await sizeOf(request, spl)).toBe(0);
+	expect(await sizeOf(request, bsbm)).toBe(bsbmSize);
+
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'clear'), { waitUntil: 'domcontentloaded' });
+	await expect(target).toHaveValue('');
+	await expect(action).toHaveText('Clear entire repository…');
+	await action.click();
+	const everything = page.getByRole('dialog', { name: 'Clear entire repository?' });
+	await expect(everything).toContainText(`from ${REPOSITORY_ID}`);
+	const confirm = everything.getByRole('button', { name: 'Clear repository' });
+	await expect(confirm).toBeDisabled();
+	await everything.getByRole('button', { name: 'Cancel' }).click();
+	expect(await sizeOf(request)).toBeGreaterThan(0);
+
+	await action.click();
+	await expect(confirm).toBeDisabled();
+	await everything.getByRole('textbox').fill(REPOSITORY_ID);
+	await expect(confirm).toBeEnabled();
+	await confirm.click();
+	await expect(page).toHaveURL(/\/summary$/);
+	expect(await sizeOf(request)).toBe(0);
+});

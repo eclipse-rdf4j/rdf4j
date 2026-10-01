@@ -2289,20 +2289,75 @@ module workbench {
                 </form>`;
         }
 
+        /** "N statements", or "—" when the server could not count within its budget. */
+        function statementsLabel(count: any, context: ViewContext): string {
+            const raw = text(count);
+            return raw ? formatCount(raw, context) + (raw === '1' ? ' statement' : ' statements') : '—';
+        }
+
+        /** A query parameter of the current page, or '' without a browser location. */
+        function locationParameter(name: string): string {
+            const location: any = typeof window !== 'undefined' ? window.location : null;
+            return location && typeof location.search === 'string'
+                ? new URLSearchParams(location.search).get(name) || '' : '';
+        }
+
+        /**
+         * Clear (M6.4, mockup 08): what to clear is chosen from the repository, the default graph and each graph, with
+         * their sizes; the button names the choice and a dialog confirms it (typing the repository id for everything).
+         * The form still posts `context`: empty for the entire repository, "null" for the default graph.
+         */
         function clearPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            return h`<form id="clear-form" class="workbench-island workbench-form-card" method="post" action="clear">
+            const listing = (model.vars || []).indexOf('statements') >= 0 ? records(model) : [];
+            const targets: any[] = [{ value: '', label: 'Entire repository', count: meta(model, 'repository-size') }]
+                .concat(listing.filter((record: any) => !record.context)
+                    .map((record: any) => ({ value: 'null', label: 'Default graph', count: record.statements })))
+                .concat(listing.filter((record: any) => !!record.context)
+                    .map((record: any) => ({ value: ntriples(record.context), label: termText(record.context), count: record.statements })));
+            const holder: any = model;
+            if (typeof holder.clearTarget !== 'string') {
+                const requested = locationParameter('context') || text(pageValue(model, 'context'));
+                holder.clearTarget = targets.some((target: any) => target.value === requested) ? requested : '';
+            }
+            const selected = targets.filter((target: any) => target.value === holder.clearTarget)[0] || targets[0];
+            const everything = selected.value === '';
+            const repositoryId = context.repositoryId || '';
+            const confirmAndSubmit = (event: any) => {
+                event.preventDefault();
+                const form = event.currentTarget;
+                const dialog: any = (workbench as any).confirmDialog;
+                const size = text(selected.count);
+                const removes = size ? 'This permanently removes ' + statementsLabel(size, context) : 'This permanently removes every statement';
+                dialog.open(everything
+                    ? { title: 'Clear entire repository?', body: removes + ' from ' + repositoryId + '.',
+                        confirmLabel: 'Clear repository', danger: true, requireText: repositoryId,
+                        requireLabel: 'Type ' + repositoryId + ' to confirm' }
+                    : { title: 'Clear graph?', body: removes + ' from ' + (selected.value === 'null' ? 'the default graph' : selected.label) + '.',
+                        confirmLabel: 'Clear graph', danger: true }).then((confirmed: boolean) => {
+                    if (confirmed) { form.submit(); }
+                });
+            };
+            return h`<form id="clear-form" class="workbench-island workbench-form-card" method="post" action="clear"
+                    @submit=${confirmAndSubmit}>
                 ${systemRepositoryCallout(runtime, context)}
-                ${callout(runtime, 'warning', 'Clearing without a context removes every statement in this repository.', 'Clear is permanent.', 'clear-warning')}
+                ${callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.',
+                    'This permanently deletes statements.', 'clear-warning')}
                 ${errorCallout(runtime, model)}
-                    <div class="workbench-field-stack">
-                        <div class="workbench-field"><label for="context">Context</label>
-                            <input id="context" name="context" type="text" value=${text(pageValue(model, 'context'))} /></div>
+                <div class="workbench-field-stack">
+                    <div class="workbench-field"><label for="context">What to clear</label>
+                        <div class="workbench-select-control"><select id="context" name="context" @change=${(event: any) => {
+                            holder.clearTarget = event.currentTarget.value;
+                            const outlet = event.currentTarget.closest('.workbench-outlet');
+                            if (outlet) { render(outlet, model, context, runtime); }
+                        }}>${targets.map((target: any) => h`<option value=${target.value} ?selected=${target === selected}>${
+                            target.label + ' — ' + statementsLabel(target.count, context)}</option>`)}</select>${
+                            icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                     </div>
-                    <div class="workbench-form-actions"><span class="workbench-action workbench-action--danger-outline"><label class="workbench-action-hit-area">
-                        ${icon(runtime, 'clear')}<span class="workbench-action-label"><input type="submit" value="Clear context" /></span>
-                    </label></span></div>
-                </form>`;
+                </div>
+                <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger">${
+                    icon(runtime, 'clear')}<span>${everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button></div>
+            </form>`;
         }
 
         function updatePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {

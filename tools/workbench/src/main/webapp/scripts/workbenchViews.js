@@ -1622,9 +1622,62 @@ var workbench;
             return h(__makeTemplateObject(["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        ", "\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Remove\" /></span>\n                    </label></span></div>\n                </form>"], ["<form id=\"remove-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"remove\">\n                ", "\n                ", "\n                <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>\n                <details id=\"remove-examples\" class=\"workbench-options\"><summary>Examples", "</summary>\n                    <ul><li>URI: <tt>&lt;http://foo.com/bar&gt;</tt></li><li>BNode: <tt>_:nodeID</tt></li>\n                        <li>Literal: <tt>\"Hello\"</tt>, <tt>\"Hello\"@en</tt>, or <tt>\"Hello\"^^&lt;http://bar.com/foo&gt;</tt></li></ul>\n                </details>\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        ", "\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Remove\" /></span>\n                    </label></span></div>\n                </form>"]), systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Only statements matching the supplied values will be removed. An empty form is rejected.', 'Remove is permanent.', 'remove-warning'), icon(runtime, 'chevron', 'workbench-disclosure-chevron'), errorCallout(runtime, model), [['subj', 'Subject', 'text'], ['pred', 'Predicate', 'text'], ['obj', 'Object', 'textarea'], ['context', 'Context', 'text']].map(function (entry) { return h(__makeTemplateObject(["<div class=\"workbench-field\">\n                            <label for=", ">", "</label>", "\n                        </div>"], ["<div class=\"workbench-field\">\n                            <label for=", ">", "</label>", "\n                        </div>"]), entry[0], entry[1], entry[2] === 'textarea'
                 ? h(__makeTemplateObject(["<textarea id=\"obj\" name=\"obj\" rows=\"3\">", "</textarea>"], ["<textarea id=\"obj\" name=\"obj\" rows=\"3\">", "</textarea>"]), text(pageValue(model, 'obj'))) : h(__makeTemplateObject(["<input id=", " name=", " type=\"text\" value=", " />"], ["<input id=", " name=", " type=\"text\" value=", " />"]), entry[0], entry[0], text(pageValue(model, entry[0])))); }), icon(runtime, 'remove'));
         }
+        /** "N statements", or "—" when the server could not count within its budget. */
+        function statementsLabel(count, context) {
+            var raw = text(count);
+            return raw ? formatCount(raw, context) + (raw === '1' ? ' statement' : ' statements') : '—';
+        }
+        /** A query parameter of the current page, or '' without a browser location. */
+        function locationParameter(name) {
+            var location = typeof window !== 'undefined' ? window.location : null;
+            return location && typeof location.search === 'string'
+                ? new URLSearchParams(location.search).get(name) || '' : '';
+        }
+        /**
+         * Clear (M6.4, mockup 08): what to clear is chosen from the repository, the default graph and each graph, with
+         * their sizes; the button names the choice and a dialog confirms it (typing the repository id for everything).
+         * The form still posts `context`: empty for the entire repository, "null" for the default graph.
+         */
         function clearPage(runtime, model, context) {
             var h = runtime.html;
-            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\">\n                ", "\n                ", "\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        <div class=\"workbench-field\"><label for=\"context\">Context</label>\n                            <input id=\"context\" name=\"context\" type=\"text\" value=", " /></div>\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Clear context\" /></span>\n                    </label></span></div>\n                </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\">\n                ", "\n                ", "\n                ", "\n                    <div class=\"workbench-field-stack\">\n                        <div class=\"workbench-field\"><label for=\"context\">Context</label>\n                            <input id=\"context\" name=\"context\" type=\"text\" value=", " /></div>\n                    </div>\n                    <div class=\"workbench-form-actions\"><span class=\"workbench-action workbench-action--danger-outline\"><label class=\"workbench-action-hit-area\">\n                        ", "<span class=\"workbench-action-label\"><input type=\"submit\" value=\"Clear context\" /></span>\n                    </label></span></div>\n                </form>"]), systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Clearing without a context removes every statement in this repository.', 'Clear is permanent.', 'clear-warning'), errorCallout(runtime, model), text(pageValue(model, 'context')), icon(runtime, 'clear'));
+            var listing = (model.vars || []).indexOf('statements') >= 0 ? records(model) : [];
+            var targets = [{ value: '', label: 'Entire repository', count: meta(model, 'repository-size') }]
+                .concat(listing.filter(function (record) { return !record.context; })
+                .map(function (record) { return ({ value: 'null', label: 'Default graph', count: record.statements }); }))
+                .concat(listing.filter(function (record) { return !!record.context; })
+                .map(function (record) { return ({ value: ntriples(record.context), label: termText(record.context), count: record.statements }); }));
+            var holder = model;
+            if (typeof holder.clearTarget !== 'string') {
+                var requested_1 = locationParameter('context') || text(pageValue(model, 'context'));
+                holder.clearTarget = targets.some(function (target) { return target.value === requested_1; }) ? requested_1 : '';
+            }
+            var selected = targets.filter(function (target) { return target.value === holder.clearTarget; })[0] || targets[0];
+            var everything = selected.value === '';
+            var repositoryId = context.repositoryId || '';
+            var confirmAndSubmit = function (event) {
+                event.preventDefault();
+                var form = event.currentTarget;
+                var dialog = workbench.confirmDialog;
+                var size = text(selected.count);
+                var removes = size ? 'This permanently removes ' + statementsLabel(size, context) : 'This permanently removes every statement';
+                dialog.open(everything
+                    ? { title: 'Clear entire repository?', body: removes + ' from ' + repositoryId + '.',
+                        confirmLabel: 'Clear repository', danger: true, requireText: repositoryId,
+                        requireLabel: 'Type ' + repositoryId + ' to confirm' }
+                    : { title: 'Clear graph?', body: removes + ' from ' + (selected.value === 'null' ? 'the default graph' : selected.label) + '.',
+                        confirmLabel: 'Clear graph', danger: true }).then(function (confirmed) {
+                    if (confirmed) {
+                        form.submit();
+                    }
+                });
+            };
+            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    @submit=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\">", "<span>", "</span></button></div>\n            </form>"]), confirmAndSubmit, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.', 'This permanently deletes statements.', 'clear-warning'), errorCallout(runtime, model), function (event) {
+                holder.clearTarget = event.currentTarget.value;
+                var outlet = event.currentTarget.closest('.workbench-outlet');
+                if (outlet) {
+                    render(outlet, model, context, runtime);
+                }
+            }, targets.map(function (target) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), target.value, target === selected, target.label + ' — ' + statementsLabel(target.count, context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), icon(runtime, 'clear'), everything ? 'Clear entire repository…' : 'Clear graph…');
         }
         function updatePage(runtime, model, context) {
             var h = runtime.html;

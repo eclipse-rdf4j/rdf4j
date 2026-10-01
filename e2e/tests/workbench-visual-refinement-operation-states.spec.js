@@ -114,8 +114,10 @@ test('covers task-fixture operation states without touching user repositories', 
 	await openPage(page, `repositories/${REPOSITORY_ID}/clear`);
 	await expect(page.locator('#clear-warning')).toBeVisible();
 	await capture(page, 'clear-warning-before-operation-1440.png');
-	await page.locator('#context').fill('<urn:visual:people>');
-	await page.locator('#clear-form input[type="submit"]').click();
+	// Clear chooses a listed graph and confirms in a dialog (plan task M6.4).
+	await page.locator('#context').selectOption('<urn:visual:people>');
+	await page.locator('#clear-form button[type="submit"]').click();
+	await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
 	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
 	await capture(page, 'clear-named-graph-success-summary-1440.png');
 	const size = await request.get(`${REPOSITORY_URL}/size`);
