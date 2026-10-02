@@ -560,6 +560,25 @@ var workbench;
             marginBlockEnd: '0px'
         };
     }
+    // The share of a disclosure's motion, at its collapsed end, in which its top and bottom borders are 0. Chromium
+    // paints a border wider than 0 and narrower than 1 px as one device pixel, so borders that shrink over the whole
+    // collapse would leave its last frames two borders tall, and the box would jump from there to hidden.
+    var disclosureBorderlessProgress = 0.1;
+    /**
+     * Keyframes from startBox to endBox in which the top and bottom borders change only while the box is more than
+     * disclosureBorderlessProgress away from collapsed: a collapse reaches endBox's borders there and an expansion
+     * keeps startBox's borders until there, so an expansion mirrors a collapse. Height, padding and margin change
+     * over the whole motion.
+     */
+    function disclosureKeyframes(startBox, endBox, expanding) {
+        var borderBox = expanding ? startBox : endBox;
+        var borders = {
+            offset: expanding ? disclosureBorderlessProgress : 1 - disclosureBorderlessProgress,
+            borderTopWidth: borderBox.borderTopWidth,
+            borderBottomWidth: borderBox.borderBottomWidth
+        };
+        return [startBox, borders, endBox];
+    }
     function dispatchWorkbenchResize() {
         if (window.dispatchEvent && typeof Event !== 'undefined') {
             window.dispatchEvent(new Event('resize'));
@@ -1125,7 +1144,7 @@ var workbench;
         var endBox = expanded
             ? disclosureBoxKeyframe(panel, endHeight, endPanelStyle)
             : collapsedDisclosureKeyframe();
-        var keyframes = [startBox, endBox];
+        var keyframes = disclosureKeyframes(startBox, endBox, expanded);
         startOwnedMotion(panel, keyframes, motionDisclosureDuration, styles, function () {
             panel.hidden = !expanded;
             panel.inert = expanded ? state.inert : true;
@@ -1170,7 +1189,8 @@ var workbench;
         startBox.opacity = startOpacity;
         var endBox = disclosureBoxKeyframe(element, endHeight, endStyle);
         endBox.opacity = window.getComputedStyle(element).opacity;
-        startOwnedMotion(element, [startBox, endBox], motionDisclosureDuration, styles, function () {
+        var keyframes = disclosureKeyframes(startBox, endBox, true);
+        startOwnedMotion(element, keyframes, motionDisclosureDuration, styles, function () {
             element.style.display = '';
         });
     }
