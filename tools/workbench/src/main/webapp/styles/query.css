@@ -1001,8 +1001,10 @@ body.query-results-fullscreen-active {
     white-space: nowrap;
 }
 
+/* Narrow pages turn data tables into scroll boxes; the result table and its pinned header copy scroll in their
+ * wrappers instead, so both stay tables with the same column widths. */
 @media (max-width: 900px) {
-    body.workbench-body .workbench-page-surface .query-result-table-wrap table.data {
+    body.workbench-body .workbench-page-surface :is(.query-result-table-wrap, .query-result-floating-head) table.data {
         display: table;
         overflow: visible;
     }

@@ -4093,7 +4093,12 @@ namespace workbench {
                     this.floatingTable.appendChild(head.cloneNode(true));
                     this.floatingTable.style.tableLayout = this.table.style.tableLayout;
                 }
-                this.floatingTable.style.width = this.table.getBoundingClientRect().width + 'px';
+                // Exactly the table's width, whatever minimum or maximum width the page gives data tables, so the
+                // copied columns line up with the rows and the viewport can scroll the copy with the table.
+                var tableWidth = this.table.getBoundingClientRect().width + 'px';
+                this.floatingTable.style.width = tableWidth;
+                this.floatingTable.style.minWidth = tableWidth;
+                this.floatingTable.style.maxWidth = 'none';
                 this.floatingHead.hidden = false;
                 this.syncFloatingHeadScroll();
             }

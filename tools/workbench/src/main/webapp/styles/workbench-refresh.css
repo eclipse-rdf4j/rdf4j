@@ -2194,8 +2194,9 @@ body.workbench-body .workbench-menu-sheet__nav span.disabled {
 }
 
 @media (max-width: 900px) {
-	body.workbench-body #workbench-contextbar.workbench-contextbar {
-		height: 52px;
+	/* Through the token, so whatever sticks under the context bar (the pinned result header) follows it. */
+	:root {
+		--workbench-contextbar-height: 52px;
 	}
 
 	body.workbench-body #workbench-contextbar .workbench-menu-button {
