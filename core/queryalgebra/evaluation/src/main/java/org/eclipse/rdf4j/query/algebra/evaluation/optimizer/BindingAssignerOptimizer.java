@@ -12,15 +12,12 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -37,62 +34,28 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(tupleExpr, bindings);
 		if (!analysis.rootContext().externalValues().isEmpty()) {
-			AssignedNameCollector assignedNames = new AssignedNameCollector();
-			tupleExpr.visit(assignedNames);
-			tupleExpr.visit(new VarVisitor(analysis, assignedNames.names));
-		}
-	}
-
-	/**
-	 * Collects names that the query itself assigns (BIND, aggregates, projection aliases). Only those can replace an
-	 * API binding; every other occurrence of an API-bound name must see the API value.
-	 */
-	private static class AssignedNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-
-		private final Set<String> names = new HashSet<>();
-
-		private AssignedNameCollector() {
-			super(true);
-		}
-
-		@Override
-		public void meet(ExtensionElem node) {
-			names.add(node.getName());
-			super.meet(node);
-		}
-
-		@Override
-		public void meet(GroupElem node) {
-			names.add(node.getName());
-			super.meet(node);
-		}
-
-		@Override
-		public void meet(ProjectionElem node) {
-			if (!node.getName().equals(node.getProjectionAlias().orElse(node.getName()))) {
-				names.add(node.getProjectionAlias().get());
-			}
-			super.meet(node);
+			VarVisitor visitor = new VarVisitor(analysis);
+			tupleExpr.visit(visitor);
+			visitor.apply();
 		}
 	}
 
 	private static class VarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final QueryAlgebraBindingAnalysis analysis;
-		private final Set<String> assignedNames;
+		private final List<Replacement> replacements = new ArrayList<>();
 		private int unknownOperatorDepth;
 
-		private VarVisitor(QueryAlgebraBindingAnalysis analysis, Set<String> assignedNames) {
+		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
 			super(true);
 			this.analysis = analysis;
-			this.assignedNames = assignedNames;
 		}
 
 		@Override
 		public void meetOther(QueryModelNode node) {
-			// Unknown operators may change the variable scope; below them only the binding analysis decides.
+			// Unknown operators own their binding contract; keep their variables opaque.
 			if (node instanceof TupleExpr) {
 				unknownOperatorDepth++;
 				try {
@@ -107,25 +70,31 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Var var) {
-			if (var.hasValue() || var.getName() == null) {
+			if (var.hasValue() || var.getName() == null
+					|| !analysis.rootContext().externalValues().containsKey(var.getName())) {
 				return;
 			}
-			Value value;
-			if (unknownOperatorDepth > 0 || assignedNames.contains(var.getName())) {
-				QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
-				value = context.externalValues().get(var.getName());
-				if (value == null || !context.guaranteedNames().contains(var.getName())
-						|| !value.equals(context.fixedValues().get(var.getName()))) {
-					return;
-				}
-			} else {
-				value = analysis.rootContext().externalValues().get(var.getName());
+			if (unknownOperatorDepth > 0) {
+				return;
 			}
-			if (value != null) {
-				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant());
-				var.replaceWith(replacement);
-				analysis.invalidate();
+			QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
+			Value value = context.externalValues().get(var.getName());
+			if (value != null && context.bindingDomainKnown() && context.guaranteedNames().contains(var.getName())
+					&& value.equals(context.fixedValues().get(var.getName()))) {
+				replacements.add(new Replacement(var, value));
 			}
+		}
+
+		private void apply() {
+			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
+			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
+			for (Replacement replacement : replacements) {
+				Var var = replacement.variable();
+				var.replaceWith(Var.of(var.getName(), replacement.value(), var.isAnonymous(), var.isConstant()));
+			}
+		}
+
+		private record Replacement(Var variable, Value value) {
 		}
 	}
 }

@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -79,6 +81,70 @@ class MemoryStoreLocalBindInputRegressionTest {
 		assertThat(row.size()).isEqualTo(1);
 	}
 
+	@Test
+	void apiBindingRemainsVisibleInIndependentUnionBranch() throws Exception {
+		String query = "SELECT ?y WHERE { { BIND(2 AS ?x) BIND(?x AS ?y) } "
+				+ "UNION { FILTER(?x = 1) BIND(3 AS ?y) } }";
+		String alphaRenamedControl = "SELECT ?y WHERE { { BIND(2 AS ?z) BIND(?z AS ?y) } "
+				+ "UNION { FILTER(?x = 1) BIND(3 AS ?y) } }";
+		List<BindingSet> rows = evaluateWithInitialBinding(query, "x", Values.literal(BigInteger.ONE));
+		List<BindingSet> controlRows = evaluateWithInitialBinding(alphaRenamedControl, "x",
+				Values.literal(BigInteger.ONE));
+
+		assertThat(rows).extracting(row -> row.getValue("y"))
+				.containsExactlyInAnyOrder(
+						Values.literal(BigInteger.valueOf(2)), Values.literal(BigInteger.valueOf(3)));
+		assertThat(controlRows).extracting(row -> row.getValue("y"))
+				.containsExactlyInAnyOrder(
+						Values.literal(BigInteger.valueOf(2)), Values.literal(BigInteger.valueOf(3)));
+	}
+
+	@Test
+	void apiBindingRemainsVisibleWhenUnionBranchesAreReversedOrNested() throws Exception {
+		assertApiResults("SELECT ?y WHERE { { FILTER(?x = 1) BIND(3 AS ?y) } "
+				+ "UNION { BIND(2 AS ?x) BIND(?x AS ?y) } }", 2, 3);
+		assertApiResults("SELECT ?y WHERE { { BIND(2 AS ?x) BIND(?x AS ?y) } UNION { "
+				+ "{ FILTER(?x = 1) BIND(3 AS ?y) } UNION { FILTER(?x = 1) BIND(4 AS ?y) } } }", 2, 3, 4);
+	}
+
+	@Test
+	void apiBindingRemainsVisibleAlongsideExportedSubqueryAssignments() throws Exception {
+		assertApiResults("SELECT ?y WHERE { { { SELECT (?local AS ?x) WHERE { BIND(2 AS ?local) } } "
+				+ "BIND(?x AS ?y) } UNION { FILTER(?x = 1) BIND(3 AS ?y) } }", 2, 3);
+		assertApiResults("SELECT ?y WHERE { { { SELECT ?x WHERE { BIND(2 AS ?x) } } BIND(?x AS ?y) } "
+				+ "UNION { FILTER(?x = 1) BIND(3 AS ?y) } }", 2, 3);
+		assertApiResults("SELECT ?y WHERE { { { SELECT (COUNT(*) AS ?x) WHERE { VALUES ?item { 1 2 } } } "
+				+ "BIND(?x AS ?y) } UNION { FILTER(?x = 1) BIND(3 AS ?y) } }", 2, 3);
+	}
+
+	@Test
+	void sequentialBindReadsApiValueBeforeReplacingItsTarget() throws Exception {
+		assertApiResults("SELECT ?y WHERE { BIND(?x + 1 AS ?x) BIND(?x AS ?y) FILTER(?x = 2) }", 2);
+	}
+
+	@Test
+	void apiBindingRemainsVisibleInOtherArmsOptionalMinusAndExists() throws Exception {
+		String left = "SELECT ?y WHERE { { BIND(2 AS ?x) BIND(?x AS ?y) } UNION { ";
+		assertApiResults(left + "VALUES ?seed { 1 } OPTIONAL { FILTER(?x = 1) BIND(3 AS ?y) } } }", 2, 3);
+		assertApiResults(left + "VALUES ?y { 3 } MINUS { FILTER(?x = 1) BIND(3 AS ?y) } } }", 2);
+		assertApiResults(left + "FILTER EXISTS { FILTER(?x = 1) } BIND(3 AS ?y) } }", 2, 3);
+		assertApiResults(left + "FILTER NOT EXISTS { FILTER(?x = 1) } BIND(3 AS ?y) } }", 2);
+	}
+
+	@Test
+	void minusAndExistsLocalAssignmentsDoNotShadowTheirOuterApiParameter() throws Exception {
+		assertApiResults("SELECT ?y WHERE { FILTER EXISTS { BIND(2 AS ?x) } BIND(?x AS ?y) }", 1);
+		assertApiResults("SELECT ?y WHERE { VALUES ?seed { 1 } MINUS { BIND(2 AS ?x) } BIND(?x AS ?y) }", 1);
+	}
+
+	private void assertApiResults(String sparql, long... expected) throws Exception {
+		List<BindingSet> rows = evaluateWithInitialBinding(sparql, "x", Values.literal(BigInteger.ONE));
+		assertThat(rows).extracting(row -> row.getValue("y"))
+				.containsExactlyInAnyOrderElementsOf(Arrays.stream(expected)
+						.mapToObj(value -> Values.literal(BigInteger.valueOf(value)))
+						.toList());
+	}
+
 	private void assertInitialBindingDoesNotReplaceLocalBind(String sparql, String projectedVariable)
 			throws Exception {
 		List<BindingSet> rows = evaluateWithInitialBinding(sparql, "x");
@@ -88,9 +154,14 @@ class MemoryStoreLocalBindInputRegressionTest {
 	}
 
 	private List<BindingSet> evaluateWithInitialBinding(String sparql, String variable) throws Exception {
+		return evaluateWithInitialBinding(sparql, variable, Values.literal(2));
+	}
+
+	private List<BindingSet> evaluateWithInitialBinding(String sparql, String variable, Value initialValue)
+			throws Exception {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql);
-			query.setBinding(variable, Values.literal(2));
+			query.setBinding(variable, initialValue);
 			try (TupleQueryResult result = query.evaluate()) {
 				return QueryResults.asList(result);
 			}

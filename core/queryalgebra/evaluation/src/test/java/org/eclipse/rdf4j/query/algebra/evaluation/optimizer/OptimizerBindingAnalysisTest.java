@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -66,6 +67,171 @@ import org.junit.jupiter.api.Test;
 class OptimizerBindingAnalysisTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void apiSubstitutionPhaseKeepsParametersHiddenByRuntimeFilterProjection() {
+		Var reference = Var.of("x");
+		Filter right = new Filter(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(3)), "y")),
+				new SameTerm(reference, new ValueConstant(VF.createLiteral(1))));
+		right.setVariableScopeChange(true);
+		Union union = new Union(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "x")), right);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		QueryAlgebraBindingAnalysis runtime = QueryAlgebraBindingAnalysis.withBindingValues(union, input);
+		QueryAlgebraBindingAnalysis substitution = QueryAlgebraBindingAnalysis.forBindingAssignment(union, input);
+
+		assertThat(runtime.contextAt(reference).externalValues()).doesNotContainKey("x");
+		assertThat(substitution.contextAt(reference).externalValues()).containsEntry("x", VF.createLiteral(1));
+		new BindingAssignerOptimizer().optimize(union, null, input);
+		assertThat(((SameTerm) right.getCondition()).getLeftArg()).isInstanceOfSatisfying(Var.class,
+				var -> assertThat(var.getValue()).isEqualTo(VF.createLiteral(1)));
+	}
+
+	@Test
+	void apiSubstitutionPreservesCompatibleRelationalParametersBeforeSequentialWrites() {
+		for (TupleExpr relation : List.of(values("x", VF.createLiteral(1)),
+				new StatementPattern(Var.of("x"), Var.of("predicate"), Var.of("object")))) {
+			Var beforeWrite = Var.of("x");
+			Var afterWrite = Var.of("x");
+			Extension extension = new Extension(relation,
+					new ExtensionElem(beforeWrite, "before"),
+					new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "x"),
+					new ExtensionElem(afterWrite, "after"));
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("x", VF.createLiteral(1));
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(extension, input);
+			assertThat(analysis.contextAt(beforeWrite).externalValues()).containsEntry("x", VF.createLiteral(1));
+			assertThat(analysis.contextAt(afterWrite).externalValues()).doesNotContainKey("x");
+			assertThat(analysis.contextAt(afterWrite).fixedValues()).containsEntry("x", VF.createLiteral(2));
+			new BindingAssignerOptimizer().optimize(extension, null, input);
+			assertThat((Var) extension.getElements().getFirst().getExpr())
+					.satisfies(var -> assertThat(var.getValue()).isEqualTo(VF.createLiteral(1)));
+			assertThat(((Var) extension.getElements().getLast().getExpr()).hasValue()).isFalse();
+		}
+	}
+
+	@Test
+	void apiSubstitutionCarriesOnlyExportedProjectionAssignments() {
+		for (boolean alias : List.of(false, true)) {
+			String source = alias ? "local" : "x";
+			ProjectionElem element = new ProjectionElem(source);
+			if (alias) {
+				element.setProjectionAlias("x");
+			}
+			Projection projection = new Projection(new Extension(new SingletonSet(),
+					new ExtensionElem(new ValueConstant(VF.createLiteral(2)), source)),
+					new ProjectionElemList(element), true);
+			Var reference = Var.of("x");
+			Extension consumer = new Extension(projection, new ExtensionElem(reference, "copy"));
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("x", VF.createLiteral(1));
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
+			assertThat(analysis.outputFacts(projection).overwrittenInputNames()).contains("x");
+			assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+			assertThat(analysis.contextAt(reference).fixedValues()).containsEntry("x", VF.createLiteral(2));
+		}
+		Projection hiddenLocal = new Projection(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "x")),
+				new ProjectionElemList(new ProjectionElem("unrelated")), true);
+		Var reference = Var.of("x");
+		Extension consumer = new Extension(hiddenLocal, new ExtensionElem(reference, "copy"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
+		assertThat(analysis.contextAt(reference).externalValues()).containsEntry("x", VF.createLiteral(1));
+	}
+
+	@Test
+	void apiSubstitutionPreservesMultiProjectionAliasAssignments() {
+		Extension localWrite = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "local"));
+		MultiProjection projection = new MultiProjection(localWrite,
+				List.of(new ProjectionElemList(new ProjectionElem("local", "x"))));
+		Var consumerReference = Var.of("x");
+		Extension consumer = new Extension(projection, new ExtensionElem(consumerReference, "y"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
+
+		assertThat(analysis.outputFacts(projection).overwrittenInputNames()).contains("x");
+		assertThat(analysis.contextAt(consumerReference).externalValues()).doesNotContainKey("x");
+		assertThat(analysis.contextAt(consumerReference).fixedValues()).containsEntry("x", VF.createLiteral(2));
+
+		new BindingAssignerOptimizer().optimize(consumer, null, input);
+		Var optimizedConsumerReference = (Var) consumer.getElements().getFirst().getExpr();
+		assertThat(optimizedConsumerReference.hasValue()).isFalse();
+	}
+
+	@Test
+	void apiSubstitutionPreservesIdentityGroupKeysButNotLocalAssignments() {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+
+		Group identityGroup = new Group(values("item", VF.createLiteral(1)), List.of("x"));
+		Var identityReference = Var.of("x");
+		Extension identityConsumer = new Extension(identityGroup, new ExtensionElem(identityReference, "copy"));
+		QueryAlgebraBindingAnalysis identityAnalysis = QueryAlgebraBindingAnalysis
+				.forBindingAssignment(identityConsumer, input);
+		assertThat(identityAnalysis.contextAt(identityReference).externalValues())
+				.containsEntry("x", VF.createLiteral(1));
+
+		Extension childWrite = new Extension(values("item", VF.createLiteral(1)),
+				new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "x"));
+		Group localGroup = new Group(childWrite, List.of("x"));
+		Var localReference = Var.of("x");
+		Extension localConsumer = new Extension(localGroup, new ExtensionElem(localReference, "copy"));
+		QueryAlgebraBindingAnalysis localAnalysis = QueryAlgebraBindingAnalysis.forBindingAssignment(localConsumer,
+				input);
+		assertThat(localAnalysis.contextAt(localReference).externalValues()).doesNotContainKey("x");
+		assertThat(localAnalysis.contextAt(localReference).fixedValues()).containsEntry("x", VF.createLiteral(2));
+	}
+
+	@Test
+	void apiSubstitutionDoesNotReplaceValuesAfterPossibleBranchOrOptionalWrites() {
+		for (boolean optional : List.of(false, true)) {
+			Extension assignment = new Extension(new SingletonSet(),
+					new ExtensionElem(new ValueConstant(VF.createLiteral(2)), "x"));
+			TupleExpr relation = optional ? new LeftJoin(new SingletonSet(), assignment)
+					: new Union(assignment, new SingletonSet());
+			Var reference = Var.of("x");
+			Extension consumer = new Extension(relation, new ExtensionElem(reference, "copy"));
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("x", VF.createLiteral(1));
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
+			assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+			new BindingAssignerOptimizer().optimize(consumer, null, input);
+			assertThat(((Var) consumer.getElements().getFirst().getExpr()).hasValue()).isFalse();
+		}
+	}
+
+	@Test
+	void apiSubstitutionReadsAggregateRowsBeforeShadowingItsTarget() {
+		Var aggregateReference = Var.of("x");
+		Group group = new Group(values("item", VF.createLiteral(1)));
+		group.addGroupElement(new GroupElem("x", new Count(aggregateReference)));
+		Var resultReference = Var.of("x");
+		Extension consumer = new Extension(group, new ExtensionElem(resultReference, "copy"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
+		assertThat(analysis.contextAt(aggregateReference).externalValues()).containsEntry("x", VF.createLiteral(1));
+		assertThat(analysis.contextAt(resultReference).externalValues()).doesNotContainKey("x");
+	}
+
+	@Test
+	void apiSubstitutionDoesNotResurrectFailedWritesInsideCorrelatedSubqueries() {
+		Var reference = Var.of("x");
+		Projection nested = new Projection(new StatementPattern(reference, Var.of("predicate"), Var.of("object")),
+				new ProjectionElemList(new ProjectionElem("x")), true);
+		Extension extension = new Extension(new SingletonSet(), new ExtensionElem(Var.of("missing"), "x"),
+				new ExtensionElem(new Exists(nested), "exists"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(1));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(extension, input);
+		assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+	}
 
 	@Test
 	void aggregatePlaceholdersPreserveChildAndInheritedBindingFacts() {
