@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.Dependencies;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Removes a UNION scope boundary only when its branches can accept every possible incoming row without changing
