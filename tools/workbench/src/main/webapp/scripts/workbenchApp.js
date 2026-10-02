@@ -789,16 +789,26 @@ var workbench;
                 return;
             }
             targetWindow.scrollTo(0, saved.y);
-            // The page can still grow for a frame or two after its rows are bound, which clamps the first scroll short
-            // of a position near its end; apply it again once the page has its final height, as the router does,
-            // unless the page was scrolled in the meantime.
-            var clamped = targetWindow.scrollY;
-            if (clamped < saved.y && typeof targetWindow.requestAnimationFrame === 'function') {
-                targetWindow.requestAnimationFrame(function () { return targetWindow.requestAnimationFrame(function () {
-                    if (targetWindow.scrollY === clamped) {
-                        targetWindow.scrollTo(0, saved.y);
+            // The page can still grow for a few frames after its rows are bound, which clamps the scroll short of a
+            // position near its end: apply it again on the next frames until it is reached, for at most about half a
+            // second, and stop as soon as the user scrolls. (The scroll position itself cannot tell: scroll anchoring
+            // moves it while the page grows.)
+            if (targetWindow.scrollY < saved.y && typeof targetWindow.requestAnimationFrame === 'function'
+                && typeof targetWindow.addEventListener === 'function') {
+                var userInput_1 = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+                var interrupted_1 = false;
+                var frames_1 = 0;
+                var interrupt_1 = function () { interrupted_1 = true; };
+                userInput_1.forEach(function (type) { return targetWindow.addEventListener(type, interrupt_1, true); });
+                var reapply_1 = function () {
+                    if (interrupted_1 || targetWindow.scrollY >= saved.y || ++frames_1 > 30) {
+                        userInput_1.forEach(function (type) { return targetWindow.removeEventListener(type, interrupt_1, true); });
+                        return;
                     }
-                }); });
+                    targetWindow.scrollTo(0, saved.y);
+                    targetWindow.requestAnimationFrame(reapply_1);
+                };
+                targetWindow.requestAnimationFrame(reapply_1);
             }
             if (storage && typeof storage.removeItem === 'function') {
                 try {

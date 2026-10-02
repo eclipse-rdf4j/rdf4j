@@ -358,8 +358,12 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 		expect(restoredStorage.storeRecords.some(store => store.id === activeStores[0].id),
 			'the old page store must be reclaimed before the reloaded route creates its row store').toBe(false);
 		expect(restoredStorage.storeRecords.filter(store => store.count === SCROLL_ROW_COUNT)).toHaveLength(1);
-		expect(returned.scrollY).toBe(beforeNavigation.scrollY,
-			'history navigation should restore the browser-recorded scroll position after route rehydration');
+		// The position is applied again while the page reaches its final height, a few frames after the rows are bound.
+		// The windowed table's height sums measured and estimated row heights, so the returned page can end a pixel
+		// shorter than the one that was left when it measured other rows; its bottom is then one pixel higher.
+		await expect.poll(async () => Math.abs(await page.evaluate(() => window.scrollY) - beforeNavigation.scrollY), {
+			message: 'history navigation should restore the browser-recorded scroll position after route rehydration'
+		}).toBeLessThanOrEqual(1);
 	}
 	expect(pageErrors).toEqual([]);
 	const report = { beforeNavigation, activeStorage, returned, leaving, showing, bfcacheRestored,

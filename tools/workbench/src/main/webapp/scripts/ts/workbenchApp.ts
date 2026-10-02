@@ -843,16 +843,26 @@ module workbench {
                 return;
             }
             targetWindow.scrollTo(0, saved.y);
-            // The page can still grow for a frame or two after its rows are bound, which clamps the first scroll short
-            // of a position near its end; apply it again once the page has its final height, as the router does,
-            // unless the page was scrolled in the meantime.
-            const clamped = targetWindow.scrollY;
-            if (clamped < saved.y && typeof targetWindow.requestAnimationFrame === 'function') {
-                targetWindow.requestAnimationFrame(() => targetWindow.requestAnimationFrame(() => {
-                    if (targetWindow.scrollY === clamped) {
-                        targetWindow.scrollTo(0, saved.y);
+            // The page can still grow for a few frames after its rows are bound, which clamps the scroll short of a
+            // position near its end: apply it again on the next frames until it is reached, for at most about half a
+            // second, and stop as soon as the user scrolls. (The scroll position itself cannot tell: scroll anchoring
+            // moves it while the page grows.)
+            if (targetWindow.scrollY < saved.y && typeof targetWindow.requestAnimationFrame === 'function'
+                    && typeof targetWindow.addEventListener === 'function') {
+                const userInput = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+                let interrupted = false;
+                let frames = 0;
+                const interrupt = () => { interrupted = true; };
+                userInput.forEach((type) => targetWindow.addEventListener(type, interrupt, true));
+                const reapply = () => {
+                    if (interrupted || targetWindow.scrollY >= saved.y || ++frames > 30) {
+                        userInput.forEach((type) => targetWindow.removeEventListener(type, interrupt, true));
+                        return;
                     }
-                }));
+                    targetWindow.scrollTo(0, saved.y);
+                    targetWindow.requestAnimationFrame(reapply);
+                };
+                targetWindow.requestAnimationFrame(reapply);
             }
             if (storage && typeof storage.removeItem === 'function') {
                 try {
