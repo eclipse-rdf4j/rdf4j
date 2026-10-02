@@ -82,6 +82,10 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-02 00:23Z) M13.5 Queries keep running in the background (user request).
 - [x] (2026-10-02 00:44Z) M13.6 Review every warning for alignment and padding (user request).
 - [x] (2026-10-02 01:50Z) M12.2 Final review and retrospective (moved after M13, see `Decision Log`).
+- [x] (2026-10-02 04:20Z) M14.1 The router sends a form that stays on its page.
+- [ ] M14.2 Update, Add, Remove and Clear stay, with a spinner and a tick (user request) (in progress).
+- [ ] M14.3 Settings panes open over the page (user request).
+- [ ] M14.4 End-of-milestone suite and outcomes.
 
 ## Surprises & Discoveries
 
@@ -386,6 +390,7 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
   Date/Author: 2026-10-02 / implementer.
 - Decision (M12.2, final review against the mockups, `review-final/` captures): intentional or accepted deviations. Page titles (`h1`) keep the long view names ("Query Repository", "Types In Repository") where the mockups show short ones and, on Query, the repository beside the title; the browser tab uses the short names (M2.6), and the long ones are what the servlets, many specs and administrator configurations name. The Query editor keeps its visible "Query" label (the textarea needs one). On Explore, "Query this resource" sits below the description rather than top right, the type chips have no "Types" label, a "Rows 1–44 of 44" line sits between the card and the role groups, and a single graph is named on the left with its full IRI rather than on the right as a prefixed name. Summary's "Configuration (Turtle)" uses the shared disclosure toggle. Types and Graphs inset their tables inside the card padding, and filter fields use the code font they share with other term inputs. One defect found by the review was fixed: Explore's "Show more" was an indented ghost button 16 px below the description; it is now a text control at the description's left edge, 4 px under it (`e2e/tests/workbench-design-system.spec.js`).
   Date/Author: 2026-10-02 / implementer.
+- Decision (M14.1): a form sent in place reads the servlet's redirect as "accepted" (`fetch` with `redirect: 'manual'` answers an `opaqueredirect` response) instead of a new server answer for page-model requests. Update, Add, Remove and Clear already redirect only on success and answer their own page with `error-message` otherwise, and a native post (no router) must keep landing on Summary, so no servlet changes. `send()` reuses `navigate()` (generation, abort, upload guard, error page shown in place) with an `inPlace` option; it skips the route progress bar and, when nothing came back, resolves `'failed'` instead of loading a document.
 
 ## Outcomes & Retrospective
 
@@ -1083,6 +1088,30 @@ This reverses part of M9.2: leaving the Query page inside the Workbench no longe
 #### Task M13.6: review every warning for alignment and padding
 
 What to build: list every warning shown in the Workbench (warning callouts such as the SYSTEM repository note, Clear's "There is no undo", Export's named-graph merge warning and its Safari note, the proxied-repository warning in the Delete dialog, field-level warnings, and the warning and error states of the result and explanation areas) and check each against the callout component of M1: icon alignment with the first line of text, padding, spacing to the surrounding fields and cards, text width, and dark mode. Fix what differs at the component level where possible. Test first: a browser spec that opens every page and state that shows a warning and checks, for each `.workbench-callout`, that the icon's vertical center is within 2 px of the first text line's center, that the padding matches the component tokens, and that the callout does not overflow its card; capture screenshots of each for the final review.
+
+### Milestone M14: user requests of 2026-10-02
+
+Requested by the user after the plan was closed: "sparql update, add, remove and clear should show a spinner when they are working but should not redirect to the summary page instead show a green tick mark when completed, also change all the settings panes to expand on top of the current view (maybe use z-index) instead of growing the outer node." The same working rules apply (test first, full Chromium suite at the end of the milestone).
+
+Background for a newcomer. Since M10.1 every POST form in the outlet is sent by the router (`scripts/ts/workbenchRouter.ts`, `route()` and `navigate()` with `options.body`) with the page-model `Accept` header; `fetch` follows the servlet's redirect, so the page that is shown is the redirect's target. `UpdateServlet`, `AddServlet`, `RemoveServlet` and `ClearServlet` (in `tools/workbench/src/main/java/org/eclipse/rdf4j/workbench/commands/`) answer a successful POST with `resp.sendRedirect("summary")` and a failed one with their own page model carrying `error-message`, which the views show as an error callout. A browser without the router (a native form post) must keep working as before, so the servlets do not change: a redirect means "done".
+
+The settings panes are the shared disclosure component `workbench.detailDisclosure` in `scripts/ts/template.ts` (markup `.workbench-disclosure` with a `.workbench-disclosure__toggle` button and a `.workbench-disclosure__panel`; `setDisclosureExpanded()` opens it with a height animation and `refreshDisclosureAnchor()` places it under its button). Panels are either inside their owner (Export, Add, Server and Create "Advanced settings") or in a separate "track" below a toolbar (Query settings and Save query on Query, Config on the explanation, Download and Display on results, Display on Explore). Both kinds are in normal flow today, so opening one pushes everything below it down.
+
+#### Task M14.1: the router sends a form that stays on its page
+
+What to build: `router.send(form, submitter?)` posts a form like `route()` does, with `redirect: 'manual'`, and resolves with the outcome: `'done'` when the server answered with a redirect (`response.type === 'opaqueredirect'`; nothing is rendered, the page and its history entry stay), `'committed'` when the answer is a page (the error page is shown as today, replacing the entry when it is the same URL), `'abandoned'` when a newer navigation replaced it, and `'failed'` when the request itself failed (no document load: the form's page says so). An in-place post does not show the route progress bar (its page shows its own progress); uploads keep their leave guard. Without the router, or for a form the router cannot send, it submits natively and resolves `'fallback'`. Test first: unit tests in `e2e/tests-unit/workbench-router.test.js` for each outcome, the request options and the upload guard; `workbenchRouter.js` stays at 100% coverage.
+
+#### Task M14.2: Update, Add, Remove and Clear stay, with a spinner and a tick
+
+What to build: the four forms are sent with `router.send`. While the request runs, the submit button is disabled, the form is `aria-busy`, and a status next to the button shows a spinner and "Executing update…", "Adding data…", "Removing statements…" or "Clearing…". When it is done the status shows a green tick and "Update executed", "Data added", "Removed N statements" (or "Statements removed" when the count was unknown) or "Graph cleared"/"Repository cleared", announced by its `role="status"`; editing the form clears it. A server error is shown as today (the error callout in the page); a failed request shows an error status. Remove then counts again (the matches are gone); Clear shows its page again with a fresh list and counts, keeping the tick. Test first: a browser spec per page (Chromium, Firefox, WebKit) that delays the POST, expects the spinner and the disabled button, then the tick, the same URL and route, no Summary, and the repository changed; the specs that expected Summary after these forms (`workbench-router.spec.js` "clearing a graph …" and "uploading a Turtle file …", `workbench-destructive-actions.spec.js`, `workbench-browsing.spec.js`, `workbench-query-workflow.spec.js`, `workbench-explain.spec.js`) are changed to expect the tick.
+
+#### Task M14.3: settings panes open over the page
+
+What to build: every `.workbench-disclosure__panel` is positioned over the page (absolutely, below its toggle and aligned to the toggle's end, kept inside its card), so opening it moves nothing: the toolbar, the card and the content below keep their positions and sizes. It sits above the content that follows (including the next card and sticky table headings) and below the sticky top bar. As an overlay it closes with Escape (focus returns to its toggle) and with a pointer press outside the panel and its toggle; opening one pane closes the other panes. Panels taller than the space below stay reachable by scrolling the page (no ancestor clips them). Test first (browser, 1440 x 900 and 390 x 844): for each pane, the bounding boxes of the toolbar, the card and the next element are unchanged after opening, the panel's center hit-tests to the panel, the panel is inside the viewport horizontally, Escape and an outside press close it.
+
+#### Task M14.4: end-of-milestone suite and outcomes
+
+Run the full Chromium suite and compare with the M0/M2 lists, the unit suite and coverage gate, and `mvnf tools/workbench` if Java changed; record the outcome.
 
 ## Concrete Steps
 

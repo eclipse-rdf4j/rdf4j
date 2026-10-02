@@ -29,6 +29,8 @@ module workbench {
             body?: any;
             /** Set once the user agreed to cancel a running upload. */
             leaveUpload?: boolean;
+            /** A form POST that stays on its page when the server accepts it with a redirect (M14.1). */
+            inPlace?: boolean;
         }
 
         /** What bootstrap hands over once the first route is mounted. */
@@ -46,7 +48,8 @@ module workbench {
             contextBar?: () => void;
         }
 
-        type Outcome = 'committed' | 'abandoned' | 'fallback';
+        /** 'done' and 'failed' are the outcomes of a form sent in place (M14.1). */
+        type Outcome = 'committed' | 'abandoned' | 'fallback' | 'done' | 'failed';
 
         /** How long a navigation may take before the progress bar shows. */
         const progressDelayMillis = 150;
@@ -344,6 +347,22 @@ module workbench {
             }
         }
 
+        /**
+         * Send a POST form and stay on its page (M14.1): 'done' when the server accepted it (its redirect is not
+         * followed), 'committed' when its answer is a page (an error) that is now shown, 'abandoned' when another
+         * page was opened meanwhile and 'failed' when the request failed. Without the router, or for a form the
+         * router cannot send, the browser posts it and the outcome is 'fallback'.
+         */
+        export function send(form: any, submitter?: any): Promise<Outcome> {
+            const request = running ? formRequest(form, submitter) : null;
+            if (!request || request.method !== 'post' || !routable(request.action)) {
+                form.submit();
+                return Promise.resolve<Outcome>('fallback');
+            }
+            return navigate(request.action.href, { history: 'push', inPlace: true,
+                body: request.multipart ? request.data : new URLSearchParams(request.data) });
+        }
+
         function onPageHide(event: any): void {
             if (!event.persisted) {
                 currentRoute.instance.dispose('pagehide');
@@ -510,7 +529,10 @@ module workbench {
             let model: any = null;
             let shownDefinition = definition;
             let history = options.history;
-            setBusy(true);
+            if (!options.inPlace) {
+                // A form sent in place shows its own progress in its page.
+                setBusy(true);
+            }
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
             let answer: Promise<any>;
@@ -520,43 +542,57 @@ module workbench {
                 if (typeof FormData === 'function' && options.body instanceof FormData) {
                     startUpload(mine);
                 }
-                answer = fetcher(request, { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
-                    credentials: 'same-origin' }).then((response: any) => app().loadModelFromResponse(response, signal, request));
+                const post: any = { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
+                    credentials: 'same-origin' };
+                if (options.inPlace) {
+                    // A redirect accepts a form sent in place; the page it names is not shown (M14.1).
+                    post.redirect = 'manual';
+                }
+                answer = fetcher(request, post).then((response: any) => response.type === 'opaqueredirect' ? null
+                    : app().loadModelFromResponse(response, signal, request));
             } else {
                 answer = app().loadModel(fetcher, request, signal);
             }
+            const show = (): Promise<Outcome> => {
+                if (options.body) {
+                    // Another page (a redirect, or Saved queries' Edit answered by the Query page) is a new
+                    // entry; the same page answered again (a rejected Namespaces save) replaces this one.
+                    history = model.finalUrl === currentRoute.url.split('#')[0] ? 'replace' : 'push';
+                    shownDefinition = routes.get(model.viewId);
+                    if (!shownDefinition || !shownDefinition.routerReady) {
+                        throw new Error('The answer is a page the router does not show: ' + model.viewId);
+                    }
+                }
+                return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal)
+                    .then(() => {
+                        if (stale()) {
+                            throw abandoned();
+                        }
+                        return model.error ? undefined : app().loadScripts(shownDefinition.scripts(model));
+                    })
+                    .then((): Outcome => {
+                        if (stale()) {
+                            throw abandoned();
+                        }
+                        const shown = new URL(model.finalUrl || request);
+                        shown.hash = target.hash;
+                        commit(shownDefinition, model, shown, Object.assign({}, options, { history }), mine);
+                        endUpload(mine);
+                        return 'committed';
+                    });
+            };
             return Promise.all([answer, app().loadScripts(definition.baseScripts())])
-                .then((loaded: any[]) => {
+                .then((loaded: any[]): Outcome | Promise<Outcome> => {
                     model = loaded[0];
                     if (stale()) {
                         throw abandoned();
                     }
-                    if (options.body) {
-                        // Another page (a redirect, or Saved queries' Edit answered by the Query page) is a new
-                        // entry; the same page answered again (a rejected Namespaces save) replaces this one.
-                        history = model.finalUrl === currentRoute.url.split('#')[0] ? 'replace' : 'push';
-                        shownDefinition = routes.get(model.viewId);
-                        if (!shownDefinition || !shownDefinition.routerReady) {
-                            throw new Error('The answer is a page the router does not show: ' + model.viewId);
-                        }
+                    if (!model) {
+                        // The server accepted a form sent in place: its page stays as it is (M14.1).
+                        endUpload(mine);
+                        return 'done';
                     }
-                    return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal);
-                })
-                .then(() => {
-                    if (stale()) {
-                        throw abandoned();
-                    }
-                    return model.error ? undefined : app().loadScripts(shownDefinition.scripts(model));
-                })
-                .then((): Outcome => {
-                    if (stale()) {
-                        throw abandoned();
-                    }
-                    const shown = new URL(model.finalUrl || request);
-                    shown.hash = target.hash;
-                    commit(shownDefinition, model, shown, Object.assign({}, options, { history }), mine);
-                    endUpload(mine);
-                    return 'committed';
+                    return show();
                 })
                 .then(null, (error: any): Outcome => {
                     endUpload(mine);
@@ -569,6 +605,11 @@ module workbench {
                     setBusy(false);
                     if (error && error.name === 'AbortError') {
                         return 'abandoned';
+                    }
+                    if (!model && options.inPlace) {
+                        // Nothing came back to show: the form's page stays and says that its request failed.
+                        console.error('The Workbench could not send ' + target.href + '.', error);
+                        return 'failed';
                     }
                     // Showing a page in place should not fail, so say why the browser loads it instead (M12.1).
                     console.error('The Workbench could not show ' + target.href + ' in place; loading it instead.', error);

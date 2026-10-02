@@ -745,7 +745,7 @@ function loadFormRouter() {
     const posts = [];
     harness.session.fetcher = (url, options) => {
         posts.push({ url, options });
-        return new Promise((resolve) => { harness.respond = resolve; });
+        return new Promise((resolve, reject) => { harness.respond = resolve; harness.refuse = reject; });
     };
     harness.workbench.app.ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
     harness.workbench.app.loadModelFromResponse = (response, signal) => {
@@ -946,6 +946,117 @@ test('Back during an upload, once the user agrees, cancels it and shows the earl
     await harness.answer('types', harness.model('types'));
 
     assert.equal(harness.router.current().viewId, 'types');
+});
+
+// Plan task M14.1: a form sent in place stays on its page when the server accepts it.
+
+/** The form router on the Update page; send() posts its form in place. */
+function loadSendRouter() {
+    const harness = loadFormRouter();
+    harness.register('update');
+    harness.window.goTo(base + 'update');
+    harness.session.url = base + 'update';
+    harness.start();
+    harness.log.length = 0;
+    return harness;
+}
+
+test('a form sent in place stays on its page when the server accepts it with a redirect', async () => {
+    const harness = loadSendRouter();
+    const form = fakeForm(harness, { action: 'update', method: 'post' }, [['update', 'INSERT DATA {}']]);
+    const entries = harness.window.history.entries.length;
+
+    const sent = harness.router.send(form);
+    const post = harness.posts[0];
+    assert.equal(post.url, base + 'update');
+    assert.equal(post.options.method, 'POST');
+    assert.equal(post.options.redirect, 'manual', 'the redirect that accepts it is not followed');
+    assert.equal(post.options.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
+    assert.equal(String(post.options.body), 'update=INSERT+DATA+%7B%7D');
+    assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the page shows its own progress');
+    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+
+    assert.equal(await sent, 'done');
+    assert.equal(harness.window.location.href, base + 'update');
+    assert.equal(harness.window.history.entries.length, entries, 'no history entry');
+    assert.equal(harness.router.current().viewId, 'update');
+    assert.deepEqual(harness.log.filter((entry) => !entry.startsWith('scripts')), [], 'nothing is loaded or rendered');
+    assert.equal(form.submitted, 0);
+});
+
+test('a form sent in place whose answer is a page shows that page', async () => {
+    const harness = loadSendRouter();
+
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
+    harness.respond({ type: 'basic', url: base + 'update', redirected: false, viewId: 'update' });
+
+    assert.equal(await sent, 'committed');
+    const last = harness.window.history.entries[harness.window.history.entries.length - 1];
+    assert.deepEqual([last[0], last[2]], ['replace', base + 'update'], 'the error page replaces its entry');
+    assert.ok(harness.log.includes('mount update'));
+});
+
+test('a form sent in place whose request fails stays on its page and says so', async () => {
+    const harness = loadSendRouter();
+
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
+    harness.refuse(new TypeError('Failed to fetch'));
+
+    assert.equal(await sent, 'failed');
+    assert.deepEqual(harness.window.assigned, [], 'no document is loaded');
+    assert.equal(harness.router.current().viewId, 'update');
+    assert.equal(harness.consoleErrors.length, 1);
+    assert.match(harness.consoleErrors[0][0], /could not send .*\/update/);
+});
+
+test('a form sent in place whose answer page cannot be shown loads it instead', async () => {
+    const harness = loadSendRouter();
+    harness.workbench.app.completeModel = () => Promise.reject(new Error('no info'));
+
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
+    harness.respond({ type: 'basic', url: base + 'update', redirected: false, viewId: 'update' });
+
+    assert.equal(await sent, 'fallback');
+    assert.deepEqual(harness.window.assigned, [base + 'update']);
+});
+
+test('a form sent in place is abandoned when another page is opened', async () => {
+    const harness = loadSendRouter();
+
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
+    const post = harness.posts[0];
+    harness.router.navigate(base + 'types', { history: 'push' });
+    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+
+    assert.equal(await sent, 'abandoned');
+    assert.equal(post.options.signal.aborted, true);
+});
+
+test('an upload sent in place guards the page until the server accepts it', async () => {
+    const harness = loadSendRouter();
+
+    const sent = harness.router.send(fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }));
+    assert.equal(harness.window.listenerCount('beforeunload'), 1);
+    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+
+    assert.equal(await sent, 'done');
+    assert.equal(harness.window.listenerCount('beforeunload'), 0);
+});
+
+test('send posts natively without the router, and for forms the router cannot send', async () => {
+    const harness = loadFormRouter();
+    const form = fakeForm(harness, { action: 'clear', method: 'post' });
+    assert.equal(await harness.router.send(form), 'fallback');
+    assert.equal(form.submitted, 1, 'no router yet');
+
+    harness.start();
+    const elsewhere = fakeForm(harness, { action: 'https://elsewhere.test/x', method: 'post' });
+    assert.equal(await harness.router.send(elsewhere), 'fallback');
+    assert.equal(elsewhere.submitted, 1);
+    const search = fakeForm(harness, { action: 'types' });
+    assert.equal(await harness.router.send(search), 'fallback');
+    assert.equal(search.submitted, 1, 'a GET form');
+    assert.equal(harness.posts.length, 0);
 });
 
 test('a form without method or action is a GET of the current page', async () => {
