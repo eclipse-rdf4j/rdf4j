@@ -245,12 +245,12 @@ public class QueryPlanRetrievalTest {
 					"║  ├── Compare (>)\n" +
 					"║  │     Var (name=s)\n" +
 					"║  │     Var (name=o)\n" +
-					"║  └── StatementPattern (costEstimate=5.67, resultSizeEstimate=12)\n" +
+					"║  └── StatementPattern (costEstimate=4.53, resultSizeEstimate=12)\n" +
 					"║        s: Var (name=s)\n" +
 					"║        p: Var (name=p)\n" +
 					"║        o: Var (name=o)\n" +
 					"╚══ Join (HashJoinIteration) [right]\n" +
-					"   ├── Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12) [left]\n" +
+					"   ├── Filter (new scope) (costEstimate=5.29, resultSizeEstimate=12) [left]\n" +
 					"   │  ╠══ Compare (!=)\n" +
 					"   │  ║     Var (name=o2)\n" +
 					"   │  ║     Var (name=o)\n" +
@@ -262,7 +262,7 @@ public class QueryPlanRetrievalTest {
 					"   │           s: Var (name=o)\n" +
 					"   │           p: Var (name=p2)\n" +
 					"   │           o: Var (name=o2)\n" +
-					"   └── Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12) [right]\n" +
+					"   └── Filter (new scope) (costEstimate=5.29, resultSizeEstimate=12) [right]\n" +
 					"      ╠══ Or\n" +
 					"      ║  ├── Compare (!=)\n" +
 					"      ║  │     Var (name=o)\n" +
@@ -336,7 +336,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"      ║     ║  │  ╚══ Bound\n" +
 					"      ║     ║  │        Var (name=s)\n" +
-					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
+					"      ║     ║  └── StatementPattern (costEstimate=2.00, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
 					"      ║     ║        o: Var (name=o)\n" +
@@ -358,7 +358,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"      ║        │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"      ║        └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"      ║        └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 					"      ║              s: Var (name=s)\n" +
 					"      ║              p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n" +
 					"      ║              o: Var (name=o2)\n" +
@@ -474,7 +474,7 @@ public class QueryPlanRetrievalTest {
 					"         │  ╠══ Compare (!=)\n" +
 					"         │  ║     Var (name=o)\n" +
 					"         │  ║     ValueConstant (value=http://example.com/Forbidden)\n" +
-					"         │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"         │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 					"         │        s: Var (name=s)\n" +
 					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
 					"         │        o: Var (name=o)\n" +
@@ -493,7 +493,7 @@ public class QueryPlanRetrievalTest {
 					"            ║  │     │     Var (name=score)\n" +
 					"            ║  │     │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │     └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"            ║  │     └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 					"            ║  │           s: Var (name=s)\n" +
 					"            ║  │           p: Var (name=_const_ada452e_uri, value=http://example.com/score, anonymous)\n"
 					+
@@ -510,7 +510,7 @@ public class QueryPlanRetrievalTest {
 					"               │  ║  ├── Str\n" +
 					"               │  ║  │     Var (name=reviewer)\n" +
 					"               │  ║  └── ValueConstant (value=\"^http://example\\.com/user\")\n" +
-					"               │  ╚══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0)\n" +
+					"               │  ╚══ StatementPattern (costEstimate=0.89, resultSizeEstimate=0)\n" +
 					"               │        s: Var (name=s)\n" +
 					"               │        p: Var (name=_const_f053af92_uri, value=http://example.com/reviewedBy, anonymous)\n"
 					+
@@ -525,7 +525,7 @@ public class QueryPlanRetrievalTest {
 					"                  ║        Var (name=lvl)\n" +
 					"                  ║        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"                  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"                  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 					"                        s: Var (name=reviewer)\n" +
 					"                        p: Var (name=_const_a78a220_uri, value=http://example.com/level, anonymous)\n"
 					+
@@ -679,7 +679,7 @@ public class QueryPlanRetrievalTest {
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
 					"   │     │  ║     ValueConstant (value=\"<\")\n" +
-					"   │     │  ╚══ StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00)\n" +
+					"   │     │  ╚══ StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00)\n" +
 					"   │     │        s: Var (name=a)\n" +
 					"   │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
@@ -688,7 +688,7 @@ public class QueryPlanRetrievalTest {
 					"   │        ╠══ Compare (!=)\n" +
 					"   │        ║     Var (name=c)\n" +
 					"   │        ║     Var (name=d)\n" +
-					"   │        ╚══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00)\n" +
+					"   │        ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00)\n" +
 					"   │              s: Var (name=a)\n" +
 					"   │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
@@ -757,7 +757,7 @@ public class QueryPlanRetrievalTest {
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
 					"   │     │  ║     ValueConstant (value=\"<\")\n" +
-					"   │     │  ╚══ StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00, resultSizeActual=48)\n"
+					"   │     │  ╚══ StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00, resultSizeActual=48)\n"
 					+
 					"   │     │        s: Var (name=a)\n" +
 					"   │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -767,7 +767,7 @@ public class QueryPlanRetrievalTest {
 					"   │        ╠══ Compare (!=)\n" +
 					"   │        ║     Var (name=c)\n" +
 					"   │        ║     Var (name=d)\n" +
-					"   │        ╚══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=6)\n"
+					"   │        ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00, resultSizeActual=6)\n"
 					+
 					"   │              s: Var (name=a)\n" +
 					"   │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -809,7 +809,7 @@ public class QueryPlanRetrievalTest {
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
 					"   │     │  ║     ValueConstant (value=\"<\")\n" +
-					"   │     │  ╚══ StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00, resultSizeActual=48)\n"
+					"   │     │  ╚══ StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00, resultSizeActual=48)\n"
 					+
 					"   │     │        s: Var (name=a)\n" +
 					"   │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -819,7 +819,7 @@ public class QueryPlanRetrievalTest {
 					"   │        ╠══ Compare (!=)\n" +
 					"   │        ║     Var (name=c)\n" +
 					"   │        ║     Var (name=d)\n" +
-					"   │        ╚══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=6)\n"
+					"   │        ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00, resultSizeActual=6)\n"
 					+
 					"   │              s: Var (name=a)\n" +
 					"   │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1119,7 +1119,7 @@ public class QueryPlanRetrievalTest {
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
 					"   │     │  ║     ValueConstant (value=\"<\")\n" +
-					"   │     │  ╚══ StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00, resultSizeActual=3)\n"
+					"   │     │  ╚══ StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00, resultSizeActual=3)\n"
 					+
 					"   │     │        s: Var (name=a)\n" +
 					"   │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1129,7 +1129,7 @@ public class QueryPlanRetrievalTest {
 					"   │        ╠══ Compare (!=)\n" +
 					"   │        ║     Var (name=c)\n" +
 					"   │        ║     Var (name=d)\n" +
-					"   │        ╚══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=3)\n"
+					"   │        ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00, resultSizeActual=3)\n"
 					+
 					"   │              s: Var (name=a)\n" +
 					"   │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1180,7 +1180,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │     │  ╠══ Compare (!=)\n" +
 					"      ║  │     │  ║     Var (name=c)\n" +
 					"      ║  │     │  ║     ValueConstant (value=\"<\")\n" +
-					"      ║  │     │  ╚══ StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00, resultSizeActual=48)\n"
+					"      ║  │     │  ╚══ StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00, resultSizeActual=48)\n"
 					+
 					"      ║  │     │        s: Var (name=a)\n" +
 					"      ║  │     │        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1190,7 +1190,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │        ╠══ Compare (!=)\n" +
 					"      ║  │        ║     Var (name=c)\n" +
 					"      ║  │        ║     Var (name=d)\n" +
-					"      ║  │        ╚══ StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=6)\n"
+					"      ║  │        ╚══ StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00, resultSizeActual=6)\n"
 					+
 					"      ║  │              s: Var (name=a)\n" +
 					"      ║  │              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1268,7 +1268,7 @@ public class QueryPlanRetrievalTest {
 					"      ║     ║  ├── Compare (!=)\n" +
 					"      ║     ║  │     Var (name=c)\n" +
 					"      ║     ║  │     ValueConstant (value=\"<\")\n" +
-					"      ║     ║  └── StatementPattern (costEstimate=4.50, resultSizeEstimate=4.00, resultSizeActual=48)\n"
+					"      ║     ║  └── StatementPattern (costEstimate=3.60, resultSizeEstimate=4.00, resultSizeActual=48)\n"
 					+
 					"      ║     ║        s: Var (name=a)\n" +
 					"      ║     ║        p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1278,7 +1278,7 @@ public class QueryPlanRetrievalTest {
 					"      ║        ├── Compare (!=)\n" +
 					"      ║        │     Var (name=c)\n" +
 					"      ║        │     Var (name=d)\n" +
-					"      ║        └── StatementPattern (costEstimate=3.00, resultSizeEstimate=4.00, resultSizeActual=6)\n"
+					"      ║        └── StatementPattern (costEstimate=2.40, resultSizeEstimate=4.00, resultSizeActual=6)\n"
 					+
 					"      ║              s: Var (name=a)\n" +
 					"      ║              p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
@@ -1365,7 +1365,7 @@ public class QueryPlanRetrievalTest {
 					"            ║  │                    ║  │     Var (name=p)\n" +
 					"            ║  │                    ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
 					+
-					"            ║  │                    ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n"
+					"            ║  │                    ║  └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n"
 					+
 					"            ║  │                    ║        s: Var (name=proc)\n" +
 					"            ║  │                    ║        p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
@@ -1418,7 +1418,7 @@ public class QueryPlanRetrievalTest {
 					"                           │  ║     Var (name=buytype)\n" +
 					"                           │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/buyer-legal-type/eu-int-org)\n"
 					+
-					"                           │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"                           │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 					"                           │        s: Var (name=org)\n" +
 					"                           │        p: Var (name=_const_1abd8d4b_uri, value=http://data.europa.eu/a4g/ontology#hasBuyerType, anonymous)\n"
 					+
@@ -1671,7 +1671,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>ValueConstant (value=&quot;&lt;&quot;)</U></td></tr></table>> shape=plaintext];\n"
 					+
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>StatementPattern</U></td></tr> <tr><td>Cost estimate</td><td>4.50</td></tr> <tr><td>Result size estimate</td><td>4.00</td></tr></table>> shape=plaintext];\n"
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>StatementPattern</U></td></tr> <tr><td>Cost estimate</td><td>3.60</td></tr> <tr><td>Result size estimate</td><td>4.00</td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID -> UUID [label=\"index 0\"] ;\n" +
 					"   UUID -> UUID [label=\"index 1\"] ;\n" +
@@ -1694,7 +1694,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Var (name=d)</U></td></tr></table>> shape=plaintext];\n"
 					+
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>StatementPattern</U></td></tr> <tr><td>Cost estimate</td><td>3.00</td></tr> <tr><td>Result size estimate</td><td>4.00</td></tr></table>> shape=plaintext];\n"
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>StatementPattern</U></td></tr> <tr><td>Cost estimate</td><td>2.40</td></tr> <tr><td>Result size estimate</td><td>4.00</td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID -> UUID [label=\"index 0\"] ;\n" +
 					"   UUID -> UUID [label=\"index 1\"] ;\n" +
@@ -1903,7 +1903,7 @@ public class QueryPlanRetrievalTest {
 				"            ║  │                    ║  │     Var (name=p)\n" +
 				"            ║  │                    ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
 				+
-				"            ║  │                    ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n"
+				"            ║  │                    ║  └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n"
 				+
 				"            ║  │                    ║        s: Var (name=proc)\n" +
 				"            ║  │                    ║        p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
@@ -1956,7 +1956,7 @@ public class QueryPlanRetrievalTest {
 				"                           │  ║     Var (name=buytype)\n" +
 				"                           │  ║     ValueConstant (value=http://publications.europa.eu/resource/authority/buyer-legal-type/eu-int-org)\n"
 				+
-				"                           │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+				"                           │  ╚══ StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
 				"                           │        s: Var (name=org)\n" +
 				"                           │        p: Var (name=_const_1abd8d4b_uri, value=http://data.europa.eu/a4g/ontology#hasBuyerType, anonymous)\n"
 				+
