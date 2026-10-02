@@ -64,6 +64,9 @@ class TracingRepositoryResult<T> extends RepositoryResult<T> {
 	protected void handleClose() throws RepositoryException {
 		try {
 			super.handleClose();
+		} catch (RuntimeException e) {
+			TracingOperation.recordException(e, span);
+			throw e;
 		} finally {
 			span.setAttribute(DbOtelAttributes.DB_RESPONSE_RETURNED_ROWS, rowCount);
 			span.end();

@@ -167,8 +167,9 @@ public final class RDF4JOpenTelemetryConfig {
 
 	/**
 	 * @return whether the bindings known to a prepared query/update at evaluation time (see
-	 *         {@link org.eclipse.rdf4j.query.Operation#getBindings()}) are recorded as a {@code db.query.parameters}
-	 *         span attribute. Disabled by default, since parameter values may contain sensitive data.
+	 *         {@link org.eclipse.rdf4j.query.Operation#getBindings()}) are recorded as one {@code db.query.parameter.
+	 *         <name>} span attribute per binding. Disabled by default, since parameter values may contain sensitive
+	 *         data.
 	 */
 	public boolean isCaptureQueryParameters() {
 		return captureQueryParameters;
@@ -183,8 +184,8 @@ public final class RDF4JOpenTelemetryConfig {
 	}
 
 	/**
-	 * @return whether the number of statements written/removed is recorded as the {@code db.response.affected_rows}
-	 *         span attribute, for the write operations where this is determinable without extra overhead (e.g. a single
+	 * @return whether the number of statements written/removed is recorded as the {@code rdf4j.affected_rows} span
+	 *         attribute, for the write operations where this is determinable without extra overhead (e.g. a single
 	 *         statement, or an {@code Iterable}/{@code CloseableIteration} of statements; not for pattern-based removal
 	 *         or {@code clear()}, nor for RDF-document-based {@code add}). Only takes effect when
 	 *         {@link #isCaptureWriteOperations()} is also {@code true}.
@@ -296,8 +297,9 @@ public final class RDF4JOpenTelemetryConfig {
 
 		/**
 		 * Enables or disables recording the bindings known to a prepared query/update at evaluation time (see
-		 * {@link org.eclipse.rdf4j.query.Operation#getBindings()}) as a {@code db.query.parameters} span attribute.
-		 * Disabled by default, unless overridden by the {@value #CAPTURE_QUERY_PARAMETERS_PROPERTY} system property.
+		 * {@link org.eclipse.rdf4j.query.Operation#getBindings()}) as one {@code db.query.parameter.<name>} span
+		 * attribute per binding. Disabled by default, unless overridden by the
+		 * {@value #CAPTURE_QUERY_PARAMETERS_PROPERTY} system property.
 		 *
 		 * @param captureQueryParameters {@code true} to record (truncated) query parameters
 		 * @return this builder
@@ -321,10 +323,10 @@ public final class RDF4JOpenTelemetryConfig {
 		}
 
 		/**
-		 * Enables or disables recording the number of statements written/removed as the
-		 * {@code db.response.affected_rows} span attribute, for write operations where this is determinable without
-		 * extra overhead. Disabled by default, unless overridden by the {@value #CAPTURE_WRITE_COUNT_PROPERTY} system
-		 * property. Only takes effect when {@link #captureWriteOperations(boolean)} is also enabled.
+		 * Enables or disables recording the number of statements written/removed as the {@code rdf4j.affected_rows}
+		 * span attribute, for write operations where this is determinable without extra overhead. Disabled by default,
+		 * unless overridden by the {@value #CAPTURE_WRITE_COUNT_PROPERTY} system property. Only takes effect when
+		 * {@link #captureWriteOperations(boolean)} is also enabled.
 		 *
 		 * @param captureWriteCount {@code true} to record the affected-statement count
 		 * @return this builder

@@ -64,6 +64,13 @@ import io.opentelemetry.context.Scope;
  */
 public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 
+	/**
+	 * Rendered for an explicit {@code null} element in a {@code contexts} array, i.e. "the default/null context
+	 * specifically" - distinct from the {@code ?context} wildcard rendered when no context argument is given at all
+	 * (meaning "any context").
+	 */
+	private static final String NULL_CONTEXT = "<urn:x-rdf4j:null-context>";
+
 	private final String repositoryId;
 	private final RDF4JOpenTelemetryConfig config;
 	private final Tracer tracer;
@@ -213,7 +220,10 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 			pattern.append(' ').append("?context");
 		} else {
 			for (Resource context : contexts) {
-				pattern.append(' ').append(termOrVariable(context, "context"));
+				// an explicit null element means "the default/null context" specifically, which is a different
+				// thing from the "?context" wildcard above (no context args given at all); use a distinct,
+				// non-SPARQL marker so the two aren't conflated
+				pattern.append(' ').append(context != null ? TracingOperation.valueToString(context) : NULL_CONTEXT);
 			}
 		}
 		pattern.append(" }");

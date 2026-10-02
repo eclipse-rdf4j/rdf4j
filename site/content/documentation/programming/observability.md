@@ -72,6 +72,8 @@ For `GET_STATEMENTS`/`HAS_STATEMENT` spans, `db.query.text` (when `captureQueryT
 
 Unbound arguments (`null` subject/predicate/object, or no context given) are rendered as a `?subj`/`?pred`/`?obj`/`?context` variable; bound terms use the same SPARQL-syntax string representation as `db.query.parameter.<name>` above.
 
+Note the distinction between *no* context argument at all (`{ ?subj ?pred ?obj ?context }`, meaning "any context") and an explicit `(Resource) null` context element (meaning "the default/null context specifically"), which is rendered as the non-SPARQL marker `<urn:x-rdf4j:null-context>` so the two aren't conflated.
+
 ### Write operations (`add`/`remove`/`clear`)
 
 Tracing write operations is a separate opt-in from read tracing, since it covers every statement mutation on a `RepositoryConnection` and is more likely to add measurable overhead on write-heavy workloads. Enable it with `captureWriteOperations(true)`:

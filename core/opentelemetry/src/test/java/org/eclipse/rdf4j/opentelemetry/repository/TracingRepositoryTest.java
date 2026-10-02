@@ -310,6 +310,27 @@ class TracingRepositoryTest {
 	}
 
 	@Test
+	void getStatements_explicitNullContext_rendersDistinctFromWildcard() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureQueryText(true)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			try (RepositoryResult<org.eclipse.rdf4j.model.Statement> result = conn.getStatements(null, null,
+					null, true, (Resource) null)) {
+				while (result.hasNext()) {
+					result.next();
+				}
+			}
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT))
+				.isEqualTo("{ ?subj ?pred ?obj <urn:x-rdf4j:null-context> }");
+	}
+
+	@Test
 	void hasStatement_recordsSpan() {
 		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
 
