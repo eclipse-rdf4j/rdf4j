@@ -17,7 +17,7 @@ After this plan, a full Chromium run of `e2e/tests` against a freshly started se
 - [x] (2026-10-02 09:15Z) `query-structure-red.spec.js`: own repository; two tests retired, one migrated; passes in Chromium, Firefox and WebKit.
 - [x] (2026-10-02 10:30Z) M2 to M4, split into seven groups of spec files worked on in parallel, each against its own fresh server (groups listed in `Artifacts and Notes`): environment fixes, migrations off the retired iframe and replaced markup, retirements with their covering specs named, committed per group.
 - [x] (2026-10-02 10:30Z) Product bugs the migrated specs exposed: eight fixed test-first (commits 150a668745, 3326c2af52, 1f44bab334); three recorded as follow-ups (pinned result header at 390 px, 2 px final frame of a closing pane in Chromium, S13 Query settings alignment).
-- [ ] (in progress) M5: full Chromium, Firefox and WebKit runs on a fresh server; record the result and the remaining real bugs.
+- [x] (2026-10-02 12:40Z) M5: full Chromium, Firefox and WebKit runs, each on its own fresh server built from the branch head (results in `Outcomes & Retrospective`); the one unexpected failure (scroll restore under load) was fixed in commit 7e27a3193a.
 
 
 ## Surprises & Discoveries
@@ -51,7 +51,9 @@ After this plan, a full Chromium run of `e2e/tests` against a freshly started se
 
 ## Outcomes & Retrospective
 
-(To be written at each milestone.)
+M5 (2026-10-02): full runs of `e2e/tests`, one per engine, run at the same time against three fresh servers built from commit db383b4dad (the stale-spec commits plus the product fixes). Chromium: 396 passed, 5 failed, 1 skipped (the M0 baseline had 139 failures). Firefox: 391 passed, 6 failed, 5 skipped. WebKit: 389 passed, 8 failed, 5 skipped. Every failure is recorded in `Surprises & Discoveries`: the three product follow-ups (pinned result header at 390 px, the 2 px last frame of a closing pane in Chromium, S13 Query settings alignment), the engine differences (Firefox `isMobile`, `:active` and the lifecycle recorder; WebKit button focus on click, `close` events, `:focus-visible` on radios, `::file-selector-button`; motion sampling in Firefox and WebKit), and `workbench-theme-first-paint.spec.js` in WebKit, which already failed 3 of 12 repeated runs on the build from before this plan. The Chromium run also failed the Back scroll restore once under the load of three parallel runs; the restore now keeps applying the position until it is reached (commit 7e27a3193a), and the spec passed 15 of 15 repeated runs in all engines.
+
+Retrospective: the stale tests are gone; every remaining failure names a product bug with a follow-up task or an engine limitation. Migrating the specs found eight real product bugs that the stale failures had hidden, among them two Safari focus problems that only show with a mouse, which shows why a suite that fails for known reasons is worse than a smaller one. The specs also run much faster: tests that waited 30 seconds to 4 minutes for removed markup now finish in seconds, so a full engine run takes about 22 to 25 minutes. Lessons: retire a test only after naming the newer test that covers it, and read every passing test for vacuous checks (assertions on elements that no longer exist passed silently in about a dozen tests); run specs against a fresh server, because leftover repositories change the windowed lists. Remaining work: the three product follow-ups, and the shared helpers the groups wished for (`primaryColor`, an `openRoute` that waits for the route, a result-root locator, a wait for a pane's opening animation), which are now written locally in several specs.
 
 
 ## Context and Orientation
