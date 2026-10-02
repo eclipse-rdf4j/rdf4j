@@ -979,7 +979,10 @@ async function resultDisclosureWorkflow(page, request, info, preserveSavedFocus)
 		await expect(saved).toBeVisible(); await expect(first.locator('[id^=saved-query-results-]')).toHaveAttribute('aria-busy', 'false');
 		for (const family of ['download', 'options']) {
 			await saved.locator(`[id^=query-result-${family}-toggle-]`).click(); await measure(saved, family, 'saved-open');
-			await second.locator('.saved-query-toggle').click(); await expect(second.locator('.CodeMirror')).toBeVisible();
+			// A press outside an open pane closes it (plan task M14.3), so the neighbor expands by keyboard and the
+			// pane stays open while the page below it grows.
+			await second.locator('.saved-query-toggle').focus(); await page.keyboard.press('Enter');
+			await expect(second.locator('.CodeMirror')).toBeVisible();
 			await measure(saved, family, 'saved-neighbor-expanded');
 			await page.evaluate(() => scrollBy(0, innerHeight / 2)); await measure(saved, family, 'saved-scroll');
 			await resizeOpen(saved, family, 'saved'); await closeReopen(saved, family, 'saved');

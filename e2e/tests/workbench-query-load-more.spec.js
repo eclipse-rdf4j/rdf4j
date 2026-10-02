@@ -1092,9 +1092,16 @@ test('mobile result layouts append and scroll locally within the viewport', asyn
 	await expect(result.locator('.query-result-load-more')).toBeHidden();
 
 	const scrollEvidence = [];
+	// The Display pane opens over the results and pressing Load more closed it (plan task M14.3): open it to choose
+	// a layout and close it again before the results are scrolled.
+	const chooseLayout = async (value) => {
+		await options.click();
+		await layout.selectOption(value);
+		await options.click();
+	};
 	for (const width of [390, 320]) {
 		await page.setViewportSize({ width, height: 844 });
-		await layout.selectOption('records');
+		await chooseLayout('records');
 		const records = result.locator('.query-result-records');
 		await scrollToResultEnd(records, page);
 		const recordState = await waitForStableVisibleRow(records,
@@ -1102,7 +1109,7 @@ test('mobile result layouts append and scroll locally within the viewport', asyn
 		scrollEvidence.push({ width, layout: 'records', ...recordState });
 		await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-		await layout.selectOption('table');
+		await chooseLayout('table');
 		const table = result.locator('.query-result-table-wrap');
 		await scrollToResultStart(table, page);
 		const tableState = await waitForStableVisibleRow(table,
@@ -1339,6 +1346,8 @@ test('saved streamed result widths use the first ten rows across batches and lay
 		await saveBrowserScreenshot(page, testInfo, 'saved-query-column-widths.png');
 	}
 
+	// Pressing Load more, outside the Display pane, closed it (plan task M14.3).
+	await options.click();
 	await layout.selectOption('records');
 	await expect(result).toHaveAttribute('data-effective-layout', 'records');
 	await layout.selectOption('table');
@@ -1605,6 +1614,8 @@ test('compact tuple rows preserve namespaced, directed, typed, nested, unbound, 
 		new URL(anchor.href).searchParams.get('resource'));
 	expect(tableNestedResource).toBe(expectedNestedResource);
 
+	// Pressing Load more, outside the Display pane, closed it (plan task M14.3).
+	await options.click();
 	await result.locator('select[name="result-layout"]').selectOption('records');
 	const firstRecord = result.locator('[data-query-record-index="0"]');
 	const fields = firstRecord.locator('dd');
