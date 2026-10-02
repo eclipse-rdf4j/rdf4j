@@ -26,6 +26,10 @@ After this plan, a full Chromium run of `e2e/tests` against a freshly started se
 
 - Observation: a server that has served several interrupted runs accumulates repositories (runs that are stopped never reach `test.afterAll`). With about 100 repositories, the windowed repository list and the Delete page's selector no longer render the fixture repository, and two router and form specs fail that pass on a fresh server.
   Evidence: on the polluted server `workbench-router.spec.js:189` fails with `expect(locator).not.toHaveCount(expected) Expected: not 0 Received: 0` and `workbench-form-options-sizing.spec.js:858` with "the delete selector includes only the fixture repository under inspection"; both pass on a fresh server built from the same jar. Always measure on a fresh `appdata.basedir`.
+- Observation (product bug, fixed): when the Query page moved from XSLT to Lit (commit 11d8f194ca), Explain's Cancel action lost its cancel icon and the `.workbench-action-label` wrapper around its input; without the wrapper the input kept its field border, so a running Explain showed a bordered field inside the red outline. Fixed in commit 150a668745 by rendering `icon(runtime, 'cancel')` and the label wrapper, as the pre-Lit XSL did.
+  Evidence: `workbench-second-review-red.spec.js` "query starts without an empty result island and Explain cancel has a labelled action root" failed with `expect(locator).toHaveCount(expected) Expected: 1 Received: 0` for the action icon, and passes in all three engines after the fix.
+- Observation (product bug, fixed): in WebKit (Safari), Escape did not close a settings pane opened with a mouse click, because WebKit does not focus a clicked button and `dismissDisclosureOnEscape` in `template.ts` only acted on focus in the pane or on its toggle. `workbench-settings-panes.spec.js` did not see it because it focused a field in the pane before pressing Escape. Fixed in commit 3326c2af52 (focus on an element around the toggle counts too), with a unit test and a new spec test "a pane opened with a click closes with Escape" that failed in WebKit before the fix.
+- Observation (not fixed, follow-up candidates from G1): an HTTP 500 answer with a non-NDJSON body is reported as "Invalid Workbench query stream: a record is not valid JSON." without the HTTP status; opening a result pane with the keyboard leaves the Query settings pane (another toolbar) open, since only a pointer press outside closes a pane.
 - Observation: background shells in the agent harness are stopped after 30 minutes unless started with a longer timeout; a server started with the default limit disappears in the middle of a long run and every later test fails with connection errors. Start servers with the maximum background timeout and split long runs into shards.
 
 
@@ -135,6 +139,39 @@ One line per migrated, retired or kept-failing test:
        and responsive Format-style fields" checks the 390 px result toolbar (one row, no overlap, no overflow).
     query-structure-red.spec.js "hides empty query errors and keeps Explain secondary": migrated; own repository, and
        the checkbox accent is compared with the --workbench-primary token instead of the retired teal rgb(15, 118, 110).
+    G5 (commit 8ae5245295): all three files create their own repositories and read the in-page result.
+       workbench-refresh-corrections-red.spec.js: environment fixes only (its member-count check now looks for the two
+       repositories it created, because the member list shows every repository on the server).
+       workbench-review-corrections-red.spec.js "mobile result footer remains reachable after the last record": retired
+       (Previous/Next footer of the retired iframe; covered by workbench-result-scrolling.spec.js "mobile records use the
+       table header labels and the last record is reachable", workbench-query-load-more.spec.js "Execute requests one
+       million rows by default and renders no result page controls" and the migrated second-review paging test).
+       "workbench action and data typography uses the shared readable scale": the action font now equals the 13px
+       --workbench-control-font-size token (introduced by commit 847789c558 after the test was written, and asserted by
+       workbench-consistency-contract.spec.js); the other tests migrated to current markup with the same thresholds.
+       workbench-second-review-red.spec.js: teal literals compared with the primary token; tests that had become
+       vacuous (Create's Advanced details element, Explore's details element, Explain colors) now measure the current
+       panes; paging test uses Load more with a 40-row batch; compare-mode labels read from the current toolbar.
+       "query starts without an empty result island and Explain cancel has a labelled action root" exposed a product
+       bug, fixed in commit 150a668745 (see Surprises & Discoveries). Result: 30 of 30 pass in Chromium, Firefox, WebKit.
+    G1 (commit b391655f91): all five files create their own repository and read the streamed in-page result.
+       query-refresh-layout.spec.js retired: "keeps a result pending while its XSL stylesheet response is held" (XSLT
+       removed; load-more "query progress keeps loaded rows browsable and Load more waits for terminal metadata"),
+       "sizes short results to content and caps large result scrolling" and "resizes result content through repeated
+       disclosures and supports real frame scrolling" (frame height and scrolling; workbench-result-scrolling.spec.js
+       "results scroll with the page under a pinned header" and dropdown-detail-parity "dynamic result details ..."),
+       "keeps embedded result paging visible and groups download controls" (load-more "Execute requests one million rows
+       by default and renders no result page controls", dropdown-detail-parity), "keeps the embedded result header
+       aligned when result disclosures open" and "keeps the embedded result title readable on a narrow viewport" (the
+       result heading is visually hidden in the output card, M3.5; toolbar row covered by dropdown-detail-parity and
+       workbench-settings-panes.spec.js). The other tests migrated; checks that had become vacuous (0x0 wrappers,
+       closed panes, the hidden side menu at 390 px) now measure the visible elements; screenshots go to the test output
+       directory instead of tracked design folders. query-refinement-new-requirements-red.spec.js: the menu check counts
+       the 17 entries of the default menu (app-shell plan decision on the default menu groups) and requires an icon on
+       each, instead of "at least 18 icons". query-final-live-smoke.spec.js: one POST per execution, the ASK value, a
+       "380 rows · complete" status instead of 100-row pages, a visible error callout. query-result-lifecycle.spec.js:
+       the designed failure state ("Query failed." and the error callout). query-result-toolbar-geometry.spec.js:
+       measures the live toolbar. Result: 21 of 21 pass in Chromium, Firefox, WebKit.
 
 
 ## Interfaces and Dependencies
