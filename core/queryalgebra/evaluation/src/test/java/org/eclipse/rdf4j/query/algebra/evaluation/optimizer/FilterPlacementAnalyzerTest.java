@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
@@ -64,8 +66,10 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Alternative;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Envelope;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -77,6 +81,255 @@ import org.junit.jupiter.api.Test;
 class FilterPlacementAnalyzerTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void precompilePreservesCustomIdentityAndShallowCloneOperators() {
+		AtomicInteger clones = new AtomicInteger();
+		Filter supported = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		OpaqueTuple opaque = new OpaqueTuple(values("z", 3), clones);
+		Join join = new Join(supported, opaque);
+		QueryRoot root = new QueryRoot(join);
+		List<QueryModelNode> before = nodes(root);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(emptyTripleSource(), null) {
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
+				return expression instanceof OpaqueTuple wrapper ? precompile(wrapper.argument, context)
+						: super.precompile(expression, context);
+			}
+		};
+
+		assertThat(strategy.precompile(root)).isNotNull();
+		assertThat(clones.get()).isZero();
+		assertThat(nodes(root)).containsExactlyElementsOf(before);
+		assertThat(root.getArg()).isSameAs(join);
+		assertThat(join.getLeftArg()).isSameAs(supported);
+		assertThat(join.getRightArg()).isSameAs(opaque);
+		assertThat(supported.getParentNode()).isSameAs(join);
+		assertThat(opaque.getParentNode()).isSameAs(join);
+		assertThat(opaque.argument.getParentNode()).isSameAs(opaque);
+	}
+
+	@Test
+	void supportedSubtreeAnalysisStaysWithinItsSnapshot() {
+		BindingSetAssignment input = values("x", 1);
+		Join localJoin = new Join(input, values("y", 2));
+		Filter supported = new Filter(localJoin, new Bound(Var.of("x")));
+		OpaqueTuple opaque = new OpaqueTuple(values("z", 3), new AtomicInteger());
+		Join unsafeParent = new Join(supported, opaque);
+		QueryRoot root = new QueryRoot(unsafeParent);
+		FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(supported,
+				QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance()));
+
+		Envelope envelope = analyzer.analyze(supported);
+		assertThat(singletonSites(envelope)).contains(localJoin, input).doesNotContain(unsafeParent, opaque);
+		assertThat(envelope.potentialSites(argument -> true)).doesNotContain(unsafeParent, opaque);
+		assertThat(arguments(envelope.earliestCompleteCut(argument -> true).orElseThrow())).containsExactly(input);
+		assertThat(envelope.isCurrent()).isTrue();
+		assertThat(supported.getParentNode()).isSameAs(unsafeParent);
+		assertThat(unsafeParent.getRightArg()).isSameAs(opaque);
+	}
+
+	@Test
+	void supportedSubtreeAnalysisPreservesInheritedBindingFacts() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(parent);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.contextAt(island).guaranteedNames()).contains("outer");
+
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+		assertThat(envelope.singletonAlternatives()).hasSizeGreaterThan(1).allSatisfy(alternative -> {
+			for (FilterPlacementAnalyzer.Site site : alternative.cut()) {
+				assertThat(site.input().guaranteedNames()).contains("outer");
+				if (site.retainsAllBindings()) {
+					assertThat(site.conditionFrame().guaranteedNames()).contains("outer");
+				} else {
+					assertThat(site.argument()).isSameAs(((Join) filter.getArg()).getRightArg());
+					assertThat(site.retainedBindingNames()).containsExactlyInAnyOrder("x", "y");
+					assertThat(site.conditionFrame().guaranteedNames()).containsExactlyInAnyOrder("x", "y");
+				}
+			}
+		});
+		assertThat(envelope.singletonAlternatives())
+				.anySatisfy(alternative -> assertThat(alternative.cut()).singleElement()
+						.satisfies(site -> assertThat(site.retainsAllBindings()).isFalse()));
+	}
+
+	@Test
+	void supportedSubtreeAnalysisPreservesUnknownCustomInputScope() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		OpaqueTuple opaque = new OpaqueTuple(island, new AtomicInteger());
+		QueryRoot root = new QueryRoot(opaque);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				new ListBindingSet(List.of("api"), VF.createLiteral(3)));
+		assertThat(analysis.contextAt(island).bindingDomainKnown()).isFalse();
+		assertThat(analysis.contextAt(island).guaranteedNames()).doesNotContain("api");
+
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+		assertThat(envelope.singletonAlternatives()).allSatisfy(alternative -> {
+			for (FilterPlacementAnalyzer.Site site : alternative.cut()) {
+				assertThat(site.input().bindingDomainKnown()).isFalse();
+				assertThat(site.input().guaranteedNames()).doesNotContain("api");
+			}
+		});
+	}
+
+	@Test
+	void supportedSubtreeAnalysisPreservesEnclosingConditionVisibility() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("outer")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(parent);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+
+		assertThat(envelope.originalSite().conditionFrame().guaranteedNames()).contains("outer");
+		assertThat(envelope.singletonAlternatives()).singleElement()
+				.satisfies(alternative -> assertThat(alternative.cut()).containsExactly(envelope.originalSite()));
+		assertThat(alternatives(envelope)).isEqualTo(envelope.singletonAlternatives());
+		assertThat(envelope.barriers()).extracting(FilterPlacementAnalyzer.Barrier::reason)
+				.containsExactly(FilterPlacementAnalyzer.Reason.SCOPE_BOUNDARY);
+		assertThat(envelope.potentialSites(argument -> true)).containsExactly(filter.getArg());
+		assertThat(envelope.earliestCompleteCut(argument -> true).orElseThrow().cut())
+				.containsExactly(envelope.originalSite());
+		assertThat(envelope.alternatives(argument -> false)).isEmpty();
+	}
+
+	@Test
+	void snapshotRootsKeepACompleteStandardQueryAsOneIsland() {
+		AtomicInteger clones = new AtomicInteger();
+		Filter nested = new Filter(values("x", 1), new Bound(Var.of("x")));
+		Filter outer = new Filter(values("x", 1, 2), new Exists(nested));
+		CountingQueryRoot root = new CountingQueryRoot(outer, clones);
+
+		assertThat(FilterPlacementAnalyzer.snapshotRoots(root)).containsExactly(root);
+		assertThat(clones.get()).isZero();
+		assertThatThrownBy(() -> FilterPlacementAnalyzer.snapshotRoots(root).add(outer))
+				.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void snapshotRootsPreserveSupportedSiblingsAndDescendantsWithoutCloningOpaqueAncestors() {
+		AtomicInteger clones = new AtomicInteger();
+		Filter sibling = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		Filter descendant = new Filter(new Join(values("z", 3), values("w", 4)), new Bound(Var.of("z")));
+		BindingSetAssignment leaf = values("v", 5);
+		OpaqueTuple inner = new OpaqueTuple(leaf, clones);
+		Join mixed = new Join(descendant, inner);
+		OpaqueTuple outer = new OpaqueTuple(mixed, clones);
+		QueryRoot root = new QueryRoot(new Join(sibling, outer));
+		List<QueryModelNode> before = nodes(root);
+		Map<QueryModelNode, QueryModelNode> parents = new IdentityHashMap<>();
+		before.forEach(node -> parents.put(node, node.getParentNode()));
+
+		List<TupleExpr> islands = FilterPlacementAnalyzer.snapshotRoots(root);
+		assertThat(islands).containsExactly(sibling, descendant, leaf);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		for (TupleExpr island : islands) {
+			for (Envelope envelope : new FilterPlacementAnalyzer(island, analysis).analyzeAll()) {
+				alternatives(envelope);
+				envelope.potentialSites(argument -> true);
+				envelope.earliestCompleteCut(argument -> true);
+				assertThat(envelope.isCurrent()).isTrue();
+			}
+		}
+		assertThat(clones.get()).isZero();
+		List<QueryModelNode> after = nodes(root);
+		assertThat(after).hasSameSizeAs(before);
+		for (int i = 0; i < before.size(); i++) {
+			assertThat(after.get(i)).isSameAs(before.get(i));
+			assertThat(after.get(i).getParentNode()).isSameAs(parents.get(before.get(i)));
+		}
+	}
+
+	@Test
+	void snapshotRootsInspectOpaqueNodesInsideExistsConditions() {
+		AtomicInteger clones = new AtomicInteger();
+		Filter nested = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		OpaqueTuple opaque = new OpaqueTuple(nested, clones);
+		BindingSetAssignment input = values("x", 1, 2);
+		Exists exists = new Exists(opaque);
+		Filter filter = new Filter(input, new And(new Bound(Var.of("x")), exists));
+		QueryRoot root = new QueryRoot(filter);
+
+		assertThat(FilterPlacementAnalyzer.snapshotRoots(root)).containsExactly(nested, input);
+		assertThat(clones.get()).isZero();
+		assertThat(filter.getArg()).isSameAs(input);
+		assertThat(exists.getSubQuery()).isSameAs(opaque);
+		assertThat(opaque.argument).isSameAs(nested);
+		assertThat(nested.getParentNode()).isSameAs(opaque);
+	}
+
+	@Test
+	void snapshotRootsInspectUnknownScalarNodesAndTheirSubqueries() {
+		AtomicInteger clones = new AtomicInteger();
+		Filter nested = new Filter(values("x", 1), new Bound(Var.of("x")));
+		Exists exists = new Exists(nested);
+		OpaqueValue opaque = new OpaqueValue(exists, clones);
+		BindingSetAssignment input = values("x", 1, 2);
+		Filter filter = new Filter(input, new And(new Bound(Var.of("x")), opaque));
+		QueryRoot root = new QueryRoot(filter);
+
+		assertThat(FilterPlacementAnalyzer.snapshotRoots(root)).containsExactly(nested, input);
+		assertThat(clones.get()).isZero();
+		assertThat(opaque.argument).isSameAs(exists);
+		assertThat(exists.getParentNode()).isSameAs(opaque);
+		assertThat(exists.getSubQuery()).isSameAs(nested);
+	}
+
+	@Test
+	void snapshotRootsVisitEachNodeOnceInsteadOfRescanningCandidateSubtrees() {
+		AtomicInteger visits = new AtomicInteger();
+		AtomicInteger clones = new AtomicInteger();
+		TupleExpr chain = values("x", 1);
+		for (int i = 0; i < 128; i++) {
+			chain = new CountingFilter(chain, new Bound(Var.of("x")), visits);
+		}
+		OpaqueTuple opaque = new OpaqueTuple(chain, clones);
+		QueryRoot root = new QueryRoot(new Join(values("y", 2), opaque));
+
+		assertThat(FilterPlacementAnalyzer.snapshotRoots(root)).containsExactly(((Join) root.getArg()).getLeftArg(),
+				chain);
+		assertThat(visits.get()).isEqualTo(128);
+		assertThat(clones.get()).isZero();
+	}
+
+	@Test
+	void selectedIslandGenerationDetectsScalarIdentityAndStructuralRewrites() {
+		ValueConstant scalarValue = constant(1);
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)),
+				new Compare(Var.of("x"), scalarValue, Compare.CompareOp.GT));
+		OpaqueTuple opaque = new OpaqueTuple(filter, new AtomicInteger());
+		QueryRoot root = new QueryRoot(opaque);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		TupleExpr island = FilterPlacementAnalyzer.snapshotRoots(root).getFirst();
+		assertThat(island).isSameAs(filter);
+		FilterPlacementAnalyzer scalar = new FilterPlacementAnalyzer(island, analysis);
+		assertThat(scalar.isCurrent()).isTrue();
+		scalarValue.setValue(VF.createLiteral(2));
+		assertThat(scalar.isCurrent()).isFalse();
+		assertThatThrownBy(scalar::analyzeAll).isInstanceOf(IllegalStateException.class);
+
+		FilterPlacementAnalyzer identities = new FilterPlacementAnalyzer(island, analysis);
+		filter.getArg().replaceWith(filter.getArg().clone());
+		assertThat(identities.isCurrent()).isFalse();
+		assertThatThrownBy(identities::analyzeAll).isInstanceOf(IllegalStateException.class);
+
+		FilterPlacementAnalyzer structure = new FilterPlacementAnalyzer(island, analysis);
+		filter.setArg(new Distinct(filter.getArg()));
+		assertThat(structure.isCurrent()).isFalse();
+		assertThatThrownBy(structure::analyzeAll).isInstanceOf(IllegalStateException.class);
+		assertThat(opaque.argument).isSameAs(filter);
+		assertThat(filter.getParentNode()).isSameAs(opaque);
+	}
 
 	@Test
 	void preparationClonesPerSearchRatherThanPerCandidatePosition() {
@@ -670,7 +923,18 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	private static List<BindingSet> evaluate(TupleExpr root) {
-		TripleSource empty = new TripleSource() {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(emptyTripleSource(), null);
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = strategy.evaluate(root, EmptyBindingSet.getInstance())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+		return rows;
+	}
+
+	private static TripleSource emptyTripleSource() {
+		return new TripleSource() {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 					Resource... contexts) {
@@ -682,14 +946,103 @@ class FilterPlacementAnalyzerTest {
 				return VF;
 			}
 		};
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(empty, null);
-		List<BindingSet> rows = new ArrayList<>();
-		try (CloseableIteration<BindingSet> result = strategy.evaluate(root, EmptyBindingSet.getInstance())) {
-			while (result.hasNext()) {
-				rows.add(result.next());
-			}
+	}
+
+	private static final class OpaqueTuple extends AbstractQueryModelNode implements TupleExpr {
+		private TupleExpr argument;
+		private final AtomicInteger clones;
+
+		private OpaqueTuple(TupleExpr argument, AtomicInteger clones) {
+			this.argument = argument;
+			this.clones = clones;
+			argument.setParentNode(this);
 		}
-		return rows;
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			argument.visit(visitor);
+		}
+
+		@Override
+		public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+			if (current != argument) {
+				throw new IllegalArgumentException("Not a child of this operator");
+			}
+			argument = (TupleExpr) replacement;
+			argument.setParentNode(this);
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return argument.getBindingNames();
+		}
+
+		@Override
+		public Set<String> getAssuredBindingNames() {
+			return argument.getAssuredBindingNames();
+		}
+
+		@Override
+		public OpaqueTuple clone() {
+			clones.incrementAndGet();
+			return (OpaqueTuple) super.clone();
+		}
+	}
+
+	private static final class OpaqueValue extends AbstractQueryModelNode implements ValueExpr {
+		private ValueExpr argument;
+		private final AtomicInteger clones;
+
+		private OpaqueValue(ValueExpr argument, AtomicInteger clones) {
+			this.argument = argument;
+			this.clones = clones;
+			argument.setParentNode(this);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			argument.visit(visitor);
+		}
+
+		@Override
+		public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+			if (current != argument) {
+				throw new IllegalArgumentException("Not a child of this expression");
+			}
+			argument = (ValueExpr) replacement;
+			argument.setParentNode(this);
+		}
+
+		@Override
+		public OpaqueValue clone() {
+			clones.incrementAndGet();
+			return (OpaqueValue) super.clone();
+		}
+	}
+
+	private static final class CountingFilter extends Filter {
+		private final AtomicInteger visits;
+
+		private CountingFilter(TupleExpr argument, ValueExpr condition, AtomicInteger visits) {
+			super(argument, condition);
+			this.visits = visits;
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			visits.incrementAndGet();
+			super.visitChildren(visitor);
+		}
 	}
 
 	private static final class CountingQueryRoot extends QueryRoot {

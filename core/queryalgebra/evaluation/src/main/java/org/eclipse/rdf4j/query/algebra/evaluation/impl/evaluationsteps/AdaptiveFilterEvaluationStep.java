@@ -1196,6 +1196,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final Map<TupleExpr, List<Envelope>> regions = new IdentityHashMap<>();
 		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
 		private final Map<TupleExpr, String> boundaryReasons;
+		private final Map<Filter, TupleExpr> islandRoots;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private boolean compiledRegion;
 		private boolean physicalReady;
@@ -1211,26 +1212,30 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				}
 			});
 			boundaryReasons = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
+			islandRoots = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
 			if (filters.isEmpty()) {
 				analysis = null;
 				return;
 			}
 			analysis = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance());
-			FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(root, analysis);
-			for (Envelope envelope : analyzer.analyzeAll()) {
-				Filter filter = envelope.filter();
-				if (!envelope.repeatable() || envelope.singletonAlternatives().size() < 2) {
-					continue;
+			for (TupleExpr islandRoot : FilterPlacementAnalyzer.snapshotRoots(root)) {
+				FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(islandRoot, analysis);
+				for (Envelope envelope : analyzer.analyzeAll()) {
+					Filter filter = envelope.filter();
+					if (!envelope.repeatable() || envelope.singletonAlternatives().size() < 2) {
+						continue;
+					}
+					islandRoots.put(filter, islandRoot);
+					TupleExpr region = filter;
+					QueryModelNode parent = region.getParentNode();
+					while (region != islandRoot && (parent instanceof Filter candidate && transparent(candidate)
+							|| parent instanceof Join join && ordinary(join)
+							|| parent instanceof Union union && !TupleExprs.isVariableScopeChange(union))) {
+						region = (TupleExpr) parent;
+						parent = region.getParentNode();
+					}
+					regions.computeIfAbsent(region, ignored -> new ArrayList<>()).add(envelope);
 				}
-				TupleExpr region = filter;
-				QueryModelNode parent = region.getParentNode();
-				while (parent instanceof Filter candidate && transparent(candidate)
-						|| parent instanceof Join join && ordinary(join)
-						|| parent instanceof Union union && !TupleExprs.isVariableScopeChange(union)) {
-					region = (TupleExpr) parent;
-					parent = region.getParentNode();
-				}
-				regions.computeIfAbsent(region, ignored -> new ArrayList<>()).add(envelope);
 			}
 		}
 
@@ -1277,9 +1282,10 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				QueryModelNode parent = region.getParentNode();
 				// A prefix is prepared by the standard evaluator, which may contain its own drainable regions.
 				// Those filters cannot be controlled by this body's gates, and must keep independent ownership.
-				while (parent != prefix && (parent instanceof Filter candidate && movable(candidate)
-						|| parent instanceof Join join && ordinary(join)
-						|| parent instanceof Union union && union(union))) {
+				while (region != islandRoots.get(envelope.filter()) && parent != prefix
+						&& (parent instanceof Filter candidate && movable(candidate)
+								|| parent instanceof Join join && ordinary(join)
+								|| parent instanceof Union union && union(union))) {
 					region = (TupleExpr) parent;
 					parent = region.getParentNode();
 				}

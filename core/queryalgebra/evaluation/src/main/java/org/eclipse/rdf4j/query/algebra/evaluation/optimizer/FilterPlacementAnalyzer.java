@@ -104,6 +104,7 @@ public final class FilterPlacementAnalyzer {
 		private final List<Alternative> singletonAlternatives;
 		private final List<Barrier> barriers;
 		private final boolean repeatable;
+		private final boolean originProjectionPreserved;
 
 		private Envelope(Filter filter) {
 			this.id = filterIds.get(filter);
@@ -116,9 +117,18 @@ public final class FilterPlacementAnalyzer {
 			List<Barrier> foundBarriers = new ArrayList<>();
 			List<Alternative> found = new ArrayList<>();
 			if (repeatable) {
-				Search search = new Search(filter, true, foundBarriers, argument -> true);
-				search.forEachRemaining(found::add);
+				Search search = new Search(filter, true, foundBarriers, argument -> true, originalSite);
+				this.originProjectionPreserved = search.originProjectionPreserved;
+				if (originProjectionPreserved) {
+					search.forEachRemaining(found::add);
+				} else {
+					// An island can inherit inputs whose condition visibility depends on an enclosing operator.
+					// Keep that existing gate when the private subtree cannot represent its projection faithfully.
+					found.add(new Alternative(List.of(originalSite)));
+					foundBarriers.add(new Barrier(filter.getArg(), Reason.SCOPE_BOUNDARY));
+				}
 			} else {
+				this.originProjectionPreserved = true;
 				found.add(new Alternative(List.of(originalSite)));
 				foundBarriers.add(new Barrier(filter.getArg(), Reason.NON_REPEATABLE_CONDITION));
 			}
@@ -163,10 +173,10 @@ public final class FilterPlacementAnalyzer {
 		 */
 		public Iterable<Alternative> alternatives(Predicate<TupleExpr> admissibleSite) {
 			Objects.requireNonNull(admissibleSite);
-			if (!repeatable) {
+			if (!repeatable || !originProjectionPreserved) {
 				return admissibleSite.test(originalSite.argument()) ? singletonAlternatives : List.of();
 			}
-			return () -> new Search(filter, false, new ArrayList<>(), admissibleSite);
+			return () -> new Search(filter, false, new ArrayList<>(), admissibleSite, originalSite);
 		}
 
 		/**
@@ -183,7 +193,7 @@ public final class FilterPlacementAnalyzer {
 				return Collections.unmodifiableSet(result);
 			}
 			result.add(origin);
-			if (!repeatable) {
+			if (!repeatable || !originProjectionPreserved) {
 				return Collections.unmodifiableSet(result);
 			}
 			ArrayDeque<TupleExpr> pending = new ArrayDeque<>();
@@ -227,7 +237,7 @@ public final class FilterPlacementAnalyzer {
 			if (!admissibleSite.test(origin)) {
 				return Optional.empty();
 			}
-			if (!repeatable) {
+			if (!repeatable || !originProjectionPreserved) {
 				return Optional.of(new Alternative(List.of(originalSite)));
 			}
 			Layout layout = new Layout(filter);
@@ -266,6 +276,7 @@ public final class FilterPlacementAnalyzer {
 	private final TupleExpr root;
 	private final TupleExpr snapshot;
 	private final QueryAlgebraBindingAnalysis analysis;
+	private final QueryAlgebraBindingAnalysis.ReadOnlyContext rootInput;
 	private final List<QueryModelNode> nodes;
 	private final Map<QueryModelNode, Integer> nodeIds = new IdentityHashMap<>();
 	private final Map<QueryModelNode, QueryModelNode> parents = new IdentityHashMap<>();
@@ -277,6 +288,7 @@ public final class FilterPlacementAnalyzer {
 	public FilterPlacementAnalyzer(TupleExpr root, QueryAlgebraBindingAnalysis analysis) {
 		this.root = Objects.requireNonNull(root);
 		this.analysis = Objects.requireNonNull(analysis);
+		this.rootInput = analysis.contextAt(root);
 		this.nodes = collectNodes(root);
 		for (int i = 0; i < nodes.size(); i++) {
 			QueryModelNode node = nodes.get(i);
@@ -296,6 +308,65 @@ public final class FilterPlacementAnalyzer {
 			}
 		}
 		this.snapshot = root.clone();
+	}
+
+	/**
+	 * Finds maximal subtrees whose complete model, including scalar conditions and subqueries, uses standard visitor
+	 * nodes. Foreign nodes reached through {@code meetOther} remain opaque: neither they nor any containing subtree is
+	 * cloned. Their children are still visited to discover independent standard tuple islands. Discovery inspects every
+	 * node once and returns roots in stable algebra traversal order without changing any parent links.
+	 */
+	public static List<TupleExpr> snapshotRoots(TupleExpr root) {
+		Objects.requireNonNull(root);
+		List<SnapshotNode> nodes = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			private SnapshotNode parent;
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				visit(node, true);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				visit(node, false);
+			}
+
+			private void visit(QueryModelNode node, boolean standard) {
+				SnapshotNode current = new SnapshotNode(node, parent, standard);
+				nodes.add(current);
+				parent = current;
+				node.visitChildren(this);
+				parent = current.parent;
+				if (parent != null && !current.standardSubtree) {
+					parent.standardSubtree = false;
+				}
+			}
+		});
+		List<TupleExpr> roots = new ArrayList<>();
+		for (SnapshotNode node : nodes) {
+			node.covered = node.parent != null && node.parent.covered;
+			if (node.standardSubtree && node.node instanceof TupleExpr tuple) {
+				if (!node.covered) {
+					roots.add(tuple);
+				}
+				node.covered = true;
+			}
+		}
+		return List.copyOf(roots);
+	}
+
+	private static final class SnapshotNode {
+		private final QueryModelNode node;
+		private final SnapshotNode parent;
+		private boolean standardSubtree;
+		private boolean covered;
+
+		private SnapshotNode(QueryModelNode node, SnapshotNode parent, boolean standardSubtree) {
+			this.node = node;
+			this.parent = parent;
+			this.standardSubtree = standardSubtree;
+		}
 	}
 
 	public Envelope analyze(Filter filter) {
@@ -373,17 +444,25 @@ public final class FilterPlacementAnalyzer {
 		private final List<Barrier> barriers;
 		private final Predicate<TupleExpr> admissibleSite;
 		private final Layout layout;
+		private final boolean originProjectionPreserved;
 		private final ArrayDeque<Cut> pending = new ArrayDeque<>();
 		private final Set<List<Integer>> visited = new HashSet<>();
 
 		private Search(Filter filter, boolean singletonsOnly, List<Barrier> barriers,
-				Predicate<TupleExpr> admissibleSite) {
+				Predicate<TupleExpr> admissibleSite, Site originalSite) {
 			this.filter = filter;
 			this.singletonsOnly = singletonsOnly;
 			this.barriers = barriers;
 			this.admissibleSite = admissibleSite;
 			this.layout = new Layout(filter);
-			add(cut(List.of(filterArguments.get(filter))));
+			TupleExpr origin = filterArguments.get(filter);
+			Cut originalCut = cut(List.of(origin));
+			layout.install(originalCut);
+			Site scratchOrigin = site(origin, layout.filters.get(origin), layout.bindingAnalysis);
+			this.originProjectionPreserved = sameConditionProjection(originalSite, scratchOrigin);
+			if (originProjectionPreserved) {
+				add(originalCut);
+			}
 		}
 
 		@Override
@@ -534,7 +613,7 @@ public final class FilterPlacementAnalyzer {
 			this.scopeChange = TupleExprs.isVariableScopeChange(old);
 			old.replaceWith(old.getArg());
 			this.bindingAnalysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(scratch,
-					analysis.rootContext(), Set.of());
+					rootInput, Set.of());
 		}
 
 		private void install(Cut cut) {
@@ -598,7 +677,19 @@ public final class FilterPlacementAnalyzer {
 		if (parent == logicalFilter) {
 			parent = parents.get(logicalFilter);
 		}
-		return parent instanceof TupleExpr tuple ? tuple : null;
+		return parent instanceof TupleExpr tuple && nodeIds.containsKey(parent) ? tuple : null;
+	}
+
+	private boolean sameConditionProjection(Site original, Site scratch) {
+		QueryAlgebraBindingAnalysis.ReadOnlyContext originalFrame = original.conditionFrame();
+		QueryAlgebraBindingAnalysis.ReadOnlyContext scratchFrame = scratch.conditionFrame();
+		return original.retainsAllBindings() == scratch.retainsAllBindings()
+				&& original.retainedBindingNames().equals(scratch.retainedBindingNames())
+				&& originalFrame.bindingDomainKnown() == scratchFrame.bindingDomainKnown()
+				&& originalFrame.visibleNames().equals(scratchFrame.visibleNames())
+				&& originalFrame.externalValues().equals(scratchFrame.externalValues())
+				&& originalFrame.externalGuaranteedNames().equals(scratchFrame.externalGuaranteedNames())
+				&& analysis.bindingFactsEquivalent(originalFrame.visibleNames(), originalFrame, scratchFrame);
 	}
 
 	private TupleExpr sibling(TupleExpr parent, TupleExpr child, Filter logicalFilter) {
