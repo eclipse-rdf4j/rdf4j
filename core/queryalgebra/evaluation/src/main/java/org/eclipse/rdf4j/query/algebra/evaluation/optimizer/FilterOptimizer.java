@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -46,7 +45,6 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -353,8 +351,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		private final EvaluationStatistics statistics;
 		private final boolean considerJoinPlacementCost;
 		private final QueryAlgebraBindingAnalysis analysis;
-		private final QueryAlgebraBindingAnalysis.ReadOnlyContext filterContext;
-		private final QueryAlgebraBindingAnalysis.Dependencies dependencies;
+		private final FilterPlacementRules placementRules;
 
 		private FilterRelocator(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
 				QueryAlgebraBindingAnalysis analysis) {
@@ -362,8 +359,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;
-			this.filterContext = analysis.contextAt(filter.getCondition());
-			this.dependencies = analysis.dependencies(filter.getCondition(), filterContext);
+			this.placementRules = new FilterPlacementRules(filter, analysis);
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
@@ -382,7 +378,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
-			if (canMoveIntoJoinChild(join.getLeftArg(), join.getRightArg(), true)
+			if (placementRules.canMoveIntoJoinChild(join.getLeftArg(), join.getRightArg(), true)
 					&& AlgebraEvaluationSafety.isRepeatable(join.getRightArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getLeftArg())) {
 					relocate(filter, join);
@@ -390,7 +386,7 @@ public class FilterOptimizer implements QueryOptimizer {
 					// The left operand preserves the condition's required values for every row.
 					join.getLeftArg().visit(this);
 				}
-			} else if (canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
+			} else if (placementRules.canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
 				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
 				} else {
@@ -404,7 +400,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(StatementPattern sp) {
-			if (candidateHasKnownDependencies(sp)) {
+			if (placementRules.candidateHasKnownDependencies(sp)) {
 				// All required vars are bound by the left expr
 				relocate(filter, sp);
 			}
@@ -412,8 +408,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (canMoveIntoJoinChild(leftJoin.getLeftArg(), leftJoin.getRightArg(), true)
-					&& leftJoinEvaluationIsRepeatable(leftJoin)) {
+			if (placementRules.canMoveIntoJoinChild(leftJoin.getLeftArg(), leftJoin.getRightArg(), true)
+					&& placementRules.leftJoinEvaluationIsRepeatable(leftJoin)) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
 				relocate(filter, leftJoin);
@@ -422,8 +418,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Union union) {
-			if (!canDistributeAcrossUnion(union)) {
-				relocate(filter, scopeBoundaryTarget(union));
+			if (!placementRules.canDistributeAcrossUnion(union)) {
+				relocate(filter, placementRules.scopeBoundaryTarget(union));
 				return;
 			}
 
@@ -443,7 +439,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			if (candidateHasKnownDependencies(node.getLeftArg())
+			if (placementRules.candidateHasKnownDependencies(node.getLeftArg())
 					&& AlgebraEvaluationSafety.isRepeatable(node.getRightArg())) {
 				// A filter over MINUS may be pushed into the left argument when all of its variables are left-visible.
 				// It
@@ -459,7 +455,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Intersection node) {
-			if (!canDistributeAcrossIntersection(node)) {
+			if (!placementRules.canDistributeAcrossIntersection(node)) {
 				relocate(filter, node);
 				return;
 			}
@@ -480,16 +476,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			Set<String> dependencies = stableNames();
-			boolean overwritesDependency = node.getElements()
-					.stream()
-					.filter(TupleExprs::isEvaluatedExtensionElement)
-					.anyMatch(element -> dependencies.contains(element.getName()));
-			boolean extensionIsRepeatable = node.getElements()
-					.stream()
-					.filter(TupleExprs::isEvaluatedExtensionElement)
-					.allMatch(element -> AlgebraEvaluationSafety.isRepeatable(element.getExpr()));
-			if (!overwritesDependency && extensionIsRepeatable && candidateHasKnownDependencies(node.getArg())) {
+			if (placementRules.canMoveThroughExtension(node)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
@@ -507,16 +494,15 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
+			if (filter == this.filter) {
+				// This is the source entry, not a relocation across another filter.
+				filter.getArg().visit(this);
+				return;
+			}
 			if (TupleExprs.isVariableScopeChange(filter)) {
-				if (filter != this.filter) {
-					// A filter outside this group cannot be moved into the group's scope.
-					relocate(this.filter, scopeBoundaryTarget(filter));
-				} else {
-					// The moving filter may still be optimized within its own scope.
-					filter.getArg().visit(this);
-				}
-			} else if (AlgebraEvaluationSafety.isRepeatable(filter.getCondition())
-					&& !TupleExprs.isVariableScopeChange(this.filter)) {
+				// A filter outside this group cannot be moved into the group's scope.
+				relocate(this.filter, placementRules.scopeBoundaryTarget(filter));
+			} else if (placementRules.canMoveThroughFilter(filter)) {
 				filter.getArg().visit(this);
 			} else {
 				// A scope-marked group filter must stay above the group's other conjuncts: moving below them would
@@ -532,9 +518,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Order node) {
-			if (node.getElements()
-					.stream()
-					.allMatch(element -> AlgebraEvaluationSafety.isRepeatable(element.getExpr()))) {
+			if (placementRules.canMoveThroughOrder(node)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
@@ -551,19 +535,6 @@ public class FilterOptimizer implements QueryOptimizer {
 			node.getArg().visit(this);
 		}
 
-		/**
-		 * A scoped group that is a join's right operand is evaluated independently only while it is the operand's root.
-		 * Placing an unscoped filter directly above it would make the join inject left-row bindings into the group, so
-		 * the filter stays above the join instead.
-		 */
-		private TupleExpr scopeBoundaryTarget(TupleExpr scopedGroup) {
-			if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode()instanceof Join join
-					&& join.getRightArg() == scopedGroup) {
-				return join;
-			}
-			return scopedGroup;
-		}
-
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg && filter.getParentNode() != null) {
 				// Remove filter from its original location
@@ -574,166 +545,6 @@ public class FilterOptimizer implements QueryOptimizer {
 				filter.setArg(newFilterArg);
 				analysis.invalidate();
 			}
-		}
-
-		private boolean canMoveIntoJoinChild(TupleExpr candidate, TupleExpr sibling,
-				boolean siblingRunsAfterCandidate) {
-			QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput = TupleExprs.isVariableScopeChange(filter)
-					? inputForScopedFilterCandidate(candidate)
-					: analysis.contextAt(candidate);
-			QueryAlgebraBindingAnalysis.ReadOnlyContext siblingInput = analysis.contextAt(sibling);
-			QueryAlgebraBindingAnalysis.OutputFacts candidateFacts = outputFactsVisibleToFilter(candidate,
-					candidateInput);
-			QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = analysis.outputFacts(sibling, siblingInput);
-			// A scope-changing Filter on the right is evaluated independently from the join's left row. Treat
-			// that left sibling as crossed even though it normally runs first: its bindings are not part of the
-			// candidate's condition-visible frame after relocation.
-			// The same holds when the candidate is evaluated without the sibling's row (scope-changing, MINUS or
-			// subquery right operands use a hash join): its input is then the join's own input.
-			QueryAlgebraBindingAnalysis.OutputFacts crossedSiblingFacts = siblingRunsAfterCandidate
-					|| TupleExprs.isVariableScopeChange(filter)
-					|| runsWithoutSiblingRow(candidate, candidateInput) ? siblingFacts : null;
-			return analysis.bindingsStableAt(stableNames(), filterContext, candidateInput, candidateFacts,
-					crossedSiblingFacts);
-		}
-
-		private boolean runsWithoutSiblingRow(TupleExpr candidate,
-				QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput) {
-			return candidate.getParentNode()instanceof TupleExpr parent
-					&& candidateInput.equals(analysis.contextAt(parent));
-		}
-
-		private boolean canDistributeAcrossUnion(Union union) {
-			if (TupleExprs.isVariableScopeChange(union)) {
-				return false;
-			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(union);
-			QueryAlgebraBindingAnalysis.OutputFacts unionFacts = analysis.outputFacts(union, input);
-			QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(union.getLeftArg());
-			QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(union.getRightArg());
-			QueryAlgebraBindingAnalysis.OutputFacts leftFacts = analysis.outputFacts(union.getLeftArg(), leftInput);
-			QueryAlgebraBindingAnalysis.OutputFacts rightFacts = analysis.outputFacts(union.getRightArg(), rightInput);
-			return branchPreservesKnownBindings(unionFacts, leftFacts, leftInput)
-					&& branchPreservesKnownBindings(unionFacts, rightFacts, rightInput);
-		}
-
-		private boolean branchPreservesKnownBindings(QueryAlgebraBindingAnalysis.OutputFacts unionFacts,
-				QueryAlgebraBindingAnalysis.OutputFacts branchFacts,
-				QueryAlgebraBindingAnalysis.ReadOnlyContext branchInput) {
-			if (!unionFacts.possibleOutputsKnown() || !unionFacts.guaranteedOutputsKnown()
-					|| !branchFacts.possibleOutputsKnown() || !branchFacts.guaranteedOutputsKnown()) {
-				return false;
-			}
-			for (String name : dependencyNames()) {
-				if ((unionFacts.guaranteedOutputs().contains(name) || filterContext.guaranteedNames().contains(name))
-						&& !guaranteedAfter(branchFacts, name)) {
-					return false;
-				}
-				if (dependencies.correlatedInputs().contains(name)
-						&& !branchInput.maybeBoundNames().contains(name)
-						&& !branchFacts.possibleOutputs().contains(name)) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		private boolean canDistributeAcrossIntersection(Intersection intersection) {
-			QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(intersection.getLeftArg());
-			QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(intersection.getRightArg());
-			QueryAlgebraBindingAnalysis.OutputFacts leftFacts = analysis.outputFacts(intersection.getLeftArg(),
-					leftInput);
-			QueryAlgebraBindingAnalysis.OutputFacts rightFacts = analysis.outputFacts(intersection.getRightArg(),
-					rightInput);
-			if (!leftFacts.possibleOutputsKnown() || !leftFacts.guaranteedOutputsKnown()
-					|| !rightFacts.possibleOutputsKnown() || !rightFacts.guaranteedOutputsKnown()) {
-				return false;
-			}
-			for (String name : dependencyNames()) {
-				if (!guaranteedAfter(leftFacts, name) || !guaranteedAfter(rightFacts, name)) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		private boolean candidateHasKnownDependencies(TupleExpr candidate) {
-			boolean scopeChange = TupleExprs.isVariableScopeChange(filter);
-			QueryAlgebraBindingAnalysis.ReadOnlyContext input = scopeChange
-					? inputForScopedFilterCandidate(candidate)
-					: analysis.contextAt(candidate);
-			QueryAlgebraBindingAnalysis.OutputFacts facts = outputFactsVisibleToFilter(candidate, input);
-			if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()) {
-				return false;
-			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext visible = input.withOutput(facts);
-			for (String name : dependencyNames()) {
-				if (!visible.maybeBoundNames().contains(name)) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		/**
-		 * Computes the candidate's input if the moving scope-changing filter were inserted immediately above it. A
-		 * join's right argument normally inherits left-row bindings, but the new Filter is a scope boundary, so the
-		 * evaluator runs that operand with the join's incoming frame instead. Other parent operators retain their
-		 * normal child-input rules.
-		 */
-		private QueryAlgebraBindingAnalysis.ReadOnlyContext inputForScopedFilterCandidate(TupleExpr candidate) {
-			QueryModelNode parent = candidate.getParentNode();
-			if (parent == null) {
-				return analysis.contextAt(candidate);
-			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext parentInput = analysis.contextAt(parent);
-			if (parent instanceof Join join && join.getRightArg() == candidate) {
-				return parentInput;
-			}
-			return analysis.childInput(parent, candidate, parentInput);
-		}
-
-		/**
-		 * Models the result bindings visible to a moved Filter after its argument has been evaluated. Outside a value
-		 * subquery, FilterIterator retains only the argument's declared binding names when the Filter marks a scope
-		 * change; inherited rows can affect argument-produced values, but they are not directly visible to the
-		 * condition.
-		 */
-		private QueryAlgebraBindingAnalysis.OutputFacts outputFactsVisibleToFilter(TupleExpr candidate,
-				QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
-			QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(candidate, input);
-			if (TupleExprs.isVariableScopeChange(filter) && !FilterIterator.isPartOfSubQuery(filter)) {
-				return facts.only(candidate.getBindingNames());
-			}
-			return facts;
-		}
-
-		private boolean leftJoinEvaluationIsRepeatable(LeftJoin leftJoin) {
-			return AlgebraEvaluationSafety.isRepeatable(leftJoin.getRightArg())
-					&& (!leftJoin.hasCondition()
-							|| AlgebraEvaluationSafety.isRepeatable(leftJoin.getCondition()));
-		}
-
-		private boolean guaranteedAfter(QueryAlgebraBindingAnalysis.OutputFacts facts, String name) {
-			return facts.guaranteedOutputs().contains(name)
-					|| facts.retainedInputNames().contains(name)
-							&& facts.inheritedInput().guaranteedNames().contains(name);
-		}
-
-		private Set<String> dependencyNames() {
-			Set<String> names = new HashSet<>(dependencies.directReferences());
-			names.addAll(dependencies.correlatedInputs());
-			return names;
-		}
-
-		/**
-		 * Names whose binding state must not change when the filter moves. The evaluator still injects outer values
-		 * into EXISTS-local names (e.g. inside a sub-SELECT), so those count too, although they need not be bound.
-		 */
-		private Set<String> stableNames() {
-			Set<String> names = dependencyNames();
-			names.addAll(dependencies.existsLocals());
-			return names;
 		}
 
 		private boolean shouldKeepFilterAtJoin(Join join, TupleExpr candidateArg) {

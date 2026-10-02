@@ -135,6 +135,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
@@ -470,6 +471,28 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		if (!AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
+			QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
+			return AdaptiveFilterEvaluationStep.scope(precompilePlanned(expr, planning), planning);
+		}
+		return precompilePlanned(expr, context);
+	}
+
+	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context) {
+		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.prepare(expr, this, context, evaluationStatistics,
+				() -> precompileStandard(expr, context));
+		if (prepared == null) {
+			prepared = precompileStandard(expr, context);
+		}
+		QueryEvaluationStep tracked = trackPreparedStep(expr, prepared);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
+		return tracked;
+	}
+
+	private QueryEvaluationStep precompileStandard(TupleExpr expr, QueryEvaluationContext context) {
 		QueryEvaluationStep ret;
 
 		if (expr instanceof StatementPattern) {
@@ -498,17 +521,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 		}
 
+		QueryEvaluationStep prepared = ret == null ? QueryEvaluationStep.minimal(this, expr) : ret;
+		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, prepared);
+		return prepared;
+	}
+
+	/** Applies the ordinary instrumentation contract to evaluator-specific physical adapters. */
+	public QueryEvaluationStep trackPreparedStep(TupleExpr expr, QueryEvaluationStep ret) {
 		if (ret != null) {
-			if (trackTime) {
-				ret = trackTime(expr, ret);
+			if (!trackTime && !trackResultSize) {
+				return ret;
 			}
-			if (trackResultSize) {
-				ret = trackResultSize(expr, ret);
-			}
-			return ret;
-		} else {
-			return QueryEvaluationStep.minimal(this, expr);
+			return AdaptiveFilterEvaluationStep.decorate(ret, prepared -> {
+				QueryEvaluationStep tracked = prepared;
+				if (trackTime) {
+					tracked = trackTime(expr, tracked);
+				}
+				if (trackResultSize) {
+					tracked = trackResultSize(expr, tracked);
+				}
+				return tracked;
+			});
 		}
+		throw new IllegalArgumentException("prepared step must not be null");
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
@@ -620,7 +655,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return new JoinQueryEvaluationStep(this, node, context);
+		return new JoinQueryEvaluationStep(this, node, context).attachAdaptive(context, node,
+				trackResultSize || trackTime);
 	}
 
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
@@ -660,14 +696,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);
+		return new StatementPatternQueryEvaluationStep(node, context,
+				AdaptiveFilterEvaluationStep.workSource(tripleSource, context));
 	}
 
 	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep leftQes = precompile(node.getLeftArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getLeftArg(), leftQes);
 		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getRightArg(), rightQes);
 
-		return new UnionQueryEvaluationStep(leftQes, rightQes);
+		return AdaptiveFilterEvaluationStep.binary(context, node, new UnionQueryEvaluationStep(leftQes, rightQes),
+				UnionQueryEvaluationStep::new);
 	}
 
 	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {

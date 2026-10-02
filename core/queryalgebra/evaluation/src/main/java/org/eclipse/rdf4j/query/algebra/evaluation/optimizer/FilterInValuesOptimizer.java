@@ -36,7 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 /**
  * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
@@ -220,13 +220,12 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(bindingName));
+		List<String> bindingNames = List.of(bindingName);
 		List<BindingSet> bindingSets = new ArrayList<>(values.size());
 		for (Value value : values) {
-			MapBindingSet bindingSet = new MapBindingSet(1);
-			bindingSet.addBinding(bindingName, value);
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(bindingNames, List.of(value)));
 		}
-		assignment.setBindingSets(bindingSets);
+		assignment.setBindingSets(List.copyOf(bindingSets));
 		return assignment;
 	}
 

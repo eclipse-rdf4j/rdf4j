@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -47,12 +48,39 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbFilterSimplifierOptimizerTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void generatedLiteralAnchorsPreserveEnclosingCorrelatedNotExistsRepeatability() {
+		StatementPattern input = statementPatternWithPredicate("entity", "http://example.com/type", "type");
+		Filter nameCondition = new Filter(
+				statementPatternWithPredicate("entity", "http://example.com/theme/grid/name", "name"),
+				listMember("name", "A", "A", "B"));
+		Filter outer = new Filter(new Join(input, statementPattern("entity", "tail", "item")),
+				new Not(new Exists(nameCondition)));
+		QueryRoot root = new QueryRoot(outer);
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null,
+				EmptyBindingSet.getInstance());
+		Exists exists = assertInstanceOf(Exists.class, ((Not) outer.getCondition()).getArg());
+		Join anchored = assertInstanceOf(Join.class, exists.getSubQuery());
+		BindingSetAssignment generated = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
+		assertIterableEquals(Set.of("name"), generated.getDeclaredBindingNames());
+		assertIterableEquals(List.of(VF.createLiteral("A"), VF.createLiteral("B")), bindingValues(generated, "name"));
+		FilterPlacementAnalyzer.Envelope envelope = new FilterPlacementAnalyzer(root,
+				QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance())).analyze(outer);
+		assertTrue(envelope.repeatable(), "optimizer-owned finite VALUES inside NOT EXISTS must remain repeatable");
+		assertTrue(envelope.singletonAlternatives()
+				.stream()
+				.anyMatch(alternative -> alternative.cut().getFirst().argument() == input));
+	}
 
 	@Test
 	void mergesAdjacentFiltersWithoutRelocatingThem() {
