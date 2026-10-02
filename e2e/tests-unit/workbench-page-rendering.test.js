@@ -201,7 +201,7 @@ test('page bootstrap reduces typed route records into a row-store-backed model',
     assert.equal(stores.length, 1);
 });
 
-test('page bootstrap rejects malformed route fields and terminal errors', async () => {
+test('page bootstrap rejects malformed route fields and shows an error answer inside the shell', async () => {
     const workbench = loadWorkbench();
     installTestStreamRuntime(workbench);
     const document = {
@@ -233,14 +233,35 @@ test('page bootstrap rejects malformed route fields and terminal errors', async 
         skipScripts: true
     }), /metadata values must be an object/);
 
-    await assert.rejects(workbench.app.bootstrap(mount, {
-        fetch: () => Promise.resolve(pageResponse([
-            { type: 'head', version: 1 }, { type: 'view', id: 'contexts' },
-            { type: 'error', status: 500, message: 'unavailable' }
-        ])),
+    // An error answer is shown inside the shell, as the router shows it (plan task M13.6): no route script runs.
+    const answer = pageResponse([
+        { type: 'head', version: 1 }, { type: 'view', id: 'contexts' },
+        { type: 'error', status: 500, message: 'unavailable' }
+    ]);
+    const fetched = [];
+    const result = await workbench.app.bootstrap(mount, {
+        fetch: (url) => {
+            fetched.push(new URL(String(url)).pathname);
+            // The repository's own information page carries the menu the shell shows around the error.
+            return Promise.resolve(fetched.length === 1 ? answer : pageResponse([
+                { type: 'head', version: 1 }, { type: 'view', id: 'info' },
+                { type: 'vars', values: ['menu-group-id', 'menu-group-label', 'menu-item-id', 'menu-item-label'] },
+                { type: 'rows', values: [[{ kind: 'literal', value: 'explore' }, { kind: 'literal', value: 'Repository' },
+                    { kind: 'literal', value: 'summary' }, { kind: 'literal', value: 'Summary' }]] },
+                { type: 'end' }
+            ]));
+        },
         runtime: fakeRuntime(),
         skipScripts: true
-    }), /unavailable/);
+    });
+    assert.equal(result.status, 'rendered');
+    assert.equal(result.model.error.message, 'unavailable');
+    assert.deepEqual(fetched, ['/workbench/repositories/repo-1/contexts', '/workbench/repositories/repo-1/info']);
+    const markup = flattenTemplateMarkup(mount.template);
+    assert.match(markup, /id="workbench-outlet"/, 'inside the shell');
+    assert.match(markup, /workbench-callout--error/);
+    assert.match(markup, /unavailable/);
+    assert.match(markup, /data-workbench-nav-href/, 'with the menu');
 });
 
 test('page bootstrap never fetches or replays a non-GET shell', async () => {

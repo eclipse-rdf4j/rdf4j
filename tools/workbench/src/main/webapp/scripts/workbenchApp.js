@@ -567,10 +567,12 @@ var workbench;
          */
         function completeModel(fetcher, url, model, basePath, signal) {
             if (model.error) {
-                if (model.error.code !== 'repository-not-found') {
-                    return Promise.resolve(model);
+                if (model.error.code === 'repository-not-found') {
+                    return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(function () { return model; });
                 }
-                return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(function () { return model; });
+                // The shell around an error still shows the menu, from the repository's information (M13.6); without
+                // it the error is shown all the same.
+                return linkedModels(fetcher, url, model, ['info'], signal).then(function () { return model; }, function () { return model; });
             }
             return linkedModels(fetcher, url, model, undefined, signal)
                 .then(function () { return prepareInitialRows(model); })
@@ -1008,9 +1010,7 @@ var workbench;
                 if (model.viewId !== viewId) {
                     throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                 }
-                if (model.error && model.error.code !== 'repository-not-found') {
-                    return model.rowStore.dispose().then(function () { throw new Error(model.error.message); });
-                }
+                // An error answer is shown inside the shell, as the router shows it (M8.1, M13.6).
                 return completeModel(fetcher, currentUrl, model, basePath).then(function () {
                     if (!model.error) {
                         configureNamespaces(model);
@@ -1045,12 +1045,17 @@ var workbench;
                     state: { rendered: true, initialPost: initialPost }
                 };
                 // A router-ready route mounts its scripts itself, so they load first; the other routes start
-                // their scripts in the legacy load handlers, after their rows are bound (M7.2).
-                var scriptsFirst = !!definition && definition.routerReady;
-                var loadRouteScripts = function () { return installRouteRuntime(basePath, viewId, state.model, dependencies); };
+                // their scripts in the legacy load handlers, after their rows are bound (M7.2). An error answer has
+                // no page to mount: like the router's, its instance only releases the row store.
+                var failed = !!state.model.error;
+                var scriptsFirst = !failed && !!definition && definition.routerReady;
+                var loadRouteScripts = function () { return failed ? Promise.resolve()
+                    : installRouteRuntime(basePath, viewId, state.model, dependencies); };
                 var mounted = null;
                 return (scriptsFirst ? loadRouteScripts() : Promise.resolve())
-                    .then(function () { return definition ? definition.mount(routeContext) : workbench.routes.defaultMount(routeContext); })
+                    .then(function () { return failed
+                    ? { dispose: function () { state.model.rowStore.dispose(); } }
+                    : definition ? definition.mount(routeContext) : workbench.routes.defaultMount(routeContext); })
                     .then(function (instance) { return Promise.resolve(instance.ready).then(function () {
                     mounted = instance;
                     disposeOnPagehide(instance);

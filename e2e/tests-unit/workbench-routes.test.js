@@ -646,11 +646,20 @@ test('completeModel loads what a page needs before it is shown', async () => {
     assert.deepEqual(requested, ['https://example.test/workbench/repositories/NONE/info'],
         'an unknown repository takes the shell from the server');
 
+    // Any other error is shown inside the shell, which still needs the repository's menu (M13.6).
     requested.length = 0;
-    const failed = { viewId: 'summary', links: ['info'], linked: {}, metadata: {},
+    const failed = { viewId: 'explore', links: [], linked: {}, metadata: {},
+        error: { status: 400, code: '', message: 'Malformed value' } };
+    assert.equal(await workbench.app.completeModel(fetcher, 'https://example.test/workbench/repositories/repo-1/explore',
+        failed, '/workbench'), failed);
+    assert.deepEqual(requested, ['https://example.test/workbench/repositories/repo-1/info']);
+    assert.equal(failed.workbench.server, 'https://example.test/rdf4j-server');
+
+    const unreachable = { viewId: 'explore', links: [], linked: {}, metadata: {},
         error: { status: 500, code: '', message: 'Store closed' } };
-    assert.equal(await workbench.app.completeModel(fetcher, 'https://example.test/x', failed, '/workbench'), failed);
-    assert.deepEqual(requested, [], 'another error loads nothing more');
+    assert.equal(await workbench.app.completeModel(() => Promise.reject(new Error('offline')),
+        'https://example.test/workbench/repositories/repo-1/explore', unreachable, '/workbench'), unreachable,
+        'the error is shown even without the menu');
 });
 
 test('viewContext describes the page to the views', () => {

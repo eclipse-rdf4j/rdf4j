@@ -103,8 +103,9 @@ async function assertFailurePageHealth(page, health) {
 	expect(new URL(page.url()).pathname).toContain('/explore');
 	const content = await page.locator('body').innerText();
 	expect(content.trim()).not.toBe('');
-	const expectedConsoleErrors = health.consoleErrors.filter(message => /Malformed value:/.test(message));
-	expect(expectedConsoleErrors.length, 'the malformed-resource failure may be logged for diagnosis').toBeGreaterThan(0);
+	// The error answer is shown inside the shell, as in-page navigation shows it (plan task M13.6), so the console
+	// has nothing to report beyond, perhaps, the message itself.
+	await expect(page.locator('#workbench-outlet .workbench-callout--error')).toContainText('Malformed value:');
 	expect(health.consoleErrors.filter(message => !/Malformed value:/.test(message))).toEqual([]);
 	expect(health.pageErrors).toEqual([]);
 	expect(health.failedRequests).toEqual([]);

@@ -96,12 +96,18 @@
  * visually distinct without changing the legacy page contracts. */
 body.workbench-body #workbench-page-surface:has(> form),
 body.workbench-body #workbench-page-surface:has(> .workbench-island),
-body.workbench-body #workbench-page-surface:has(> #saved-queries) {
+body.workbench-body #workbench-page-surface:has(> #saved-queries),
+body.workbench-body #workbench-page-surface:has(> .workbench-callout:only-child) {
 	min-height: 0;
 	padding: 0;
 	border: 0;
 	background: transparent;
 	box-shadow: none;
+}
+
+/* A page that is only an error (M13.6): the callout is the page, with no empty card around it. */
+body.workbench-body #workbench-page-surface > .workbench-callout:only-child {
+	margin-bottom: 0;
 }
 
 /* One content width (M1.5): the surface is capped at --workbench-content-max and every card fills it;
@@ -2005,10 +2011,15 @@ body.workbench-body .workbench-page-surface h3 {
 	line-height: 1.4;
 }
 
-body.workbench-body .workbench-page-surface .workbench-island > :first-child,
-body.workbench-body .workbench-page-surface .workbench-island > section:first-child > :first-child {
+/* A callout keeps its own padding when it opens a card (M13.6): it is a bordered box, not a heading. */
+body.workbench-body .workbench-page-surface .workbench-island > :first-child:not(.workbench-callout),
+body.workbench-body .workbench-page-surface .workbench-island > section:first-child > :first-child:not(.workbench-callout) {
 	margin-top: 0;
 	padding-top: 0;
+}
+
+body.workbench-body .workbench-page-surface .workbench-island > .workbench-callout:first-child {
+	margin-top: 0;
 }
 
 /* Callouts (mockup 11): icon, optional bold title and body; info, warning and error variants. */
