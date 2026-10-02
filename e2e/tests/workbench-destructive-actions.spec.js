@@ -200,7 +200,9 @@ test('Remove counts the matching statements as you type and confirms before remo
 	expect(await sizeOf(request)).toBe(before);
 	await action.click();
 	await dialog.getByRole('button', { name: 'Remove statements' }).click();
-	await expect(page).toHaveURL(/\/summary$/);
+	// The page stays and says what it removed (plan task M14.2).
+	await expect(form.locator('.workbench-submit-status')).toHaveText(`Removed ${matches} statements`);
+	await expect(page).toHaveURL(/\/remove$/);
 	expect(await sizeOf(request)).toBe(before - matches);
 });
 
@@ -268,7 +270,10 @@ test('Clear lists the graphs with their sizes and asks before clearing a graph o
 	const graphDialog = page.getByRole('dialog', { name: 'Clear graph?' });
 	await expect(graphDialog).toContainText('http://example.org/graph/spl');
 	await graphDialog.getByRole('button', { name: 'Clear graph' }).click();
-	await expect(page).toHaveURL(/\/summary$/);
+	await expect(page.locator('#clear-form .workbench-submit-status')).toHaveText('Graph cleared');
+	await expect(page).toHaveURL(/\/clear(?:\?[^#]*)?$/);
+	await expect(target.locator('option[value="<http://example.org/graph/spl>"]'), 'the cleared graph is no longer offered')
+		.toHaveCount(0);
 	expect(await sizeOf(request, spl)).toBe(0);
 	expect(await sizeOf(request, bsbm)).toBe(bsbmSize);
 
@@ -288,6 +293,7 @@ test('Clear lists the graphs with their sizes and asks before clearing a graph o
 	await everything.getByRole('textbox').fill(REPOSITORY_ID);
 	await expect(confirm).toBeEnabled();
 	await confirm.click();
-	await expect(page).toHaveURL(/\/summary$/);
+	await expect(page.locator('#clear-form .workbench-submit-status')).toHaveText('Repository cleared');
+	await expect(page).toHaveURL(/\/clear$/);
 	expect(await sizeOf(request)).toBe(0);
 });

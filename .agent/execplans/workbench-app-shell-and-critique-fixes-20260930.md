@@ -83,8 +83,8 @@ Each item below is small enough to finish and commit on its own. Keep exactly on
 - [x] (2026-10-02 00:44Z) M13.6 Review every warning for alignment and padding (user request).
 - [x] (2026-10-02 01:50Z) M12.2 Final review and retrospective (moved after M13, see `Decision Log`).
 - [x] (2026-10-02 04:20Z) M14.1 The router sends a form that stays on its page.
-- [ ] M14.2 Update, Add, Remove and Clear stay, with a spinner and a tick (user request) (in progress).
-- [ ] M14.3 Settings panes open over the page (user request).
+- [x] (2026-10-02 04:55Z) M14.2 Update, Add, Remove and Clear stay, with a spinner and a tick (user request).
+- [ ] M14.3 Settings panes open over the page (user request) (in progress).
 - [ ] M14.4 End-of-milestone suite and outcomes.
 
 ## Surprises & Discoveries
@@ -391,6 +391,7 @@ These observations come from the 2026-09-30 review of a local build (`tools/serv
 - Decision (M12.2, final review against the mockups, `review-final/` captures): intentional or accepted deviations. Page titles (`h1`) keep the long view names ("Query Repository", "Types In Repository") where the mockups show short ones and, on Query, the repository beside the title; the browser tab uses the short names (M2.6), and the long ones are what the servlets, many specs and administrator configurations name. The Query editor keeps its visible "Query" label (the textarea needs one). On Explore, "Query this resource" sits below the description rather than top right, the type chips have no "Types" label, a "Rows 1–44 of 44" line sits between the card and the role groups, and a single graph is named on the left with its full IRI rather than on the right as a prefixed name. Summary's "Configuration (Turtle)" uses the shared disclosure toggle. Types and Graphs inset their tables inside the card padding, and filter fields use the code font they share with other term inputs. One defect found by the review was fixed: Explore's "Show more" was an indented ghost button 16 px below the description; it is now a text control at the description's left edge, 4 px under it (`e2e/tests/workbench-design-system.spec.js`).
   Date/Author: 2026-10-02 / implementer.
 - Decision (M14.1): a form sent in place reads the servlet's redirect as "accepted" (`fetch` with `redirect: 'manual'` answers an `opaqueredirect` response) instead of a new server answer for page-model requests. Update, Add, Remove and Clear already redirect only on success and answer their own page with `error-message` otherwise, and a native post (no router) must keep landing on Summary, so no servlet changes. `send()` reuses `navigate()` (generation, abort, upload guard, error page shown in place) with an `inPlace` option; it skips the route progress bar and, when nothing came back, resolves `'failed'` instead of loading a document.
+- Decision (M14.2): after a clear, the Clear page asks for `clear?counts=true` again instead of reloading its page model: that answer lists every graph as it is now (with counts), so the cleared graph leaves the list, the counts refresh, and the tick stays on the same page model without a second navigation. Remove counts its matches again instead. Work that finishes after a page may have changed (a write's outcome, a counts answer) renders only while the outlet still shows the page model it belongs to (`shownModels` in `workbenchViews.ts`): Lit reuses a form element when the same view is rendered with a new model, so `form.closest('.workbench-outlet')` alone cannot tell a stale page from the shown one. Specs that followed these writes to Summary now wait with `waitForWriteDone(page, view)` (`workbench-test-helpers.js`).
 
 ## Outcomes & Retrospective
 

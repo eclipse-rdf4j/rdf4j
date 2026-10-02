@@ -3115,6 +3115,47 @@ body.workbench-body .remove-actions__count {
 	font-size: var(--workbench-label-font-size);
 }
 
+/* A write sent in place (M14.2): a spinner while the server works, then a green tick, beside the button. */
+body.workbench-body .workbench-submit-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: var(--workbench-control-height);
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+body.workbench-body .workbench-submit-status[data-state="done"] {
+	color: var(--workbench-success);
+}
+
+body.workbench-body .workbench-submit-status[data-state="failed"] {
+	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-submit-status__spinner {
+	box-sizing: border-box;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--workbench-primary);
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: workbench-nav-activity-spin .9s linear infinite;
+}
+
+body.workbench-body .workbench-submit-status__icon {
+	flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-submit-status__spinner {
+		animation: none;
+	}
+}
+
 body.workbench-body .workbench-field__error {
 	margin: 0;
 	color: var(--workbench-danger);

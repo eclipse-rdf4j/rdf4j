@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
     'http://localhost:8080/rdf4j-workbench').replace(/\/+$/, '');
@@ -55,8 +55,8 @@ async function insertChainData(page) {
 }`);
     });
     await page.getByRole('button', { name: 'Execute' }).click();
-    // The update is posted from the page, which then shows Summary (plan task M10.1).
-    await waitForRoute(page, 'summary', { url: /\/summary$/ });
+    // The update is posted from the page, which stays and shows a tick (plan tasks M10.1 and M14.2).
+    await waitForWriteDone(page, 'update');
 }
 
 async function waitForExplanation(page) {

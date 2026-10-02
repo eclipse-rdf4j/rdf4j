@@ -12,7 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -589,8 +589,7 @@ async function exerciseMutations(page, request, evidence) {
 		await page.locator('label[for="source-text"]').click();
 		await page.locator('#text').fill(addedTriple);
 		await page.locator('#add-upload-actions input[type="submit"]').click();
-		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-		await waitForRoute(page, 'summary');
+		await waitForWriteDone(page, 'add');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before + 1 };
 	});
@@ -600,8 +599,7 @@ async function exerciseMutations(page, request, evidence) {
 		await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'update');
 		await setQuery(page, 'INSERT DATA { <urn:route-parity:updated> <urn:route-parity:name> "Updated" }');
 		await page.locator('#update-form input[type="submit"]').click();
-		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-		await waitForRoute(page, 'summary');
+		await waitForWriteDone(page, 'update');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before + 1 };
 	});
@@ -614,8 +612,7 @@ async function exerciseMutations(page, request, evidence) {
 		// Remove names its live count on the button and confirms it in a dialog (plan task M6.5).
 		await page.locator('#remove-form button[type="submit"]').click();
 		await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
-		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-		await waitForRoute(page, 'summary');
+		await waitForWriteDone(page, 'remove');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 1 };
 	});
@@ -628,8 +625,7 @@ async function exerciseMutations(page, request, evidence) {
 		await page.locator('#context').selectOption('<urn:route-parity:people>');
 		await page.locator('#clear-form button[type="submit"]').click();
 		await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
-		await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-		await waitForRoute(page, 'summary');
+		await waitForWriteDone(page, 'clear');
 		currentSize = await repositorySize(request);
 		return { from: before, to: currentSize, response: page.url(), acceptable: currentSize === before - 2 };
 	});

@@ -19,6 +19,7 @@ const {
 	repositoryPageUrl,
 	serverBaseUrl,
 	uniqueRepositoryId,
+	waitForWriteDone,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
@@ -229,7 +230,8 @@ test('Add RDF marks the chosen source and uploads a dropped file into the target
 	expect(await page.locator('#file').evaluate((input) => input.files.length)).toBe(1);
 	await expect(page.locator('#add-drop-zone')).toContainText('dropped.ttl');
 	await page.locator('#add-upload-actions input[type="submit"]').click();
-	await expect(page).toHaveURL(/\/summary$/);
+	await waitForWriteDone(page, 'add');
+	await expect(page).toHaveURL(/\/add$/);
 	expect(await repositorySize(request)).toBe(before + 1);
 });
 

@@ -12,7 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -71,9 +71,9 @@ test('covers task-fixture operation states without touching user repositories', 
 	await expect(page.locator('#file')).toBeDisabled();
 	await page.locator('#text').fill('<urn:visual:added> <urn:visual:value> "Added" .');
 	await page.locator('#add-upload-actions input[type="submit"]').click();
-	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-	await waitForRoute(page, 'summary');
-	await capture(page, 'add-success-summary-1440.png');
+	// Add stays and shows a tick (plan task M14.2).
+	await waitForWriteDone(page, 'add');
+	await capture(page, 'add-success-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/add`);
 	await page.locator('label[for="source-text"]').click();
@@ -92,9 +92,8 @@ test('covers task-fixture operation states without touching user repositories', 
 	await openPage(page, `repositories/${REPOSITORY_ID}/update`);
 	await setCodeMirror(page, 'INSERT DATA { <urn:visual:updated> <urn:visual:value> "Updated" }');
 	await page.locator('#update-form input[type="submit"]').click();
-	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-	await waitForRoute(page, 'summary');
-	await capture(page, 'update-success-summary-1440.png');
+	await waitForWriteDone(page, 'update');
+	await capture(page, 'update-success-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/update`);
 	await setCodeMirror(page, 'INSERT {');
@@ -113,9 +112,8 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#pred').fill('<urn:visual:name>');
 	await page.locator('#remove-form button[type="submit"]').click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove statements' }).click();
-	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-	await waitForRoute(page, 'summary');
-	await capture(page, 'remove-success-summary-1440.png');
+	await waitForWriteDone(page, 'remove');
+	await capture(page, 'remove-success-1440.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/clear`);
 	await expect(page.locator('#clear-warning')).toBeVisible();
@@ -124,9 +122,8 @@ test('covers task-fixture operation states without touching user repositories', 
 	await page.locator('#context').selectOption('<urn:visual:people>');
 	await page.locator('#clear-form button[type="submit"]').click();
 	await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
-	await expect(page).toHaveURL(/\/summary(?:$|[?#])/);
-	await waitForRoute(page, 'summary');
-	await capture(page, 'clear-named-graph-success-summary-1440.png');
+	await waitForWriteDone(page, 'clear');
+	await capture(page, 'clear-named-graph-success-1440.png');
 	const size = await request.get(`${REPOSITORY_URL}/size`);
 	expect(size.ok()).toBeTruthy();
 	expect(Number((await size.text()).trim())).toBeGreaterThan(0);

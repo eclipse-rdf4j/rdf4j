@@ -1,6 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
 const fs = require('node:fs');
 
 const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
@@ -513,7 +513,7 @@ test.describe('Workbench configuration and option sizing', () => {
 		await page.locator('#text').blur();
 		await expect(page.locator('#Content-Type')).toHaveValue('application/trig');
 		await page.getByRole('button', { name: 'Upload' }).click();
-		await waitForRoute(page, 'summary', { url: /\/summary$/ });
+		await waitForWriteDone(page, 'add');
 
 		let response = await request.get(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}/statements`, {
 			headers: { Accept: 'application/n-quads' }
@@ -537,7 +537,7 @@ test.describe('Workbench configuration and option sizing', () => {
 		].join('\n'));
 		await expect(page.locator('#Content-Type')).toHaveValue('application/trig');
 		await page.getByRole('button', { name: 'Upload' }).click();
-		await waitForRoute(page, 'summary', { url: /\/summary$/ });
+		await waitForWriteDone(page, 'add');
 
 		response = await request.get(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}/statements`, {
 			headers: { Accept: 'application/n-quads' }

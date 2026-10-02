@@ -20,6 +20,7 @@ const {
 	serverBaseUrl,
 	setQueryEditor,
 	uniqueRepositoryId,
+	waitForWriteDone,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
@@ -77,7 +78,9 @@ test('Cmd/Ctrl+Enter in the update editor executes the update', async ({ page })
 	await page.keyboard.press('Backspace');
 	await page.keyboard.type('INSERT DATA { <urn:a> <urn:b> <urn:c> }');
 	await page.keyboard.press('ControlOrMeta+Enter');
-	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary$`), { timeout: 15000 });
+	// The update runs in place and shows a tick (plan task M14.2).
+	await waitForWriteDone(page, 'update');
+	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/update$`));
 });
 
 test('the Execute button shows its keyboard shortcut', async ({ page }) => {

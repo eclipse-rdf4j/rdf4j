@@ -19,7 +19,8 @@ const {
 	repositoryPageUrl,
 	serverBaseUrl,
 	uniqueRepositoryId,
-	waitForRoute
+	waitForRoute,
+	waitForWriteDone
 } = require('./workbench-test-helpers.js');
 
 const REPOSITORY_ID = uniqueRepositoryId('workbench-router');
@@ -381,7 +382,7 @@ test.describe('forms through the router', () => {
 		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route-ready', 'true');
 	}
 
-	test('clearing a graph shows Summary without loading a document', async ({ page, request }) => {
+	test('clearing a graph stays on Clear without loading a document', async ({ page, request }) => {
 		await openForm(page, 'clear');
 		const documents = recordDocumentRequests(page);
 		const before = await sizeOf(request);
@@ -389,8 +390,9 @@ test.describe('forms through the router', () => {
 		await page.locator('#clear-form button[type="submit"]').click();
 		await page.getByRole('dialog', { name: 'Clear graph?' }).getByRole('button', { name: 'Clear graph' }).click();
 
-		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/summary$`));
-		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', 'summary');
+		// The page stays and shows a tick (plan task M14.2).
+		await waitForWriteDone(page, 'clear');
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/clear$`));
 		expect(documents).toEqual([]);
 		expect(await sizeOf(request)).toBeLessThan(before);
 	});
@@ -410,7 +412,7 @@ test.describe('forms through the router', () => {
 		expect(documents).toEqual([]);
 	});
 
-	test('uploading a Turtle file shows Summary with the larger repository', async ({ page, request }) => {
+	test('uploading a Turtle file stays on Add with the larger repository', async ({ page, request }) => {
 		await openForm(page, 'add');
 		const documents = recordDocumentRequests(page);
 		const before = await sizeOf(request);
@@ -418,8 +420,8 @@ test.describe('forms through the router', () => {
 			buffer: Buffer.from('<urn:router:a> <urn:router:p> "one", "two" .\n') });
 		await page.locator('input[type="submit"][value="Upload"]').click();
 
-		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/summary$`));
-		await expect(page.locator('#workbench-outlet')).toHaveAttribute('data-workbench-route', 'summary');
+		await waitForWriteDone(page, 'add');
+		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/add$`));
 		expect(documents).toEqual([]);
 		expect(await sizeOf(request)).toBe(before + 2);
 	});

@@ -133,6 +133,16 @@ async function waitForRoute(page, viewId, options = {}) {
         .waitFor({ state: 'attached', timeout });
 }
 
+/**
+ * Wait until a write sent in place (Update, Add, Remove or Clear, plan task M14.2) is done: its page stays and its
+ * status shows the tick.
+ */
+async function waitForWriteDone(page, viewId, options = {}) {
+    const timeout = options.timeout || 15000;
+    await waitForRoute(page, viewId, { timeout });
+    await page.locator('#workbench-outlet .workbench-submit-status[data-state="done"]').waitFor({ state: 'visible', timeout });
+}
+
 async function deleteRepository(request, baseUrl, repositoryId) {
     const repositoryUrl = `${baseUrl.replace(/\/+$/, '')}/repositories/${encodeURIComponent(repositoryId)}`;
     const deleted = await request.delete(repositoryUrl).catch(() => null);
@@ -152,5 +162,6 @@ module.exports = {
     typeIntoCodeMirror,
     uniqueRepositoryId,
     waitForRoute,
+    waitForWriteDone,
     workbenchBaseUrl
 };

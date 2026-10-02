@@ -2345,6 +2345,80 @@ module workbench {
             </div>`;
         }
 
+        /** A write sent in place (M14.2): 'idle', 'running', 'done' or 'failed', and what its status says. */
+        interface Submission {
+            state: string;
+            message: string;
+        }
+
+        function submissionOf(model: PageModel): Submission {
+            const holder: any = model;
+            return holder.submission || (holder.submission = { state: 'idle', message: '' });
+        }
+
+        /** Render model again into the outlet that holds element, if that outlet still shows model. */
+        function renderAgain(element: any, model: PageModel, context: ViewContext, runtime: LitRuntime): void {
+            const outlet = element && element.closest ? element.closest('.workbench-outlet') : null;
+            if (outlet && shownModels.get(outlet) === model) {
+                render(outlet, model, context, runtime);
+            }
+        }
+
+        /** The status beside a write's button: a spinner while it runs, a green tick when it is done. */
+        function submissionStatus(runtime: LitRuntime, model: PageModel): any {
+            const h = runtime.html;
+            const submission = submissionOf(model);
+            const mark = submission.state === 'running'
+                ? h`<span class="workbench-submit-status__spinner" aria-hidden="true"></span>`
+                : submission.state === 'done' ? icon(runtime, 'check', 'workbench-submit-status__icon')
+                    : submission.state === 'failed' ? icon(runtime, 'error', 'workbench-submit-status__icon') : '';
+            return h`<span class="workbench-submit-status" role="status" data-state=${submission.state}>${mark}${
+                submission.message}</span>`;
+        }
+
+        /** A finished write's status belongs to what was sent: changing the form clears it. */
+        function clearSubmission(event: any, model: PageModel, context: ViewContext, runtime: LitRuntime): void {
+            const submission = submissionOf(model);
+            if (submission.state === 'done' || submission.state === 'failed') {
+                submission.state = 'idle';
+                submission.message = '';
+                renderAgain(event.currentTarget, model, context, runtime);
+            }
+        }
+
+        /**
+         * Send a write form and stay on its page (M14.2): the status says `running` while the server works and `done`
+         * with a tick once it accepted the write; then `after` runs (Remove counts again, Clear lists its graphs again).
+         * An error answer is shown as the page, with its callout, as before.
+         */
+        function sendInPlace(form: any, submitter: any, model: PageModel, context: ViewContext, runtime: LitRuntime,
+                             running: string, done: string, after?: () => void): void {
+            const router: any = (workbench as any).router;
+            // The form is read before its button is disabled.
+            const sent: Promise<string> = router && typeof router.send === 'function' ? router.send(form, submitter)
+                : Promise.resolve('fallback').then((outcome: string) => {
+                    (workbench as any).submitForm(form);
+                    return outcome;
+                });
+            const submission = submissionOf(model);
+            submission.state = 'running';
+            submission.message = running;
+            renderAgain(form, model, context, runtime);
+            sent.then((outcome: string) => {
+                // 'committed' shows the answer page and 'fallback' loads a document: this page is gone either way.
+                if (outcome === 'committed' || outcome === 'fallback') {
+                    return;
+                }
+                submission.state = outcome === 'done' ? 'done' : outcome === 'failed' ? 'failed' : 'idle';
+                submission.message = outcome === 'done' ? done : outcome === 'failed'
+                    ? 'No answer from the server; check the repository before trying again.' : '';
+                renderAgain(form, model, context, runtime);
+                if (outcome === 'done' && after) {
+                    after();
+                }
+            });
+        }
+
         function addPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const rows = records(model);
@@ -2356,7 +2430,14 @@ module workbench {
             const error = text(pageValue(model, 'error-message'));
             return h`${error ? callout(runtime, 'error', error) : ''}
                 ${systemRepositoryCallout(runtime, context)}
-                <form method="post" action="add" enctype="multipart/form-data" class="workbench-form-card">
+                <form id="add-form" method="post" action="add" enctype="multipart/form-data" class="workbench-form-card"
+                        aria-busy=${submissionOf(model).state === 'running' ? 'true' : 'false'}
+                        @submit=${(event: any) => {
+                            event.preventDefault();
+                            sendInPlace(event.currentTarget, event.submitter, model, context, runtime, 'Adding data…', 'Data added');
+                        }}
+                        @input=${(event: any) => clearSubmission(event, model, context, runtime)}
+                        @change=${(event: any) => clearSubmission(event, model, context, runtime)}>
                     <fieldset id="add-source-tabs" class="workbench-source-tabs"><legend>Source</legend>
                         ${[['file', 'File'], ['url', 'URL'], ['text', 'Text']].map((entry: string[]) => h`<label for=${'source-' + entry[0]}>
                             ${icon(runtime, 'source-' + (entry[0] === 'text' ? 'text' : entry[0]))}
@@ -2414,8 +2495,9 @@ module workbench {
                             </div>
                         </div>`)}
                     <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
-                        <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload" /></span></label>
-                    </span></div>
+                        <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload"
+                            ?disabled=${submissionOf(model).state === 'running'} /></span></label>
+                    </span>${submissionStatus(runtime, model)}</div>
                 </form>`;
         }
 
@@ -2530,19 +2612,28 @@ module workbench {
                 || counted && state.count === 0;
             const amount = counted ? (state.count > 1000000 ? 'more than 1,000,000 statements'
                 : state.count === 1 ? '1 statement' : formatCount(String(state.count), context) + ' statements') : 'statements';
+            const sending = submissionOf(model).state === 'running';
             const confirmAndSubmit = (event: any) => {
                 event.preventDefault();
                 const form = event.currentTarget;
-                if (disabled) { return; }
+                if (disabled || sending) { return; }
                 (workbench as any).confirmDialog.open({
                     title: counted ? 'Remove ' + amount + '?' : 'Remove the matching statements?',
                     body: 'This permanently removes ' + (counted ? amount : 'every explicit statement') + ' that match these values.',
                     confirmLabel: 'Remove statements', danger: true
-                }).then((confirmed: boolean) => { if (confirmed) { (workbench as any).submitForm(form); } });
+                }).then((confirmed: boolean) => {
+                    // The matches are gone once the server removed them, so the page counts again.
+                    if (confirmed) {
+                        sendInPlace(form, null, model, context, runtime, 'Removing statements…',
+                            counted ? 'Removed ' + amount : 'Statements removed', () => recount(form));
+                    }
+                });
             };
             const selectedGraph = text(pageValue(model, 'context'));
             return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove"
-                    @submit=${confirmAndSubmit}>
+                    aria-busy=${sending ? 'true' : 'false'} @submit=${confirmAndSubmit}
+                    @input=${(event: any) => clearSubmission(event, model, context, runtime)}
+                    @change=${(event: any) => clearSubmission(event, model, context, runtime)}>
                 ${systemRepositoryCallout(runtime, context)}
                 ${callout(runtime, 'warning', 'Every explicit statement that matches the values below is removed; empty fields match anything.', 'Remove is permanent.', 'remove-warning')}
                 <p>Values use RDF syntax: IRIs in angle brackets, blank nodes as _:nodeID, and literals in double quotes with optional language or datatype.</p>
@@ -2575,10 +2666,11 @@ module workbench {
                     </div>
                 </div>
                 <div class="workbench-form-actions remove-actions">
-                    <button type="submit" class="workbench-action workbench-action--danger-outline" ?disabled=${disabled}>${
+                    <button type="submit" class="workbench-action workbench-action--danger-outline" ?disabled=${disabled || sending}>${
                         icon(runtime, 'remove')}<span>${'Remove ' + amount + '…'}</span></button>
                     <span id="remove-count" class="remove-actions__count" role="status"
                         title=${state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : ''}>${removeMatchLabel(state, context)}</span>
+                    ${submissionStatus(runtime, model)}
                 </div>
             </form>`;
         }
@@ -2591,10 +2683,13 @@ module workbench {
          * repository; Summary by 'size' and 'contexts'.
          */
         const countedPages: { [viewId: string]: { timedOut: string; absorb(answer: PageModel, rows: any[][],
-                                                                            values: { [key: string]: any }): void } } = {
+                                                                            counts: PageCounts): void } } = {
             clear: {
                 timedOut: 'Counting took longer than five seconds',
-                absorb(answer: PageModel, rows: any[][], values: { [key: string]: any }): void {
+                absorb(answer: PageModel, rows: any[][], counts: PageCounts): void {
+                    const values = counts.values;
+                    // The answer lists every graph as it is now, which is what Clear offers (M14.2).
+                    counts.listing = recordsFromRows(answer, rows);
                     rows.forEach((row: any[]) => {
                         if (text(row[1])) { values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
                     });
@@ -2604,7 +2699,8 @@ module workbench {
             },
             summary: {
                 timedOut: 'Counting took longer than two seconds',
-                absorb(_answer: PageModel, rows: any[][], values: { [key: string]: any }): void {
+                absorb(_answer: PageModel, rows: any[][], counts: PageCounts): void {
+                    const values = counts.values;
                     const row = rows[0] || [];
                     if (text(row[0])) { values.size = row[0]; }
                     if (text(row[1])) { values.contexts = row[1]; }
@@ -2615,6 +2711,8 @@ module workbench {
         interface PageCounts {
             state: string;
             values: { [key: string]: any };
+            /** Clear's graphs from its latest counts answer, newer than the page model's. */
+            listing?: any[];
         }
 
         function pageCounts(model: PageModel): PageCounts {
@@ -2646,11 +2744,14 @@ module workbench {
             app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
                 .then((answer: PageModel) => answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                     answer.rowStore.dispose();
-                    countedPages[model.viewId].absorb(answer, rows, counts.values);
+                    countedPages[model.viewId].absorb(answer, rows, counts);
                     counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
                 }))
                 .then(null, () => { counts.state = 'failed'; })
-                .then(() => { if (!disposed) { render(mount, model, context, runtime); } });
+                .then(() => {
+                    const outlet = outletOf(mount) || mount;
+                    if (!disposed && shownModels.get(outlet) === model) { render(mount, model, context, runtime); }
+                });
             return () => { disposed = true; };
         }
 
@@ -2673,7 +2774,8 @@ module workbench {
          */
         function clearPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const listing = (model.vars || []).indexOf('statements') >= 0 ? records(model) : [];
+            const listing = pageCounts(model).listing
+                || ((model.vars || []).indexOf('statements') >= 0 ? records(model) : []);
             // The counts arrive after the page (M13.2); a page model that already has them shows them at once.
             const counted = pageCounts(model).values;
             const countOf = (key: string, fallback: any) => key in counted ? counted[key] : fallback;
@@ -2691,9 +2793,18 @@ module workbench {
             const selected = targets.filter((target: any) => target.value === holder.clearTarget)[0] || targets[0];
             const everything = selected.value === '';
             const repositoryId = context.repositoryId || '';
+            const sending = submissionOf(model).state === 'running';
+            /** After a clear, ask for the graphs and their counts again; the tick stays (M14.2). */
+            const recount = (form: any) => {
+                const counts = pageCounts(model);
+                counts.state = 'counting';
+                counts.values = {};
+                loadPageCounts(form.closest('.workbench-outlet'), model, context, runtime, window);
+            };
             const confirmAndSubmit = (event: any) => {
                 event.preventDefault();
                 const form = event.currentTarget;
+                if (sending) { return; }
                 const dialog: any = (workbench as any).confirmDialog;
                 const size = text(selected.count);
                 const removes = size ? 'This permanently removes ' + statementsLabel(size, context) : 'This permanently removes every statement';
@@ -2703,11 +2814,15 @@ module workbench {
                         requireLabel: 'Type ' + repositoryId + ' to confirm' }
                     : { title: 'Clear graph?', body: removes + ' from ' + (selected.value === 'null' ? 'the default graph' : selected.label) + '.',
                         confirmLabel: 'Clear graph', danger: true }).then((confirmed: boolean) => {
-                    if (confirmed) { (workbench as any).submitForm(form); }
+                    if (confirmed) {
+                        sendInPlace(form, null, model, context, runtime, 'Clearing…',
+                            everything ? 'Repository cleared' : 'Graph cleared', () => recount(form));
+                    }
                 });
             };
             return h`<form id="clear-form" class="workbench-island workbench-form-card" method="post" action="clear"
-                    @submit=${confirmAndSubmit}>
+                    aria-busy=${sending ? 'true' : 'false'} @submit=${confirmAndSubmit}
+                    @change=${(event: any) => clearSubmission(event, model, context, runtime)}>
                 ${systemRepositoryCallout(runtime, context)}
                 ${callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.',
                     'This permanently deletes statements.', 'clear-warning')}
@@ -2726,8 +2841,9 @@ module workbench {
                             : ''}
                     </div>
                 </div>
-                <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger">${
-                    icon(runtime, 'clear')}<span>${everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button></div>
+                <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger"
+                    ?disabled=${sending}>${icon(runtime, 'clear')}<span>${everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button>
+                    ${submissionStatus(runtime, model)}</div>
             </form>`;
         }
 
@@ -2741,13 +2857,20 @@ module workbench {
                 (window as any).namespaces = mappings || {};
                 (window as any).sparqlNamespaces = mappings || {};
             }
+            const sending = submissionOf(model).state === 'running';
             return h`<form id="update-form" class="workbench-island" action="update" method="post"
-                    @submit=${(event: Event) => {
+                    aria-busy=${sending ? 'true' : 'false'}
+                    @submit=${(event: any) => {
                         const globalWorkbench: any = (window as any).workbench;
-                        if (globalWorkbench.update && globalWorkbench.update.doSubmit) {
-                            if (!globalWorkbench.update.doSubmit()) { event.preventDefault(); }
+                        event.preventDefault();
+                        if (sending || globalWorkbench.update && globalWorkbench.update.doSubmit
+                                && !globalWorkbench.update.doSubmit()) {
+                            return;
                         }
-                    }}>
+                        sendInPlace(event.currentTarget, event.submitter, model, context, runtime, 'Executing update…',
+                            'Update executed');
+                    }}
+                    @input=${(event: any) => clearSubmission(event, model, context, runtime)}>
                 ${error ? callout(runtime, 'error', error, undefined, 'updateString.errors')
                     : h`<span id="updateString.errors" class="error" role="alert"></span>`}
                 <div id="update-editor" class="workbench-field"><label for="update">SPARQL Update</label>
@@ -2756,8 +2879,9 @@ module workbench {
                         aria-orientation="horizontal" aria-label="Resize editor" tabindex="0"></div>
                 </div>
                 <div id="update-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
-                    <label class="workbench-action-hit-area">${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span></label>
-                </span></div>
+                    <label class="workbench-action-hit-area">${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute"
+                        ?disabled=${sending} /></span></label>
+                </span>${submissionStatus(runtime, model)}</div>
             </form>`;
         }
 
@@ -3532,6 +3656,8 @@ module workbench {
 
         const outletsByMount = new WeakMap<Element, Element>();
         const outletElements = new WeakSet<Element>();
+        /** The page model each outlet shows, so work that finishes later renders only the page it belongs to. */
+        const shownModels = new WeakMap<Element, PageModel>();
 
         function outletNodeFor(appMount: any): Element | null {
             const existing = outletsByMount.get(appMount);
@@ -3624,6 +3750,7 @@ module workbench {
         /** Render a route's title and page surface into the outlet. */
         export function renderOutlet(outletMount: Element, model: PageModel, context: ViewContext,
                                      runtime: LitRuntime): Element {
+            shownModels.set(outletMount, model);
             const regions = prepareRowRegions(outletMount, model);
             const renderedContext = regions ? { ...context, rowRegions: regions } : context;
             runtime.render(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount);
