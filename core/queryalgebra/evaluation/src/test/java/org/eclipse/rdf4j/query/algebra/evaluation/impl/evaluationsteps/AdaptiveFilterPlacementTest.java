@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class AdaptiveFilterPlacementTest {
@@ -178,6 +180,27 @@ class AdaptiveFilterPlacementTest {
 		assignment.setBindingNames(Set.of("limit"));
 		assignment.setBindingSets(rows);
 		return assignment;
+	}
+
+	private static BindingSetAssignment immutableAssignment(String name, Value... values) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of(name));
+		List<BindingSet> rows = new ArrayList<>();
+		for (Value value : values) {
+			rows.add(new ListBindingSet(List.of(name), value));
+		}
+		assignment.setBindingSets(List.copyOf(rows));
+		return assignment;
+	}
+
+	private static void addBatchObservations(Map<BindingSet, Integer> rows, IRI subject, IRI batch) {
+		for (int j = 0; j < 2; j++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("batch", batch);
+			row.addBinding("subject", subject);
+			row.addBinding("observation", VF.createIRI("urn:observation:" + j));
+			rows.put(row, 1);
+		}
 	}
 
 	private static void assertRejectingPrefixAvoidsDownstreamWork(TupleExpr prefix) {
@@ -320,6 +343,101 @@ class AdaptiveFilterPlacementTest {
 		TupleExpr query = passingQuery();
 		assertThat(consume(strategy.precompile(new QueryRoot(query)), EmptyBindingSet.getInstance())).hasSize(12);
 		assertThat(query.getResultSizeActual()).isEqualTo(12);
+	}
+
+	@Test
+	void aNonRootFilterRetainsItsActualResultSize() {
+		CountingSource source = passingSource(12, 2);
+		Filter filter = new Filter(type(), new Not(new Exists(pattern(CONDITION, "local"))));
+		Join query = new Join(filter, pattern(OBSERVATION, "item"));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		strategy.setTrackResultSize(true);
+		Map<BindingSet, Integer> expected = new HashMap<>();
+		for (int i = 0; i < 12; i++) {
+			for (int j = 0; j < 2; j++) {
+				QueryBindingSet row = new QueryBindingSet();
+				row.addBinding("subject", subject(i));
+				row.addBinding("item", VF.createIRI("urn:item:" + j));
+				expected.put(row, 1);
+			}
+		}
+
+		assertThat(consume(strategy.precompile(new QueryRoot(query)), EmptyBindingSet.getInstance()))
+				.isEqualTo(expected);
+		assertThat(filter.getResultSizeActual())
+				.as("the original non-region-root Filter still reports its output cardinality")
+				.isEqualTo(12);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void earlyClosePreservesThePrefetchedNonRootFilterResultSize() {
+		CountingSource source = passingSource(12, 2);
+		Filter filter = new Filter(type(), new Not(new Exists(pattern(CONDITION, "local"))));
+		Join query = new Join(filter, pattern(OBSERVATION, "item"));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		strategy.setTrackResultSize(true);
+		QueryEvaluationStep prepared = strategy.precompile(new QueryRoot(query));
+
+		try (CloseableIteration<BindingSet> rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(filter.getResultSizeActual())
+					.as("repeated root prefetch consumes only one left Filter output")
+					.isEqualTo(1);
+			rows.next();
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(filter.getResultSizeActual())
+					.as("the second observation belongs to the same prefetched subject")
+					.isEqualTo(1);
+		}
+
+		assertThat(filter.getResultSizeActual()).isEqualTo(1);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void aTrialDoesNotResurrectNonRootFilterCountsAcrossNestedReuse() {
+		int subjects = 512;
+		CountingSource source = new CountingSource();
+		IRI largeBatch = VF.createIRI("urn:batch:large");
+		IRI smallBatch = VF.createIRI("urn:batch:small");
+		for (int i = 0; i < subjects; i++) {
+			IRI subject = subject(i);
+			source.add(subject, TYPE, largeBatch);
+			if (i == 0) {
+				source.add(subject, TYPE, smallBatch);
+			}
+			for (int j = 0; j < 2; j++) {
+				source.add(subject, OBSERVATION, VF.createIRI("urn:observation:" + j));
+			}
+		}
+
+		BindingSetAssignment batches = immutableAssignment("batch", largeBatch, smallBatch);
+		StatementPattern typed = new StatementPattern(Var.of("subject"), constant(TYPE), Var.of("batch"));
+		Filter filter = new Filter(typed, new Not(new Exists(pattern(CONDITION, "local"))));
+		Join inner = new Join(filter, pattern(OBSERVATION, "observation"));
+		inner.setRuntimeTelemetryEnabled(true);
+		LeftJoin query = new LeftJoin(batches, inner);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		strategy.setTrackResultSize(true);
+		Map<BindingSet, Integer> expected = new HashMap<>();
+		for (int i = 0; i < subjects; i++) {
+			addBatchObservations(expected, subject(i), largeBatch);
+		}
+		addBatchObservations(expected, subject(0), smallBatch);
+
+		assertThat(consume(strategy.precompile(new QueryRoot(query)), EmptyBindingSet.getInstance()))
+				.isEqualTo(expected);
+		assertThat(query.getLeftArg().getResultSizeActual()).isEqualTo(2);
+		assertThat(inner.getLongMetricActual("adaptiveFilterTrialsActual"))
+				.as("the large nested invocation completes at least one real adaptive trial")
+				.isPositive();
+		assertThat(filter.getResultSizeActual())
+				.as("a trial invalidates this non-root Filter count across the later small invocation")
+				.isEqualTo(-1);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
 	@Test
@@ -473,13 +591,25 @@ class AdaptiveFilterPlacementTest {
 		arm.setRuntimeTelemetryEnabled(true);
 		Filter otherArm = arm.clone();
 		Union union = new Union(arm, otherArm);
-		Map<BindingSet, Integer> actual = evaluate(union, source);
+		QueryEvaluationContext[] planning = new QueryEvaluationContext[1];
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) {
+				planning[0] = context;
+				return super.prepare(node, context);
+			}
+		};
+		Map<BindingSet, Integer> actual = consume(strategy.precompile(new QueryRoot(union)),
+				EmptyBindingSet.getInstance());
 		assertThat(actual).hasSize(128 * 2);
 		assertThat(actual.values()).allMatch(multiplicity -> multiplicity == 2);
 		assertThat(arm.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(128);
 		assertThat(otherArm.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(128);
-		assertThat(union.getStringMetricPlanned("adaptiveFilterBoundaryPlanned"))
+		assertThat(AdaptiveFilterEvaluationStep.boundaryReason(union, planning[0]))
 				.isEqualTo("No common drainable input prefix");
+		assertThat(union.getStringMetricPlanned("adaptiveFilterBoundaryPlanned"))
+				.as("declining an adapter does not change the selected ordinary Explain plan")
+				.isNull();
 		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 

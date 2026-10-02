@@ -29,6 +29,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.BNode;
@@ -101,6 +102,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 	public static boolean isPlanningContext(QueryEvaluationContext context) {
 		return context instanceof PlanningContext;
+	}
+
+	/** Declined alternatives remain preparation data, rather than annotations on the selected ordinary plan. */
+	static String boundaryReason(TupleExpr expression, QueryEvaluationContext context) {
+		return context instanceof PlanningContext planning ? planning.boundaryReasons.get(expression) : null;
 	}
 
 	/** Opts the selected ordinary binary operator into child rebinding without replacing its physical contract. */
@@ -216,7 +222,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		TupleExpr anchor = firstFactor(expression, planning);
 		planning.partitionPrefix(envelopes, anchor);
 		if (anchor == expression) {
-			expression.setStringMetricPlanned("adaptiveFilterBoundaryPlanned", "No common drainable input prefix");
+			planning.boundaryReasons.put(expression, "No common drainable input prefix");
 			return preparedPrefix(expression, planning, strategy, context, standard);
 		}
 		Map<TupleExpr, Boolean> members = new IdentityHashMap<>();
@@ -236,9 +242,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 								envelope.earliestCompleteCut(members::containsKey).orElse(null),
 								envelope.potentialSites(members::containsKey)));
 					} else {
-						envelope.filter()
-								.setStringMetricPlanned("adaptiveFilterBoundaryPlanned",
-										"No alternate complete cut in this drainable region");
+						planning.boundaryReasons.put(envelope.filter(),
+								"No alternate complete cut in this drainable region");
 					}
 				}
 			}
@@ -491,12 +496,13 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 					continue;
 				}
 				QueryValueEvaluationStep condition = strategy.precompile(filter.getCondition(), context);
-				filters[id] = new FilterPlan(filter, condition, placements, context, statistics, strategy);
+				filters[id] = new FilterPlan(filter, condition, placements, context, statistics, strategy,
+						strategy.isTrackResultSize() && filter != regionRoot);
 				filter.setStringMetricPlanned("adaptiveFilterPlacementPlanned",
 						"Complete legal cuts, selected per drained cohort");
 				if (filter != regionRoot) {
 					filter.setStringMetricPlanned("adaptiveFilterTrackingPlanned",
-							"Condition telemetry aggregates active gates; final outputs belong to the region root");
+							"Condition telemetry aggregates active gates; original-site outputs become unknown after movement; final outputs belong to the region root");
 				}
 				id++;
 			}
@@ -562,6 +568,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 						.trackPreparedStep(expression, input -> untracked.open(input, execution))
 						.evaluate(bindings);
 			}
+			if (expression instanceof Filter filter && positions.containsKey(filter) && expression != regionRoot
+					&& strategy.isTrackResultSize()) {
+				Node output = raw;
+				raw = (bindings, execution) -> {
+					OriginalOutput count = execution.query.originalOutput(filter);
+					return new OriginalOutputIteration(output.open(bindings, execution), count);
+				};
+			}
 			List<Gate> possible = new ArrayList<>();
 			for (int id = 0; id < filters.length; id++) {
 				if (filters[id].placements.sites.contains(expression)) {
@@ -591,7 +605,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private record FilterPlan(Filter filter, QueryValueEvaluationStep condition, PlacementSource placements,
-			QueryEvaluationContext context, EvaluationStatistics statistics, DefaultEvaluationStrategy strategy) {
+			QueryEvaluationContext context, EvaluationStatistics statistics, DefaultEvaluationStrategy strategy,
+			boolean trackOriginalOutput) {
 	}
 
 	/** Only explored complete cuts are materialized. The semantic envelope itself remains complete and immutable. */
@@ -780,6 +795,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final Execution query;
 		private final TupleExpr root;
 		private final boolean telemetry;
+		private final boolean trackOriginalOutputs;
 		private final Map<TupleExpr, ActiveGate[]> bundles = new IdentityHashMap<>();
 		private long bundleGeneration = -1;
 		private CloseableIteration<BindingSet> body;
@@ -800,6 +816,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			this.query = query;
 			this.root = root;
 			telemetry = root.isRuntimeTelemetryEnabled();
+			boolean requested = false;
+			for (FilterPlan filter : candidates.filters) {
+				requested |= filter.trackOriginalOutput;
+			}
+			trackOriginalOutputs = requested;
 		}
 
 		void open(Node preparedBody, BindingSet bindings) {
@@ -816,6 +837,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 		void beginCohort() {
 			controller.beginCohort();
+			if (trackOriginalOutputs && !controller.atOriginalPlacement()) {
+				for (int id = 0; id < candidates.filters.length; id++) {
+					Filter filter = candidates.filters[id].filter;
+					if (candidates.filters[id].trackOriginalOutput && controller.selected(id) != 0) {
+						query.invalidateOriginalOutput(filter);
+					}
+				}
+			}
 			cohortOpen = true;
 			activeNanos = 0;
 			// The anchor's open/pull is common prefix work. Synchronous suffix open/pull starts here.
@@ -945,6 +974,30 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	private static final class Execution {
 		private final AdaptiveFilterPlacementController.LearningBudget budget = new AdaptiveFilterPlacementController.LearningBudget();
 		private RegionIteration region;
+		private Map<Filter, OriginalOutput> originalOutputs;
+		private boolean unknownOriginalOutputs;
+
+		OriginalOutput originalOutput(Filter filter) {
+			if (originalOutputs == null) {
+				originalOutputs = new IdentityHashMap<>();
+			}
+			return originalOutputs.computeIfAbsent(filter, OriginalOutput::new);
+		}
+
+		void invalidateOriginalOutput(Filter filter) {
+			unknownOriginalOutputs = true;
+			originalOutput(filter).invalidate();
+		}
+
+		private void publishUnknownOutputs() {
+			if (unknownOriginalOutputs) {
+				for (OriginalOutput output : originalOutputs.values()) {
+					if (output.invalidated) {
+						output.filter.setResultSizeActual(-1);
+					}
+				}
+			}
+		}
 
 		<T> T call(Supplier<T> work) {
 			Execution previous = CURRENT.get();
@@ -952,9 +1005,53 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			try {
 				return work.get();
 			} finally {
-				// Clear the execution reference while retaining the reusable ThreadLocal entry between pulls.
-				CURRENT.set(previous);
+				// A later ordinary/fallback nested invocation cannot resurrect an invalidated partial count.
+				try {
+					publishUnknownOutputs();
+				} finally {
+					// Clear the execution reference while retaining the reusable ThreadLocal entry between pulls.
+					CURRENT.set(previous);
+				}
 			}
+		}
+	}
+
+	/** One query's original-site interpretation, shared by repeated invocations of the same logical filter. */
+	private static final class OriginalOutput {
+		private final Filter filter;
+		private boolean invalidated;
+
+		OriginalOutput(Filter filter) {
+			this.filter = filter;
+			filter.setResultSizeActual(Math.max(0, filter.getResultSizeActual()));
+		}
+
+		void consumed() {
+			if (!invalidated) {
+				filter.setResultSizeActual(Math.max(0, filter.getResultSizeActual()) + 1);
+			}
+		}
+
+		void invalidate() {
+			invalidated = true;
+			filter.setResultSizeActual(-1);
+		}
+	}
+
+	/** Counts the physical output pull, rather than a condition pass buffered by hasNext(). */
+	private static final class OriginalOutputIteration extends IterationWrapper<BindingSet> {
+		private final OriginalOutput output;
+
+		OriginalOutputIteration(CloseableIteration<BindingSet> source, OriginalOutput output) {
+			super(source);
+			this.output = output;
+		}
+
+		@Override
+		public BindingSet next() {
+			BindingSet row = super.next();
+			output.consumed();
+			return row;
 		}
 	}
 
@@ -1098,6 +1195,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final List<Filter> filters = new ArrayList<>();
 		private final Map<TupleExpr, List<Envelope>> regions = new IdentityHashMap<>();
 		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
+		private final Map<TupleExpr, String> boundaryReasons;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private boolean compiledRegion;
 		private boolean physicalReady;
@@ -1112,6 +1210,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 					super.meet(filter);
 				}
 			});
+			boundaryReasons = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
 			if (filters.isEmpty()) {
 				analysis = null;
 				return;
@@ -1141,7 +1240,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				reason = "Selected join has no drained child-rebinding contract";
 			}
 			if (reason != null) {
-				join.setStringMetricPlanned("adaptiveFilterBoundaryPlanned", reason);
+				boundaryReasons.put(join, reason);
 			}
 			return reason == null;
 		}
@@ -1151,8 +1250,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				return false;
 			}
 			if (physicalReady && !capable(union, Kind.UNION)) {
-				union.setStringMetricPlanned("adaptiveFilterBoundaryPlanned",
-						"Selected UNION has no all-arm child-rebinding contract");
+				boundaryReasons.put(union, "Selected UNION has no all-arm child-rebinding contract");
 				return false;
 			}
 			return true;
@@ -1163,8 +1261,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				return false;
 			}
 			if (physicalReady && !capable(filter, Kind.FILTER)) {
-				filter.setStringMetricPlanned("adaptiveFilterBoundaryPlanned",
-						"Selected FILTER has no ordinary condition/frame contract");
+				boundaryReasons.put(filter, "Selected FILTER has no ordinary condition/frame contract");
 				return false;
 			}
 			return true;
