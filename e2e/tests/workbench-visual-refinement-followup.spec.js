@@ -181,7 +181,7 @@ test('query result table headers stay visible while scrolling rows on desktop an
 	await expect(optionsPanel).toBeHidden();
 
 	const screenshotPrefix = process.env.WORKBENCH_STICKY_HEADER_SCREENSHOT_PREFIX
-		|| '/private/tmp/workbench-query-sticky-header';
+		|| path.join(require('os').tmpdir(), 'workbench-query-sticky-header');
 	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
 		await page.setViewportSize(viewport);
 		if (viewport.width < 480) {

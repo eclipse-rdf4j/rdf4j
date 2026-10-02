@@ -181,12 +181,21 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 
 	const compareRow = page.locator('#query-explanation-row-compare');
 	await expect(compareRow).toBeHidden();
-	const opening = await compareRow.evaluate(element => {
+	const opening = await compareRow.evaluate(element => new Promise(resolve => {
 		document.getElementById('compare-toggle').click();
-		const animation = element.getAnimations({ subtree: false })
-			.find(candidate => candidate.playState === 'running');
-		return animation ? animation.effect.getKeyframes() : [];
-	});
+		// The motion may start with the next frame; its keyframes are fixed once it exists.
+		const deadline = performance.now() + 1000;
+		const read = () => {
+			const animation = element.getAnimations({ subtree: false })
+				.find(candidate => candidate.playState === 'running');
+			if (animation || performance.now() > deadline) {
+				resolve(animation ? animation.effect.getKeyframes() : []);
+			} else {
+				requestAnimationFrame(read);
+			}
+		};
+		read();
+	}));
 	expect(opening.length).toBeGreaterThan(1);
 	expect(parseFloat(opening[0].height)).toBe(0);
 	expect(parseFloat(opening[0].opacity)).toBe(0);

@@ -170,6 +170,10 @@ start_docker_tomcat() {
 
 run_playwright() {
   cd "$E2E_DIR"
+  if [ "$(uname -s)" = "Linux" ] && [ -z "${FONTCONFIG_FILE:-}" ]; then
+    # Geometry specs need the same font metrics on every Linux host (see fontconfig/fonts.conf).
+    export FONTCONFIG_FILE="${E2E_DIR}/fontconfig/fonts.conf"
+  fi
   npx playwright test
 }
 

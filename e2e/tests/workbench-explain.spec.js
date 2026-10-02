@@ -1,5 +1,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const os = require('os');
+const path = require('path');
 const {
     deleteRepository,
     repositoryPageUrl,
@@ -260,7 +262,7 @@ test('Closing comparison cancels stale work and preserves the primary result', a
         .toBeLessThanOrEqual(1);
     expect.soft(desktopCompareGeometry.paneRight).toBeCloseTo(desktopCompareGeometry.layoutRight, 0);
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: '/private/tmp/rdf4j-compare-close-desktop.png' });
+    await page.screenshot({ path: path.join(os.tmpdir(), 'rdf4j-compare-close-desktop.png') });
 
     await page.setViewportSize({ width: 320, height: 900 });
     await page.locator('#query-compare-close').scrollIntoViewIfNeeded();
@@ -280,7 +282,7 @@ test('Closing comparison cancels stale work and preserves the primary result', a
     expect.soft(mobileCloseBounds.left).toBeGreaterThanOrEqual(mobileCloseBounds.paneLeft);
     expect.soft(mobileCloseBounds.right).toBeLessThanOrEqual(mobileCloseBounds.paneRight + 1);
     expect.soft(mobileCloseBounds.right).toBeLessThanOrEqual(mobileCloseBounds.viewportWidth);
-    await page.locator('.query-compare-pane--secondary').screenshot({ path: '/private/tmp/rdf4j-compare-close-mobile-320.png' });
+    await page.locator('.query-compare-pane--secondary').screenshot({ path: path.join(os.tmpdir(), 'rdf4j-compare-close-mobile-320.png') });
     await page.setViewportSize({ width: 1280, height: 900 });
 
     await page.evaluate(query => {

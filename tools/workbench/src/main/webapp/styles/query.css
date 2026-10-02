@@ -653,6 +653,11 @@ body.query-results-fullscreen-active {
 	background: var(--query-surface);
 }
 
+/* Download and Display stay together; when the toolbar is narrow they move below the status as one row. */
+:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar__disclosures {
+	flex-wrap: nowrap;
+}
+
 /* An open Download or Display pane hangs over the rows and the pinned header row (M14.3). */
 .query-result-toolbar:has(.workbench-disclosure__panel:not([hidden])) {
 	z-index: 4;
