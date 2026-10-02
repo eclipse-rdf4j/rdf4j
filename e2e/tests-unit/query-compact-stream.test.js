@@ -62,14 +62,24 @@ test('compact terms stay packed in storage and render lexical values losslessly'
     assert.equal(stored[0][1][2], 'response-0');
     assert.equal(stored[0][7][1][2], 'response-0');
     assert.equal(stored[1][1][2], 'response-0');
+    assert.equal(current.target.querySelector('.query-result-layout').getAttribute('data-effective-layout'), 'records',
+        'Auto selects Records for the fixture viewport with zero width');
+    const layout = current.target.querySelectorAll('select').find(select => select.name === 'result-layout');
+    layout.value = 'table';
+    layout.trigger('change');
+    await settle();
+    assert.equal(current.target.querySelector('.query-result-layout').getAttribute('data-effective-layout'), 'table');
     const cells = current.target.querySelector('[data-query-row-index="0"]').children;
     assert.equal(cells[0].title, 'urn:example:Åβ😃');
-    assert.equal(cells[2].title, '-01');
+    assert.equal(cells[2].title, '"-01"^^<' + XSD + 'integer>');
+    assert.equal(cells[2].textContent, '-01');
     assert.equal(cells[3].getAttribute('lang'), 'en-GB');
     assert.equal(cells[4].querySelector('pre').textContent, '<strong>inert</strong>');
     assert.equal(cells[6].getAttribute('aria-label'), 'Unbound');
     assert.match(cells[7].title, /same-label/);
-    assert.ok(cells[7].title.includes(lexical));
+    assert.equal(stored[0][3][1], lexical, 'the complete literal lexical value stays unmodified in storage');
+    assert.ok(cells[7].title.includes(JSON.stringify(lexical)),
+        'nested RDF literal tooltips quote and escape the complete lexical value');
     current.controller.loadMore();
     await settle();
     assert.equal(stored.length, 4);
@@ -104,6 +114,13 @@ test('directed compact language literals preserve language and direction through
     assert.equal(current.target.querySelector('.ERROR').hidden, true);
     const stored = current.workers[0].rows;
     assert.deepEqual(JSON.parse(JSON.stringify(stored[0][0])), rtl);
+    assert.equal(current.target.querySelector('.query-result-layout').getAttribute('data-effective-layout'), 'records',
+        'Auto selects Records for the fixture viewport with zero width');
+    const layout = current.target.querySelectorAll('select').find(select => select.name === 'result-layout');
+    layout.value = 'table';
+    layout.trigger('change');
+    await settle();
+    assert.equal(current.target.querySelector('.query-result-layout').getAttribute('data-effective-layout'), 'table');
     const cells = current.target.querySelector('[data-query-row-index="0"]').children;
     assert.equal(cells[0].getAttribute('lang'), 'ar');
     assert.equal(cells[0].getAttribute('dir'), 'rtl');

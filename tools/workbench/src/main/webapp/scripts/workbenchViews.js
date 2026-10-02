@@ -880,7 +880,7 @@ var workbench;
             return h(__makeTemplateObject(["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"], ["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"]), function (event) {
                 var globalWindow = typeof window !== 'undefined' ? window : null;
                 if (globalWindow && typeof globalWindow.checkIsSafeToDelete === 'function') {
-                    globalWindow.checkIsSafeToDelete(event);
+                    globalWindow.checkIsSafeToDelete(event, modelOwner(event.currentTarget, model));
                 }
             }, function (event) {
                 var selected = options.filter(function (row) { return text(row.id) === event.target.value; })[0];
@@ -970,10 +970,11 @@ var workbench;
                 rerender(event, true);
             }, icon(runtime, 'edit'), 'Delete ' + label(row.prefix), function (event) {
                 var document = event.currentTarget.ownerDocument;
+                var owns = modelOwner(event.currentTarget, model);
                 var dialog = workbench.confirmDialog;
                 dialog.open({ title: 'Delete prefix ' + label(row.prefix) + '?', body: row.namespace,
                     confirmLabel: 'Delete prefix', danger: true }).then(function (confirmed) {
-                    if (confirmed) {
+                    if (confirmed && owns()) {
                         postNamespaces(document, { action: 'delete', prefix: row.prefix });
                     }
                 });
@@ -1734,6 +1735,12 @@ var workbench;
             var holder = model;
             return holder.submission || (holder.submission = { state: 'idle', message: '' });
         }
+        /** A DOM node may be reused by Lit for another page; its captured model still owns async work only here. */
+        function modelOwner(element, model) {
+            var outlet = element && element.closest ? element.closest('.workbench-outlet') : null;
+            return function () { return !!element && element.isConnected !== false
+                && (!outlet || shownModels.get(outlet) === model && outlet.contains(element)); };
+        }
         /** Render model again into the outlet that holds element, if that outlet still shows model. */
         function renderAgain(element, model, context, runtime) {
             var outlet = element && element.closest ? element.closest('.workbench-outlet') : null;
@@ -1765,6 +1772,9 @@ var workbench;
          * An error answer is shown as the page, with its callout, as before.
          */
         function sendInPlace(form, submitter, model, context, runtime, running, done, after) {
+            if (!modelOwner(form, model)()) {
+                return;
+            }
             var router = workbench.router;
             // The form is read before its button is disabled.
             var sent = router && typeof router.send === 'function' ? router.send(form, submitter)
@@ -2736,6 +2746,10 @@ var workbench;
                 executionDisposers = [];
             };
             var bindExecutionForms = function () {
+                var savedQueries = workbench.savedQueries;
+                if (model.viewId === 'saved-queries' && savedQueries && savedQueries.refresh) {
+                    savedQueries.refresh(mount);
+                }
                 if (model.viewId !== 'saved-queries' || !stream
                     || typeof stream.bindExecutionForms !== 'function') {
                     return;

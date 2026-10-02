@@ -8,19 +8,28 @@
  * DeleteServlet whether the given ID has been proxied, giving a chance to back
  * out if it is.
  */
-function checkIsSafeToDelete(event) {
+function checkIsSafeToDelete(event, ownsPage) {
     event.preventDefault();
+    var form = $(event.target).closest('form').get(0);
+    var owner = workbench.captureFormOwner(form);
+    var owns = function () { return owner.isCurrent() && (!ownsPage || ownsPage()); };
+    if (!owns()) {
+        return;
+    }
     var id = $('#id').val();
     var feedback = $('#delete-feedback');
     $
         .ajax({
         dataType: 'json',
-        url: 'delete',
+        url: owner.url ? new URL('delete', owner.url).href : 'delete',
         timeout: 5000,
         data: {
             checkSafe: id
         },
         error: function (jqXHR, textStatus, errorThrown) {
+            if (!owns()) {
+                return;
+            }
             if (textStatus == 'timeout') {
                 feedback
                     .text('The server seems unresponsive. Delete request not sent.');
@@ -34,8 +43,10 @@ function checkIsSafeToDelete(event) {
             }
         },
         success: function (data) {
+            if (!owns()) {
+                return;
+            }
             feedback.text('');
-            var form = $(event.target).closest('form').get(0);
             var body = 'This permanently deletes ' + id + ' and all of its statements.';
             if (!data.safe) {
                 body += ' Another repository proxies this one and stops working once it is deleted.';
@@ -47,7 +58,7 @@ function checkIsSafeToDelete(event) {
                 danger: true,
                 requireText: String(id)
             }).then(function (submit) {
-                if (submit && form) {
+                if (submit && owns()) {
                     workbench.submitForm(form);
                 }
             });

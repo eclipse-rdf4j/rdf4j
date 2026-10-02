@@ -647,3 +647,169 @@ test('Explore lists each class and type once and leaves out the explored resourc
     const card = markup.substring(markup.indexOf('explore-resource-card__types'));
     assert.equal(links(card.substring(0, card.indexOf('</ul>')), '<' + rdfs + 'Class>'), 1, 'each type is shown once');
 });
+
+
+/** Exercise real generated saved-query handlers against the virtual-card renderer. */
+async function savedActionHarness(rowCount = 300) {
+    const loaded = loadWorkbench();
+    const { workbench, window } = loaded;
+    const model = modelFor('saved-queries', []);
+    model.vars = ['query', 'queryName', 'user', 'queryText', 'queryLn', 'infer', 'rowsPerPage', 'queryTimeout'];
+    model.rowCount = rowCount;
+    model.rowStore = { async read(start, count) {
+        return Array.from({ length: Math.min(count, rowCount - start) }, (_unused, relative) => {
+            const index = start + relative;
+            return [`urn:saved:${index}`, `Query ${index}`, 'alice', '  ASK {}  ', 'SPARQL', 'true', '100', '0'];
+        });
+    } };
+    const routeContext = Object.assign({}, context, { workbench });
+    const harness = windowHarness(workbench, window, model);
+    const document = harness.document;
+    const originalRender = harness.renderer.render.bind(harness.renderer);
+    harness.renderer.render = (template, target) => {
+        originalRender(template, target);
+        if (target.tagName !== 'ARTICLE') { return; }
+        const markup = flatten(template);
+        const urn = target.id.slice(0, -4);
+        const metadata = document.createElement('div');
+        metadata.setAttribute('id', urn + '-metadata');
+        metadata.style.display = 'none';
+        const textarea = document.createElement('textarea');
+        textarea.setAttribute('id', urn + '-text');
+        textarea.value = '  ASK {}  ';
+        textarea.style.display = 'none';
+        target.appendChild(metadata);
+        target.appendChild(textarea);
+        for (const match of markup.matchAll(/<button\b([^>]*class="[^"]*saved-query-(?:toggle|delete)[^"]*"[^>]*)>([\s\S]*?)<\/button>/g)) {
+            const button = document.createElement('button');
+            for (const attribute of match[1].matchAll(/([\w-]+)=(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g)) {
+                button.setAttribute(attribute[1], attribute[2] ?? attribute[3] ?? attribute[4]);
+            }
+            button.textContent = match[2].replace(/<[^>]+>/g, '');
+            if (button.classList.contains('saved-query-delete')) {
+                const form = document.createElement('form');
+                form.setAttribute('id', urn);
+                form.setAttribute('name', urn);
+                form.appendChild(button);
+                target.appendChild(form);
+            } else { target.appendChild(button); }
+        }
+    };
+    loaded.context.document = document;
+    // jQuery styling and the original direct bindings are both supported by the fixture.
+    loaded.context.$ = value => {
+        const nodes = value ? [value] : [];
+        function wrap(list) { return {
+            css() { return this; },
+            find(selector) { return wrap(list.flatMap(node => node.querySelectorAll(selector))); },
+            each(callback) { list.forEach(node => callback.call(node)); return this; },
+            attr(name, value) { if (arguments.length === 2) { list.forEach(node => node.setAttribute(name, value)); return this; }
+                return list[0]?.getAttribute(name); },
+            on(event, callback) { list.forEach(node => node.addEventListener(event.split('.')[0], callback)); return this; },
+            off() { list.forEach(node => node.removeAllEventListeners()); return this; }
+        }; }
+        return wrap(nodes);
+    };
+    const dialogs = [];
+    workbench.getCookie = () => Buffer.from('alice:secret').toString('base64');
+    window.atob = value => Buffer.from(value, 'base64').toString('utf8');
+    workbench.confirmDialog = { open(options) { dialogs.push(options); return Promise.resolve(false); } };
+    const editors = [];
+    loaded.context.YASQE = { fromTextArea(textarea) {
+        const editor = { textarea, closed: false, refresh() {},
+            toTextArea() { this.closed = true; }, getWrapperElement() { return document.createElement('div'); } };
+        editors.push(editor);
+        return editor;
+    } };
+    vm.runInContext(fs.readFileSync(path.join(scripts, 'saved-queries.js'), 'utf8'), loaded.context);
+    workbench.views.render(harness.mount, model, routeContext, harness.renderer);
+    const outlet = workbench.views.outletOf(harness.mount);
+    const geometry = document.createElement('div');
+    geometry.getBoundingClientRect = () => ({ top: -window.scrollY, height: rowCount * 240 });
+    const query = outlet.querySelectorAll.bind(outlet);
+    outlet.querySelectorAll = selector => selector.includes('data-workbench-row-table')
+        || selector.includes('data-workbench-row-list') ? [geometry] : query(selector);
+    const disposeRows = await workbench.views.bindRowWindows(outlet, model, routeContext, harness.renderer);
+    const disposeActions = workbench.savedQueries.mount(outlet);
+    const toggle = index => outlet.querySelectorAll('.saved-query-toggle')
+        .find(button => button.getAttribute('data-query-urn') === 'urn:saved:' + index);
+    const remove = index => outlet.querySelectorAll('.saved-query-delete')
+        .find(button => button.getAttribute('data-query-urn') === 'urn:saved:' + index);
+    const activate = button => button.dispatchEvent({ type: 'click', bubbles: true,
+        preventDefault() { this.defaultPrevented = true; } });
+    return Object.assign(harness, { workbench, window, outlet, editors, dialogs, toggle, remove, activate,
+        disposeRows, disposeActions, async scroll(index) {
+            window.scrollY = index * 240;
+            await harness.listeners.get('scroll')();
+        } });
+}
+
+test('virtual saved rows delegate details and delete actions after scroll and resize', async () => {
+    const harness = await savedActionHarness();
+    harness.window.innerHeight = 660;
+    await harness.listeners.get('resize')();
+    await harness.scroll(8);
+    harness.activate(harness.toggle(8));
+    harness.activate(harness.remove(8));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(harness.toggle(8).getAttribute('aria-expanded'), 'true');
+    assert.equal(harness.dialogs.length, 1);
+    assert.equal(harness.editors.length, 1);
+    harness.disposeActions();
+    harness.disposeRows();
+});
+
+test('virtual saved row editors close when removed and expanded rows reopen with a fresh textarea', async () => {
+    const harness = await savedActionHarness(1000000);
+    harness.activate(harness.toggle(0));
+    const first = harness.editors[0];
+    await harness.scroll(10000);
+    assert.equal(first.closed, true, 'an offscreen editor must release its DOM and listeners');
+    harness.activate(harness.toggle(10000));
+    await harness.scroll(0);
+    assert.equal(harness.editors[1].closed, true);
+    assert.equal(harness.toggle(0).getAttribute('aria-expanded'), 'true');
+    assert.equal(harness.editors.length, 3, 'expanded returning row gets its own fresh editor');
+    assert.notEqual(harness.editors[2].textarea, first.textarea);
+    assert.equal(harness.editors.filter(editor => !editor.closed).length, 1);
+    harness.activate(harness.toggle(0));
+    assert.equal(harness.toggle(0).getAttribute('aria-expanded'), 'false');
+    assert.equal(harness.editors.filter(editor => !editor.closed).length, 0);
+    harness.disposeActions();
+    harness.disposeRows();
+});
+
+test('saved actions dispose and remount without duplicate native keyboard click activation', async () => {
+    const harness = await savedActionHarness();
+    harness.disposeActions();
+    harness.disposeActions = harness.workbench.savedQueries.mount(harness.outlet);
+    harness.activate(harness.toggle(0));
+    assert.equal(harness.editors.length, 1);
+    assert.equal(harness.toggle(0).getAttribute('aria-expanded'), 'true');
+    harness.disposeActions();
+    assert.equal(harness.editors[0].closed, true);
+    harness.activate(harness.toggle(0));
+    assert.equal(harness.editors.length, 1, 'disposed page cannot react to activation');
+    harness.disposeRows();
+});
+
+
+test('saved deletion confirmation cannot submit a recycled card with the same urn', async () => {
+    const harness = await savedActionHarness();
+    let confirm;
+    harness.workbench.confirmDialog.open = () => new Promise(resolve => { confirm = resolve; });
+    const submitted = [];
+    harness.workbench.submitForm = form => submitted.push(form);
+    harness.activate(harness.remove(0));
+    await harness.scroll(100);
+    await harness.scroll(0);
+    confirm(true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(submitted.length, 0, 'a confirmation is owned by the original mounted card');
+    harness.activate(harness.remove(0));
+    harness.disposeActions();
+    confirm(true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(submitted.length, 0, 'disposed actions cannot submit a form');
+    harness.disposeRows();
+});

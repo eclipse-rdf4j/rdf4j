@@ -176,13 +176,13 @@ test('saved query controls bind inert data attributes to static handlers', async
     harness.loadScripts(['saved-queries.js']);
     harness.context.workbench.savedQueries.mount(harness.document.body);
 
-    deleteButton.click();
+    deleteButton.dispatchEvent({ type: 'click', bubbles: true });
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
     assert.match(harness.confirms[0], /globalThis\.rdf4jXss=true/);
     assert.equal(harness.context.rdf4jXss, undefined);
 
-    toggle.click();
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(metadata.style.display, '');
     assert.equal(toggle.textContent, 'Hide details');
     assert.equal(yasqe.state.instance.refreshCount, 1);
@@ -330,14 +330,15 @@ test('the Saved queries route unbinds its buttons and closes opened editors on d
     harness.loadScripts(['saved-queries.js']);
 
     const first = harness.context.workbench.savedQueries.mount(page);
-    assert.equal(toggle.listenerCount('click'), 1);
-    toggle.click();
+    assert.equal(page.listenerCount('click'), 1, 'one stable outlet listener serves every card');
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     const opened = yasqe.state.instance;
     first();
     assert.equal(opened.closed, true, 'an opened editor is closed');
+    assert.equal(page.listenerCount('click'), 0);
     assert.equal(toggle.listenerCount('click'), 0);
     assert.equal(remove.listenerCount('click'), 0);
     const second = harness.context.workbench.savedQueries.mount(page);
-    assert.equal(toggle.listenerCount('click'), 1);
+    assert.equal(page.listenerCount('click'), 1, 'one stable outlet listener serves every card');
     second();
 });

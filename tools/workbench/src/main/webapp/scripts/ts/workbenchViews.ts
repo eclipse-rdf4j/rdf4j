@@ -1206,7 +1206,7 @@ module workbench {
                     @submit=${(event: Event) => {
                         const globalWindow: any = typeof window !== 'undefined' ? window : null;
                         if (globalWindow && typeof globalWindow.checkIsSafeToDelete === 'function') {
-                            globalWindow.checkIsSafeToDelete(event);
+                            globalWindow.checkIsSafeToDelete(event, modelOwner(event.currentTarget, model));
                         }
                     }}>
                 <div class="workbench-field"><label for="id">Repository</label>
@@ -1329,10 +1329,11 @@ module workbench {
                         class="workbench-action workbench-action--ghost workbench-action--icon workbench-namespace-delete"
                         aria-label=${'Delete ' + label(row.prefix)} title="Delete" @click=${(event: any) => {
                             const document = event.currentTarget.ownerDocument;
+                            const owns = modelOwner(event.currentTarget, model);
                             const dialog: any = (workbench as any).confirmDialog;
                             dialog.open({ title: 'Delete prefix ' + label(row.prefix) + '?', body: row.namespace,
                                 confirmLabel: 'Delete prefix', danger: true }).then((confirmed: boolean) => {
-                                if (confirmed) { postNamespaces(document, { action: 'delete', prefix: row.prefix }); }
+                                if (confirmed && owns()) { postNamespaces(document, { action: 'delete', prefix: row.prefix }); }
                             });
                         }}>${icon(runtime, 'delete')}</button></td>
             </tr>`;
@@ -2356,6 +2357,13 @@ module workbench {
             return holder.submission || (holder.submission = { state: 'idle', message: '' });
         }
 
+        /** A DOM node may be reused by Lit for another page; its captured model still owns async work only here. */
+        function modelOwner(element: any, model: PageModel): () => boolean {
+            const outlet = element && element.closest ? element.closest('.workbench-outlet') : null;
+            return () => !!element && element.isConnected !== false
+                && (!outlet || shownModels.get(outlet) === model && outlet.contains(element));
+        }
+
         /** Render model again into the outlet that holds element, if that outlet still shows model. */
         function renderAgain(element: any, model: PageModel, context: ViewContext, runtime: LitRuntime): void {
             const outlet = element && element.closest ? element.closest('.workbench-outlet') : null;
@@ -2393,6 +2401,7 @@ module workbench {
          */
         function sendInPlace(form: any, submitter: any, model: PageModel, context: ViewContext, runtime: LitRuntime,
                              running: string, done: string, after?: () => void): void {
+            if (!modelOwner(form, model)()) { return; }
             const router: any = (workbench as any).router;
             // The form is read before its button is disabled.
             const sent: Promise<string> = router && typeof router.send === 'function' ? router.send(form, submitter)
@@ -3819,6 +3828,10 @@ module workbench {
             };
 
             const bindExecutionForms = () => {
+                const savedQueries = (workbench as any).savedQueries;
+                if (model.viewId === 'saved-queries' && savedQueries && savedQueries.refresh) {
+                    savedQueries.refresh(mount);
+                }
                 if (model.viewId !== 'saved-queries' || !stream
                         || typeof stream.bindExecutionForms !== 'function') {
                     return;

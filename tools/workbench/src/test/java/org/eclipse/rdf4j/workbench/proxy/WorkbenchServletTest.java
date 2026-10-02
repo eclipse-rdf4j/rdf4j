@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
@@ -27,6 +28,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,8 +50,12 @@ import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
+import org.eclipse.rdf4j.workbench.commands.SummaryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -53,13 +63,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-class WorkbenchServletTest {
+public class WorkbenchServletTest {
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
 
 	@Test
@@ -157,6 +168,118 @@ class WorkbenchServletTest {
 		servlet.destroy();
 		assertThat(created.destroyCount).isEqualTo(1);
 		verify(manager).shutDown();
+	}
+
+	@Test
+	void repositoryLandingUsesPolicyFallbackThroughTheProxyForSlashAndMountedPaths() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		Repository repository = mock(Repository.class);
+		when(manager.getRepository("repo")).thenReturn(repository);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		WorkbenchPolicy policy = policy("query,repositories");
+		RoutedWorkbenchServlet servlet = initRoutedServlet(manager, policy, "/summary", null);
+
+		try {
+			List<String[]> requests = List.of(
+					new String[] { "/workbench/repo", "/repo", "", "/workbench" },
+					new String[] { "/workbench/repo/", "/repo/", "", "/workbench" },
+					new String[] { "/mount/workbench/repo", "/repo", "/mount", "/workbench" });
+			for (String[] path : requests) {
+				MockHttpServletRequest request = request(path[0], path[1], path[2], path[3]);
+				MockHttpServletResponse response = new MockHttpServletResponse();
+				servlet.service(request, response);
+
+				String requestPath = path[0].endsWith("/") ? path[0].substring(0, path[0].length() - 1) : path[0];
+				assertThat(response.getRedirectedUrl())
+						.as("landing redirect for %s (status %s, body %s)", path[0], response.getStatus(),
+								response.getContentAsString())
+						.isEqualTo(requestPath + "/query");
+			}
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void explicitDisabledRepositoryRouteRemainsNotFound() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		WorkbenchPolicy policy = policy("query,repositories");
+		RoutedWorkbenchServlet servlet = initRoutedServlet(manager, policy, "/summary", null);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		try {
+			servlet.service(request("/workbench/repo/summary", "/repo/summary"), response);
+
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+			verifyNoInteractions(manager);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void repositoryWithoutVisibleLandingReturnsTheProxyDisabledLandingResponse() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		RoutedWorkbenchServlet servlet = initRoutedServlet(manager, policy("repositories"), "/summary", null);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		try {
+			servlet.service(request("/workbench/repo", "/repo"), response);
+
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			assertThat(response.getContentAsString()).contains("no repository landing page enabled by policy");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void configuredCustomDefaultAliasRemainsTheRepositoryLanding() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		Properties properties = new Properties();
+		properties.setProperty("menu.items", "query,repositories,tenantLanding");
+		properties.setProperty("menu.consumer-ids", "tenantLanding");
+		properties.setProperty("menu.item.tenantLanding.route", "/custom-landing");
+		properties.setProperty("menu.item.tenantLanding.href", "/custom-landing");
+		properties.setProperty("menu.item.tenantLanding.label", "Tenant landing");
+		properties.setProperty("menu.item.tenantLanding.group", "explore");
+		properties.setProperty("menu.group.explore.visible", "true");
+		properties.setProperty("menu.group.repositories.visible", "true");
+		RoutedWorkbenchServlet servlet = initRoutedServlet(manager,
+				WorkbenchPolicy.fromProperties(properties, Set.of()), "/custom-landing", null);
+
+		try {
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			servlet.service(request("/workbench/repo", "/repo"), response);
+
+			assertThat(response.getRedirectedUrl())
+					.as("custom landing (status %s, body %s)", response.getStatus(), response.getContentAsString())
+					.isEqualTo("/workbench/repo/custom-landing");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void configuredNoneRepositoryUsesTheRepositoryLandingPolicyThroughTheProxy() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("NONE")).thenReturn(null);
+		RoutedWorkbenchServlet servlet = initRoutedServlet(manager, policy("query,repositories"), "/summary", "NONE");
+
+		try {
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			servlet.service(request("/workbench/NONE", "/NONE"), response);
+
+			assertThat(response.getRedirectedUrl())
+					.as("NONE landing (status %s, body %s)", response.getStatus(), response.getContentAsString())
+					.isEqualTo("/workbench/NONE/query");
+		} finally {
+			servlet.destroy();
+		}
 	}
 
 	@Test
@@ -423,16 +546,67 @@ class WorkbenchServletTest {
 		return servlet;
 	}
 
+	private static RoutedWorkbenchServlet initRoutedServlet(RepositoryManager manager, WorkbenchPolicy policy,
+			String defaultCommand, String noRepositoryId) throws Exception {
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, policy);
+		Map<String, String> params = new LinkedHashMap<>();
+		params.put("default-path", "/repositories");
+		params.put("default-command", defaultCommand);
+		params.put(WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server");
+		params.put(LEGACY_TRANSFORMATIONS, "/transform");
+		params.put("/summary", SummaryServlet.class.getName());
+		params.put("/query", TestLandingServlet.class.getName());
+		params.put("/custom-landing", TestLandingServlet.class.getName());
+		if (noRepositoryId != null) {
+			params.put("no-repository-id", noRepositoryId);
+		}
+		RoutedWorkbenchServlet servlet = new RoutedWorkbenchServlet(manager);
+		servlet.init(new TestServletConfig("workbench", context, params));
+		return servlet;
+	}
+
+	private static WorkbenchPolicy policy(String menuItems) {
+		Properties properties = new Properties();
+		properties.setProperty("menu.items", menuItems);
+		properties.setProperty("menu.group.explore.visible", "true");
+		properties.setProperty("menu.group.repositories.visible", "true");
+		return WorkbenchPolicy.fromProperties(properties, Set.of());
+	}
+
 	private static MockHttpServletRequest request(String requestUri, String pathInfo) {
+		return request(requestUri, pathInfo, "", "");
+	}
+
+	private static MockHttpServletRequest request(String requestUri, String pathInfo, String contextPath,
+			String servletPath) {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", requestUri);
 		request.setScheme("https");
 		request.setServerName("example.org");
 		request.setServerPort(443);
-		request.setContextPath("");
-		request.setServletPath("");
+		request.setContextPath(contextPath);
+		request.setServletPath(servletPath);
 		request.setRequestURI(requestUri);
 		request.setPathInfo(pathInfo);
 		return request;
+	}
+
+	private static final class RoutedWorkbenchServlet extends WorkbenchServlet {
+		private final RepositoryManager manager;
+
+		private RoutedWorkbenchServlet(RepositoryManager manager) {
+			this.manager = manager;
+		}
+
+		@Override
+		protected RepositoryManager createRepositoryManager(String param) {
+			return manager;
+		}
+	}
+
+	public static class TestLandingServlet extends AbstractRepositoryServlet {
+		public TestLandingServlet() {
+		}
 	}
 
 	private static class TestWorkbenchServlet extends WorkbenchServlet {

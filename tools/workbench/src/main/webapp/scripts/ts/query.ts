@@ -3694,23 +3694,32 @@ module workbench {
          *            if true, add a URL parameter that tells the server we wish
          *            to overwrite any already saved query
          */
-        function ajaxSave(overwrite: boolean) {
-            var feedback = $('#save-feedback');
-            var url: string[] = [];
-            url[url.length] = 'query';
-            if (overwrite) {
-                url[url.length] = document.all ? ';' : '?';
-                url[url.length] = 'overwrite=true&'
-	        }
-            var href = url.join('');
-            var form = $('form[action="query"]');
+        interface SaveOperation {
+            owner: workbench.FormOwner;
+            data: string;
+            name: string;
+            feedback: JQuery;
+        }
+
+        function ajaxSave(overwrite: boolean, operation?: SaveOperation) {
+            if (!operation) {
+                var form = $('form[action="query"]');
+                operation = { owner: workbench.captureFormOwner(<HTMLFormElement>form.get(0)), data: form.serialize(),
+                    name: String($('#query-name').val() || ''), feedback: $('#save-feedback') };
+            }
+            if (!operation.owner.isCurrent()) { return; }
+            var saved = operation;
+            var feedback = saved.feedback;
+            var suffix = overwrite ? (document.all ? ';' : '?') + 'overwrite=true&' : '';
+            var href = (saved.owner.url ? new URL('query', saved.owner.url).href : 'query') + suffix;
             $.ajax({
                 url: href,
                 type: 'POST',
                 dataType: 'json',
-                data: form.serialize(),
+                data: saved.data,
                 timeout: 5000,
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    if (!saved.owner.isCurrent()) { return; }
                     feedback.removeClass().addClass('error');
                     if (textStatus == 'timeout') {
                         feedback.text('Timed out waiting for response. Uncertain if save occured.');
@@ -3720,27 +3729,26 @@ module workbench {
                     }
                 },
                 success: function(response: AjaxSaveResponse) {
+                    if (!saved.owner.isCurrent()) { return; }
                     if (response.accessible) {
                         if (response.written) {
                             feedback.removeClass().addClass('success');
                             feedback.text('Query saved.');
-                        } else {
-                            if (response.existed) {
-                                var name = String($('#query-name').val() || '');
-                                workbench.confirmDialog.open({
-                                    title: 'Replace saved query?',
-                                    body: 'A saved query named "' + name + '" already exists. Saving replaces it.',
-                                    confirmLabel: 'Replace',
-                                    danger: true
-                                }).then(function(overwrite: boolean) {
-                                    if (overwrite) {
-                                        ajaxSave(true);
-                                    } else {
-                                        feedback.removeClass().addClass('error');
-                                        feedback.text('Cancelled overwriting existing query.');
-                                    }
-                                });
-                            }
+                        } else if (response.existed) {
+                            workbench.confirmDialog.open({
+                                title: 'Replace saved query?',
+                                body: 'A saved query named "' + saved.name + '" already exists. Saving replaces it.',
+                                confirmLabel: 'Replace',
+                                danger: true
+                            }).then(function(overwrite: boolean) {
+                                if (!saved.owner.isCurrent()) { return; }
+                                if (overwrite) {
+                                    ajaxSave(true, saved);
+                                } else {
+                                    feedback.removeClass().addClass('error');
+                                    feedback.text('Cancelled overwriting existing query.');
+                                }
+                            });
                         }
                     } else {
                         feedback.removeClass().addClass('error');

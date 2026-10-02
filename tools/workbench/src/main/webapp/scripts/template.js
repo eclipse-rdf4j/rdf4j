@@ -1310,6 +1310,16 @@ var workbench;
         };
     }
     workbench.decoratePage = decoratePage;
+    /** Async writes retain their original page and actual form, including across same-URL return visits. */
+    function captureFormOwner(form) {
+        var router = workbench.router;
+        if (router && typeof router.isRunning === 'function' && router.isRunning()
+            && typeof router.captureFormOwner === 'function') {
+            return router.captureFormOwner(form);
+        }
+        return { url: null, isCurrent: function () { return !!form && form.isConnected !== false; } };
+    }
+    workbench.captureFormOwner = captureFormOwner;
     /**
      * Submit a form from a script, for example after a confirmation dialog: through the in-page router when it
      * runs and can show the answer (M10.1), natively otherwise.

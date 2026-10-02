@@ -291,8 +291,12 @@ function checkOverwrite() {
     // 'exists' asks before replacing the configuration; 'absent' creates; anything else sends nothing.
     var found = '';
     var id = workbench.create.id.val();
+    var form = <HTMLFormElement>$(workbench.create.id.get(0)).closest('form').get(0);
+    var owner = workbench.captureFormOwner(form);
+    if (!owner.isCurrent()) { return; }
+    var lookup = '../' + id + '/info';
     $.ajax({
-        url: '../' + id + '/info',
+        url: owner.url ? new URL(lookup, owner.url).href : lookup,
         success: function () {
             found = 'exists';
         },
@@ -306,6 +310,7 @@ function checkOverwrite() {
             }
         },
 		complete : function(xhr, status) {
+            if (!owner.isCurrent()) { return; }
             var overwrite: Promise<boolean> = found == 'exists' ? workbench.confirmDialog.open({
                 title: 'Replace repository configuration?',
                 body: 'A repository with the id "' + id + '" already exists. Creating it again replaces its configuration.',
@@ -313,6 +318,7 @@ function checkOverwrite() {
                 danger: true
             }) : Promise.resolve(found == 'absent');
             overwrite.then(function(submit: boolean) {
+                if (!owner.isCurrent()) { return false; }
                 if (submit && !id.match(/^[a-z0-9._-]+$/)) {
                     return workbench.confirmDialog.open({
                         title: 'Use this repository id?',
@@ -324,8 +330,8 @@ function checkOverwrite() {
                 }
                 return submit;
             }).then(function(submit: boolean) {
-                if (submit) {
-                    workbench.submitForm(<HTMLFormElement>$("form[action='create']").get(0));
+                if (submit && owner.isCurrent()) {
+                    workbench.submitForm(form);
                 }
             });
         }

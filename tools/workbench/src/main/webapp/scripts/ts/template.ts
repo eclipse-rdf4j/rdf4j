@@ -1479,6 +1479,22 @@ module workbench {
         };
     }
 
+    export interface FormOwner {
+        /** The displayed route URL, or null for a legacy document without a router. */
+        url: string;
+        isCurrent: () => boolean;
+    }
+
+    /** Async writes retain their original page and actual form, including across same-URL return visits. */
+    export function captureFormOwner(form: HTMLFormElement): FormOwner {
+        var router: any = (<any>workbench).router;
+        if (router && typeof router.isRunning === 'function' && router.isRunning()
+                && typeof router.captureFormOwner === 'function') {
+            return router.captureFormOwner(form);
+        }
+        return { url: null, isCurrent: () => !!form && form.isConnected !== false };
+    }
+
     /**
      * Submit a form from a script, for example after a confirmation dialog: through the in-page router when it
      * runs and can show the answer (M10.1), natively otherwise.

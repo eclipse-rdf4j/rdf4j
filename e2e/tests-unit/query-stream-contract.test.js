@@ -534,9 +534,14 @@ test('a bound execution form requests the default million-row batch into its dec
     assert.equal(requests[0].init.body.get('query'), 'SELECT * WHERE {?s ?p ?o}');
     assert.ok(requests[0].init.body.get('query-request-id'));
     assert.equal(target.getAttribute('aria-busy'), 'false');
-    assert.equal(target.querySelector('.query-result-status').textContent, '1 result.',
+    assert.equal(target.querySelector('.query-result-status').textContent, '1 row · complete',
         target.querySelector('.ERROR').textContent);
-    assert.equal(target.querySelector('td').textContent, '"streamed"');
+    const layout = target.querySelectorAll('select').find(select => select.name === 'result-layout');
+    layout.value = 'table';
+    layout.trigger('change');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(target.querySelector('td').textContent, 'streamed');
+    assert.equal(target.querySelector('td').title, '"streamed"');
     assert.equal(requests[0].init.body.get('batch-size'), '1000000');
     assert.equal(requests[0].init.body.get('batch-offset'), '0');
     assert.equal(requests[0].init.body.has('limit_query'), false);
@@ -562,7 +567,7 @@ test('large batched results stay in worker storage and bound table DOM', async (
     const target = document.createElement('section');
     document.body.appendChild(target);
     const renderer = new queryStream.QueryResultRenderer(target, {
-        batched: true, requestedLimit: 1000000, maxDomRows: 80, rowStore: inMemoryRowStore()
+        batched: true, requestedLimit: 1000000, maxDomRows: 80, initialLayout: 'table', rowStore: inMemoryRowStore()
     });
     renderer.beginBatch(0);
     await renderer.accept({ type: 'head', version: 1 });
