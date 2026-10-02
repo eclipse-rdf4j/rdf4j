@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
 
 import io.opentelemetry.api.trace.Span;
@@ -44,9 +46,15 @@ import io.opentelemetry.context.Scope;
 
 /**
  * A {@link RepositoryConnection} that wraps every prepared {@link Query}/{@link Update} so that its evaluation is
- * recorded as an OpenTelemetry span, and that also traces {@code getStatements}/{@code hasStatement} calls and
- * {@code add}/{@code remove}/{@code clear} calls directly, following the OpenTelemetry database client semantic
- * conventions. See {@link org.eclipse.rdf4j.opentelemetry.repository} for the full attribute list.
+ * recorded as an OpenTelemetry span, and that also traces {@code getStatements}/{@code exportStatements}/
+ * {@code hasStatement} calls and {@code add}/{@code remove}/{@code clear} calls directly, following the OpenTelemetry
+ * database client semantic conventions. See {@link org.eclipse.rdf4j.opentelemetry.repository} for the full attribute
+ * list.
+ * <p>
+ * {@code exportStatements} is traced as its own {@code GET_STATEMENTS} span (not by delegating to
+ * {@link #getStatements}): {@link org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper} forwards it directly
+ * to the delegate connection rather than routing it through {@code getStatements}, and this is the path RDF4J Server's
+ * {@code GET .../statements} endpoint uses to stream matching statements into the HTTP response.
  * <p>
  * Instances are usually obtained via {@link TracingRepository}; this constructor is available for advanced/custom
  * wiring.
@@ -133,6 +141,26 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 	}
 
 	@Override
+	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+			Resource... contexts) throws RepositoryException, RDFHandlerException {
+		// RepositoryConnectionWrapper.exportStatements() delegates directly rather than going through
+		// getStatements(), e.g. this is the path RDF4J Server's GET .../statements endpoint uses to stream
+		// matches into the HTTP response - trace it in its own right rather than relying on getStatements().
+		Span span = TracingOperation.startSpan(tracer, config, repositoryId, "GET_STATEMENTS");
+		attachTriplePatternText(span, subj, pred, obj, contexts);
+		CountingRDFHandler countingHandler = new CountingRDFHandler(handler);
+		try (Scope scope = span.makeCurrent()) {
+			super.exportStatements(subj, pred, obj, includeInferred, countingHandler, contexts);
+			span.setAttribute(DbOtelAttributes.DB_RESPONSE_RETURNED_ROWS, countingHandler.getCount());
+		} catch (RuntimeException e) {
+			TracingOperation.recordException(e, span);
+			throw e;
+		} finally {
+			span.end();
+		}
+	}
+
+	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws RepositoryException {
 		Span span = TracingOperation.startSpan(tracer, config, repositoryId, "HAS_STATEMENT");
@@ -180,8 +208,13 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 		pattern.append(termOrVariable(subj, "subj")).append(' ');
 		pattern.append(termOrVariable(pred, "pred")).append(' ');
 		pattern.append(termOrVariable(obj, "obj"));
-		for (Resource context : contexts) {
-			pattern.append(' ').append(termOrVariable(context, "context"));
+		if (contexts.length == 0) {
+			// no context given means "any context"; render the same wildcard variable as an unbound argument
+			pattern.append(' ').append("?context");
+		} else {
+			for (Resource context : contexts) {
+				pattern.append(' ').append(termOrVariable(context, "context"));
+			}
 		}
 		pattern.append(" }");
 		return pattern.toString();
@@ -207,7 +240,7 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 			traceWrite("ADD", () -> super.add(statements, contexts), null);
 			return;
 		}
-		CountingIterable<? extends Statement> counted = new CountingIterable<>(statements);
+		CountingIterable<? extends Statement> counted = CountingIterable.wrap(statements);
 		traceWrite("ADD", () -> super.add(counted, contexts), counted::getCount);
 	}
 
@@ -265,7 +298,7 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 			traceWrite("REMOVE", () -> super.remove(statements, contexts), null);
 			return;
 		}
-		CountingIterable<? extends Statement> counted = new CountingIterable<>(statements);
+		CountingIterable<? extends Statement> counted = CountingIterable.wrap(statements);
 		traceWrite("REMOVE", () -> super.remove(counted, contexts), counted::getCount);
 	}
 
@@ -299,9 +332,10 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 	 * {@link RDF4JOpenTelemetryConfig#isCaptureWriteOperations()} is enabled. When disabled, {@code action} runs
 	 * directly with no tracing overhead.
 	 *
-	 * @param lazyCount supplies the number of statements affected, recorded as {@code db.response.affected_rows} when
-	 *                  {@link RDF4JOpenTelemetryConfig#isCaptureWriteCount()} is also enabled; {@code null} if not
-	 *                  determinable for this operation. Evaluated only after {@code action} completes successfully.
+	 * @param lazyCount supplies the number of statements affected by the operation, recorded as
+	 *                  {@code rdf4j.affected_rows} when {@link RDF4JOpenTelemetryConfig#isCaptureWriteCount()} is also
+	 *                  enabled; {@code null} if not determinable for this operation. Evaluated only after
+	 *                  {@code action} completes successfully.
 	 */
 	private void traceWrite(String operationName, WriteAction action, LongSupplier lazyCount)
 			throws RepositoryException {
@@ -313,7 +347,7 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 		try (Scope scope = span.makeCurrent()) {
 			action.run();
 			if (config.isCaptureWriteCount() && lazyCount != null) {
-				span.setAttribute(DbOtelAttributes.DB_RESPONSE_AFFECTED_ROWS, lazyCount.getAsLong());
+				span.setAttribute(DbOtelAttributes.RDF4J_AFFECTED_ROWS, lazyCount.getAsLong());
 			}
 		} catch (RuntimeException e) {
 			TracingOperation.recordException(e, span);
