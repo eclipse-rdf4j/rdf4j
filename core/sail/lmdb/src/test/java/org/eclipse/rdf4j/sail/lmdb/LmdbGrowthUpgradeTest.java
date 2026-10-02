@@ -221,7 +221,7 @@ class LmdbGrowthUpgradeTest {
 	private static LmdbStore newStore(Path dataDirectory) {
 		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(INITIAL_MAP_BYTES)
-				.setValueDBSize(INITIAL_MAP_BYTES)
+				.setValueDBSize(128L * 1024L * 1024L)
 				.setAutoGrow(true)
 				.setMapGrowthThreshold(0.10d)
 				.setMapGrowthReadDrainTimeoutMillis(30_000L));
@@ -250,6 +250,8 @@ class LmdbGrowthUpgradeTest {
 					GROWTH_PREDICATE,
 					VF.createLiteral("growth-value:" + index));
 		}
+		// Namespaces share the authoritative TripleStore map, whose readers require the reader-grace phase.
+		connection.setNamespace("growth-demand", "urn:lmdb:growth-upgrade:" + "n".repeat(2 * 1024 * 1024));
 	}
 
 	private static void await(CountDownLatch latch, String message) throws InterruptedException {
@@ -285,9 +287,9 @@ class LmdbGrowthUpgradeTest {
 	}
 
 	private static void assertHasResizeSince(MapGrowthMetrics.Snapshot before, MapGrowthMetrics.Snapshot after) {
-		assertTrue(
-				after.tripleStoreResizes() + after.valueStoreResizes() > before.tripleStoreResizes()
-						+ before.valueStoreResizes(),
-				"the coordinated episode must complete a normal map resize");
+		assertTrue(after.tripleStoreResizes() > before.tripleStoreResizes(),
+				"the coordinated episode must complete an authoritative TripleStore map resize");
+		assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
+				"dictionary-only growth must not supply this reader-grace stimulus");
 	}
 }

@@ -12,13 +12,14 @@ in [Transaction Isolation Levels](/documentation/programming/repository/#transac
 Here, “this change” refers to the GH-6070 work in [PR #6073](https://github.com/eclipse-rdf4j/rdf4j/pull/6073),
 compared with its pre-port target at `978c9a64cf4e`. No advertised isolation level was removed or redefined. The
 commit-publication and whole-write recovery rows below describe repaired behavior. A replayable read that has not
-exposed a result may be restarted when a map grows; other pinned reads still have an invalidation boundary to handle.
+exposed a result may be restarted when TripleStore growth or dictionary triple-term membership requires it. Ordinary
+statement reads preserve their existing RDF snapshot through ValueStore-only growth.
 
 ## Changes applications may notice
 
 | Operation | Behavior before this change | Behavior now and what to do |
 | --- | --- | --- |
-| A query or transaction remains open while a map grows | Publication of Sail-buffered commits to LMDB, and the associated map growth, could be postponed while observers remained open; after a reader reset, the record iterator could renew its native cursor and appear to continue. That renewal did not promise one pinned native generation across resize. | A replayable read-only attempt that has not exposed a result may be restarted automatically, up to `readOnlyReplayMaxRetries`. If the read has been observed, attempted a write, or cannot be replayed, its pinned view is invalidated: re-run the whole `SNAPSHOT_READ` query or restart the `SNAPSHOT`/`SERIALIZABLE` transaction. A replay reruns the query plan, including remote `SERVICE` calls, so external services may receive duplicate requests. |
+| A query or transaction remains open while a map grows | Publication of Sail-buffered commits to LMDB, and the associated map growth, could be postponed while observers remained open; after a reader reset, the record iterator could renew its native cursor and appear to continue. That renewal did not promise one pinned native generation across resize. | Ordinary statement reads continue on their original RDF snapshot through ValueStore-only growth. TripleStore growth and dictionary triple-term membership retain the retry boundary: a replayable read-only attempt that has not exposed a result may restart automatically, up to `readOnlyReplayMaxRetries`. An observed, writing, or otherwise ineligible view instead reports a conflict: re-run the whole `SNAPSHOT_READ` query or restart the `SNAPSHOT`/`SERIALIZABLE` transaction. Replay reruns the query plan, including remote `SERVICE` calls, so external services may receive duplicate requests. |
 | A repository transaction commits while other reads stay open | Root changes could remain buffered until the final observer closed, making the commit path depend on reader cleanup. | `RepositoryConnection.commit()` flushes both roots at the commit boundary. Native commit work must complete before `commit()` returns; with `forceSync=true`, the required storage flush is also part of that path. |
 | A namespace-only update commits | Namespace data was persisted separately in `namespaces.dat`, outside the TripleStore transaction. | The namespace snapshot is written into the TripleStore environment with a native commit. A namespace-only change therefore performs a physical TripleStore commit, but does not commit the ValueStore or advance the RDF data revision. |
 | A write reaches a native map limit | Map-full growth could commit a prefix while continuing the logical write. | Tracked TripleStore writes can abort, grow, and replay their complete statement and namespace journal before publication. Dictionary growth is proactive; unexpected native ValueStore map-full errors can still fail a tracked write. Eligible writes may omit the journal; exhaustion then requires rollback and retry of the entire transaction. Failed writes publish no partial RDF or namespace transaction. |
@@ -49,8 +50,12 @@ invalidated rather than allowed to proceed on a different native view.
 ## Map sizing and reader lifetime
 
 `autoGrow` remains enabled by default. When growth is needed, LMDB must remap its environment while native readers are
-quiesced. The old physical read view is retired or invalidated by that remap; eligible unobserved reads may be replayed
-as described above. When the workload is known, pre-size both the TripleStore and ValueStore maps using
+quiesced. ValueStore ID resolution preserves logical value identity and the existing TripleStore snapshot through a
+dictionary-only remap. TripleStore growth still retires or invalidates the old physical statement view; eligible
+unobserved reads may be replayed as described above. Dictionary triple-term enumeration is also a membership snapshot:
+an active term scan retains that retry boundary, and a pre-growth view first requesting terms after dictionary growth
+reports a conflict rather than silently acquiring newer terms. An eligible unobserved attempt can then replay the
+whole query or transaction. When the workload is known, pre-size both the TripleStore and ValueStore maps using
 `LmdbStoreConfig.setTripleDBSize(...)` and `setValueDBSize(...)` to reduce how often this boundary is reached.
 Disabling `autoGrow` disables automatic growth; a write that reaches the configured map limit
 then fails with a map-full error.
@@ -89,8 +94,10 @@ tracked; an unexpected native ValueStore map-full error can still fail a tracked
 the whole-transaction retry above applies. If an already admitted writer exhausts capacity before it finishes, emergency
 growth is attempted only when its internal continuation, journal and dictionary checkpoint can preserve all writer
 observations and borrowers. It suspends that writer and starts a separate reader grace. An open reader can delay the writer
-and all new admissions for that grace. At its end, observed or otherwise nonreplayable readonly work is cancelled; eligible
-unobserved work is parked for replay. Native calls must quiesce safely before the mappings change, so the grace bounds the
+and all new admissions for that grace when the affected map supplies its membership snapshot. At its end, affected
+observed or otherwise nonreplayable readonly work is cancelled; eligible unobserved work is parked for replay. Ordinary
+statement readers do not need cancellation or replay for ValueStore-only growth. Native calls must quiesce safely
+before the mappings change, so the grace bounds the
 cancellation request rather than forced termination. The store grows the environments whose projected write needs more
 capacity and reserves fresh paired epochs for eligible replays before reopening admission. Replay execution continues
 lazily. Emergency recovery resumes internal mutations without rerunning application, SPARQL, SERVICE or custom-function
@@ -109,20 +116,21 @@ the reader grace to `0` skips the grace period but does not disable the early ad
 Configure eligible read retries with `LmdbStoreConfig.setReadOnlyReplayMaxRetries(...)` (default `3`); setting the retry
 limit to `0` disables automatic replay.
 
-An admitted read view holds a native reader in each environment until its final owning lease is released. A
-`SNAPSHOT`/`SERIALIZABLE` connection can keep that transaction view after an individual result or dataset closes. The
-reader-slot limits already existed before this change; pinned views now keep both readers for the life of the view.
-Close datasets, iterations, and query results promptly in high-concurrency applications. A long-lived reader also
+An admitted read view retains its native TripleStore snapshot and logical dictionary value lifetime until its final
+owning lease is released. Its dictionary native reader preserves original triple-term membership until close or
+dictionary remapping; ordinary ID resolution can then use brief reads without replacing the TripleStore snapshot.
+A `SNAPSHOT`/`SERIALIZABLE` connection can keep that transaction view after an individual result or dataset closes.
+Close datasets, iterations, and query results promptly in high-concurrency applications because native reader slots
+remain limited. A long-lived reader also
 delays reclamation of old dictionary IDs until the reader horizon has passed and committed triples have been checked.
 Reclamation makes internal pages and IDs reusable; it does not promise that an `.mdb` file shrinks.
 
-RDF values returned from a successfully closed result remain usable: the normal final close detaches the reachable lazy
-and nested values from the native read snapshot. That work can add CPU and value-resolution work to close. One narrower
-case remains for direct low-level `SailDataset` use: if map growth invalidates the snapshot before it is closed, values
-that were already returned but are still lazy may no longer be resolved after invalidation. Resolve values while that
-snapshot is valid, or reacquire a dataset and read them again. Public `RepositoryConnection` statement and binding
-paths initialize their returned values. This invalidation-specific lifetime note is source-derived; it is not a
-separate runtime reproduction.
+Returned RDF values remain usable after their result, transaction, and repository close, including deferred nested
+triple terms. Shared lazy value lifetimes preserve dictionary bytes while values remain unresolved, and store shutdown
+resolves still-reachable lazy values before freeing the native environment. This can add value-resolution work to
+shutdown; normal result closure does not materialize every lazy value. Direct dictionary-only snapshots without an
+authoritative TripleStore reader retain strict native dictionary snapshots and report a retryable conflict if that
+dictionary map grows.
 
 ## Automatic publication and low-level SailSource use
 

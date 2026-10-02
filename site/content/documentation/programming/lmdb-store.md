@@ -211,8 +211,10 @@ choosing the value and triple db sizes.
 RDF4J implements an **autogrow** feature to simplify the management of memory map sizes.
 
 If it is enabled (which is the default), RDF4J monitors used pages and increases the map size when required. Resizing
-requires coordinating native readers while LMDB remaps the environment. A pinned query result or an established
-`SNAPSHOT`/`SERIALIZABLE` transaction can be invalidated by that resize and must be retried. Writes normally retain a
+requires coordinating native readers while LMDB remaps the environment. Ordinary statement reads preserve their
+TripleStore snapshot when only the ValueStore dictionary grows. TripleStore growth, or a read that depends on the
+dictionary's triple-term membership, can invalidate a pinned query result or an established
+`SNAPSHOT`/`SERIALIZABLE` transaction and require a retry. Writes normally retain a
 complete TripleStore replay journal, which may use temporary disk space. Large, lightly filled paired maps with
 conservative successful allocation history may omit tracking; unexpected exhaustion then attempts capacity growth and reports
 `LmdbTransactionRetryException` through the cause chain. Roll back and retry the entire transaction in that case;

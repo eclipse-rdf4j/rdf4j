@@ -148,6 +148,8 @@ class LmdbMapGrowthCoordinatorTest {
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(@TempDir Path dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(32L * 1024L * 1024L)
+				.setValueDBSize(256L * 1024L * 1024L)
 				.setMapGrowthThreshold(0.01d)
 				.setMapGrowthReadDrainTimeoutMillis(0L);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
@@ -158,6 +160,7 @@ class LmdbMapGrowthCoordinatorTest {
 		IRI laterSubject = values.createIRI("urn:phased-growth:after-reopen");
 		try (RepositoryConnection reader = repository.getConnection()) {
 			reader.add(values.createIRI("urn:phased-growth:initial"), predicate, values.createLiteral("initial"));
+			MapGrowthMetrics.Snapshot before = store.getBackingStore().growthMetricsSnapshot();
 			try (TupleQueryResult result = reader.prepareTupleQuery(
 					"SELECT ?s WHERE { ?s <urn:phased-growth:predicate> ?o }").evaluate()) {
 				try (RepositoryConnection writer = repository.getConnection()) {
@@ -166,6 +169,7 @@ class LmdbMapGrowthCoordinatorTest {
 						writer.add(values.createIRI("urn:phased-growth:buffered:" + i), predicate,
 								values.createLiteral(i + "-" + "payload".repeat(150)));
 					}
+					writer.setNamespace("growth-demand", "urn:phased-growth:" + "n".repeat(2 * 1024 * 1024));
 					writer.commit();
 				}
 				// Begin waits for the growth gate. The old unobserved result must already own its replacement
@@ -173,8 +177,10 @@ class LmdbMapGrowthCoordinatorTest {
 				try (RepositoryConnection writer = repository.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
 					MapGrowthMetrics.Snapshot metrics = store.getBackingStore().growthMetricsSnapshot();
-					assertTrue(metrics.tripleStoreResizes() + metrics.valueStoreResizes() > 0,
-							"the capacity regression must cross a native map growth");
+					assertTrue(metrics.tripleStoreResizes() > before.tripleStoreResizes(),
+							"the replay reservation regression must cross authoritative TripleStore map growth");
+					assertEquals(before.valueStoreResizes(), metrics.valueStoreResizes(),
+							"dictionary-only growth must not supply this replay stimulus");
 					assertTrue(metrics.replayAccepted() > 0, "the old unobserved query must be eligible for replay");
 					writer.add(laterSubject, predicate, values.createLiteral("after growth"));
 					writer.commit();

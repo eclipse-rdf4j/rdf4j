@@ -53,11 +53,14 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -262,6 +265,81 @@ public class OrderIteratorTest {
 				breaker.complete(handle);
 			}
 		});
+	}
+
+	@Test
+	public void sortInstallsWorkerCapabilityOnceForSequentialRun() {
+		ThreadLocal<Boolean> admitted = new ThreadLocal<>();
+		AtomicInteger activations = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> input = new ArrayList<>();
+		for (int i = 512; i > 0; i--) {
+			input.add(new BindingSetSize(i));
+		}
+		Comparator<BindingSet> admittedComparator = (left, right) -> {
+			assertEquals(Boolean.TRUE, admitted.get(), "every comparison must retain its owning query admission");
+			comparisons.incrementAndGet();
+			return Integer.compare(left.size(), right.size());
+		};
+		admitted.set(true);
+		try (QueryExecutionContext.Activation source = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> () -> {
+			Boolean previous = admitted.get();
+			admitted.set(true);
+			activations.incrementAndGet();
+			return () -> {
+				closes.incrementAndGet();
+				if (previous == null) {
+					admitted.remove();
+				} else {
+					admitted.set(previous);
+				}
+			};
+		}); OrderIterator sorting = new OrderIterator(new IterationStub(input.iterator()), admittedComparator)) {
+			assertTrue(sorting.hasNext());
+			assertTrue(comparisons.get() > 1);
+			assertEquals(1, activations.get(), "one sequential sort run must own one captured capability lifetime");
+			assertEquals(activations.get(), closes.get(),
+					"sorting must close every captured capability before returning");
+			assertEquals(Boolean.TRUE, admitted.get(), "sorting must restore the caller's admission");
+		} finally {
+			admitted.remove();
+		}
+	}
+
+	@Test
+	public void capturedSortingPreservesSpillDistinctAndLimitCombinations() {
+		Comparator<BindingSet> byValue = Comparator.comparingInt(row -> ((Literal) row.getValue("value")).intValue());
+		List<BindingSet> input = new ArrayList<>();
+		for (int i = 39; i >= 0; i--) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("value", SimpleValueFactory.getInstance().createLiteral(i));
+			input.add(row);
+			input.add(row);
+		}
+		for (boolean unique : new boolean[] { false, true }) {
+			for (long maximum : new long[] { Long.MAX_VALUE, 13 }) {
+				for (long spillThreshold : new long[] { 0, 7 }) {
+					Stream<BindingSet> expected = input.stream().sorted(byValue);
+					if (unique) {
+						expected = expected.distinct();
+					}
+					List<BindingSet> expectedRows = expected.limit(maximum).toList();
+					try (QueryExecutionContext.Activation source = QueryExecutionContext.activateReplaySafepoint(() -> {
+					});
+							OrderIterator sorting = new OrderIterator(new IterationStub(input.iterator()), byValue,
+									maximum, unique, spillThreshold)) {
+						List<BindingSet> actualRows = new ArrayList<>();
+						while (sorting.hasNext()) {
+							actualRows.add(sorting.next());
+						}
+						assertEquals(expectedRows, actualRows,
+								"distinct=" + unique + ", limit=" + maximum + ", spill=" + spillThreshold);
+					}
+				}
+			}
+		}
 	}
 
 	@Test

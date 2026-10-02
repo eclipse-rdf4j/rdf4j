@@ -72,6 +72,13 @@ public interface ValueStoreRevision {
 		public boolean resolveValue(long id, LmdbValue value) {
 			return valueStore != null && valueStore.resolveValue(id, value);
 		}
+
+		@Override
+		public void valueInitialized(long id, LmdbValue value) {
+			if (valueStore != null) {
+				valueStore.cacheValue(id, value, this);
+			}
+		}
 	}
 
 	class Lazy extends Base implements Serializable {
@@ -80,11 +87,35 @@ public interface ValueStoreRevision {
 		private final ValueStoreRevision revision;
 		private final long revisionId;
 		private final ValueStore valueStore;
+		private final transient ValueStore.NativeValueAssociation association;
+		private transient volatile WeakReference<ValueStore.ReadSnapshot> preferredSnapshot;
 
 		public Lazy(ValueStoreRevision revision) {
+			this(revision, null);
+		}
+
+		Lazy(ValueStoreRevision revision, ValueStore.NativeValueAssociation association) {
 			this.revision = revision;
 			this.revisionId = revision.getRevisionId();
 			this.valueStore = revision.getValueStore();
+			this.association = association;
+		}
+
+		ValueStoreRevision unwrapped() {
+			return revision;
+		}
+
+		ValueStore.NativeValueAssociation association() {
+			return association;
+		}
+
+		void preferSnapshot(ValueStore.ReadSnapshot snapshot) {
+			preferredSnapshot = new WeakReference<>(snapshot);
+		}
+
+		ValueStore.ReadSnapshot preferredSnapshot() {
+			WeakReference<ValueStore.ReadSnapshot> preferred = preferredSnapshot;
+			return preferred == null ? null : preferred.get();
 		}
 
 		@Override
@@ -99,12 +130,17 @@ public interface ValueStoreRevision {
 
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
-			if (valueStore != null && valueStore.resolveValue(id, value)) {
+			if (valueStore != null && valueStore.resolveValue(id, value, this)) {
 				// set unwrapped version of revision
 				value.setInternalID(id, revision);
 				return true;
 			}
 			return false;
+		}
+
+		@Override
+		public void valueInitialized(long id, LmdbValue value) {
+			revision.valueInitialized(id, value);
 		}
 	}
 
@@ -204,13 +240,31 @@ public interface ValueStoreRevision {
 			return System.identityHashCode(this);
 		}
 
-		private static final class TrackedValues {
+		static final class TrackedValues {
 			private final ReferenceQueue<LmdbValue> collectedValues = new ReferenceQueue<>();
 			private final Set<ValueReference> values = new HashSet<>();
+			private boolean frozen;
+			private Thread materializationThread;
 
 			synchronized void add(LmdbValue value) {
+				if (frozen && Thread.currentThread() != materializationThread) {
+					throw new SailException("ValueStore is closed; retry the read operation");
+				}
 				removeCollectedValues();
 				values.add(new ValueReference(value, collectedValues));
+			}
+
+			synchronized void freezeForMaterialization() {
+				frozen = true;
+				materializationThread = Thread.currentThread();
+			}
+
+			synchronized void finishMaterialization() {
+				try {
+					clear();
+				} finally {
+					materializationThread = null;
+				}
 			}
 
 			synchronized List<LmdbValue> drainLiveValues() {
@@ -274,19 +328,23 @@ public interface ValueStoreRevision {
 
 	boolean resolveValue(long id, LmdbValue value);
 
+	/** Publishes a value only after its lazy payload and revision metadata have completed initialization. */
+	default void valueInitialized(long id, LmdbValue value) {
+	}
+
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
 		if (valueStore == null || !valueStore.valueHashCacheEnabled
 				|| valueStore.getRevision().getRevisionId() != getRevisionId()) {
 			return 0;
 		}
-		return valueStore.getStoredHash(id);
+		return valueStore.getStoredHash(id, getRevisionId());
 	}
 
 	default void storeHash(long id, int hash) {
 		ValueStore valueStore = getValueStore();
 		if (valueStore != null && valueStore.getRevision().getRevisionId() == getRevisionId()) {
-			valueStore.storeHash(id, hash);
+			valueStore.storeHash(id, hash, getRevisionId());
 		}
 	}
 }

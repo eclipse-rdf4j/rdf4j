@@ -263,6 +263,66 @@ class QueryReplayWorkerScopeTest {
 		}
 	}
 
+	@Test
+	void capturedOwnershipValidationRunsInOrderWithoutActivatingScopes() {
+		List<String> validations = new ArrayList<>();
+		AtomicInteger activations = new AtomicInteger();
+		AtomicBoolean closed = new AtomicBoolean();
+		IllegalStateException cancellation = new IllegalStateException("captured owner closed");
+		QueryExecutionContext.WorkerScope owner = new QueryExecutionContext.WorkerScope() {
+			@Override
+			public QueryExecutionContext.Activation activate() {
+				activations.incrementAndGet();
+				return () -> {
+				};
+			}
+
+			@Override
+			public void checkActive() {
+				validations.add("outer");
+				if (closed.get()) {
+					throw cancellation;
+				}
+			}
+		};
+		QueryExecutionContext.WorkerScope nested = new QueryExecutionContext.WorkerScope() {
+			@Override
+			public QueryExecutionContext.Activation activate() {
+				activations.incrementAndGet();
+				return () -> {
+				};
+			}
+
+			@Override
+			public void checkActive() {
+				validations.add("inner");
+			}
+		};
+		try (QueryExecutionDeadline capturedDeadline = QueryExecutionDeadline.start(60000);
+				QueryExecutionDeadline localDeadline = QueryExecutionDeadline.start(60000)) {
+			QueryExecutionContext.ReplayContext context;
+			try (QueryExecutionDeadline.Scope deadline = capturedDeadline.enter();
+					QueryExecutionContext.Activation outer = QueryExecutionContext.activateReplaySafepoint(() -> {
+					}, () -> owner);
+					QueryExecutionContext.Activation inner = QueryExecutionContext.activateReplaySafepoint(() -> {
+					}, () -> nested)) {
+				context = QueryExecutionContext.captureReplayContext();
+			}
+			try (QueryExecutionDeadline.Scope deadline = localDeadline.enter();
+					QueryExecutionContext.Activation deferral = QueryExecutionContext.deferReplaySafepoints()) {
+				context.checkActive();
+				assertEquals(List.of("outer", "inner"), validations);
+				assertEquals(0, activations.get(), "validation must not acquire or install worker resources");
+				assertSame(localDeadline, QueryExecutionDeadline.current());
+				closed.set(true);
+				assertSame(cancellation, assertThrows(IllegalStateException.class, context::checkActive),
+						"synchronous replay deferral must never defer ownership validation");
+				assertEquals(0, activations.get());
+				assertSame(localDeadline, QueryExecutionDeadline.current());
+			}
+		}
+	}
+
 	private static QueryExecutionContext.ReplayContext captureContext(QueryExecutionDeadline deadline, String name) {
 		try (QueryExecutionDeadline.Scope ignored = deadline.enter();
 				QueryExecutionContext.Activation source = QueryExecutionContext.activateReplaySafepoint(() -> {

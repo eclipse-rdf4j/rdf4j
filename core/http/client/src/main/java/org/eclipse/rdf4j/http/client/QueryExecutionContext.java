@@ -222,6 +222,14 @@ public final class QueryExecutionContext {
 	@FunctionalInterface
 	public interface WorkerScope {
 		Activation activate();
+
+		/**
+		 * Revalidates the owning operation without activating worker resources. Implementations with cancellable or
+		 * replaceable ownership may override this with a cheap lifetime check. Validation is independent of cooperative
+		 * replay deferral and must not acquire a new admission or retain additional resources.
+		 */
+		default void checkActive() {
+		}
 	}
 
 	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, ReplayDeferral deferral) {
@@ -240,6 +248,19 @@ public final class QueryExecutionContext {
 			this.deferral = deferral;
 			this.deadline = deadline;
 			this.workerScopes = workerScopes;
+		}
+
+		/**
+		 * Checks the original deadline and captured operation ownership without installing this context. These checks
+		 * remain active while cooperative replay safepoints are deferred by synchronous extension code.
+		 */
+		public void checkActive() {
+			if (deadline != null && deadline.isExpired()) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
+			for (int i = 0; i < workerScopes.size(); i++) {
+				workerScopes.get(i).checkActive();
+			}
 		}
 
 		/** Runs an integer-returning operation with this context installed, then restores the worker's context. */

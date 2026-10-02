@@ -260,7 +260,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** A physical paired snapshot lease; replay may abandon lazy values before its owner closes the view. */
+	/** A statement snapshot and dictionary lifetime lease; relational replay may retire their native handles. */
 	final class ReadViewLease {
 		private final MapGrowthObserver observer;
 		private final ReadAttemptLease attempt;
@@ -269,6 +269,8 @@ class LmdbSailStore implements SailStore {
 		private volatile ReadView view;
 		private volatile boolean closed;
 		private volatile MapResizeKind invalidatedKind;
+		private MapGrowthToken dictionaryTermReplayToken;
+		private volatile MapGrowthToken dictionaryMembershipConflictToken;
 		private boolean pending = true;
 
 		private ReadViewLease(MapGrowthObserver observer, ReadAttemptLease attempt, Object nativeOwner) {
@@ -296,6 +298,11 @@ class LmdbSailStore implements SailStore {
 		boolean hasNativePin(MapResizeKind kind) {
 			ReadView current = view;
 			return !closed && current != null && current.hasNativePin(kind);
+		}
+
+		boolean requiresDictionaryMembership() {
+			ReadView current = view;
+			return !closed && current != null && current.valueSnapshot.requiresStableTermMembership();
 		}
 
 		void retireNativeSnapshots(MapResizeKind kind) {
@@ -478,6 +485,9 @@ class LmdbSailStore implements SailStore {
 		private boolean growthStarted;
 		private boolean admissionClosed = true;
 		private boolean quiescenceRunning;
+		private boolean dictionaryMembershipFrozen;
+		private long frozenDictionaryMapGeneration;
+		private int pendingDictionaryReplayClassifications;
 		private Thread quiescenceThread;
 		private MapResizeKind kind;
 		private boolean managed;
@@ -489,6 +499,7 @@ class LmdbSailStore implements SailStore {
 		private boolean tripleResized;
 		private boolean valueResized;
 		private Throwable failure;
+		// Accepted replays stay parked until the episode ends; false means their replacement is still pending.
 		private final IdentityHashMap<ReadAttemptLease, Boolean> parkedAttempts = new IdentityHashMap<>();
 
 		private GrowthEpisode(Object owner, long deadlineNanos, MapGrowthToken token,
@@ -1373,7 +1384,7 @@ class LmdbSailStore implements SailStore {
 								"Unable to establish a stable paired LMDB publication after resize failure");
 					}
 					try (Txn tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							ValueStore.ReadSnapshot values = valueReservation.start()) {
+							ValueStore.ReadSnapshot values = valueReservation.start(tripleTxn)) {
 						// Successful paired native acquisition is the consistency/lifetime check. No data was published
 						// by a map-size change, so the stable publication remains authoritative in both environments.
 					}
@@ -1510,42 +1521,82 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void reserveParkedSnapshots(GrowthEpisode requestedEpisode) {
-			List<ReadAttemptLease> parked;
-			lock.lock();
-			try {
-				changePhase(requestedEpisode, GrowthPhase.RESERVE_REPLAYS);
-				parked = List.copyOf(requestedEpisode.parkedAttempts.keySet());
-			} finally {
-				lock.unlock();
-			}
-			for (ReadAttemptLease attempt : parked) {
-				if (attempt.closed || attempt.deadlineOwner != null && attempt.deadlineOwner.isExpired()) {
-					mapGrowthMetrics.recordReplayCancelled();
-					continue;
-				}
-				ReadView fresh;
-				try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(attempt.deadlineOwner)) {
-					fresh = createFreshReadView(attempt.observer, attempt);
-				} catch (QueryInterruptedException expired) {
-					mapGrowthMetrics.recordReplayCancelled();
-					continue;
-				}
-				ReadView discarded;
+			while (true) {
+				List<ReadAttemptLease> parked;
 				lock.lock();
 				try {
-					if (!attempt.closed && episode == requestedEpisode && !shuttingDown) {
-						discarded = attempt.reservedEpoch;
-						attempt.reservedEpoch = fresh;
-						mapGrowthMetrics.recordReplayReserved();
-					} else {
-						discarded = fresh;
+					if (episode != requestedEpisode || shuttingDown) {
+						return;
+					}
+					changePhase(requestedEpisode, GrowthPhase.RESERVE_REPLAYS);
+					while (requestedEpisode.pendingDictionaryReplayClassifications > 0 && !shuttingDown) {
+						try {
+							changed.await();
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new SailException("Interrupted while reserving LMDB replay snapshots", e);
+						}
+					}
+					if (shuttingDown) {
+						return;
+					}
+					parked = requestedEpisode.parkedAttempts.entrySet()
+							.stream()
+							.filter(entry -> !entry.getValue())
+							.map(Map.Entry::getKey)
+							.toList();
+					if (parked.isEmpty()) {
+						// Seal replay reservations and reopen admission atomically with late-demand registration.
+						failedPressure = null;
+						episode = null;
+						mapGrowthMetrics.transition(GrowthPhase.OPEN);
+						changed.signalAll();
+						return;
 					}
 				} finally {
 					lock.unlock();
 				}
-				if (discarded != null) {
-					discarded.close();
+				for (ReadAttemptLease attempt : parked) {
+					if (attempt.closed || attempt.deadlineOwner != null && attempt.deadlineOwner.isExpired()) {
+						mapGrowthMetrics.recordReplayCancelled();
+						markReplayReservationComplete(requestedEpisode, attempt);
+						continue;
+					}
+					ReadView fresh;
+					try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(attempt.deadlineOwner)) {
+						fresh = createFreshReadView(attempt.observer, attempt);
+					} catch (QueryInterruptedException expired) {
+						mapGrowthMetrics.recordReplayCancelled();
+						markReplayReservationComplete(requestedEpisode, attempt);
+						continue;
+					}
+					ReadView discarded;
+					lock.lock();
+					try {
+						if (!attempt.closed && episode == requestedEpisode && !shuttingDown) {
+							discarded = attempt.reservedEpoch;
+							attempt.reservedEpoch = fresh;
+							requestedEpisode.parkedAttempts.put(attempt, Boolean.TRUE);
+							mapGrowthMetrics.recordReplayReserved();
+						} else {
+							discarded = fresh;
+						}
+					} finally {
+						lock.unlock();
+					}
+					if (discarded != null) {
+						discarded.close();
+					}
 				}
+			}
+		}
+
+		private void markReplayReservationComplete(GrowthEpisode requestedEpisode, ReadAttemptLease attempt) {
+			lock.lock();
+			try {
+				requestedEpisode.parkedAttempts.put(attempt, Boolean.TRUE);
+			} finally {
+				lock.unlock();
 			}
 		}
 
@@ -1624,6 +1675,10 @@ class LmdbSailStore implements SailStore {
 							break;
 						}
 					}
+					if (kind == MapResizeKind.VALUE_STORE) {
+						requestedEpisode.dictionaryMembershipFrozen = true;
+						requestedEpisode.frozenDictionaryMapGeneration = valueStore.nativeMapGeneration();
+					}
 					notifications = snapshotNotifications(requestedEpisode);
 				} catch (IOException | RuntimeException | Error failure) {
 					if (coordinationOwner && episode == requestedEpisode) {
@@ -1651,7 +1706,7 @@ class LmdbSailStore implements SailStore {
 								lock.lock();
 								try {
 									for (ReadAttemptLease attempt : notification.attempts()) {
-										requestedEpisode.parkedAttempts.put(attempt, Boolean.TRUE);
+										requestedEpisode.parkedAttempts.putIfAbsent(attempt, Boolean.FALSE);
 									}
 								} finally {
 									lock.unlock();
@@ -1854,7 +1909,9 @@ class LmdbSailStore implements SailStore {
 		private List<ObserverNotification> snapshotNotifications(GrowthEpisode requestedEpisode) {
 			IdentityHashMap<MapGrowthObserver, ObserverNotificationBuilder> grouped = new IdentityHashMap<>();
 			for (ReadAttemptLease lease : attempts.keySet()) {
-				if (!lease.closed && lease.observer != null && lease.owner != requestedEpisode.owner) {
+				if (!lease.closed && lease.observer != null && lease.owner != requestedEpisode.owner
+						&& (requestedEpisode.kind == MapResizeKind.TRIPLE_STORE
+								|| hasDictionaryTermDependency(lease))) {
 					grouped.computeIfAbsent(lease.observer, ObserverNotificationBuilder::new).attempts.add(lease);
 				}
 			}
@@ -1870,6 +1927,91 @@ class LmdbSailStore implements SailStore {
 						List.copyOf(builder.views)));
 			}
 			return result;
+		}
+
+		private boolean hasDictionaryTermDependency(ReadAttemptLease attempt) {
+			for (ReadViewLease lease : attempt.historicalViews.keySet()) {
+				if (lease != null && lease.requiresDictionaryMembership()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/** Called while the dictionary native read barrier and its transaction monitor are held. */
+		private void declareDictionaryTermMembership(ReadViewLease lease, Runnable declareMembership) {
+			lock.lock();
+			try {
+				ReadView view = lease.view;
+				if (episode != null && episode.dictionaryMembershipFrozen && view != null
+						&& view.valueSnapshot.nativeMapGeneration() == episode.frozenDictionaryMapGeneration) {
+					lease.dictionaryMembershipConflictToken = episode.token;
+					throw new MapResizeConflictException(MapResizeKind.VALUE_STORE,
+							"ValueStore term membership is frozen for map growth; retry the transaction");
+				}
+				declareMembership.run();
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		/** Classifies an old view only when a term operation first depends on its remapped dictionary membership. */
+		private void requestDictionaryTermReplay(ReadViewLease lease, MapGrowthToken token) {
+			ObserverNotification notification;
+			GrowthEpisode activeEpisode;
+			QueryExecutionDeadline deadline = earlierDeadline(QueryExecutionDeadline.current(),
+					lease.attempt == null ? null : lease.attempt.deadlineOwner());
+			throwIfExpired(deadline);
+			lock.lock();
+			try {
+				if (lease.closed || lease.observer == null || token == null
+						|| lease.dictionaryTermReplayToken == token) {
+					return;
+				}
+				lease.dictionaryTermReplayToken = token;
+				activeEpisode = episode != null && episode.managed && episode.token == token ? episode : null;
+				if (activeEpisode != null) {
+					activeEpisode.pendingDictionaryReplayClassifications++;
+				}
+				notification = new ObserverNotification(lease.observer,
+						lease.attempt == null ? List.of() : List.of(lease.attempt), List.of(lease));
+			} finally {
+				lock.unlock();
+			}
+			try {
+				long callbackDeadline = activeEpisode == null ? System.nanoTime() + readDrainTimeoutNanos
+						: activeEpisode.deadlineNanos;
+				mapGrowthMetrics.recordReplayRequested();
+				// Like managed growth, this classifies an attempt and schedules retirement; it runs no query factory.
+				if (notification.observer()
+						.requestReplay(MapResizeKind.VALUE_STORE, token, callbackDeadline,
+								notification.attempts(), notification.views())) {
+					mapGrowthMetrics.recordReplayAccepted();
+					if (activeEpisode != null) {
+						lock.lock();
+						try {
+							if (episode == activeEpisode) {
+								for (ReadAttemptLease attempt : notification.attempts()) {
+									activeEpisode.parkedAttempts.putIfAbsent(attempt, Boolean.FALSE);
+								}
+							}
+						} finally {
+							lock.unlock();
+						}
+					}
+				}
+				throwIfExpired(deadline);
+			} finally {
+				if (activeEpisode != null) {
+					lock.lock();
+					try {
+						activeEpisode.pendingDictionaryReplayClassifications--;
+						changed.signalAll();
+					} finally {
+						lock.unlock();
+					}
+				}
+			}
 		}
 
 		private void markMapResized(GrowthEpisode requestedEpisode, MapResizeKind kind, boolean fallback) {
@@ -1888,6 +2030,7 @@ class LmdbSailStore implements SailStore {
 				long newlyInvalidatedViews = 0;
 				for (ReadViewLease lease : views.keySet()) {
 					if (!ownedBy(lease, requestedEpisode.owner) && !isParkedView(requestedEpisode, lease)
+							&& (kind == MapResizeKind.TRIPLE_STORE || lease.requiresDictionaryMembership())
 							&& lease.invalidate(kind)) {
 						newlyInvalidatedViews++;
 					}
@@ -1896,6 +2039,7 @@ class LmdbSailStore implements SailStore {
 					if (!attempt.closed && attempt.owner != requestedEpisode.owner) {
 						for (ReadViewLease lease : attempt.historicalViews.keySet()) {
 							if (lease != null && !lease.closed && !isParkedView(requestedEpisode, lease)
+									&& (kind == MapResizeKind.TRIPLE_STORE || lease.requiresDictionaryMembership())
 									&& lease.invalidate(kind)) {
 								newlyInvalidatedViews++;
 							}
@@ -1964,6 +2108,9 @@ class LmdbSailStore implements SailStore {
 				if (episode == requestedEpisode && requestedEpisode.managed) {
 					if (--requestedEpisode.attempts == 1) {
 						requestedEpisode.owner = new Object();
+						// The emergency native transition has finished. Old detached views retain their own token;
+						// remaining admitted writers and readers may declare membership during the next writer grace.
+						requestedEpisode.dictionaryMembershipFrozen = false;
 						changePhase(requestedEpisode, GrowthPhase.DRAIN_WRITERS);
 						requestedEpisode.deadlineNanos = Long.MAX_VALUE;
 						changed.signalAll();
@@ -2641,7 +2788,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** A caller-owned, paired TripleStore/ValueStore snapshot and immutable namespace view. */
+	/** A caller-owned TripleStore snapshot, stable dictionary IDs, and immutable namespace view. */
 	final class ReadView implements AutoCloseable {
 		private final Txn tripleTxn;
 		private final long tripleTxnVersion;
@@ -2659,6 +2806,7 @@ class LmdbSailStore implements SailStore {
 			this.tripleTxn = tripleTxn;
 			this.tripleTxnVersion = tripleTxn.version();
 			this.valueSnapshot = valueSnapshot;
+			valueSnapshot.retainStableIds(tripleTxn);
 			this.namespaces = namespaces;
 			this.capturedNamespaceGeneration = capturedNamespaceGeneration;
 			this.capturedPublicationVersion = capturedPublicationVersion;
@@ -2689,6 +2837,24 @@ class LmdbSailStore implements SailStore {
 
 		ValueStore.ReadSnapshot valueSnapshot() {
 			return valueSnapshot;
+		}
+
+		void requireDictionaryTermSnapshot() throws SailException {
+			ensureNativeSnapshotsValid();
+			try {
+				valueSnapshot.requireTermSnapshot(
+						declare -> mapGrowthCoordinator.declareDictionaryTermMembership(growthLease, declare));
+			} catch (MapResizeConflictException conflict) {
+				MapGrowthToken token = valueSnapshot.dictionaryDetached() ? valueSnapshot.dictionaryGrowthToken()
+						: growthLease.dictionaryMembershipConflictToken;
+				if (token != null) {
+					mapGrowthCoordinator.requestDictionaryTermReplay(growthLease,
+							token);
+				}
+				throw conflict;
+			} catch (IOException e) {
+				throw new SailException(e.getMessage(), e);
+			}
 		}
 
 		boolean hasNativePin(MapResizeKind kind) {
@@ -2765,8 +2931,10 @@ class LmdbSailStore implements SailStore {
 			Throwable failure = null;
 			try {
 				if (effectiveRetirementKind == null) {
-					// Detach escaped values before releasing the authoritative triple revision horizon. Retirement may
-					// reclaim dictionary IDs as soon as the last pinned TripleStore reader closes.
+					// Release dictionary ownership before the authoritative triple revision horizon. Escaped shared
+					// lazy
+					// values retain their own epochs until they resolve, so later retirement cannot change their ID
+					// meaning.
 					valueSnapshot.close();
 				} else {
 					valueSnapshot.retireForMapResize(effectiveRetirementKind);
@@ -3808,7 +3976,7 @@ class LmdbSailStore implements SailStore {
 						ValueStore.ReadSnapshot valueSnapshot = null;
 						try {
 							tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
-							valueSnapshot = valueReservation.start();
+							valueSnapshot = valueReservation.start(tripleTxn);
 							if (pendingDictionaryCheckpointGeneration != 0L) {
 								valueSnapshot.close();
 								valueSnapshot = null;
@@ -5103,6 +5271,9 @@ class LmdbSailStore implements SailStore {
 
 	CloseableIteration<? extends TripleTerm> createTripleTermIterator(ReadView readView, Resource subj, IRI pred,
 			Value obj) throws IOException {
+		if (readView != null) {
+			readView.requireDictionaryTermSnapshot();
+		}
 		ValueStore.ReadSnapshot valueSnapshot = readView == null ? null : readView.valueSnapshot();
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {

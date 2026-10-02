@@ -112,6 +112,22 @@ public class TestServer {
 	}
 
 	LongSupplier replayAcceptedCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "replayAcceptedCounter");
+	}
+
+	LongSupplier replayRequestedCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "replayRequestedCounter");
+	}
+
+	LongSupplier tripleStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "tripleStoreResizeCounter");
+	}
+
+	LongSupplier valueStoreResizeCounter(String repositoryId) throws ReflectiveOperationException {
+		return growthCounter(repositoryId, "valueStoreResizeCounter");
+	}
+
+	private LongSupplier growthCounter(String repositoryId, String counterMethod) throws ReflectiveOperationException {
 		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
 		Object serverManager = dispatcherContext.getClass()
 				.getMethod("getBean", String.class)
@@ -121,7 +137,7 @@ public class TestServer {
 				.invoke(serverManager, repositoryId);
 		// Public calls bridge the webapp classloader; the fixture reads diagnostics beside its LMDB classes.
 		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
-		return (LongSupplier) support.getMethod("replayAcceptedCounter", Object.class).invoke(null, repository);
+		return (LongSupplier) support.getMethod(counterMethod, Object.class).invoke(null, repository);
 	}
 
 	public void start() throws Exception {

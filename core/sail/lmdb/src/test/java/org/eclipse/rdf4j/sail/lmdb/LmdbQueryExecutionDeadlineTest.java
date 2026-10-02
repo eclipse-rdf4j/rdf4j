@@ -216,7 +216,8 @@ class LmdbQueryExecutionDeadlineTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void standaloneTupleQueryReplaysAcrossValueStoreGrowth(@TempDir Path dataDirectory) throws Exception {
+	void standaloneTupleQueryKeepsOriginalResultsAcrossValueStoreOnlyGrowth(@TempDir Path dataDirectory)
+			throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 					.setForceSync(true)
@@ -231,8 +232,6 @@ class LmdbQueryExecutionDeadlineTest {
 			try {
 				repository.init();
 				LmdbSailStore backingStore = store.getBackingStore();
-				ValueStore valueStore = valueStoreOf(store);
-				long initialMapSize = mapSize(valueStore);
 				try (RepositoryConnection seed = repository.getConnection()) {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 					seed.add(SUBJECT, SERVICE_PREDICATE, Values.iri(serviceGate.endpoint()));
@@ -262,18 +261,26 @@ class LmdbQueryExecutionDeadlineTest {
 					}
 					return null;
 				});
-				awaitGrowthAndReplayAccepted(backingStore, before, writer);
-				serviceGate.releaseFirstRequest();
 				writer.get(20, TimeUnit.SECONDS);
-				awaitValueStoreGrowth(repository, valueStore, initialMapSize, largeValue);
-				assertThat(mapSize(valueStore) > initialMapSize)
-						.as("the write must grow the ValueStore map before replay completes")
-						.isTrue();
-				assertThat(serviceGate.awaitSecondRequest()).isTrue();
+				try (RepositoryConnection published = repository.getConnection()) {
+					published.begin(IsolationLevels.SNAPSHOT);
+					assertThat(published.hasStatement(SUBJECT, VALUE_PREDICATE, Values.literal(largeValue), false))
+							.isTrue();
+					published.rollback();
+				}
+				MapGrowthMetrics.Snapshot afterGrowth = backingStore.growthMetricsSnapshot();
+				assertThat(afterGrowth.valueStoreResizes()).isGreaterThan(before.valueStoreResizes());
+				assertThat(afterGrowth.tripleStoreResizes()).isEqualTo(before.tripleStoreResizes());
+				assertThat(afterGrowth.replayRequests()).isEqualTo(before.replayRequests());
+				assertThat(afterGrowth.replayAccepted()).isEqualTo(before.replayAccepted());
 				serviceGate.releaseAllRequests();
 
-				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder("before", largeValue);
-				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(2);
+				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactly("before");
+				assertThat(serviceGate.requestCount()).isEqualTo(1);
+				MapGrowthMetrics.Snapshot afterQuery = backingStore.growthMetricsSnapshot();
+				assertThat(afterQuery.replayRequests()).isEqualTo(before.replayRequests());
+				assertThat(afterQuery.replayAccepted()).isEqualTo(before.replayAccepted());
+				assertThat(afterQuery.reservedReplays()).isEqualTo(before.reservedReplays());
 			} finally {
 				serviceGate.releaseAllRequests();
 				executor.shutdownNow();
@@ -487,18 +494,6 @@ class LmdbQueryExecutionDeadlineTest {
 		}
 	}
 
-	private static void awaitValueStoreGrowth(SailRepository repository, ValueStore valueStore, long initialMapSize,
-			String value) throws Exception {
-		try (RepositoryConnection barrier = repository.getConnection()) {
-			barrier.begin(IsolationLevels.SNAPSHOT);
-			assertThat(barrier.hasStatement(SUBJECT, VALUE_PREDICATE, Values.literal(value), false)).isTrue();
-			barrier.rollback();
-		}
-		assertThat(mapSize(valueStore) > initialMapSize)
-				.as("the independent admission barrier must finish pending ValueStore growth")
-				.isTrue();
-	}
-
 	private static void awaitTripleStoreGrowth(SailRepository repository, LmdbSailStore backingStore,
 			TripleStore tripleStore, long initialTripleMapSize, String namespace) throws Exception {
 		long timeoutAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
@@ -524,22 +519,10 @@ class LmdbQueryExecutionDeadlineTest {
 		return (TripleStore) tripleStoreField.get(store.getBackingStore());
 	}
 
-	private static ValueStore valueStoreOf(LmdbStore store) throws ReflectiveOperationException {
-		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
-		valueStoreField.setAccessible(true);
-		return (ValueStore) valueStoreField.get(store.getBackingStore());
-	}
-
 	private static long mapSize(TripleStore tripleStore) throws ReflectiveOperationException {
 		Field mapSizeField = TripleStore.class.getDeclaredField("mapSize");
 		mapSizeField.setAccessible(true);
 		return mapSizeField.getLong(tripleStore);
-	}
-
-	private static long mapSize(ValueStore valueStore) throws ReflectiveOperationException {
-		Field mapSizeField = ValueStore.class.getDeclaredField("mapSize");
-		mapSizeField.setAccessible(true);
-		return mapSizeField.getLong(valueStore);
 	}
 
 	private static final class ServiceGate implements AutoCloseable {

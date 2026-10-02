@@ -40,6 +40,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
@@ -66,6 +67,7 @@ import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -128,6 +130,45 @@ class LmdbSnapshotValueLifetimeTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void escapedNestedValuesRemainUsableAfterRepositoryShutdown(@TempDir File dataDir) throws Exception {
+		IRI subject = VF.createIRI("urn:shutdown-values:subject");
+		IRI context = VF.createIRI("urn:shutdown-values:context");
+		IRI datatype = VF.createIRI("urn:shutdown-values:datatype");
+		Literal literal = VF.createLiteral("deferred until shutdown", datatype);
+		TripleTerm inner = VF.createTripleTerm(subject, PREDICATE, literal);
+		TripleTerm outer = VF.createTripleTerm(subject, PREDICATE, inner);
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		Statement escaped;
+		repository.init();
+		try {
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.add(subject, PREDICATE, outer, context);
+			}
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, null, null,
+						false)) {
+					assertTrue(statements.hasNext());
+					escaped = statements.next();
+				}
+				reader.commit();
+			}
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(subject.stringValue(), escaped.getSubject().stringValue());
+		assertEquals(context, escaped.getContext());
+		TripleTerm escapedOuter = (TripleTerm) escaped.getObject();
+		TripleTerm escapedInner = (TripleTerm) escapedOuter.getObject();
+		Literal escapedLiteral = (Literal) escapedInner.getObject();
+		assertEquals(literal.getLabel(), escapedLiteral.getLabel());
+		assertEquals(datatype, escapedLiteral.getDatatype());
+		assertEquals(outer.hashCode(), escapedOuter.hashCode());
+		assertEquals(outer, escapedOuter);
 	}
 
 	@Test
@@ -1040,7 +1081,7 @@ class LmdbSnapshotValueLifetimeTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void snapshotTransactionCanRollbackAndRestartAfterValueStoreMapGrowth(@TempDir File dataDir) throws Exception {
+	void snapshotTransactionPreservesStatementsAcrossValueStoreMapGrowth(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setValueDBSize(1024L * 1024L)
@@ -1069,13 +1110,10 @@ class LmdbSnapshotValueLifetimeTest {
 
 				assertTrue(mapSize(valueStore) > initialMapSize,
 						"the writer must grow the ValueStore map while the reader transaction is pinned");
-				SailConflictException resizeConflict = assertThrows(SailConflictException.class,
-						() -> reader.hasStatement(subject, predicate, value, false),
-						"a ValueStore map resize must invalidate the full pinned transaction");
-				assertTrue(resizeConflict instanceof LmdbSailStore.MapResizeConflictException,
-						"a live old-generation borrower must receive the typed resize conflict");
-				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE,
-						((LmdbSailStore.MapResizeConflictException) resizeConflict).kind());
+				assertFalse(reader.hasStatement(subject, predicate, value, false),
+						"dictionary growth must preserve the pinned TripleStore membership");
+				assertEquals(0, store.getBackingStore().growthMetricsSnapshot().replayRequests(),
+						"ordinary dictionary resolution must not replay an observed transaction");
 				reader.rollback();
 				reader.begin(IsolationLevels.SNAPSHOT);
 				assertTrue(reader.hasStatement(subject, predicate, value, false),
@@ -1084,6 +1122,105 @@ class LmdbSnapshotValueLifetimeTest {
 			}
 		} finally {
 			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void writerSnapshotSurvivesDictionaryAllocationGrowth(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(1024L * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(0)
+				.setAutoGrow(true));
+		IRI subject = VF.createIRI("urn:writer-dictionary-growth:subject");
+		Literal value = VF.createLiteral("x".repeat(2 * 1024 * 1024));
+		store.init();
+		try {
+			long originalTripleMap = mapSize(tripleStoreOf(store));
+			long originalValueMap = mapSize(valueStoreOf(store));
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				assertFalse(writer.hasStatement(subject, PREDICATE, null, false));
+				writer.addStatement(subject, PREDICATE, value);
+				writer.commit();
+			}
+			assertEquals(originalTripleMap, mapSize(tripleStoreOf(store)));
+			assertTrue(mapSize(valueStoreOf(store)) > originalValueMap);
+			try (SailConnection reader = store.getConnection()) {
+				assertTrue(reader.hasStatement(subject, PREDICATE, value, false));
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void firstTermQueryAfterDictionaryGrowthReplaysCompleteUnobservedSnapshot(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(1024L * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(0)
+				.setAutoGrow(true));
+		SailRepository repository = new SailRepository(store);
+		IRI claims = VF.createIRI("urn:late-term:claims");
+		TripleTerm first = VF.createTripleTerm(VF.createIRI("urn:late-term:first"), PREDICATE,
+				VF.createLiteral("first"));
+		TripleTerm second = VF.createTripleTerm(VF.createIRI("urn:late-term:second"), PREDICATE,
+				VF.createLiteral("second"));
+		repository.init();
+		try {
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.add(VF.createIRI("urn:late-term:owner:first"), claims, first);
+			}
+			long originalTripleMap = mapSize(tripleStoreOf(store));
+			long originalValueMap = mapSize(valueStoreOf(store));
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (TupleQueryResult earlier = reader.prepareTupleQuery("SELECT ?owner WHERE { ?owner <"
+						+ claims.stringValue() + "> ?term }").evaluate()) {
+					LmdbStoreConnection readerConnection = (LmdbStoreConnection) ((SailRepositoryConnection) reader)
+							.getSailConnection();
+					assertFalse(snapshotReadViewLeases(readerConnection).isEmpty(),
+							"an unobserved ordinary query must pin the pre-growth dictionary and TripleStore views");
+					try (RepositoryConnection writer = repository.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT);
+						writer.add(VF.createIRI("urn:late-term:demand"), PREDICATE,
+								VF.createLiteral("x".repeat(2 * 1024 * 1024)));
+						writer.add(VF.createIRI("urn:late-term:owner:second"), claims, second);
+						writer.commit();
+					}
+					assertEquals(originalTripleMap, mapSize(tripleStoreOf(store)));
+					assertTrue(mapSize(valueStoreOf(store)) > originalValueMap);
+					assertEquals(0, store.getBackingStore().growthMetricsSnapshot().replayRequests(),
+							"the old ordinary read view must survive without an eager query replay");
+					Set<Value> subjects = new HashSet<>();
+					try (TupleQueryResult result = reader.prepareTupleQuery("SELECT ?s WHERE { ?owner <"
+							+ claims.stringValue() + "> <<(?s <" + PREDICATE.stringValue() + "> ?o)>> }").evaluate()) {
+						while (result.hasNext()) {
+							subjects.add(result.next().getValue("s"));
+						}
+					}
+					assertEquals(Set.of(first.getSubject(), second.getSubject()), subjects,
+							"a late dictionary term conflict must replay the complete query and its TripleStore snapshot");
+					assertTrue(store.getBackingStore().growthMetricsSnapshot().replayAccepted() > 0);
+					Set<Value> owners = new HashSet<>();
+					while (earlier.hasNext()) {
+						owners.add(earlier.next().getValue("owner"));
+					}
+					assertEquals(
+							Set.of(VF.createIRI("urn:late-term:owner:first"),
+									VF.createIRI("urn:late-term:owner:second")),
+							owners,
+							"a late term conflict must also replay an earlier unobserved query from the same attempt");
+					reader.commit();
+				}
+			}
+		} finally {
+			repository.shutDown();
 		}
 	}
 
@@ -1126,6 +1263,11 @@ class LmdbSnapshotValueLifetimeTest {
 		IRI innerSubject = VF.createIRI("urn:snapshot-lifetime:capacity:inner");
 		TripleTerm inner = VF.createTripleTerm(innerSubject, PREDICATE, VF.createLiteral("nested under capacity"));
 		TripleTerm outer = VF.createTripleTerm(seedSubject, PREDICATE, inner);
+		IRI laterSubject = VF.createIRI("urn:snapshot-lifetime:capacity:later");
+		Literal laterLiteral = VF.createLiteral("nested after older readers",
+				VF.createIRI("urn:snapshot-lifetime:capacity:later-datatype"));
+		TripleTerm laterInner = VF.createTripleTerm(laterSubject, PREDICATE, laterLiteral);
+		TripleTerm laterOuter = VF.createTripleTerm(laterSubject, PREDICATE, laterInner);
 		try {
 			try (SailConnection writer = store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
@@ -1137,6 +1279,10 @@ class LmdbSnapshotValueLifetimeTest {
 			int valuePermits = availableReaderPermits(valueManager);
 			for (int i = 0; i < valuePermits; i++) {
 				heldValueReaders.add(valueManager.createReadTxn());
+			}
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approve(laterSubject, PREDICATE, laterOuter, null);
+				sink.flush();
 			}
 			Future<Void> priorityHolder = executor.submit(() -> valueManager.doWithPriority((stack, txn) -> {
 				priorityReaderStarted.countDown();
@@ -1161,24 +1307,29 @@ class LmdbSnapshotValueLifetimeTest {
 			assertEquals("urn:snapshot-lifetime:capacity:published:", admittedDataset.getNamespace("capacity"),
 					"the admission retry must capture namespace publication completed while it waited for capacity");
 			SailDataset datasetForRead = admittedDataset;
-			Future<String> nestedRead = executor.submit(() -> {
-				try (datasetForRead;
-						CloseableIteration<? extends Statement> statements = datasetForRead.getStatements(seedSubject,
-								PREDICATE, null)) {
+			Future<Statement> nestedRead = executor.submit(() -> {
+				try (CloseableIteration<? extends Statement> statements = datasetForRead.getStatements(laterSubject,
+						PREDICATE, null)) {
 					assertTrue(statements.hasNext(),
-							"the retried paired admission must retain the seed statement while resolving its nested terms");
-					TripleTerm result = (TripleTerm) statements.next().getObject();
+							"the admitted dictionary must include IDs published after the older saturated readers opened");
+					Statement result = statements.next();
 					assertFalse(statements.hasNext());
-					return ((Literal) ((TripleTerm) result.getObject()).getObject()).getLabel();
+					return result;
 				}
 			});
-			admittedDataset = null;
 			try {
-				assertEquals("nested under capacity", nestedRead.get(5, TimeUnit.SECONDS),
-						"recursive term lookup must reuse the admitted ValueStore view when every reader slot is occupied");
+				Statement escaped = nestedRead.get(5, TimeUnit.SECONDS);
+				Future<String> applicationRead = executor.submit(() -> {
+					TripleTerm result = (TripleTerm) escaped.getObject();
+					return ((Literal) ((TripleTerm) result.getObject()).getObject()).getLabel();
+				});
+				assertEquals("nested after older readers", applicationRead.get(5, TimeUnit.SECONDS),
+						"application code must initialize escaped nested values without another dictionary reader slot");
 			} catch (TimeoutException timeout) {
 				throw new AssertionError("recursive lookup waited for an additional ValueStore reader", timeout);
 			}
+			datasetForRead.close();
+			admittedDataset = null;
 			releasePriorityReader.countDown();
 			priorityHolder.get(5, TimeUnit.SECONDS);
 		} finally {
@@ -1188,6 +1339,84 @@ class LmdbSnapshotValueLifetimeTest {
 			}
 			heldValueReaders.forEach(TxnManager.Txn::close);
 			executor.shutdownNow();
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void dictionaryGrowthKeepsObservedSnapshotAndDeferredValues(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(64L * 1024L * 1024L)
+				.setValueDBSize(1024L * 1024L)
+				.setMapGrowthReadDrainTimeoutMillis(100)
+				.setAutoGrow(true));
+		IRI subject = VF.createIRI("urn:dictionary-growth:original:subject");
+		IRI secondSubject = VF.createIRI("urn:dictionary-growth:original:second");
+		IRI context = VF.createIRI("urn:dictionary-growth:original:context");
+		IRI datatype = VF.createIRI("urn:dictionary-growth:datatype:custom");
+		Literal literal = VF.createLiteral("original typed value", datatype);
+		TripleTerm inner = VF.createTripleTerm(subject, PREDICATE, literal);
+		TripleTerm outer = VF.createTripleTerm(subject, PREDICATE, inner);
+		TripleTerm laterTerm = VF.createTripleTerm(secondSubject, PREDICATE, VF.createLiteral("later term"));
+		store.init();
+		try {
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(subject, PREDICATE, outer, context);
+				writer.addStatement(secondSubject, PREDICATE, literal, context);
+				writer.commit();
+			}
+			TripleStore tripleStore = tripleStoreOf(store);
+			ValueStore valueStore = valueStoreOf(store);
+			long originalTripleMap = mapSize(tripleStore);
+			long originalValueMap = mapSize(valueStore);
+			Statement escaped;
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				try (CloseableIteration<? extends Statement> observed = reader.getStatements(subject, PREDICATE,
+						outer, context)) {
+					assertTrue(observed.hasNext());
+					escaped = observed.next();
+				}
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.removeStatements(null, PREDICATE, null, context);
+					writer.commit();
+				}
+				assertTrue(store.getBackingStore().hasRetiredValueIds(),
+						"the old TripleStore reader must preserve raw IDs before values are constructed");
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.addStatement(VF.createIRI("urn:dictionary-growth:new:large"), PREDICATE,
+							VF.createLiteral("g".repeat(2 * 1024 * 1024)));
+					writer.addStatement(VF.createIRI("urn:dictionary-growth:new:term"), PREDICATE, laterTerm);
+					writer.commit();
+				}
+				assertEquals(originalTripleMap, mapSize(tripleStore), "only the dictionary map must grow");
+				assertTrue(mapSize(valueStore) > originalValueMap, "the oversized value must grow ValueStore");
+				MapGrowthMetrics.Snapshot metrics = store.getBackingStore().growthMetricsSnapshot();
+				assertEquals(0L, metrics.forcedInvalidatedViews(),
+						"dictionary remapping must preserve already-observed TripleStore snapshots");
+				assertEquals(0L, metrics.replayRequests(), "dictionary remapping must not replay queries");
+				try (CloseableIteration<? extends Statement> deferred = reader.getStatements(secondSubject, PREDICATE,
+						literal, context)) {
+					assertTrue(deferred.hasNext(), "a value not constructed before resize must still match its old ID");
+					assertEquals(literal, deferred.next().getObject());
+					assertFalse(deferred.hasNext());
+				}
+				LmdbSailStore.MapResizeConflictException termConflict = assertThrows(
+						LmdbSailStore.MapResizeConflictException.class,
+						() -> reader.getTriples(null, null, null),
+						"a first term scan after remapping must reject its unavailable original dictionary membership");
+				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, termConflict.kind());
+			}
+			assertEquals(subject, escaped.getSubject());
+			assertEquals(outer, escaped.getObject(), "escaped nested lazy values must retain their ID meanings");
+			assertEquals(context, escaped.getContext());
+		} finally {
 			store.shutDown();
 		}
 	}
@@ -1335,7 +1564,114 @@ class LmdbSnapshotValueLifetimeTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void directDatasetReportsForcedResizeConflictAndRetiresAfterClose(@TempDir File dataDir) throws Exception {
+	void firstTermDemandDuringDictionaryQuiescenceKeepsReplayToken(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setMapGrowthReadDrainTimeoutMillis(5_000));
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		CountDownLatch notificationsCaptured = new CountDownLatch(1);
+		CountDownLatch releaseNotification = new CountDownLatch(1);
+		AtomicReference<LmdbSailStore.MapGrowthToken> ordinaryReplayToken = new AtomicReference<>();
+		LmdbSailStore.MapGrowthObserver ordinaryObserver = (kind, token, deadline, attempts, views) -> {
+			ordinaryReplayToken.set(token);
+			return false;
+		};
+		LmdbSailStore.MapGrowthObserver termObserver = (kind, token, deadline, attempts, views) -> {
+			notificationsCaptured.countDown();
+			try {
+				assertTrue(releaseNotification.await(10, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return false;
+		};
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (LmdbSailStore.ReadAttemptLease ordinaryAttempt = backing.registerReadAttempt(ordinaryObserver);
+				LmdbSailStore.ReadAttemptLease termAttempt = backing.registerReadAttempt(termObserver);
+				LmdbSailStore.ReadView ordinaryView = backing.createTransactionReadView(ordinaryObserver,
+						ordinaryAttempt);
+				LmdbSailStore.ReadView termView = backing.createTransactionReadView(termObserver, termAttempt);
+				LmdbSailStore.MapGrowthAttempt growth = backing.beginMapGrowthAttempt(new Object())) {
+			termView.requireDictionaryTermSnapshot();
+			Future<?> quiescence = executor.submit(() -> {
+				growth.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				return null;
+			});
+			try {
+				assertTrue(notificationsCaptured.await(10, TimeUnit.SECONDS));
+				assertNull(ordinaryReplayToken.get(), "ordinary reads must receive no eager dictionary replay");
+				LmdbSailStore.MapResizeConflictException conflict = assertThrows(
+						LmdbSailStore.MapResizeConflictException.class, ordinaryView::requireDictionaryTermSnapshot,
+						"new term membership demand after notification capture must classify its complete attempt");
+				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
+				assertSame(growth.token(), ordinaryReplayToken.get());
+			} finally {
+				ordinaryView.retireNativeSnapshots(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				termView.retireNativeSnapshots(LmdbSailStore.MapResizeKind.VALUE_STORE);
+				releaseNotification.countDown();
+				quiescence.get(10, TimeUnit.SECONDS);
+			}
+		} finally {
+			releaseNotification.countDown();
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void activeTermIteratorReportsDictionaryResizeConflict(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(1024L * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(0)
+				.setAutoGrow(true));
+		IRI subject = VF.createIRI("urn:active-term:owner");
+		TripleTerm first = VF.createTripleTerm(VF.createIRI("urn:active-term:first"), PREDICATE,
+				VF.createLiteral("first term"));
+		TripleTerm second = VF.createTripleTerm(VF.createIRI("urn:active-term:second"), PREDICATE,
+				VF.createLiteral("second term"));
+		store.init();
+		try {
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(subject, PREDICATE, first);
+				writer.addStatement(subject, PREDICATE, second);
+				writer.commit();
+			}
+			long initialTripleMapSize = mapSize(tripleStoreOf(store));
+			long initialValueMapSize = mapSize(valueStoreOf(store));
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends TripleTerm> terms = reader.getTriples(null, PREDICATE, null)) {
+				assertTrue(terms.hasNext());
+				TripleTerm escaped = terms.next();
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.addStatement(subject, PREDICATE, VF.createLiteral("x".repeat(2 * 1024 * 1024)));
+					writer.commit();
+				}
+				assertEquals(initialTripleMapSize, mapSize(tripleStoreOf(store)));
+				assertTrue(mapSize(valueStoreOf(store)) > initialValueMapSize);
+				assertTrue(store.getBackingStore().growthMetricsSnapshot().forcedInvalidatedViews() > 0,
+						"an active dictionary term cursor must keep the strict relational growth boundary");
+				LmdbSailStore.MapResizeConflictException conflict = assertThrows(
+						LmdbSailStore.MapResizeConflictException.class, terms::hasNext);
+				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
+				assertTrue(escaped.equals(first) || escaped.equals(second),
+						"a term returned before invalidation must retain its original value");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void directTermDatasetReportsForcedResizeConflictAndRetiresAfterClose(@TempDir File dataDir) throws Exception {
 		long tripleMapSize = 64L * 1024 * 1024;
 		long smallValueMapSize = 1024L * 1024;
 		long drainTimeoutMillis = 1_000;
@@ -1369,6 +1705,9 @@ class LmdbSnapshotValueLifetimeTest {
 					.getExplicitSailSource()
 					.dataset(IsolationLevels.SNAPSHOT_READ);
 			try {
+				try (CloseableIteration<? extends TripleTerm> terms = pinnedReader.getTriples(null, null, null)) {
+					assertFalse(terms.hasNext(), "observed empty term membership still belongs to this snapshot");
+				}
 				try (CloseableIteration<? extends Statement> statements = pinnedReader.getStatements(subject, PREDICATE,
 						object, context)) {
 					assertTrue(statements.hasNext(), "the direct dataset must have consumed a real old-generation row");
@@ -1650,7 +1989,7 @@ class LmdbSnapshotValueLifetimeTest {
 							ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 								return new ReadSnapshotReservation(getTxnManager().reserveReadTxn(false)) {
 									@Override
-									synchronized ReadSnapshot start() throws IOException {
+									synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
 										if (failNextSnapshotStart.compareAndSet(true, false)) {
 											try {
 												assertEquals(expectedTriplePermits - 1,
@@ -1659,11 +1998,11 @@ class LmdbSnapshotValueLifetimeTest {
 											} catch (ReflectiveOperationException e) {
 												throw new IOException(e);
 											}
-											ReadSnapshot snapshot = super.start();
+											ReadSnapshot snapshot = super.start(tripleTxn);
 											snapshot.close();
 											throw new IOException("injected ValueStore snapshot start failure");
 										}
-										return super.start();
+										return super.start(tripleTxn);
 									}
 								};
 							}

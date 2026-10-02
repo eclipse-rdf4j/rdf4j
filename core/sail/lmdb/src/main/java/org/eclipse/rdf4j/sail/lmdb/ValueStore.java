@@ -50,6 +50,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
@@ -58,6 +59,7 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -68,15 +70,20 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.Consumer;
 import java.util.zip.CRC32;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -87,6 +94,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -150,11 +158,20 @@ class ValueStore extends AbstractValueFactory {
 	private static final int MAX_KEY_SIZE = 16;
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
+	private static final VarHandle VALUE_CACHE_ELEMENT = MethodHandles.arrayElementVarHandle(ValueCacheEntry[].class);
+	private static final VarHandle CANONICAL_CACHE_ELEMENT = MethodHandles
+			.arrayElementVarHandle(CanonicalValueEntry[].class);
+	private static final VarHandle SNAPSHOT_LOOKUP_ELEMENT = MethodHandles
+			.arrayElementVarHandle(SnapshotLookupEntry[].class);
+	private static final VarHandle SNAPSHOT_LOOKUP_CACHE;
+	private static final SnapshotLookupCache DISABLED_SNAPSHOT_LOOKUP_CACHE = new SnapshotLookupCache(0);
 
 	static {
 		try {
 			PREVIOUS_NAMESPACE_HANDLE = MethodHandles.lookup()
 					.findVarHandle(ValueStore.class, "previousNamespaceEntry", Object[].class);
+			SNAPSHOT_LOOKUP_CACHE = MethodHandles.lookup()
+					.findVarHandle(ReadSnapshot.class, "lookupCache", SnapshotLookupCache.class);
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
 		}
@@ -176,15 +193,18 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private final StampedLock revisionLock = new StampedLock();
 	/**
-	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
+	 * Bounded caches for one issued dictionary epoch. Native payload copying uses only the completed array; ordinary
+	 * lazy lookups can reuse canonical shells before initialization. Replacing the owner releases obsolete nested Lazy
+	 * capabilities and prevents late callbacks from repopulating current storage.
 	 */
-	private final LmdbValue[] valueCache;
-	private final long[] valueCacheId;
+	private volatile ValueCacheEpoch valueCaches;
 	private final int valueCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
 	private final ConcurrentCache<LmdbValue, Long> valueIDCache;
+	/** Capacity of the optional positive point-lookup memo owned by each native dictionary read view. */
+	private final int snapshotLookupCacheCapacity;
 	/**
 	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
 	 */
@@ -202,6 +222,7 @@ class ValueStore extends AbstractValueFactory {
 	private long env;
 	private int pageSize;
 	private volatile long mapSize;
+	private volatile long nativeMapGeneration;
 	private volatile long committedHighWaterBytes;
 	private volatile long mutationGeneration;
 	private long nativeCommitGeneration;
@@ -220,6 +241,23 @@ class ValueStore extends AbstractValueFactory {
 	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	private long writeTxn;
 	private Thread writeTxnOwner;
+	/** Published before writer IDs, and released only after commit or abort metadata has settled. */
+	private volatile WriterPublication writerPublication;
+
+	private static final class WriterPublication {
+		private final Thread owner;
+		private volatile Thread consumer;
+		private volatile boolean failedCleanup;
+
+		private WriterPublication(Thread owner) {
+			this.owner = owner;
+		}
+	}
+
+	private final Object writerAdmission = new Object();
+	private boolean shuttingDown;
+	private int writerStartsInFlight;
+	private Thread writerStartOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
@@ -245,10 +283,14 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private volatile ValueStoreRevision.Default revision;
 	/**
-	 * A wrapper object for the revision of the value store, which is used within lazy (uninitialized values). If this
-	 * object is GCed then it is safe to finally remove the ID-value associations and to reuse IDs.
+	 * Publishes the shared Lazy retention epoch and native association together with a pending writer's predecessor.
 	 */
-	private volatile ValueStoreRevision.Lazy lazyRevision;
+	private volatile ValueIdentity valueIdentity;
+	private NativeValueAssociation nativeValueAssociation;
+	private PendingValueAssociation pendingValueAssociation;
+	private final ReentrantLock associationGate = new ReentrantLock();
+	private long writerFirstAppendedId;
+	private final Set<Long> writerReusedIds = new HashSet<>();
 	/**
 	 * The next ID that is associated with a stored value
 	 */
@@ -258,13 +300,15 @@ class ValueStore extends AbstractValueFactory {
 	private ValueStoreHashFile hashFile;
 	private final Map<Long, Integer> pendingHashUpdates = new HashMap<>();
 
-	private volatile long nextValueEvictionTime = 0;
 	private final ConcurrentCleaner cleaner = new ConcurrentCleaner();
 
 	// package-protected for testing
 	final Set<Long> unusedRevisionIds = new HashSet<>();
+	private final Set<Long> reclaimedRevisionIds = new HashSet<>();
+	private final LazyRevisionTracker lazyRevisions;
 
 	private TxnManager txnManager;
+	private final Set<ReadSnapshot> readSnapshots = ConcurrentHashMap.newKeySet();
 
 	@SuppressWarnings("unused")
 	private Object[] previousNamespaceEntry;
@@ -274,6 +318,10 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean inlineLiterals;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
+	private final ThreadLocal<Long> borrowedReadTxn = new ThreadLocal<>();
+	private final ThreadLocal<ValueStoreRevision.Lazy> borrowedReadRevision = new ThreadLocal<>();
+	private volatile ValueStoreRevision.Snapshot.TrackedValues sharedLazyValues;
+	private boolean closeInProgress;
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this(dir, new StoreProperties(dir), config);
@@ -288,19 +336,19 @@ class ValueStore extends AbstractValueFactory {
 		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
+		this.lazyRevisions = new LazyRevisionTracker(unusedRevisionIds, valueEvictionInterval);
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
 		try {
 			open();
 
 			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-			valueCache = new LmdbValue[cacheSize];
-			valueCacheId = new long[cacheSize];
+			valueCaches = new ValueCacheEpoch(valueIdentity.revision, cacheSize);
 			valueCacheMask = cacheSize - 1;
 			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			snapshotLookupCacheCapacity = Math.max(0, config.getValueIDCacheSize());
 			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
 			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-			setNewRevision();
 
 			startTransaction(true);
 			termIndexManifestDbi = openTermIndexManifestDatabase();
@@ -463,8 +511,12 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void open() throws IOException {
+		sharedLazyValues = new ValueStoreRevision.Snapshot.TrackedValues();
 		replayDecision = null;
 		environmentGeneration++;
+		nativeValueAssociation = new NativeValueAssociation(0L, environmentGeneration, false);
+		setNewRevision();
+		writerPublication = null;
 		committedHighWaterBytes = 0L;
 		// create directory if it not exists
 		dir.mkdirs();
@@ -553,6 +605,9 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 		refreshCommittedHighWater();
+		synchronized (writerAdmission) {
+			shuttingDown = false;
+		}
 	}
 
 	private int openTermIndexManifestDatabase() throws IOException {
@@ -1067,6 +1122,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 		try {
+			detachStableReadSnapshots(growthAttempt);
 			txnManager.deactivate();
 			try {
 				long newMapSize = growthPolicy.grownMapSize(mapSize, pageSize,
@@ -1076,6 +1132,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 				E(mdb_env_set_mapsize(env, newMapSize));
 				mapSize = newMapSize;
+				nativeMapGeneration++;
 				if (restartWriter) {
 					startTransaction(false);
 				}
@@ -1151,7 +1208,9 @@ class ValueStore extends AbstractValueFactory {
 				}
 			});
 			if (reusedId != null) {
-				return ValueIds.createId(idType, reusedId);
+				long id = ValueIds.createId(idType, reusedId);
+				writerReusedIds.add(id);
+				return id;
 			}
 		}
 		long result = nextId;
@@ -1181,14 +1240,330 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private void setNewRevision() {
 		revision = new ValueStoreRevision.Default(this);
-		lazyRevision = new ValueStoreRevision.Lazy(revision);
+		ValueStoreRevision.Lazy nextLazyRevision = new ValueStoreRevision.Lazy(revision, nativeValueAssociation);
+		lazyRevisions.register(nextLazyRevision, cleaner);
+		PendingValueAssociation pending = pendingValueAssociation;
+		valueIdentity = new ValueIdentity(revision, nextLazyRevision, pending == null ? null : pending.predecessor);
+		ValueCacheEpoch previousCaches = valueCaches;
+		if (previousCaches != null) {
+			valueCaches = new ValueCacheEpoch(revision, previousCaches.completed.length);
+		}
+	}
+
+	/** A transient proof of which committed native snapshots can contain an ID's current association. */
+	static final class NativeValueAssociation {
+		private enum State {
+			PENDING,
+			COMMITTED,
+			ABORTED
+		}
+
+		private final long transactionId;
+		private final long environmentGeneration;
+		private volatile State state;
+
+		private NativeValueAssociation(long transactionId, long environmentGeneration, boolean pending) {
+			this.transactionId = transactionId;
+			this.environmentGeneration = environmentGeneration;
+			state = pending ? State.PENDING : State.COMMITTED;
+		}
+
+		boolean isAborted() {
+			return state == State.ABORTED;
+		}
+	}
+
+	private record ValueIdentity(ValueStoreRevision.Default revision, ValueStoreRevision.Lazy lazy,
+			ValueStoreRevision.Lazy predecessor) {
+	}
+
+	private record PendingValueAssociation(NativeValueAssociation previous, ValueStoreRevision.Lazy predecessor,
+			NativeValueAssociation pending) {
+	}
+
+	private boolean isWriterAssigned(long id) {
+		return id != LmdbValue.UNKNOWN_ID && !ValueIds.isInlined(id) && (writerReusedIds.contains(id)
+				|| ValueIds.getValue(id) >= writerFirstAppendedId && ValueIds.getValue(id) < nextId);
+	}
+
+	/** Called only by the owning writer, before reclaiming records or exposing an unresolved writer-assigned ID. */
+	private void ensurePendingValueAssociation() {
+		if (pendingValueAssociation == null) {
+			associationGate.lock();
+			try {
+				ValueStoreRevision.Lazy predecessor = valueIdentity.lazy;
+				NativeValueAssociation pending = new NativeValueAssociation(mdb_txn_id(writeTxn), environmentGeneration,
+						true);
+				pendingValueAssociation = new PendingValueAssociation(nativeValueAssociation, predecessor, pending);
+				nativeValueAssociation = pending;
+				lazyRevisions.retireCurrentEpoch();
+				setNewRevision();
+			} finally {
+				associationGate.unlock();
+			}
+			clearCaches();
+		}
+	}
+
+	private void settleValueAssociation(boolean committed) {
+		PendingValueAssociation pending = pendingValueAssociation;
+		if (pending == null) {
+			return;
+		}
+		pending.pending.state = committed ? NativeValueAssociation.State.COMMITTED
+				: NativeValueAssociation.State.ABORTED;
+		pendingValueAssociation = null;
+		if (committed) {
+			ValueIdentity current = valueIdentity;
+			valueIdentity = new ValueIdentity(current.revision, current.lazy, null);
+		} else {
+			nativeValueAssociation = pending.previous;
+			setNewRevision();
+		}
+	}
+
+	private ValueStoreRevision.Lazy currentReadRevision(long id) {
+		boolean writer = writeTxn != 0 && writeTxnOwner == Thread.currentThread();
+		if (writer && isWriterAssigned(id)) {
+			ensurePendingValueAssociation();
+			return valueIdentity.lazy;
+		}
+		ValueStoreRevision.Lazy borrowed = borrowedReadRevision.get();
+		if (borrowed != null) {
+			return borrowed;
+		}
+		ValueIdentity current = valueIdentity;
+		return current.predecessor != null && (!writer || !isWriterAssigned(id)) ? current.predecessor : current.lazy;
+	}
+
+	private static ValueStoreRevision completedRevision(ValueStoreRevision valueRevision) {
+		return valueRevision instanceof ValueStoreRevision.Lazy lazy ? lazy.unwrapped() : valueRevision;
+	}
+
+	private void ensureAssociationReadable(ValueStoreRevision valueRevision) {
+		if (!(valueRevision instanceof ValueStoreRevision.Lazy lazy) || lazy.association() == null) {
+			return;
+		}
+		NativeValueAssociation association = lazy.association();
+		if (association.state == NativeValueAssociation.State.ABORTED
+				|| association.environmentGeneration != environmentGeneration) {
+			throw new SailException("The lazy value's native dictionary association was aborted or closed");
+		}
+		if (association.state == NativeValueAssociation.State.PENDING
+				&& (writeTxn == 0 || writeTxnOwner != Thread.currentThread()
+						|| mdb_txn_id(writeTxn) != association.transactionId)) {
+			throw new SailException("An uncommitted lazy dictionary value can only be resolved by its owning writer");
+		}
+	}
+
+	private boolean associationCompatible(ValueStoreRevision valueRevision, long transactionId) {
+		if (!(valueRevision instanceof ValueStoreRevision.Lazy lazy) || lazy.association() == null) {
+			return true;
+		}
+		NativeValueAssociation association = lazy.association();
+		return association.state == NativeValueAssociation.State.COMMITTED
+				&& association.environmentGeneration == environmentGeneration
+				&& transactionId >= association.transactionId;
+	}
+
+	/** Reader admission takes the native barrier first; this gate covers native begin and identity capture only. */
+	private final class ValueReadScope implements TxnManager.ReaderStartScope {
+		private final ValueStoreRevision.Lazy requested;
+		private ValueStoreRevision.Lazy captured;
+
+		private ValueReadScope(ValueStoreRevision.Lazy requested) {
+			this.requested = requested;
+		}
+
+		private ValueReadScope open() throws IOException {
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			try {
+				if (deadline == null) {
+					associationGate.lockInterruptibly();
+				} else if (!associationGate.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+					throw new QueryInterruptedException("Query evaluation took too long");
+				}
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while capturing dictionary identity", failure);
+			}
+			boolean capturedIdentity = false;
+			try {
+				if (deadline != null && deadline.remainingNanos() <= 0L) {
+					throw new QueryInterruptedException("Query evaluation took too long");
+				}
+				captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
+				ensureAssociationReadable(captured);
+				capturedIdentity = true;
+				return this;
+			} finally {
+				if (!capturedIdentity) {
+					associationGate.unlock();
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			associationGate.unlock();
+		}
+	}
+
+	private <T> T withValueReadTransaction(ValueStoreRevision.Lazy requested, Transaction<T> transaction)
+			throws IOException {
+		if (requested != null) {
+			ensureAssociationReadable(requested);
+		}
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
+			return withBorrowedReadContext(writeTxn,
+					requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false, transaction);
+		}
+		Long borrowed = borrowedReadTxn.get();
+		if (borrowed != null) {
+			if (requested != null && !associationCompatible(requested, mdb_txn_id(borrowed))) {
+				throw new SailException("The borrowed dictionary reader predates this value's native association");
+			}
+			return LmdbUtil.readTransaction(env, borrowed, transaction);
+		}
+		ValueReadScope scope = new ValueReadScope(requested);
+		return txnManager.doWithPriority((stack, txn) -> withScopedValueReadContext(txn, scope, transaction), scope::open);
+	}
+
+	private <T> T withScopedValueReadContext(long txn, ValueReadScope scope, Transaction<T> transaction)
+			throws IOException {
+		if (!associationCompatible(scope.captured, mdb_txn_id(txn))) {
+			throw new SailException("The committed dictionary reader predates this value's native association");
+		}
+		return withBorrowedReadContext(txn, scope.captured, true, transaction);
+	}
+
+	private <T> T withBorrowedReadContext(long txn, ValueStoreRevision.Lazy valueRevision, boolean ownsReadBarrier,
+			Transaction<T> transaction)
+			throws IOException {
+		Long previousTxn = borrowedReadTxn.get();
+		ValueStoreRevision.Lazy previousRevision = borrowedReadRevision.get();
+		Boolean previousLock = hasReadLock.get();
+		borrowedReadTxn.set(txn);
+		borrowedReadRevision.set(valueRevision);
+		if (ownsReadBarrier) {
+			hasReadLock.set(Boolean.TRUE);
+		}
+		try {
+			return LmdbUtil.readTransaction(env, txn, transaction);
+		} finally {
+			setBorrowedReadContext(previousTxn, previousRevision);
+			if (previousLock == null) {
+				hasReadLock.remove();
+			} else {
+				hasReadLock.set(previousLock);
+			}
+		}
+	}
+
+	private void setBorrowedReadContext(Long transaction, ValueStoreRevision.Lazy valueRevision) {
+		if (transaction == null) {
+			borrowedReadTxn.remove();
+		} else {
+			borrowedReadTxn.set(transaction);
+		}
+		if (valueRevision == null) {
+			borrowedReadRevision.remove();
+		} else {
+			borrowedReadRevision.set(valueRevision);
+		}
+	}
+
+	/** Detached from the store so Cleaner actions cannot keep their current Lazy referent reachable through it. */
+	private static final class LazyRevisionTracker {
+		private final Set<Long> unusedRevisionIds;
+		private final long evictionInterval;
+		private final LinkedHashSet<LazyEpoch> liveEpochs = new LinkedHashSet<>();
+		private final ArrayDeque<LazyEpoch> retiredEpochs = new ArrayDeque<>();
+		private long nextEpoch;
+		private LazyEpoch currentEpoch;
+		private volatile long nextValueEvictionTime;
+
+		private LazyRevisionTracker(Set<Long> unusedRevisionIds, long evictionInterval) {
+			this.unusedRevisionIds = unusedRevisionIds;
+			this.evictionInterval = evictionInterval;
+		}
+
+		void register(ValueStoreRevision.Lazy revision, ConcurrentCleaner cleaner) {
+			LazyEpoch epoch;
+			synchronized (unusedRevisionIds) {
+				epoch = new LazyEpoch(++nextEpoch, revision.getRevisionId(), this);
+				liveEpochs.add(epoch);
+				currentEpoch = epoch;
+			}
+			cleaner.register(revision, epoch);
+		}
+
+		void retireCurrentEpoch() {
+			synchronized (unusedRevisionIds) {
+				retiredEpochs.addLast(currentEpoch);
+			}
+		}
+
+		private void collected(LazyEpoch epoch) {
+			synchronized (unusedRevisionIds) {
+				liveEpochs.remove(epoch);
+				long oldestLiveEpoch = liveEpochs.isEmpty() ? Long.MAX_VALUE : liveEpochs.getFirst().epoch;
+				while (!retiredEpochs.isEmpty() && retiredEpochs.getFirst().epoch < oldestLiveEpoch) {
+					unusedRevisionIds.add(retiredEpochs.removeFirst().revisionId);
+				}
+				schedulePendingEviction();
+			}
+		}
+
+		void schedulePendingEviction() {
+			synchronized (unusedRevisionIds) {
+				if (!unusedRevisionIds.isEmpty() && nextValueEvictionTime < 0) {
+					nextValueEvictionTime = System.currentTimeMillis() + evictionInterval;
+				}
+			}
+		}
+
+		private static final class LazyEpoch implements Runnable {
+			private final long epoch;
+			private final long revisionId;
+			private final LazyRevisionTracker tracker;
+
+			private LazyEpoch(long epoch, long revisionId, LazyRevisionTracker tracker) {
+				this.epoch = epoch;
+				this.revisionId = revisionId;
+				this.tracker = tracker;
+			}
+
+			@Override
+			public void run() {
+				tracker.collected(this);
+			}
+		}
 	}
 
 	ValueStoreRevision getRevision() {
-		return revision;
+		return completedRevision(currentReadRevision(LmdbValue.UNKNOWN_ID));
 	}
 
 	int getStoredHash(long id) {
+		return getStoredHashUnchecked(id);
+	}
+
+	/** Optional hash lookup never waits while a value monitor is held and validates the association at access. */
+	int getStoredHash(long id, long revisionId) {
+		if (!associationGate.tryLock()) {
+			return 0;
+		}
+		try {
+			return !shuttingDown && env != 0 && valueIdentity.revision.getRevisionId() == revisionId
+					? getStoredHashUnchecked(id)
+					: 0;
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	private int getStoredHashUnchecked(long id) {
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
 			pendingHash = pendingHashUpdates.get(id);
@@ -1208,6 +1583,24 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void storeHash(long id, int hash) {
+		storeHashUnchecked(id, hash);
+	}
+
+	/** A stale or contended optional hash update is omitted; lexical hashing remains authoritative. */
+	void storeHash(long id, int hash, long revisionId) {
+		if (!associationGate.tryLock()) {
+			return;
+		}
+		try {
+			if (!shuttingDown && env != 0 && valueIdentity.revision.getRevisionId() == revisionId) {
+				storeHashUnchecked(id, hash);
+			}
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	private void storeHashUnchecked(long id, int hash) {
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
@@ -1259,40 +1652,75 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Get value from cache by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Cache entries contain completed model payloads and their original immutable native association. A caller can
+	 * subsequently rebind the model's ID without changing this provenance. Acquire publication makes the completed
+	 * payload visible, and the requested revision rejects late completion from a retired dictionary epoch.
 	 *
 	 * @param id ID of a value object
 	 * @return the value object or <code>null</code> if not found
 	 */
-	LmdbValue cachedValue(long id) {
-		int idx = (int) (id & valueCacheMask);
-
-		// Faster to read the long from an array than calling LmdbValue#getInternalID() on the value object. There may
-		// be race conditions, especially if the cache is small and has a high churn rate, but we can live with that
-		// since we anyway check the ID on the value object later on.
-		if (valueCacheId[idx] != id) {
+	LmdbValue cachedValue(long id, ValueStoreRevision expectedRevision) {
+		ValueCacheEpoch caches = valueCaches;
+		if (caches.revision != completedRevision(expectedRevision)) {
 			return null;
 		}
+		int idx = valueCacheIndex(id);
 
-		LmdbValue value = valueCache[idx];
-		if (value != null && value.getInternalID() == id) {
-			return value;
+		ValueCacheEntry entry = (ValueCacheEntry) VALUE_CACHE_ELEMENT.getAcquire(caches.completed, idx);
+		if (entry != null && entry.id == id && expectedRevision.equals(entry.revision)) {
+			return entry.value;
 		}
 		return null;
+	}
+
+	LmdbValue cachedValue(long id) {
+		return cachedValue(id, currentReadRevision(id));
 	}
 
 	/**
 	 * Cache value by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Called only for fully constructed values or after lazy initialization completes. Release publication never
+	 * exposes a model still decoding under its initialization monitor.
 	 *
 	 * @param id    ID of a value object
 	 * @param value ID of a value object
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		int idx = (int) (id & valueCacheMask);
-		valueCacheId[idx] = id;
-		valueCache[idx] = value;
+		cacheValue(id, value, value.getInternalIdentity().revision());
+	}
+
+	void cacheValue(long id, LmdbValue value, ValueStoreRevision sourceRevision) {
+		ValueCacheEpoch caches = valueCaches;
+		if (caches.revision != completedRevision(sourceRevision)) {
+			return;
+		}
+		int idx = valueCacheIndex(id);
+		VALUE_CACHE_ELEMENT.setRelease(caches.completed, idx, new ValueCacheEntry(id, sourceRevision, value));
+	}
+
+	private record ValueCacheEntry(long id, ValueStoreRevision revision, LmdbValue value) {
+	}
+
+	private record CanonicalValueEntry(long id, LmdbValue value) {
+	}
+
+	private static final class ValueCacheEpoch {
+		private final ValueStoreRevision.Default revision;
+		private final ValueCacheEntry[] completed;
+		private final CanonicalValueEntry[] canonical;
+
+		private ValueCacheEpoch(ValueStoreRevision.Default revision, int size) {
+			this.revision = revision;
+			completed = new ValueCacheEntry[size];
+			canonical = new CanonicalValueEntry[size];
+		}
+	}
+
+	private int valueCacheIndex(long id) {
+		// Reference IDs reserve seven low bits for type tags. Fold the logical payload into those bits so the
+		// configured capacity remains useful for one value type; retain all encoded bits for inlined values too.
+		return Long.hashCode(id ^ ValueIds.getValue(id)) & valueCacheMask;
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -1311,40 +1739,64 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
+		ValueStoreRevision.Lazy valueRevision = currentReadRevision(id);
 		long stamp = revisionLock.readLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
-
-			if (resultValue == null) {
-				int idType = ValueIds.getIdType(id);
-				switch (idType) {
-				case ValueIds.T_URI:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case ValueIds.T_DOUBLE:
-				case ValueIds.T_LITERAL:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case ValueIds.T_BNODE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				case ValueIds.T_TRIPLE:
-					resultValue = new LmdbTripleTerm(lazyRevision, id);
-					break;
-				default:
-					if (ValueIds.isInlined(id)) {
-						resultValue = new LmdbLiteral(lazyRevision, id);
-						break;
-					}
-					throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
-				}
-			}
-
-			return resultValue;
+			return getLazyValue(id, valueRevision);
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
+	}
+
+	LmdbValue getLazyValue(long id, ValueStoreRevision valueRevision) throws IOException {
+		PendingValueAssociation pending = pendingValueAssociation;
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread() && pending != null
+				&& valueRevision instanceof ValueStoreRevision.Lazy lazy && lazy.association() == pending.pending
+				&& !isWriterAssigned(id)) {
+			// Existing children keep a committed capability; newer children retain the pending parent's epoch.
+			valueRevision = pending.predecessor;
+		}
+		ValueCacheEpoch caches = valueCaches;
+		boolean currentEpoch = caches.revision == completedRevision(valueRevision);
+		int idx = valueCacheIndex(id);
+		CanonicalValueEntry previous = currentEpoch
+				? (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical, idx)
+				: null;
+		if (previous != null && previous.id == id) {
+			return previous.value;
+		}
+		LmdbValue cached = cachedValue(id, valueRevision);
+		if (cached != null) {
+			// Both the ID association and deferred nested children belong to this captured dictionary epoch.
+			return currentEpoch ? publishCanonicalValue(caches, idx, previous, id, cached) : cached;
+		}
+		int idType = ValueIds.getIdType(id);
+		LmdbValue value = switch (idType) {
+		case ValueIds.T_URI -> new LmdbIRI(valueRevision, id);
+		case ValueIds.T_DOUBLE, ValueIds.T_LITERAL -> new LmdbLiteral(valueRevision, id);
+		case ValueIds.T_BNODE -> new LmdbBNode(valueRevision, id);
+		case ValueIds.T_TRIPLE -> new LmdbTripleTerm(valueRevision, id);
+		default -> {
+			if (!ValueIds.isInlined(id)) {
+				throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+			}
+			yield new LmdbLiteral(valueRevision, id);
+		}
+		};
+		if (valueRevision instanceof ValueStoreRevision.Lazy) {
+			// Register before publishing: shutdown must discover every shell another thread can obtain from the cache.
+			sharedLazyValues.add(value);
+		}
+		return currentEpoch ? publishCanonicalValue(caches, idx, previous, id, value) : value;
+	}
+
+	private LmdbValue publishCanonicalValue(ValueCacheEpoch caches, int idx, CanonicalValueEntry previous, long id,
+			LmdbValue value) {
+		CanonicalValueEntry entry = new CanonicalValueEntry(id, value);
+		CanonicalValueEntry witness = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.compareAndExchange(caches.canonical,
+				idx, previous, entry);
+		// One bounded publication attempt. A racing same-ID lookup shares the winner; a collision may remain uncached.
+		return witness != previous && witness != null && witness.id == id ? witness.value : value;
 	}
 
 	/**
@@ -1355,30 +1807,43 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getValue(long id) throws IOException {
+		ValueStoreRevision.Lazy valueRevision = currentReadRevision(id);
+		LmdbValue cached = cachedValue(id, valueRevision);
+		if (cached != null || ValueIds.isInlined(id)) {
+			return cached == null ? getValue(id, valueRevision) : cached;
+		}
+		return withValueReadTransaction(writeTxn != 0 && writeTxnOwner == Thread.currentThread() ? valueRevision : null,
+				(stack, txn) -> getValue(id, borrowedReadRevision.get()));
+	}
+
+	private LmdbValue getValue(long id, ValueStoreRevision valueRevision) throws IOException {
 		long stamp = revisionLock.readLock();
 		try {
 			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
+			LmdbValue resultValue = cachedValue(id, valueRevision);
 
 			if (resultValue == null) {
 				// unpack inlined values if possible
 				if (ValueIds.isInlined(id)) {
 					Literal unpacked = Values.unpackLiteral(id, this);
-					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
+					return new LmdbLiteral(completedRevision(valueRevision), unpacked.getLabel(),
+							unpacked.getDatatype(), id);
 				}
 
 				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-					resultValue = id2tripleTerm(id, null);
-					cacheValue(id, resultValue);
+					resultValue = id2tripleTerm(id, null, valueRevision);
+					if (resultValue != null) {
+						cacheValue(id, resultValue, completedRevision(valueRevision));
+					}
 					return resultValue;
 				}
 
 				// Value not in cache, fetch it from file
 				byte[] data = getData(id);
 				if (data != null) {
-					resultValue = data2value(id, data, null);
+					resultValue = data2value(id, data, null, valueRevision);
 					// Store value in cache
-					cacheValue(id, resultValue);
+					cacheValue(id, resultValue, completedRevision(valueRevision));
 				}
 			}
 			return resultValue;
@@ -1395,6 +1860,10 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
+		return resolveValue(id, value, currentReadRevision(id));
+	}
+
+	boolean resolveValue(long id, LmdbValue value, ValueStoreRevision valueRevision) {
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
@@ -1403,28 +1872,96 @@ class ValueStore extends AbstractValueFactory {
 			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 			return true;
 		}
+		ensureAssociationReadable(valueRevision);
 		// Try to get from cache
-		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+		LmdbValue cached = cachedValue(id, valueRevision);
+		if (cached != null) {
 			value.setFromInitializedValue(cached);
 			return true;
 		}
 		try {
-			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-				value = id2tripleTerm(id, (LmdbTripleTerm) value);
-				cacheValue(id, value);
-				return true;
+			if (valueRevision instanceof ValueStoreRevision.Lazy lazy) {
+				Transaction<Boolean> decode = (stack, txn) -> resolveValueFromData(id, value, valueRevision);
+				if (borrowedReadTxn.get() == null && (writeTxn == 0 || writeTxnOwner != Thread.currentThread())) {
+					ValueReadScope scope = new ValueReadScope(lazy);
+					Boolean resolved = txnManager.tryDoWith((stack, txn) -> withScopedValueReadContext(txn, scope, decode),
+							scope::open);
+					if (resolved != null) {
+						return resolved;
+					}
+					if (resolveValueFromPairedSnapshot(id, value, lazy)) {
+						return true;
+					}
+				}
+				return withValueReadTransaction(lazy, decode);
 			}
-
-			byte[] data = getData(id);
-			if (data != null) {
-//				System.out.println(id);
-				data2value(id, data, value);
-				cacheValue(id, value);
-				return true;
-			}
+			return resolveValueFromData(id, value, valueRevision);
 		} catch (IOException e) {
 			throw new SailException(e);
+		}
+	}
+
+	private boolean resolveValueFromPairedSnapshot(long id, LmdbValue value, ValueStoreRevision.Lazy valueRevision)
+			throws IOException {
+		ReadSnapshot preferred = valueRevision.preferredSnapshot();
+		long stamp = txnManager.acquireReadBarrier();
+		try {
+			if (resolveValueFromPairedSnapshot(preferred, id, value, valueRevision)) {
+				return true;
+			}
+			for (ReadSnapshot candidate : readSnapshots) {
+				if (candidate != preferred && resolveValueFromPairedSnapshot(candidate, id, value, valueRevision)) {
+					valueRevision.preferSnapshot(candidate);
+					return true;
+				}
+			}
+			return false;
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	private boolean resolveValueFromPairedSnapshot(ReadSnapshot snapshot, long id, LmdbValue value,
+			ValueStoreRevision valueRevision) throws IOException {
+		if (snapshot == null || snapshot.valueStore() != this) {
+			return false;
+		}
+		synchronized (snapshot.txnRef()) {
+			if (!snapshot.hasStableIds() || snapshot.closed || snapshot.dictionaryDetached
+					|| snapshot.retiredKind != null || snapshot.txn.isClosed() || !snapshot.txn.isNativeActive()
+					|| snapshot.txn.version() != snapshot.transactionVersion
+					|| !associationCompatible(valueRevision, snapshot.nativeTransactionId)) {
+				return false;
+			}
+			Long previousTxn = borrowedReadTxn.get();
+			ValueStoreRevision.Lazy previousRevision = borrowedReadRevision.get();
+			borrowedReadTxn.set(snapshot.txn.get());
+			borrowedReadRevision.set((ValueStoreRevision.Lazy) valueRevision);
+			try {
+				// The dictionary epoch may include values appended after this paired reader was admitted.
+				// An absent ID must fall back to a current reader rather than being interpreted as missing.
+				return resolveValueFromData(id, value, valueRevision);
+			} finally {
+				setBorrowedReadContext(previousTxn, previousRevision);
+			}
+		}
+	}
+
+	private boolean resolveValueFromData(long id, LmdbValue value, ValueStoreRevision valueRevision)
+			throws IOException {
+		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+			value = id2tripleTerm(id, (LmdbTripleTerm) value, valueRevision);
+			if (value == null) {
+				return false;
+			}
+			return true;
+		}
+
+		byte[] data = getData(id);
+		if (data != null) {
+//				System.out.println(id);
+			data2value(id, data, value, valueRevision);
+			return true;
 		}
 		return false;
 	}
@@ -1501,6 +2038,7 @@ class ValueStore extends AbstractValueFactory {
 						if (activeWriteTxn) {
 							endTransaction(true, true);
 						}
+						detachStableReadSnapshots(growthAttempt);
 						txnManager.deactivate();
 
 						long oldMapSize = mapSize;
@@ -1513,6 +2051,7 @@ class ValueStore extends AbstractValueFactory {
 						}
 						E(mdb_env_set_mapsize(env, grownSize));
 						mapSize = grownSize;
+						nativeMapGeneration++;
 						if (activeWriteTxn) {
 							startTransaction(false);
 						}
@@ -1583,6 +2122,10 @@ class ValueStore extends AbstractValueFactory {
 
 	long mapSizeBytes() {
 		return mapSize;
+	}
+
+	long nativeMapGeneration() {
+		return nativeMapGeneration;
 	}
 
 	boolean retainsGrowthReserve() throws IOException {
@@ -1674,6 +2217,7 @@ class ValueStore extends AbstractValueFactory {
 			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
 				return false;
 			}
+			detachStableReadSnapshots(growthAttempt);
 			txnManager.deactivate();
 			try {
 				long nextPageNo;
@@ -1690,6 +2234,7 @@ class ValueStore extends AbstractValueFactory {
 				}
 				E(mdb_env_set_mapsize(env, resizedMapSize));
 				mapSize = resizedMapSize;
+				nativeMapGeneration++;
 				return true;
 			} finally {
 				txnManager.activate();
@@ -2018,6 +2563,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
+		return id2tripleTerm(id, value, currentReadRevision(id));
+	}
+
+	private LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value, ValueStoreRevision valueRevision)
+			throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			final var index = tripleTermCspoIndex;
 
@@ -2025,28 +2575,34 @@ class ValueStore extends AbstractValueFactory {
 			E(mdb_cursor_open(txn, index.getDB(true), pp));
 			long cursor = pp.get(0);
 
-			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(keyBuf, -1, -1, -1, id);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+			try {
+				MDBVal keyVal = MDBVal.malloc(stack);
+				// use calloc to get an empty data value
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(keyBuf, -1, -1, -1, id);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
 
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-				long[] quad = new long[4];
-				index.keyToQuad(keyVal.mv_data(), quad);
-				if (value != null) {
-					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
-					return value;
-				} else {
-					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+					long[] quad = new long[4];
+					index.keyToQuad(keyVal.mv_data(), quad);
+					if (value != null) {
+						value.setFromInitializedValue(new LmdbTripleTerm(completedRevision(valueRevision),
+								(Resource) getLazyValue(quad[0], valueRevision),
+								(IRI) getLazyValue(quad[1], valueRevision), getLazyValue(quad[2], valueRevision), id));
+						return value;
+					} else {
+						return new LmdbTripleTerm(completedRevision(valueRevision),
+								(Resource) getLazyValue(quad[0], valueRevision),
+								(IRI) getLazyValue(quad[1], valueRevision), getLazyValue(quad[2], valueRevision), id);
+					}
 				}
+				return null;
+			} finally {
+				mdb_cursor_close(cursor);
 			}
-			return null;
 		});
 	}
 
@@ -2137,7 +2693,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findTripleTermId(ReadSnapshot snapshot, long txn, long subj, long pred, long obj) throws IOException {
-		snapshot.ensureValid();
+		if (snapshot != null) {
+			snapshot.ensureValid();
+		}
 		try (MemoryStack stack = stackPush()) {
 			final TripleIndex mainIndex = tripleTermSpocIndex;
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -2164,6 +2722,22 @@ class ValueStore extends AbstractValueFactory {
 
 	/** Finds a value ID in the supplied dictionary generation without consulting mutable ValueStore caches. */
 	long getId(ReadSnapshot snapshot, Value value) throws IOException {
+		snapshot.ensureValid();
+		if (snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+		}
+		long cachedId = snapshot.cachedLookup(value);
+		if (cachedId != LmdbValue.UNKNOWN_ID) {
+			return cachedId;
+		}
+		long knownId = knownSnapshotId(snapshot, value);
+		if (knownId != LmdbValue.UNKNOWN_ID) {
+			return knownId;
+		}
+		// Caller getters may initialize escaped lazy values, which borrow a paired native transaction. Capture
+		// lexical fields and nested components before either the native barrier or the transaction monitor.
+		SnapshotValueLookup lookup = captureSnapshotLookup(snapshot, value);
+		SnapshotLookupKey lookupKey = snapshot.canCacheLookup() ? snapshotLookupKey(lookup) : null;
 		long stamp;
 		try {
 			stamp = txnManager.lockManager().readLock();
@@ -2174,65 +2748,277 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			synchronized (snapshot.txnRef()) {
 				snapshot.ensureValid();
-				if (snapshot.valueStore() != this) {
-					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				if (!snapshot.dictionaryDetached()) {
+					long id = getId(snapshot, snapshot.txnRef().get(), lookup);
+					snapshot.cacheLookup(value, lookupKey, id);
+					return id;
 				}
-				return getId(snapshot, snapshot.txnRef().get(), value);
 			}
 		} finally {
 			txnManager.lockManager().unlockRead(stamp);
 		}
+		return readTransaction(env, (stack, txn) -> getId(snapshot, txn, lookup));
 	}
 
-	private long getId(ReadSnapshot snapshot, long txn, Value value) throws IOException {
-		snapshot.ensureValid();
-		if (value instanceof LmdbValue lmdbValue && lmdbValue.getValueStoreRevision() == snapshot.revision()
-				&& lmdbValue.getInternalID() != LmdbValue.UNKNOWN_ID) {
-			return lmdbValue.getInternalID();
+	private long knownSnapshotId(ReadSnapshot snapshot, Value value) throws IOException {
+		if (snapshot != null && value instanceof LmdbValue lmdbValue) {
+			LmdbValue.InternalIdentity identity = lmdbValue.getInternalIdentity();
+			if (identity.id() != LmdbValue.UNKNOWN_ID && identity.revision() == snapshot.revision()) {
+				long stamp = txnManager.acquireReadBarrier();
+				try {
+					synchronized (snapshot.txnRef()) {
+						snapshot.ensureValid();
+						// A shared epoch can include ready values appended after this native reader began.
+						// An already-present same-epoch ID keeps its association; later absent IDs need lexical lookup.
+						if (!snapshot.hasStableIds() || snapshot.dictionaryDetached()
+								|| ValueIds.isInlined(identity.id())
+								|| containsValueId(snapshot.txnRef().get(), identity.id())) {
+							return identity.id();
+						}
+					}
+				} finally {
+					txnManager.lockManager().unlockRead(stamp);
+				}
+			}
+		}
+		return LmdbValue.UNKNOWN_ID;
+	}
+
+	/** Checks native resolution membership without decoding values or invoking caller/model getters. */
+	private boolean containsValueId(long txn, long id) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			if (ValueIds.getIdType(id) != ValueIds.T_TRIPLE) {
+				key.mv_data(id2data(idBuffer(stack), id).flip());
+				int rc = mdb_get(txn, dbi, key, data);
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				return rc == MDB_SUCCESS;
+			}
+			TripleIndex index = tripleTermCspoIndex;
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), pointer));
+			long cursor = pointer.get(0);
+			try {
+				ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(keyBuffer, -1, -1, -1, id);
+				key.mv_data(keyBuffer.flip());
+				int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				return rc == MDB_SUCCESS && Varint.readUnsigned(key.mv_data()) == id;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private SnapshotValueLookup captureSnapshotLookup(ReadSnapshot snapshot, Value value) throws IOException {
+		long knownId = knownSnapshotId(snapshot, value);
+		if (knownId != LmdbValue.UNKNOWN_ID) {
+			return new SnapshotKnownId(knownId);
 		}
 		if (value.isTripleTerm()) {
 			TripleTerm tripleTerm = (TripleTerm) value;
-			long subj = getId(snapshot, txn, tripleTerm.getSubject());
-			long pred = getId(snapshot, txn, tripleTerm.getPredicate());
-			long obj = getId(snapshot, txn, tripleTerm.getObject());
-			if (subj == LmdbValue.UNKNOWN_ID || pred == LmdbValue.UNKNOWN_ID || obj == LmdbValue.UNKNOWN_ID) {
-				return LmdbValue.UNKNOWN_ID;
-			}
-			return findTripleTermId(snapshot, txn, subj, pred, obj);
+			return new SnapshotTriple(captureSnapshotLookup(snapshot, tripleTerm.getSubject()),
+					captureSnapshotLookup(snapshot, tripleTerm.getPredicate()),
+					captureSnapshotLookup(snapshot, tripleTerm.getObject()));
 		}
 		if (inlineLiterals && value instanceof Literal literal) {
 			try {
 				long packedId = Values.packLiteral(literal);
 				if (packedId != 0L && Values.unpackLiteral(packedId, this).equals(literal)) {
-					return packedId;
+					return new SnapshotKnownId(packedId);
 				}
 			} catch (IllegalArgumentException e) {
 				// The literal is not compatible with inlining; look for its stored representation below.
 			}
 		}
-		byte[] data = value2data(snapshot, txn, value);
-		return data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
-	}
-
-	private byte[] value2data(ReadSnapshot snapshot, long txn, Value value) throws IOException {
 		return switch (value.getType()) {
-		case Value.Type.IRI -> uri2data(snapshot, txn, (IRI) value);
-		case Value.Type.BNode -> bnode2data((BNode) value, false);
-		case Value.Type.Literal -> literal2data(snapshot, txn, (Literal) value);
+		case Value.Type.IRI -> {
+			IRI iri = (IRI) value;
+			byte[] namespaceBytes = iri.getNamespace().getBytes(StandardCharsets.UTF_8);
+			byte[] namespaceData = new byte[namespaceBytes.length + 1];
+			namespaceData[0] = NAMESPACE_VALUE;
+			System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
+			yield new SnapshotIRI(namespaceData, iri.getLocalName().getBytes(StandardCharsets.UTF_8));
+		}
+		case Value.Type.BNode -> new SnapshotEncodedValue(bnode2data((BNode) value, false));
+		case Value.Type.Literal -> {
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			yield new SnapshotLiteral(datatype == null ? null : captureSnapshotLookup(snapshot, datatype),
+					literal.getLabel().getBytes(StandardCharsets.UTF_8),
+					literal.getLanguage().map(s -> s.getBytes(StandardCharsets.UTF_8)).orElse(null),
+					literal.getBaseDirection());
+		}
 		default -> throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
 		};
 	}
 
-	private byte[] uri2data(ReadSnapshot snapshot, long txn, IRI uri) throws IOException {
-		byte[] namespaceBytes = uri.getNamespace().getBytes(StandardCharsets.UTF_8);
-		byte[] namespaceData = new byte[namespaceBytes.length + 1];
-		namespaceData[0] = NAMESPACE_VALUE;
-		System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
-		long nsID = findId(snapshot, txn, namespaceData);
+	private sealed interface SnapshotValueLookup {
+	}
+
+	private record SnapshotKnownId(long id) implements SnapshotValueLookup {
+	}
+
+	private record SnapshotEncodedValue(byte[] data) implements SnapshotValueLookup {
+	}
+
+	private record SnapshotIRI(byte[] namespaceData, byte[] localNameData) implements SnapshotValueLookup {
+	}
+
+	private record SnapshotLiteral(SnapshotValueLookup datatype, byte[] labelData, byte[] languageData,
+			Literal.BaseDirection baseDirection) implements SnapshotValueLookup {
+	}
+
+	private record SnapshotTriple(SnapshotValueLookup subject, SnapshotValueLookup predicate,
+			SnapshotValueLookup object)
+			implements SnapshotValueLookup {
+	}
+
+	/**
+	 * Builds a lexical fingerprint from the same owned fields used by the native miss, without calling the caller
+	 * again. Known-ID components are deliberately not decoded just to populate an optional memo.
+	 */
+	private static SnapshotLookupKey snapshotLookupKey(SnapshotValueLookup lookup) {
+		return switch (lookup) {
+		case SnapshotKnownId ignored -> null;
+		case SnapshotIRI iri -> new SnapshotIRIKey(
+				new String(iri.namespaceData(), 1, iri.namespaceData().length - 1, StandardCharsets.UTF_8)
+						+ new String(iri.localNameData(), StandardCharsets.UTF_8));
+		case SnapshotEncodedValue encoded -> encoded.data()[0] == BNODE_VALUE
+				? new SnapshotBNodeKey(new String(encoded.data(), 1, encoded.data().length - 1, StandardCharsets.UTF_8))
+				: null;
+		case SnapshotLiteral literal -> {
+			SnapshotLookupKey datatype = literal.datatype() == null ? null : snapshotLookupKey(literal.datatype());
+			yield literal.datatype() != null && datatype == null ? null
+					: new SnapshotLiteralKey(datatype, new String(literal.labelData(), StandardCharsets.UTF_8),
+							literal.languageData() == null ? null
+									: new String(literal.languageData(), StandardCharsets.UTF_8),
+							literal.baseDirection());
+		}
+		case SnapshotTriple triple -> {
+			SnapshotLookupKey subject = snapshotLookupKey(triple.subject());
+			SnapshotLookupKey predicate = snapshotLookupKey(triple.predicate());
+			SnapshotLookupKey object = snapshotLookupKey(triple.object());
+			yield subject == null || predicate == null || object == null ? null
+					: new SnapshotTripleKey(subject, predicate, object);
+		}
+		};
+	}
+
+	private sealed interface SnapshotLookupKey {
+		/** Caller getters run only before native admission and never under a native transaction monitor. */
+		boolean matches(Value value);
+	}
+
+	private record SnapshotIRIKey(String iri) implements SnapshotLookupKey {
+		@Override
+		public boolean matches(Value value) {
+			return value instanceof IRI input && iri.equals(input.stringValue());
+		}
+	}
+
+	private record SnapshotBNodeKey(String id) implements SnapshotLookupKey {
+		@Override
+		public boolean matches(Value value) {
+			return value instanceof BNode input && id.equals(input.getID());
+		}
+	}
+
+	private record SnapshotLiteralKey(SnapshotLookupKey datatype, String label, String language,
+			Literal.BaseDirection direction) implements SnapshotLookupKey {
+		@Override
+		public boolean matches(Value value) {
+			if (!(value instanceof Literal input) || !label.equals(input.getLabel())
+					|| !Objects.equals(language, input.getLanguage().orElse(null))
+					|| direction != input.getBaseDirection()) {
+				return false;
+			}
+			IRI inputDatatype = input.getDatatype();
+			return datatype == null ? inputDatatype == null : datatype.matches(inputDatatype);
+		}
+	}
+
+	private record SnapshotTripleKey(SnapshotLookupKey subject, SnapshotLookupKey predicate, SnapshotLookupKey object)
+			implements SnapshotLookupKey {
+		@Override
+		public boolean matches(Value value) {
+			return value instanceof TripleTerm input && subject.matches(input.getSubject())
+					&& predicate.matches(input.getPredicate()) && object.matches(input.getObject());
+		}
+	}
+
+	private record SnapshotLookupEntry(Value value, SnapshotLookupKey key, long id) {
+	}
+
+	/** Bounded identity slots; the holder never owns a snapshot or any native memory. */
+	private static final class SnapshotLookupCache {
+		private final SnapshotLookupEntry[] entries;
+		private final int mask;
+
+		private SnapshotLookupCache(int capacity) {
+			entries = new SnapshotLookupEntry[capacity];
+			mask = capacity > 0 && Integer.bitCount(capacity) == 1 ? capacity - 1 : -1;
+		}
+
+		private int index(Value value) {
+			int hash = System.identityHashCode(value);
+			return mask >= 0 ? hash & mask : Math.floorMod(hash, entries.length);
+		}
+
+		private SnapshotLookupEntry get(Value value) {
+			SnapshotLookupEntry entry = (SnapshotLookupEntry) SNAPSHOT_LOOKUP_ELEMENT.getAcquire(entries, index(value));
+			return entry != null && entry.value() == value ? entry : null;
+		}
+
+		private void put(Value value, SnapshotLookupKey key, long id) {
+			SNAPSHOT_LOOKUP_ELEMENT.setRelease(entries, index(value), new SnapshotLookupEntry(value, key, id));
+		}
+
+		private void clear() {
+			for (int i = 0; i < entries.length; i++) {
+				SNAPSHOT_LOOKUP_ELEMENT.setRelease(entries, i, null);
+			}
+		}
+	}
+
+	private long getId(ReadSnapshot snapshot, long txn, SnapshotValueLookup lookup) throws IOException {
+		if (snapshot != null) {
+			snapshot.ensureValid();
+		}
+		return switch (lookup) {
+		case SnapshotKnownId known -> known.id();
+		case SnapshotEncodedValue encoded -> findId(snapshot, txn, encoded.data());
+		case SnapshotIRI iri -> {
+			byte[] data = uri2data(snapshot, txn, iri);
+			yield data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
+		}
+		case SnapshotLiteral literal -> {
+			byte[] data = literal2data(snapshot, txn, literal);
+			yield data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
+		}
+		case SnapshotTriple triple -> {
+			long subj = getId(snapshot, txn, triple.subject());
+			long pred = getId(snapshot, txn, triple.predicate());
+			long obj = getId(snapshot, txn, triple.object());
+			yield subj == LmdbValue.UNKNOWN_ID || pred == LmdbValue.UNKNOWN_ID || obj == LmdbValue.UNKNOWN_ID
+					? LmdbValue.UNKNOWN_ID
+					: findTripleTermId(snapshot, txn, subj, pred, obj);
+		}
+		};
+	}
+
+	private byte[] uri2data(ReadSnapshot snapshot, long txn, SnapshotIRI uri) throws IOException {
+		long nsID = findId(snapshot, txn, uri.namespaceData());
 		if (nsID == LmdbValue.UNKNOWN_ID) {
 			return null;
 		}
-		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
+		byte[] localNameData = uri.localNameData();
 		int nsIDLength = Varint.calcLengthUnsigned(nsID);
 		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
 		uriData[0] = URI_VALUE;
@@ -2241,14 +3027,14 @@ class ValueStore extends AbstractValueFactory {
 		return uriData;
 	}
 
-	private byte[] literal2data(ReadSnapshot snapshot, long txn, Literal literal) throws IOException {
-		long datatypeID = literal.getDatatype() == null ? 0 : getId(snapshot, txn, literal.getDatatype());
+	private byte[] literal2data(ReadSnapshot snapshot, long txn, SnapshotLiteral literal) throws IOException {
+		long datatypeID = literal.datatype() == null ? 0 : getId(snapshot, txn, literal.datatype());
 		if (datatypeID == LmdbValue.UNKNOWN_ID) {
 			return null;
 		}
-		byte[] langData = literal.getLanguage().map(s -> s.getBytes(StandardCharsets.UTF_8)).orElse(null);
+		byte[] langData = literal.languageData();
 		int langLength = langData == null ? 0 : langData.length;
-		byte[] labelData = literal.getLabel().getBytes(StandardCharsets.UTF_8);
+		byte[] labelData = literal.labelData();
 		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
 		boolean extended = langLength > 0x3F;
 		int extendedLengthBytes = extended ? Varint.calcLengthUnsigned(langLength) : 0;
@@ -2256,7 +3042,7 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		bb.put(LITERAL_VALUE);
 		Varint.writeUnsigned(bb, datatypeID);
-		Literal.BaseDirection baseDirection = literal.getBaseDirection();
+		Literal.BaseDirection baseDirection = literal.baseDirection();
 		int directionValue = baseDirection == null ? 0 : switch (baseDirection) {
 		case LTR -> 1;
 		case RTL -> 2;
@@ -2276,7 +3062,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(ReadSnapshot snapshot, long txn, byte[] data) throws IOException {
-		snapshot.ensureValid();
+		if (snapshot != null) {
+			snapshot.ensureValid();
+		}
 		try (MemoryStack stack = stackPush()) {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			MDBVal idVal = MDBVal.calloc(stack);
@@ -2351,6 +3139,14 @@ class ValueStore extends AbstractValueFactory {
 		return txnManager;
 	}
 
+	/** Detaches ordinary paired dictionary readers before resetting native map handles. */
+	private void detachStableReadSnapshots(LmdbSailStore.MapGrowthAttempt growthAttempt) {
+		LmdbSailStore.MapGrowthToken token = growthAttempt == null ? null : growthAttempt.token();
+		for (ReadSnapshot snapshot : readSnapshots) {
+			snapshot.detachStableDictionary(token);
+		}
+	}
+
 	/** Reserves an untracked read transaction for a caller-owned dictionary snapshot. */
 	ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 		return new ReadSnapshotReservation(txnManager.reserveReadTxn(false));
@@ -2364,24 +3160,43 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		synchronized ReadSnapshot start() throws IOException {
+			return start(null);
+		}
+
+		/** Captures shared ID retention atomically with native admission under an already-pinned triple capability. */
+		synchronized ReadSnapshot start(Txn tripleTxn) throws IOException {
 			if (reservation == null) {
 				throw new IllegalStateException(
 						"ValueStore read snapshot reservation has already been consumed or closed");
 			}
+			if (tripleTxn != null) {
+				if (tripleTxn.snapshotRevision() < 0) {
+					throw new IllegalStateException("Stable dictionary IDs require a pinned TripleStore reader");
+				}
+				tripleTxn.ensureSnapshotValid();
+			}
 			TxnManager.ReaderReservation reserved = reservation;
-			TxnManager.Txn txn = null;
+			ReadSnapshot[] captured = new ReadSnapshot[1];
+			ValueReadScope scope = new ValueReadScope(null);
 			try {
-				txn = reserved.start();
-				ReadSnapshot snapshot = new ReadSnapshot(txn);
+				ReadSnapshot snapshot = reserved.startPinned(null, txn -> {
+					captured[0] = new ReadSnapshot(txn, scope.captured, tripleTxn);
+					return captured[0];
+				}, scope::open);
 				reservation = null;
 				return snapshot;
 			} catch (IOException | RuntimeException | Error e) {
 				reservation = null;
-				if (txn == null) {
-					reserved.close();
-				} else {
-					txn.close();
+				if (captured[0] != null) {
+					try {
+						captured[0].close();
+					} catch (RuntimeException | Error cleanupFailure) {
+						if (cleanupFailure != e) {
+							e.addSuppressed(cleanupFailure);
+						}
+					}
 				}
+				reserved.close();
 				throw e;
 			}
 		}
@@ -2403,20 +3218,59 @@ class ValueStore extends AbstractValueFactory {
 	final class ReadSnapshot implements AutoCloseable {
 		private final Txn txn;
 		private final long transactionVersion;
+		private final long nativeTransactionId;
+		private final long nativeMapGeneration;
 		private final ValueStoreRevision.Snapshot revision;
 		private volatile boolean closed;
 		private volatile Thread closingThread;
 		private volatile boolean abandonUnobserved;
 		private volatile LmdbSailStore.MapResizeKind retiredKind;
+		private volatile Txn stableTripleTxn;
+		private volatile ValueStoreRevision.Lazy stableRevision;
+		private volatile boolean dictionaryDetached;
+		private volatile boolean termSnapshotUsed;
+		private volatile LmdbSailStore.MapGrowthToken dictionaryGrowthToken;
+		private volatile SnapshotLookupCache lookupCache;
 
-		private ReadSnapshot(Txn txn) {
+		private ReadSnapshot(Txn txn, ValueStoreRevision.Lazy capturedRevision, Txn tripleTxn) {
 			this.txn = txn;
 			this.transactionVersion = txn.version();
+			this.nativeTransactionId = mdb_txn_id(txn.get());
+			this.nativeMapGeneration = ValueStore.this.nativeMapGeneration;
+			if (tripleTxn != null) {
+				stableRevision = capturedRevision;
+				stableTripleTxn = tripleTxn;
+				capturedRevision.preferSnapshot(this);
+			}
 			txn.setSnapshotBound();
 			this.revision = new ValueStoreRevision.Snapshot(ValueStore.this, this);
+			readSnapshots.add(this);
+		}
+
+		/** Verifies the authoritative TripleStore capability supplied at dictionary admission. */
+		void retainStableIds(Txn tripleTxn) {
+			synchronized (txn) {
+				if (closed || stableTripleTxn != tripleTxn || tripleTxn.snapshotRevision() < 0) {
+					throw new IllegalStateException(
+							"Stable dictionary IDs require their pinned TripleStore reader at admission");
+				}
+				tripleTxn.ensureSnapshotValid();
+			}
+		}
+
+		boolean hasStableIds() {
+			return stableTripleTxn != null;
 		}
 
 		boolean isCurrent() {
+			if (hasStableIds()) {
+				try {
+					ensureValid();
+					return true;
+				} catch (IOException | SailException e) {
+					return false;
+				}
+			}
 			if (closed || txn.isClosed() || txn.version() != transactionVersion) {
 				return false;
 			}
@@ -2434,8 +3288,13 @@ class ValueStore extends AbstractValueFactory {
 				throw new LmdbSailStore.MapResizeConflictException(invalidated,
 						"ValueStore map changed while the read snapshot was pinned; retry the transaction");
 			}
-			if ((closed && closingThread != Thread.currentThread()) || txn.isClosed()) {
+			if ((closed && closingThread != Thread.currentThread()) || !hasStableIds() && txn.isClosed()) {
 				throw new IOException("ValueStore read snapshot is closed; retry the read operation");
+			}
+			Txn horizon = stableTripleTxn;
+			if (horizon != null) {
+				horizon.ensureSnapshotValid();
+				return;
 			}
 			try {
 				txn.ensureSnapshotValid();
@@ -2455,7 +3314,58 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		boolean hasNativeTxn() {
-			return txn.isNativeActive();
+			return requiresStableTermMembership() && txn.isNativeActive();
+		}
+
+		boolean requiresStableTermMembership() {
+			return (!hasStableIds() || termSnapshotUsed) && !dictionaryDetached;
+		}
+
+		LmdbSailStore.MapGrowthToken dictionaryGrowthToken() {
+			return dictionaryGrowthToken;
+		}
+
+		boolean dictionaryDetached() {
+			return dictionaryDetached;
+		}
+
+		long nativeMapGeneration() {
+			return nativeMapGeneration;
+		}
+
+		/** Holds the ordinary native read barrier while declaring this view dependent on dictionary membership. */
+		void requireTermSnapshot() throws IOException {
+			requireTermSnapshot(Runnable::run);
+		}
+
+		void requireTermSnapshot(Consumer<Runnable> membershipDeclaration) throws IOException {
+			long stamp = txnManager.acquireReadBarrier();
+			try {
+				synchronized (txn) {
+					ensureValid();
+					if (dictionaryDetached) {
+						throw new LmdbSailStore.MapResizeConflictException(LmdbSailStore.MapResizeKind.VALUE_STORE,
+								"ValueStore term membership changed while the read snapshot was pinned; retry the transaction");
+					}
+					membershipDeclaration.accept(() -> termSnapshotUsed = true);
+					txn.ensureSnapshotValid();
+				}
+			} finally {
+				txnManager.lockManager().unlockRead(stamp);
+			}
+		}
+
+		/** Called under ValueStore's exclusive native barrier, after all in-flight dictionary reads leave. */
+		private void detachStableDictionary(LmdbSailStore.MapGrowthToken token) {
+			synchronized (txn) {
+				if (!closed && hasStableIds() && !termSnapshotUsed && !dictionaryDetached) {
+					disableLookupCache();
+					dictionaryGrowthToken = token;
+					dictionaryDetached = true;
+					txn.invalidateAndReset(LmdbSailStore.MapResizeKind.VALUE_STORE);
+					txn.close();
+				}
+			}
 		}
 
 		void retireForMapResize(LmdbSailStore.MapResizeKind kind) {
@@ -2467,8 +3377,9 @@ class ValueStore extends AbstractValueFactory {
 			return txn;
 		}
 
-		ValueStoreRevision.Snapshot revision() {
-			return revision;
+		ValueStoreRevision revision() {
+			ValueStoreRevision.Lazy stable = stableRevision;
+			return stable == null ? revision : stable;
 		}
 
 		ValueStore valueStore() {
@@ -2479,6 +3390,63 @@ class ValueStore extends AbstractValueFactory {
 			synchronized (txn) {
 				ensureValid();
 				revision.track(value);
+			}
+		}
+
+		private long cachedLookup(Value value) throws IOException {
+			SnapshotLookupCache cache = lookupCache;
+			if (cache == null || cache == DISABLED_SNAPSHOT_LOOKUP_CACHE) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			SnapshotLookupEntry entry = cache.get(value);
+			if (entry == null) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			checkLookupAdmission();
+			boolean matches = entry.key().matches(value);
+			// A caller getter can race close, detach, cancellation or a native generation change.
+			ensureValid();
+			checkLookupAdmission();
+			return matches && lookupCache == cache ? entry.id() : LmdbValue.UNKNOWN_ID;
+		}
+
+		private boolean canCacheLookup() {
+			return snapshotLookupCacheCapacity > 0 && lookupCache != DISABLED_SNAPSHOT_LOOKUP_CACHE;
+		}
+
+		private void checkLookupAdmission() throws IOException {
+			if (Thread.currentThread().isInterrupted()) {
+				throw new IOException("Interrupted while looking up a ValueStore snapshot value",
+						new InterruptedException());
+			}
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			if (deadline != null && deadline.remainingNanos() <= 0L) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
+		}
+
+		private void cacheLookup(Value value, SnapshotLookupKey key, long id) {
+			if (key == null || id == LmdbValue.UNKNOWN_ID || snapshotLookupCacheCapacity == 0) {
+				return;
+			}
+			SnapshotLookupCache cache = lookupCache;
+			if (cache == null) {
+				SnapshotLookupCache candidate = new SnapshotLookupCache(snapshotLookupCacheCapacity);
+				cache = (SnapshotLookupCache) SNAPSHOT_LOOKUP_CACHE.compareAndExchange(this, null, candidate);
+				if (cache == null) {
+					cache = candidate;
+				}
+			}
+			if (cache != DISABLED_SNAPSHOT_LOOKUP_CACHE) {
+				cache.put(value, key, id);
+			}
+		}
+
+		private void disableLookupCache() {
+			SnapshotLookupCache cache = (SnapshotLookupCache) SNAPSHOT_LOOKUP_CACHE.getAndSet(this,
+					DISABLED_SNAPSHOT_LOOKUP_CACHE);
+			if (cache != null && cache != DISABLED_SNAPSHOT_LOOKUP_CACHE) {
+				cache.clear();
 			}
 		}
 
@@ -2500,9 +3468,10 @@ class ValueStore extends AbstractValueFactory {
 					if (closed) {
 						return;
 					}
-					materialize = !abandonUnobserved && isCurrent();
+					materialize = !hasStableIds() && !abandonUnobserved && isCurrent();
 					closingThread = Thread.currentThread();
 					closed = true;
+					disableLookupCache();
 				}
 				try {
 					if (materialize) {
@@ -2515,11 +3484,15 @@ class ValueStore extends AbstractValueFactory {
 					synchronized (txn) {
 						closingThread = null;
 						LmdbSailStore.MapResizeKind invalidated = retiredKind;
-						if (invalidated != null) {
-							txn.invalidateAndReset(invalidated);
+						if (!dictionaryDetached) {
+							if (invalidated != null) {
+								txn.invalidateAndReset(invalidated);
+							}
+							txn.close();
 						}
 						revision.release(this);
-						txn.close();
+						stableRevision = null;
+						readSnapshots.remove(this);
 					}
 				}
 			} finally {
@@ -2537,6 +3510,9 @@ class ValueStore extends AbstractValueFactory {
 		}
 		synchronized (snapshot.txnRef()) {
 			snapshot.ensureValid();
+			if (snapshot.hasStableIds()) {
+				return getLazyValue(id, snapshot.revision());
+			}
 			int idType = ValueIds.getIdType(id);
 			LmdbValue value = switch (idType) {
 			case ValueIds.T_URI -> new LmdbIRI(snapshot.revision(), id);
@@ -2550,7 +3526,7 @@ class ValueStore extends AbstractValueFactory {
 				throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
 			}
 			};
-			snapshot.revision().track(value);
+			snapshot.revision.track(value);
 			return value;
 		}
 	}
@@ -2569,11 +3545,14 @@ class ValueStore extends AbstractValueFactory {
 				if (snapshot.valueStore() != this) {
 					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 				}
-				return getValue(snapshot, snapshot.txnRef().get(), id);
+				if (!snapshot.dictionaryDetached()) {
+					return getValue(snapshot, snapshot.txnRef().get(), id);
+				}
 			}
 		} finally {
 			txnManager.lockManager().unlockRead(stamp);
 		}
+		return readTransaction(env, (stack, txn) -> getValue(snapshot, txn, id));
 	}
 
 	private LmdbValue getValue(ReadSnapshot snapshot, long txn, long id) throws IOException {
@@ -2636,7 +3615,7 @@ class ValueStore extends AbstractValueFactory {
 		if (snapshot.valueStore() != this) {
 			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 		}
-		snapshot.ensureValid();
+		snapshot.requireTermSnapshot();
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
 		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, snapshot.txnRef(), snapshot);
@@ -2711,25 +3690,11 @@ class ValueStore extends AbstractValueFactory {
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			return LmdbUtil.readTransaction(env, writeTxn, transaction);
 		}
-		for (int attempt = 0;; attempt++) {
-			try {
-				var lockManager = txnManager.lockManager();
-				long stamp = txnManager.acquireReadBarrier();
-				hasReadLock.set(Boolean.TRUE);
-				try {
-					try (Txn txn = txnManager.createReadTxnUnderReadLock(); MemoryStack stack = stackPush()) {
-						return transaction.exec(stack, txn.get());
-					}
-				} finally {
-					hasReadLock.remove();
-					lockManager.unlockRead(stamp);
-				}
-			} catch (ReadersFullException e) {
-				if (attempt > 0) {
-					throw e;
-				}
-			}
+		Long borrowed = borrowedReadTxn.get();
+		if (borrowed != null) {
+			return LmdbUtil.readTransaction(env, borrowed, transaction);
 		}
+		return withValueReadTransaction(null, transaction);
 	}
 
 	<T> T writeTransaction(Transaction<T> transaction) throws IOException {
@@ -2817,95 +3782,124 @@ class ValueStore extends AbstractValueFactory {
 			checkReplayFailure();
 		}
 		// Try to get the internal ID from the value itself
-		boolean isOwnValue = isOwnValue(value);
+		LmdbValue.InternalIdentity identity = value instanceof LmdbValue lmdbValue
+				? lmdbValue.getInternalIdentity()
+				: null;
+		boolean isOwnValue = identity != null && identity.revision().getValueStore() == this;
 		if (isOwnValue) {
-			LmdbValue lmdbValue = (LmdbValue) value;
-			if (revisionIsCurrent(lmdbValue)) {
-				long id = lmdbValue.getInternalID();
+			// Capture the model first, then acquire publication state, then validate its epoch. Observing a
+			// cleared phase publishes abort invalidation; a newly bound writer identity sees its active phase.
+			WriterPublication publication = writerPublication;
+			boolean ownsNativeWriter = writeTxn != 0 && writeTxnOwner == Thread.currentThread();
+			if ((publication == null || publication.owner == Thread.currentThread() && ownsNativeWriter)
+					&& revision.equals(identity.revision())) {
+				long id = identity.id();
 				if (id != LmdbValue.UNKNOWN_ID) {
 					return id;
 				}
 			}
 		}
 
-		long stamp = revisionLock.readLock();
-		try {
-			// Check cache
-			Long cachedID = valueIDCache.get(value);
-			if (cachedID == null) {
-				cachedID = commonVocabulary.get(value);
+		if (!create && (writeTxn == 0 || writeTxnOwner != Thread.currentThread())) {
+			// Copy caller payload before native admission. The one captured reader chooses every nested ID;
+			// publishing into the mutable reverse cache here could attach an older reader's ID to a newer epoch.
+			SnapshotValueLookup lookup = captureSnapshotLookup(null, value);
+			if (!isOwnValue) {
+				return readTransaction(env, (stack, txn) -> getId(null, txn, lookup));
 			}
-
-			if (cachedID != null) {
-				long id = cachedID;
-				if (isOwnValue) {
-					// Store id in value for fast access in any consecutive calls
-					((LmdbValue) value).setInternalID(id, revision);
-				}
-				return id;
+			ResolvedValueId resolved = readTransaction(env, (stack, txn) -> new ResolvedValueId(
+					getId(null, txn, lookup), completedRevision(currentReadRevision(LmdbValue.UNKNOWN_ID))));
+			if (resolved.id != LmdbValue.UNKNOWN_ID) {
+				// Preserve the model's ID optimization with the reader's captured epoch, even if a concurrent
+				// writer has already published a newer one. Caller code runs after all native gates are released.
+				((LmdbValue) value).setInternalID(resolved.id, resolved.revision);
 			}
+			return resolved.id;
+		}
 
-			long id = LmdbValue.UNKNOWN_ID;
-			if (inlineLiterals && value instanceof Literal) {
-				// inline value into id if possible
-				try {
-					long packedId = Values.packLiteral((Literal) value);
-					if (packedId != 0L) {
-						Literal unpacked = Values.unpackLiteral(packedId, this);
-						if (unpacked.equals(value)) {
-							id = packedId;
-						}
+		// The owning writer can checkpoint while allocating. It must not hold a revision read lock across the
+		// checkpoint's GC commit, which publishes a new revision under the write lock. Store-level writer admission
+		// already serializes this mutation path; dictionary-only creation keeps its existing single-writer contract.
+		return getIdOnMutationPath(value, create, isOwnValue);
+	}
+
+	private record ResolvedValueId(long id, ValueStoreRevision revision) {
+	}
+
+	private long getIdOnMutationPath(Value value, boolean create, boolean isOwnValue) throws IOException {
+		// Check cache
+		Long cachedID = valueIDCache.get(value);
+		if (cachedID == null) {
+			cachedID = commonVocabulary.get(value);
+		}
+
+		if (cachedID != null) {
+			long id = cachedID;
+			if (isOwnValue) {
+				// Store id in value for fast access in any consecutive calls
+				((LmdbValue) value).setInternalID(id, revision);
+			}
+			return id;
+		}
+
+		long id = LmdbValue.UNKNOWN_ID;
+		if (inlineLiterals && value instanceof Literal) {
+			// inline value into id if possible
+			try {
+				long packedId = Values.packLiteral((Literal) value);
+				if (packedId != 0L) {
+					Literal unpacked = Values.unpackLiteral(packedId, this);
+					if (unpacked.equals(value)) {
+						id = packedId;
 					}
-				} catch (IllegalArgumentException e) {
-					// ignore, invalid literal
+				}
+			} catch (IllegalArgumentException e) {
+				// ignore, invalid literal
+			}
+		}
+
+		if (id == LmdbValue.UNKNOWN_ID) {
+			if (value.isTripleTerm()) {
+				TripleTerm tripleTerm = (TripleTerm) value;
+				long subjectId = getId(tripleTerm.getSubject(), create);
+				long predicateId = getId(tripleTerm.getPredicate(), create);
+				long objectId = getId(tripleTerm.getObject(), create);
+
+				if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
+						|| objectId == LmdbValue.UNKNOWN_ID) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+				id = findTripleTermId(subjectId, predicateId, objectId, create);
+			} else {
+				// not inlined or ID not cached, search in index
+				byte[] data = value2data(value, create);
+				if (data != null) {
+					id = findId(data, create);
 				}
 			}
+		}
 
-			if (id == LmdbValue.UNKNOWN_ID) {
-				if (value.isTripleTerm()) {
-					TripleTerm tripleTerm = (TripleTerm) value;
-					long subjectId = getId(tripleTerm.getSubject(), create);
-					long predicateId = getId(tripleTerm.getPredicate(), create);
-					long objectId = getId(tripleTerm.getObject(), create);
+		if (id != LmdbValue.UNKNOWN_ID) {
+			if (isOwnValue) {
+				// Store id in value for fast access in any consecutive calls
+				((LmdbValue) value).setInternalID(id, revision);
+				// Store id in cache
+				valueIDCache.put((LmdbValue) value, id);
+			} else {
+				// Store id in cache
+				LmdbValue nv = getLmdbValue(value);
+				nv.setInternalID(id, revision);
 
-					if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
-							|| objectId == LmdbValue.UNKNOWN_ID) {
-						return LmdbValue.UNKNOWN_ID;
-					}
-					id = findTripleTermId(subjectId, predicateId, objectId, create);
-				} else {
-					// not inlined or ID not cached, search in index
-					byte[] data = value2data(value, create);
-					if (data != null) {
-						id = findId(data, create);
-					}
+				if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
+					commonVocabulary.put(value, id);
 				}
+				valueIDCache.put(nv, id);
 			}
-
-			if (id != LmdbValue.UNKNOWN_ID) {
-				if (isOwnValue) {
-					// Store id in value for fast access in any consecutive calls
-					((LmdbValue) value).setInternalID(id, revision);
-					// Store id in cache
-					valueIDCache.put((LmdbValue) value, id);
-				} else {
-					// Store id in cache
-					LmdbValue nv = getLmdbValue(value);
-					nv.setInternalID(id, revision);
-
-					if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
-						commonVocabulary.put(value, id);
-					}
-					valueIDCache.put(nv, id);
-				}
-				// only store hash for non-inlined values
-				if (!ValueIds.isInlined(id)) {
-					storeHashIfAbsent(id, value);
-				}
-				return id;
+			// only store hash for non-inlined values
+			if (!ValueIds.isInlined(id)) {
+				storeHashIfAbsent(id, value);
 			}
-		} finally {
-			revisionLock.unlockRead(stamp);
+			return id;
 		}
 		return LmdbValue.UNKNOWN_ID;
 	}
@@ -2953,8 +3947,8 @@ class ValueStore extends AbstractValueFactory {
 					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
 
 					invalidateRevisionOnCommit = true;
-					if (nextValueEvictionTime < 0) {
-						nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+					if (lazyRevisions.nextValueEvictionTime < 0) {
+						lazyRevisions.nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
 					}
 					return null;
 				});
@@ -3203,17 +4197,36 @@ class ValueStore extends AbstractValueFactory {
 
 	public void startTransaction(boolean resize) throws IOException {
 		checkReplayFailure();
-		nativeMutation = false;
+		synchronized (writerAdmission) {
+			boolean restarting = writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread();
+			if (env == 0 || shuttingDown && !restarting) {
+				throw new IOException("ValueStore is closed");
+			}
+			if (writeTxn != 0 || writerPublication != null || writerStartsInFlight != 0 && !restarting) {
+				throw new IOException("ValueStore already has an active write transaction");
+			}
+			writerStartsInFlight++;
+			writerStartOwner = Thread.currentThread();
+			nativeMutation = false;
+		}
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
+			// Native begin can block on an external writer. The in-flight scope keeps the environment alive without
+			// holding an admission monitor or native barrier through begin, reclamation, or map-growth restart.
 			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
-			writeTxnOwner = Thread.currentThread();
+			synchronized (writerAdmission) {
+				writeTxn = pp.get(0);
+				writeTxnOwner = Thread.currentThread();
+				writerPublication = new WriterPublication(Thread.currentThread());
+				writerFirstAppendedId = nextId;
+				writerReusedIds.clear();
+			}
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
-			if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
+			if (lazyRevisions.nextValueEvictionTime >= 0
+					&& System.currentTimeMillis() >= lazyRevisions.nextValueEvictionTime) {
 				synchronized (unusedRevisionIds) {
 					if (!unusedRevisionIds.isEmpty()) {
 						MDBStat stat = MDBStat.malloc(stack);
@@ -3223,19 +4236,27 @@ class ValueStore extends AbstractValueFactory {
 							resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
 						}
 
-						freeUnusedIdsAndValues(stack, writeTxn, unusedRevisionIds);
+						reclaimedRevisionIds.addAll(unusedRevisionIds);
+						ensurePendingValueAssociation();
+						freeUnusedIdsAndValues(stack, writeTxn, reclaimedRevisionIds);
 						nativeMutation = true;
-						unusedRevisionIds.clear();
 						clearCaches();
 					}
+					lazyRevisions.nextValueEvictionTime = -1;
 				}
-				nextValueEvictionTime = -1;
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {
 			if (autoGrow && replayDecision != null && !replayDecision.track) {
 				growForTransactionRetry(0L, mapFull);
 			}
 			throw mapFull;
+		} finally {
+			synchronized (writerAdmission) {
+				if (--writerStartsInFlight == 0) {
+					writerStartOwner = null;
+				}
+				writerAdmission.notifyAll();
+			}
 		}
 	}
 
@@ -3245,6 +4266,64 @@ class ValueStore extends AbstractValueFactory {
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
 		if (commit) {
 			checkReplayFailure();
+		}
+		WriterPublication publication = writerPublication;
+		if (publication == null) {
+			return;
+		}
+		boolean publicationComplete = false;
+		try {
+			publicationComplete = endWriterTransaction(publication, commit, autoGrow);
+		} catch (Throwable failure) {
+			if (publication.consumer == Thread.currentThread()) {
+				if (writeTxn != 0) {
+					// Preparation failed before native consumption. The owning writer can still roll back or
+					// retry growth; shutdown must not wait for a consumer that has already unwound.
+					associationGate.lock();
+					try {
+						publication.consumer = null;
+					} finally {
+						associationGate.unlock();
+					}
+				} else {
+					try {
+						// A consumed native pointer cannot retain IDs assigned by a failed writer, even when
+						// commit or subsequent metadata cleanup throws before the normal invalidation path.
+						setNewRevision();
+						clearCaches();
+						publicationComplete = true;
+					} catch (Throwable cleanupFailure) {
+						failure = appendFailure(failure, cleanupFailure);
+						publication.failedCleanup = true;
+					}
+				}
+			}
+			rethrowFailure(failure);
+		} finally {
+			synchronized (writerAdmission) {
+				if (publicationComplete && writerPublication == publication) {
+					writerPublication = null;
+				}
+				writerAdmission.notifyAll();
+			}
+		}
+	}
+
+	private boolean endWriterTransaction(WriterPublication publication, boolean commit, boolean autoGrow)
+			throws IOException {
+		associationGate.lock();
+		try {
+			if (writerPublication != publication || writeTxn == 0 || publication.consumer != null) {
+				if (commit) {
+					throw new IOException("ValueStore write transaction was already consumed");
+				}
+				return false;
+			}
+			// Claim before commit preparation touches native state. Close can retire an idle writer, but must
+			// drain the winning consumer's complete publication, including native high-water refresh.
+			publication.consumer = Thread.currentThread();
+		} finally {
+			associationGate.unlock();
 		}
 		if (writeTxn != 0) {
 			if (commit) {
@@ -3257,28 +4336,20 @@ class ValueStore extends AbstractValueFactory {
 				if (invalidateRevisionOnCommit) {
 					long stamp = revisionLock.writeLock();
 					try {
-						int rc = commitAndReleaseWriteTransaction();
+						int rc = commitAndReleaseWriteTransaction(publication);
 						if (rc != MDB_SUCCESS) {
 							cleanupAfterFailedCommit(rc);
 						}
 						retiredIdStore.transactionCommitted();
 						flushPendingHashUpdates();
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
+						lazyRevisions.retireCurrentEpoch();
 						setNewRevision();
 						clearCaches();
 					} finally {
 						revisionLock.unlockWrite(stamp);
 					}
 				} else {
-					int rc = commitAndReleaseWriteTransaction();
+					int rc = commitAndReleaseWriteTransaction(publication);
 					if (rc != MDB_SUCCESS) {
 						cleanupAfterFailedCommit(rc);
 					}
@@ -3288,12 +4359,19 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
-				long transaction = writeTxn;
+				associationGate.lock();
 				try {
+					long transaction = nativeWriteTransaction(publication);
 					abortWriteTransaction(transaction);
 				} catch (Throwable failure) {
 					rollbackFailure = failure;
 				} finally {
+					try {
+						settleValueAssociation(false);
+					} finally {
+						releaseNativeWriteTransactionOwnership(publication);
+						associationGate.unlock();
+					}
 					releaseWriteTransactionState();
 					droppedTermIndexDbis.clear();
 				}
@@ -3323,6 +4401,25 @@ class ValueStore extends AbstractValueFactory {
 				rethrowFailure(rollbackFailure);
 			}
 			releaseWriteTransactionState();
+		}
+		return true;
+	}
+
+	private long nativeWriteTransaction(WriterPublication publication) throws IOException {
+		assert associationGate.isHeldByCurrentThread();
+		if (writerPublication != publication || publication.consumer != Thread.currentThread() || writeTxn == 0) {
+			throw new IOException("ValueStore write transaction was already consumed");
+		}
+		return writeTxn;
+	}
+
+	private void releaseNativeWriteTransactionOwnership(WriterPublication publication) {
+		assert associationGate.isHeldByCurrentThread();
+		synchronized (writerAdmission) {
+			if (writerPublication == publication) {
+				writeTxn = 0;
+				writeTxnOwner = null;
+			}
 		}
 	}
 
@@ -3360,18 +4457,41 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void releaseWriteTransactionState() {
-		writeTxn = 0;
-		writeTxnOwner = null;
-		invalidateRevisionOnCommit = false;
-		nativeMutation = false;
+		synchronized (writerAdmission) {
+			writeTxn = 0;
+			writeTxnOwner = null;
+			invalidateRevisionOnCommit = false;
+			nativeMutation = false;
+			reclaimedRevisionIds.clear();
+			writerReusedIds.clear();
+		}
+		lazyRevisions.schedulePendingEviction();
 	}
 
-	private int commitAndReleaseWriteTransaction() throws IOException {
-		long transaction = writeTxn;
+	private int commitAndReleaseWriteTransaction(WriterPublication publication) throws IOException {
 		boolean mutated = nativeMutation;
 		try {
-			int result = commitWriteTransaction(transaction);
+			int result;
+			associationGate.lock();
+			try {
+				long transaction = nativeWriteTransaction(publication);
+				try {
+					result = commitWriteTransaction(transaction);
+					settleValueAssociation(result == MDB_SUCCESS);
+				} catch (RuntimeException | Error failure) {
+					settleValueAssociation(false);
+					throw failure;
+				} finally {
+					// LMDB consumed this pointer before another gated close/rollback can inspect it.
+					releaseNativeWriteTransactionOwnership(publication);
+				}
+			} finally {
+				associationGate.unlock();
+			}
 			if (result == MDB_SUCCESS) {
+				synchronized (unusedRevisionIds) {
+					unusedRevisionIds.removeAll(reclaimedRevisionIds);
+				}
 				nativeCommitGeneration++;
 				if (mutated) {
 					mutationGeneration++;
@@ -3512,20 +4632,32 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
-		close();
+		while (true) {
+			awaitWriterStartsForShutdown();
+			synchronized (this) {
+				if (!confirmWriterStartsFinished()) {
+					continue;
+				}
+				if (closeInProgress) {
+					throw new IOException("Cannot clear ValueStore during shutdown");
+				}
+				if (!closeUnderMonitor()) {
+					continue;
+				}
 
-		new File(dir, "data.mdb").delete();
-		new File(dir, "lock.mdb").delete();
-		ValueStoreHashFile.deleteIfPresent(dir);
+				new File(dir, "data.mdb").delete();
+				new File(dir, "lock.mdb").delete();
+				ValueStoreHashFile.deleteIfPresent(dir);
 
-		clearCaches();
-		open();
-		setNewRevision();
+				clearCaches();
+				open();
+				return;
+			}
+		}
 	}
 
 	protected void clearCaches() {
-		Arrays.fill(valueCache, null);
-		Arrays.fill(valueCacheId, 0);
+		valueCaches = new ValueCacheEpoch(valueIdentity.revision, valueCacheMask + 1);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
@@ -3539,49 +4671,188 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
-		try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+		while (true) {
+			awaitWriterStartsForShutdown();
+			synchronized (this) {
+				if (!confirmWriterStartsFinished()) {
+					continue;
+				}
+				if (!closeUnderMonitor()) {
+					continue;
+				}
+				return;
+			}
+		}
+	}
+
+	/** Waits outside the store monitor and native barrier needed by admission maintenance and resize restart. */
+	private void awaitWriterStartsForShutdown() throws IOException {
+		boolean interrupted = Thread.interrupted();
+		try {
+			synchronized (writerAdmission) {
+				if (writerStartsInFlight != 0 && writerStartOwner == Thread.currentThread()) {
+					throw new IOException("Cannot close ValueStore during write transaction admission");
+				}
+				WriterPublication current = writerPublication;
+				if (current != null && current.consumer == Thread.currentThread() && !current.failedCleanup) {
+					throw new IOException("Cannot close ValueStore during write transaction publication");
+				}
+				shuttingDown = true;
+				while (writerStartsInFlight != 0 || hasActiveWriterConsumer()) {
+					WriterPublication publication = writerPublication;
+					if (publication != null && publication.consumer == Thread.currentThread()) {
+						throw new IOException("Cannot close ValueStore during write transaction publication");
+					}
+					try {
+						writerAdmission.wait();
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/** Rechecks after taking the store monitor, since another clear may have reopened writer admission. */
+	private boolean confirmWriterStartsFinished() {
+		synchronized (writerAdmission) {
+			shuttingDown = true;
+			return writerStartsInFlight == 0 && !hasActiveWriterConsumer();
+		}
+	}
+
+	private boolean hasActiveWriterConsumer() {
+		WriterPublication publication = writerPublication;
+		return publication != null && publication.consumer != null && !publication.failedCleanup;
+	}
+
+	private boolean closeUnderMonitor() throws IOException {
+		assert Thread.holdsLock(this);
+		if (closeInProgress) {
+			return true;
+		}
+		closeInProgress = true;
+		try {
 			Throwable failure = null;
-			if (env != 0) {
-				if (writeTxn == 0) {
+			boolean nativeQuiesced = false;
+			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+				nativeQuiesced = true;
+				if (env != 0) {
+					try {
+						// Capture/claim under the association gate before freezing values or retiring readers.
+						// A commit that wins this race owns all native refresh and publication cleanup.
+						endTransaction(false, false);
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					}
+					associationGate.lock();
+					try {
+						if (hasActiveWriterConsumer()) {
+							// Retry outside both locks. The winning consumer may need native access to finish.
+							return false;
+						}
+					} finally {
+						associationGate.unlock();
+					}
+					try {
+						sharedLazyValues.freezeForMaterialization();
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					}
 					try {
 						flushPendingHashUpdates();
 					} catch (Throwable closeFailure) {
 						failure = appendFailure(failure, closeFailure);
 					}
+					try {
+						txnManager.closeUnderExclusiveLock();
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					}
 				}
+			} catch (Throwable closeFailure) {
+				failure = appendFailure(failure, closeFailure);
+			}
+			if (nativeQuiesced && env != 0) {
+				// An application getter may own a value monitor while waiting for the native read barrier.
+				// Drain outside that barrier so the getter can observe the closed manager and release its monitor.
+				// This synchronized close prevents another close from freeing the environment during the raw read.
 				try {
-					// This rollback path only aborts the active writer and clears in-memory state; it does not
-					// reacquire
-					// the transaction manager's native-operation barrier.
-					endTransaction(false, false);
-				} catch (Throwable closeFailure) {
-					failure = appendFailure(failure, closeFailure);
-				}
-				try {
-					txnManager.closeUnderExclusiveLock();
-				} catch (Throwable closeFailure) {
-					failure = appendFailure(failure, closeFailure);
-				}
-				long environment = env;
-				try {
-					closeEnvironment(environment);
+					materializeSharedLazyValues();
 				} catch (Throwable closeFailure) {
 					failure = appendFailure(failure, closeFailure);
 				} finally {
-					env = 0;
+					try {
+						sharedLazyValues.finishMaterialization();
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					}
 				}
+			}
+			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+				if (nativeQuiesced && env != 0) {
+					long environment = env;
+					try {
+						closeEnvironment(environment);
+					} catch (Throwable closeFailure) {
+						failure = appendFailure(failure, closeFailure);
+					} finally {
+						env = 0;
+						writerPublication = null;
+					}
+				}
+			} catch (Throwable closeFailure) {
+				failure = appendFailure(failure, closeFailure);
 			}
 			if (hashFile != null) {
 				try {
 					hashFile.close();
-				} catch (IOException e) {
-					logger.warn("Could not close LMDB hash cache", e);
+				} catch (Throwable closeFailure) {
+					failure = appendFailure(failure, closeFailure);
 				} finally {
 					hashFile = null;
 				}
 			}
 			rethrowFailure(failure);
+			return true;
+		} finally {
+			closeInProgress = false;
 		}
+	}
+
+	/** Runs during serialized close after managed readers have released all native reader slots. */
+	private void materializeSharedLazyValues() throws IOException {
+		LmdbUtil.readTransaction(env, (stack, txn) -> {
+			borrowedReadTxn.set(txn);
+			try {
+				Throwable failure = null;
+				while (true) {
+					List<LmdbValue> liveValues = sharedLazyValues.drainLiveValues();
+					if (liveValues.isEmpty()) {
+						rethrowFailure(failure);
+						return null;
+					}
+					for (LmdbValue value : liveValues) {
+						if (value.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy
+								&& lazy.association() != null && lazy.association().isAborted()) {
+							// The aborted writer never published this shell's native association.
+							continue;
+						}
+						try {
+							value.init();
+						} catch (Throwable materializationFailure) {
+							failure = appendFailure(failure, materializationFailure);
+						}
+					}
+				}
+			} finally {
+				borrowedReadTxn.remove();
+			}
+		});
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
@@ -3659,14 +4930,8 @@ class ValueStore extends AbstractValueFactory {
 	 * Checks if the supplied Value object is a LmdbValue object that has been created by this ValueStore.
 	 */
 	private boolean isOwnValue(Value value) {
-		return value instanceof LmdbValue && ((LmdbValue) value).getValueStoreRevision().getValueStore() == this;
-	}
-
-	/**
-	 * Checks if the revision of the supplied value object is still current.
-	 */
-	private boolean revisionIsCurrent(LmdbValue value) {
-		return revision.equals(value.getValueStoreRevision());
+		return value instanceof LmdbValue lmdbValue
+				&& lmdbValue.getInternalIdentity().revision().getValueStore() == this;
 	}
 
 	private byte[] value2data(Value value, boolean create) throws IOException {
@@ -3778,10 +5043,15 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
+		return data2value(id, data, value, currentReadRevision(id));
+	}
+
+	private LmdbValue data2value(long id, byte[] data, LmdbValue value, ValueStoreRevision valueRevision)
+			throws IOException {
 		return switch (data[0]) {
-		case URI_VALUE -> data2uri(id, data, (LmdbIRI) value);
-		case BNODE_VALUE -> data2bnode(id, data, (LmdbBNode) value);
-		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value);
+		case URI_VALUE -> data2uri(id, data, (LmdbIRI) value, valueRevision);
+		case BNODE_VALUE -> data2bnode(id, data, (LmdbBNode) value, valueRevision);
+		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value, valueRevision);
 		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		};
 	}
@@ -3877,7 +5147,7 @@ class ValueStore extends AbstractValueFactory {
 		return value;
 	}
 
-	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
+	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value, ValueStoreRevision valueRevision) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
@@ -3886,7 +5156,7 @@ class ValueStore extends AbstractValueFactory {
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
 		if (value == null) {
-			return new LmdbIRI(revision, namespace, localName, id);
+			return new LmdbIRI(completedRevision(valueRevision), namespace, localName, id);
 		} else {
 			value.setNamespaceAndIri(namespace, localName);
 //			value.setIRIString(namespace + localName);
@@ -3894,17 +5164,18 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
+	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value, ValueStoreRevision valueRevision) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		if (value == null) {
-			return new LmdbBNode(revision, nodeID, id);
+			return new LmdbBNode(completedRevision(valueRevision), nodeID, id);
 		} else {
 			value.setID(nodeID);
 			return value;
 		}
 	}
 
-	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value) throws IOException {
+	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value, ValueStoreRevision valueRevision)
+			throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
@@ -3913,7 +5184,7 @@ class ValueStore extends AbstractValueFactory {
 		IRI datatype = null;
 		// literal without a datatype
 		if (datatypeID > 0) {
-			datatype = (IRI) getValue(datatypeID);
+			datatype = (IRI) getValue(datatypeID, valueRevision);
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -3944,11 +5215,12 @@ class ValueStore extends AbstractValueFactory {
 
 		if (value == null) {
 			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, baseDirection, id);
+				return new LmdbLiteral(completedRevision(valueRevision), label, lang, baseDirection, id);
 			} else if (datatype != null) {
-				return new LmdbLiteral(revision, label, datatype, id);
+				return new LmdbLiteral(completedRevision(valueRevision), label, datatype, id);
 			} else {
-				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+				return new LmdbLiteral(completedRevision(valueRevision), label,
+						org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
 			}
 		} else {
 			value.setLabel(label);
@@ -4147,6 +5419,6 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void forceEvictionOfValues() {
-		nextValueEvictionTime = 0L;
+		lazyRevisions.nextValueEvictionTime = 0L;
 	}
 }

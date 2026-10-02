@@ -31,7 +31,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -241,58 +240,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_SORT");
 		BindingSet[] array = collection.toArray(new BindingSet[collection.size()]);
 		QueryExecutionContext.ReplayContext replayContext = QueryExecutionContext.captureReplayContext();
-		Comparator<BindingSet> sortComparator = comparator;
 		if (replayContext != null) {
-			AtomicReference<Throwable> replayFailure = new AtomicReference<>();
-			AtomicReference<Throwable> evaluationFailure = new AtomicReference<>();
-			AtomicReference<Throwable> sortFailure = new AtomicReference<>();
-			ComparatorCallbackGate callbackGate = new ComparatorCallbackGate();
-			sortComparator = (left, right) -> {
-				if (!callbackGate.enter()) {
-					return 0;
-				}
-				try {
-					if (replayFailure.get() != null || evaluationFailure.get() != null) {
-						return 0;
-					}
-					try {
-						return replayContext.getAsInt(() -> {
-							int compared = comparator.compare(left, right);
-							QueryExecutionContext.checkpointReplaySafepoint();
-							return compared;
-						});
-					} catch (RuntimeException | Error failure) {
-						if (QueryExecutionContext.isReplaySafepointFailure(failure)) {
-							replayFailure.compareAndSet(null, failure);
-						} else {
-							evaluationFailure.compareAndSet(null, failure);
-						}
-						callbackGate.seal();
-						return 0;
-					}
-				} finally {
-					callbackGate.leave();
-				}
-			};
-			try {
-				Arrays.parallelSort(array, sortComparator);
-			} catch (RuntimeException | Error failure) {
-				sortFailure.set(failure);
-			} finally {
-				callbackGate.sealAndAwait();
-			}
-			Throwable failure = evaluationFailure.get();
-			if (failure == null) {
-				failure = replayFailure.get();
-			}
-			if (failure == null) {
-				failure = sortFailure.get();
-			}
-			if (failure != null) {
-				throwAsUnchecked(failure);
-			}
+			ContextAwareArraySorter.sort(array, comparator, replayContext);
 		} else {
-			Arrays.parallelSort(array, sortComparator);
+			Arrays.parallelSort(array, comparator);
 		}
 		QueryExecutionContext.checkpointReplaySafepoint();
 		Stream<BindingSet> stream = Stream.of(array);
@@ -303,60 +254,6 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			stream = stream.limit(limit);
 		}
 		return stream;
-	}
-
-	private static void throwAsUnchecked(Throwable failure) {
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (failure instanceof Error error) {
-			throw error;
-		}
-		throw new AssertionError("Unexpected checked failure from comparator", failure);
-	}
-
-	private static final class ComparatorCallbackGate {
-		private boolean sealed;
-		private int activeCallbacks;
-
-		synchronized boolean enter() {
-			if (sealed) {
-				return false;
-			}
-			activeCallbacks++;
-			return true;
-		}
-
-		synchronized void leave() {
-			activeCallbacks--;
-			if (activeCallbacks == 0) {
-				notifyAll();
-			}
-		}
-
-		synchronized void seal() {
-			sealed = true;
-			if (activeCallbacks == 0) {
-				notifyAll();
-			}
-		}
-
-		void sealAndAwait() {
-			boolean interrupted = false;
-			synchronized (this) {
-				sealed = true;
-				while (activeCallbacks > 0) {
-					try {
-						wait();
-					} catch (InterruptedException e) {
-						interrupted = true;
-					}
-				}
-			}
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
-		}
 	}
 
 	@Override

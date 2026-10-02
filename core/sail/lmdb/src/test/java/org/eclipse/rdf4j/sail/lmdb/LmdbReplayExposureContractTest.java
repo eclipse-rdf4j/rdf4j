@@ -25,8 +25,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -39,15 +41,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbReplayExposureContractTest {
 
@@ -58,6 +64,127 @@ class LmdbReplayExposureContractTest {
 	private static final long GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
 	private static final double GROWTH_THRESHOLD = 0.10d;
 	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
+
+	@Test
+	void completedSnapshotPinRetiresWithCachedGeneration(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.add(VF.createIRI(SUBJECT), VF.createIRI(PREDICATE), VF.createLiteral(1));
+			}
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (TupleQueryResult result = reader.prepareTupleQuery(
+						"SELECT ?value WHERE { ?subject <" + PREDICATE + "> ?value } ORDER BY ?value").evaluate()) {
+					assertTrue(result.hasNext());
+					result.next();
+					assertFalse(result.hasNext());
+				}
+				reader.rollback();
+			}
+			assertEquals(tripleStoreOf(store).getDataRevision(),
+					tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+					"the store's idle shared SNAPSHOT cache keeps its generation after connection closure");
+			retireCachedGeneration(repository);
+			assertEquals(Long.MAX_VALUE, tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+					"normal publication must retire the unborrowed cached generation");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void retireCachedGeneration(SailRepository repository) {
+		try (RepositoryConnection writer = repository.getConnection()) {
+			writer.begin(IsolationLevels.READ_COMMITTED);
+			writer.add(VF.createIRI(SUBJECT + ":retire-cache"), VF.createIRI(PREDICATE), VF.createLiteral(-1));
+			writer.commit();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void closedResultStopsAdmittedSortComparisons(boolean snapshot, boolean deferReplay, @TempDir File dataDir)
+			throws Exception {
+		String functionIri = "urn:lmdb-replay-exposure:closed-sort-owner";
+		OrderCloseBarrierFunction function = new OrderCloseBarrierFunction(functionIri);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(GROWTH_MAP_SIZE)
+				.setValueDBSize(GROWTH_MAP_SIZE));
+		SailRepository repository = new SailRepository(store);
+		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
+		ExecutorService closeExecutor = Executors.newSingleThreadExecutor();
+		AtomicReference<TupleQueryResult> currentResult = new AtomicReference<>();
+		try {
+			registry.add(function);
+			repository.init();
+			try (RepositoryConnection seed = repository.getConnection()) {
+				seed.begin();
+				for (int i = 0; i < 64; i++) {
+					seed.add(VF.createIRI(SUBJECT + ":" + i), VF.createIRI(PREDICATE), VF.createLiteral(i));
+				}
+				seed.commit();
+			}
+			MapGrowthMetrics.Snapshot before = store.getBackingStore().growthMetricsSnapshot();
+			Future<Throwable> query = queryExecutor.submit(() -> {
+				try (RepositoryConnection reader = repository.getConnection()) {
+					if (snapshot) {
+						reader.begin(IsolationLevels.SNAPSHOT);
+					}
+					String queryString = "SELECT ?value WHERE { ?subject <" + PREDICATE
+							+ "> ?value } ORDER BY <" + functionIri + ">(?value)";
+					try (TupleQueryResult result = reader.prepareTupleQuery(queryString).evaluate();
+							QueryExecutionContext.Activation deferral = deferReplay
+									? QueryExecutionContext.deferReplaySafepoints()
+									: () -> {
+									}) {
+						currentResult.set(result);
+						result.hasNext();
+					}
+					return null;
+				} catch (RuntimeException failure) {
+					return failure;
+				}
+			});
+
+			assertTrue(function.entered.await(5, TimeUnit.SECONDS),
+					"sorting must pause inside an already-admitted application comparison");
+			TupleQueryResult result = currentResult.get();
+			assertNotNull(result);
+			closeExecutor.submit(result::close).get(5, TimeUnit.SECONDS);
+			function.release.countDown();
+			Throwable failure = query.get(10, TimeUnit.SECONDS);
+			assertTrue(function.invocations.get() <= 2,
+					"closing the owner must prevent the next comparison; only its two already-running operands may finish, "
+							+ "but observed " + function.invocations.get() + " function calls");
+			assertNotNull(findCause(failure, SailException.class),
+					"cancellation must retain the dispatched LMDB operation's closed-owner failure");
+			// SNAPSHOT's store-level cached generation outlives the transaction. A normal publication retires
+			// that idle cache but cannot release a live captured worker/dataset reference to its old read view.
+			retireCachedGeneration(repository);
+			assertEquals(Long.MAX_VALUE, tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+					"the canceled result and every admitted sorting scope must release their statement snapshots; "
+							+ "snapshot=" + snapshot + ", deferReplay=" + deferReplay + ", failure=" + failure);
+			assertEquals(before.replayRequests(), store.getBackingStore().growthMetricsSnapshot().replayRequests(),
+					"result cancellation without growth must not request a replay");
+		} finally {
+			function.release.countDown();
+			queryExecutor.shutdown();
+			closeExecutor.shutdown();
+			try {
+				assertTrue(queryExecutor.awaitTermination(5, TimeUnit.SECONDS));
+				assertTrue(closeExecutor.awaitTermination(5, TimeUnit.SECONDS));
+			} finally {
+				registry.remove(function);
+				repository.shutDown();
+			}
+		}
+	}
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -272,24 +399,23 @@ class LmdbReplayExposureContractTest {
 			function.releaseFirstInvocation();
 
 			assertTrue(function.awaitSecondInvocation(), "the configured single retry must reopen the query once");
-			ValueStore valueStore = valueStoreOf(store);
-			long firstGrowthValueMapSize = mapSize(valueStore);
+			long firstGrowthTripleMapSize = mapSize(tripleStore);
+			assertTrue(firstGrowthTripleMapSize > initialMapSize, "the first writer must grow TripleStore");
 			MapGrowthMetrics.Snapshot beforeSecondGrowth = backingStore.growthMetricsSnapshot();
-			growValueStore(repository);
+			String secondNamespace = publishGrowth(repository, firstGrowthTripleMapSize, "retry-cap-second", 10_000);
 			awaitGrowthEpisode(backingStore, beforeSecondGrowth);
 			awaitForcedInvalidatedView(backingStore, beforeSecondGrowth);
 			function.releaseSecondInvocation();
 
 			Throwable failure = query.get(20, TimeUnit.SECONDS);
-			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
-			assertTrue(mapSize(tripleStore) > initialMapSize, "the first writer must grow TripleStore");
-			assertTrue(mapSize(valueStore) > firstGrowthValueMapSize,
-					"the second writer must grow ValueStore after publishing while the replayed attempt is active");
+			awaitTripleStoreGrowth(repository, tripleStore, firstGrowthTripleMapSize, secondNamespace);
+			assertTrue(mapSize(tripleStore) > firstGrowthTripleMapSize,
+					"the second writer must grow TripleStore while the replayed attempt is active");
 			assertNotNull(failure, "exceeding the retry cap must fail rather than return a later-snapshot result");
 			assertTrue(hasMapResizeConflict(failure),
 					"the result invalidated after its one allowed replay must report typed map invalidation");
-			assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, mapResizeConflict(failure).kind(),
-					"the retry cap must apply to the second, ValueStore-triggered growth episode too");
+			assertEquals(LmdbSailStore.MapResizeKind.TRIPLE_STORE, mapResizeConflict(failure).kind(),
+					"the retry cap must apply to the second authoritative map-growth episode too");
 			assertEquals(2, function.invocationCount(),
 					"a retry cap of one permits one replay callback after the initial query execution");
 		} finally {
@@ -544,15 +670,6 @@ class LmdbReplayExposureContractTest {
 		}
 	}
 
-	private static void growValueStore(SailRepository repository) {
-		try (RepositoryConnection writer = repository.getConnection()) {
-			writer.begin(IsolationLevels.SNAPSHOT);
-			writer.add(VF.createIRI("urn:lmdb-replay-exposure:retry-cap:large-value"),
-					VF.createIRI(GROWTH_PREDICATE), VF.createLiteral("x".repeat(4 * 1024 * 1024)));
-			writer.commit();
-		}
-	}
-
 	private static TripleStore tripleStoreOf(LmdbStore store) throws ReflectiveOperationException {
 		Field field = LmdbSailStore.class.getDeclaredField("tripleStore");
 		field.setAccessible(true);
@@ -563,18 +680,6 @@ class LmdbReplayExposureContractTest {
 		Field field = TripleStore.class.getDeclaredField("mapSize");
 		field.setAccessible(true);
 		return field.getLong(tripleStore);
-	}
-
-	private static ValueStore valueStoreOf(LmdbStore store) throws ReflectiveOperationException {
-		Field field = LmdbSailStore.class.getDeclaredField("valueStore");
-		field.setAccessible(true);
-		return (ValueStore) field.get(store.getBackingStore());
-	}
-
-	private static long mapSize(ValueStore valueStore) throws ReflectiveOperationException {
-		Field field = ValueStore.class.getDeclaredField("mapSize");
-		field.setAccessible(true);
-		return field.getLong(valueStore);
 	}
 
 	private static final class ReplayBarrierFunction implements Function {
@@ -738,6 +843,43 @@ class LmdbReplayExposureContractTest {
 
 		private int invocationCount() {
 			return invocationCount.get();
+		}
+	}
+
+	private static final class OrderCloseBarrierFunction implements Function {
+		private final String functionIri;
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+		private final AtomicInteger invocations = new AtomicInteger();
+
+		private OrderCloseBarrierFunction(String functionIri) {
+			this.functionIri = functionIri;
+		}
+
+		@Override
+		public String getURI() {
+			return functionIri;
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			if (invocations.incrementAndGet() == 1) {
+				boolean comparing = StackWalker.getInstance()
+						.walk(frames -> frames
+								.anyMatch(frame -> frame.getClassName().equals(OrderComparator.class.getName())
+										&& frame.getMethodName().equals("compare")));
+				assertTrue(comparing, "the cancellation barrier must run inside the application sort comparator");
+				entered.countDown();
+				try {
+					if (!release.await(10, TimeUnit.SECONDS)) {
+						throw new ValueExprEvaluationException("Timed out waiting at the closed sort-owner barrier");
+					}
+				} catch (InterruptedException failure) {
+					Thread.currentThread().interrupt();
+					throw new ValueExprEvaluationException("Interrupted at the closed sort-owner barrier", failure);
+				}
+			}
+			return args[0];
 		}
 	}
 

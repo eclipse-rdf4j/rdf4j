@@ -25,4 +25,19 @@ public final class LmdbGrowthTestSupport {
 		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
 		return () -> store.getBackingStore().growthMetricsSnapshot().replayAccepted();
 	}
+
+	public static LongSupplier replayRequestedCounter(Object repository) {
+		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
+		return () -> store.getBackingStore().growthMetricsSnapshot().replayRequests();
+	}
+
+	public static LongSupplier tripleStoreResizeCounter(Object repository) {
+		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
+		return () -> store.getBackingStore().growthMetricsSnapshot().tripleStoreResizes();
+	}
+
+	public static LongSupplier valueStoreResizeCounter(Object repository) {
+		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
+		return () -> store.getBackingStore().growthMetricsSnapshot().valueStoreResizes();
+	}
 }

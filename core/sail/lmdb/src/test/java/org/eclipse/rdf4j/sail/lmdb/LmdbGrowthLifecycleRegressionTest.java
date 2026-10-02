@@ -15,6 +15,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -32,7 +34,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -49,6 +53,7 @@ import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -63,6 +68,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
@@ -307,6 +314,204 @@ class LmdbGrowthLifecycleRegressionTest {
 			manager.close();
 			mdb_env_close(environment);
 		}
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void freshPairedViewCanFirstEnumerateTermsAfterEmergencyDictionaryRemap(@TempDir Path dataDir) throws Exception {
+		AtomicReference<ValueStore> dictionary = new AtomicReference<>();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(1024L * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(0)
+				.setAutoGrow(true);
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+				false, (dir, properties, cfg) -> {
+					ValueStore valueStore = new ValueStore(dir, properties, cfg);
+					dictionary.set(valueStore);
+					return valueStore;
+				}, TripleStore::new);
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI ownerSubject = values.createIRI("urn:emergency-term:owner");
+		IRI predicate = values.createIRI("urn:emergency-term:predicate");
+		TripleTerm term = values.createTripleTerm(values.createIRI("urn:emergency-term:subject"), predicate,
+				values.createLiteral("term from the original committed dictionary"));
+		AtomicReference<LmdbSailStore.MapGrowthToken> oldReplayToken = new AtomicReference<>();
+		LmdbSailStore.MapGrowthObserver oldObserver = (kind, token, deadline, attempts, views) -> {
+			oldReplayToken.set(token);
+			return false;
+		};
+		Object writerOwner = new Object();
+		try {
+			try (SailSink seed = backing.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				seed.approve(ownerSubject, predicate, term, null);
+				seed.flush();
+			}
+			try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(writerOwner, NO_REPLAY);
+					LmdbSailStore.ReadAttemptLease oldAttempt = backing.registerReadAttempt(oldObserver);
+					LmdbSailStore.ReadAttemptLease freshAttempt = backing.registerReadAttempt(NO_REPLAY)) {
+				writer.markWriteIntent();
+				try (LmdbSailStore.ReadView oldView = backing.createTransactionReadView(oldObserver, oldAttempt);
+						LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner)) {
+					ValueStore valueStore = dictionary.get();
+					long originalMapGeneration = valueStore.nativeMapGeneration();
+					LmdbSailStore.MapGrowthToken originalToken = warning.token();
+					assertEquals(LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
+							backing.growthMetricsSnapshot().currentPhase());
+					try (LmdbSailStore.MapGrowthAttempt emergency = backing.beginMapGrowthAttempt(writerOwner)) {
+						assertSame(originalToken, emergency.token());
+						assertEquals(LmdbSailStore.GrowthPhase.EMERGENCY,
+								backing.growthMetricsSnapshot().currentPhase());
+						emergency.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+						assertTrue(valueStore.growMapForEstimatedWrite(valueStore.mapSizeBytes(), emergency),
+								"The test must perform a real native dictionary remap");
+					}
+					assertTrue(valueStore.nativeMapGeneration() > originalMapGeneration);
+					assertTrue(oldView.valueSnapshot().dictionaryDetached());
+					assertEquals(LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
+							backing.growthMetricsSnapshot().currentPhase(),
+							"The original managed episode must resume while its writer remains admitted");
+					try (LmdbSailStore.ReadView freshView = backing.createTransactionReadView(NO_REPLAY, freshAttempt);
+							LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+									IsolationLevels.SNAPSHOT_READ, freshView, NO_REPLAY, freshAttempt);
+							SailDataset dataset = backing.getExplicitSailSource()
+									.dataset(IsolationLevels.SNAPSHOT_READ);
+							CloseableIteration<? extends TripleTerm> terms = dataset.getTriples(null, predicate,
+									null)) {
+						assertEquals(valueStore.nativeMapGeneration(), freshView.valueSnapshot().nativeMapGeneration());
+						assertFalse(freshView.valueSnapshot().dictionaryDetached());
+						Set<TripleTerm> actualTerms = new HashSet<>();
+						while (terms.hasNext()) {
+							actualTerms.add(terms.next());
+						}
+						assertEquals(Set.of(term), actualTerms,
+								"Fresh paired handles must first acquire term membership in the remapped dictionary");
+					}
+					LmdbSailStore.MapResizeConflictException oldConflict = assertThrows(
+							LmdbSailStore.MapResizeConflictException.class, oldView::requireDictionaryTermSnapshot);
+					assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, oldConflict.kind());
+					assertSame(originalToken, oldReplayToken.get(),
+							"An old detached view must keep the token of the remap that detached it");
+					assertSame(originalToken, warning.token());
+					assertEquals(LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
+							backing.growthMetricsSnapshot().currentPhase());
+				} finally {
+					writer.completeTransaction();
+				}
+			}
+		} finally {
+			backing.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void onDemandDictionaryReplayClassificationFencesReplayReservation(boolean callbackThrows,
+			@TempDir Path dataDir) throws Exception {
+		AtomicReference<ValueStore> dictionary = new AtomicReference<>();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(64L * 1024 * 1024)
+				.setValueDBSize(1024L * 1024)
+				.setMapGrowthReadDrainTimeoutMillis(0)
+				.setAutoGrow(true);
+		LmdbSailStore backing = new LmdbSailStore(dataDir.toFile(), new StoreProperties(dataDir.toFile()), config,
+				false, (dir, properties, cfg) -> {
+					ValueStore valueStore = new ValueStore(dir, properties, cfg);
+					dictionary.set(valueStore);
+					return valueStore;
+				}, TripleStore::new);
+		CountDownLatch classificationEntered = new CountDownLatch(1);
+		CountDownLatch releaseClassification = new CountDownLatch(1);
+		AtomicReference<LmdbSailStore.MapGrowthToken> replayToken = new AtomicReference<>();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> {
+			replayToken.set(token);
+			for (LmdbSailStore.ReadViewLease view : views) {
+				view.retireNativeSnapshots(kind);
+			}
+			classificationEntered.countDown();
+			try {
+				assertTrue(releaseClassification.await(10, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new SailException(e);
+			}
+			if (callbackThrows) {
+				throw new IllegalStateException("injected replay classification failure");
+			}
+			return true;
+		};
+		Object writerOwner = new Object();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(writerOwner, NO_REPLAY);
+				LmdbSailStore.ReadAttemptLease reader = backing.registerReadAttempt(observer)) {
+			writer.markWriteIntent();
+			try (LmdbSailStore.ReadView oldView = backing.createTransactionReadView(observer, reader);
+					LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner)) {
+				ValueStore valueStore = dictionary.get();
+				LmdbSailStore.MapGrowthToken originalToken = warning.token();
+				try (LmdbSailStore.MapGrowthAttempt emergency = backing.beginMapGrowthAttempt(writerOwner)) {
+					emergency.requestQuiescence(LmdbSailStore.MapResizeKind.VALUE_STORE);
+					assertTrue(valueStore.growMapForEstimatedWrite(valueStore.mapSizeBytes(), emergency));
+				}
+				assertEquals(LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
+						backing.growthMetricsSnapshot().currentPhase());
+				assertTrue(oldView.valueSnapshot().dictionaryDetached());
+				long reservedBefore = backing.growthMetricsSnapshot().reservedReplays();
+				Future<?> firstTermDemand = executor.submit(() -> {
+					oldView.requireDictionaryTermSnapshot();
+					return null;
+				});
+				assertTrue(classificationEntered.await(5, TimeUnit.SECONDS),
+						"The old detached view must classify its first term demand");
+				assertSame(originalToken, replayToken.get());
+				warning.close();
+				writer.completeTransaction();
+				awaitGrowthPhase(backing, LmdbSailStore.GrowthPhase.RESERVE_REPLAYS);
+				assertTrue(backing.growthAdmissionClosed(),
+						"The managed episode must stay closed while on-demand replay classification is pending");
+				assertEquals(reservedBefore, backing.growthMetricsSnapshot().reservedReplays());
+				assertFalse(firstTermDemand.isDone());
+				releaseClassification.countDown();
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> firstTermDemand.get(5, TimeUnit.SECONDS));
+				if (callbackThrows) {
+					assertInstanceOf(IllegalStateException.class, failure.getCause());
+					assertEquals("injected replay classification failure", failure.getCause().getMessage());
+				} else {
+					LmdbSailStore.MapResizeConflictException conflict = assertInstanceOf(
+							LmdbSailStore.MapResizeConflictException.class, failure.getCause());
+					assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
+				}
+				awaitGrowthPhase(backing, LmdbSailStore.GrowthPhase.OPEN);
+				assertFalse(backing.growthAdmissionClosed(), "Callback completion must release the replay fence");
+				assertEquals(reservedBefore + (callbackThrows ? 0 : 1),
+						backing.growthMetricsSnapshot().reservedReplays());
+				if (!callbackThrows) {
+					try (LmdbSailStore.ReadView replay = backing.createTransactionReadView(observer, reader)) {
+						assertFalse(replay.valueSnapshot().dictionaryDetached());
+						assertEquals(valueStore.nativeMapGeneration(), replay.valueSnapshot().nativeMapGeneration());
+						replay.requireDictionaryTermSnapshot();
+					}
+				}
+			} finally {
+				writer.completeTransaction();
+			}
+		} finally {
+			releaseClassification.countDown();
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+			backing.close();
+		}
+	}
+
+	private static void awaitGrowthPhase(LmdbSailStore backing, LmdbSailStore.GrowthPhase expected) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (backing.growthMetricsSnapshot().currentPhase() != expected && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertEquals(expected, backing.growthMetricsSnapshot().currentPhase(),
+				"The coordinator must reach the expected phase before checking its admission boundary");
 	}
 
 	private static long openEnvironment(Path directory) throws IOException {

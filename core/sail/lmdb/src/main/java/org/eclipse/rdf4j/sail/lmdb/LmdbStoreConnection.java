@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.UpdateContext;
@@ -2041,7 +2042,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		private LmdbSailStore.ReadAttemptLease admissionAttempt;
 		private final Set<LmdbSailStore.ReadViewLease> readViews = Collections
 				.newSetFromMap(new IdentityHashMap<>());
-		private LmdbSailStore.MapGrowthToken growthToken;
+		private volatile LmdbSailStore.MapGrowthToken growthToken;
 		private LmdbSailStore.MapResizeKind growthKind;
 		private QueryExecutionContext.Activation replaySafepoint;
 		private int replayAttempts;
@@ -2135,6 +2136,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		}
 
 		private void requestGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token) {
+			assert Thread.holdsLock(readAttemptLock);
 			if (exposed) {
 				return;
 			}
@@ -2170,6 +2172,11 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		}
 
 		private void throwIfGrowthRequested() throws SailException {
+			// A null token needs no shared monitor. Publication occurs after growthKind under readAttemptLock;
+			// once requested, preserve the synchronized observation check and replay failure below.
+			if (growthToken == null) {
+				return;
+			}
 			synchronized (readAttemptLock) {
 				if (!exposed && growthToken != null) {
 					throw new LmdbSailStore.MapResizeConflictException(growthKind,
@@ -2184,6 +2191,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		private final OperationReadAttempt operationAttempt;
 		private final LmdbSailStore.ReadAttemptLease admission;
 		private final long generation;
+		private final long observationGeneration;
 		private final QueryExecutionDeadline deadline;
 		private final List<LmdbSailStore.ReadViewLease> views;
 		private final LmdbSailStore.ReadViewLease preferred;
@@ -2195,9 +2203,27 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			this.operationAttempt = operationAttempt;
 			this.admission = admission;
 			this.generation = generation;
+			this.observationGeneration = observationOwner == null ? -1 : observationOwner.generation;
 			this.deadline = deadline;
 			this.views = views;
 			this.preferred = preferred;
+		}
+
+		@Override
+		public void checkActive() {
+			// These lifecycle fields are volatile or immutable. Revalidation must not take the shared
+			// read-attempt monitor for every comparator callback or be deferred with growth checkpoints.
+			if (operationAttempt != null && operationAttempt.closed
+					|| observationOwner != null && observationOwner.workerAdmissionClosed) {
+				throw new SailException("The dispatched LMDB read operation has already finished");
+			}
+			if (admission == null || admission.generation() != generation
+					|| views.isEmpty() && admission.isClosed()
+					|| observationOwner != null && (observationOwner.generation != observationGeneration
+							|| observationOwner.admissionAttempt != admission)) {
+				throw new SailConflictException(
+						"The dispatched LMDB read attempt has already finished; retry the read");
+			}
 		}
 
 		@Override
@@ -2208,6 +2234,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 						|| observationOwner != null && observationOwner.isClosed()) {
 					throw new SailException("The dispatched LMDB read operation has already finished");
 				}
+				checkActive();
 				activeReadOperations++;
 			}
 			SailClosable binding = null;
@@ -2394,6 +2421,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		private volatile long generation;
 		private long attemptGeneration;
 		private volatile boolean attemptFinished;
+		private volatile boolean workerAdmissionClosed;
 		private volatile boolean observed;
 		private List<LmdbSailStore.ReadViewLease> readViews;
 		private final QueryExecutionDeadline deadline;
@@ -2576,6 +2604,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 
 		@Override
 		protected void handleClose() {
+			workerAdmissionClosed = true;
 			closeDelegateForReplay();
 			synchronized (readAttemptLock) {
 				replayableIterations.remove(this);
