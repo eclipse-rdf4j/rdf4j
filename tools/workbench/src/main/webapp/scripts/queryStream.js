@@ -100,11 +100,14 @@ var workbench;
                 if (owner && owner.target !== target) {
                     set(owner.target, owner.control, false, false);
                 }
+                // Safari does not focus a button that is clicked, so focus on an element around the control (the page,
+                // the outlet) means the control was used: focus returns to it.
+                var active = doc.activeElement;
                 owner = {
                     target: target,
                     control: control,
                     previousFocus: callbacks && callbacks.previousFocus
-                        || (doc.activeElement !== doc.body ? doc.activeElement : control),
+                        || (active && !(control && active.contains(control)) ? active : control),
                     callbacks: callbacks || {}
                 };
                 target.setAttribute('data-fullscreen', 'true');
@@ -1954,6 +1957,10 @@ var workbench;
                 optionFields.appendChild(wrap.label);
                 optionFields.appendChild(this.createCheckboxLabel(this.datatypeControl, 'Show datatypes'));
                 optionsDisclosure.content.appendChild(optionFields);
+                // The page wraps its selects when the route mounts, before these panes exist.
+                if (typeof workbench.wrapSelects === 'function') {
+                    workbench.wrapSelects(panels);
+                }
                 this.disposers.push(workbench.detailDisclosure.bind(this.downloadToggle, downloadPanel, downloadDisclosure.owner));
                 this.disposers.push(workbench.detailDisclosure.bind(this.optionsToggle, optionsPanel, optionsDisclosure.owner));
                 panels.appendChild(optionsPanel);

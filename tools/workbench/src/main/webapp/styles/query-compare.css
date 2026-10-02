@@ -46,10 +46,6 @@
     background: transparent;
 }
 
-.query-editor-header #query-sidebar-toggle-action:focus-within {
-    outline: 0;
-}
-
 body:not(.query-compare-mode) #query-sidebar-toggle-action {
     display: none;
 }

@@ -789,6 +789,17 @@ var workbench;
                 return;
             }
             targetWindow.scrollTo(0, saved.y);
+            // The page can still grow for a frame or two after its rows are bound, which clamps the first scroll short
+            // of a position near its end; apply it again once the page has its final height, as the router does,
+            // unless the page was scrolled in the meantime.
+            var clamped = targetWindow.scrollY;
+            if (clamped < saved.y && typeof targetWindow.requestAnimationFrame === 'function') {
+                targetWindow.requestAnimationFrame(function () { return targetWindow.requestAnimationFrame(function () {
+                    if (targetWindow.scrollY === clamped) {
+                        targetWindow.scrollTo(0, saved.y);
+                    }
+                }); });
+            }
             if (storage && typeof storage.removeItem === 'function') {
                 try {
                     storage.removeItem(saved.key);

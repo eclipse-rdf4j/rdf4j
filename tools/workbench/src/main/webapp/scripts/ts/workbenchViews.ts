@@ -820,10 +820,10 @@ module workbench {
             const columns = options && options.columns || model.vars || [];
             const rowHeightValue = rowHeight(model);
             if (!total && !allRows.length) {
-                return h`<tr class="workbench-empty-row"><td role="status" colspan=${Math.max(1, columns.length)}>${emptyText}</td></tr>`;
+                return h`<tr class="workbench-empty-row"><td class="workbench-empty-table-message" role="status" colspan=${Math.max(1, columns.length)}>${emptyText}</td></tr>`;
             }
             if (!allRows.length) {
-                return h`<tr class="workbench-pending-row"><td role="status" colspan=${Math.max(1, columns.length)}>Loading rows...</td></tr>`;
+                return h`<tr class="workbench-pending-row"><td class="workbench-empty-table-message" role="status" colspan=${Math.max(1, columns.length)}>Loading rows...</td></tr>`;
             }
             const before = typeof model.rowTopSpacer === 'number'
                 ? model.rowTopSpacer : Math.max(0, start) * rowHeightValue;
@@ -1051,8 +1051,8 @@ module workbench {
             return h`<form action="create" method="post" class="workbench-form-card">
                 <table class="dataentry" data-advanced-label="Advanced settings"><tbody>
                     <tr><th><label for="type">Repository type</label></th><td><select id="type" name="type"><option value="federate">Federation Store</option></select></td></tr>
-                    <tr><th><label for="id">Repository ID</label></th><td><input id="id" name="Local repository ID" type="text" value="fed" data-field-role="repository-id" /></td><td><span id="recurse-message" class="error" hidden>Federation ID may not match an existing ID.</span></td></tr>
-                    <tr><th><label for="title">Repository title</label></th><td><input id="title" name="Repository title" type="text" value="Federation" data-field-role="repository-title" /></td></tr>
+                    <tr><th><label for="id">Repository ID</label></th><td><input id="id" name="Local repository ID" type="text" size="16" value="fed" data-field-role="repository-id" /></td><td><span id="recurse-message" class="error" hidden>Federation ID may not match an existing ID.</span></td></tr>
+                    <tr><th><label for="title">Repository title</label></th><td><input id="title" name="Repository title" type="text" size="48" value="Federation" data-field-role="repository-title" /></td></tr>
                     <tr data-field-role="federation-member"><th>Federation members</th><td><div class="workbench-choice-list">
                         ${rows.filter((row: any) => text(row.id) !== 'SYSTEM').map((row: any) => h`<label class="workbench-choice">
                             <input type="checkbox" class="memberID" name="memberID" value=${text(row.id)} data-field-role="federation-member" />
@@ -1362,7 +1362,7 @@ module workbench {
                     <tbody>
                         ${state.adding ? editRow(null) : ''}
                         ${visible.map((row: any) => state.editing === row.prefix ? editRow(row) : viewRow(row))}
-                        ${!visible.length && !state.adding ? h`<tr class="workbench-empty-row"><td role="status" colspan="3">${
+                        ${!visible.length && !state.adding ? h`<tr class="workbench-empty-row"><td class="workbench-empty-table-message" role="status" colspan="3">${
                             rows.length ? 'No namespaces match this filter.' : 'No namespaces.'}</td></tr>` : ''}
                     </tbody>
                 </table>

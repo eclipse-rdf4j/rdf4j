@@ -699,7 +699,7 @@ test.describe('Workbench configuration and option sizing', () => {
 					buttonHeight: Math.round(button.height),
 					selectCenterDifference: Math.abs(Math.round(select.top + select.height / 2) -
 						Math.round(limit.top + limit.height / 2)),
-					labelTops: Array.from(element.querySelectorAll('.query-result-field > span'))
+					labelTops: Array.from(element.querySelectorAll('.query-result-field > span:first-child'))
 						.slice(0, 2).map(label => Math.round(label.getBoundingClientRect().top)),
 					centerDifference: Math.abs(Math.round(select.top + select.height / 2) -
 						Math.round(button.top + button.height / 2))

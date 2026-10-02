@@ -137,6 +137,24 @@ test('result fullscreen restores the parent control after entry from a focused r
         'fullscreen exit releases the shared body scroll lock');
 });
 
+test('result fullscreen returns focus to its control when focus was on an element around it', () => {
+    // Safari does not focus a button that is clicked: focus stays on the outlet around the Full screen control.
+    const queryStream = loadQueryStreamApi();
+    const manager = queryStream.__testResultFullscreen;
+    const { doc, target, control } = createFullscreenFixture();
+    const outlet = doc.createElement('main');
+    outlet.hasAttribute = name => outlet.attributes.has(name);
+    outlet.closest = () => null;
+    doc.body.appendChild(outlet);
+    outlet.appendChild(control);
+    outlet.focus();
+
+    manager.set(target, control, true);
+    manager.set(target, control, false);
+
+    assert.equal(doc.activeElement, control);
+});
+
 test('shared fullscreen ownership switches targets, enforces policy, and unlocks on renderer disposal', () => {
     const queryStream = loadQueryStreamApi();
     const manager = queryStream.__testResultFullscreen;
@@ -1108,6 +1126,25 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     replacement.dispose();
     assert.equal(legacyHeader.hidden, false, 'replacement disposal restores the legacy result header');
     assert.equal(target.getAttribute('aria-labelledby'), legacyHeading.getAttribute('id'));
+});
+
+test('result pane selects get the shared select control and chevron', async () => {
+    // The page decorates its selects when a route mounts; the result renderer builds its panes later.
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+
+    const selects = [renderer.downloadFormatControl, renderer.downloadLimitControl, renderer.layoutControl];
+    for (const select of selects) {
+        const control = select.parentNode;
+        assert.equal(control.classList.contains('workbench-select-control'), true, `${select.name} is wrapped`);
+        assert.equal(control.children[control.children.length - 1].getAttribute('class'),
+            'workbench-action-icon workbench-select-chevron', `${select.name} shows the shared chevron`);
+    }
 });
 
 test('result disclosure panels open below their trigger and stay inside the result card', async () => {

@@ -1230,8 +1230,12 @@ var workbench;
         return createFallbackRequestId();
     }
     workbench.generateRequestId = generateRequestId;
-    /** Give every select under root the shared chevron while keeping the native control. */
+    /**
+     * Give every select under root the shared chevron while keeping the native control. Exported for content built
+     * after the page was decorated (the query result's panes).
+     */
     function wrapSelects(root) {
+        var doc = root.ownerDocument || root;
         var selects = root.querySelectorAll('select');
         var iconNamespace = 'http://www.w3.org/2000/svg';
         for (var i = 0; i < selects.length; i++) {
@@ -1243,23 +1247,24 @@ var workbench;
             if (!parent) {
                 continue;
             }
-            var control = document.createElement('span');
+            var control = doc.createElement('span');
             control.className = 'workbench-select-control';
             parent.insertBefore(control, select);
             control.appendChild(select);
-            var chevron = document.createElementNS(iconNamespace, 'svg');
+            var chevron = doc.createElementNS(iconNamespace, 'svg');
             chevron.setAttribute('class', 'workbench-action-icon workbench-select-chevron');
             chevron.setAttribute('viewBox', '0 0 24 24');
             chevron.setAttribute('width', '16');
             chevron.setAttribute('height', '16');
             chevron.setAttribute('focusable', 'false');
             chevron.setAttribute('aria-hidden', 'true');
-            var chevronPath = document.createElementNS(iconNamespace, 'path');
+            var chevronPath = doc.createElementNS(iconNamespace, 'path');
             chevronPath.setAttribute('d', 'm6 9 6 6 6-6');
             chevron.appendChild(chevronPath);
             control.appendChild(chevron);
         }
     }
+    workbench.wrapSelects = wrapSelects;
     /**
      * The decorations every page gets: animated native disclosures (details elements), button/panel disclosures
      * whose panels open below their toolbar, and the shared select chevron. Run for the document once it loads and

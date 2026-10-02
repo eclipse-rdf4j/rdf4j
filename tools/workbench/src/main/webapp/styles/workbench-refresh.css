@@ -432,10 +432,11 @@ body.query-result-embedded-body .workbench-disclosure__field {
 	min-width: 0;
 }
 
+/* A field's label; the shared select control around a field's select is a span too, and is not a label. */
 body.workbench-body .workbench-disclosure__field > label,
-body.workbench-body .workbench-disclosure__field > span,
+body.workbench-body .workbench-disclosure__field > span:not(.workbench-select-control),
 body.query-result-embedded-body .workbench-disclosure__field > label,
-body.query-result-embedded-body .workbench-disclosure__field > span {
+body.query-result-embedded-body .workbench-disclosure__field > span:not(.workbench-select-control) {
 	display: block;
 	color: var(--workbench-muted);
 	font-size: var(--workbench-label-font-size);
@@ -501,10 +502,12 @@ body.workbench-body .saved-query-row .yasqe .CodeMirror pre {
 	font-size: var(--workbench-code-font-size);
 }
 
+/* Keep code clear of the overlay buttons: two 28px buttons with their gaps, placed by YASQE at the scrollbar's width
+ * plus 4px from the editor's edge, reach about 84px in from it. */
 body.workbench-body .query-page .yasqe .CodeMirror-lines,
 body.workbench-body #update-editor .yasqe .CodeMirror-lines,
 body.workbench-body .saved-query-row .yasqe .CodeMirror-lines {
-	padding-right: 3.5rem;
+	padding-right: 5.5rem;
 }
 
 /* The vendor anchors Share to its narrow icon strip. Give that strip the
