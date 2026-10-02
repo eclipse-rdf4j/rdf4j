@@ -1,16 +1,46 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const {
+	deleteRepository,
+	memoryRepositoryConfiguration,
+	openQueryPage,
+	runQuery,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'workbench-second-review-20260924';
+// The query result is streamed into the page since the redesign (plan workbench-app-shell-and-critique-fixes-20260930,
+// M9.1 removed the result iframe), so the result tests read #query-results; the retired teal literal is compared with
+// the --workbench-primary token instead. A Yes/No answer hides Full screen (M3.5), and long results continue with a
+// secondary "Load more" button instead of Previous/Next paging.
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-second-review');
 const REPOSITORY_BASE_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
+/** The computed color of the --workbench-primary token, to compare with computed styles. */
+async function primaryColor(page) {
+	const color = await page.evaluate(() => {
+		if (!getComputedStyle(document.documentElement).getPropertyValue('--workbench-primary').trim()) {
+			return '';
+		}
+		const probe = document.createElement('span');
+		probe.style.color = 'var(--workbench-primary)';
+		document.body.append(probe);
+		const value = getComputedStyle(probe).color;
+		probe.remove();
+		return value;
+	});
+	expect(color, 'the page defines the --workbench-primary token').not.toBe('');
+	return color;
+}
+
 test.beforeAll(async ({ request }) => {
-	await request.delete(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`);
 	const response = await request.put(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`, {
 		headers: { 'Content-Type': 'text/turtle' },
-		data: repositoryConfig(REPOSITORY_ID)
+		data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Workbench second review fixture')
 	});
 	expect([200, 201, 204]).toContain(response.status());
 	for (const [prefix, namespace] of [
@@ -37,13 +67,14 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	await request.delete(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`);
+	await deleteRepository(request, SERVER_BASE_URL, REPOSITORY_ID);
 });
 
 test('shared actions expose semantic classes and composed outline icons', async ({ page }) => {
 	await page.goto(`${REPOSITORY_BASE_URL}/update`, { waitUntil: 'domcontentloaded' });
 	const updateAction = page.locator('#update-actions input[type="submit"]');
 	await expect(updateAction).toBeVisible();
+	const primary = await primaryColor(page);
 	const actions = await updateAction.evaluate(element => ({
 		className: element.closest('.workbench-action')?.className || '',
 		backgroundImage: getComputedStyle(element).backgroundImage,
@@ -55,13 +86,13 @@ test('shared actions expose semantic classes and composed outline icons', async 
 	expect(actions.backgroundImage).toBe('none');
 	expect(actions.parentHasIcon).toBe(true);
 	expect(actions.parentHasLabel).toBe(true);
-	expect(actions.background).toBe('rgb(15, 118, 110)');
+	expect(actions.background, 'the Update action uses the Workbench primary color').toBe(primary);
 
 	await page.goto(`${REPOSITORY_BASE_URL}/clear`, { waitUntil: 'domcontentloaded' });
 	// Clear's button is a danger action that names its target (plan task M6.4).
 	const clearAction = page.locator('#clear-form button[type="submit"]');
 	await expect(clearAction).toHaveClass(/workbench-action--danger/);
-	await expect(clearAction).not.toHaveCSS('background-color', 'rgb(15, 118, 110)');
+	await expect(clearAction).not.toHaveCSS('background-color', primary);
 });
 
 test('creation actions use compact semantic wrappers and stay inset when Advanced opens', async ({ page }) => {
@@ -78,26 +109,26 @@ test('creation actions use compact semantic wrappers and stay inset when Advance
 	await expect(create.locator('xpath=ancestor::span[contains(@class, "workbench-action--primary")]')).toHaveClass(/workbench-action--primary/);
 	await expect(cancel.locator('xpath=ancestor::span[contains(@class, "workbench-action")]').locator('.workbench-action-icon')).toHaveCount(1);
 	await expect(create.locator('xpath=ancestor::span[contains(@class, "workbench-action")]').locator('.workbench-action-icon')).toHaveCount(1);
-	const advanced = form.locator('details.workbench-advanced');
-	if (await advanced.count()) {
-		await advanced.locator('summary').press('Enter');
-		const inset = await advanced.evaluate(element => {
-			const rect = element.getBoundingClientRect();
-			const styles = getComputedStyle(element);
-			const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
-			const controls = Array.from(element.querySelectorAll('input, select, textarea')).map(control => ({
-				right: control.getBoundingClientRect().right,
-				width: control.getBoundingClientRect().width
-			}));
-			return {
-				right: rect.right - paddingRight,
-				rect: { left: rect.left, right: rect.right, width: rect.width },
-				controls
-			};
-		});
-		expect(inset.controls.every(control => control.right <= inset.right + 1)).toBe(true);
-		 expect(inset.controls.every(control => control.width <= 600)).toBe(true);
-	}
+	// Advanced settings is a settings pane that opens over the form below its toggle (plan M14.3), no longer a
+	// <details> element; its controls stay inset inside the open pane.
+	const advancedToggle = form.locator('#create-advanced-toggle');
+	const advanced = form.locator('#create-advanced-panel');
+	await expect(advancedToggle).toBeVisible();
+	await advancedToggle.press('Enter');
+	await expect(advanced).toBeVisible();
+	await expect.poll(async () => advanced.evaluate(element => {
+		const rect = element.getBoundingClientRect();
+		const styles = getComputedStyle(element);
+		const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+		const right = rect.right - paddingRight;
+		const controls = Array.from(element.querySelectorAll('input, select, textarea')).map(control => ({
+			right: control.getBoundingClientRect().right,
+			width: control.getBoundingClientRect().width
+		}));
+		return controls.length > 0
+			&& controls.every(control => control.right <= right + 1)
+			&& controls.every(control => control.width <= 600);
+	}), { message: 'Advanced settings controls stay inset inside the open pane and at most 600px wide' }).toBe(true);
 	for (const type of ['federate', 'remote', 'sparql', 'lmdb']) {
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=${type}`, {
 			waitUntil: 'domcontentloaded'
@@ -142,7 +173,10 @@ test('Explore keeps preferences collapsed and pagination below the result island
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.locator('#explore-result-options')).toHaveCount(1);
-	await expect(page.locator('#explore-result-options')).not.toHaveAttribute('open', '');
+	// Display is a settings pane with a toggle (plan M5.1, M14.3), no longer a <details> element.
+	await expect(page.locator('#explore-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('#explore-result-options-panel')).toHaveCount(1);
+	await expect(page.locator('#explore-result-options-panel')).toBeHidden();
 	await expect(page.locator('label[for="resource"]')).toHaveCount(1);
 	const geometry = await page.evaluate(() => {
 		const result = document.querySelector('#explore-results table.data, #explore-results table.simple')?.getBoundingClientRect();
@@ -173,65 +207,66 @@ test('Update editor stays useful on mobile and action controls retain outline ic
 });
 
 test('ASK result uses the compact status surface and secondary fullscreen action', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('ASK { VALUES ?s { <http://example.org/alice> } }'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await expect(frame.locator('.queryResult')).toHaveText(/Yes/);
-	const metrics = await page.locator('#query-results-frame').evaluate(frameElement => {
-		const button = frameElement.contentDocument.querySelector('#query-result-fullscreen');
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 1000 } });
+	const primary = await primaryColor(page);
+	await runQuery(page, 'ASK { VALUES ?s { <http://example.org/alice> } }');
+	const results = page.locator('#query-results');
+	await expect(results.locator('.query-result-boolean__value')).toHaveText(/Yes/);
+	// A Yes/No answer has no rows to show in full screen, so the action is hidden (plan M3.5).
+	const fullscreen = results.locator('[id^="query-result-fullscreen-"]');
+	await expect(fullscreen).toHaveCount(1);
+	await expect(fullscreen).toBeHidden();
+	const metrics = await results.evaluate(element => {
+		const button = element.querySelector('[id^="query-result-fullscreen-"]');
 		return {
-			height: frameElement.getBoundingClientRect().height,
+			height: element.getBoundingClientRect().height,
 			fullscreenBackground: getComputedStyle(button).backgroundColor,
-			statusIcons: frameElement.contentDocument.querySelectorAll('.workbench-status-icon').length,
-			blackGlyphs: Array.from(frameElement.contentDocument.querySelectorAll('img')).length
+			statusIcons: element.querySelectorAll('.workbench-status-icon').length,
+			blackGlyphs: Array.from(element.querySelectorAll('img')).length
 		};
 	});
 	expect(metrics.height).toBeLessThan(420);
-	expect(metrics.fullscreenBackground).not.toBe('rgb(15, 118, 110)');
+	expect(metrics.fullscreenBackground).not.toBe(primary);
 	expect(metrics.statusIcons).toBe(1);
 	expect(metrics.blackGlyphs).toBe(0);
 });
 
 test('embedded tuple results keep paging secondary and reachable after keyboard scroll', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 3'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await expect(frame.locator('table.data tbody tr')).toHaveCount(3, { timeout: 30000 });
-	const before = await frame.locator('#nextX').evaluate(element => ({
-		wrapper: element.closest('.workbench-action')?.className || '',
-		bottom: element.getBoundingClientRect().bottom,
-		viewport: element.ownerDocument.defaultView.innerHeight
-	}));
-	expect(before.wrapper).toContain('workbench-action--secondary');
-	await frame.locator('body').press('End');
-	const frameBox = await page.locator('#query-results-frame').boundingBox();
-	if (frameBox) {
-		await page.mouse.move(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height / 2);
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 1000 } });
+	// Results continue with "Load more" instead of Previous/Next pages; ask for a small first batch, as
+	// workbench-query-load-more.spec.js does, so that the result needs a second one and ends below the fold.
+	await page.locator('#query-form').evaluate(form => {
+		form.querySelector('[name="batch-size"]')?.remove();
+		const control = document.createElement('input');
+		control.type = 'hidden';
+		control.name = 'batch-size';
+		control.value = '40';
+		form.appendChild(control);
+	});
+	const values = Array.from({ length: 60 }, (_unused, index) => `(${index} "item-${index}")`).join(' ');
+	await runQuery(page, `SELECT ?number ?item WHERE { VALUES (?number ?item) { ${values} } } ORDER BY ?number`);
+	const result = page.locator('#query-results [data-query-stream-root]');
+	const loadMore = result.locator('.query-result-load-more');
+	await expect(loadMore).toBeVisible();
+	await expect(loadMore).toHaveClass(/workbench-action--secondary/);
+	const before = await loadMore.evaluate(element => element.getBoundingClientRect().top);
+	expect(before, 'Load more starts below the fold').toBeGreaterThan(1000);
+	// End outside an editable element scrolls the page to the end of the result (plan M4.1).
+	await page.evaluate(() => {
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	});
+	await page.keyboard.press('End');
+	const resultBox = await page.locator('#query-results').boundingBox();
+	if (resultBox) {
+		await page.mouse.move(resultBox.x + resultBox.width / 2, Math.min(resultBox.y + resultBox.height / 2, 900));
 		await page.mouse.wheel(0, 1600);
 	}
-	await frame.locator('html').press('End');
-	await frame.locator('#nextX').hover();
-	await page.mouse.wheel(0, 1600);
-	const after = await frame.locator('#nextX').evaluate(element => ({
-		bottom: element.getBoundingClientRect().bottom,
-		viewport: element.ownerDocument.defaultView.innerHeight,
-		visible: element.getBoundingClientRect().height > 0,
-		documentScrollTop: element.ownerDocument.documentElement.scrollTop,
-		bodyScrollTop: element.ownerDocument.body?.scrollTop || 0
-	}));
-	expect(after.visible).toBe(true);
-	expect(after.documentScrollTop).toBeGreaterThan(0);
-	expect(after.bottom).toBeLessThanOrEqual(after.viewport + 2);
+	await expect.poll(async () => loadMore.evaluate(element => {
+		const rect = element.getBoundingClientRect();
+		return rect.height > 0 && window.scrollY > 0 && rect.bottom <= window.innerHeight + 2;
+	}), { message: 'Load more is on screen after scrolling to the end of the result' }).toBe(true);
 });
 
 test('populated fixture keeps list pages and Explore readable', async ({ page }) => {
@@ -293,6 +328,7 @@ test('Explain surfaces use muted semantic colors for plan text and secondary con
 	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#compare-toggle')).toBeVisible({ timeout: 10000 });
 	await expect.poll(async () => page.locator('#query-explanation').textContent()).not.toContain('Loading');
+	const primary = await primaryColor(page);
 	const colors = await page.evaluate(() => {
 		const token = document.querySelector('.query-explanation-token');
 		const config = document.getElementById('explanation-settings-toggle');
@@ -308,21 +344,18 @@ test('Explain surfaces use muted semantic colors for plan text and secondary con
 	});
 	expect(colors.tokenCount).toBeGreaterThan(0);
 	expect(colors.token).not.toBe('rgb(0, 28, 170)');
-	expect(colors.config).not.toBe('rgb(15, 118, 110)');
-	expect(colors.compare).not.toBe('rgb(15, 118, 110)');
+	expect(colors.config).toMatch(/^rgb/);
+	expect(colors.compare).toMatch(/^rgb/);
+	expect(colors.config).not.toBe(primary);
+	expect(colors.compare).not.toBe(primary);
 });
 
 test('embedded result actions keep outline icons in the result document', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 3'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	const icons = await page.locator('#query-results-frame').evaluate(frameElement =>
-		Array.from(frameElement.contentDocument.querySelectorAll('.workbench-action-icon, .workbench-status-icon')).map(icon => ({
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 1000 } });
+	await runQuery(page, 'SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 3');
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^3 rows/);
+	const icons = await page.locator('#query-results').evaluate(results =>
+		Array.from(results.querySelectorAll('.workbench-action-icon, .workbench-status-icon')).map(icon => ({
 			className: icon.className.baseVal,
 			fill: getComputedStyle(icon).fill,
 			stroke: getComputedStyle(icon).stroke,
@@ -346,7 +379,12 @@ test('query starts without an empty result island and Explain cancel has a label
 	});
 	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(() => window.__workbenchPageshowSeen === true);
+	await expect(page.locator('#query-results')).toHaveCount(1);
 	await expect(page.locator('#query-results')).toBeHidden();
+	// Known product bug (stale spec migration, 2026-10-02): when the Query page moved from XSLT to Lit (commit
+	// 11d8f194ca), the Explain Cancel action kept its wrapper but lost its cancel icon (an empty
+	// #explain-trigger-cancel-icon is left) and the .workbench-action-label around its input, so the running
+	// Explain shows a field-bordered input inside the red outline. Create's Cancel shows the intended markup.
 	const cancel = page.locator('#explain-trigger-cancel');
 	const cancelRoot = cancel.locator(
 		'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]'
@@ -381,7 +419,12 @@ test('Explain comparison controls expose labelled Copy, Swap, and Close actions'
 	await expect(page.locator('#copy-explanation')).toContainText(/copy/i);
 	await page.locator('#compare-toggle').click();
 	await expect.poll(async () => page.locator('.CodeMirror').count()).toBe(2);
-	const controlLabels = await page.locator('#query-compare-toolbar .workbench-action-label button').allTextContents();
+	// In compare mode Swap sits in the explanation toolbar and each plan column has its own Copy icon button
+	// (plan M3.3); icon buttons are labelled by aria-label.
+	const controlLabels = await page.locator('#query-compare-toolbar button, .query-explanation-column__header button')
+		.evaluateAll(buttons => buttons
+			.filter(button => button.getClientRects().length > 0)
+			.map(button => button.getAttribute('aria-label') || button.textContent.replace(/\s+/g, ' ').trim()));
 	expect(controlLabels.join(' ')).toMatch(/copy/i);
 	expect(controlLabels.join(' ')).toMatch(/swap/i);
 	await page.locator('.CodeMirror').nth(1).evaluate(element =>
@@ -390,7 +433,8 @@ test('Explain comparison controls expose labelled Copy, Swap, and Close actions'
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	await page.locator('#query-diff-trigger').click();
 	await expect(page.locator('#query-diff-modal')).toHaveClass(/query-diff-modal--open/);
-	await expect(page.locator('#query-diff-close')).toHaveValue(/close/i);
+	// Close is a <button> of the button component now (plan M1.3), not an <input> with a value.
+	await expect(page.locator('#query-diff-close')).toHaveAccessibleName(/close/i);
 });
 
 test('YASQE utility controls preserve the hidden library state', async ({ page }) => {
@@ -424,18 +468,3 @@ test('YASQE fullscreen controls keep one state-specific icon visible', async ({ 
 	await expect(fullscreen).toBeVisible();
 	await expect(smallscreen).toBeHidden();
 });
-
-function repositoryConfig(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-
-[] a config:Repository ;
-   config:rep.id "${repositoryId}" ;
-   rdfs:label "Workbench second review fixture" ;
-   config:rep.impl [
-      config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [
-         config:sail.type "openrdf:MemoryStore"
-      ]
-   ].`;
-}

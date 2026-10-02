@@ -1,19 +1,31 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const {
+    deleteRepository,
+    memoryRepositoryConfiguration,
+    serverBaseUrl,
+    uniqueRepositoryId,
+    workbenchBaseUrl
+} = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'query-refresh-layout';
-const MEMBER_REPOSITORY_ID = 'query-refresh-layout-member';
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-refresh-corrections');
+const MEMBER_REPOSITORY_ID = uniqueRepositoryId('workbench-refresh-corrections-member');
 
-test.beforeEach(async ({ request }) => {
+test.beforeAll(async ({ request }) => {
     for (const repositoryId of [REPOSITORY_ID, MEMBER_REPOSITORY_ID]) {
-        await request.delete(`${SERVER_BASE_URL}/repositories/${repositoryId}`);
         const response = await request.put(`${SERVER_BASE_URL}/repositories/${repositoryId}`, {
             headers: { 'Content-Type': 'text/turtle' },
-            data: nativeRepositoryConfig(repositoryId)
+            data: memoryRepositoryConfiguration(repositoryId, 'Workbench refresh corrections test')
         });
         expect([200, 201, 204]).toContain(response.status());
+    }
+});
+
+test.afterAll(async ({ request }) => {
+    for (const repositoryId of [REPOSITORY_ID, MEMBER_REPOSITORY_ID]) {
+        await deleteRepository(request, SERVER_BASE_URL, repositoryId);
     }
 });
 
@@ -23,22 +35,6 @@ async function viewportMetrics(page) {
         scrollWidth: document.documentElement ? document.documentElement.scrollWidth : window.innerWidth,
         bodyScrollWidth: document.body ? document.body.scrollWidth : window.innerWidth
     }));
-}
-
-function nativeRepositoryConfig(repositoryId) {
-    return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-
-[] a config:Repository ;
-   config:rep.id "${repositoryId}" ;
-   rdfs:label "Workbench refresh corrections test" ;
-   config:rep.impl [
-      config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [
-         config:sail.type "openrdf:MemoryStore"
-      ]
-   ].
-`;
 }
 
 test('mobile workbench forms keep editors and selected source fields inside the viewport', async ({ page }) => {
@@ -65,7 +61,12 @@ test('federation keeps required identity and member controls visible', async ({ 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=federate`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#id')).toBeVisible();
     await expect(page.locator('#title')).toBeVisible();
-    await expect(page.locator('.memberID')).toHaveCount(2);
+    // The member list offers every repository of the server, so look for the two this spec created rather than
+    // counting them.
+    for (const repositoryId of [REPOSITORY_ID, MEMBER_REPOSITORY_ID]) {
+        await expect(page.locator(`.memberID[value="${repositoryId}"]`)).toHaveCount(1);
+        await expect(page.locator(`.memberID[value="${repositoryId}"]`)).toBeVisible();
+    }
     for (const control of ['#id', '#title', '.memberID']) {
         await expect(page.locator(control).first()).toBeVisible();
     }

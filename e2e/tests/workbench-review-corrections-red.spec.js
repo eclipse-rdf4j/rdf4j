@@ -1,59 +1,57 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const {
+	deleteRepository,
+	memoryRepositoryConfiguration,
+	openQueryPage,
+	runQuery,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'query-refresh-layout';
-const MEMBER_REPOSITORY_ID = 'query-refresh-layout-member';
+// Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): "mobile result footer
+// remains reachable after the last record" measured the Previous/Next footer of the retired result iframe. Results now
+// scroll with the page and continue with "Load more" (plan workbench-app-shell-and-critique-fixes-20260930, M4.1 and
+// M9.1): workbench-result-scrolling.spec.js "mobile records use the table header labels and the last record is
+// reachable" reaches the last record at 390px, workbench-second-review-red.spec.js "embedded tuple results keep paging
+// secondary and reachable after keyboard scroll" reaches Load more at 390px, and workbench-query-load-more.spec.js
+// "Execute requests one million rows by default and renders no result page controls" checks that no page footer is left.
+//
+// The query result is streamed into the page (#query-results) instead of the retired iframe, and the retired teal
+// literal rgb(15, 118, 110) is compared with the --workbench-primary token.
 
-test.beforeEach(async ({ request }) => {
-	for (const repositoryId of [REPOSITORY_ID, MEMBER_REPOSITORY_ID]) {
-		await request.delete(`${SERVER_BASE_URL}/repositories/${repositoryId}`);
-		const response = await request.put(`${SERVER_BASE_URL}/repositories/${repositoryId}`, {
-			headers: { 'Content-Type': 'text/turtle' },
-			data: nativeRepositoryConfig(repositoryId)
-		});
-		expect([200, 201, 204]).toContain(response.status());
-	}
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-review-corrections');
+
+test.beforeAll(async ({ request }) => {
+	const response = await request.put(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`, {
+		headers: { 'Content-Type': 'text/turtle' },
+		data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Workbench review corrections test')
+	});
+	expect([200, 201, 204]).toContain(response.status());
 });
 
-async function setQuery(page, query) {
-	await page.locator('.CodeMirror').first().evaluate((element, value) => {
-		element.CodeMirror.setValue(value);
-	}, query);
-}
+test.afterAll(async ({ request }) => {
+	await deleteRepository(request, SERVER_BASE_URL, REPOSITORY_ID);
+});
 
-async function executeSelect(page) {
-	const request = page.waitForRequest(candidate => {
-		if (!candidate.url().includes('/query')) {
-			return false;
+/** The computed color of the --workbench-primary token, to compare with computed styles. */
+async function primaryColor(page) {
+	const color = await page.evaluate(() => {
+		if (!getComputedStyle(document.documentElement).getPropertyValue('--workbench-primary').trim()) {
+			return '';
 		}
-		if (candidate.method() === 'GET') {
-			return new URL(candidate.url()).searchParams.get('action') === 'exec';
-		}
-		return candidate.method() === 'POST'
-			&& new URLSearchParams(candidate.postData() || '').get('action') === 'exec';
+		const probe = document.createElement('span');
+		probe.style.color = 'var(--workbench-primary)';
+		document.body.append(probe);
+		const value = getComputedStyle(probe).color;
+		probe.remove();
+		return value;
 	});
-	await page.locator('#exec').click();
-	await request;
-	await page.frameLocator('#query-results-frame').locator('#rdf4j-query-result').waitFor({ state: 'attached', timeout: 30000 });
-	await expect(page.locator('#query-request-id')).toHaveValue('', { timeout: 30000 });
-}
-
-function nativeRepositoryConfig(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-
-[] a config:Repository ;
-   config:rep.id "${repositoryId}" ;
-   rdfs:label "Workbench review corrections test" ;
-   config:rep.impl [
-      config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [
-         config:sail.type "openrdf:MemoryStore"
-      ]
-   ].
-`;
+	expect(color, 'the page defines the --workbench-primary token').not.toBe('');
+	return color;
 }
 
 test('mobile shared header stays compact while retaining aligned context actions', async ({ page }) => {
@@ -78,74 +76,35 @@ test('mobile shared header stays compact while retaining aligned context actions
 });
 
 test('desktop result toolbar keeps title and all actions in one header band', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor();
-	await setQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" } }');
-	await executeSelect(page);
-	const frame = page.frames().find(candidate => candidate !== page.mainFrame() && candidate.url().includes('/query'));
-	expect(frame, 'embedded result frame should be available').toBeTruthy();
-	const geometry = await frame.evaluate(() => {
-		const rect = selector => {
-			const element = document.querySelector(selector);
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 1000 } });
+	await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" } }');
+	const geometry = await page.locator('#query-results [data-query-stream-root]').evaluate(root => {
+		const rect = element => {
 			if (!element) return null;
 			const value = element.getBoundingClientRect();
 			return { top: value.top, left: value.left, width: value.width, bottom: value.bottom };
 		};
-		const title = document.querySelector('.query-result-toolbar__header h2, .query-result-embedded-header h2');
-		const titleRect = title?.getBoundingClientRect();
-		const toolbarElement = document.querySelector('.query-result-toolbar');
-		const toolbarStyle = toolbarElement ? getComputedStyle(toolbarElement) : null;
+		const title = root.querySelector('.query-result-toolbar__header h2');
 		return {
-			toolbar: rect('.query-result-toolbar'),
-			gridTemplateAreas: toolbarStyle?.gridTemplateAreas || '',
-			title: titleRect ? {
-				top: titleRect.top,
-				left: titleRect.left,
-				width: titleRect.width,
-				bottom: titleRect.bottom,
-				text: title.textContent?.trim() || ''
-			} : null,
-			download: rect('#query-result-download-toggle'),
-			options: rect('#query-result-options-toggle'),
-			fullscreen: rect('#query-result-fullscreen')
+			toolbar: rect(root.querySelector('.query-result-toolbar')),
+			titleText: title?.textContent?.trim() || '',
+			download: rect(root.querySelector('.query-result-download-toggle')),
+			options: rect(root.querySelector('.query-result-options-toggle')),
+			fullscreen: rect(root.querySelector('[id^="query-result-fullscreen-"]'))
 		};
 	});
 	expect(geometry.toolbar).toBeTruthy();
-	expect(geometry.gridTemplateAreas.replace(/\s+/g, ' '), 'desktop result toolbar should use one row')
-		.toContain('"title download options fullscreen"');
-	expect(geometry.title, 'embedded result title should be rendered').toBeTruthy();
-	expect(geometry.title.text).toMatch(/query result/i);
-	expect(geometry.title.width, 'embedded result title should have visible geometry').toBeGreaterThan(0);
-	for (const control of [geometry.download, geometry.options, geometry.fullscreen]) {
+	// The "Query result" heading still names the result region, but the output card's Results tab shows it, so the
+	// heading is visually hidden there (plan M3.5); the actions form the toolbar's one row.
+	expect(geometry.titleText, 'the result heading still names the result').toMatch(/query result/i);
+	const controls = [geometry.download, geometry.options, geometry.fullscreen];
+	for (const control of controls) {
 		expect(control, 'result action should be rendered').toBeTruthy();
 		expect(control.width, 'result action should have visible geometry').toBeGreaterThan(0);
-		expect(Math.abs(control.top - geometry.title.top), 'result actions should share the title band').toBeLessThan(4);
+		expect(Math.abs(control.top - controls[0].top), 'result actions should share one header band').toBeLessThan(4);
 	}
 	expect(geometry.toolbar.bottom - geometry.toolbar.top, 'desktop result actions should fit one row')
 		.toBeLessThanOrEqual(60);
-});
-
-test('mobile result footer remains reachable after the last record', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor();
-	await setQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-	await executeSelect(page);
-	const frame = page.frames().find(candidate => candidate !== page.mainFrame() && candidate.url().includes('/query'));
-	expect(frame).toBeTruthy();
-	const geometry = await frame.evaluate(() => {
-		const navigation = document.querySelector('.query-result-navigation');
-		const table = document.querySelector('#query-result-table-wrap');
-		if (!navigation || !table) return null;
-		const navRect = navigation.getBoundingClientRect();
-		const tableRect = table.getBoundingClientRect();
-		return { navigationBottom: navRect.bottom, tableBottom: tableRect.bottom, bodyHeight: document.body.scrollHeight };
-	});
-	expect(geometry).toBeTruthy();
-	expect(geometry.navigationBottom).toBeLessThanOrEqual(geometry.bodyHeight + 1);
-	await frame.locator('#nextX').scrollIntoViewIfNeeded();
-	await expect(frame.locator('#nextX')).toBeVisible();
 });
 
 test('workbench action and data typography uses the shared readable scale', async ({ page }) => {
@@ -156,12 +115,26 @@ test('workbench action and data typography uses the shared readable scale', asyn
 		return data ? Number.parseFloat(getComputedStyle(data).fontSize) : 0;
 	});
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/update`, { waitUntil: 'domcontentloaded' });
-	const actionFont = await page.locator('#workbench-page-surface').evaluate(element => {
+	const fonts = await page.locator('#workbench-page-surface').evaluate(element => {
 		const action = element.querySelector('input[type="submit"], input[type="button"], button');
-		return action ? Number.parseFloat(getComputedStyle(action).fontSize) : 0;
+		const probe = document.createElement('span');
+		probe.style.fontSize = 'var(--workbench-control-font-size)';
+		element.append(probe);
+		const control = Number.parseFloat(getComputedStyle(probe).fontSize);
+		probe.remove();
+		return {
+			action: action ? Number.parseFloat(getComputedStyle(action).fontSize) : 0,
+			control,
+			token: getComputedStyle(document.documentElement).getPropertyValue('--workbench-control-font-size').trim()
+		};
 	});
 	expect(dataFont).toBeGreaterThanOrEqual(13);
-	expect(actionFont).toBeGreaterThanOrEqual(14);
+	expect(fonts.token, 'the page defines --workbench-control-font-size').not.toBe('');
+	// Actions use the shared control size, --workbench-control-font-size (13px), which replaced the 14px floor of this
+	// review when the Workbench UI was unified (commit 847789c558); workbench-consistency-contract.spec.js "query,
+	// upload, create, saved, and embedded controls share their locked action tokens" checks that 13px signature.
+	expect(fonts.control).toBeGreaterThanOrEqual(13);
+	expect(fonts.action, 'actions use the shared control font size').toBe(fonts.control);
 });
 
 test('repository access cells use text badges', async ({ page }) => {
@@ -178,6 +151,7 @@ test('creation actions stay compact and make Create the primary action', async (
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	await page.locator('form[action="create"] input[type="button"]').first().waitFor({ state: 'attached' });
+	const primary = await primaryColor(page);
 	const actions = await page.locator('form[action="create"] input[type="button"]').evaluateAll(elements => elements.map(element => {
 		const rect = element.getBoundingClientRect();
 		const wrapper = element.closest('.workbench-action');
@@ -195,7 +169,7 @@ test('creation actions stay compact and make Create the primary action', async (
 	expect(cancel).toBeTruthy();
 	expect(create).toBeTruthy();
 	expect(Math.abs(cancel.top - create.top), 'actions should share a compact row').toBeLessThan(8);
-	expect(create.background, 'Create should use the shared teal primary').toBe('rgb(15, 118, 110)');
+	expect(create.background, 'Create should use the shared primary color').toBe(primary);
 	expect(cancel.background, 'Cancel should remain a secondary surface').toBe('rgb(255, 255, 255)');
 	expect(create.backgroundImage, 'Create should leave native control backgrounds clear').toBe('none');
 	expect(cancel.backgroundImage, 'Cancel should leave native control backgrounds clear').toBe('none');
@@ -215,10 +189,23 @@ test('shared shell keeps desktop gutters and mobile controls usable', async ({ p
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	await page.locator('form[action="create"] input[type="button"]').first().waitFor({ state: 'attached' });
-	const controls = await page.locator('form[action="create"] input[type="text"], form[action="create"] select').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+	const controlSelector = 'form[action="create"] input[type="text"], form[action="create"] select';
+	const renderedHeights = () => page.locator(controlSelector).evaluateAll(elements => elements
+		.filter(element => element.getClientRects().length > 0)
+		.map(element => ({ id: element.id, height: element.getBoundingClientRect().height })));
+	const controlCount = await page.locator(controlSelector).count();
+	// The Advanced settings fields are not rendered until their pane is opened (plan M14.3), so measure the fields on
+	// the form first and then the ones in the open pane; together they are every field of the form.
+	const formControls = await renderedHeights();
+	await page.locator('#create-advanced-toggle').press('Enter');
+	await expect(page.locator('#create-advanced-panel')).toBeVisible();
+	const allControls = await renderedHeights();
+	const measured = new Map([...formControls, ...allControls].map(control => [control.id, control.height]));
+	expect(measured.size, 'every form control is measured').toBe(controlCount);
 	const changeTargets = await page.locator('#workbench-contextbar .workbench-switcher__button').evaluateAll(elements => elements
 		.filter(element => element.getClientRects().length > 0).map(element => element.getBoundingClientRect().height));
-	expect(controls.every(height => height >= 44), 'mobile form controls should retain 44px targets').toBe(true);
+	expect([...measured.values()].every(height => height >= 44),
+		`mobile form controls should retain 44px targets: ${JSON.stringify([...measured])}`).toBe(true);
 	expect(changeTargets.length).toBeGreaterThan(0);
 	expect(changeTargets.every(height => height >= 40), 'context switchers should have touch-sized hit regions').toBe(true);
 });
@@ -237,10 +224,11 @@ test('saved queries wrap names and actions without mobile page overflow', async 
 	await expect(page.locator('#save-feedback')).toHaveText('Query saved.');
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/saved-queries`, { waitUntil: 'domcontentloaded' });
 	await page.locator('.saved-query-row').first().waitFor({ state: 'attached' });
+	// The saved query's name is a heading above its actions (plan M5.6), no longer a table header cell.
 	const geometry = await page.evaluate(() => {
 		const row = document.querySelector('.saved-query-row');
-		const title = row?.querySelector('th');
-		const action = row?.querySelector('input[type="button"], input[type="submit"]');
+		const title = row?.querySelector('.saved-query-row__heading');
+		const action = row?.querySelector('input[type="button"], input[type="submit"], button');
 		const titleRect = title?.getBoundingClientRect();
 		const actionRect = action?.getBoundingClientRect();
 		return {
@@ -256,38 +244,36 @@ test('saved queries wrap names and actions without mobile page overflow', async 
 });
 
 test('embedded result option controls use the shared teal accent', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await page.locator('.CodeMirror').first().evaluate(element => {
-		element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "alpha" "beta" } }');
-	});
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await frame.locator('#query-result-options-toggle').press('Enter');
-	const accents = await frame.locator('input[type="checkbox"]').evaluateAll(elements =>
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 1000 } });
+	const primary = await primaryColor(page);
+	await runQuery(page, 'SELECT * WHERE { VALUES ?s { "alpha" "beta" } }');
+	const result = page.locator('#query-results [data-query-stream-root]');
+	await result.locator('.query-result-options-toggle').press('Enter');
+	const panel = result.locator('[id^="query-result-options-panel-"]');
+	await expect(panel).toBeVisible();
+	const accents = await panel.locator('input[type="checkbox"]').evaluateAll(elements =>
 		elements.map(element => getComputedStyle(element).accentColor));
 	expect(accents.length).toBeGreaterThan(0);
-	expect(accents.every(accent => accent === 'rgb(15, 118, 110)')).toBe(true);
+	expect(accents.every(accent => accent === primary), `${JSON.stringify(accents)} use ${primary}`).toBe(true);
 });
 
 test('destructive actions expose outline icons across their labels', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
+	// The page-level danger actions are buttons of the button component (plan M1.3) that name what they do (M6.4 to
+	// M6.6); Remove and Delete stay disabled until something is chosen.
 	for (const [route, label] of [
-		['clear', 'Clear Context(s)'],
-		['remove', 'Remove'],
-		['delete', 'Delete']
+		['clear', /^Clear entire repository/],
+		['remove', /^Remove\b/],
+		['delete', /^Delete repository/]
 	]) {
 		const repository = route === 'delete' ? 'NONE' : REPOSITORY_ID;
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/${repository}/${route}`, { waitUntil: 'domcontentloaded' });
-		const action = page.locator(`input[value="${label}"]`).first();
-		await action.waitFor({ state: 'visible' });
+		const action = page.locator('#workbench-outlet').getByRole('button', { name: label });
+		await expect(action).toHaveCount(1);
+		await expect(action).toBeVisible();
 		await expect(action).toHaveCSS('background-image', 'none');
-		await expect(action.locator('xpath=ancestor::span[contains(@class, "workbench-action--danger")]'))
-			.toHaveClass(/workbench-action--danger/);
-		await expect(action.locator('xpath=ancestor::span[contains(@class, "workbench-action")]').locator('.workbench-action-icon'))
-			.toHaveCount(1);
+		await expect(action).toHaveClass(/workbench-action--danger/);
+		await expect(action.locator('.workbench-action-icon')).toHaveCount(1);
 	}
 });
 
