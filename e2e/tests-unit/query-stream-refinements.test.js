@@ -1147,6 +1147,42 @@ test('result pane selects get the shared select control and chevron', async () =
     }
 });
 
+test('result toolbar panes follow their own toggles in keyboard order', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    // The controls Tab reaches, in document order: a closed pane and everything in it are skipped.
+    const tabOrder = () => {
+        const controls = [];
+        const walk = (element) => {
+            if (!element.children || element.hidden) {
+                return;
+            }
+            if (/^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(element.tagName)) {
+                controls.push(element);
+            }
+            element.children.forEach(walk);
+        };
+        walk(renderer.root);
+        return controls;
+    };
+    for (const toggle of [renderer.downloadToggle, renderer.optionsToggle]) {
+        const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+        toggle.trigger('click');
+        assert.equal(panel.hidden, false, `${panel.id} should be open`);
+        const controls = tabOrder();
+        const next = controls[controls.indexOf(toggle) + 1];
+        assert.ok(next && panel.contains(next),
+            `Tab from ${toggle.id} should move into ${panel.id}, not to ${next && (next.id || next.tagName)}`);
+        toggle.trigger('click');
+    }
+    renderer.dispose();
+});
+
 test('result disclosure panels open below their trigger and stay inside the result card', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
@@ -1165,12 +1201,14 @@ test('result disclosure panels open below their trigger and stay inside the resu
 	await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
 	const panel = document.getElementById(renderer.optionsToggle.getAttribute('aria-controls'));
 	const observer = queryStream.__testDisclosureObservers[0];
-	assert.equal(panel.parentNode.classList.contains('workbench-disclosure-track'), true);
+	assert.equal(panel.parentNode, renderer.optionsToggle.parentNode, 'the pane sits in its own disclosure');
 	const rect = (left, top, width, height) => ({
         left, top, width, height, right: left + width, bottom: top + height
     });
     card.getBoundingClientRect = () => rect(100, 10, 800, 600);
     renderer.optionsToggle.getBoundingClientRect = () => rect(840, 10, 80, 36);
+    // A one-row toolbar: the pane opens below the whole toolbar (M14.3), here just below the trigger.
+    renderer.optionsToggle.closest('.workbench-action-toolbar').getBoundingClientRect = () => rect(100, 10, 800, 36);
     panel.getBoundingClientRect = () => rect(100, 50, 320, 200);
     panel.offsetParent = card;
 

@@ -824,7 +824,7 @@ var workbench;
         if (!panel || !panel.closest) {
             return null;
         }
-        return panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-disclosure-panels')
+        return panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-toolbar__disclosures')
             || panel.closest('.workbench-disclosure');
     }
     function disclosureBounds(panel) {

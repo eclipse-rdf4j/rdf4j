@@ -126,7 +126,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 		});
 
 		for (const pane of PANES) {
-			test(`${pane.name} opens over the page and closes with Escape or a press outside it`, async ({ page }) => {
+			test(`${pane.name} opens over the page and closes with Escape or a press outside it`, async ({ page, browserName }) => {
 				const repository = pane.repository || REPOSITORY_ID;
 				await page.goto(repositoryPageUrl(repository, pane.view) + (pane.search || ''));
 				await waitForRoute(page, pane.view);
@@ -174,6 +174,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 				expect(placement.left, 'inside the viewport').toBeGreaterThanOrEqual(0);
 				expect(placement.right, 'inside the viewport').toBeLessThanOrEqual(placement.viewport);
 				expect(placement.onTop, 'on top of what it covers').toBe(true);
+
+				// The pane follows its toggle, so Tab from the open pane's toggle moves into the pane. Safari's Tab reaches
+				// only text fields and pop-up menus, and some panes have neither; Option-Tab reaches every control.
+				await toggle.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+				expect(await panel.evaluate((element) => element.contains(document.activeElement)),
+					'Tab from the toggle moves into the pane').toBe(true);
 
 				await panel.locator('input, select, button').first().focus();
 				await page.keyboard.press('Escape');

@@ -36,7 +36,7 @@ test.afterAll(async ({ request }) => {
 async function panelGeometry(panel) {
 	return panel.evaluate(element => {
 		const button = document.getElementById(element.getAttribute('aria-labelledby'));
-		const track = element.closest('.query-actions-toolbar, .query-result-disclosure-panels');
+		const track = element.closest('.query-actions-toolbar, .query-result-toolbar__disclosures');
 		const panelRect = element.getBoundingClientRect();
 		const buttonRect = button.getBoundingClientRect();
 		const trackRect = track.getBoundingClientRect();

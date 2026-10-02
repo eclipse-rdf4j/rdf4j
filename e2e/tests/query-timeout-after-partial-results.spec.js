@@ -124,7 +124,8 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	const result = page.locator('#query-results .query-result-layout');
 	const status = result.locator('.query-result-status');
 	const countLabel = result.locator('.query-result-navigation__label').first();
-	const downloadToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Download' });
+	const downloadToggle = result.locator('.query-result-toolbar__disclosures .workbench-disclosure__toggle')
+		.filter({ hasText: 'Download' });
 	// The alert is a callout (icon and body) since the result states redesign (fa6a07914c); its message is the
 	// .query-result-error__message line, so the wrapping is measured there and the callout must not overflow either.
 	const alertMessage = page.locator('#query-results [role="alert"] .query-result-error__message');
@@ -294,7 +295,7 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	// The status counts rows and names the elapsed time (result states redesign, fa6a07914c).
 	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^1 row · complete in [\d,]+ ms$/);
 	await expect(page.locator('#query-results [role="alert"]')).toBeHidden();
-	await expect(page.locator('#query-results .query-result-toolbar__disclosures button')
+	await expect(page.locator('#query-results .query-result-toolbar__disclosures .workbench-disclosure__toggle')
 		.filter({ hasText: 'Download' })).toBeVisible();
 	await expect(page.locator('#query-cancel')).toBeDisabled();
 	await expect(page.locator('#query-request-id')).toHaveValue('');
@@ -372,7 +373,7 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 		status,
 		alert,
 		countVisible: await result.locator('.query-result-navigation__label').first().isVisible(),
-		downloadVisible: await result.locator('.query-result-toolbar__disclosures button')
+		downloadVisible: await result.locator('.query-result-toolbar__disclosures .workbench-disclosure__toggle')
 			.filter({ hasText: 'Download' }).isVisible(),
 		busy: await page.locator('#query-results').getAttribute('aria-busy'),
 		cancelDisabled: await page.locator('#query-cancel').isDisabled(),

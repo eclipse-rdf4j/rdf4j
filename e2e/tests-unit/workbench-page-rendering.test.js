@@ -1079,7 +1079,7 @@ test('query route renders the existing streaming form and result targets', () =>
     }
 });
 
-test('query toolbar panes follow their own toggles in keyboard order', () => {
+test('query page panes follow their own toggles in keyboard order', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
@@ -1091,7 +1091,8 @@ test('query toolbar panes follow their own toggles in keyboard order', () => {
         return index;
     };
     const focusable = /<(?:button|input|select|textarea|a)\b|tabindex=/;
-    const panes = [['save-query-toggle', 'save-query-panel'], ['query-options-toggle', 'query-options-panel']];
+    const panes = [['save-query-toggle', 'save-query-panel'], ['query-options-toggle', 'query-options-panel'],
+        ['explanation-settings-toggle', 'explanation-settings-panel']];
     for (const [toggle, panel] of panes) {
         const toggleEnd = markup.indexOf('</button>', position(toggle));
         assert.ok(toggleEnd >= 0 && toggleEnd < position(panel), `${panel} should come after ${toggle}`);

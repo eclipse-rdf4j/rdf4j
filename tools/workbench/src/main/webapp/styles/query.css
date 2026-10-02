@@ -700,7 +700,7 @@ body.query-results-fullscreen-active {
 	position: static;
 }
 
-.query-result-embedded .query-result-disclosure-panels > .query-disclosure__panel > form {
+.query-result-embedded .query-result-disclosure > .query-disclosure__panel > form {
 	display: block;
 	max-width: 100%;
 	margin: 0;

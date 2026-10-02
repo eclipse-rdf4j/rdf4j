@@ -965,7 +965,7 @@ module workbench {
         if (!panel || !panel.closest) {
             return null;
         }
-        return <HTMLElement>panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-disclosure-panels')
+        return <HTMLElement>panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-toolbar__disclosures')
             || <HTMLElement>panel.closest('.workbench-disclosure');
     }
 

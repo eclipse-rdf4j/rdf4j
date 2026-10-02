@@ -3125,9 +3125,9 @@ module workbench {
                             : h`<option value=${level.value} ?hidden=${true} ?disabled=${true} ?selected=${false}>Timed</option>`;
                 }
             };
-            // Config keeps its toggle in the toolbar and opens its panel in a track below the toolbar row,
-            // so an open panel never moves the other toolbar controls.
-            const explanationSettings = workbench.detailDisclosure.renderSeparated(h, {
+            // The pane follows its toggle, so Tab from an open Config toggle moves into the pane before the explanation
+            // actions. It opens over the explanation (M14.3), so an open pane never moves the other toolbar controls.
+            const explanationSettings = workbench.detailDisclosure.render(h, {
                 id: 'explanation-settings', toggleId: 'explanation-settings-toggle',
                 panelId: 'explanation-settings-panel', label: 'Config', hidden: !queryExplainSettingsEnabled(context),
                 ownerClass: 'query-explanation-settings', toggleClass: 'query-explanation-settings__toggle workbench-action workbench-action--secondary',
@@ -3180,7 +3180,7 @@ module workbench {
                             ?hidden=${allExplainFormatsDisabled}>
                             ${explainFormats.map(formatOption)}
                         </select>
-                        ${explanationSettings.owner}
+                        ${explanationSettings}
                     </div>
                     <div id="query-explanation-controls-row" class="query-explanation-controls-row-class query-explanation-toolbar__actions"
                         ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
@@ -3228,7 +3228,6 @@ module workbench {
                         </div>
                     </div>
                 </div>
-                <div class="query-explanation-settings-track">${explanationSettings.panel}</div>
                 <div class="query-explanation-columns">
                     ${explanationColumn(runtime, false, explanation, selectedFormat, context)}
                     ${explanationColumn(runtime, true, '', selectedFormat, context)}

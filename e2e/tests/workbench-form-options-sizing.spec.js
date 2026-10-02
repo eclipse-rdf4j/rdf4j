@@ -83,7 +83,7 @@ function queryResultRoot(page) {
 }
 
 function queryResultPanels(result) {
-	return result.locator('.query-result-disclosure-panels > .workbench-disclosure__panel');
+	return result.locator('.query-result-disclosure > .workbench-disclosure__panel');
 }
 
 async function waitForSettledDisclosure(panel) {

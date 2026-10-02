@@ -2148,6 +2148,8 @@ namespace workbench {
                 toolbar.appendChild(header);
                 var actions = createElement(this.document, 'div', 'workbench-action-toolbar__actions');
                 actions.appendChild(this.fullscreenButton);
+                // Each pane stays in its own disclosure right after its toggle, so Tab from an open pane's toggle moves
+                // into the pane. The panes open over the page (M14.3), so where they sit does not move the toolbar.
                 var disclosures = createElement(this.document, 'div',
                     'query-result-toolbar__disclosures workbench-action-toolbar__group');
                 var downloadPanelId = this.elementId('query-result-download-panel');
@@ -2174,12 +2176,8 @@ namespace workbench {
                 toolbar.appendChild(actions);
                 this.root.appendChild(toolbar);
 
-                var panels = createElement(this.document, 'div',
-                    'query-result-disclosure-panels workbench-action-toolbar__panels workbench-disclosure-track');
                 var downloadPanel = downloadDisclosure.panel;
                 var optionsPanel = optionsDisclosure.panel;
-                panels.appendChild(downloadPanel);
-                panels.appendChild(optionsPanel);
                 this.downloadFormatControl = this.createSelect('Accept', 'Download format',
                     this.options.downloadFormats || []);
                 this.downloadLimitControl = this.createSelect('download_limit', 'Download limit',
@@ -2216,14 +2214,12 @@ namespace workbench {
                 optionsDisclosure.content.appendChild(optionFields);
                 // The page wraps its selects when the route mounts, before these panes exist.
                 if (typeof workbench.wrapSelects === 'function') {
-                    workbench.wrapSelects(panels);
+                    workbench.wrapSelects(disclosures);
                 }
                 this.disposers.push(workbench.detailDisclosure.bind(
                     this.downloadToggle, downloadPanel, downloadDisclosure.owner));
                 this.disposers.push(workbench.detailDisclosure.bind(
                     this.optionsToggle, optionsPanel, optionsDisclosure.owner));
-                panels.appendChild(optionsPanel);
-                toolbar.appendChild(panels);
                 var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
                 if (view && view.addEventListener) {
                     var onFullscreenEscape = (event: KeyboardEvent) => {

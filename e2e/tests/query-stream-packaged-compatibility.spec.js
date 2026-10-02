@@ -119,7 +119,8 @@ test('executes a typed SELECT once and keeps result controls interactive', async
 	await expect(result.locator('table.data tbody')).toContainText('second');
 	assertOneStreamingPost(monitor);
 
-	const optionsToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
+	const optionsToggle = result.locator('.query-result-toolbar__disclosures .workbench-disclosure__toggle')
+		.filter({ hasText: 'Display' });
 	await optionsToggle.click();
 	await expect(optionsToggle).toHaveAttribute('aria-expanded', 'true');
 	const layout = result.locator('select[name="result-layout"]');
@@ -130,7 +131,8 @@ test('executes a typed SELECT once and keeps result controls interactive', async
 	await layout.selectOption('table');
 	await expect(result).toHaveAttribute('data-effective-layout', 'table');
 
-	const downloadToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Download' });
+	const downloadToggle = result.locator('.query-result-toolbar__disclosures .workbench-disclosure__toggle')
+		.filter({ hasText: 'Download' });
 	await downloadToggle.click();
 	await expect(downloadToggle).toHaveAttribute('aria-expanded', 'true');
 	const downloadButton = result.locator('.query-result-download-button');
@@ -188,7 +190,8 @@ test('streams 20000 query results before completion with a bounded table window'
 		.toHaveText(new RegExp(`^${formattedRowCount.replace(/[.]/g, '\\.')} rows · complete in [\\d,.\\s]+ ms$`));
 	await assertOneStreamingPost(monitor);
 
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
+	const options = result.locator('.query-result-toolbar__disclosures .workbench-disclosure__toggle')
+		.filter({ hasText: 'Display' });
 	await options.click();
 	const layout = result.locator('select[name="result-layout"]');
 	await layout.selectOption('table');

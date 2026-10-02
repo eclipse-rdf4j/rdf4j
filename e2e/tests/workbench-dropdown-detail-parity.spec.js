@@ -282,6 +282,8 @@ test('dynamic result details keep distinct triggers and responsive Format-style 
 		} else {
 			expectVerticalFlow(downloadGeometry.items, 'Result Download');
 		}
+		await downloadToggle.press('Tab');
+		await expect(result.locator('[id^="Accept-"]'), 'Tab from Download should move into its pane').toBeFocused();
 		await capture(page, `result-download-${width > 640 ? 'desktop' : 'mobile'}.png`);
 
 		await optionsToggle.click();

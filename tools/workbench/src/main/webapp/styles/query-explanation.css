@@ -359,11 +359,6 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     z-index: 9;
 }
 
-/* The open Config panel opens over the explanation, below its toggle (M14.3); the track takes no room. */
-.query-explanation-settings-track {
-    display: contents;
-}
-
 .query-explanation-settings__panel {
     max-width: calc(100vw - 2rem);
     max-height: calc(100vh - 2rem);
