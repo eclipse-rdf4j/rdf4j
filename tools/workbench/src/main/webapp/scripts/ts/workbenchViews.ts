@@ -1612,9 +1612,9 @@ module workbench {
                         aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
                 ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => h`<li>
                     <a class="explore-chip" href=${'explore?resource=' + encodeURIComponent(ntriples(type))}>${exploreGraphLabel(type, namespaces)}</a></li>`)}</ul>` : ''}
-                ${comment ? h`<p class="explore-resource-card__comment workbench-prose">${comment}</p>
+                ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
-                        aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}` : ''}
+                        aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
                 ${isIri ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
                     href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
             </section>`;

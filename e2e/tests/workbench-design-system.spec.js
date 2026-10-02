@@ -190,3 +190,26 @@ test('editor overlay icons are drawn visibly as 28px ghost buttons', async ({ pa
 		expect(metric.size, JSON.stringify(metric)).toBe(28);
 	}
 });
+
+// Plan task M12.2 (final review against mockup 05): "Show more" continues the clamped description, as a text control.
+test('the Explore description\'s Show more lines up with the description, right under it', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const product = '<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/Product1>';
+	await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${encodeURIComponent(product)}`);
+	const description = page.locator('.explore-resource-card__comment');
+	const more = page.locator('.explore-resource-card__more');
+	await expect(more).toBeVisible();
+	const text = await description.boundingBox();
+	const button = await more.boundingBox();
+	const label = await more.evaluate((element) => {
+		const range = document.createRange();
+		range.selectNodeContents(element);
+		const rect = range.getBoundingClientRect();
+		return { left: rect.left };
+	});
+	expect(Math.abs(label.left - text.x), 'the label starts where the description starts').toBeLessThanOrEqual(1);
+	expect(button.y - (text.y + text.height), 'right under the description').toBeLessThanOrEqual(12);
+	await more.click();
+	await expect(more).toHaveAttribute('aria-expanded', 'true');
+	await expect(more).toHaveText('Show less');
+});

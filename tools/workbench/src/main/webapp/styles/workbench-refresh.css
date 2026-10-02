@@ -2923,7 +2923,8 @@ body.workbench-body .explore-chip {
 	text-decoration: none;
 }
 
-body.workbench-body .explore-resource-card__comment {
+/* p.…: outranks the page surface's paragraph margin, so Show more sits right under the text (M12.2). */
+body.workbench-body .explore-resource-card p.explore-resource-card__comment {
 	display: -webkit-box;
 	max-width: 72ch;
 	margin: 0;
@@ -2933,8 +2934,35 @@ body.workbench-body .explore-resource-card__comment {
 	color: var(--workbench-body);
 }
 
-body.workbench-body .explore-resource-card__comment.is-expanded {
+body.workbench-body .explore-resource-card p.explore-resource-card__comment.is-expanded {
 	display: block;
+}
+
+/* "Show more" continues the description (mockup 05): a text control at its left edge, right under it (M12.2).
+ * The shared button rules select with :is(button, input[type=…]), so these name the button to outrank them. */
+body.workbench-body .explore-resource-card button.explore-resource-card__more.workbench-action {
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--workbench-primary);
+	font-weight: 600;
+	height: auto;
+}
+
+/* The description and its Show more stay together, outside the card's 10px grid gap. */
+body.workbench-body .explore-resource-card__description {
+	display: grid;
+	gap: 4px;
+	justify-items: start;
+}
+
+body.workbench-body .explore-resource-card button.explore-resource-card__more.workbench-action:is(:hover, [aria-expanded="true"]) {
+	background: none;
+	color: var(--workbench-primary);
+	text-decoration: underline;
 }
 
 body.workbench-body .explore-group + .explore-group {
