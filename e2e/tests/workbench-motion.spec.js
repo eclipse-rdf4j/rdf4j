@@ -65,6 +65,33 @@ async function hasVisibleIntermediateMotion(locator, lowerBound = 0, upperBound 
 	}, { lowerBound, upperBound });
 }
 
+/**
+ * Watches an element on every animation frame for up to two seconds and remembers whether it was seen mid-motion. A
+ * short eased motion can finish between two polls from the test process, so the sampling happens in the page.
+ */
+async function recordIntermediateMotion(locator) {
+	await locator.evaluate(element => {
+		const record = { seen: false };
+		element.__workbenchMotionRecord = record;
+		const deadline = performance.now() + 2000;
+		const sample = () => {
+			const running = element.getAnimations({ subtree: false })
+				.some(animation => animation.playState === 'running');
+			const height = element.getBoundingClientRect().height;
+			if (running && height > 1 && height < element.scrollHeight - 1) {
+				record.seen = true;
+			} else if (performance.now() < deadline) {
+				requestAnimationFrame(sample);
+			}
+		};
+		requestAnimationFrame(sample);
+	});
+}
+
+async function wasSeenInIntermediateMotion(locator) {
+	return locator.evaluate(element => !!(element.__workbenchMotionRecord && element.__workbenchMotionRecord.seen));
+}
+
 async function hasVisibleIntermediateDetailsMotion(locator) {
 	return locator.evaluate(element => {
 		const summary = element.querySelector(':scope > summary');
@@ -296,12 +323,12 @@ test('query options animate reversibly while semantic state and focus update imm
 	const panel = page.locator('#query-options-panel');
 	await expect(toggle).toBeVisible();
 	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await recordIntermediateMotion(panel);
 	await toggle.focus();
 	await page.keyboard.press('Enter');
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(panel).toBeVisible();
-	expect(await activeMotionCount(panel)).toBeGreaterThan(0);
-	await expect.poll(() => hasVisibleIntermediateMotion(panel)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(panel)).toBe(true);
 	await waitForOwnedAnimations(panel);
 
 	// The result limit left Query settings (results stream whole and "Load more" continues them); the timeout is its

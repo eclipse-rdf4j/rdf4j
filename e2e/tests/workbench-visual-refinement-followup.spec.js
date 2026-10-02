@@ -240,6 +240,11 @@ test('query result table headers stay visible while scrolling rows on desktop an
 				element.scrollLeft = 120;
 			});
 			await expect.poll(() => tableWrap.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+			// The pinned header follows on the table's scroll event, which the browser dispatches with the next frame.
+			await expect.poll(() => tableWrap.evaluate(element => {
+				const pinned = element.ownerDocument.querySelector('#query-results .query-result-floating-head__viewport');
+				return pinned.scrollLeft;
+			})).toBeGreaterThan(0);
 			const horizontal = await tableWrap.evaluate(element => {
 				const pinned = element.ownerDocument.querySelector('#query-results .query-result-floating-head__viewport');
 				const pinnedBounds = pinned.getBoundingClientRect();

@@ -41,7 +41,8 @@ test.describe('Workbench-wide refresh seed', () => {
             bodyOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             backgroundImage: getComputedStyle(document.body).backgroundImage
         }));
-        expect(pageMetrics.bodyOverflow).toBe(0);
+        // A classic scrollbar's stable gutter makes the page narrower than the viewport (a negative value).
+        expect(pageMetrics.bodyOverflow).toBeLessThanOrEqual(0);
         expect(pageMetrics.backgroundImage).toBe('none');
     });
 

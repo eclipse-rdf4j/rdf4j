@@ -356,6 +356,8 @@ test.describe('Workbench configuration and option sizing', () => {
 			await importSettings.locator(':scope > .workbench-disclosure__toggle').click();
 		}
 		geometry.baseUri = await routePage.locator('#baseURI').evaluate(element => Math.round(element.getBoundingClientRect().width));
+		// A classic scrollbar's stable gutter (Linux, Windows) narrows the page; overlay scrollbars reserve nothing.
+		geometry.scrollbarGutter = await routePage.evaluate(() => window.innerWidth - document.body.clientWidth);
 		geometry.context = await routePage.locator('#context').evaluate(element => Math.round(element.getBoundingClientRect().width));
 		await routePage.close();
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/export`);
@@ -373,8 +375,9 @@ test.describe('Workbench configuration and option sizing', () => {
 		if (Math.abs(geometry.url - geometry.urlCardContent) > 1) {
 			violations.push(`URL ${geometry.url}px in a ${geometry.urlCardContent}px form card`);
 		}
-		if (geometry.baseUri < 320 || geometry.baseUri > 600) violations.push(`base URI ${geometry.baseUri}px`);
-		if (geometry.context < 320 || geometry.context > 600) violations.push(`context ${geometry.context}px`);
+		const minimumAddressWidth = 320 - geometry.scrollbarGutter;
+		if (geometry.baseUri < minimumAddressWidth || geometry.baseUri > 600) violations.push(`base URI ${geometry.baseUri}px`);
+		if (geometry.context < minimumAddressWidth || geometry.context > 600) violations.push(`context ${geometry.context}px`);
 		// Namespaces are edited in their table row since plan task M6.3, so the old form widths no longer apply.
 		if (geometry.exportLimit >= 200) violations.push(`export result limit ${geometry.exportLimit}px`);
 		if (geometry.timeout >= 120) violations.push(`query timeout ${geometry.timeout}px`);
