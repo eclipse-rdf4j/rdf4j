@@ -27,25 +27,18 @@ import java.util.function.BiFunction;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
-import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -53,41 +46,27 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
-import org.eclipse.rdf4j.query.algebra.IsBNode;
-import org.eclipse.rdf4j.query.algebra.IsLiteral;
-import org.eclipse.rdf4j.query.algebra.IsNumeric;
-import org.eclipse.rdf4j.query.algebra.IsResource;
-import org.eclipse.rdf4j.query.algebra.IsTriple;
-import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
-import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Str;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
@@ -116,6 +95,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+	private static final double FILTERED_PATTERN_COST_MULTIPLIER = 0.8d;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -193,6 +173,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private double currentHighestCost = 1;
 		private final QueryAlgebraBindingAnalysis bindingAnalysis;
 		private QueryAlgebraBindingAnalysis.ReadOnlyContext currentContext;
+		private Set<StatementPattern> filterDiscountedPatterns;
 
 		protected JoinVisitor() {
 			this(QueryAlgebraBindingAnalysis.withBindingValues(null, EmptyBindingSet.getInstance()), null);
@@ -365,6 +346,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
+			initializeFilterDiscounts(node);
 			if (containsLateral(node)) {
 				node.visitChildren(this);
 				return;
@@ -788,7 +770,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Deque<TupleExpr> ret = new ArrayDeque<>();
 			Set<String> prefixBindingNames = new HashSet<>(entryBoundVars);
 
-			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
+			// Memo table for pairwise planning scores, including each pattern's filter discount.
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
 
 			// Helper to look up or compute & cache the cardinality of Join(a,b).
@@ -800,7 +782,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (cached != null) {
 					return cached;
 				}
-				double c = statistics.getCardinality(new Join(a, b));
+				double c = statistics.getCardinality(new Join(a, b))
+						* filterCostMultiplier(a) * filterCostMultiplier(b);
 				inner.put(b, c);
 				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
 				return c;
@@ -878,7 +861,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					if (Double.isInfinite(candidateCost) && connectedToPrefix) {
-						candidateCost = normalizeCost(statistics.getCardinality(cand));
+						candidateCost = normalizeCost(statistics.getCardinality(cand) * filterCostMultiplier(cand));
 					}
 
 					if (bestCandidate == null || isBetterCandidate(candidateCost, candidateConnected, bestCost,
@@ -964,7 +947,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
 			for (TupleExpr candidate : candidates) {
-				singleCard.put(candidate, normalizeCost(statistics.getCardinality(candidate)));
+				singleCard.put(candidate,
+						normalizeCost(statistics.getCardinality(candidate) * filterCostMultiplier(candidate)));
 			}
 
 			List<TupleExpr> primary = new ArrayList<>(candidates);
@@ -1545,7 +1529,105 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 
-			return cost;
+			return cost * filterCostMultiplier(tupleExpr);
+		}
+
+		private double filterCostMultiplier(TupleExpr expression) {
+			// A filter around a single pattern is still that pattern's join factor.
+			while (expression instanceof Filter filter) {
+				expression = filter.getArg();
+			}
+			if (!(expression instanceof StatementPattern pattern)) {
+				return 1.0d;
+			}
+			initializeFilterDiscounts(pattern);
+			return filterDiscountedPatterns.contains(pattern) ? FILTERED_PATTERN_COST_MULTIPLIER : 1.0d;
+		}
+
+		private void initializeFilterDiscounts(QueryModelNode node) {
+			if (filterDiscountedPatterns != null) {
+				return;
+			}
+			QueryModelNode root = node;
+			while (root.getParentNode() != null) {
+				root = root.getParentNode();
+			}
+			FilterCostCollector collector = new FilterCostCollector();
+			collector.visitGroup(root);
+			filterDiscountedPatterns = collector.discountedPatterns;
+		}
+
+		/** Snapshots lexical filter groups before join rebuilding changes their parent links. */
+		private final class FilterCostCollector extends AbstractQueryModelVisitor<RuntimeException> {
+			private final Set<StatementPattern> discountedPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			private List<StatementPattern> patterns;
+			private Set<String> filterVariables;
+			private QueryModelNode groupRoot;
+
+			private void visitGroup(QueryModelNode root) {
+				List<StatementPattern> previousPatterns = patterns;
+				Set<String> previousVariables = filterVariables;
+				QueryModelNode previousRoot = groupRoot;
+				patterns = new ArrayList<>();
+				filterVariables = new HashSet<>();
+				groupRoot = root;
+				try {
+					// The parser lifts a filter in an OPTIONAL group into the LeftJoin condition.
+					if (root.getParentNode()instanceof LeftJoin optional && root == optional.getRightArg()
+							&& optional.hasCondition()) {
+						addFilterVariables(optional.getCondition());
+					}
+					root.visit(this);
+					for (StatementPattern pattern : patterns) {
+						for (Var variable : pattern.getVarList()) {
+							if (!variable.hasValue() && filterVariables.contains(variable.getName())) {
+								discountedPatterns.add(pattern);
+								break;
+							}
+						}
+					}
+				} finally {
+					patterns = previousPatterns;
+					filterVariables = previousVariables;
+					groupRoot = previousRoot;
+				}
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node != groupRoot && node instanceof TupleExpr expression && startsGroup(expression)) {
+					visitGroup(node);
+					return;
+				}
+				if (node instanceof StatementPattern pattern) {
+					patterns.add(pattern);
+				} else if (node instanceof Filter filter) {
+					addFilterVariables(filter.getCondition());
+				}
+				super.meetNode(node);
+			}
+
+			private void addFilterVariables(ValueExpr condition) {
+				QueryAlgebraBindingAnalysis.Dependencies dependencies = bindingAnalysis.dependencies(condition,
+						bindingAnalysis.contextAt(condition));
+				filterVariables.addAll(dependencies.directReferences());
+				filterVariables.addAll(dependencies.correlatedInputs());
+			}
+
+			private boolean startsGroup(TupleExpr expression) {
+				if (TupleExprs.isVariableScopeChange(expression)) {
+					return true;
+				}
+				QueryModelNode parent = expression.getParentNode();
+				return parent instanceof Union || parent instanceof Intersection
+						|| parent instanceof SubQueryValueOperator
+						|| parent instanceof Service || parent instanceof Group
+						|| parent instanceof Projection projection && projection.isSubquery()
+						|| parent instanceof LeftJoin optional && expression == optional.getRightArg()
+						|| parent instanceof Difference difference && expression == difference.getRightArg()
+						|| parent instanceof Lateral lateral && expression == lateral.getRightArg()
+						|| parent instanceof ArbitraryLengthPath path && expression == path.getPathExpression();
+			}
 		}
 
 		private int countConstantVars(List<Var> vars) {
