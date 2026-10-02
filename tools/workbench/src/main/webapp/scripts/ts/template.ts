@@ -1111,14 +1111,17 @@ module workbench {
         });
     }
 
-    /** Escape in an open pane, or on its toggle, closes the pane; focus returns to the toggle (M14.3). */
+    /**
+     * Escape in an open pane, or on its toggle, closes the pane; focus returns to the toggle (M14.3). Safari does not
+     * focus a button that is clicked, so focus on an element around the toggle (the page, the outlet) counts as well.
+     */
     function dismissDisclosureOnEscape(event: KeyboardEvent): void {
         if (event.key !== 'Escape' || event.defaultPrevented) {
             return;
         }
         var focused = document.activeElement;
         expandedDisclosures().forEach(function(state) {
-            if (state.panel.contains(focused) || state.button === focused) {
+            if (state.panel.contains(focused) || !!focused && focused.contains(state.button)) {
                 event.preventDefault();
                 setDisclosureExpanded(state.button, state.panel, state.owner, false, true);
                 state.button.focus();

@@ -185,6 +185,19 @@ test('Escape in an open pane or on its toggle closes it and returns focus to the
     assert.equal(pane.open(), false, 'Escape on the toggle');
 });
 
+test('Escape closes a pane opened with a click that left focus on an element around its toggle', () => {
+    // Safari does not focus a button that is clicked: focus stays on the page or the outlet around the toggle.
+    const pane = paneHarness();
+    pane.button.click();
+    pane.card.focus();
+
+    const escape = pane.document.trigger('keydown', key('Escape'));
+
+    assert.equal(pane.open(), false);
+    assert.equal(escape.defaultPrevented, true);
+    assert.equal(pane.document.activeElement, pane.button);
+});
+
 test('releasing an open pane stops listening and stops watching its card', () => {
     const observed = new Set();
     class ResizeObserver {

@@ -112,6 +112,19 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 			await expect(page.locator('#save-query-panel')).toBeHidden();
 		});
 
+		test('a pane opened with a click closes with Escape', async ({ page }) => {
+			// WebKit does not focus a button that is clicked, so focus is not on the toggle when Escape is pressed.
+			await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
+			await waitForRoute(page, 'query');
+			await page.locator('#query-options-toggle').click();
+			await expect(page.locator('#query-options-panel')).toBeVisible();
+
+			await page.keyboard.press('Escape');
+
+			await expect(page.locator('#query-options-panel')).toBeHidden();
+			await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+		});
+
 		for (const pane of PANES) {
 			test(`${pane.name} opens over the page and closes with Escape or a press outside it`, async ({ page }) => {
 				const repository = pane.repository || REPOSITORY_ID;
