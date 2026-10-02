@@ -14,9 +14,9 @@
 const { test, expect } = require('@playwright/test');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
+	|| 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+	|| 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 const STREAM_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
 let repositoryId;
 let repositoryUrl;

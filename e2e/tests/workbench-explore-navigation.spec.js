@@ -17,8 +17,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8097/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8097/rdf4j-workbench').replace(/\/+$/, '');
+const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
+const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 const REPOSITORY_ID = process.env.WORKBENCH_EXPLORE_REPOSITORY_ID
 	|| `workbench-explore-review-${process.pid}-${Date.now().toString(36)}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;

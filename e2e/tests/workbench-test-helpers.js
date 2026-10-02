@@ -25,11 +25,11 @@ async function typeIntoCodeMirror(page, index, value) {
 }
 
 function workbenchBaseUrl() {
-    return (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:18090/rdf4j-workbench').replace(/\/+$/, '');
+    return (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 }
 
 function serverBaseUrl() {
-    return (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:18090/rdf4j-server').replace(/\/+$/, '');
+    return (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 }
 
 /** Returns a repository id that no other spec run uses. */

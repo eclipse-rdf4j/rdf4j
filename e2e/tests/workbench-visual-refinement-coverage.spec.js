@@ -3,8 +3,8 @@ const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8090/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8090/rdf4j-workbench').replace(/\/+$/, '');
+const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
+const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
 	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
 const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final');

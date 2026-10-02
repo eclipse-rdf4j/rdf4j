@@ -14,7 +14,7 @@ const { test, expect } = require('@playwright/test');
 const { BLOCK_SIZE, TERM_VOLUME_LIMIT, compactRows, legacyRows, openStorageHarness, call, observe, physical, seedLegacy }
 	= require('../query-block-storage-helper');
 
-const BASE = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+const BASE = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 let provenance;
 
 test.beforeEach(async ({ page }) => {

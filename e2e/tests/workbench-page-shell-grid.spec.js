@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+	|| 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
 const SCREENSHOT_DIRECTORY = path.resolve(__dirname, '../../output/playwright');
 
 test('repository landing shell owns full-width layout and loads server navigation', async ({ page }) => {
