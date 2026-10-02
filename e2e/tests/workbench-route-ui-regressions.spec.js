@@ -11,10 +11,10 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { runQuery, serverBaseUrl, waitForRoute, workbenchBaseUrl } = require('./workbench-test-helpers');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const REPOSITORY_ID = `route-ui-${RUN_ID}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
@@ -289,8 +289,9 @@ test('route templates preserve paging, saved-query streams, export selection, an
 
 	await page.locator('#query-compare-close').click();
 	await page.locator('#query-compare-toolbar').waitFor({ state: 'hidden' });
-	await page.locator('.CodeMirror').first().evaluate(element => element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o } LIMIT 1'));
-	await page.locator('#exec').click();
+	// The result toolbar shows Download and Display only once rows are on screen (plan task M3.5), so the result is read
+	// after the streamed query has finished.
+	await runQuery(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 1');
 	await expect(page.locator('#query-results [data-query-stream-root="true"]')).toBeVisible({ timeout: 20_000 });
 	const queryDownloadButton = page.locator('#query-results .query-result-download-button');
 	const resultOptions = page.locator('#query-results .query-result-toolbar__disclosures .query-result-disclosure:nth-child(2) .query-disclosure__toggle');

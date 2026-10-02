@@ -12,19 +12,23 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
+const { serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
-const ARTIFACT_ROOT = process.env.WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT
+// Screenshots and the coverage record go to WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT when it is set, otherwise to
+// the test's own output directory (set when the test starts).
+let ARTIFACT_ROOT = process.env.WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT
 	? path.join(process.env.WORKBENCH_LIVE_ROUTE_PARITY_ARTIFACT_ROOT, RUN_ID)
-	: path.join('/Users/havardottestad/.codex/visualizations/2026/09/27/01a0e2fb-705d-7ee2-9a69-d25d3da4d594/workbench-refinement/final/live-route-parity', RUN_ID);
+	: '';
+let COVERAGE_PATH = ARTIFACT_ROOT ? path.join(ARTIFACT_ROOT, `workbench-live-route-parity-${RUN_ID}.json`) : '';
+// Queries stream in the compact query format; the client also accepts the page-model format as a fallback.
+const QUERY_STREAM_TYPE = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
 const REPOSITORY_ID = `route-parity-${RUN_ID}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
-const COVERAGE_PATH = path.join(__dirname, '..', `workbench-live-route-parity-${RUN_ID}.json`);
 const PAGE_ROUTES = [
 	{ name: 'server/change', view: 'server', path: 'repositories/NONE/server', landmark: 'form' },
 	{ name: 'repositories', view: 'repositories', path: 'repositories/NONE/repositories', landmark: 'table' },
@@ -50,7 +54,6 @@ let repositoryCreated = false;
 test.setTimeout(720_000);
 
 test.beforeAll(async ({ request }) => {
-	fs.mkdirSync(ARTIFACT_ROOT, { recursive: true });
 	const existing = await request.get(REPOSITORY_URL);
 	if (existing.status() !== 400 && existing.status() !== 404) {
 		throw new Error(`Refusing to use non-absent disposable repository ${REPOSITORY_ID}: GET status ${existing.status()}`);
@@ -83,6 +86,11 @@ test.afterAll(async ({ request }) => {
 });
 
 test('records built-in route rendering, query result states, and disposable-repository mutations', async ({ page, request }) => {
+	if (!ARTIFACT_ROOT) {
+		ARTIFACT_ROOT = test.info().outputPath('live-route-parity');
+		COVERAGE_PATH = path.join(ARTIFACT_ROOT, `workbench-live-route-parity-${RUN_ID}.json`);
+	}
+	fs.mkdirSync(ARTIFACT_ROOT, { recursive: true });
 	page.setDefaultTimeout(12_000);
 	page.setDefaultNavigationTimeout(15_000);
 	await page.setViewportSize({ width: 1440, height: 1000 });
@@ -480,7 +488,8 @@ async function exerciseExportPreview(page, evidence) {
 			&& new URL(pageModelResponse.url()).searchParams.get('action') === 'preview'
 			&& previewState.format === 'application/n-quads'
 			&& previewState.previewLimit === '100'
-			&& /limited to the selected number of statements/i.test(previewState.resultLimited || '')
+			// The Export redesign (plan task M6.6) words the limit as "Showing the first 100 statements."
+			&& /showing the first 100 statements/i.test(previewState.resultLimited || '')
 			&& (previewState.rowCount > 0 || !!previewState.emptyText)
 	};
 	evidence.exportPreview = previewRecord;
@@ -497,11 +506,14 @@ async function exerciseQueries(page, evidence) {
 		{ name: 'tuple', query: 'SELECT ?s ?name WHERE { ?s <urn:route-parity:name> ?name }', check: page => page.locator('#query-results .query-result-table-wrap table.data tbody tr').count() },
 		{ name: 'graph', query: 'CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }', check: page => page.locator('#query-results .query-result-table-wrap table.data').count() },
 		{ name: 'boolean', query: 'ASK { ?s <urn:route-parity:name> "Alice" }', check: page => page.locator('#query-results .queryResult').innerText() },
-		{ name: 'error', query: 'SELECT WHERE {', check: page => page.locator('#query-results [role="alert"]').count() },
+		// The error callout stays in the result (hidden) when there is no error, so only a shown one counts.
+		{ name: 'error', query: 'SELECT WHERE {', check: page => page.locator('#query-results [role="alert"]:visible').count() },
+		// An empty result reads "0 rows · complete …" and shows the "No results" state (plan task M3.5).
 		{ name: 'empty', query: 'SELECT ?s WHERE { ?s <urn:route-parity:name> ?name FILTER(false) }', check: async page => ({
 			tableCount: await page.locator('#query-results .query-result-table-wrap table.data').count(),
 			rowCount: await page.locator('#query-results .query-result-table-wrap table.data tbody tr').count(),
-			status: await page.locator('#query-results .query-result-status').innerText()
+			status: await page.locator('#query-results .query-result-status').innerText(),
+			emptyTitle: await page.locator('#query-results .query-result-empty__title:visible').innerText()
 		}) }
 	];
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
@@ -515,13 +527,13 @@ async function exerciseQueries(page, evidence) {
 				const requestEvent = response.request();
 				return requestEvent.url().startsWith(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`)
 					&& requestEvent.method() === 'POST'
-					&& requestEvent.headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson')
-					&& response.headers()['content-type']?.includes('application/vnd.rdf4j.workbench+ndjson');
+					&& requestEvent.headers().accept?.includes(QUERY_STREAM_TYPE)
+					&& response.headers()['content-type']?.includes(QUERY_STREAM_TYPE);
 			}, { timeout: 30_000 });
 			const requestPromise = page.waitForRequest(requestEvent => {
 				return requestEvent.url().startsWith(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`)
 					&& requestEvent.method() === 'POST'
-					&& requestEvent.headers().accept?.includes('application/vnd.rdf4j.workbench+ndjson');
+					&& requestEvent.headers().accept?.includes(QUERY_STREAM_TYPE);
 			}, { timeout: 30_000 });
 			await page.locator('#exec').click();
 			const requestEvent = await requestPromise;
@@ -534,7 +546,8 @@ async function exerciseQueries(page, evidence) {
 			record.acceptable = scenario.name === 'boolean'
 				? /yes|true/i.test(String(record.result))
 				: scenario.name === 'empty'
-					? record.result.tableCount > 0 && record.result.rowCount === 0 && /no results/i.test(record.result.status)
+					? record.result.tableCount > 0 && record.result.rowCount === 0 && /^0 rows\b/.test(record.result.status)
+						&& /no results/i.test(record.result.emptyTitle)
 					: Number(record.result) > 0;
 			if (scenario.name === 'tuple') {
 				record.resultControls = await page.evaluate(() => {
@@ -563,7 +576,8 @@ async function exerciseQueries(page, evidence) {
 				await expect(downloadToggle).toHaveAttribute('aria-expanded', 'true');
 				await expect(page.locator('#query-results .query-disclosure__panel').first()).toBeVisible();
 				await expect.soft(page.locator('#query-results .query-result-download-button')).toHaveAccessibleName('Download');
-				await expect.soft(page.locator('#query-results .query-result-toolbar__disclosures .query-result-disclosure:nth-child(2) .query-disclosure__toggle')).toHaveAccessibleName(/result options/i);
+				// The result's Options pane became Display (plan milestone M3), named "Result display options".
+				await expect.soft(page.locator('#query-results .query-result-toolbar__disclosures .query-result-disclosure:nth-child(2) .query-disclosure__toggle')).toHaveAccessibleName(/result display options/i);
 				expect.soft(record.resultControls.download.iconKey).toBe('download');
 				expect.soft(record.resultControls.options.iconKey).toBe('chevron');
 			}

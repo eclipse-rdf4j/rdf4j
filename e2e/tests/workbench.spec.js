@@ -1,44 +1,55 @@
 // @ts-check
 const {test, expect} = require('@playwright/test');
-const { typeIntoCodeMirror } = require('./workbench-test-helpers');
+const {
+    deleteRepository,
+    repositoryPageUrl,
+    serverBaseUrl,
+    typeIntoCodeMirror,
+    uniqueRepositoryId,
+    waitForRoute,
+    waitForWriteDone,
+    workbenchBaseUrl
+} = require('./workbench-test-helpers');
 
-test.beforeEach(async ({page}, testInfo) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
-    await page.getByText("Delete repository").click();
-    await page.waitForSelector('#id');
-    const optionExists = await page.locator('#id option[value="testrepo1"]').count() > 0;
+const WORKBENCH_URL = `${workbenchBaseUrl()}/`;
 
-    if (optionExists) {
-        await page.locator("#id").selectOption("testrepo1");
-        // Deleting asks for the typed repository id in a dialog (plan task M6.6).
-        await page.locator('#delete-actions button[type="submit"]').click();
-        await page.getByRole('dialog').getByRole('textbox').fill('testrepo1');
-        await page.getByRole('dialog').getByRole('button', {name: 'Delete repository'}).click();
-        await page.getByText("List of Repositories").click();
-    }
+// Every test creates its own repository through the Workbench and deletes it afterwards.
+let repositoryId = '';
+
+test.beforeEach(async ({page}) => {
+    repositoryId = uniqueRepositoryId('workbench-ui');
+    await page.goto(WORKBENCH_URL);
+});
+
+test.afterEach(async ({request}) => {
+    await deleteRepository(request, serverBaseUrl(), repositoryId);
 });
 
 test('RDF4J Workbench has correct title', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
 
-    // Expect a title "to contain" a substring.
-    await expect(page).toHaveTitle("RDF4J Workbench - List of Repositories");
+    // The tab title is "<page> — RDF4J Workbench" (plan task M2.6); the Workbench opens on the repository list.
+    await expect(page).toHaveTitle('Repositories — RDF4J Workbench');
 });
 
+// The menu item is "Create repository" (plan task M2.4). Its first step chooses the type (Memory Store by default);
+// the repository id is asked on the next step, whose button is #create.
 async function createRepo(page) {
-    await page.getByText('New repository').click();
-
-    await page.locator("#id").fill('testrepo1');
+    await page.getByRole('link', {name: 'Create repository'}).click();
+    await waitForRoute(page, 'create');
     await page.getByText('Next').click();
+    await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});
 
-    await page.getByText('Create').click();
+    await page.getByRole('textbox', {name: 'Repository ID'}).fill(repositoryId);
+    await page.locator('#create').click();
+    await waitForRoute(page, 'summary');
     // The Summary card's first section is "Repository" (plan task M5.4).
     await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
-
+    await expect(page).toHaveURL(repositoryPageUrl(repositoryId, 'summary'));
 }
 
 async function delayExplainRequests(page, delayMs = 2200) {
-    await page.route('**/rdf4j-workbench/repositories/testrepo1/query', async route => {
+    await page.route(repositoryPageUrl(repositoryId, 'query'), async route => {
         const request = route.request();
         if (request.method() === 'POST' && request.postData()?.includes('action=explain')) {
             await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -51,7 +62,7 @@ async function trackExplainTraffic(page, delayMs = 2200) {
     const explainRequests = [];
     const cancelRequests = [];
 
-    await page.route('**/rdf4j-workbench/repositories/testrepo1/query', async route => {
+    await page.route(repositoryPageUrl(repositoryId, 'query'), async route => {
         const request = route.request();
         if (request.method() !== 'POST') {
             await route.continue();
@@ -114,26 +125,28 @@ async function waitForStableExplanations(page, selectors) {
 }
 
 test('Create repo', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
-    await page.getByText('New repository').click();
-
-    await page.locator("#id").fill('testrepo1');
+    await page.getByRole('link', {name: 'Create repository'}).click();
+    await waitForRoute(page, 'create');
     await page.getByText('Next').click();
+    await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});
 
-    await page.getByText('Create').click();
+    await page.getByRole('textbox', {name: 'Repository ID'}).fill(repositoryId);
+    await page.locator('#create').click();
+    await waitForRoute(page, 'summary');
     // The Summary card's first section is "Repository" (plan task M5.4).
     await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
-
+    await expect(page).toHaveURL(repositoryPageUrl(repositoryId, 'summary'));
 });
 
 
 test('SPARQL update', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
@@ -141,7 +154,7 @@ test('SPARQL update', async ({page}) => {
 
     await createRepo(page);
 
-    await page.getByText('SPARQL Update').click();
+    await page.getByRole('link', {name: 'SPARQL Update', exact: true}).click();
     await page.waitForSelector('.CodeMirror > div > textarea');
 
     // magic code that lets us type in the CodeMirror editor
@@ -154,18 +167,21 @@ test('SPARQL update', async ({page}) => {
 
 
     await page.getByRole('button', { name: 'Execute' }).click();
-    await page.waitForSelector('table');
+    // The update stays on its page and shows a tick when it is done (plan task M14.2).
+    await waitForWriteDone(page, 'update');
 
-    await page.getByText('Types').click();
+    await page.getByRole('link', {name: 'Types', exact: true}).click();
+    await waitForRoute(page, 'types');
 
-    let type = await page.getByText('<http://exampletype>');
-    await expect(type).toHaveText('<http://exampletype>');
+    // Types writes an IRI without a known prefix in full, without angle brackets (plan task M5.2).
+    let type = await page.getByText('http://exampletype', {exact: true});
+    await expect(type).toHaveText('http://exampletype');
 
 });
 
 
 test('Add Turtle data to repository', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
@@ -173,11 +189,16 @@ test('Add Turtle data to repository', async ({page}) => {
 
     await createRepo(page);
 
-    await page.getByText('Add').click();
-    await page.waitForSelector('#text');
+    await page.getByRole('link', {name: 'Add RDF', exact: true}).click();
+    await waitForRoute(page, 'add');
 
-    await page.locator('#source-text').check();
+    // The source is a segmented control (plan task M5.5). The base URI sits under the import settings, which open over
+    // the form and its buttons (plan task M14.3), so they are closed again before the upload.
+    await page.locator('label[for="source-text"]').click();
+    await expect(page.locator('#source-text')).toBeChecked();
+    await page.locator('#add-import-settings-toggle').click();
     await page.locator('#baseURI').fill('http://example.org/ns#');
+    await page.locator('#add-import-settings-toggle').click();
     await page.locator('#Content-Type').selectOption('text/turtle');
 
     const turtleData = '@prefix ex: <http://example.org/ns#> .\n\n' +
@@ -187,15 +208,18 @@ test('Add Turtle data to repository', async ({page}) => {
     await page.locator('#text').fill(turtleData);
 
     await page.getByRole('button', { name: 'Upload' }).click();
+    // Add stays on its page and shows a tick when it is done (plan task M14.2).
+    await waitForWriteDone(page, 'add');
 
-    await page.getByText('Types').click();
+    await page.getByRole('link', {name: 'Types', exact: true}).click();
+    await waitForRoute(page, 'types');
 
     let type = await page.getByText('ex:Person');
     await expect(type).toHaveText('ex:Person');
 });
 
 test('Query page keeps separate drafts per browser page on refresh', async ({page}) => {
-    const queryUrl = 'http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query';
+    const queryUrl = repositoryPageUrl(repositoryId, 'query');
     const queryA = 'SELECT * WHERE { ?s ?p ?o } LIMIT 1';
     const queryB = 'ASK { ?s ?p ?o }';
 
@@ -236,14 +260,14 @@ test('Query page keeps separate drafts per browser page on refresh', async ({pag
 });
 
 test('Query compare mode diffs query and explanation', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
     await expect(page.locator('#explain-trigger-spinner')).toBeHidden();
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
@@ -275,31 +299,19 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#rerun-explanation')).toBeVisible();
     await expect(page.locator('#compare-explain-format')).toHaveCount(0);
     await expect(page.locator('#compare-explain-level')).toHaveCount(0);
-    await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-label', /Refresh/i);
-    await expect(page.locator('#query-diff-trigger')).toHaveAttribute('aria-label', /Diff/i);
+    // Both buttons are named by their visible text ("Refresh explanations", "Diff") since plan task M3.3.
+    await expect(page.locator('#explain-compare-trigger')).toHaveAccessibleName(/Refresh/i);
+    await expect(page.locator('#query-diff-trigger')).toHaveAccessibleName(/Diff/i);
     await expect.poll(async () => page.evaluate(() => {
         const compareCode = document.querySelectorAll('.CodeMirror-code')[1];
         return compareCode ? compareCode.textContent.replace(/\s+/g, ' ').trim() : '';
     })).toContain('SELECT * WHERE { ?s ?p ?o } LIMIT 10');
     await waitForStableExplanation(page, '#query-explanation-compare');
 
-    const collapsedLayout = await page.evaluate(() => {
-        const queryForm = document.querySelector('.query-form');
-        const toggle = document.getElementById('query-sidebar-toggle');
-        return {
-            contentLeft: queryForm.getBoundingClientRect().left,
-            toggleLeft: toggle.getBoundingClientRect().left
-        };
-    });
-
+    // In compare mode the menu opens over the page below its toggle and moves nothing; that geometry is checked by
+    // workbench-visual-refinement-followup.spec.js ("compare mode collapses and restores navigation ...").
     await page.locator('#query-sidebar-toggle').click();
     await expect(page.locator('#navigation')).toBeVisible();
-    await expect.poll(async () => page.evaluate(() => {
-        return document.querySelector('.query-form').getBoundingClientRect().left;
-    })).toBeGreaterThan(collapsedLayout.contentLeft + 100);
-    await expect.poll(async () => page.evaluate(() => {
-        return document.getElementById('query-sidebar-toggle').getBoundingClientRect().left;
-    })).toBeGreaterThan(collapsedLayout.toggleLeft + 100);
 
     await expect.poll(async () => page.evaluate(() => {
         return document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue();
@@ -323,14 +335,14 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
 });
 
 test('Explain wait state shows spinner and cancel for primary and compare actions', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
     await delayExplainRequests(page);
 
@@ -365,14 +377,14 @@ test('Explain wait state shows spinner and cancel for primary and compare action
 });
 
 test('Primary cancel posts matching request id and stale responses do not repaint', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
@@ -398,14 +410,14 @@ test('Primary cancel posts matching request id and stale responses do not repain
 });
 
 test('Compare-mode left cancel buttons abort explanation refresh', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
@@ -450,14 +462,14 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
 });
 
 test('Changing explain level implicitly cancels pending explain with matching request id', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
@@ -484,14 +496,14 @@ test('Changing explain level implicitly cancels pending explain with matching re
 });
 
 test('Query compare mode keeps primary query on reload without persisting secondary query', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
 
     const primaryQuery = 'SELECT * WHERE { ?s ?p ?o } LIMIT 10';
@@ -530,14 +542,14 @@ test('Query compare mode keeps primary query on reload without persisting second
 });
 
 test('Query page keeps explanation panes hidden until explain runs', async ({page}) => {
-    await page.goto('http://localhost:8080/rdf4j-workbench/');
+    await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
         dialog.dismiss();
     });
 
     await createRepo(page);
-    await page.goto('http://localhost:8080/rdf4j-workbench/repositories/testrepo1/query');
+    await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
 
     await expect(page.locator('#query-explanation-row')).toBeHidden();
