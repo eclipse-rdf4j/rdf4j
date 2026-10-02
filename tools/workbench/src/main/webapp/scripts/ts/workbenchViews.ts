@@ -532,19 +532,32 @@ module workbench {
         /** Groups with more items than this keep a disclosure so long custom menus stay manageable. */
         const navigationDisclosureThreshold = 12;
 
+        /** A query of this repository running or finished while its Query page is not shown (M13.5). */
+        function queryActivity(context: ViewContext): string {
+            const page: any = (workbench as any).queryPage;
+            return page && typeof page.activity === 'function' ? page.activity(context.repositoryId || '') : '';
+        }
+
         function navigationItem(runtime: LitRuntime, context: ViewContext, info: any, item: any,
-                                groupLabel: string, active: string): any {
+                                groupLabel: string, active: string, idPrefix: string): any {
             const h = runtime.html;
             const id = text(item.id || item['menu-item-id']);
             const label = text(item.label || item['menu-item-label'] || id);
             const href = item.href || item['menu-item-href'] || urlFor(context, id);
+            // The Query item says when a query runs on, or has finished, out of sight; its name stays "Query".
+            const activity = id === 'query' && active !== 'query' ? queryActivity(context) : '';
+            const activityId = idPrefix + '-query-activity';
             return h`<li class=${active === id ? 'current' : ''}>
                 ${isDisabled(item, info)
                     ? h`<span class="disabled" title=${groupLabel}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
                     : h`<a href=${href} data-workbench-nav-href=${href}
-                        title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}>
-                        ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}
-                    </a>`}
+                        title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}
+                        aria-describedby=${activity ? activityId : runtime.nothing}>
+                        ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}${activity
+                            ? h`<span class="workbench-nav-activity" data-activity=${activity} aria-hidden="true"></span>`
+                            : ''}
+                    </a>${activity ? h`<span id=${activityId} class="workbench-visually-hidden">${
+                        activity === 'running' ? 'Query running' : 'Results ready'}</span>` : ''}`}
             </li>`;
         }
 
@@ -561,7 +574,7 @@ module workbench {
                 const groupId = text(group.id || group['menu-group-id'] || 'workbench');
                 const groupLabel = text(group.label || group['menu-group-label'] || 'Workbench');
                 const list = h`<ul id=${idPrefix + '-items-' + groupId} class="group" aria-labelledby=${idPrefix + '-label-' + groupId}>
-                    ${items.map((item: any) => navigationItem(runtime, context, info, item, groupLabel, active))}
+                    ${items.map((item: any) => navigationItem(runtime, context, info, item, groupLabel, active, idPrefix))}
                 </ul>`;
                 if (items.length > navigationDisclosureThreshold) {
                     const containsActive = items.some((item: any) => text(item.id || item['menu-item-id']) === active);
@@ -3580,6 +3593,16 @@ module workbench {
             }
         }
 
+        /** The shell rendered last, so that it can show what changed behind the page (M13.5). */
+        let lastShell: { appMount: Element; shellState: ShellState; runtime: LitRuntime } = null;
+
+        /** Render the shell again as it was, for example when a query running out of sight ends (M13.5). */
+        export function refreshShell(): void {
+            if (lastShell) {
+                renderShell(lastShell.appMount, lastShell.shellState, lastShell.runtime);
+            }
+        }
+
         /**
          * Render the persistent shell (header, menu, footer) into the application mount and return the
          * outlet element that renderOutlet fills. Returns null when the mount has no DOM document.
@@ -3589,6 +3612,7 @@ module workbench {
             if (!outlet) {
                 return null;
             }
+            lastShell = { appMount, shellState, runtime };
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
             const document: any = (appMount as any).ownerDocument;
             if (document && 'title' in document) {

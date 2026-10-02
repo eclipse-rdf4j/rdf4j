@@ -732,7 +732,7 @@ function queryRouteHarness(state) {
     harness.workbench.queryPage = {
         renderInto(target, model, context) {
             log.push('render into ' + target.id);
-            return () => log.push('renderer disposed');
+            return (reason) => log.push('renderer disposed' + (reason ? ' ' + reason : ''));
         },
         submitExecution() {
             log.push('submit');
@@ -776,8 +776,9 @@ test('the Query route renders its results into the page and mounts the Query pag
     await instance.ready;
     instance.dispose('navigate');
 
-    assert.deepEqual(harness.log, ['render into query-page-content', 'mount query page', 'cancel',
-        'query page disposed', 'renderer disposed']);
+    // Leaving within the tab does not cancel a running query (M13.5): the renderer keeps it for the repository.
+    assert.deepEqual(harness.log, ['render into query-page-content', 'mount query page',
+        'query page disposed', 'renderer disposed navigate']);
 });
 
 test('leaving a Query route cancels its running query first, with a keepalive request when the page goes', async () => {
@@ -787,7 +788,7 @@ test('leaving a Query route cancels its running query first, with a keepalive re
     await instance.ready;
     instance.dispose('pagehide');
 
-    assert.deepEqual(harness.log.slice(2), ['cancel on leave', 'query page disposed', 'renderer disposed']);
+    assert.deepEqual(harness.log.slice(2), ['cancel on leave', 'query page disposed', 'renderer disposed pagehide']);
 });
 
 test('a Query route that starts with a posted query runs it once its controller is mounted', async () => {
@@ -846,8 +847,8 @@ test('a Query route mounted without navigation state renders its outlet and runs
     await instance.ready;
     instance.dispose('navigate');
 
-    assert.deepEqual(harness.log, ['render outlet', 'render into query-page-content', 'mount query page', 'cancel',
-        'query page disposed', 'renderer disposed']);
+    assert.deepEqual(harness.log, ['render outlet', 'render into query-page-content', 'mount query page',
+        'query page disposed', 'renderer disposed navigate']);
 });
 
 test('a Query route whose page has no content area renders into the outlet itself', async () => {

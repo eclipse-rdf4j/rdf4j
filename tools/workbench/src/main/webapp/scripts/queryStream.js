@@ -4234,6 +4234,12 @@ var workbench;
             var frozenUrl = '';
             var batchSize = 1000000;
             var revealPending = false;
+            /** Tell the page that a request started or ended (the menu shows queries running elsewhere, M13.5). */
+            function notifyActivity() {
+                if (typeof config.onActivity === 'function') {
+                    config.onActivity();
+                }
+            }
             /** Reveal the results once per execution, after its first rendered rows, answer or error. */
             function revealOnce() {
                 if (revealPending && !disposed) {
@@ -4265,6 +4271,7 @@ var workbench;
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 renderer.setBusy(false);
+                notifyActivity();
             }
             function recover(requestGeneration, currentRenderer, message, code, status) {
                 recovering = true;
@@ -4296,6 +4303,7 @@ var workbench;
                 cancelServerRequest(oldId, leaving);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
+                notifyActivity();
                 if (renderer && announce) {
                     recover(cancelGeneration, renderer, 'Query cancelled.', 'cancelled');
                 }
@@ -4315,6 +4323,7 @@ var workbench;
                 var requestGeneration = ++generation;
                 setQueryRequestId(id);
                 setQueryCancelVisible(true);
+                notifyActivity();
                 var body = new URLSearchParams(frozenBody.toString());
                 body.set('action', 'exec');
                 body.set('query-request-id', id);
@@ -4569,6 +4578,48 @@ var workbench;
             var shelved = [];
             var maxShelvedResults = 4;
             var shelfPageHide = null;
+            /** The repository of the mounted Query page, and whether that page is kept alive out of sight (M11.3). */
+            var mountedRepositoryId = '';
+            var mountedSuspended = false;
+            /** Repositories whose query finished while no Query page showed it, until it is shown (M13.5). */
+            var ready = {};
+            /** Results nobody sees: the waiting ones and a kept-alive Query page's own. */
+            function backgroundResults() {
+                var results = shelved.slice();
+                if (mountedController && mountedSuspended) {
+                    results.push({ repositoryId: mountedRepositoryId, controller: mountedController });
+                }
+                return results;
+            }
+            /** A request started or ended: a query that ended out of sight has results ready (M13.5). */
+            function activityChanged() {
+                backgroundResults().forEach(function (entry) {
+                    var holder = entry.controller;
+                    var active = entry.controller.hasActiveRequest();
+                    if (holder.ranInBackground && !active) {
+                        ready[entry.repositoryId] = true;
+                    }
+                    holder.ranInBackground = active;
+                });
+                var views = workbench.views;
+                if (views && typeof views.refreshShell === 'function') {
+                    views.refreshShell();
+                }
+            }
+            /** The result of a repository is shown again: nothing is running or ready out of sight any more. */
+            function seen(repositoryId, controller) {
+                controller.ranInBackground = false;
+                delete ready[repositoryId];
+            }
+            /** What the menu's Query item says about a repository's query: 'running', 'ready' or ''. */
+            function activity(repositoryId) {
+                var results = backgroundResults().filter(function (entry) { return entry.repositoryId === repositoryId; });
+                if (results.some(function (entry) { return entry.controller.hasActiveRequest(); })) {
+                    return 'running';
+                }
+                return ready[repositoryId] ? 'ready' : '';
+            }
+            queryPage.activity = activity;
             function takeShelved(repositoryId) {
                 var match = shelved.filter(function (entry) { return entry.repositoryId === repositoryId; })[0];
                 if (!match) {
@@ -4585,8 +4636,11 @@ var workbench;
                 controller.shelve();
                 shelved.push({ repositoryId: repositoryId, controller: controller });
                 if (shelved.length > maxShelvedResults) {
-                    shelved.shift().controller.dispose();
+                    var evicted = shelved.shift();
+                    delete ready[evicted.repositoryId];
+                    evicted.controller.dispose();
                 }
+                activityChanged();
                 if (!shelfPageHide && typeof window !== 'undefined' && window.addEventListener) {
                     // A tab that is closed or reloaded releases the waiting results like the shown one.
                     shelfPageHide = function (event) {
@@ -4647,6 +4701,9 @@ var workbench;
                 }
                 mountedForm = form;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
+                mountedRepositoryId = repositoryId;
+                mountedSuspended = false;
+                delete ready[repositoryId];
                 var waiting = takeShelved(repositoryId);
                 if (waiting && pageModelQuery(model).trim()) {
                     // A page that opens with its own query (Edit on Saved queries) starts afresh.
@@ -4656,10 +4713,12 @@ var workbench;
                 if (waiting) {
                     restoreExecutedRequest(form, waiting.executedRequest());
                     waiting.adopt(form, target);
+                    seen(repositoryId, waiting);
                     mountedController = waiting;
                 }
                 else {
                     mountedController = bindMainQueryForm(form, target, {
+                        onActivity: activityChanged,
                         workbench: shellContext && shellContext.workbench,
                         features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
                         rowStoreOptions: shellContext && shellContext.rowStoreOptions,
@@ -4701,11 +4760,14 @@ var workbench;
                     if (typeof window !== 'undefined' && window.removeEventListener) {
                         window.removeEventListener('pagehide', onPageHide, false);
                     }
-                    if (reason === 'navigate' && repositoryId && mountedController.hasResult()) {
-                        shelve(repositoryId, mountedController);
+                    var leaving = mountedController;
+                    mountedController = null;
+                    mountedSuspended = false;
+                    if (reason === 'navigate' && repositoryId && leaving.hasResult()) {
+                        shelve(repositoryId, leaving);
                     }
                     else {
-                        mountedController.dispose();
+                        leaving.dispose();
                     }
                     mountedForm = null;
                     mountedController = null;
@@ -4743,12 +4805,16 @@ var workbench;
             function suspend() {
                 if (mountedController) {
                     mountedController.suspend();
+                    mountedSuspended = true;
+                    activityChanged();
                 }
             }
             queryPage.suspend = suspend;
             function resume() {
                 if (mountedController) {
                     mountedController.resume();
+                    mountedSuspended = false;
+                    seen(mountedRepositoryId, mountedController);
                 }
             }
             queryPage.resume = resume;
@@ -4785,6 +4851,11 @@ var workbench;
             return queryStream.queryPage.ownsForm(form);
         }
         queryPage.ownsForm = ownsForm;
+        /** 'running' or 'ready' when a repository's query runs or ended while no Query page shows it (M13.5). */
+        function activity(repositoryId) {
+            return queryStream.queryPage.activity(repositoryId);
+        }
+        queryPage.activity = activity;
         function isMounted() {
             return queryStream.queryPage.isMounted();
         }

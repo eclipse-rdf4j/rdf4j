@@ -1841,6 +1841,38 @@ body.workbench-body #navigation.workbench-nav .query-nav-group-label {
 	line-height: 1.25;
 }
 
+/* A query running out of sight, or its results ready (M13.5): a small ring at the end of the Query item. */
+body.workbench-body .workbench-nav-activity {
+	box-sizing: border-box;
+	flex: none;
+	width: 10px;
+	height: 10px;
+	margin-left: auto;
+	border: 2px solid var(--workbench-primary);
+	border-radius: 50%;
+}
+
+body.workbench-body .workbench-nav-activity[data-activity="running"] {
+	border-right-color: transparent;
+	animation: workbench-nav-activity-spin .9s linear infinite;
+}
+
+body.workbench-body .workbench-nav-activity[data-activity="ready"] {
+	background: var(--workbench-primary);
+}
+
+@keyframes workbench-nav-activity-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-nav-activity[data-activity="running"] {
+		animation: none;
+	}
+}
+
 body.workbench-body #navigation.workbench-nav a:hover {
 	background: var(--workbench-inset);
 	color: var(--workbench-ink);

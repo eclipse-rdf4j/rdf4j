@@ -473,13 +473,22 @@ var workbench;
         }
         /** Groups with more items than this keep a disclosure so long custom menus stay manageable. */
         var navigationDisclosureThreshold = 12;
-        function navigationItem(runtime, context, info, item, groupLabel, active) {
+        /** A query of this repository running or finished while its Query page is not shown (M13.5). */
+        function queryActivity(context) {
+            var page = workbench.queryPage;
+            return page && typeof page.activity === 'function' ? page.activity(context.repositoryId || '') : '';
+        }
+        function navigationItem(runtime, context, info, item, groupLabel, active, idPrefix) {
             var h = runtime.html;
             var id = text(item.id || item['menu-item-id']);
             var label = text(item.label || item['menu-item-label'] || id);
             var href = item.href || item['menu-item-href'] || urlFor(context, id);
+            // The Query item says when a query runs on, or has finished, out of sight; its name stays "Query".
+            var activity = id === 'query' && active !== 'query' ? queryActivity(context) : '';
+            var activityId = idPrefix + '-query-activity';
             return h(__makeTemplateObject(["<li class=", ">\n                ", "\n            </li>"], ["<li class=", ">\n                ", "\n            </li>"]), active === id ? 'current' : '', isDisabled(item, info)
-                ? h(__makeTemplateObject(["<span class=\"disabled\" title=", ">", "", "</span>"], ["<span class=\"disabled\" title=", ">", "", "</span>"]), groupLabel, icon(runtime, item.icon || item['menu-item-icon'] || id), label) : h(__makeTemplateObject(["<a href=", " data-workbench-nav-href=", "\n                        title=", " aria-current=", ">\n                        ", "", "\n                    </a>"], ["<a href=", " data-workbench-nav-href=", "\n                        title=", " aria-current=", ">\n                        ", "", "\n                    </a>"]), href, href, groupLabel, active === id ? 'page' : 'false', icon(runtime, item.icon || item['menu-item-icon'] || id), label));
+                ? h(__makeTemplateObject(["<span class=\"disabled\" title=", ">", "", "</span>"], ["<span class=\"disabled\" title=", ">", "", "</span>"]), groupLabel, icon(runtime, item.icon || item['menu-item-icon'] || id), label) : h(__makeTemplateObject(["<a href=", " data-workbench-nav-href=", "\n                        title=", " aria-current=", "\n                        aria-describedby=", ">\n                        ", "", "", "\n                    </a>", ""], ["<a href=", " data-workbench-nav-href=", "\n                        title=", " aria-current=", "\n                        aria-describedby=", ">\n                        ", "", "", "\n                    </a>", ""]), href, href, groupLabel, active === id ? 'page' : 'false', activity ? activityId : runtime.nothing, icon(runtime, item.icon || item['menu-item-icon'] || id), label, activity
+                ? h(__makeTemplateObject(["<span class=\"workbench-nav-activity\" data-activity=", " aria-hidden=\"true\"></span>"], ["<span class=\"workbench-nav-activity\" data-activity=", " aria-hidden=\"true\"></span>"]), activity) : '', activity ? h(__makeTemplateObject(["<span id=", " class=\"workbench-visually-hidden\">", "</span>"], ["<span id=", " class=\"workbench-visually-hidden\">", "</span>"]), activityId, activity === 'running' ? 'Query running' : 'Results ready') : ''));
         }
         /**
          * Every group renders the same way: a non-interactive label followed by its items (M2.4). The sidebar
@@ -493,7 +502,7 @@ var workbench;
                 var items = group.items || [];
                 var groupId = text(group.id || group['menu-group-id'] || 'workbench');
                 var groupLabel = text(group.label || group['menu-group-label'] || 'Workbench');
-                var list = h(__makeTemplateObject(["<ul id=", " class=\"group\" aria-labelledby=", ">\n                    ", "\n                </ul>"], ["<ul id=", " class=\"group\" aria-labelledby=", ">\n                    ", "\n                </ul>"]), idPrefix + '-items-' + groupId, idPrefix + '-label-' + groupId, items.map(function (item) { return navigationItem(runtime, context, info, item, groupLabel, active); }));
+                var list = h(__makeTemplateObject(["<ul id=", " class=\"group\" aria-labelledby=", ">\n                    ", "\n                </ul>"], ["<ul id=", " class=\"group\" aria-labelledby=", ">\n                    ", "\n                </ul>"]), idPrefix + '-items-' + groupId, idPrefix + '-label-' + groupId, items.map(function (item) { return navigationItem(runtime, context, info, item, groupLabel, active, idPrefix); }));
                 if (items.length > navigationDisclosureThreshold) {
                     var containsActive = items.some(function (item) { return text(item.id || item['menu-item-id']) === active; });
                     return h(__makeTemplateObject(["<li class=\"workbench-nav-group workbench-nav-group--long\" data-workbench-menu-group=", "\n                            data-workbench-menu-label=", ">\n                        <details class=\"workbench-nav-group__disclosure\" ?open=", ">\n                            <summary id=", " aria-controls=", "\n                                    class=\"workbench-nav-group__summary\">\n                                <span id=", " class=\"workbench-nav-group__label\">", "</span>\n                                ", "\n                            </summary>\n                            ", "\n                        </details>\n                    </li>"], ["<li class=\"workbench-nav-group workbench-nav-group--long\" data-workbench-menu-group=", "\n                            data-workbench-menu-label=", ">\n                        <details class=\"workbench-nav-group__disclosure\" ?open=", ">\n                            <summary id=", " aria-controls=", "\n                                    class=\"workbench-nav-group__summary\">\n                                <span id=", " class=\"workbench-nav-group__label\">", "</span>\n                                ", "\n                            </summary>\n                            ", "\n                        </details>\n                    </li>"]), groupId, groupLabel, containsActive, idPrefix + '-summary-' + groupId, idPrefix + '-items-' + groupId, idPrefix + '-label-' + groupId, groupLabel, icon(runtime, 'chevron', 'workbench-nav-group__chevron workbench-disclosure-chevron'), list);
@@ -2538,6 +2547,15 @@ var workbench;
                 Object.keys(regions.groups).forEach(function (key) { return regions.groups[key].render(); });
             }
         }
+        /** The shell rendered last, so that it can show what changed behind the page (M13.5). */
+        var lastShell = null;
+        /** Render the shell again as it was, for example when a query running out of sight ends (M13.5). */
+        function refreshShell() {
+            if (lastShell) {
+                renderShell(lastShell.appMount, lastShell.shellState, lastShell.runtime);
+            }
+        }
+        views.refreshShell = refreshShell;
         /**
          * Render the persistent shell (header, menu, footer) into the application mount and return the
          * outlet element that renderOutlet fills. Returns null when the mount has no DOM document.
@@ -2547,6 +2565,7 @@ var workbench;
             if (!outlet) {
                 return null;
             }
+            lastShell = { appMount: appMount, shellState: shellState, runtime: runtime };
             runtime.render(shellTemplate(shellState, runtime, outlet), appMount);
             var document = appMount.ownerDocument;
             if (document && 'title' in document) {

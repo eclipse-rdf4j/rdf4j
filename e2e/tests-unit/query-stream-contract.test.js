@@ -924,6 +924,104 @@ test('a repository\'s query result waits for its next Query page, which shows it
     own.dispose();
 });
 
+// Plan task M13.5 (user request): a query runs on out of sight, and the menu can say so.
+test('a query out of sight runs on: "running", then "ready" until its Query page is shown again', async () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    const window = queryStream.__testWindow;
+    window.addEventListener = () => {};
+    window.removeEventListener = () => {};
+    let refreshes = 0;
+    workbench.views = { refreshShell() { refreshes += 1; } };
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['item'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'late row' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 1,
+            'result-has-more': false, 'result-next-offset': 1 } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    const cancels = [];
+    let release;
+    window.fetch = async (url, options) => {
+        const body = String(options && options.body || '');
+        if (body.includes('action=cancel-query')) {
+            cancels.push(body);
+            return { ok: true, status: 204 };
+        }
+        const held = new Promise(resolve => { release = resolve; });
+        const bytes = new TextEncoder().encode(records);
+        let delivered = false;
+        return { body: { getReader: () => ({
+            read: async () => {
+                if (delivered) {
+                    return { done: true };
+                }
+                await held;
+                delivered = true;
+                return { done: false, value: bytes };
+            },
+            cancel: async () => {}
+        }) } };
+    };
+    const worker = new InMemoryWorker();
+    const document = new FakeDocument();
+    function page(repositoryId) {
+        document.body.children.slice().forEach(node => document.body.removeChild(node));
+        const form = document.createElement('form');
+        form.setAttribute('id', 'query-form');
+        form.setAttribute('action', 'query');
+        const query = document.createElement('textarea');
+        query.name = 'query';
+        query.value = 'SELECT ?item WHERE { VALUES ?item { "late row" } }';
+        form.appendChild(query);
+        const target = document.createElement('section');
+        target.setAttribute('id', 'query-results');
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+        const dispose = workbench.queryPage.renderInto(document.body, {}, {
+            executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
+            rowStoreOptions: { workerFactory: () => worker }
+        });
+        return { form, target, dispose };
+    }
+    const settle = async (condition) => {
+        for (let attempt = 0; attempt < 30 && !condition(); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    };
+
+    // A kept-alive Query page (M11.3) out of sight.
+    const shown = page('repo-a');
+    shown.form.trigger('submit');
+    await settle(() => !!release);
+    assert.equal(workbench.queryPage.activity('repo-a'), '', 'a query on the page that is shown is not out of sight');
+    workbench.queryPage.suspend();
+    assert.equal(workbench.queryPage.activity('repo-a'), 'running');
+    release();
+    await settle(() => workbench.queryPage.activity('repo-a') === 'ready');
+    assert.equal(workbench.queryPage.activity('repo-a'), 'ready');
+    assert.ok(refreshes > 0, 'the menu is rendered again when the query ends');
+    workbench.queryPage.resume();
+    assert.equal(workbench.queryPage.activity('repo-a'), '');
+
+    // A Query page left for another repository's page: its query runs on, uncancelled.
+    release = null;
+    shown.form.trigger('submit');
+    await settle(() => !!release);
+    shown.dispose('navigate');
+    assert.equal(workbench.queryPage.activity('repo-a'), 'running');
+    assert.equal(workbench.queryPage.activity('repo-b'), '');
+    release();
+    await settle(() => workbench.queryPage.activity('repo-a') === 'ready');
+    assert.equal(workbench.queryPage.activity('repo-a'), 'ready');
+    assert.deepEqual(cancels, [], 'leaving the page in the tab cancels nothing');
+    const again = page('repo-a');
+    assert.match(again.target.textContent, /1 row · complete/);
+    assert.equal(workbench.queryPage.activity('repo-a'), '');
+    again.dispose();
+});
+
 // Task M4.3 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: literals read as values.
 test('formatRdfTerm shows literal values without quotes or datatype suffixes', () => {
     const queryStream = loadQueryStreamApi();

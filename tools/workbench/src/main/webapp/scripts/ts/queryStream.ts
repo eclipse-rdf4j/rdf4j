@@ -4596,6 +4596,13 @@ namespace workbench {
             var batchSize = 1000000;
             var revealPending = false;
 
+            /** Tell the page that a request started or ended (the menu shows queries running elsewhere, M13.5). */
+            function notifyActivity() {
+                if (typeof config.onActivity === 'function') {
+                    config.onActivity();
+                }
+            }
+
             /** Reveal the results once per execution, after its first rendered rows, answer or error. */
             function revealOnce() {
                 if (revealPending && !disposed) {
@@ -4630,6 +4637,7 @@ namespace workbench {
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 renderer.setBusy(false);
+                notifyActivity();
             }
 
             function recover(requestGeneration: number, currentRenderer: QueryResultRenderer,
@@ -4664,6 +4672,7 @@ namespace workbench {
                 cancelServerRequest(oldId, leaving);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
+                notifyActivity();
                 if (renderer && announce) {
                     recover(cancelGeneration, renderer, 'Query cancelled.', 'cancelled');
                 } else if (renderer) {
@@ -4683,6 +4692,7 @@ namespace workbench {
                 var requestGeneration = ++generation;
                 setQueryRequestId(id);
                 setQueryCancelVisible(true);
+                notifyActivity();
                 var body = new URLSearchParams(frozenBody.toString());
                 body.set('action', 'exec');
                 body.set('query-request-id', id);
@@ -4952,6 +4962,51 @@ namespace workbench {
             var shelved: ShelvedResult[] = [];
             var maxShelvedResults = 4;
             var shelfPageHide: (event: any) => void = null;
+            /** The repository of the mounted Query page, and whether that page is kept alive out of sight (M11.3). */
+            var mountedRepositoryId = '';
+            var mountedSuspended = false;
+            /** Repositories whose query finished while no Query page showed it, until it is shown (M13.5). */
+            var ready: { [repositoryId: string]: boolean } = {};
+
+            /** Results nobody sees: the waiting ones and a kept-alive Query page's own. */
+            function backgroundResults(): ShelvedResult[] {
+                var results = shelved.slice();
+                if (mountedController && mountedSuspended) {
+                    results.push({ repositoryId: mountedRepositoryId, controller: mountedController });
+                }
+                return results;
+            }
+
+            /** A request started or ended: a query that ended out of sight has results ready (M13.5). */
+            function activityChanged(): void {
+                backgroundResults().forEach(entry => {
+                    var holder: any = entry.controller;
+                    var active = entry.controller.hasActiveRequest();
+                    if (holder.ranInBackground && !active) {
+                        ready[entry.repositoryId] = true;
+                    }
+                    holder.ranInBackground = active;
+                });
+                var views: any = (workbench as any).views;
+                if (views && typeof views.refreshShell === 'function') {
+                    views.refreshShell();
+                }
+            }
+
+            /** The result of a repository is shown again: nothing is running or ready out of sight any more. */
+            function seen(repositoryId: string, controller: BoundExecutionController): void {
+                (controller as any).ranInBackground = false;
+                delete ready[repositoryId];
+            }
+
+            /** What the menu's Query item says about a repository's query: 'running', 'ready' or ''. */
+            export function activity(repositoryId: string): string {
+                var results = backgroundResults().filter(entry => entry.repositoryId === repositoryId);
+                if (results.some(entry => entry.controller.hasActiveRequest())) {
+                    return 'running';
+                }
+                return ready[repositoryId] ? 'ready' : '';
+            }
 
             function takeShelved(repositoryId: string): BoundExecutionController {
                 var match = shelved.filter(entry => entry.repositoryId === repositoryId)[0];
@@ -4970,8 +5025,11 @@ namespace workbench {
                 controller.shelve();
                 shelved.push({ repositoryId: repositoryId, controller: controller });
                 if (shelved.length > maxShelvedResults) {
-                    shelved.shift().controller.dispose();
+                    var evicted = shelved.shift();
+                    delete ready[evicted.repositoryId];
+                    evicted.controller.dispose();
                 }
+                activityChanged();
                 if (!shelfPageHide && typeof window !== 'undefined' && window.addEventListener) {
                     // A tab that is closed or reloaded releases the waiting results like the shown one.
                     shelfPageHide = (event: any) => {
@@ -5035,6 +5093,9 @@ namespace workbench {
 
                 mountedForm = form;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
+                mountedRepositoryId = repositoryId;
+                mountedSuspended = false;
+                delete ready[repositoryId];
                 var waiting = takeShelved(repositoryId);
                 if (waiting && pageModelQuery(model).trim()) {
                     // A page that opens with its own query (Edit on Saved queries) starts afresh.
@@ -5044,9 +5105,11 @@ namespace workbench {
                 if (waiting) {
                     restoreExecutedRequest(form, waiting.executedRequest());
                     waiting.adopt(form, target);
+                    seen(repositoryId, waiting);
                     mountedController = waiting;
                 } else {
                     mountedController = bindMainQueryForm(form, target, {
+                        onActivity: activityChanged,
                         workbench: shellContext && shellContext.workbench,
                         features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
                         rowStoreOptions: shellContext && shellContext.rowStoreOptions,
@@ -5087,10 +5150,13 @@ namespace workbench {
                     if (typeof window !== 'undefined' && window.removeEventListener) {
                         window.removeEventListener('pagehide', onPageHide, false);
                     }
-                    if (reason === 'navigate' && repositoryId && mountedController.hasResult()) {
-                        shelve(repositoryId, mountedController);
+                    var leaving = mountedController;
+                    mountedController = null;
+                    mountedSuspended = false;
+                    if (reason === 'navigate' && repositoryId && leaving.hasResult()) {
+                        shelve(repositoryId, leaving);
                     } else {
-                        mountedController.dispose();
+                        leaving.dispose();
                     }
                     mountedForm = null;
                     mountedController = null;
@@ -5129,12 +5195,16 @@ namespace workbench {
             export function suspend(): void {
                 if (mountedController) {
                     mountedController.suspend();
+                    mountedSuspended = true;
+                    activityChanged();
                 }
             }
 
             export function resume(): void {
                 if (mountedController) {
                     mountedController.resume();
+                    mountedSuspended = false;
+                    seen(mountedRepositoryId, mountedController);
                 }
             }
 
@@ -5168,6 +5238,11 @@ namespace workbench {
 
         export function ownsForm(form: any): boolean {
             return queryStream.queryPage.ownsForm(form);
+        }
+
+        /** 'running' or 'ready' when a repository's query runs or ended while no Query page shows it (M13.5). */
+        export function activity(repositoryId: string): string {
+            return queryStream.queryPage.activity(repositoryId);
         }
 
         export function isMounted(): boolean {

@@ -213,15 +213,12 @@ module workbench {
                     }
                 }
             }
-            // A running query is cancelled before anything is torn down (M9.2); a page that is going away sends
-            // one keepalive request, because the retrying request would not outlive it.
+            // A page that is going away cancels its running query first (M9.2), with one keepalive request because the
+            // retrying request would not outlive it. Leaving for another page in the tab cancels nothing: the query
+            // runs on for the repository's next Query page (M13.5).
             const cleanup: RouteCleanup = (reason?: 'navigate' | 'pagehide') => {
-                if (renderer) {
-                    if (reason === 'pagehide') {
-                        renderer.cancelExecutionOnLeave();
-                    } else {
-                        renderer.cancelExecution();
-                    }
+                if (renderer && reason === 'pagehide') {
+                    renderer.cancelExecutionOnLeave();
                 }
                 unmount();
                 // Leaving within the tab keeps the result for this repository's next Query page (M13.4).

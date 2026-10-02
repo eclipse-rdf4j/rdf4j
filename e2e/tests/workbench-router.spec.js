@@ -301,6 +301,62 @@ test('a query keeps running while another page is shown, and its results are the
 	await expect(page.locator('#query-results .query-result-status')).toContainText('3 rows');
 });
 
+// Plan task M13.5 (user request): a query runs on in the background, and the menu says so.
+test('the menu shows a query running in the background and when its results are ready', async ({ page, request }) => {
+	const other = uniqueRepositoryId('workbench-router-background');
+	await createSeededRepository(request, serverBaseUrl(), other, { graphs: [] });
+	try {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await openRoute(page, 'query');
+		const cancels = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && (request.postData() || '').includes('action=cancel-query')) {
+				cancels.push(request.postData());
+			}
+		});
+		await page.route((url) => url.pathname.endsWith(`/repositories/${REPOSITORY_ID}/query`), async (route) => {
+			const request = route.request();
+			if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+				await new Promise((resolve) => setTimeout(resolve, 3000));
+			}
+			await route.continue().catch(() => {});
+		});
+		const queryItem = menuLink(page, 'Query');
+		const run = async () => {
+			await page.locator('.CodeMirror').first().evaluate((element) =>
+				element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 3'));
+			await page.locator('#exec').click();
+			await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'true');
+		};
+
+		// Another page of the same repository.
+		await run();
+		await menuLink(page, 'Summary').click();
+		await expectRoute(page, 'summary');
+		await expect(queryItem).toHaveAccessibleDescription('Query running');
+		await expect(queryItem).toHaveAccessibleDescription('Results ready', { timeout: 10000 });
+		await queryItem.click();
+		await expectRoute(page, 'query');
+		await expect(page.locator('#query-results .query-result-status')).toContainText('3 rows');
+		await expect(queryItem).not.toHaveAccessibleDescription(/Query running|Results ready/);
+
+		// Another repository's Query page: the query runs on, and is there on return.
+		await run();
+		await page.locator('#workbench-repository-switcher').click();
+		await page.locator(`#workbench-repository-options a[data-repository-id="${other}"]`).click();
+		await waitForRoute(page, 'query', { url: new RegExp(`/repositories/${other}/query$`) });
+		await page.waitForTimeout(3500);
+		await page.locator('#workbench-repository-switcher').click();
+		await page.locator(`#workbench-repository-options a[data-repository-id="${REPOSITORY_ID}"]`).click();
+		await waitForRoute(page, 'query', { url: new RegExp(`/repositories/${REPOSITORY_ID}/query$`) });
+		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+		await expect(page.locator('#query-results .query-result-status')).toContainText('3 rows');
+		expect(cancels, 'leaving the Query page in the tab cancels nothing').toEqual([]);
+	} finally {
+		await deleteRepository(request, serverBaseUrl(), other);
+	}
+});
+
 // Plan task M10.1: forms are sent through the router.
 test.describe('forms through the router', () => {
 	const FORMS_ID = uniqueRepositoryId('workbench-router-forms');
