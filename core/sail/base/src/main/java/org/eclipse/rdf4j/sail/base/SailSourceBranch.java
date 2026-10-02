@@ -425,8 +425,11 @@ class SailSourceBranch implements SailSource {
 						// prepared-write or
 						// publication reservations. Growth coordination may need the branch's complete write estimate.
 						SailSourceBranch.this.ensureWritePreflight();
-						reservation = SailSourceBranch.this.beginPreparedWrite(pendingWriteOwner());
 					}
+					// Every prepared sink retains a branch lock until close, including observation-only SERIALIZABLE
+					// sinks. Keep its backing reservation for that lifetime so a competing publisher cannot own the
+					// backing writer while waiting for a lock the prepared owner needs to publish and release.
+					reservation = SailSourceBranch.this.beginPreparedWrite(pendingWriteOwner());
 					try (SailClosable publication = SailSourceBranch.this.beginPublication(pendingWriteOwner())) {
 						preparedChangeset(this);
 						branchLockHeld = true;

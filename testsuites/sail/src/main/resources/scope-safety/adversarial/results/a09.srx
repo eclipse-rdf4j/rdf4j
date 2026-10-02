@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+  <head>
+    <variable name="g"/>
+    <variable name="inside"/>
+    <variable name="mark"/>
+  </head>
+  <results>
+    <result>
+      <binding name="g"><uri>urn:g1</uri></binding>
+      <binding name="inside"><uri>urn:g2</uri></binding>
+      <binding name="mark"><literal>m2</literal></binding>
+    </result>
+  </results>
+</sparql>

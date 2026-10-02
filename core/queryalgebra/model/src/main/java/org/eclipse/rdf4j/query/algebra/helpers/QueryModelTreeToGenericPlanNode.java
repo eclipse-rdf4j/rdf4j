@@ -22,15 +22,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
-import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -49,21 +41,13 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 @InternalUseOnly
 public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<RuntimeException> {
 
-	private static final Set<String> LEFT_BOUND_RIGHT_ALGORITHMS = Set.of(
-			"JoinIterator",
-			"LeftJoinIterator",
-			"BadlyDesignedLeftJoinIterator",
-			"ServiceJoinIterator");
-	private static final Set<String> INCOMING_ONLY_RIGHT_ALGORITHMS = Set.of(
-			"HashJoinIteration",
-			"InnerMergeJoinIterator");
-
 	private GenericPlanNode top = null;
 	private final QueryModelNode topTupleExpr;
 	private final QueryModelNode optimizerMetricWrapper;
 	private final Explanation.Level level;
 	private final Set<String> rootIncomingBindings;
 	private final CartesianJoinExplainAnalyzer cartesianJoinExplainAnalyzer;
+	private final QueryAlgebraBindingAnalysis bindingAnalysis;
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr) {
 		this(topTupleExpr, Collections.emptySet(), defaultExplanationLevel(topTupleExpr));
@@ -85,6 +69,8 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		this.level = level == null ? defaultExplanationLevel(topTupleExpr) : level;
 		this.rootIncomingBindings = rootIncomingBindings == null ? Collections.emptySet()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(rootIncomingBindings));
+		this.bindingAnalysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(
+				this.topTupleExpr instanceof TupleExpr tupleExpr ? tupleExpr : null, this.rootIncomingBindings);
 		this.cartesianJoinExplainAnalyzer = this.level.includesEvaluationAnnotations()
 				? new CartesianJoinExplainAnalyzer(this.topTupleExpr, this.rootIncomingBindings)
 				: null;
@@ -92,7 +78,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	public GenericPlanNode getGenericPlanNode() {
 		if (top == null && topTupleExpr != null) {
-			top = buildPlanNode(topTupleExpr, rootIncomingBindings);
+			top = buildPlanNode(topTupleExpr);
 		}
 		if (top != null) {
 			top.applyExplanationLevel(level);
@@ -103,11 +89,11 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	@Override
 	protected void meetNode(QueryModelNode node) {
 		if (node == topTupleExpr && top == null) {
-			top = buildPlanNode(node, rootIncomingBindings);
+			top = buildPlanNode(node);
 		}
 	}
 
-	private GenericPlanNode buildPlanNode(QueryModelNode node, Set<String> incomingBindings) {
+	private GenericPlanNode buildPlanNode(QueryModelNode node) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
@@ -143,7 +129,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			copyOptimizerMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
-			applyExplainAnnotations(node, genericPlanNode, incomingBindings);
+			applyExplainAnnotations(node, genericPlanNode);
 		}
 		if (node instanceof VariableScopeChange) {
 			genericPlanNode.setNewScope(((VariableScopeChange) node).isVariableScopeChange());
@@ -154,7 +140,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0);
 
 		for (QueryModelNode child : directChildren(node)) {
-			genericPlanNode.addPlans(buildPlanNode(child, childIncomingBindings(node, child, incomingBindings)));
+			genericPlanNode.addPlans(buildPlanNode(child));
 		}
 
 		return genericPlanNode;
@@ -259,13 +245,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		return inputBindings;
 	}
 
-	private void applyExplainAnnotations(QueryModelNode node, GenericPlanNode genericPlanNode,
-			Set<String> incomingBindings) {
+	private void applyExplainAnnotations(QueryModelNode node, GenericPlanNode genericPlanNode) {
 		if (node instanceof Var) {
 			Var var = (Var) node;
 			if (!var.isConstant()) {
-				genericPlanNode.setStringMetricActual(TelemetryMetricNames.BINDING_STATE,
-						incomingBindings.contains(var.getName()) ? "bound" : "unbound");
+				QueryAlgebraBindingAnalysis.BindingState state = bindingAnalysis.bindingState(var,
+						bindingAnalysis.contextAt(var));
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.BINDING_STATE, bindingStateName(state));
 			}
 		}
 
@@ -279,6 +265,15 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.JOIN_TYPE, joinType);
 			}
 		}
+	}
+
+	private static String bindingStateName(QueryAlgebraBindingAnalysis.BindingState state) {
+		return switch (state) {
+		case BOUND -> "bound";
+		case POSSIBLY_BOUND -> "possibly bound";
+		case UNBOUND -> "unbound";
+		case UNKNOWN -> "unknown";
+		};
 	}
 
 	private static void applyIndexAnnotation(StatementPattern statementPattern, GenericPlanNode genericPlanNode,
@@ -298,77 +293,6 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
 			}
 		}
-	}
-
-	private Set<String> childIncomingBindings(QueryModelNode parent, QueryModelNode child,
-			Set<String> incomingBindings) {
-		if (parent instanceof BinaryTupleOperator && child == ((BinaryTupleOperator) parent).getRightArg()) {
-			return rightIncomingBindings((BinaryTupleOperator) parent, incomingBindings);
-		}
-		if (parent instanceof Filter && child == ((Filter) parent).getCondition()) {
-			return union(incomingBindings, ((Filter) parent).getArg().getBindingNames());
-		}
-		if (parent instanceof LeftJoin && child == ((LeftJoin) parent).getCondition()) {
-			LeftJoin leftJoin = (LeftJoin) parent;
-			return union(incomingBindings, leftJoin.getLeftArg().getBindingNames(),
-					leftJoin.getRightArg().getBindingNames());
-		}
-		if (parent instanceof Projection && child == ((Projection) parent).getProjectionElemList()) {
-			return union(incomingBindings, ((Projection) parent).getArg().getBindingNames());
-		}
-		if (parent instanceof Extension && child instanceof ExtensionElem) {
-			return incomingBindingsForExtensionElem((Extension) parent, (ExtensionElem) child, incomingBindings);
-		}
-		if (parent instanceof Group && child instanceof GroupElem) {
-			Group group = (Group) parent;
-			return union(incomingBindings, group.getArg().getBindingNames(), group.getGroupBindingNames());
-		}
-		if (parent instanceof OrderElem) {
-			return incomingBindings;
-		}
-		return incomingBindings;
-	}
-
-	private Set<String> incomingBindingsForExtensionElem(Extension extension, ExtensionElem extensionElem,
-			Set<String> incomingBindings) {
-		Set<String> visibleBindings = union(incomingBindings, extension.getArg().getBindingNames());
-		for (ExtensionElem element : extension.getElements()) {
-			if (element == extensionElem) {
-				break;
-			}
-			visibleBindings.add(element.getName());
-		}
-		return visibleBindings;
-	}
-
-	private Set<String> rightIncomingBindings(BinaryTupleOperator parent, Set<String> incomingBindings) {
-		if (!(parent instanceof Join || parent instanceof LeftJoin)) {
-			return incomingBindings;
-		}
-		String algorithmName = parent.getAlgorithmName();
-		if (algorithmName == null || algorithmName.isEmpty()) {
-			return union(incomingBindings, parent.getLeftArg().getBindingNames());
-		}
-		if (INCOMING_ONLY_RIGHT_ALGORITHMS.contains(algorithmName)) {
-			return incomingBindings;
-		}
-		if (LEFT_BOUND_RIGHT_ALGORITHMS.contains(algorithmName)) {
-			return union(incomingBindings, parent.getLeftArg().getBindingNames());
-		}
-		return incomingBindings;
-	}
-
-	private static Set<String> union(Set<String> incomingBindings, Set<String> additionalBindings) {
-		Set<String> union = new LinkedHashSet<>(incomingBindings);
-		union.addAll(additionalBindings);
-		return union;
-	}
-
-	private static Set<String> union(Set<String> incomingBindings, Set<String> additionalBindings,
-			Set<String> moreBindings) {
-		Set<String> union = union(incomingBindings, additionalBindings);
-		union.addAll(moreBindings);
-		return union;
 	}
 
 	private static List<QueryModelNode> directChildren(QueryModelNode node) {

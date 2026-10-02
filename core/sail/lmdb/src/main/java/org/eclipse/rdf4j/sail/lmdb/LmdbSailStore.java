@@ -2521,8 +2521,14 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Object> activeWriterOwner = new ThreadLocal<>();
 
 	private final class PreparedWriteContext {
-		private final Object owner = new Object();
+		private final Object owner;
+		private final boolean ownsOwner;
 		private int references;
+
+		private PreparedWriteContext(Object owner, boolean ownsOwner) {
+			this.owner = owner;
+			this.ownsOwner = ownsOwner;
+		}
 	}
 
 	private final class PreparedWriteScope implements SailClosable {
@@ -2553,7 +2559,7 @@ class LmdbSailStore implements SailStore {
 				try {
 					writerLease.close();
 				} finally {
-					if (retiredOwner) {
+					if (retiredOwner && context.ownsOwner) {
 						completeWriterRollback(context.owner);
 					}
 				}
@@ -3540,16 +3546,23 @@ class LmdbSailStore implements SailStore {
 	private SailClosable beginPreparedWrite(Object requestedOwner) throws SailException {
 		ensureNamespacePersistenceCertain();
 		Object owner = requestedOwner;
-		if (owner == null) {
-			owner = activeWriterOwner.get();
-		}
-
 		Thread reservationThread = null;
 		PreparedWriteContext context = null;
 		if (owner == null) {
+			// Retain implicit ownership beyond an enclosing publication's close: the prepared sink still owns
+			// its branch lock and writer reservation, and a later unscoped publication must recover that owner.
+			Object inheritedOwner = currentWriterOwner();
+			PublicationContext publication = publicationContext.get();
+			boolean ownsInheritedOwner = publication != null && publication.ownsOwner;
 			reservationThread = Thread.currentThread();
 			context = preparedWriteContexts.compute(reservationThread, (thread, existing) -> {
-				PreparedWriteContext next = existing == null ? new PreparedWriteContext() : existing;
+				if (existing != null && inheritedOwner != null && existing.owner != inheritedOwner) {
+					throw new SailConflictException("A retained prepared publication cannot change writer ownership");
+				}
+				PreparedWriteContext next = existing == null
+						? new PreparedWriteContext(inheritedOwner == null ? new Object() : inheritedOwner,
+								inheritedOwner == null || ownsInheritedOwner)
+						: existing;
 				next.references++;
 				return next;
 			});
@@ -3561,7 +3574,7 @@ class LmdbSailStore implements SailStore {
 			lease = acquireWriterLease(owner);
 		} catch (RuntimeException | Error failure) {
 			if (context != null) {
-				if (releasePreparedWriteContext(reservationThread, context)) {
+				if (releasePreparedWriteContext(reservationThread, context) && context.ownsOwner) {
 					completeWriterRollback(context.owner);
 				}
 			}

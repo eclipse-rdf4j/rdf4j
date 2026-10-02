@@ -44,6 +44,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -74,6 +76,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 
@@ -814,6 +817,44 @@ class LmdbStoreFlushReproductionTest {
 			try (SailClosable laterPublication = source.beginPublication()) {
 				assertFalse(dataset.isSnapshotCurrent(),
 						"an intervening committed publication remains stale inside a later ordering scope");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void preparedObservationRetainsUnscopedOwnerAfterOuterPublicationCloses(boolean publish, @TempDir Path dataDir)
+			throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		try (SailSource source = store.getSailStore().getExplicitSailSource().fork();
+				SailSink sink = source.sink(IsolationLevels.SERIALIZABLE)) {
+			sink.observe(null, PREDICATE, null, new Resource[0]);
+			try (SailClosable publication = source.beginPublication()) {
+				sink.prepare();
+			}
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000L);
+					QueryExecutionDeadline.Scope ignored = deadline.enter();
+					SailClosable continuation = source.beginPublication()) {
+				// A bounded admission must recover the observation's retained logical publication owner.
+			}
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(250L);
+					QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				assertThrows(QueryInterruptedException.class, () -> source.beginPublication(new Object()),
+						"an explicitly unrelated publication must not inherit the retained owner");
+			}
+			if (publish) {
+				try (SailClosable publication = source.beginPublication()) {
+					sink.flush();
+				}
+			}
+			sink.close();
+			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000L);
+					QueryExecutionDeadline.Scope ignored = deadline.enter();
+					SailClosable later = source.beginPublication(new Object())) {
+				// Both successful publication and rollback release the reservation before an independent owner enters.
 			}
 		} finally {
 			store.shutDown();

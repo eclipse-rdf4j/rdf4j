@@ -210,8 +210,8 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		// Public transaction operations after prepare are restricted to commit, rollback, and close. Seal the retryable
 		// attempt after SHACL validation but before branch preparation can retain publication or cleanup locks. Closing
-		// the paired read snapshot materializes retained writer values, while branch changes and serializable
-		// observations remain intact for the normal prepare path.
+		// the paired read snapshot releases its native handles. Shared lazy value identity, branch changes, and
+		// serializable observations remain intact for the normal prepare path.
 		finishReadAttempt();
 		releaseReadDatasetsBeforePrepare();
 		releaseTransactionReadView();

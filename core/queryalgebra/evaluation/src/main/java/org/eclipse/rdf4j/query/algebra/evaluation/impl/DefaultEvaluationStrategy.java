@@ -137,6 +137,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
@@ -176,6 +177,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
@@ -491,7 +493,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryEvaluationStep precompile(TupleExpr expr) {
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
 				tripleSource.getComparator());
-		if (expr instanceof QueryRoot) {
+		if (expr instanceof QueryRoot && !hasUnknownBindingSetColumns(expr)) {
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
 			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
@@ -499,8 +501,42 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return precompile(expr, context);
 	}
 
+	private static boolean hasUnknownBindingSetColumns(TupleExpr expression) {
+		boolean[] unknown = { false };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				unknown[0] |= !assignment.hasRepeatableBindingSets();
+			}
+		});
+		// A fixed array layout cannot represent columns discovered only while a streaming source is evaluated.
+		return unknown[0];
+	}
+
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		if (!AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
+			QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
+			return AdaptiveFilterEvaluationStep.scope(precompilePlanned(expr, planning), planning);
+		}
+		return precompilePlanned(expr, context);
+	}
+
+	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context) {
+		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.prepare(expr, this, context, evaluationStatistics,
+				() -> precompileStandard(expr, context));
+		if (prepared == null) {
+			prepared = precompileStandard(expr, context);
+		}
+		QueryEvaluationStep tracked = trackPreparedStep(expr, prepared);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
+		return tracked;
+	}
+
+	private QueryEvaluationStep precompileStandard(TupleExpr expr, QueryEvaluationContext context) {
 		QueryEvaluationStep ret;
 
 		if (expr instanceof StatementPattern) {
@@ -529,17 +565,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 		}
 
+		QueryEvaluationStep prepared = ret == null ? QueryEvaluationStep.minimal(this, expr) : ret;
+		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, prepared);
+		return prepared;
+	}
+
+	/** Applies the ordinary instrumentation contract to evaluator-specific physical adapters. */
+	public QueryEvaluationStep trackPreparedStep(TupleExpr expr, QueryEvaluationStep ret) {
 		if (ret != null) {
-			if (trackTime) {
-				ret = trackTime(expr, ret);
+			if (!trackTime && !trackResultSize) {
+				return ret;
 			}
-			if (trackResultSize) {
-				ret = trackResultSize(expr, ret);
-			}
-			return ret;
-		} else {
-			return QueryEvaluationStep.minimal(this, expr);
+			return AdaptiveFilterEvaluationStep.decorate(ret, prepared -> {
+				QueryEvaluationStep tracked = prepared;
+				if (trackTime) {
+					tracked = trackTime(expr, tracked);
+				}
+				if (trackResultSize) {
+					tracked = trackResultSize(expr, tracked);
+				}
+				return tracked;
+			});
 		}
+		throw new IllegalArgumentException("prepared step must not be null");
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
@@ -651,7 +699,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return new JoinQueryEvaluationStep(this, node, context);
+		return new JoinQueryEvaluationStep(this, node, context).attachAdaptive(context, node,
+				trackResultSize || trackTime);
 	}
 
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
@@ -691,14 +740,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);
+		return new StatementPatternQueryEvaluationStep(node, context,
+				AdaptiveFilterEvaluationStep.workSource(tripleSource, context));
 	}
 
 	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep leftQes = precompile(node.getLeftArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getLeftArg(), leftQes);
 		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getRightArg(), rightQes);
 
-		return new UnionQueryEvaluationStep(leftQes, rightQes);
+		return AdaptiveFilterEvaluationStep.binary(context, node, new UnionQueryEvaluationStep(leftQes, rightQes),
+				UnionQueryEvaluationStep::new);
 	}
 
 	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -709,28 +762,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		boolean setNullOnError = !isWithinMinusRightArg(node);
 		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
-				context, setNullOnError);
+				context);
 		return new ExtensionQueryEvaluationStep(arg, consumer, context);
-	}
-
-	private static boolean isWithinMinusRightArg(QueryModelNode node) {
-		QueryModelNode child = node;
-		QueryModelNode parent = node.getParentNode();
-		while (parent != null) {
-			if (parent instanceof Difference diff) {
-				if (diff.getRightArg() == child) {
-					return true;
-				}
-				if (diff.getLeftArg() == child) {
-					return false;
-				}
-			}
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		return false;
 	}
 
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
@@ -1925,14 +1959,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
 		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
 		if (leftStep.isConstant() && rightStep.isConstant()) {
-			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
-			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
 			Value value;
 			try {
+				Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+				Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
 				value = operation.apply(leftVal, rightVal);
 			} catch (ValueExprEvaluationException e) {
-				// defer the error to evaluation, where OR, IF, COALESCE and BIND apply their error rules
-				return new QueryValueEvaluationStep.Fail(e.getMessage());
+				// Keep the error per solution (it makes a BIND unbound or a FILTER false) instead of failing the query.
+				return failingValueEvaluationStep(e);
 			}
 			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else if (leftStep.isConstant()) {
@@ -1969,13 +2003,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
 		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
 		if (argStep.isConstant()) {
-			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());
 			Value value;
 			try {
-				value = operation.apply(argValue);
+				value = operation.apply(argStep.evaluate(EmptyBindingSet.getInstance()));
 			} catch (ValueExprEvaluationException e) {
-				// defer the error to evaluation, where OR, IF, COALESCE and BIND apply their error rules
-				return new QueryValueEvaluationStep.Fail(e.getMessage());
+				return failingValueEvaluationStep(e);
 			}
 			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else {
@@ -1984,6 +2016,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return operation.apply(argValue);
 			};
 		}
+	}
+
+	private static QueryValueEvaluationStep failingValueEvaluationStep(ValueExprEvaluationException failure) {
+		return bindings -> {
+			throw new ValueExprEvaluationException(failure.getMessage(), failure);
+		};
 	}
 
 	/**

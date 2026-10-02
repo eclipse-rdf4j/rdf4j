@@ -826,15 +826,42 @@ class SailSourceBranchTest {
 	}
 
 	@Test
-	void readOnlySerializableChangesetsDoNotReservePreparedWriter() throws SailException {
+	void readOnlySerializableChangesetsReserveWriterUntilTheirBranchLockCloses() throws Exception {
 		PreparedWriteTrackingBackingSource backing = new PreparedWriteTrackingBackingSource();
 		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
 		backing.branch.set(branch);
 
-		try (branch; SailSink sink = branch.sink(IsolationLevels.SERIALIZABLE)) {
+		try (branch; ExecutorService executor = Executors.newSingleThreadExecutor();
+				SailSink sink = branch.sink(IsolationLevels.SERIALIZABLE)) {
+			backing.executor = executor;
 			sink.observe(null, null, null, new Resource[0]);
 			sink.prepare();
-			assertEquals(0, backing.acquisitions.get(), "read observations do not reserve the backing writer");
+			assertEquals(1, backing.acquisitions.get(),
+					"an observation-only prepare must retain its writer reservation with its branch lock");
+			assertEquals(1, backing.activeReservations.get());
+			sink.close();
+			assertEquals(1, backing.releases.get(), "rollback releases the observation reservation once");
+			assertEquals(0, backing.activeReservations.get());
+		}
+	}
+
+	@Test
+	void observationPrepareFailureReleasesItsWriterReservation() throws Exception {
+		PreparedWriteTrackingBackingSource backing = new PreparedWriteTrackingBackingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
+		backing.branch.set(branch);
+		try (branch; ExecutorService executor = Executors.newSingleThreadExecutor();
+				SailSink sink = branch.sink(IsolationLevels.SERIALIZABLE)) {
+			backing.executor = executor;
+			sink.observe(null, null, null, new Resource[0]);
+			backing.publicationFailure = new SailException("failed observation prepare publication");
+			assertEquals(backing.publicationFailure, assertThrows(SailException.class, sink::prepare));
+			assertEquals(1, backing.acquisitions.get());
+			assertEquals(1, backing.releases.get());
+			assertEquals(0, backing.activeReservations.get());
+			backing.publicationFailure = null;
+			assertFalse(executor.submit(branch::isChanged).get(5, TimeUnit.SECONDS),
+					"failed preparation must not retain the branch semaphore");
 		}
 	}
 
@@ -954,20 +981,41 @@ class SailSourceBranchTest {
 
 	@Test
 	void preparedChangesetReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore() throws Exception {
+		preparedChangesetReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore(true, false);
+	}
+
+	@Test
+	void preparedObservationReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore() throws Exception {
+		preparedChangesetReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore(false, false);
+	}
+
+	@Test
+	void nestedPreparedObservationReservesWriterAcrossParentPublication() throws Exception {
+		preparedChangesetReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore(false, true);
+	}
+
+	private void preparedChangesetReservationLetsCommitFinishBeforeCompetitorTakesBranchSemaphore(boolean writes,
+			boolean nested)
+			throws Exception {
 		WriterLeaseBackingSource backing = new WriterLeaseBackingSource();
-		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
+		SailSourceBranch parent = nested ? new SailSourceBranch(backing, new DynamicModelFactory(), false) : null;
+		SailSourceBranch branch = new SailSourceBranch(nested ? parent : backing, new DynamicModelFactory(), false);
 		CountDownLatch prepared = new CountDownLatch(1);
 		CountDownLatch allowCommit = new CountDownLatch(1);
 		CountDownLatch competingWriterAcquired = new CountDownLatch(1);
 		CountDownLatch competingBranchLockAcquired = new CountDownLatch(1);
 		CountDownLatch commitFlushComplete = new CountDownLatch(1);
 
-		try (branch; ExecutorService executor = Executors.newFixedThreadPool(2)) {
+		try (parent; branch; ExecutorService executor = Executors.newFixedThreadPool(2)) {
 			Future<?> preparedCommit = executor.submit(() -> {
-				SailSink sink = branch.sink(IsolationLevels.SNAPSHOT);
-				sink.approve(SimpleValueFactory.getInstance().createIRI("urn:s"),
-						SimpleValueFactory.getInstance().createIRI("urn:p"),
-						SimpleValueFactory.getInstance().createIRI("urn:o"), null);
+				SailSink sink = branch.sink(writes ? IsolationLevels.SNAPSHOT : IsolationLevels.SERIALIZABLE);
+				if (writes) {
+					sink.approve(SimpleValueFactory.getInstance().createIRI("urn:s"),
+							SimpleValueFactory.getInstance().createIRI("urn:p"),
+							SimpleValueFactory.getInstance().createIRI("urn:o"), null);
+				} else {
+					sink.observe(null, null, null, new Resource[0]);
+				}
 				sink.prepare();
 				sink.flush();
 				prepared.countDown();
@@ -1489,6 +1537,7 @@ class SailSourceBranchTest {
 		private final AtomicInteger releases = new AtomicInteger();
 		private final AtomicInteger activeReservations = new AtomicInteger();
 		private ExecutorService executor;
+		private SailException publicationFailure;
 
 		@Override
 		public SailSink sink(IsolationLevel level) {
@@ -1498,6 +1547,15 @@ class SailSourceBranchTest {
 		@Override
 		public SailDataset dataset(IsolationLevel level) {
 			return new CloseCountingDataset(new AtomicInteger());
+		}
+
+		@Override
+		public SailClosable beginPublication() {
+			if (publicationFailure != null) {
+				throw publicationFailure;
+			}
+			return () -> {
+			};
 		}
 
 		@Override
