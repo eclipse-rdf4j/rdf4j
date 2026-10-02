@@ -157,6 +157,8 @@ test('narrow query layout keeps navigation above full-width content', async ({ p
             return {
                 clientWidth: document.documentElement.clientWidth,
                 scrollWidth: document.documentElement.scrollWidth,
+                // The width left for the page once a classic scrollbar's stable gutter is reserved.
+                layoutWidth: document.body.clientWidth,
                 navigationBottom: navigation.bottom,
                 contentTop: content.top,
                 contentWidth: content.width,
@@ -166,8 +168,8 @@ test('narrow query layout keeps navigation above full-width content', async ({ p
 
         expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
         expect(metrics.navigationBottom).toBeLessThanOrEqual(metrics.contentTop + 1);
-        expect(metrics.contentWidth).toBeGreaterThanOrEqual(metrics.clientWidth - 32);
-        expect(metrics.resultsWidth).toBeGreaterThanOrEqual(metrics.clientWidth - 32);
+        expect(metrics.contentWidth).toBeGreaterThanOrEqual(metrics.layoutWidth - 32);
+        expect(metrics.resultsWidth).toBeGreaterThanOrEqual(metrics.layoutWidth - 32);
     }
 });
 

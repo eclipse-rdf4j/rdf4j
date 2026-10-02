@@ -192,10 +192,12 @@ test('query shell uses outline icons and a responsive Menu disclosure', async ({
     await expect(menu).toBeVisible();
     await expect(menu.locator('a').first()).toBeVisible();
     await page.keyboard.press('Escape');
+    // Classic scrollbars (Linux, Windows) keep a stable gutter, so the page may be narrower than the viewport;
+    // closing the menu must leave no horizontal overflow.
     await expect.poll(() => page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
-        scrollWidth: document.documentElement.scrollWidth
-    }))).toEqual({ clientWidth: 390, scrollWidth: 390 });
+        overflows: document.documentElement.scrollWidth > document.documentElement.clientWidth
+    }))).toEqual({ clientWidth: 390, overflows: false });
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload({ waitUntil: 'domcontentloaded' });
