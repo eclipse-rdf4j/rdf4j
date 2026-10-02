@@ -3250,7 +3250,9 @@ module workbench {
             const explanation = text(pageValue(model, 'explanation'));
             const explanationFormat = text(pageValue(model, 'explanation-format')) || 'text';
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
-            const saveDisclosure = workbench.detailDisclosure.renderSeparated(h, {
+            // Each pane follows its own toggle, so Tab from an open pane's toggle moves into the pane. The panes open
+            // over the page (M14.3), so where they sit in the toolbar does not move its buttons.
+            const saveDisclosure = workbench.detailDisclosure.render(h, {
                 id: 'save-query-disclosure', toggleId: 'save-query-toggle', panelId: 'save-query-panel',
                 label: 'Save query', ownerClass: 'query-disclosure query-save-disclosure',
                 toggleClass: 'query-disclosure__toggle workbench-action workbench-action--secondary',
@@ -3269,7 +3271,7 @@ module workbench {
                     <input id="save" type="submit" value="Save" disabled
                         ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
                 </div>`);
-            const optionsDisclosure = workbench.detailDisclosure.renderSeparated(h, {
+            const optionsDisclosure = workbench.detailDisclosure.render(h, {
                 id: 'query-options-disclosure', toggleId: 'query-options-toggle',
                 panelId: 'query-options-panel', label: 'Query settings', icon: icon(runtime, 'sliders'),
                 ownerClass: 'query-disclosure query-options-disclosure',
@@ -3343,10 +3345,7 @@ module workbench {
                                     @click=${() => invoke('workbench.query.cancelExplain')} /></span>
                         </div>
                         <div class="workbench-action-toolbar__actions">
-                            <div class="workbench-action-toolbar__group">${saveDisclosure.owner}${optionsDisclosure.owner}</div>
-                        </div>
-                        <div class="workbench-action-toolbar__panels workbench-disclosure-track">
-                            ${saveDisclosure.panel}${optionsDisclosure.panel}
+                            <div class="workbench-action-toolbar__group">${saveDisclosure}${optionsDisclosure}</div>
                         </div>
                     </div>
                     </div>

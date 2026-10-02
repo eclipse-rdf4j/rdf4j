@@ -292,7 +292,9 @@ body.query-result-embedded-body .workbench-action-toolbar__primary > h2 {
 	display: contents;
 }
 
-.workbench-action-toolbar__group:not(:has(button:not([hidden]), input:not([hidden]))) {
+/* Only the group's own controls count: the controls in a pane that follows its toggle do not keep the group. */
+.workbench-action-toolbar__group:not(:has(> :is(button, input):not([hidden]),
+		> .workbench-disclosure > :is(button, input):not([hidden]))) {
 	display: none;
 }
 

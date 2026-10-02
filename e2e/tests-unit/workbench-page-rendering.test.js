@@ -1079,6 +1079,27 @@ test('query route renders the existing streaming form and result targets', () =>
     }
 });
 
+test('query toolbar panes follow their own toggles in keyboard order', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'query', vars: [], rows: [], metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, runtime));
+    const position = (id) => {
+        const index = markup.indexOf(`id="${id}"`);
+        assert.ok(index >= 0, `query route should render ${id}`);
+        return index;
+    };
+    const focusable = /<(?:button|input|select|textarea|a)\b|tabindex=/;
+    const panes = [['save-query-toggle', 'save-query-panel'], ['query-options-toggle', 'query-options-panel']];
+    for (const [toggle, panel] of panes) {
+        const toggleEnd = markup.indexOf('</button>', position(toggle));
+        assert.ok(toggleEnd >= 0 && toggleEnd < position(panel), `${panel} should come after ${toggle}`);
+        const between = markup.substring(toggleEnd, markup.lastIndexOf('<', position(panel)));
+        assert.doesNotMatch(between, focusable, `Tab from ${toggle} should move into ${panel}`);
+    }
+});
+
 test('query page renderer receives the Lit runtime through its shell context', async () => {
     const workbench = loadWorkbench();
     installTestStreamRuntime(workbench);
