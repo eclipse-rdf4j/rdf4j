@@ -1,14 +1,42 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const path = require('path');
+const {
+    createSeededRepository,
+    deleteRepository,
+    repositoryPageUrl,
+    runQuery,
+    serverBaseUrl,
+    uniqueRepositoryId
+} = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'query-refresh-layout';
-const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
-const DESIGN_DIR = path.resolve(__dirname, '../../design/workbench-query-refresh');
-const CHEVRON_DIR = path.resolve(__dirname, '../../design/workbench-polish-20260925/final-chevron-v6-20260925');
+// Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md):
+// - "keeps a result pending while its XSL stylesheet response is held": the Workbench no longer uses XSL stylesheets
+//   (.agent/execplans/workbench-xslt-removal.md); a streamed result that is still arriving keeps the result busy, which
+//   workbench-query-load-more.spec.js "query progress keeps loaded rows browsable and Load more waits for terminal
+//   metadata" checks.
+// - "sizes short results to content and caps large result scrolling" and "resizes result content through repeated
+//   disclosures and supports real frame scrolling" measured the retired result iframe; results now scroll with the page
+//   (app-shell plan, decision M4.1), which workbench-result-scrolling.spec.js "results scroll with the page under a
+//   pinned header" checks down to the last row, and workbench-dropdown-detail-parity.spec.js "dynamic result details
+//   keep distinct triggers and responsive Format-style fields" opens and closes the Download and Display panes in turn.
+// - "keeps embedded result paging visible and groups download controls": the Next/Previous paging and the result's
+//   "results per page" control were replaced by Load more (workbench-query-load-more.spec.js "Execute requests one
+//   million rows by default and renders no result page controls"); the Download and Display panes are checked by
+//   workbench-dropdown-detail-parity.spec.js ("dynamic result details ...") and their chevrons by "uses the shared SVG
+//   chevron across query and embedded result states" below.
+// - "keeps the embedded result header aligned when result disclosures open" and "keeps the embedded result title
+//   readable on a narrow viewport": the result's "Query result" heading is visually hidden in the output card (app-shell
+//   plan, decision M3.5); the result toolbar row is checked by workbench-dropdown-detail-parity.spec.js ("dynamic result
+//   details ...") and workbench-settings-panes.spec.js (a result pane opens without moving its toolbar).
+// Screenshots go to the test output directory instead of the design folders they were first captured for.
+
+const REPOSITORY_ID = uniqueRepositoryId('query-refresh-layout');
+const QUERY_URL = repositoryPageUrl(REPOSITORY_ID, 'query');
+
+/** The streamed result on the Query page (it replaced the result iframe). */
+function resultRoot(page) {
+    return page.locator('#query-results [data-query-stream-root]');
+}
 
 function readChevron(toggle) {
     const icon = toggle.querySelector('svg.workbench-disclosure-chevron');
@@ -73,13 +101,16 @@ async function expectChevronState(locator, size, rotation) {
     expectChevron(await locator.evaluate(readChevron), size, rotation);
 }
 
-test.beforeEach(async ({ page, request }) => {
-    await request.delete(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`);
-    const createResponse = await request.put(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`, {
-        headers: { 'Content-Type': 'text/turtle' },
-        data: nativeRepositoryConfig(REPOSITORY_ID)
-    });
-    expect([200, 201, 204]).toContain(createResponse.status());
+test.beforeAll(async ({ request }) => {
+    await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID,
+        { graphs: [], label: 'Query refresh layout test' });
+});
+
+test.afterAll(async ({ request }) => {
+    await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
+});
+
+test.beforeEach(async ({ page }) => {
     await page.goto(QUERY_URL);
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
 });
@@ -113,14 +144,16 @@ test('narrow query layout keeps navigation above full-width content', async ({ p
         await page.setViewportSize({ width, height: 900 });
         await page.reload();
         await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-        await page.locator('.CodeMirror').evaluate(element =>
-            element.CodeMirror.setValue('ASK { VALUES ?s { <http://example.org/alice> } }'));
-        await page.locator('#exec').click();
-        await page.frameLocator('#query-results-frame').locator('#rdf4j-query-result').waitFor({ state: 'attached' });
+        await runQuery(page, 'ASK { VALUES ?s { <http://example.org/alice> } }');
+        // On narrow screens the menu is the Menu button in the context bar (app-shell plan M2.8); the side menu is not
+        // shown beside the content.
+        await expect(page.locator('#workbench-menu-button')).toBeVisible();
+        await expect(page.locator('#workbench-navigation-disclosure')).toBeHidden();
         const metrics = await page.evaluate(() => {
-            const navigation = document.querySelector('#navigation').getBoundingClientRect();
+            const navigation = document.querySelector('#workbench-menu-button').getBoundingClientRect();
             const content = document.querySelector('#content').getBoundingClientRect();
-            const results = document.querySelector('#query-results').getBoundingClientRect();
+            // The result card is the output card that holds the Results and Explanation tabs.
+            const results = document.querySelector('#query-output').getBoundingClientRect();
             return {
                 clientWidth: document.documentElement.clientWidth,
                 scrollWidth: document.documentElement.scrollWidth,
@@ -138,25 +171,24 @@ test('narrow query layout keeps navigation above full-width content', async ({ p
     }
 });
 
-test('captures the stacked query and embedded result surfaces', async ({ page }) => {
+test('captures the stacked query and embedded result surfaces', async ({ page }, testInfo) => {
     for (const [width, name] of [[1440, 'implementation-desktop'], [390, 'implementation-narrow']]) {
         await page.setViewportSize({ width, height: 1000 });
         await page.reload();
         await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-        await page.locator('.CodeMirror').evaluate((element) => {
-            element.CodeMirror.setValue(`SELECT ?s ?p ?o WHERE {
+        await runQuery(page, `SELECT ?s ?p ?o WHERE {
                 VALUES (?s ?p ?o) {
                     ("short" <http://example.org/p> <http://example.org/resource/with-a-very-long-name-001>)
                     ("a much longer literal value" <http://example.org/another-predicate> "tiny")
                     (<http://example.org/resource/subject> <http://example.org/predicate/with-a-long-name> "another long literal value")
                 }
             }`);
-        });
-        await page.locator('#exec').click();
-        await expect(page.frameLocator('#query-results-frame').locator('table.data tbody tr')).toHaveCount(3);
+        // Auto shows the rows as a table on the desktop and as records on the narrow page.
+        await expect(resultRoot(page).locator('table.data tbody tr[data-query-row-index], [data-query-record-index]'))
+            .toHaveCount(3);
         await expect(page.locator('#query-results-status')).toBeEmpty();
         await page.screenshot({
-            path: path.join(DESIGN_DIR, `${name}.png`),
+            path: testInfo.outputPath(`${name}.png`),
             fullPage: true,
             animations: 'disabled',
             caret: 'hide'
@@ -164,26 +196,23 @@ test('captures the stacked query and embedded result surfaces', async ({ page })
     }
 });
 
-test('captures the expanded query and result disclosures', async ({ page }) => {
+test('captures the expanded query and result disclosures', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.reload();
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-    await page.locator('.CodeMirror').evaluate(element => {
-        element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-    });
-    await page.locator('#exec').click();
-    const resultFrame = page.frameLocator('#query-results-frame');
-    await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(3);
+    await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
+    const result = resultRoot(page);
+    await expect(result.locator('table.data tbody tr')).toHaveCount(3);
 
     await page.locator('#query-options-toggle').press('Enter');
     await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#query-timeout')).toBeVisible();
     await expect(page.locator('#query-name')).toBeHidden();
-    await resultFrame.locator('#query-result-download-toggle').press('Enter');
-    await expect(resultFrame.locator('#Accept')).toBeVisible();
-    await expect(resultFrame.locator('#limit_query')).toBeHidden();
+    await result.locator('.query-result-download-toggle').press('Enter');
+    await expect(result.locator('select[name="Accept"]')).toBeVisible();
+    await expect(result.locator('select[name="result-layout"]')).toBeHidden();
     await page.screenshot({
-        path: path.join(DESIGN_DIR, 'implementation-query-options-and-download.png'),
+        path: testInfo.outputPath('implementation-query-options-and-download.png'),
         fullPage: true,
         animations: 'disabled',
         caret: 'hide'
@@ -194,91 +223,68 @@ test('captures the expanded query and result disclosures', async ({ page }) => {
     await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#query-name')).toBeVisible();
     await expect(page.locator('#query-timeout')).toBeHidden();
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
-    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await expect(resultFrame.locator('#limit_query')).toBeVisible();
-    await expect(resultFrame.locator('#Accept')).toBeHidden();
+    await result.locator('.query-result-options-toggle').press('Enter');
+    await expect(result.locator('.query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(result.locator('.query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await expect(result.locator('select[name="result-layout"]')).toBeVisible();
+    await expect(result.locator('select[name="Accept"]')).toBeHidden();
     await page.screenshot({
-        path: path.join(DESIGN_DIR, 'implementation-expanded.png'),
+        path: testInfo.outputPath('implementation-expanded.png'),
         fullPage: true,
         animations: 'disabled',
         caret: 'hide'
     });
 });
 
-test('keeps a result pending while its XSL stylesheet response is held', async ({ page }) => {
-    let releaseStylesheet;
-    let stylesheetSeen = false;
-    let holdStylesheet = false;
-    const stylesheetGate = new Promise(resolve => {
-        releaseStylesheet = resolve;
-    });
-
-    await page.route('**/rdf4j-workbench/transformations/tuple.xsl', async route => {
-        if (holdStylesheet) {
-            stylesheetSeen = true;
-            await stylesheetGate;
-        }
-        await route.continue();
-    });
-
-    try {
-        await page.locator('.CodeMirror').evaluate(element => {
-            element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-        });
-        holdStylesheet = true;
-        const startedAt = Date.now();
-        await page.locator('#exec').click();
-        await expect.poll(() => stylesheetSeen, { timeout: 5000 }).toBe(true);
-        await expect.poll(() => Date.now() - startedAt, { timeout: 1000, intervals: [50] })
-            .toBeGreaterThan(300);
-        await expect(page.locator('#query-results-loading')).toBeVisible();
-        await expect(page.locator('#query-request-id')).not.toHaveValue('');
-        await expect(page.locator('#query-results-status')).toBeEmpty();
-        releaseStylesheet();
-        await expect(page.frameLocator('#query-results-frame').locator('table.data tbody tr'))
-            .toHaveCount(3);
-    } finally {
-        releaseStylesheet();
-    }
-});
-
 test('keeps navigation state and option controls coherent on a narrow query page', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.reload();
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-    const metrics = await page.evaluate(() => {
-        const rect = selector => document.querySelector(selector).getBoundingClientRect();
-        const queryLink = document.querySelector('#navigation a[href="query"]');
-        const queryLinkStyle = getComputedStyle(queryLink);
-        const infer = rect('#infer');
-        const inferLabel = rect('label[for="infer"]');
-        const privateInput = rect('#save-private');
-        const privateLabel = rect('label[for="save-private"]');
-        return {
-            logoTop: rect('#logo').top,
-            contextTop: rect('#workbench-repository-switcher').top,
-            queryBorderWidth: parseFloat(queryLinkStyle.borderLeftWidth),
-            queryBackground: queryLinkStyle.backgroundColor,
-            inferPairGap: Math.abs((infer.top + infer.bottom) / 2 - (inferLabel.top + inferLabel.bottom) / 2),
-            privatePairGap: Math.abs((privateInput.top + privateInput.bottom) / 2
-                - (privateLabel.top + privateLabel.bottom) / 2),
-            inferLabelFor: document.querySelector('label[for="infer"]').htmlFor,
-            privateLabelFor: document.querySelector('label[for="save-private"]').htmlFor
-        };
+    // The narrow menu is the sheet opened by the Menu button (app-shell plan M2.8); the logo and the repository
+    // switcher share the one-row context bar, which workbench-navigation.spec.js ("mobile header omits the theme
+    // selector and keeps server context reachable") checks.
+    await page.locator('#workbench-menu-button').click();
+    const queryLink = page.locator('#workbench-menu-sheet a[aria-current="page"]');
+    await expect(queryLink).toBeVisible();
+    await expect(queryLink).toHaveText(/Query/);
+    const navigation = await queryLink.evaluate(link => {
+        const style = getComputedStyle(link);
+        return { borderWidth: parseFloat(style.borderLeftWidth), background: style.backgroundColor };
     });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#workbench-menu-sheet')).toBeHidden();
 
-    expect(metrics.logoTop).toBeLessThanOrEqual(metrics.contextTop + 1);
-    expect(metrics.queryBorderWidth).toBeGreaterThanOrEqual(2);
-    expect(metrics.queryBackground).not.toBe('rgba(0, 0, 0, 0)');
-    expect(metrics.inferPairGap).toBeLessThanOrEqual(1);
-    expect(metrics.privatePairGap).toBeLessThanOrEqual(1);
-    expect(metrics.inferLabelFor).toBe('infer');
-    expect(metrics.privateLabelFor).toBe('save-private');
+    const pairGeometry = (inputSelector) => page.evaluate((selector) => {
+        const input = document.querySelector(selector);
+        const label = input.labels[0];
+        const inputRect = input.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        return {
+            labels: input.labels.length,
+            visible: inputRect.width > 0 && labelRect.width > 0,
+            gap: Math.abs((inputRect.top + inputRect.bottom) / 2 - (labelRect.top + labelRect.bottom) / 2)
+        };
+    }, inputSelector);
+    await page.locator('#query-options-toggle').click();
+    await expect(page.locator('#infer')).toBeVisible();
+    const infer = await pairGeometry('#infer');
+    await page.locator('#save-query-toggle').click();
+    await expect(page.locator('#save-private')).toBeVisible();
+    const privateInput = await pairGeometry('#save-private');
+
+    expect(navigation.borderWidth).toBeGreaterThanOrEqual(2);
+    expect(navigation.background).not.toBe('rgba(0, 0, 0, 0)');
+    expect(infer.visible).toBe(true);
+    expect(infer.gap).toBeLessThanOrEqual(1);
+    expect(privateInput.visible).toBe(true);
+    expect(privateInput.gap).toBeLessThanOrEqual(1);
+    expect(infer.labels).toBe(1);
+    expect(privateInput.labels).toBe(1);
 });
 
 test('stacks query option labels and contains controls on desktop and mobile', async ({ page }) => {
+    // "Query settings" no longer holds a results-per-page select (results load with Load more) or the "Clear" button
+    // ("Insert prefixes" replaced it in app-shell plan task M3.4).
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload();
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
@@ -288,18 +294,11 @@ test('stacks query option labels and contains controls on desktop and mobile', a
     const desktop = await page.evaluate(() => {
         const bounds = selector => document.querySelector(selector).getBoundingClientRect();
         const controls = [
-            bounds('#limit_query'),
             bounds('#query-timeout'),
             document.querySelector('#infer').parentElement.getBoundingClientRect(),
-            bounds('#query-options-panel .workbench-disclosure__actions input[type="button"]')
+            bounds('#query-options-panel .workbench-disclosure__actions button')
         ];
-        const controlHeights = {
-            resultsPerPage: bounds('#limit_query').height,
-            timeout: bounds('#query-timeout').height,
-            clear: bounds('#query-options-panel .workbench-disclosure__actions input[type="button"]').height
-        };
         const stackedLabels = [
-            ['label[for="limit_query"]', '#limit_query'],
             ['label[for="query-timeout"]', '#query-timeout']
         ].map(([labelSelector, controlSelector]) => ({
             labelBottom: bounds(labelSelector).bottom,
@@ -309,9 +308,6 @@ test('stacks query option labels and contains controls on desktop and mobile', a
             panel: bounds('#query-options-panel'),
             controls,
             stackedLabels,
-            controlHeights,
-            controlHeightSpread: Math.max(...Object.values(controlHeights)) - Math.min(...Object.values(controlHeights)),
-            limitLabelFor: document.querySelector('#query-options-panel label[for="limit_query"]')?.htmlFor ?? null,
             timeoutLabelFor: document.querySelector('#query-options-panel label[for="query-timeout"]')?.htmlFor ?? null,
             inferredLabelFor: document.querySelector('#query-options-panel label[for="infer"]')?.htmlFor ?? null
         };
@@ -325,14 +321,8 @@ test('stacks query option labels and contains controls on desktop and mobile', a
         expect(control.left).toBeGreaterThanOrEqual(desktop.panel.left + 8);
         expect(control.right).toBeLessThanOrEqual(desktop.panel.right - 8);
     }
-    expect(desktop.limitLabelFor).toBe('limit_query');
     expect(desktop.timeoutLabelFor).toBe('query-timeout');
     expect(desktop.inferredLabelFor).toBe('infer');
-
-    const limit = page.locator('#limit_query');
-    await page.locator('label[for="limit_query"]').click();
-    await expect(limit).toBeFocused();
-    await limit.selectOption('50');
 
     const infer = page.locator('#infer');
     const inferredBeforeLabelClick = await infer.isChecked();
@@ -343,19 +333,7 @@ test('stacks query option labels and contains controls on desktop and mobile', a
     await page.locator('label[for="query-timeout"]').click();
     await expect(timeout).toBeFocused();
     await timeout.fill('23');
-
-    const clearPrompt = new Promise(resolve => {
-        page.once('dialog', async dialog => {
-            expect(dialog.message()).toContain('Click OK to clear');
-            await dialog.accept();
-            resolve();
-        });
-    });
-    await page.locator('#query-options-panel .workbench-disclosure__actions input[type="button"]').click();
-    await clearPrompt;
-    await expect(limit).toHaveValue('50');
     await expect(timeout).toHaveValue('23');
-    expect(await infer.isChecked()).toBe(!inferredBeforeLabelClick);
 
     for (const width of [390, 320]) {
         await page.setViewportSize({ width, height: 900 });
@@ -368,11 +346,10 @@ test('stacks query option labels and contains controls on desktop and mobile', a
             const settingsElement = document.querySelector('#query-options-panel .workbench-disclosure__fields');
             const settings = settingsElement.getBoundingClientRect();
             const childRects = [
-                'label[for="limit_query"]', '#limit_query',
                 'label[for="query-timeout"]', '#query-timeout',
                 '.query-option', '#infer',
-                '.workbench-disclosure__actions input[type="button"]'
-            ].map(selector => document.querySelector(selector).getBoundingClientRect());
+                '.workbench-disclosure__actions button'
+            ].map(selector => settingsElement.querySelector(selector).getBoundingClientRect());
             return {
                 clientWidth: document.documentElement.clientWidth,
                 scrollWidth: document.documentElement.scrollWidth,
@@ -392,9 +369,9 @@ test('stacks query option labels and contains controls on desktop and mobile', a
     }
 });
 
-test('uses the shared SVG chevron across query and embedded result states', async ({ page }) => {
-    fs.mkdirSync(CHEVRON_DIR, { recursive: true });
-
+test('uses the shared SVG chevron across query and embedded result states', async ({ page }, testInfo) => {
+    // The narrow side-menu disclosure with its own chevron became the Menu button and sheet (app-shell plan M2.8),
+    // which workbench-shell.spec.js ("on a phone the header is one compact bar and the menu opens as a sheet") checks.
     for (const [width, height, name] of [[1440, 1000, 'desktop'], [390, 1000, 'mobile'], [320, 900, 'narrow']]) {
         await page.setViewportSize({ width, height });
         await page.goto(QUERY_URL);
@@ -403,75 +380,38 @@ test('uses the shared SVG chevron across query and embedded result states', asyn
         for (const selector of ['#query-options-toggle', '#save-query-toggle']) {
             expectChevron(await page.locator(selector).evaluate(readChevron));
         }
-        if (width <= 768) {
-            const menu = page.locator('#workbench-navigation-disclosure');
-            const menuSummary = page.locator('#workbench-navigation-summary');
-            await expect(menu).toHaveJSProperty('open', false);
-            await expectChevronState(menuSummary, 18, 0);
-            if (width === 390) {
-                await page.screenshot({
-                    path: path.join(CHEVRON_DIR, 'menu-mobile-closed.png'),
-                    fullPage: true,
-                    animations: 'disabled'
-                });
-            }
-            await menuSummary.press('Enter');
-            await expect(menu).toHaveJSProperty('open', true);
-            await expectChevronState(menuSummary, 18, 180);
-            if (width === 390) {
-                await page.screenshot({
-                    path: path.join(CHEVRON_DIR, 'menu-mobile-keyboard-focus.png'),
-                    fullPage: true,
-                    animations: 'disabled'
-                });
-                await menuSummary.evaluate(element => element.blur());
-                await page.screenshot({
-                    path: path.join(CHEVRON_DIR, 'menu-mobile-open.png'),
-                    fullPage: true,
-                    animations: 'disabled'
-                });
-            }
-            await menuSummary.press('Enter');
-            await expect(menu).toHaveJSProperty('open', false);
-            await expectChevronState(menuSummary, 18, 0);
-            await menuSummary.evaluate(element => element.blur());
-        }
 
-        const queryClosedPath = path.join(CHEVRON_DIR, `query-${name}-closed.png`);
-        await page.screenshot({ path: queryClosedPath, fullPage: true, animations: 'disabled' });
+        await page.screenshot({ path: testInfo.outputPath(`query-${name}-closed.png`), fullPage: true, animations: 'disabled' });
         await page.locator('#query-options-toggle').press('Enter');
         await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
         await expectChevronState(page.locator('#query-options-toggle'), 16, 180);
         if (width === 1440) {
             await page.screenshot({
-                path: path.join(CHEVRON_DIR, 'query-desktop-options-keyboard-focus.png'),
+                path: testInfo.outputPath('query-desktop-options-keyboard-focus.png'),
                 fullPage: true,
                 animations: 'disabled'
             });
         }
         await page.locator('#query-options-toggle').evaluate(element => element.blur());
         await page.screenshot({
-            path: path.join(CHEVRON_DIR, `query-${name}-options-open.png`),
+            path: testInfo.outputPath(`query-${name}-options-open.png`),
             fullPage: true,
             animations: 'disabled'
         });
         await page.locator('#query-options-toggle').press('Enter');
         await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
 
-        await page.locator('.CodeMirror').evaluate(element => {
-            element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-        });
-        await page.locator('#exec').click();
-        const frame = page.frameLocator('#query-results-frame');
-        await expect(frame.locator('table.data tbody tr')).toHaveCount(3);
-        for (const selector of ['#query-result-download-toggle', '#query-result-options-toggle']) {
-            expectChevron(await frame.locator(selector).evaluate(readChevron));
+        await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
+        const result = resultRoot(page);
+        await expect(result.locator('table.data tbody tr')).toHaveCount(3);
+        for (const selector of ['.query-result-download-toggle', '.query-result-options-toggle']) {
+            expectChevron(await result.locator(selector).evaluate(readChevron));
         }
         if (width === 320) {
-            const toolbar = await frame.locator('.query-result-toolbar').evaluate(element => {
+            const toolbar = await result.locator('.query-result-toolbar').evaluate(element => {
                 const toolbarBounds = element.getBoundingClientRect();
                 const triggers = Array.from(element.querySelectorAll(
-                    '#query-result-download-toggle, #query-result-options-toggle, #query-result-fullscreen'))
+                    '.query-result-download-toggle, .query-result-options-toggle, [id^="query-result-fullscreen-"]'))
                     .map(trigger => {
                         const bounds = trigger.getBoundingClientRect();
                         return {
@@ -489,6 +429,7 @@ test('uses the shared SVG chevron across query and embedded result states', asyn
                     triggers
                 };
             });
+            expect(toolbar.triggers).toHaveLength(3);
             expect(toolbar.scrollWidth).toBeLessThanOrEqual(toolbar.clientWidth + 1);
             for (const trigger of toolbar.triggers) {
                 expect(trigger.left, `${trigger.id} starts outside the result toolbar`).toBeGreaterThanOrEqual(toolbar.left - 1);
@@ -497,34 +438,36 @@ test('uses the shared SVG chevron across query and embedded result states', asyn
         }
         await page.locator('#exec').evaluate(element => element.blur());
         await page.screenshot({
-            path: path.join(CHEVRON_DIR, `embedded-result-${name}-closed.png`),
+            path: testInfo.outputPath(`embedded-result-${name}-closed.png`),
             fullPage: true,
             animations: 'disabled'
         });
-        await frame.locator('#query-result-options-toggle').press('Enter');
-        await expect(frame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
-        await expectChevronState(frame.locator('#query-result-options-toggle'), 16, 180);
+        const optionsToggle = result.locator('.query-result-options-toggle');
+        const downloadToggle = result.locator('.query-result-download-toggle');
+        await optionsToggle.press('Enter');
+        await expect(optionsToggle).toHaveAttribute('aria-expanded', 'true');
+        await expectChevronState(optionsToggle, 16, 180);
         if (width === 390) {
             await page.screenshot({
-                path: path.join(CHEVRON_DIR, 'embedded-result-mobile-options-keyboard-focus.png'),
+                path: testInfo.outputPath('embedded-result-mobile-options-keyboard-focus.png'),
                 fullPage: true,
                 animations: 'disabled'
             });
         }
-        await frame.locator('#query-result-options-toggle').evaluate(element => element.blur());
+        await optionsToggle.evaluate(element => element.blur());
         await page.screenshot({
-            path: path.join(CHEVRON_DIR, `embedded-result-${name}-options-open.png`),
+            path: testInfo.outputPath(`embedded-result-${name}-options-open.png`),
             fullPage: true,
             animations: 'disabled'
         });
-        await frame.locator('#query-result-options-toggle').press('Enter');
-        await frame.locator('#query-result-download-toggle').press('Enter');
-        await expect(frame.locator('#Accept')).toBeVisible();
-        await expectChevronState(frame.locator('#query-result-download-toggle'), 16, 180);
+        await optionsToggle.press('Enter');
+        await downloadToggle.press('Enter');
+        await expect(result.locator('select[name="Accept"]')).toBeVisible();
+        await expectChevronState(downloadToggle, 16, 180);
     }
 });
 
-test('uses shared chevrons for explanation, native details, and mobile navigation', async ({ page }) => {
+test('uses shared chevrons for explanation, native details, and mobile navigation', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(QUERY_URL);
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
@@ -540,7 +483,7 @@ test('uses shared chevrons for explanation, native details, and mobile navigatio
     await expect(explanationChevron).toHaveAttribute('aria-expanded', 'true');
     await expectChevronState(explanationChevron, 16, 180);
 
-    const addUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`;
+    const addUrl = repositoryPageUrl(REPOSITORY_ID, 'add');
     for (const [width, height, name] of [[1440, 1000, 'desktop'], [390, 1000, 'mobile'], [320, 900, 'narrow']]) {
         await page.setViewportSize({ width, height });
         await page.goto(addUrl);
@@ -550,7 +493,7 @@ test('uses shared chevrons for explanation, native details, and mobile navigatio
         expectChevron(await toggle.evaluate(readChevron));
         if (width === 1440 || width === 390) {
             await page.screenshot({
-                path: path.join(CHEVRON_DIR, `add-details-${name}-closed.png`),
+                path: testInfo.outputPath(`add-details-${name}-closed.png`),
                 fullPage: true,
                 animations: 'disabled'
             });
@@ -562,7 +505,7 @@ test('uses shared chevrons for explanation, native details, and mobile navigatio
         await toggle.evaluate(element => element.blur());
         if (width === 1440 || width === 390) {
             await page.screenshot({
-                path: path.join(CHEVRON_DIR, `add-details-${name}-open.png`),
+                path: testInfo.outputPath(`add-details-${name}-open.png`),
                 fullPage: true,
                 animations: 'disabled'
             });
@@ -630,94 +573,7 @@ test('keeps the collapsed query toolbar compact and gives disclosures visible af
     expect(narrowMetrics.controlsBottom - narrowMetrics.controlsTop).toBeLessThan(120);
 });
 
-test('sizes short results to content and caps large result scrolling', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 1200 });
-    await page.reload();
-    await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-
-    const setQueryAndExecute = async query => {
-        await page.locator('.CodeMirror').evaluate((element, value) => element.CodeMirror.setValue(value), query);
-        await page.locator('#exec').click();
-        await expect(page.frameLocator('#query-results-frame').locator('table.data tbody tr').first())
-            .toBeVisible();
-    };
-
-    await setQueryAndExecute('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-    const shortMetrics = await page.locator('#query-results-frame').evaluate(frame => ({
-        frameHeight: frame.getBoundingClientRect().height,
-        documentHeight: frame.contentDocument.documentElement.scrollHeight,
-        clientHeight: frame.contentDocument.documentElement.clientHeight
-    }));
-
-    const values = Array.from({ length: 80 }, (_, index) => `"row-${index}"`).join(' ');
-    await setQueryAndExecute(`SELECT * WHERE { VALUES ?s { ${values} } }`);
-    const largeMetrics = await page.locator('#query-results-frame').evaluate(frame => ({
-        frameHeight: frame.getBoundingClientRect().height,
-        documentHeight: frame.contentDocument.documentElement.scrollHeight,
-        clientHeight: frame.contentDocument.documentElement.clientHeight
-    }));
-
-    expect(shortMetrics.frameHeight).toBeLessThan(520);
-    expect(shortMetrics.frameHeight).toBeGreaterThanOrEqual(shortMetrics.documentHeight - 8);
-    expect(largeMetrics.frameHeight).toBeLessThanOrEqual(640);
-    expect(largeMetrics.documentHeight).toBeGreaterThan(largeMetrics.clientHeight + 100);
-});
-
-test('resizes result content through repeated disclosures and supports real frame scrolling', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.reload();
-    await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-    const values = Array.from({ length: 80 }, (_, index) => `"row-${index}"`).join(' ');
-    await page.locator('.CodeMirror').evaluate((element, value) => element.CodeMirror.setValue(value),
-        `SELECT * WHERE { VALUES ?s { ${values} } }`);
-    await page.locator('#exec').click();
-    const frame = page.locator('#query-results-frame');
-    await expect(page.frameLocator('#query-results-frame').locator('table.data tbody tr')).toHaveCount(80);
-
-    const initial = await frame.evaluate(element => ({
-        height: element.getBoundingClientRect().height,
-        innerHeight: element.contentWindow.innerHeight,
-        scrollHeight: element.contentDocument.documentElement.scrollHeight
-    }));
-    const resultFrame = page.frameLocator('#query-results-frame');
-    await resultFrame.locator('#query-result-download-toggle').press('Enter');
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await expect(resultFrame.locator('input[name="show-datatypes"]')).toBeVisible();
-    await resultFrame.locator('input[name="show-datatypes"]').uncheck();
-    await resultFrame.locator('#query-result-download-toggle').press('Enter');
-    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'true');
-    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
-    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
-
-    await page.setViewportSize({ width: 1440, height: 500 });
-    await expect.poll(() => frame.evaluate(element => element.getBoundingClientRect().height))
-        .toBeLessThanOrEqual(375);
-    await page.setViewportSize({ width: 1440, height: 1600 });
-    await expect.poll(() => frame.evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(640);
-    const afterClose = await frame.evaluate(element => ({
-        height: element.getBoundingClientRect().height,
-        innerHeight: element.contentWindow.innerHeight,
-        scrollHeight: element.contentDocument.documentElement.scrollHeight
-    }));
-    await frame.hover({ position: { x: 300, y: Math.min(afterClose.height - 20, 500) } });
-    await page.mouse.wheel(0, 9000);
-    await expect.poll(() => frame.evaluate(element => Math.max(
-        element.contentWindow.scrollY,
-        element.contentDocument.documentElement.scrollTop,
-        element.contentDocument.body ? element.contentDocument.body.scrollTop : 0
-    ))).toBeGreaterThan(0);
-    await expect(resultFrame.locator('table.data tbody tr').last()).toBeInViewport();
-
-    expect(initial.scrollHeight).toBeGreaterThan(initial.innerHeight);
-    expect(afterClose.height).toBeLessThanOrEqual(640);
-    expect(afterClose.innerHeight).toBeLessThanOrEqual(640);
-});
-
-test('keeps three-column result tables aligned inside the narrow result frame', async ({ page }) => {
+test('keeps three-column result tables aligned inside the narrow result', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await page.reload();
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
@@ -728,31 +584,31 @@ test('keeps three-column result tables aligned inside the narrow result frame', 
             (<http://example.org/resource/subject> <http://example.org/predicate/with-a-long-name> "another long literal value")
         }
     }`;
-    await page.locator('.CodeMirror').evaluate((element, value) => element.CodeMirror.setValue(value), query);
-    await page.locator('#exec').click();
-    await expect(page.frameLocator('#query-results-frame').locator('table.data thead th')).toHaveCount(3);
+    await runQuery(page, query);
+    const result = resultRoot(page);
+    await expect(result.locator('table.data thead th')).toHaveCount(3);
 
-    const tableMetrics = await page.locator('#query-results-frame').evaluate(frame => {
-        const documentElement = frame.contentDocument.documentElement;
-        const resultSurface = frame.contentDocument.querySelector('#query-result-embedded');
-        const table = frame.contentDocument.querySelector('table.data');
-        const thead = frame.contentDocument.querySelector('table.data thead');
-        const tbody = frame.contentDocument.querySelector('table.data tbody');
+    const tableMetrics = await result.evaluate(resultSurface => {
+        const documentElement = document.documentElement;
+        const table = resultSurface.querySelector('[id^="query-result-table-wrap-"] table.data');
+        const thead = table.querySelector('thead');
+        const tbody = table.querySelector('tbody');
+        const tableWrap = resultSurface.querySelector('[id^="query-result-table-wrap-"]');
+        const records = resultSurface.querySelector('[id^="query-result-records-"]');
         return {
             tableDisplay: getComputedStyle(table).display,
             theadDisplay: getComputedStyle(thead).display,
             tbodyDisplay: getComputedStyle(tbody).display,
             tableWidth: table.getBoundingClientRect().width,
-            frameWidth: frame.clientWidth,
-            effectiveLayout: frame.contentDocument.querySelector('#query-result-layout').getAttribute('data-effective-layout'),
-            recordsVisible: !frame.contentDocument.querySelector('#query-result-records').hidden,
-            recordFieldCount: frame.contentDocument.querySelectorAll('#query-result-records .query-result-record__fields dd').length,
+            effectiveLayout: resultSurface.getAttribute('data-effective-layout'),
+            recordsVisible: !records.hidden,
+            recordFieldCount: records.querySelectorAll('.query-result-record__fields dd').length,
             bodyScrollWidth: documentElement.scrollWidth,
             bodyClientWidth: documentElement.clientWidth,
             resultSurfaceScrollWidth: resultSurface.scrollWidth,
             resultSurfaceClientWidth: resultSurface.clientWidth,
-            tableWrapScrollWidth: frame.contentDocument.querySelector('#query-result-table-wrap').scrollWidth,
-            tableWrapClientWidth: frame.contentDocument.querySelector('#query-result-table-wrap').clientWidth
+            tableWrapScrollWidth: tableWrap.scrollWidth,
+            tableWrapClientWidth: tableWrap.clientWidth
         };
     });
 
@@ -766,29 +622,30 @@ test('keeps three-column result tables aligned inside the narrow result frame', 
     expect(tableMetrics.resultSurfaceScrollWidth).toBeLessThanOrEqual(tableMetrics.resultSurfaceClientWidth);
     expect(tableMetrics.tableWrapScrollWidth).toBeLessThanOrEqual(tableMetrics.tableWrapClientWidth);
 
-    const resultFrame = page.frameLocator('#query-results-frame');
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await resultFrame.locator('#result-layout').selectOption('table');
-    await resultFrame.locator('#result-wrap-values').uncheck();
-    await expect(resultFrame.locator('#query-result-table-wrap')).toBeVisible();
-    const explicitTableMetrics = await page.locator('#query-results-frame').evaluate(frame => {
-        const table = frame.contentDocument.querySelector('table.data');
-        const tableWrap = frame.contentDocument.querySelector('#query-result-table-wrap');
+    await result.locator('.query-result-options-toggle').press('Enter');
+    await result.locator('select[name="result-layout"]').selectOption('table');
+    await result.locator('input[name="result-wrap-values"]').uncheck();
+    await expect(result.locator('[id^="query-result-table-wrap-"]')).toBeVisible();
+    const explicitTableMetrics = await result.evaluate(resultSurface => {
+        const tableWrap = resultSurface.querySelector('[id^="query-result-table-wrap-"]');
+        const table = tableWrap.querySelector('table.data');
         return {
             tableWidth: table.getBoundingClientRect().width,
-            frameWidth: frame.clientWidth,
+            resultWidth: resultSurface.clientWidth,
             tableWrapScrollWidth: tableWrap.scrollWidth,
             tableWrapClientWidth: tableWrap.clientWidth
         };
     });
-    expect(explicitTableMetrics.tableWidth).toBeGreaterThanOrEqual(explicitTableMetrics.frameWidth - 1);
-    await expect.poll(() => page.locator('#query-results-frame').evaluate(frame => {
-        const tableWrap = frame.contentDocument.querySelector('#query-result-table-wrap');
+    expect(explicitTableMetrics.tableWidth).toBeGreaterThanOrEqual(explicitTableMetrics.resultWidth - 1);
+    await expect.poll(() => result.evaluate(resultSurface => {
+        const tableWrap = resultSurface.querySelector('[id^="query-result-table-wrap-"]');
         return tableWrap.scrollWidth - tableWrap.clientWidth;
     })).toBeGreaterThan(0);
 });
 
 test('keeps query and result controls discoverable through keyboard disclosures', async ({ page }) => {
+    // "Query settings" no longer holds a results-per-page select (results load with Load more), so the setting sent
+    // with the execution is the timeout; the iframe-only "embedded" request parameter is gone with the iframe.
     const disclosureState = await page.evaluate(() => ({
         queryOptions: document.querySelector('#query-options-disclosure'),
         saveQuery: document.querySelector('#save-query-disclosure'),
@@ -801,16 +658,15 @@ test('keeps query and result controls discoverable through keyboard disclosures'
     expect(disclosureState.saveToggle).toBeTruthy();
     await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('#limit_query')).toBeHidden();
+    await expect(page.locator('#query-timeout')).toBeHidden();
     await expect(page.locator('#save')).toBeHidden();
 
     await page.locator('#query-options-toggle').focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('#limit_query')).toBeVisible();
     await expect(page.locator('#query-timeout')).toBeVisible();
     await expect(page.locator('#infer')).toBeVisible();
-    await page.locator('#limit_query').selectOption({ value: '50' });
+    await page.locator('#query-timeout').fill('23');
 
     await page.locator('#save-query-toggle').press('Enter');
     await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'true');
@@ -830,7 +686,7 @@ test('keeps query and result controls discoverable through keyboard disclosures'
         element.CodeMirror.setValue('ASK { ?s ?p ?o }');
     });
     const executionRequest = page.waitForRequest(request =>
-        request.url().includes('/repositories/query-refresh-layout/query')
+        request.url().includes(`/repositories/${REPOSITORY_ID}/query`)
         && ['GET', 'POST'].includes(request.method())
     );
     await page.locator('#exec').click();
@@ -838,57 +694,21 @@ test('keeps query and result controls discoverable through keyboard disclosures'
     const requestParameters = new URL(request.url()).searchParams;
     if (request.method() === 'POST') {
         const postParameters = new URLSearchParams(request.postData() || '');
-        expect(postParameters.get('limit_query')).toBe('50');
-        expect(postParameters.get('embedded')).toBe('true');
+        expect(postParameters.get('action')).toBe('exec');
+        expect(postParameters.get('query-timeout')).toBe('23');
     } else {
-        expect(requestParameters.get('limit_query')).toBe('50');
-        expect(requestParameters.get('embedded')).toBe('true');
+        expect(requestParameters.get('action')).toBe('exec');
+        expect(requestParameters.get('query-timeout')).toBe('23');
     }
 });
 
-test('keeps embedded result paging visible and groups download controls', async ({ page }) => {
-    await page.locator('.CodeMirror').evaluate(element => {
-        element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-    });
-    await page.locator('#exec').click();
-    const frame = page.frameLocator('#query-results-frame');
-    await expect(frame.locator('table.data tbody tr')).toHaveCount(3);
-    await expect(frame.locator('#query-result-download-disclosure')).toHaveCount(1);
-    await expect(frame.locator('#query-result-options-disclosure')).toHaveCount(1);
-    await expect(frame.locator('#query-result-embedded-header')).toHaveCount(1);
-    await expect(frame.locator('#query-result-embedded-header').locator('h2')).toHaveText(/Query Result/);
-    await expect(frame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await expect(frame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await expect(frame.locator('#nextX')).toBeVisible();
-    const navigationFollowsTable = await frame.locator('#query-result-layout').evaluate(layout => {
-        const navigation = layout.parentElement.querySelector('.query-result-navigation');
-        return !!navigation && !!(layout.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING);
-    });
-    expect(navigationFollowsTable).toBe(true);
-    const resultChevronMetrics = await Promise.all([
-        frame.locator('#query-result-download-toggle').evaluate(readChevron),
-        frame.locator('#query-result-options-toggle').evaluate(readChevron)
-    ]);
-    resultChevronMetrics.forEach(metrics => expectChevron(metrics));
-    await frame.locator('#query-result-download-toggle').press('Enter');
-    await expect(frame.locator('#Accept')).toBeVisible();
-    await expectChevronState(frame.locator('#query-result-download-toggle'), 16, 180);
-    await frame.locator('#query-result-options-toggle').press('Enter');
-    await expect(frame.locator('#limit_query')).toBeVisible();
-    await expectChevronState(frame.locator('#query-result-options-toggle'), 16, 180);
-    await expect(frame.locator('#nextX')).toBeVisible();
-});
-
 test('uses one embedded result header and anchors the active query disclosure', async ({ page }) => {
-    await page.locator('.CodeMirror').evaluate(element => {
-        element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" } }');
-    });
-    await page.locator('#exec').click();
-    const frame = page.frameLocator('#query-results-frame');
-    await expect(frame.locator('table.data tbody tr')).toHaveCount(2);
+    await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" } }');
+    const result = resultRoot(page);
+    await expect(result.locator('table.data tbody tr')).toHaveCount(2);
 
     await expect(page.locator('.query-results__header')).toBeHidden();
-    await expect(frame.locator('#query-result-embedded-header')).toHaveCount(1);
+    await expect(result.locator('.query-result-toolbar__header')).toHaveCount(1);
 
     const readDisclosureGeometry = async (toggleSelector, panelSelector) => page.evaluate(([toggleSelector, panelSelector]) => {
         const toolbar = document.querySelector('.query-actions-toolbar').getBoundingClientRect();
@@ -919,76 +739,3 @@ test('uses one embedded result header and anchors the active query disclosure', 
     expect(saveGeometry.panel.right).toBeLessThanOrEqual(saveGeometry.toolbar.right + 1);
     expect(saveGeometry.panel.top).toBeGreaterThanOrEqual(saveGeometry.toggleBottom - 1);
 });
-
-test('keeps the embedded result header aligned when result disclosures open', async ({ page }) => {
-    await page.locator('.CodeMirror').evaluate(element => {
-        element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" } }');
-    });
-    await page.locator('#exec').click();
-    const frame = page.frameLocator('#query-results-frame');
-    await expect(frame.locator('table.data tbody tr')).toHaveCount(2);
-    await frame.locator('#query-result-download-toggle').press('Enter');
-    const metrics = await page.locator('#query-results-frame').evaluate(frameElement => {
-        const toolbar = frameElement.contentDocument.querySelector('.query-result-toolbar');
-        const title = frameElement.contentDocument.querySelector('#query-result-embedded-header h2');
-        const firstAction = frameElement.contentDocument.querySelector('#query-result-download-toggle');
-        return {
-            toolbarTop: toolbar.getBoundingClientRect().top,
-            titleTop: title.getBoundingClientRect().top,
-            titleBottom: title.getBoundingClientRect().bottom,
-            firstActionTop: firstAction.getBoundingClientRect().top,
-            firstActionBottom: firstAction.getBoundingClientRect().bottom
-        };
-    });
-
-    expect(Math.abs(metrics.titleTop - metrics.toolbarTop)).toBeLessThanOrEqual(2);
-    expect(Math.abs(metrics.firstActionTop - metrics.toolbarTop)).toBeLessThanOrEqual(2);
-    expect(metrics.titleBottom).toBeLessThanOrEqual(metrics.firstActionBottom);
-});
-
-test('keeps the embedded result title readable on a narrow viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 900 });
-    await page.reload();
-    await page.locator('.CodeMirror').waitFor({ state: 'visible' });
-    await page.locator('.CodeMirror').evaluate(element => {
-        element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" } }');
-    });
-    await page.locator('#exec').click();
-    const frame = page.frameLocator('#query-results-frame');
-    await expect(frame.locator('table.data tbody tr')).toHaveCount(2);
-    await expect(frame.locator('#query-result-embedded-header h2')).toHaveText(/Query Result/);
-    const metrics = await page.locator('#query-results-frame').evaluate(frameElement => {
-        const header = frameElement.contentDocument.querySelector('#query-result-embedded-header');
-        const title = header.querySelector('h2');
-        const style = getComputedStyle(title);
-        return {
-            titleText: title.textContent.trim(),
-            titleWidth: title.getBoundingClientRect().width,
-            titleHeight: title.getBoundingClientRect().height,
-            lineHeight: parseFloat(style.lineHeight),
-            horizontalOverflow: frameElement.contentDocument.documentElement.scrollWidth
-                - frameElement.contentDocument.documentElement.clientWidth
-        };
-    });
-
-    expect(metrics.titleText).toMatch(/Query Result/);
-    expect(metrics.titleWidth).toBeGreaterThanOrEqual(40);
-    expect(metrics.titleHeight).toBeGreaterThanOrEqual(metrics.lineHeight - 1);
-    expect(metrics.horizontalOverflow).toBeLessThanOrEqual(1);
-});
-
-function nativeRepositoryConfig(repositoryId) {
-    return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-
-[] a config:Repository ;
-   config:rep.id "${repositoryId}" ;
-   rdfs:label "Query refresh layout test" ;
-   config:rep.impl [
-      config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [
-         config:sail.type "openrdf:MemoryStore"
-      ]
-   ].
-`;
-}

@@ -12,51 +12,72 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const fs = require('node:fs');
-const path = require('node:path');
+const {
+	createSeededRepository,
+	deleteRepository,
+	openQueryPage,
+	runQuery,
+	serverBaseUrl,
+	uniqueRepositoryId
+} = require('./workbench-test-helpers.js');
 
-const queryCssPath = path.resolve(__dirname,
-	'../../tools/workbench/src/main/webapp/styles/query.css');
-const workbenchCssPath = path.resolve(__dirname,
-	'../../tools/workbench/src/main/webapp/styles/workbench-refresh.css');
+// Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the test built a copy of
+// the retired iframe's result toolbar from the stylesheets; it now measures the streamed result's toolbar on the Query
+// page. That toolbar is a flex row (.workbench-action-toolbar), where justify-self alone does not keep a toggle at its
+// intrinsic width, so each toggle is also compared with its own max-content width.
+
+const REPOSITORY_ID = uniqueRepositoryId('query-result-toolbar-geometry');
+
+test.beforeAll(async ({ request }) => {
+	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID,
+		{ graphs: [], label: 'Query result toolbar geometry test' });
+});
+
+test.afterAll(async ({ request }) => {
+	await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
+});
 
 test('query result disclosure toggles keep intrinsic width at desktop and mobile sizes', async ({ page }) => {
-	const css = fs.readFileSync(workbenchCssPath, 'utf8') + '\n' + fs.readFileSync(queryCssPath, 'utf8');
-	await page.setContent('<body class="workbench-body query-result-embedded-body">'
-		+ '<main style="width:100%;max-width:1200px;margin:0 auto">'
-		+ '<div id="query-result" class="query-result-layout query-result-embedded">'
-		+ '<div class="query-result-toolbar">'
-		+ '<div class="query-result-toolbar__header"><h2>Query results</h2></div>'
-		+ '<div class="query-result-toolbar__disclosures">'
-		+ '<div class="query-result-disclosure"><button class="query-disclosure__toggle '
-		+ 'query-result-download-toggle">Download</button></div>'
-		+ '<div class="query-result-disclosure"><button class="query-disclosure__toggle '
-		+ 'query-result-options-toggle">Options</button></div>'
-		+ '</div><button id="query-result-fullscreen">Full screen</button></div>'
-		+ '<div class="query-result-disclosure-panels">'
-		+ '<div class="query-disclosure__panel" hidden>Download settings</div>'
-		+ '<div class="query-disclosure__panel" hidden>Result settings</div>'
-		+ '</div></div></main></body>');
-	await page.addStyleTag({ content: css });
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
+	const result = page.locator('#query-results [data-query-stream-root]');
 
 	for (const viewport of [
 		{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 800 }
 	]) {
 		await page.setViewportSize(viewport);
-		const metrics = await page.locator('.query-result-download-toggle').evaluate(button => {
-			const buttonRect = button.getBoundingClientRect();
-			const toolbarRect = button.closest('.query-result-toolbar').getBoundingClientRect();
-			return {
-				buttonWidth: buttonRect.width,
-				toolbarWidth: toolbarRect.width,
-				justifySelf: getComputedStyle(button).justifySelf
-			};
-		});
-		expect(metrics.buttonWidth,
-			`Download width ${metrics.buttonWidth}px should remain intrinsic in a ${metrics.toolbarWidth}px toolbar`)
-			.toBeLessThan(180);
-		expect(metrics.buttonWidth).toBeLessThan(metrics.toolbarWidth / 2);
-		expect(metrics.justifySelf, 'Download should remain intrinsic instead of filling its toolbar grid area')
-			.toBe('start');
+		for (const [name, selector] of [['Download', '.query-result-download-toggle'], ['Display', '.query-result-options-toggle']]) {
+			const metrics = await result.locator(selector).evaluate(button => {
+				const buttonRect = button.getBoundingClientRect();
+				const toolbarRect = button.closest('.query-result-toolbar').getBoundingClientRect();
+				// The width the button takes when nothing stretches it, in a flex row or a grid cell alike.
+				const inlineStyle = button.getAttribute('style');
+				button.style.flex = '0 0 auto';
+				button.style.width = 'max-content';
+				button.style.minWidth = '0';
+				button.style.maxWidth = 'none';
+				const intrinsicWidth = button.getBoundingClientRect().width;
+				if (inlineStyle === null) {
+					button.removeAttribute('style');
+				} else {
+					button.setAttribute('style', inlineStyle);
+				}
+				return {
+					buttonWidth: buttonRect.width,
+					intrinsicWidth,
+					toolbarWidth: toolbarRect.width,
+					justifySelf: getComputedStyle(button).justifySelf
+				};
+			});
+			expect(metrics.buttonWidth,
+				`${name} width ${metrics.buttonWidth}px should remain intrinsic in a ${metrics.toolbarWidth}px toolbar`)
+				.toBeLessThan(180);
+			expect(metrics.buttonWidth).toBeLessThan(metrics.toolbarWidth / 2);
+			expect(metrics.justifySelf, `${name} should remain intrinsic instead of filling its toolbar grid area`)
+				.toBe('start');
+			expect(Math.abs(metrics.buttonWidth - metrics.intrinsicWidth),
+				`${name} should remain intrinsic (${metrics.intrinsicWidth}px) instead of filling its toolbar area at `
+				+ `${viewport.width}px`).toBeLessThanOrEqual(1);
+		}
 	}
 });
