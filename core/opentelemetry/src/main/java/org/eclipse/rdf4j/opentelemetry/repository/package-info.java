@@ -11,10 +11,13 @@
 
 /**
  * OpenTelemetry tracing instrumentation at the {@link org.eclipse.rdf4j.repository.RepositoryConnection} level: every
- * SPARQL query/update evaluated through a wrapped connection is recorded as a span following the
+ * SPARQL query/update evaluated through a wrapped connection, every
+ * {@code getStatements}/{@code exportStatements}/{@code hasStatement} call, and (opt-in) every
+ * {@code add}/{@code remove}/{@code clear} call, is recorded as a span following the
  * <a href="https://opentelemetry.io/docs/specs/semconv/database/database-spans/">OpenTelemetry database client semantic
  * conventions</a> ({@code db.system.name}, {@code db.operation.name}, {@code db.namespace}, {@code db.query.text},
- * {@code db.response.returned_rows}, ...).
+ * {@code db.query.parameter.<name>}, {@code db.response.returned_rows}, ...), plus one RDF4J-specific attribute not
+ * covered by those conventions, {@code rdf4j.affected_rows}.
  * <p>
  * Unlike {@link org.eclipse.rdf4j.opentelemetry.http}, this instrumentation is backend-agnostic: it only depends on
  * {@link org.eclipse.rdf4j.repository.Repository}/{@link org.eclipse.rdf4j.repository.RepositoryConnection}, so it
