@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?v WHERE { VALUES ?s { :a :a :b } ?s :p ?k . SERVICE <urn:query-boundary:remote> { ?k :q ?v } }

@@ -1,0 +1,20 @@
+
+Benchmark                                                    (cliquePercentage)  (engineMode)  (maxCliqueSize)  (minCliqueSize)  (peopleCount)  (randomKnowsEdges)  (seed)  Mode  Cnt     Score     Error  Units
+FoafCliqueQueryBenchmark.cycle3                                              30        native                8                3           5000               15000   12345  avgt    5    11.772 ±   2.453  ms/op
+FoafCliqueQueryBenchmark.cycle3                                              30       generic                8                3           5000               15000   12345  avgt    5   110.346 ±  13.198  ms/op
+FoafCliqueQueryBenchmark.cycle3CountCityInterest                             30        native                8                3           5000               15000   12345  avgt    5    47.439 ±  22.733  ms/op
+FoafCliqueQueryBenchmark.cycle3CountCityInterest                             30       generic                8                3           5000               15000   12345  avgt    5    99.732 ±  14.068  ms/op
+FoafCliqueQueryBenchmark.cycle3DistinctCityOrdered                           30        native                8                3           5000               15000   12345  avgt    5    46.109 ±   9.426  ms/op
+FoafCliqueQueryBenchmark.cycle3DistinctCityOrdered                           30       generic                8                3           5000               15000   12345  avgt    5   172.657 ±  25.882  ms/op
+FoafCliqueQueryBenchmark.cycle3GroupedInterest                               30        native                8                3           5000               15000   12345  avgt    5    59.619 ±  19.808  ms/op
+FoafCliqueQueryBenchmark.cycle3GroupedInterest                               30       generic                8                3           5000               15000   12345  avgt    5   104.421 ±   6.260  ms/op
+FoafCliqueQueryBenchmark.cycle4                                              30        native                8                3           5000               15000   12345  avgt    5    42.028 ±  14.687  ms/op
+FoafCliqueQueryBenchmark.cycle4                                              30       generic                8                3           5000               15000   12345  avgt    5   677.948 ±  27.151  ms/op
+FoafCliqueQueryBenchmark.cycle4ValuesFilteredOrdered                         30        native                8                3           5000               15000   12345  avgt    5    50.181 ±   2.045  ms/op
+FoafCliqueQueryBenchmark.cycle4ValuesFilteredOrdered                         30       generic                8                3           5000               15000   12345  avgt    5   335.168 ±  16.078  ms/op
+FoafCliqueQueryBenchmark.cycle5                                              30        native                8                3           5000               15000   12345  avgt    5   136.820 ±   2.881  ms/op
+FoafCliqueQueryBenchmark.cycle5                                              30       generic                8                3           5000               15000   12345  avgt    5  5231.326 ± 932.578  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesCountMailboxHomepage                    30        native                8                3           5000               15000   12345  avgt    5  1691.423 ± 145.581  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesCountMailboxHomepage                    30       generic                8                3           5000               15000   12345  avgt    5  2985.553 ± 102.814  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered                  30        native                8                3           5000               15000   12345  avgt    5   357.606 ±  23.965  ms/op
+FoafCliqueQueryBenchmark.cycle5ValuesDistinctMailboxOrdered                  30       generic                8                3           5000               15000   12345  avgt    5  3601.236 ± 595.919  ms/op

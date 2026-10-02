@@ -215,6 +215,74 @@ class TokenEfficientOutputTest(unittest.TestCase):
                 (module / "target" / "benchmark-output.log").read_text(encoding="utf-8"),
             )
 
+    def test_run_single_benchmark_can_invoke_main_class_from_benchmark_jar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            module = tmp / "bench-module"
+            target = module / "target"
+            target.mkdir(parents=True)
+            benchmark_jar = target / "fake-jmh.jar"
+            benchmark_jar.touch()
+            java_args = tmp / "java-args.txt"
+
+            fake_bin = tmp / "bin"
+            fake_bin.mkdir()
+            fake_java = fake_bin / "java"
+            fake_java.write_text(
+                dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    printf '%s\n' "$@" > "${JAVA_ARGS_FILE}"
+                    echo "main completed"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_java.chmod(fake_java.stat().st_mode | stat.S_IXUSR)
+
+            result = subprocess.run(
+                [
+                    str(REPO_ROOT / "scripts" / "run-single-benchmark.sh"),
+                    "--module",
+                    os.path.relpath(module, REPO_ROOT),
+                    "--main-class",
+                    "example.ThemeBenchmark",
+                    "--no-build",
+                    "--jvm-arg",
+                    "-Dexample.flag=true",
+                ],
+                cwd=REPO_ROOT,
+                env={
+                    **os.environ,
+                    "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                    "JAVA_ARGS_FILE": str(java_args),
+                },
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            invoked_benchmark_jar = (
+                REPO_ROOT / os.path.relpath(module, REPO_ROOT) / "target" / benchmark_jar.name
+            )
+            self.assertEqual(
+                java_args.read_text(encoding="utf-8").splitlines(),
+                [
+                    "-Dexample.flag=true",
+                    "-cp",
+                    str(invoked_benchmark_jar),
+                    "example.ThemeBenchmark",
+                ],
+            )
+            self.assertIn("main completed", result.stdout)
+            self.assertIn(
+                "main completed",
+                (target / "benchmark-output.log").read_text(encoding="utf-8"),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

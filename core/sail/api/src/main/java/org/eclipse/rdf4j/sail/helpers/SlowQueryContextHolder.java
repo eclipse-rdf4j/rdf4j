@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.Query;
 
 public final class SlowQueryContextHolder {
@@ -20,10 +21,12 @@ public final class SlowQueryContextHolder {
 	public static final class SlowQueryContext {
 		private final String rawQueryText;
 		private final Query.QueryType queryType;
+		private final String forcedExecutionStrategy;
 
-		private SlowQueryContext(String rawQueryText, Query.QueryType queryType) {
+		private SlowQueryContext(String rawQueryText, Query.QueryType queryType, String forcedExecutionStrategy) {
 			this.rawQueryText = rawQueryText;
 			this.queryType = Objects.requireNonNull(queryType);
+			this.forcedExecutionStrategy = forcedExecutionStrategy;
 		}
 
 		public String getRawQueryText() {
@@ -32,6 +35,16 @@ public final class SlowQueryContextHolder {
 
 		public Query.QueryType getQueryType() {
 			return queryType;
+		}
+
+		/**
+		 * A store-specific execution strategy requested for this one query, or {@code null} when none was requested.
+		 * Set via {@link #set(String, Query.QueryType, String)}; individual store implementations decide whether and
+		 * how to honor it. Unrecognized by stores that do not support forced strategies.
+		 */
+		@Experimental
+		public String getForcedExecutionStrategy() {
+			return forcedExecutionStrategy;
 		}
 	}
 
@@ -45,8 +58,13 @@ public final class SlowQueryContextHolder {
 	}
 
 	public static SlowQueryContext set(String rawQueryText, Query.QueryType queryType) {
+		return set(rawQueryText, queryType, null);
+	}
+
+	@Experimental
+	public static SlowQueryContext set(String rawQueryText, Query.QueryType queryType, String forcedExecutionStrategy) {
 		SlowQueryContext previous = CONTEXT.get();
-		CONTEXT.set(new SlowQueryContext(rawQueryText, queryType));
+		CONTEXT.set(new SlowQueryContext(rawQueryText, queryType, forcedExecutionStrategy));
 		return previous;
 	}
 

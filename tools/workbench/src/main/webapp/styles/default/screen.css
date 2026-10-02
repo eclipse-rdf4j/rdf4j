@@ -364,6 +364,12 @@ div.resource:hover > a.resourceURL {
 	font-size: 200%;
 }
 
+#content p.query-duration {
+	margin: 0 0 8px 0;
+	color: #333;
+	font-size: 90%;
+}
+
 #message {
 	margin: 5px 0;
 	padding: 5px;

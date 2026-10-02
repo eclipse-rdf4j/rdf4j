@@ -6,10 +6,12 @@ usage() {
 Usage:
   run-docker-jfr-loop.sh <fullyQualifiedClass.method> [options]
   run-docker-jfr-loop.sh --module <module> --class <fullyQualifiedClass> --method <method> [options]
+  run-docker-jfr-loop.sh --module <module> --main-class <fullyQualifiedClass> [options]
 
 Options:
   --param <name=value>      Pass a benchmark @Param override
   --jvm-arg <value>         Pass an extra JVM arg to the benchmark JVM
+  --main-arg <value>        Pass an argument to the selected main class
   --jfr-output <path>       Override the JFR output path
   --dry-run                 Print the effective docker helper command
   --help                    Show this help
@@ -30,6 +32,7 @@ benchmark_id=""
 module=""
 benchmark_class=""
 benchmark_method=""
+main_class=""
 passthrough_args=()
 user_jvm_args=()
 
@@ -80,6 +83,17 @@ while [[ $# -gt 0 ]]; do
 		passthrough_args+=("$1" "$2")
 		shift 2
 		;;
+	--main-class)
+		require_value "$@"
+		main_class="$2"
+		passthrough_args+=("$1" "$2")
+		shift 2
+		;;
+	--main-arg)
+		require_value "$@"
+		passthrough_args+=("$1" "$2")
+		shift 2
+		;;
 	--param|--jfr-output|--jvm-arg)
 		require_value "$@"
 		passthrough_args+=("$1" "$2")
@@ -109,7 +123,7 @@ while [[ $# -gt 0 ]]; do
 		exit 1
 		;;
 	*)
-		if [[ -n "${benchmark_id}" || -n "${module}" || -n "${benchmark_class}" || -n "${benchmark_method}" ]]; then
+		if [[ -n "${benchmark_id}" || -n "${module}" || -n "${benchmark_class}" || -n "${benchmark_method}" || -n "${main_class}" ]]; then
 			echo "Error: only one shorthand selector is allowed. Use --param for benchmark parameters." >&2
 			exit 1
 		fi
@@ -124,14 +138,21 @@ if [[ ! -x "${HELPER}" ]]; then
 	exit 1
 fi
 
-if [[ -n "${benchmark_id}" && ( -n "${module}" || -n "${benchmark_class}" || -n "${benchmark_method}" ) ]]; then
-	echo "Error: choose shorthand selector or --module/--class/--method, not both." >&2
+if [[ -n "${benchmark_id}" && ( -n "${module}" || -n "${benchmark_class}" || -n "${benchmark_method}" || -n "${main_class}" ) ]]; then
+	echo "Error: choose shorthand selector, --module/--class/--method, or --module/--main-class." >&2
 	exit 1
 fi
 
-if [[ -z "${benchmark_id}" && ( -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ) ]]; then
-	echo "Error: provide either <fullyQualifiedClass.method> or --module/--class/--method." >&2
-	exit 1
+if [[ -z "${benchmark_id}" ]]; then
+	if [[ -n "${main_class}" ]]; then
+		if [[ -z "${module}" || -n "${benchmark_class}" || -n "${benchmark_method}" ]]; then
+			echo "Error: --main-class requires --module and cannot be combined with --class/--method." >&2
+			exit 1
+		fi
+	elif [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
+		echo "Error: provide <fullyQualifiedClass.method>, --module/--class/--method, or --module/--main-class." >&2
+		exit 1
+	fi
 fi
 
 default_jvm_args=(

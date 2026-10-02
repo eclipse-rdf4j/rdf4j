@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -530,6 +531,11 @@ class LmdbFilterSelectivityStats
 			deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(optimizerSamplingMaxMillis);
 		}
 
+		StatementOrder samplingOrder = samplingOrder(candidate);
+		if (samplingOrder == null) {
+			return null;
+		}
+
 		int reservoirSize = Math.min(SAMPLE_RESERVOIR_SIZE, scanBudget);
 		List<BindingSet> samples = new ArrayList<>(reservoirSize);
 		int eligibleRows = 0;
@@ -537,8 +543,8 @@ class LmdbFilterSelectivityStats
 
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
-						candidate.objId, candidate.contextId, explicit)) {
+				try (RecordIterator triples = tripleStore.getTriples(txn, samplingOrder, candidate.subjId,
+						candidate.predId, candidate.objId, candidate.contextId, explicit)) {
 					long[] row;
 					while (scannedRows < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
 							&& (row = triples.next()) != null) {
@@ -566,6 +572,9 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
+		if (scannedRows < scanBudget && samplingDeadlineExceeded(deadlineNanos)) {
+			return null;
+		}
 		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
 			return null;
 		}
@@ -816,6 +825,60 @@ class LmdbFilterSelectivityStats
 			}
 		});
 		return supported[0];
+	}
+
+	private StatementOrder samplingOrder(SamplingCandidate candidate) {
+		Set<String> filteredBindings = VarNameCollector.process(candidate.condition);
+		Set<StatementOrder> supportedOrders = tripleStore.getSupportedOrders(candidate.subjId, candidate.predId,
+				candidate.objId, candidate.contextId);
+		StatementOrder defaultOrder = firstVaryingOrder(
+				tripleStore.getIndexName(candidate.subjId, candidate.predId, candidate.objId, candidate.contextId),
+				candidate.pattern);
+		if (isOrderIndependentOfFilter(defaultOrder, candidate.pattern, filteredBindings)
+				&& supportedOrders.contains(defaultOrder)) {
+			return defaultOrder;
+		}
+		for (StatementOrder order : supportedOrders) {
+			if (isOrderIndependentOfFilter(order, candidate.pattern, filteredBindings)) {
+				return order;
+			}
+		}
+		return null;
+	}
+
+	private static StatementOrder firstVaryingOrder(String indexName, StatementPattern pattern) {
+		for (int i = 0; i < indexName.length(); i++) {
+			StatementOrder order = switch (indexName.charAt(i)) {
+			case 's' -> StatementOrder.S;
+			case 'p' -> StatementOrder.P;
+			case 'o' -> StatementOrder.O;
+			case 'c' -> StatementOrder.C;
+			default -> null;
+			};
+			Var var = patternVar(pattern, order);
+			if (var != null && !var.hasValue()) {
+				return order;
+			}
+		}
+		return null;
+	}
+
+	private static boolean isOrderIndependentOfFilter(StatementOrder order, StatementPattern pattern,
+			Set<String> filteredBindings) {
+		Var var = patternVar(pattern, order);
+		return var != null && !var.hasValue() && var.getName() != null && !filteredBindings.contains(var.getName());
+	}
+
+	private static Var patternVar(StatementPattern pattern, StatementOrder order) {
+		if (order == null) {
+			return null;
+		}
+		return switch (order) {
+		case S -> pattern.getSubjectVar();
+		case P -> pattern.getPredicateVar();
+		case O -> pattern.getObjectVar();
+		case C -> pattern.getContextVar();
+		};
 	}
 
 	private PatternFilterKey samplingKey(Filter filter, StatementPattern pattern) {

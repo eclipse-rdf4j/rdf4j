@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Optional;
@@ -627,6 +629,56 @@ public class QueryEvaluationUtilTest {
 		// GH-2760: should not throw an NPE, simply try all avaliable comparator operators
 		for (CompareOp op : Compare.CompareOp.values()) {
 			QueryEvaluationUtil.compareLiterals(left, right, op, true);
+		}
+	}
+
+	@Test
+	public void calendarComparisonCacheDoesNotStronglyRetainComparedLiteralOrValue() throws Exception {
+		Literal left = f.createLiteral("2000-01-01T00:00:00Z", XSD.DATETIME);
+		Literal right = f.createLiteral("2001-01-01T00:00:00Z", XSD.DATETIME);
+
+		QueryEvaluationUtil.compareLiterals(left, right, LT, true);
+
+		Object cache = currentThreadCalendarValueCache();
+		assertNoDirectStrongArrayType(cache, Literal.class);
+		assertNoDirectStrongArrayType(cache, XMLGregorianCalendar.class);
+		assertNoDirectStrongArrayElement(cache, left, right);
+	}
+
+	private Object currentThreadCalendarValueCache() throws ReflectiveOperationException {
+		Field field = QueryEvaluationUtil.class.getDeclaredField("CALENDAR_VALUE_CACHE");
+		field.setAccessible(true);
+		ThreadLocal<?> threadLocal = (ThreadLocal<?>) field.get(null);
+		return threadLocal.get();
+	}
+
+	private void assertNoDirectStrongArrayType(Object cache, Class<?> retainedType) {
+		for (Field field : cache.getClass().getDeclaredFields()) {
+			Class<?> fieldType = field.getType();
+			if (fieldType.isArray()) {
+				assertFalse(retainedType.isAssignableFrom(fieldType.getComponentType()),
+						() -> "Calendar cache strongly retains " + retainedType.getSimpleName()
+								+ " values in array field " + field.getName());
+			}
+		}
+	}
+
+	private void assertNoDirectStrongArrayElement(Object cache, Object... unexpected)
+			throws IllegalAccessException {
+		for (Field field : cache.getClass().getDeclaredFields()) {
+			if (field.getType().isArray()) {
+				field.setAccessible(true);
+				Object values = field.get(cache);
+				int length = Array.getLength(values);
+				for (int i = 0; i < length; i++) {
+					Object value = Array.get(values, i);
+					for (Object retained : unexpected) {
+						assertFalse(value == retained,
+								() -> "Calendar cache strongly retains compared literal in array field "
+										+ field.getName());
+					}
+				}
+			}
 		}
 	}
 

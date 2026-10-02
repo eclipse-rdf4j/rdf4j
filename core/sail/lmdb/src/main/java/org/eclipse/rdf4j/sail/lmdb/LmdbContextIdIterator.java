@@ -76,6 +76,7 @@ class LmdbContextIdIterator implements Closeable {
 			throw new SailException(e);
 		}
 		try {
+			txnRef.ensureSnapshotValid();
 			this.txnRefVersion = txnRef.version();
 			this.txn = txnRef.get();
 
@@ -99,6 +100,8 @@ class LmdbContextIdIterator implements Closeable {
 		try {
 			int lastResult;
 			if (txnRefVersion != txnRef.version()) {
+				// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
+				txnRef.ensureSnapshotValid();
 				// cursor must be renewed
 				E(mdb_cursor_renew(txn, cursor));
 				if (fetchNext) {

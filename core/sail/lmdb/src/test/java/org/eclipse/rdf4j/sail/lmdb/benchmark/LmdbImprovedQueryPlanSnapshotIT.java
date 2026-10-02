@@ -191,7 +191,7 @@ class LmdbImprovedQueryPlanSnapshotIT {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("improved-plan-snapshot-" + theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name(),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -220,16 +220,6 @@ class LmdbImprovedQueryPlanSnapshotIT {
 		}
 	}
 
-	private static void primeLearnedFilterStats(SailRepository repository, TargetQuery targetQuery) {
-		String query = ThemeQueryCatalog.queryFor(targetQuery.theme(), targetQuery.queryIndex());
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
-		}
-	}
-
 	private static String explainOptimized(SailRepository repository, TargetQuery targetQuery) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			String query = ThemeQueryCatalog.queryFor(targetQuery.theme(), targetQuery.queryIndex());
@@ -242,7 +232,6 @@ class LmdbImprovedQueryPlanSnapshotIT {
 	private static void assertPlanSnapshotPassesWithinThirtySeconds(SailRepository repository, TargetQuery targetQuery,
 			RecordedPlanSnapshot expectedPlan) throws Exception {
 		BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds(targetQuery.key(), () -> {
-			primeLearnedFilterStats(repository, targetQuery);
 			String actualPlan = explainOptimized(repository, targetQuery);
 			assertPlanUsesRobustPlanner(targetQuery, actualPlan);
 			PlanSignature actualSignature = planSignature(actualPlan);
@@ -308,7 +297,7 @@ class LmdbImprovedQueryPlanSnapshotIT {
 			return value.contains("LeftJoinIterator") ? "LeftJoin (LeftJoinIterator)" : "LeftJoin";
 		}
 		if (value.startsWith("Join")) {
-			return isJoinIteratorFamily(value) ? "Join (JoinIterator)" : "Join";
+			return "Join";
 		}
 		if (value.startsWith("Group ")) {
 			return stripTrailingMetadata(value);
@@ -329,12 +318,6 @@ class LmdbImprovedQueryPlanSnapshotIT {
 			return "Difference";
 		}
 		return "";
-	}
-
-	private static boolean isJoinIteratorFamily(String value) {
-		return value.contains("JoinIterator")
-				|| value.contains("BoundStatementPatternJoinIteration")
-				|| value.contains("BoundStatementPatternLeftJoinIteration");
 	}
 
 	private static String stripTreePrefix(String line) {

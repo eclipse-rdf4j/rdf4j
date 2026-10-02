@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryFactory;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreFactory;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.sparql.RepositorySPARQLComplianceTestSuite;
 
 /**
@@ -26,7 +26,8 @@ public class LmdbSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuit
 			@Override
 			public RepositoryImplConfig getConfig() {
 
-				return new SailRepositoryConfig(new LmdbStoreFactory().getConfig());
+				return new SailRepositoryConfig(
+						LmdbComplianceTestSupport.configure(new LmdbStoreConfig()));
 			}
 		});
 	}

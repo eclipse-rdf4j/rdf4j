@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -105,6 +106,16 @@ public class TripleStoreAutoGrowTest {
 					"The cached aligned write should grow the native LMDB map before the estimator reads it");
 			assertEquals(1.0 + batch.subj.length, cachedStore.cardinality(-1, 7, -1, -1));
 		}
+	}
+
+	@Test
+	public void reserveWriteCapacityAdvancesMappingGeneration() throws Exception {
+		long before = mappingGeneration(tripleStore);
+
+		tripleStore.reserveWriteCapacity(1L << 20);
+
+		assertTrue(mappingGeneration(tripleStore) > before,
+				"automatic resize must invalidate estimator mappings");
 	}
 
 	private static int batchSizeForMapGrowth(long mapSize) {
@@ -202,11 +213,14 @@ public class TripleStoreAutoGrowTest {
 	public void testAlignedBulkContextFallbackReplaysBatchOnce() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp");
 		config.setTripleDBSize(8L * 1024 * 1024);
-		try (FailingContextAlignedTripleStore fallbackStore = new FailingContextAlignedTripleStore(
-				new File(dataDir, "aligned-bulk-context-fallback"), config)) {
-			StatementBatch batch = createBatch(400_000L, 8);
+		File storeDir = new File(dataDir, "aligned-bulk-context-fallback");
+		try (TripleStore fallbackStore = new TripleStore(storeDir, config, null)) {
+			long targetRemainingCapacity = LmdbUtil.MIN_FREE_SPACE + getPageSize(fallbackStore);
+			StatementBatch batch = createBatchExceedingRemainingCapacity(dataDir, config, targetRemainingCapacity);
+			shrinkMapToRemainingCapacity(fallbackStore, targetRemainingCapacity);
 
 			fallbackStore.startTransaction();
+			assertFalse(requiresResize(fallbackStore), "the healthy writer must enter before the resize threshold");
 			assertDoesNotThrow(
 					() -> fallbackStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context,
 							batch.subj.length, true));
@@ -336,6 +350,12 @@ public class TripleStoreAutoGrowTest {
 		}
 	}
 
+	private static long mappingGeneration(TripleStore store) throws Exception {
+		Field field = TripleStore.class.getDeclaredField("mappingGeneration");
+		field.setAccessible(true);
+		return ((AtomicLong) field.get(store)).get();
+	}
+
 	private static int getPageSize(TripleStore store) throws Exception {
 		Field pageSizeField = TripleStore.class.getDeclaredField("pageSize");
 		pageSizeField.setAccessible(true);
@@ -434,23 +454,6 @@ public class TripleStoreAutoGrowTest {
 	}
 
 	private record StatementBatch(long[] subj, long[] pred, long[] obj, long[] context) {
-	}
-
-	private static final class FailingContextAlignedTripleStore extends TripleStore {
-		private int incrementCalls;
-
-		private FailingContextAlignedTripleStore(File dir, LmdbStoreConfig config) throws IOException {
-			super(dir, config, null);
-		}
-
-		@Override
-		void incrementAlignedContext(org.lwjgl.system.MemoryStack stack, long context, int amount) throws IOException {
-			incrementCalls++;
-			if (incrementCalls == 2) {
-				throw new IOException("MDB_MAP_FULL: Environment mapsize limit reached");
-			}
-			super.incrementAlignedContext(stack, context, amount);
-		}
 	}
 
 	private static int count(RecordIterator it) {

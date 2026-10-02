@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:>
+SELECT (COUNT(*) AS ?n) WHERE { ?s :p ?k . ?s :p ?k . SERVICE :remote { ?k :q ?v } }

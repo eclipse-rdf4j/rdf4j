@@ -30,6 +30,7 @@
 	<xsl:include href="table.xsl" />
 
 	<xsl:template match="sparql:sparql">
+		<xsl:call-template name="query-duration" />
 		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:total-result-count">
 			<input type="hidden" id="workbench-total-result-count"
 				value="{/sparql:sparql/workbench:metadata/workbench:total-result-count}" />

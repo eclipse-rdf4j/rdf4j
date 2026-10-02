@@ -135,6 +135,99 @@ with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
 [] lmdb:sketchEstimatorEnabled true .
 ```
 
+Native evaluation, direct adjacency, and the compressed value overlay are independent per-store startup options. They all
+default to off. Enable only the accelerators needed by a repository:
+
+```java
+config.setNativeEvaluationEnabled(true);
+config.setDirectAdjacencyEnabled(true);
+config.setValueOverlayEnabled(true);
+```
+
+The equivalent repository configuration is:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:nativeEvaluationEnabled true ;
+   lmdb:directAdjacencyEnabled true ;
+   lmdb:valueOverlayEnabled true .
+```
+
+With native evaluation disabled, the store uses `DefaultEvaluationStrategyFactory`. Factory selection does not change the
+query evaluation mode: the existing `STANDARD` or `STRICT` mode selected by the Sail default or repository configuration
+continues to apply.
+
+Legacy adjacency mode/build settings and value-overlay system properties tune their respective accelerators; they do not
+turn them on. The `rdf4j.lmdb.nativeQueryEngine.enabled` system property controls routing inside the native strategy,
+but does not select that strategy on its own. When value overlay is enabled, absent
+`rdf4j.lmdb.valueOverlay.maxBytes` uses the shared retained-memory cap (2 GiB by default) for startup warm-up; an
+explicit zero disables automatic warm-up and a positive value overrides the startup base budget. All overlay allocations
+remain subject to the shared retained-memory cap.
+These options affect in-memory runtime behavior only, so existing LMDB data needs no storage migration. Repositories that
+relied on the former automatic native evaluator or adjacency activation should add the matching opt-in setting to their
+repository configuration. The three startup options are captured when the store is constructed; restart the repository
+after changing any of them.
+
+## Background adjacency indexes
+
+Direct adjacency is disabled by default. Opt in with `LmdbStoreConfig.setDirectAdjacencyEnabled(true)` or the persisted
+`lmdb:directAdjacencyEnabled true` setting. When enabled, the default mode is `PREFER` and startup building defaults on.
+Legacy `directAdjacencyMode`, `directAdjacencyBuildOnStart`, and tuning values alone do not activate the index; they are
+ignored for activation while the new flag is false. Setting the flag true together with `DISABLED` is rejected.
+
+When direct adjacency and startup building are enabled, repository initialization schedules adjacency and the configured
+node-predicate projection on repository-owned workers and returns. Reads use LMDB until both construction and catch-up
+finish, preserving read-your-writes. A map resize can invalidate a pinned LMDB snapshot before publication; a mapped
+repository read then fails with a `SNAPSHOT transaction invalidated` error that asks the caller to retry after the resize.
+Repository APIs may wrap the underlying `SailException` in a `RepositoryException`.
+
+After construction, a `SNAPSHOT_READ` operation fully served by a built immutable adjacency view can retain its original
+query snapshot across map growth while a later query sees committed writes. Adjacency may decline a shape and fall back to
+mapped reads, so it does not guarantee every operation will avoid resize invalidation. Callers should continue to handle
+the retryable error. Different repositories can initialize and build concurrently, including through `LocalRepositoryManager`.
+
+Writes made during a populated repository's startup accumulate committed deltas. The builder first consumes a fixed
+revision range while writes continue. It then fences new backing writes, lets admitted writes hand over their deltas,
+and publishes the fully caught-up generation. Readers continue to use LMDB during this transition.
+
+After publication, commits normally return only after their explicit and inferred index changes are published. This rule
+applies immediately when the repository is empty at initialization. Primitive mutation batches are prepared asynchronously
+while LMDB continues writing; commit waits only for remaining publication work. Uncommitted changes stay private.
+
+Configure the backlog admission threshold in bytes:
+
+```java
+config.setDirectAdjacencyBacklogMaxBytes(32L * 1024 * 1024);
+```
+
+The corresponding repository configuration is:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:directAdjacencyBacklogMaxBytes 33554432 .
+```
+
+`0` (the default) selects AUTO: 1% of the effective adjacency memory budget, bounded between 8 MiB and 2 GiB.
+Negative values are rejected. Backlog accounting includes unpublished payloads and their queue and preparation metadata.
+At the threshold, new backing writes pause; an admitted transaction can finish within its bounded capture allowance.
+The overall adjacency memory cap still applies. Reservations are released before commit waits for publication.
+
+The system property `rdf4j.lmdb.directAdjacency.synchronousMaintenance=false` explicitly disables waiting
+for index publication. Existing mode, coverage, startup-build and incoming node-predicate settings remain effective.
+Transactions exceeding the capture allowance commit to LMDB, mark a revision gap, and schedule an asynchronous rebuild.
+Maintenance failures and memory refusal keep LMDB available, wake blocked writers, and report degraded readiness;
+recoverable failures use the existing retry policy. Failure of only the optional node-predicate projection preserves
+adjacency access for unaffected capabilities. These indexes are derived in memory, so this change requires no persisted
+index-format migration.
+
+For diagnostics, `LmdbStore.getDirectAdjacencyReadinessDescription()` includes backlog bytes and limit, peak backlog,
+admission block reason, catch-up target, publication revision, cumulative commit wait nanoseconds, and the latest cutover
+duration. `awaitDirectAdjacencyReady(timeout, unit)` provides an explicit bounded readiness wait. A backlog pause is resolved
+by consumption or degraded fallback; a catch-up pause lasts until admitted writes hand off and the final generation is
+published. Inspect `lastBuildFailure` and gap revisions when readiness is degraded.
+
 ## Cardinality estimation
 
 The LMDB Store normally estimates statement-pattern cardinalities by reading a bounded number of pages from the

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 
 import java.io.ObjectStreamException;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -72,6 +73,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbBNode lmdbBNode) {
 			super.setID(lmdbBNode.getID());
+			initialized = true;
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
 		}
@@ -80,6 +82,12 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	@Override
 	public long getInternalID() {
 		return internalID;
+	}
+
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		return initialized ? super.getID().length() : -1L;
 	}
 
 	@Override
@@ -102,6 +110,25 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 				initialized = true;
 			}
 		}
+	}
+
+	@Experimental
+	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					resolver.resolve(internalID, this);
+				}
+				initialized = true;
+			}
+		}
+	}
+
+	@Experimental
+	@Override
+	public boolean isInitialized() {
+		return initialized;
 	}
 
 	@Override

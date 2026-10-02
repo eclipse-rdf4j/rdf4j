@@ -42,6 +42,14 @@ class UnionSailDataset implements SailDataset {
 		this.dataset2 = dataset2;
 	}
 
+	SailDataset getLeftDataset() {
+		return dataset1;
+	}
+
+	SailDataset getRightDataset() {
+		return dataset2;
+	}
+
 	/**
 	 * Creates a new {@link SailDataset} that includes both the provided {@link SailDataset}s.
 	 */
@@ -153,6 +161,12 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return dataset1.hasStatements(subj, pred, obj, contexts)
+				|| dataset2.hasStatements(subj, pred, obj, contexts);
+	}
+
+	@Override
 	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 
@@ -184,9 +198,13 @@ class UnionSailDataset implements SailDataset {
 		CloseableIteration<? extends Statement> iteration1 = null;
 		CloseableIteration<? extends Statement> iteration2 = null;
 		try {
+			Comparator<Value> comparator = getComparator();
+			if (comparator == null) {
+				throw new SailException("Statement ordering not supported by " + getClass().getSimpleName());
+			}
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
-			Comparator<Statement> cmp = statementOrder.getComparator(dataset1.getComparator());
+			Comparator<Statement> cmp = statementOrder.getComparator(comparator);
 			return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
@@ -205,6 +223,9 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (getComparator() == null) {
+			return Set.of();
+		}
 
 		Set<StatementOrder> supportedOrders1 = dataset1.getSupportedOrders(subj, pred, obj, contexts);
 		if (supportedOrders1.isEmpty()) {
@@ -230,7 +251,9 @@ class UnionSailDataset implements SailDataset {
 		Comparator<Value> comparator1 = dataset1.getComparator();
 		Comparator<Value> comparator2 = dataset2.getComparator();
 
-		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
+		if (comparator1 == null || comparator2 == null) {
+			return null;
+		}
 
 		return comparator1;
 	}

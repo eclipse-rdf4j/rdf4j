@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:>
+SELECT ?s ?missing ?v WHERE { ?s :p ?k . OPTIONAL { ?s :absent ?missing } SERVICE :remote { ?k :q ?v } }

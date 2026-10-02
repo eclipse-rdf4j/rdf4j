@@ -49,6 +49,13 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  */
 public final class FilterSelectivityKeys {
 
+	private static final Object FILTER_ORIGIN_PATTERNS_KEY = new Object();
+	private static final Object FILTER_CONDITION_VARS_KEY = new Object();
+	private static final Object PATTERN_LOCAL_ROLES_KEY = new Object();
+
+	private record OriginPatternsCache(QueryModelNode arg, Set<StatementPattern> patterns) {
+	}
+
 	private FilterSelectivityKeys() {
 	}
 
@@ -94,22 +101,31 @@ public final class FilterSelectivityKeys {
 		key.append(node.getSignature());
 		int childStart = key.length();
 		key.append('[');
-		boolean[] first = { true };
-		node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetNode(QueryModelNode child) {
-				if (first[0]) {
-					first[0] = false;
-				} else {
-					key.append(',');
-				}
-				appendStructuralKey(child, key);
-			}
-		});
-		if (first[0]) {
+		StructuralKeyVisitor visitor = new StructuralKeyVisitor(key);
+		node.visitChildren(visitor);
+		if (visitor.first) {
 			key.setLength(childStart);
 		} else {
 			key.append(']');
+		}
+	}
+
+	private static final class StructuralKeyVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+		private final StringBuilder key;
+		private boolean first = true;
+
+		private StructuralKeyVisitor(StringBuilder key) {
+			this.key = key;
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode child) {
+			if (first) {
+				first = false;
+			} else {
+				key.append(',');
+			}
+			appendStructuralKey(child, key);
 		}
 	}
 
@@ -147,11 +163,18 @@ public final class FilterSelectivityKeys {
 	}
 
 	public static Set<StatementPattern> originPatternsForFilter(Filter filter) {
-		Set<StatementPattern> patterns = Collections.newSetFromMap(new IdentityHashMap<>());
 		if (filter == null || filter.getArg() == null) {
-			return patterns;
+			return Collections.emptySet();
 		}
-		patterns.addAll(StatementPatternCollector.process(filter.getArg()));
+		QueryModelNode arg = filter.getArg();
+		Object cached = filter.getQueryModelMetadata(FILTER_ORIGIN_PATTERNS_KEY);
+		if (cached instanceof OriginPatternsCache cache && cache.arg() == arg) {
+			return cache.patterns();
+		}
+
+		Set<StatementPattern> patterns = Collections.newSetFromMap(new IdentityHashMap<>());
+		patterns.addAll(StatementPatternCollector.process(arg));
+		filter.setQueryModelMetadata(FILTER_ORIGIN_PATTERNS_KEY, new OriginPatternsCache(arg, patterns));
 		return patterns;
 	}
 
@@ -159,7 +182,7 @@ public final class FilterSelectivityKeys {
 		if (condition == null || pattern == null) {
 			return false;
 		}
-		Set<String> conditionVars = VarNameCollector.process(condition);
+		Set<String> conditionVars = conditionVars(condition);
 		if (conditionVars.isEmpty()) {
 			return false;
 		}
@@ -179,12 +202,29 @@ public final class FilterSelectivityKeys {
 		return var != null && var.hasValue();
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Set<String> conditionVars(ValueExpr condition) {
+		Object cached = condition.getQueryModelMetadata(FILTER_CONDITION_VARS_KEY);
+		if (cached instanceof Set) {
+			return (Set<String>) cached;
+		}
+		Set<String> conditionVars = VarNameCollector.process(condition);
+		condition.setQueryModelMetadata(FILTER_CONDITION_VARS_KEY, conditionVars);
+		return conditionVars;
+	}
+
+	@SuppressWarnings("unchecked")
 	private static Map<String, String> localRoles(StatementPattern pattern) {
+		Object cached = pattern.getQueryModelMetadata(PATTERN_LOCAL_ROLES_KEY);
+		if (cached instanceof Map) {
+			return (Map<String, String>) cached;
+		}
 		Map<String, String> roles = new HashMap<>(4);
 		registerLocalRole(roles, pattern.getSubjectVar(), "LOCAL_S");
 		registerLocalRole(roles, pattern.getPredicateVar(), "LOCAL_P");
 		registerLocalRole(roles, pattern.getObjectVar(), "LOCAL_O");
 		registerLocalRole(roles, pattern.getContextVar(), "LOCAL_C");
+		pattern.setQueryModelMetadata(PATTERN_LOCAL_ROLES_KEY, roles);
 		return roles;
 	}
 

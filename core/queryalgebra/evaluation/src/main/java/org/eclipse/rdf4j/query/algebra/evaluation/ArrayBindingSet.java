@@ -143,6 +143,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = toCopy.empty;
 		this.cachedSize = toCopy.cachedSize;
+		if (toCopy.bindingNames == names) {
+			this.bindingNamesSetCache = toCopy.bindingNamesSetCache;
+			this.sortedBindingNames = toCopy.sortedBindingNames;
+			this.cachedHashCode = toCopy.cachedHashCode;
+		}
 		if (sharedSortedBindingNamesCache != null) {
 			this.activeBindingMask = toCopy.bindingNames == names ? toCopy.activeBindingMask
 					: calculateActiveBindingMask();

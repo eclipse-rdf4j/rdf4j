@@ -23,9 +23,11 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
@@ -36,6 +38,7 @@ import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
@@ -51,20 +54,35 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 20)
 @BenchmarkMode({ Mode.AverageTime })
-@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
+@Fork(value = 3, jvmArgs = { "-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC" })
 //@Fork(value = 1, jvmArgs = {"-Xms8G", "-Xmx8G", "-Xmn4G", "-XX:+UseSerialGC", "-XX:+UnlockCommercialFeatures", "-XX:StartFlightRecording=delay=5s,duration=120s,filename=recording.jfr,settings=profile", "-XX:FlightRecorderOptions=samplethreads=true,stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ValueComparatorBenchmark {
+
+	/** Keeps calendar ordering mode out of the non-calendar benchmark parameter matrix. */
+	@State(Scope.Benchmark)
+	public static class CalendarOrderState {
+
+		@Param({ "STANDARD", "STRICT" })
+		public String mode;
+
+		ValueComparator comparator() {
+			ValueComparator comparator = new ValueComparator();
+			comparator.setStrict("STRICT".equals(mode));
+			return comparator;
+		}
+	}
 
 	List<Value> subjects;
 	List<Value> predicates;
 	List<Value> objects;
 	List<Value> manyPointerEquals;
 	List<Value> manyDeepEquals;
+	List<Value> calendars;
 
-	@Setup(Level.Invocation)
-	public void setUp() throws InterruptedException, IOException {
+	@Setup(Level.Trial)
+	public void setUp() throws IOException {
 
 		try (InputStream resourceAsStream = BenchmarkResources
 				.openDecompressedStream("benchmarkFiles/bsbm-100.ttl.gz")) {
@@ -106,10 +124,33 @@ public class ValueComparatorBenchmark {
 						.add(vf.createIRI("http://example.com/main/ontology/something/item32784y83rh8193ey81rfehw"));
 			}
 
-		}
+			List<Value> calendarSeeds = List.of(
+					vf.createLiteral("1999Z", XSD.GYEAR),
+					vf.createLiteral("2000", XSD.GYEAR),
+					vf.createLiteral("2000-02Z", XSD.GYEARMONTH),
+					vf.createLiteral("2000-02", XSD.GYEARMONTH),
+					vf.createLiteral("2000-02-29Z", XSD.DATE),
+					vf.createLiteral("2000-02-29+14:00", XSD.DATE),
+					vf.createLiteral("2000-02-29T23:59:59.125Z", XSD.DATETIME),
+					vf.createLiteral("2000-02-29T23:59:59.125", XSD.DATETIME),
+					vf.createLiteral("2000-02-29T09:59:59.125+14:00", XSD.DATETIMESTAMP),
+					vf.createLiteral("2000-02-29T23:59:59.125", XSD.DATETIMESTAMP),
+					vf.createLiteral("00:00:00Z", XSD.TIME),
+					vf.createLiteral("23:59:59.999-14:00", XSD.TIME),
+					vf.createLiteral("--02Z", XSD.GMONTH),
+					vf.createLiteral("--02-29", XSD.GMONTHDAY),
+					vf.createLiteral("---29+14:00", XSD.GDAY),
+					vf.createLiteral("2000-13-40", XSD.DATE),
+					vf.createLiteral("25:00:00", XSD.TIME));
+			calendars = new ArrayList<>(1000);
+			for (int i = 0; i < 1000; i++) {
+				Literal seed = (Literal) calendarSeeds.get(i % calendarSeeds.size());
+				// Distinct identities exercise the bounded weak-identity cache instead of benchmarking 17 hot entries.
+				calendars.add(vf.createLiteral(seed.getLabel(), seed.getDatatype()));
+			}
+			Collections.shuffle(calendars, new Random(468202874));
 
-		System.gc();
-		Thread.sleep(100);
+		}
 	}
 
 	public static void main(String[] args) throws RunnerException {
@@ -187,6 +228,19 @@ public class ValueComparatorBenchmark {
 		}
 
 		return compare;
+	}
+
+	@Benchmark
+	public List<Value> copyCalendars(CalendarOrderState ignoredOrder) {
+		return new ArrayList<>(calendars);
+	}
+
+	@Benchmark
+	public List<Value> sortCalendars(CalendarOrderState order) {
+		ValueComparator valueComparator = order.comparator();
+		List<Value> sorted = new ArrayList<>(calendars);
+		sorted.sort(valueComparator);
+		return sorted;
 	}
 
 }

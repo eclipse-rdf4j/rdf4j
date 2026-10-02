@@ -18,6 +18,7 @@ org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Ceil
 org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Floor
 org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand
 org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Round
+org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction
 org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrDt
 org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrLang
 org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID

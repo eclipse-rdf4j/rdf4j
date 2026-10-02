@@ -397,7 +397,17 @@ public class FilterInValuesRewriteRegressionTest {
 						  FILTER(IF(?n = 0, 1/0, "ok") IN ("ok"))
 						}
 						ORDER BY ?s
-						""", "", rows("s=http://example/s2")), c("N11", """
+						""", "", rows("s=http://example/s2")), c("N13", """
+						@prefix ex: <http://example/> .
+						ex:s1 ex:n 0 .
+						ex:s2 ex:n 1 .
+						""", """
+						SELECT ?s WHERE {
+						  ?s ex:n ?n .
+						  FILTER(IF(?n = 0, "ok", 1/0) IN ("ok"))
+						}
+						ORDER BY ?s
+						""", "", rows("s=http://example/s1")), c("N11", """
 						@prefix ex: <http://example/> .
 						ex:s ex:n 2 .
 						""", """

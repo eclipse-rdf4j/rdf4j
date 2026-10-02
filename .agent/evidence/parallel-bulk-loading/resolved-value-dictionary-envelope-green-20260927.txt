@@ -1,0 +1,17 @@
+Description: Track the resolved-value dictionary reader, key/decode working set, and its simultaneous component/descriptor output under shared scheduler admission.
+
+Evidence:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ValueStoreBulkRecordsTest#dictionaryReaderAndOutputShareTheActiveResourceEnvelope
+Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ValueStoreBulkRecordsTest.txt
+Snippet:
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.439 s
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ValueStoreBulkRecordsTest
+Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ValueStoreBulkRecordsTest.txt
+Snippet:
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.743 s
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs LmdbBulkLoaderContractTest#stagesCallerOwnedInputWithBoundedOpenFilesAndCleansItsWorkspace
+Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoaderContractTest.txt
+Snippet:
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.945 s
+Details: The dictionary cursor reserves its 64 KiB input buffer and each key/decode working estimate before allocation. Bucket preparation reserves one output together with the reader; assigned-value descriptors reserve reader and writer together. Normal configured workloads remain within the scheduler budget; the scheduler's existing exclusive minimum handles an irreducible large row. This budget is for controlled bulk working buffers, not total JVM RSS.
+Full logs: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T234145.154146Z-75685-a27531b1/verify.log; .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T234321.477269Z-76790-92828c2c/verify.log; .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T234441.514418Z-77479-18a31b81/verify.log

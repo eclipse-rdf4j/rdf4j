@@ -35,6 +35,11 @@ public class CommonValuesHandlerInterceptor implements HandlerInterceptor {
 
 	@Override
 	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
+		if (mav == null) {
+			// The handler wrote the response itself, so there is no model to enrich.
+			return;
+		}
+
 		mav.addObject("path", request.getContextPath());
 		mav.addObject("basePath", request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort()
 				+ request.getContextPath() + "/");

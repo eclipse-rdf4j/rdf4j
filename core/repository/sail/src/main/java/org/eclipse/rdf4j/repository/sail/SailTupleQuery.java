@@ -51,7 +51,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
-					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE);
+					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE, getForcedLmdbExecutionStrategy());
 			try {
 				bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 			} finally {

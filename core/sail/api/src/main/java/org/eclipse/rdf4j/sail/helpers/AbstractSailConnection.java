@@ -118,6 +118,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 	private final LongAdder iterationsClosed = new LongAdder();
 
 	private final Map<SailBaseIteration<?, ?>, Throwable> activeIterationsDebug;
+	private final Map<SailBaseIteration<?, ?>, CleanerIteration.CleanupRegistration> activeIterationCleanups;
 
 	/**
 	 * Statements that are currently being removed, but not yet realized, by an active operation.
@@ -153,8 +154,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 		txnActive = false;
 		if (debugEnabled) {
 			activeIterationsDebug = new ConcurrentHashMap<>();
+			activeIterationCleanups = Collections.emptyMap();
 		} else {
 			activeIterationsDebug = Collections.emptyMap();
+			activeIterationCleanups = new ConcurrentHashMap<>();
 		}
 		owner = Thread.currentThread();
 	}
@@ -675,6 +678,29 @@ public abstract class AbstractSailConnection implements SailConnection {
 		setStatementsAdded();
 	}
 
+	@Experimental
+	@Override
+	public final void addStatements(Iterable<? extends Statement> statements, Resource... contexts)
+			throws SailException {
+		if (statementsRemoved) {
+			flushPendingUpdates();
+		}
+		long added;
+		try {
+			added = addStatementsInternal(statements, contexts);
+		} catch (RuntimeException | Error e) {
+			// Mark pending when bulk iteration fails: an optimized path may have buffered a prefix before the failure.
+			// Preserve the caller-managed transaction and original exception; a later read or update flushes the
+			// prefix.
+			setStatementsAdded();
+			throw e;
+		}
+		recordDataImportMetricsStatementsAdded(added);
+		if (added > 0) {
+			setStatementsAdded();
+		}
+	}
+
 	@Override
 	public final void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		if (pendingAdds()) {
@@ -751,6 +777,12 @@ public abstract class AbstractSailConnection implements SailConnection {
 			return;
 		}
 		dataImportMetricsStatementsAdded += contexts.length;
+	}
+
+	private void recordDataImportMetricsStatementsAdded(long statements) {
+		if (dataImportMetricsEnabled) {
+			dataImportMetricsStatementsAdded += statements;
+		}
 	}
 
 	private void resetDataImportMetricsState() {
@@ -1047,7 +1079,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 					new Throwable("Unclosed iteration created in " + this.getClass().getName()));
 			return result;
 		} else {
-			return new CleanerIteration<>(new SailBaseIteration<>(iter, this), cleaner);
+			var delegate = new SailBaseIteration<>(iter, this);
+			var result = new CleanerIteration<>(delegate, cleaner);
+			activeIterationCleanups.put(delegate, result.cleanupRegistration());
+			return result;
 		}
 	}
 
@@ -1059,6 +1094,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeIterationsDebug.remove(iter);
 		}
 		iterationsClosed.increment();
+		if (!debugEnabled) {
+			// Removing the registration publishes that delegate close and its accounting have both completed.
+			activeIterationCleanups.remove(iter);
+		}
 	}
 
 	protected abstract void closeInternal() throws SailException;
@@ -1091,6 +1130,28 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected abstract void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException;
+
+	@Experimental
+	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
+			throws SailException {
+		long count = 0;
+		for (Statement statement : statements) {
+			if (contexts.length == 0) {
+				Resource context = statement.getContext();
+				if (context == null) {
+					addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject());
+				} else {
+					addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							context);
+				}
+				count++;
+			} else {
+				addStatement(null, statement.getSubject(), statement.getPredicate(), statement.getObject(), contexts);
+				count += contexts.length;
+			}
+		}
+		return count;
+	}
 
 	@Experimental
 	protected void bulkAddStatementsInternal(final Collection<? extends Statement> statements)
@@ -1134,8 +1195,10 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	private void forceCloseActiveOperations() throws SailException {
+		closeAbandonedIterations();
 		for (int i = 0; i < 10 && isActiveOperation() && !debugEnabled; i++) {
 			System.gc();
+			closeAbandonedIterations();
 			try {
 				Thread.sleep(1);
 			} catch (InterruptedException e) {
@@ -1171,6 +1234,14 @@ public abstract class AbstractSailConnection implements SailConnection {
 			}
 		}
 
+	}
+
+	private void closeAbandonedIterations() {
+		// Do not retain or close a still-reachable result, and do not hold a registry lock while delegate close calls
+		// iterationClosed. Weak collection establishes abandonment; cleanup completion is a separate obligation.
+		for (CleanerIteration.CleanupRegistration registration : activeIterationCleanups.values()) {
+			registration.closeIfAbandoned();
+		}
 	}
 
 	/**

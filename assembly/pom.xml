@@ -18,6 +18,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-lmdb-bulk-load</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-runtime-osgi</artifactId>
 			<version>${project.version}</version>
 			<exclusions>
@@ -86,7 +91,7 @@
 							<exclude>org.eclipse.rdf4j:rdf4j-runtime-osgi</exclude>
 						</excludes>
 					</artifactSet>
-					<outputFile>target/eclipse-rdf4j-${project.version}-onejar.jar</outputFile>
+					<outputFile>${project.build.directory}/eclipse-rdf4j-${project.version}-onejar.jar</outputFile>
 					<createDependencyReducedPom>false</createDependencyReducedPom>
 					<shadedArtifactAttached>false</shadedArtifactAttached>
 					<transformers>

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -53,6 +54,8 @@ import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeForceableStrategies;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
@@ -92,6 +95,13 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_EXPLAIN = "explain";
 
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
+	private static final String ACTION_LMDB_PROPERTIES = "lmdb-properties";
+	private static final String ACTION_SET_LMDB_PROPERTY = "set-lmdb-property";
+	private static final String ACTION_LMDB_STRATEGIES = "lmdb-strategies";
+
+	/** Per-query request parameter pinning one named LMDB execution strategy; see {@code Protocol}. */
+	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
+	private static final String ADMIN_ROLE = "rdf4j-admin";
 
 	private static final String ACTION_CANCEL_QUERY = "cancel-query";
 
@@ -159,11 +169,11 @@ public class QueryServlet extends TransformationServlet {
 
 	private String[] getCookieNames(boolean shouldWriteQueryCookie) {
 		if (shouldWriteQueryCookie) {
-			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-					"show-datatypes" };
+			return new String[] { QUERY, REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+					"total_result_count", "show-datatypes" };
 		}
-		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
-				"show-datatypes" };
+		return new String[] { REF, "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
+				"total_result_count", "show-datatypes" };
 	}
 
 	/**
@@ -222,6 +232,14 @@ public class QueryServlet extends TransformationServlet {
 		final String action = req.getParameter(ACTION);
 		if (ACTION_GET.equals(action)) {
 			writeQueryTextResponse(req, resp);
+		} else if (ACTION_LMDB_PROPERTIES.equals(action)) {
+			writeLmdbRuntimeProperties(resp);
+		} else if (ACTION_LMDB_STRATEGIES.equals(action)) {
+			writeLmdbForceableStrategies(resp);
+		} else if (ACTION_SET_LMDB_PROPERTY.equals(action)) {
+			resp.setHeader("Allow", "POST");
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_METHOD_NOT_ALLOWED,
+					new RuntimePropertyError("LMDB runtime properties can only be changed with POST"));
 		} else if (ACTION_EXPLAIN.equals(action)) {
 			if (isSavedQueryReference(req) && !canReadSavedQuery(req)) {
 				throw new BadRequestException("Current user may not read the given query.");
@@ -234,6 +252,89 @@ public class QueryServlet extends TransformationServlet {
 		} else {
 			handleStandardBrowserRequest(req, resp, xslPath);
 		}
+	}
+
+	private void writeLmdbRuntimeProperties(HttpServletResponse resp) throws IOException {
+		try {
+			Object properties = repository instanceof HTTPRepository
+					? ((HTTPRepository) repository).getLmdbRuntimeProperties()
+					: LmdbRuntimeProperties.list();
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_OK,
+					new RuntimePropertiesResponse(true, properties, null));
+		} catch (RDF4JException e) {
+			LOGGER.debug("LMDB runtime properties are unavailable", e);
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					new RuntimePropertiesResponse(false, null,
+							"Runtime toggles are unavailable on the selected server."));
+		}
+	}
+
+	/**
+	 * Serves the strategy dropdown's options. Mirrors {@link #writeLmdbRuntimeProperties(HttpServletResponse)}: read
+	 * the catalogue from the remote server when this workbench fronts one, and straight out of the in-process LMDB
+	 * module when the repository is embedded. The empty default entry is added by the page, not here, since it is the
+	 * absence of a strategy rather than one of them.
+	 */
+	private void writeLmdbForceableStrategies(HttpServletResponse resp) throws IOException {
+		try {
+			Object strategies = repository instanceof HTTPRepository
+					? ((HTTPRepository) repository).getLmdbForceableStrategies()
+					: LmdbNativeForceableStrategies.list();
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_OK,
+					new ForceableStrategiesResponse(true, strategies, null));
+		} catch (RDF4JException e) {
+			LOGGER.debug("LMDB forceable execution strategies are unavailable", e);
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					new ForceableStrategiesResponse(false, null,
+							"Forced execution strategies are unavailable on the selected server."));
+		}
+	}
+
+	private void writeSetLmdbRuntimeProperty(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
+		if (!req.isUserInRole(ADMIN_ROLE)
+				|| !"true".equals(req.getHeader(Protocol.LMDB_ADMIN_REQUEST_HEADER))) {
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_FORBIDDEN,
+					new RuntimePropertyError("The rdf4j-admin role and " + Protocol.LMDB_ADMIN_REQUEST_HEADER
+							+ ": true header are required to change LMDB runtime properties"));
+			return;
+		}
+		String enabled = req.getParameter("enabled");
+		if (!"true".equals(enabled) && !"false".equals(enabled)) {
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_BAD_REQUEST,
+					new RuntimePropertyError("enabled must be true or false"));
+			return;
+		}
+		String name = req.getParameter("name");
+		try {
+			Object property = repository instanceof HTTPRepository
+					? ((HTTPRepository) repository).setLmdbRuntimeProperty(name, Boolean.parseBoolean(enabled))
+					: LmdbRuntimeProperties.set(name, Boolean.parseBoolean(enabled));
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_OK, property);
+		} catch (IllegalArgumentException e) {
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_BAD_REQUEST,
+					new RuntimePropertyError(e.getMessage()));
+		} catch (RDF4JException e) {
+			LOGGER.debug("Could not update LMDB runtime property", e);
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+					new RuntimePropertyError("Runtime toggles are unavailable on the selected server."));
+		}
+	}
+
+	private static void writeRuntimePropertyJson(HttpServletResponse resp, int status, Object value)
+			throws IOException {
+		resp.setStatus(status);
+		resp.setHeader("Cache-Control", "no-store");
+		resp.setContentType("application/json");
+		mapper.writeValue(resp.getWriter(), value);
+	}
+
+	private record RuntimePropertiesResponse(boolean available, Object properties, String error) {
+	}
+
+	private record ForceableStrategiesResponse(boolean available, Object strategies, String error) {
+	}
+
+	private record RuntimePropertyError(String error) {
 	}
 
 	private void writeQueryTextResponse(final WorkbenchRequest req, final HttpServletResponse resp)
@@ -450,6 +551,7 @@ public class QueryServlet extends TransformationServlet {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
+		jsonObject.set("strategyDecisions", mapper.valueToTree(explainQueryResult.getStrategyDecisions()));
 		jsonObject.put("lineSeparator", System.lineSeparator());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
 	}
@@ -723,6 +825,8 @@ public class QueryServlet extends TransformationServlet {
 		final String action = req.getParameter(ACTION);
 		if ("save".equals(action)) {
 			saveQuery(req, resp);
+		} else if (ACTION_SET_LMDB_PROPERTY.equals(action)) {
+			writeSetLmdbRuntimeProperty(req, resp);
 		} else if ("edit".equals(action)) {
 			if (canReadSavedQuery(req)) {
 				/*

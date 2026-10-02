@@ -1,0 +1,4 @@
+interface:
+  display_name: "High-Performance Java"
+  short_description: "Hot-path Java, plus algorithm/perf-library, execution-model, and runtime-codegen guidance"
+  default_prompt: "Use $high-performance-java to choose the right algorithm, execution model, data structure, runtime codegen strategy, library, and HotSpot-friendly code shape for a high-performance Java task."

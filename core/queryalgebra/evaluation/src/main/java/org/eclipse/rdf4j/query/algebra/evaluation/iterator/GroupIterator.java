@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -128,6 +129,21 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf)
 			throws QueryEvaluationException {
+		this(strategy, group, parentBindings, iterationCacheSyncThreshold, context, vf, cf,
+				strategy.precompile(group.getArg(), context));
+	}
+
+	@Experimental
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
+		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
+				new DefaultCollectionFactory(),
+				arguments);
+	}
+
+	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
+			QueryEvaluationStep arguments) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -136,7 +152,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this.context = context;
 		this.vf = vf;
 		this.cf = cf;
-		this.arguments = strategy.precompile(group.getArg(), context);
+		this.arguments = arguments;
 	}
 
 	/*---------*

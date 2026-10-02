@@ -46,6 +46,7 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 		String queryRequestId = registerActiveQuerySession(client);
 
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendBooleanQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), getBindingsArray());
@@ -74,6 +75,7 @@ public class HTTPBooleanQuery extends AbstractHTTPQuery implements BooleanQuery 
 	public Explanation explain(Explanation.Level level) {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendQueryExplanation(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), level, getBindingsArray());
