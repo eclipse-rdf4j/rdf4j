@@ -1,0 +1,5 @@
+SELECT * WHERE {
+  VALUES ?x { "a" "b" }
+  MINUS { VALUES ?x { "a" } FILTER(?missing = "x") }
+  FILTER(?x = "a")
+}

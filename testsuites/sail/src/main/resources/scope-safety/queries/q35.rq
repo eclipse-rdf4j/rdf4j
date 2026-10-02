@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { "a" "b" "c" "d" }
+  MINUS { VALUES ?x { "b" } OPTIONAL { VALUES ?witness { "w" } } }
+}

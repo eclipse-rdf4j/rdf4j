@@ -1551,7 +1551,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private double bindingSetRows(BindingSetAssignment assignment) {
-			if (assignment.getBindingSets() == null) {
+			if (!assignment.hasRepeatableBindingSets()) {
 				return Double.NaN;
 			}
 			double rows = 0.0d;
@@ -2324,7 +2324,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private BindingAssignmentSignature bindingAssignmentSignature(TupleExpr joinArg) {
-			if (!(joinArg instanceof BindingSetAssignment assignment)) {
+			if (!(joinArg instanceof BindingSetAssignment assignment) || !assignment.hasRepeatableBindingSets()) {
 				return null;
 			}
 			if (assignment.getBindingNames().size() != 1) {
@@ -2364,6 +2364,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private List<BindingSetAssignment> splitCartesianAssignment(BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return List.of();
+			}
 			List<String> bindingNames = new ArrayList<>(assignment.getAssuredBindingNames());
 			List<BindingSet> rows = new ArrayList<>();
 			Map<String, LinkedHashSet<Value>> valuesByName = new LinkedHashMap<>();
@@ -2616,6 +2619,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isSingleLiteralBindingAssignment(TupleExpr tupleExpr) {
 			if (!(tupleExpr instanceof BindingSetAssignment assignment)
+					|| !assignment.hasRepeatableBindingSets()
 					|| assignment.getAssuredBindingNames().size() != 1
 					|| assignment.getBindingSets() == null) {
 				return false;
@@ -3561,7 +3565,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private double distinctAssignmentProjectionRows(BindingSetAssignment assignment, Set<String> projectedNames) {
-			if (assignment.getBindingSets() == null || projectedNames.isEmpty()) {
+			if (!assignment.hasRepeatableBindingSets() || projectedNames.isEmpty()) {
 				return Double.NaN;
 			}
 			List<String> names = new ArrayList<>(projectedNames);
