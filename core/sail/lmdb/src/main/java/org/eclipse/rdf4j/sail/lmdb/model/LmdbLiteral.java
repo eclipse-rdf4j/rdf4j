@@ -377,7 +377,17 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		}
 
 		init();
-		return super.equals(o);
+		boolean equals = super.equals(o);
+		if (equals && revision != null && o instanceof LmdbLiteral otherLmdbLiteral
+				&& revision.equals(otherLmdbLiteral.revision)) {
+			// Only share an ID after all RDF term components match, including language and direction.
+			if (internalID == UNKNOWN_ID) {
+				internalID = otherLmdbLiteral.internalID;
+			} else if (otherLmdbLiteral.internalID == UNKNOWN_ID) {
+				otherLmdbLiteral.internalID = internalID;
+			}
+		}
+		return equals;
 	}
 
 	@Override

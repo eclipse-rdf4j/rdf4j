@@ -58,6 +58,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -2157,8 +2159,9 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
-	@Test
-	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue() throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue(boolean delayCommitFinalization) throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
@@ -2183,13 +2186,22 @@ class LmdbDirectAdjacencyQueryTest {
 
 		CountDownLatch admissionStarted = new CountDownLatch(1);
 		CountDownLatch releaseAdmission = new CountDownLatch(1);
+		CountDownLatch finalizationStarted = new CountDownLatch(1);
+		CountDownLatch releaseFinalization = new CountDownLatch(1);
 		CountDownLatch readinessStarted = new CountDownLatch(1);
 		Runnable previousAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		Runnable previousFinalizationHook = direct.beforePreparedFinalizeWaitForTest;
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		direct.beforeApplyQueueAdmissionForTest = () -> {
 			admissionStarted.countDown();
 			awaitQueueAdmissionRelease(releaseAdmission);
 		};
+		if (delayCommitFinalization) {
+			direct.beforePreparedFinalizeWaitForTest = () -> {
+				finalizationStarted.countDown();
+				awaitQueueAdmissionRelease(releaseFinalization);
+			};
+		}
 		try {
 			Future<?> commit = executor.submit(() -> {
 				try (RepositoryConnection connection = repo.getConnection()) {
@@ -2197,10 +2209,17 @@ class LmdbDirectAdjacencyQueryTest {
 				}
 			});
 			awaitPendingPublication(admissionStarted);
+			if (delayCommitFinalization) {
+				awaitPendingPublication(finalizationStarted);
+				assertThat(commit.isDone()).isFalse();
+			}
+			releaseFinalization.countDown();
+			// Queue admission runs on the preparation worker and can precede the connection's admission release.
+			commit.get(30, TimeUnit.SECONDS);
+			assertThat(direct.publicationDiagnostics()).contains("admittedWrites=0");
 			LmdbAdjacencyMetrics.Snapshot handoff = direct.snapshotMetrics();
 			assertThat(handoff.currentDataRevision).as(direct.publicationDiagnostics())
 					.isGreaterThan(handoff.appliedRevision);
-			assertThat(direct.publicationDiagnostics()).contains("admittedWrites=0");
 			Future<Boolean> readiness = executor.submit(() -> {
 				readinessStarted.countDown();
 				return sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS);
@@ -2218,11 +2237,12 @@ class LmdbDirectAdjacencyQueryTest {
 							+ direct.publicationDiagnostics())
 					.isNull();
 			releaseAdmission.countDown();
-			commit.get(30, TimeUnit.SECONDS);
 			assertThat(readiness.get(60, TimeUnit.SECONDS)).isTrue();
 		} finally {
+			releaseFinalization.countDown();
 			releaseAdmission.countDown();
 			direct.beforeApplyQueueAdmissionForTest = previousAdmissionHook;
+			direct.beforePreparedFinalizeWaitForTest = previousFinalizationHook;
 			executor.shutdownNow();
 		}
 	}
