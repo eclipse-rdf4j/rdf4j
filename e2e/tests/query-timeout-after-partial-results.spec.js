@@ -12,17 +12,18 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `query-timeout-after-rows-${process.pid}-${Date.now().toString(36)}`;
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('query-timeout-after-rows');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const NDJSON_ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
 const QUERY_TIMEOUT_SECONDS = 1;
-const VALUES_PER_DIMENSION = 100;
+// 200^3 = 8,000,000 candidate rows: the server streams about a million rows a second, so a cube of 100^3 sometimes
+// completed in the one second before the timeout and the test saw no timeout at all.
+const VALUES_PER_DIMENSION = 200;
 const GRAPH_VALUES_PER_DIMENSION = 60;
 let repositoryCreated = false;
 
@@ -59,6 +60,9 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	test.setTimeout(90000);
 	await page.setViewportSize({ width: 390, height: 844 });
 	const monitor = monitorPage(page);
+	// The compact stream sends several hundred thousand rows in the one second before the timeout (about 100 MB),
+	// more than Chromium's inspector keeps for response.text(), so the page keeps its own copy of the body.
+	await captureQueryResponseBodies(page);
 	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
 	await page.locator('#query-form').waitFor({ state: 'visible' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
@@ -113,20 +117,26 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	const terminalMetrics = await page.evaluate(() => window.__queryTimeoutMetrics);
 	await expect.poll(() => monitor.responses.length).toBeGreaterThan(timeoutExecutionIndex);
 	const timeoutResponse = monitor.responses[timeoutExecutionIndex];
-	await timeoutResponse.bodyPromise;
-	const streamRecords = parseNdjson(timeoutResponse.body);
+	await page.waitForFunction(index => window.__queryTimeoutCapturedResponses[index]
+		&& window.__queryTimeoutCapturedResponses[index].complete, timeoutExecutionIndex, { timeout: 20000 });
+	const streamRecords = await capturedStreamRecords(page, timeoutExecutionIndex);
 	const timeoutRecord = streamRecords.find(record => record.type === 'error');
 	const result = page.locator('#query-results .query-result-layout');
 	const status = result.locator('.query-result-status');
 	const countLabel = result.locator('.query-result-navigation__label').first();
 	const downloadToggle = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Download' });
-	const alertLayout = await page.locator('#query-results [role="alert"]').evaluate(element => ({
+	// The alert is a callout (icon and body) since the result states redesign (fa6a07914c); its message is the
+	// .query-result-error__message line, so the wrapping is measured there and the callout must not overflow either.
+	const alertMessage = page.locator('#query-results [role="alert"] .query-result-error__message');
+	const alertLayout = await alertMessage.evaluate(element => ({
 		clientWidth: element.clientWidth,
 		scrollWidth: element.scrollWidth,
+		alertClientWidth: element.closest('[role="alert"]').clientWidth,
+		alertScrollWidth: element.closest('[role="alert"]').scrollWidth,
 		whiteSpace: getComputedStyle(element).whiteSpace,
 		text: element.textContent
 	}));
-	const alertWrapping = await page.locator('#query-results [role="alert"]').evaluate(element => {
+	const alertWrapping = await alertMessage.evaluate(element => {
 		const originalText = element.textContent;
 		const longMessage = `First line.\n${'x'.repeat(512)}`;
 		element.textContent = longMessage;
@@ -135,6 +145,8 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 		const result = {
 			clientWidth: element.clientWidth,
 			scrollWidth: element.scrollWidth,
+			alertClientWidth: element.closest('[role="alert"]').clientWidth,
+			alertScrollWidth: element.closest('[role="alert"]').scrollWidth,
 			whiteSpace: getComputedStyle(element).whiteSpace,
 			lineFragments: range.getClientRects().length,
 			text: element.textContent
@@ -194,9 +206,14 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 	expect(alertLayout.scrollWidth, 'the full timeout recovery instruction must fit the mobile alert').toBeLessThanOrEqual(
 		alertLayout.clientWidth
 	);
+	expect(alertLayout.alertScrollWidth, 'the timeout callout must fit the mobile result').toBeLessThanOrEqual(
+		alertLayout.alertClientWidth
+	);
 	expect(alertLayout.whiteSpace).toBe('pre-wrap');
 	expect(alertWrapping.scrollWidth, 'a long uninterrupted token must wrap inside the mobile alert')
 		.toBeLessThanOrEqual(alertWrapping.clientWidth);
+	expect(alertWrapping.alertScrollWidth, 'a long uninterrupted token must wrap inside the mobile alert')
+		.toBeLessThanOrEqual(alertWrapping.alertClientWidth);
 	expect(alertWrapping.text).toBe(`First line.\n${'x'.repeat(512)}`);
 	expect(alertWrapping.lineFragments, 'preserved line breaks and long-token wrapping should occupy separate lines')
 		.toBeGreaterThan(1);
@@ -271,8 +288,11 @@ test('shows partial rows on a real query timeout, cleans up, then executes again
 		contentType: 'application/json'
 	});
 	expect(successfulRerunCompleted, 'a clean successful run should work immediately after timeout').toBe(true);
-	await expect(page.locator('#query-results table.data tbody tr')).toHaveCount(1);
-	await expect(page.locator('#query-results .query-result-status')).toHaveText('1 result.');
+	// At 390 px Auto shows three columns as records (cards), so the one row is counted in either layout.
+	await expect(page.locator('#query-results [data-query-row-index], #query-results [data-query-record-index]'))
+		.toHaveCount(1);
+	// The status counts rows and names the elapsed time (result states redesign, fa6a07914c).
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^1 row · complete in [\d,]+ ms$/);
 	await expect(page.locator('#query-results [role="alert"]')).toBeHidden();
 	await expect(page.locator('#query-results .query-result-toolbar__disclosures button')
 		.filter({ hasText: 'Download' })).toBeVisible();
@@ -442,6 +462,25 @@ async function captureQueryResponseBodies(page) {
 	}, NDJSON_ACCEPT);
 }
 
+/**
+ * The NDJSON records of a response captured by captureQueryResponseBodies, parsed in the page; a rows record keeps
+ * only its number of rows, so a stream of several hundred thousand rows is not copied out of the browser.
+ */
+async function capturedStreamRecords(page, index) {
+	return page.evaluate(responseIndex => {
+		const entry = window.__queryTimeoutCapturedResponses[responseIndex];
+		const records = entry.body.split(/\r?\n/).filter(line => line.trim()).map(line => {
+			const record = JSON.parse(line);
+			if (record.type === 'rows' && Array.isArray(record.values)) {
+				record.values = { length: record.values.length };
+			}
+			return record;
+		});
+		entry.body = '';
+		return records;
+	}, index);
+}
+
 function repositoryConfiguration(repositoryId) {
 	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix config: <tag:rdf4j.org,2023:config/>.
@@ -482,7 +521,7 @@ function summarizeRecord(record) {
 		code: record.code,
 		status: record.status,
 		message: record.message,
-		rowCount: Array.isArray(record.values) ? record.values.length : undefined,
+		rowCount: record.values ? record.values.length : undefined,
 		metadata: record.metadata
 	};
 }

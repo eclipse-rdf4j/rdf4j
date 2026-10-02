@@ -12,10 +12,13 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { serverBaseUrl, uniqueRepositoryId, waitForRoute, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8090/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8090/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `workbench-disclosure-collapse-${process.pid}-${Date.now()}`;
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-disclosure-collapse');
+const RESULT_ROWS = '#query-results [data-query-stream-root] [data-query-row-index], '
+	+ '#query-results [data-query-stream-root] [data-query-record-index]';
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
 test.beforeAll(async ({ request }) => {
@@ -45,21 +48,20 @@ test('disclosure panels finish closing without a final panel or enclosing-layout
 		await page.locator('.CodeMirror').first().evaluate(element =>
 			element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 		await page.locator('#exec').click();
-		await expect(page.locator('#query-results-frame')).toBeVisible();
-		const initialResultFrame = page.frame({ name: 'query-results-frame' });
-		if (!initialResultFrame) {
-			throw new Error('The query results iframe did not initialize');
-		}
-		await expect(initialResultFrame.locator('table.data tbody tr')).toHaveCount(1);
+		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+		await expect(page.locator(RESULT_ROWS)).toHaveCount(1);
 		await page.locator('#explain-trigger').click();
 		await waitForExplanation(page);
+		// The explanation and the result are tabs of the output card below the query form (app-shell plan M3.3), so
+		// the content after the Config pane is the explanation columns and the content after Query settings is the
+		// output card.
 		await assertCollapseContinuity(page, {
 			name: `query Config ${width}px`,
 			trigger: '#explanation-settings-toggle',
 			animated: '#explanation-settings-panel',
 			container: '.query-explanation-toolbar',
 			containerEdge: 'bottom',
-			downstream: '#query-results',
+			downstream: '.query-explanation-columns',
 			downstreamEdge: 'top',
 			closed: '#explanation-settings-panel[hidden]'
 		});
@@ -69,7 +71,7 @@ test('disclosure panels finish closing without a final panel or enclosing-layout
 			animated: '#query-options-panel',
 			container: '.query-actions-toolbar',
 			containerEdge: 'bottom',
-			downstream: '#query-results',
+			downstream: '#query-output',
 			downstreamEdge: 'top',
 			closed: '#query-options-panel[hidden]'
 		});
@@ -78,25 +80,21 @@ test('disclosure panels finish closing without a final panel or enclosing-layout
 		await page.locator('.CodeMirror').first().evaluate(element =>
 			element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { "one" "two" } }'));
 		await page.locator('#exec').click();
-		await expect(page.locator('#query-results-frame')).toBeVisible();
-		const resultFrame = page.frame({ name: 'query-results-frame' });
-		if (!resultFrame) {
-			throw new Error('The query results iframe did not initialize');
-		}
-		await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(2);
-		await assertCollapseContinuity(resultFrame, {
-			name: `result iframe Options ${width}px`,
-			trigger: '#query-result-options-toggle',
-			animated: '#query-result-options-panel',
-			container: 'body',
+		// The result streams into the page (the iframe is gone): its Display pane must close without moving the
+		// result card or its rows. Its ids carry a per-result suffix, so the pane is found through aria-controls.
+		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+		await expect(page.locator(RESULT_ROWS)).toHaveCount(2);
+		const resultOptionsPanelId = await page.locator('#query-results .query-result-options-toggle')
+			.getAttribute('aria-controls');
+		await assertCollapseContinuity(page, {
+			name: `result Display ${width}px`,
+			trigger: '#query-results .query-result-options-toggle',
+			animated: `#${resultOptionsPanelId}`,
+			container: '#query-results',
 			containerEdge: 'bottom',
-			assertContainer: false,
-			outerContext: page,
-			outerSelector: '#query-results-frame',
-			outerEdge: 'bottom',
-			downstream: '#query-result-layout',
+			downstream: RESULT_ROWS,
 			downstreamEdge: 'top',
-			closed: '#query-result-options-panel[hidden]'
+			closed: `#${resultOptionsPanelId}[hidden]`
 		});
 
 		await openPage(page, `repositories/${REPOSITORY_ID}/add`);
@@ -459,6 +457,8 @@ async function runningMotionCount(locator) {
 
 async function openPage(page, route) {
 	await page.goto(`${WORKBENCH_BASE_URL}/${route}`, { waitUntil: 'load' });
+	// The page's scripts bind the disclosures when the route is ready; a click before that is lost (seen in WebKit).
+	await waitForRoute(page, route.split('?')[0].split('/').pop());
 	await page.locator('#workbench-page-surface').waitFor({ state: 'visible', timeout: 15_000 });
 	await page.evaluate(() => document.fonts.ready);
 }

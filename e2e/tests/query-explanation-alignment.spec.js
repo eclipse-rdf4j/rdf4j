@@ -15,18 +15,23 @@ const fs = require('fs');
 const path = require('path');
 
 const { test, expect } = require('@playwright/test');
+const {
+    deleteRepository,
+    serverBaseUrl,
+    uniqueRepositoryId,
+    workbenchBaseUrl
+} = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'query-explanation-alignment';
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('query-explanation-alignment');
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const SCREENSHOT_DIRECTORY = path.resolve(__dirname, '../../output/playwright');
 
 test.setTimeout(120000);
 
-test.beforeEach(async ({ request }) => {
-    await request.delete(REPOSITORY_URL);
+test.beforeAll(async ({ request }) => {
     const response = await request.put(REPOSITORY_URL, {
         headers: { 'Content-Type': 'text/turtle' },
         data: memoryRepositoryConfig(REPOSITORY_ID)
@@ -35,8 +40,8 @@ test.beforeEach(async ({ request }) => {
     fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 });
 
-test.afterEach(async ({ request }) => {
-    await request.delete(REPOSITORY_URL).catch(() => {});
+test.afterAll(async ({ request }) => {
+    await deleteRepository(request, SERVER_BASE_URL, REPOSITORY_ID);
 });
 
 test('keeps both comparison explanations aligned as editor heights change', async ({ page }) => {
@@ -66,6 +71,9 @@ test('keeps both comparison explanations aligned as editor heights change', asyn
     await expect(page.locator('#query-compare-layout')).not.toHaveClass(/query-compare-layout--active/);
     await page.locator('#compare-toggle').click();
     await expect(page.locator('#query-compare-pane')).toBeVisible();
+    // As after the first opening, measure once the panes have finished opening (Firefox was still animating them).
+    await expect.poll(() => page.locator('#query-compare-layout').evaluate(element =>
+        element.getAnimations({ subtree: true }).some(animation => animation.playState === 'running'))).toBe(false);
     await setQueries(page, shortQuery(), longQuery());
     await refreshAndWaitForExplanations(page);
     await assertExplanationAlignment(page, 'query-compare-explanation-reopened-20260927.png');
@@ -143,8 +151,10 @@ async function assertExplanationAlignment(page, screenshotName) {
         const compareEditor = document.querySelector('#query-compare-pane .CodeMirror').getBoundingClientRect();
         const primaryExplanation = document.querySelector('#query-explanation-row').getBoundingClientRect();
         const compareExplanation = document.querySelector('#query-explanation-row-compare').getBoundingClientRect();
-        const primaryLabel = document.querySelector('#query-explanation-row .query-form__label').getBoundingClientRect();
-        const compareLabel = document.querySelector('#query-explanation-row-compare .query-form__label').getBoundingClientRect();
+        // The explanation columns sit side by side in the output card below the editors (app-shell plan M3.3); each
+        // column is headed by its own label.
+        const primaryLabel = document.querySelector('#query-explanation-row .query-explanation-column__label').getBoundingClientRect();
+        const compareLabel = document.querySelector('#query-explanation-row-compare .query-explanation-column__label').getBoundingClientRect();
         const primarySurface = document.querySelector('#query-explanation-row .query-explanation-surface').getBoundingClientRect();
         const compareSurface = document.querySelector('#query-explanation-row-compare .query-explanation-surface').getBoundingClientRect();
         const primaryPane = document.querySelector('#query-primary-pane').getBoundingClientRect();

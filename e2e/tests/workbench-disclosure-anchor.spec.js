@@ -2,12 +2,11 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const { serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL ||
-	'http://127.0.0.1:8086/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
-	'http://127.0.0.1:8086/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `workbench-disclosure-anchor-${process.pid}-${Date.now()}`;
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-disclosure-anchor');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const SCREENSHOT_DIR = process.env.WORKBENCH_DISCLOSURE_SCREENSHOT_DIR;
@@ -46,6 +45,9 @@ async function panelGeometry(panel) {
 		const connector = getComputedStyle(element, '::before');
 		const transformOrigin = getComputedStyle(element).transformOrigin.split(' ')[0];
 		const buttonCenter = (buttonRect.left + buttonRect.right) / 2;
+		// A pane in a toolbar opens below the whole toolbar, so on a wrapped toolbar it covers none of the toggles in
+		// the next row (app-shell plan M14.3).
+		const toolbarRect = (button.closest('.workbench-action-toolbar') || button).getBoundingClientRect();
 		const connectorCenter = panelRect.left + parseFloat(connector.left);
 		return {
 			buttonCenter,
@@ -54,6 +56,7 @@ async function panelGeometry(panel) {
 			buttonMinHeight: buttonStyle.minHeight,
 			buttonRight: buttonRect.right,
 			buttonBottom: buttonRect.bottom,
+			toolbarBottom: toolbarRect.bottom,
 			panelLeft: panelRect.left,
 			panelRight: panelRect.right,
 			panelTop: panelRect.top,
@@ -84,10 +87,10 @@ async function expectPanelAttached(button, panel, desktopAlignment) {
 		`connector must track the actual trigger: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(2);
 	expect(Math.abs(geometry.transformOriginCenter - geometry.buttonCenter),
 		`panel motion origin must track the actual trigger: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(2);
-	expect(geometry.panelTop - geometry.buttonBottom,
-		`panel must sit directly below its trigger: ${JSON.stringify(geometry)}`).toBeGreaterThanOrEqual(-1);
-	expect(geometry.panelTop - geometry.buttonBottom,
-		`panel must sit directly below its trigger: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(12);
+	expect(geometry.panelTop - geometry.toolbarBottom,
+		`panel must sit directly below its trigger's toolbar: ${JSON.stringify(geometry)}`).toBeGreaterThanOrEqual(-1);
+	expect(geometry.panelTop - geometry.toolbarBottom,
+		`panel must sit directly below its trigger's toolbar: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(12);
 	if (desktopAlignment) {
 		expect(geometry.buttonHeight).toBeGreaterThanOrEqual(32);
 		expect(geometry.buttonHeight).toBeLessThanOrEqual(40);
@@ -143,7 +146,9 @@ test('query and embedded result panels remain attached to their own toolbar trig
 		await expect(savePanel).toBeHidden();
 		await expectPanelAttached(optionsTrigger, optionsPanel, width > 900);
 		await expect(optionsTrigger).toBeFocused();
-		await optionsPanel.locator('select').first().focus();
+		// Query settings has no select any more (the query language row is hidden while SPARQL is the only language);
+		// its first field is the timeout.
+		await optionsPanel.locator('#query-timeout').focus();
 		await saveTrigger.evaluate(element => element.click());
 		await expect(optionsPanel).toBeHidden();
 		await expectPanelAttached(saveTrigger, savePanel, width > 900);
@@ -159,23 +164,24 @@ test('query and embedded result panels remain attached to their own toolbar trig
 			element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }');
 		});
 		await page.locator('#exec').click();
-		const resultFrame = page.frameLocator('#query-results-frame');
-		await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(1);
+		// The result streams into the page (the iframe is gone); its toolbar ids carry a per-result suffix, so the
+		// toggles are found by class and their panels through aria-controls.
+		const result = page.locator('#query-results [data-query-stream-root]');
+		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+		await expect(result.locator('[data-query-row-index], [data-query-record-index]')).toHaveCount(1);
+		const resultPanel = async trigger => page.locator(`#${await trigger.getAttribute('aria-controls')}`);
 
-		for (const [triggerId, panelId] of [
-			['query-result-options-toggle', 'query-result-options-panel'],
-			['query-result-download-toggle', 'query-result-download-panel']
-		]) {
-			const trigger = resultFrame.locator(`#${triggerId}`);
-			const panel = resultFrame.locator(`#${panelId}`);
+		for (const triggerClass of ['query-result-options-toggle', 'query-result-download-toggle']) {
+			const trigger = result.locator(`.${triggerClass}`);
+			const panel = await resultPanel(trigger);
 			await trigger.press('Enter');
 			await expectPanelAttached(trigger, panel, width > 900);
-			if (SCREENSHOT_DIR && triggerId === 'query-result-options-toggle'
+			if (SCREENSHOT_DIR && triggerClass === 'query-result-options-toggle'
 					&& (width === 1440 || width === 320)) {
 				fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 				for (const colorScheme of ['light', 'dark']) {
 					await page.emulateMedia({ colorScheme });
-					await resultFrame.locator('body').screenshot({
+					await page.locator('#query-results').screenshot({
 						path: path.join(SCREENSHOT_DIR, `result-options-${width}-${colorScheme}.png`),
 						animations: 'disabled'
 					});
@@ -186,13 +192,13 @@ test('query and embedded result panels remain attached to their own toolbar trig
 			await expect(panel).toBeHidden();
 		}
 
-		const resultOptionsTrigger = resultFrame.locator('#query-result-options-toggle');
-		const resultDownloadTrigger = resultFrame.locator('#query-result-download-toggle');
-		const resultOptionsPanel = resultFrame.locator('#query-result-options-panel');
-		const resultDownloadPanel = resultFrame.locator('#query-result-download-panel');
+		const resultOptionsTrigger = result.locator('.query-result-options-toggle');
+		const resultDownloadTrigger = result.locator('.query-result-download-toggle');
+		const resultOptionsPanel = await resultPanel(resultOptionsTrigger);
+		const resultDownloadPanel = await resultPanel(resultDownloadTrigger);
 		await resultOptionsTrigger.press('Enter');
 		await expectPanelAttached(resultOptionsTrigger, resultOptionsPanel, width > 900);
-		const retainedLayout = resultOptionsPanel.locator('#result-layout');
+		const retainedLayout = resultOptionsPanel.locator('select[name="result-layout"]');
 		await retainedLayout.selectOption('records');
 		await resultDownloadTrigger.press('Enter');
 		await expect(resultOptionsPanel).toBeHidden();

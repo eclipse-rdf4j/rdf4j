@@ -15,20 +15,31 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
+const { deleteRepository, serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
+
+// Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): "Auto table keeps the
+// bottom scroll anchor visible across desktop and mobile resizing" expected the renderer to keep row 120 on screen
+// while a resize switched Auto between table and records. Results now scroll with the page and the renderer never
+// scrolls the page to keep rows in place (app-shell plan, Decision M4.1); reaching the last row with End and native
+// scrolling is checked by "main Table and Records reach first, middle, and last rows through native scrolling" below
+// and by workbench-result-scrolling.spec.js ("results scroll with the page under a pinned header", "mobile records use
+// the table header labels and the last record is reachable").
 
 const PREVIEW_GENERATION = process.env.RDF4J_PREVIEW_GENERATION || 'unrecorded';
 const BROWSER_EVIDENCE_DIR = path.join(os.tmpdir(), 'rdf4j7-workbench-loadmore-20260930',
 	`browser-final-${PREVIEW_GENERATION}`);
 const COLUMN_MINIMUM_EVIDENCE_DIR = path.join(os.tmpdir(), 'rdf4j7-workbench-column-minimum-20261001');
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `workbench-load-more-${process.pid}-${Date.now().toString(36)}`;
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-load-more');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const SAVED_QUERIES_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/saved-queries`;
-const REVIEW_QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/spacing-review-50467-mun6z6qr/query`;
+// The 120-statement review fixture (first object a long readable literal) that the native-scrolling tests read; it
+// used to be a retained repository on a review server and is now created by this spec.
+const REVIEW_REPOSITORY_ID = uniqueRepositoryId('workbench-load-more-review');
+const REVIEW_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REVIEW_REPOSITORY_ID}`;
+const REVIEW_QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REVIEW_REPOSITORY_ID}/query`;
 const STREAM_ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
 const COMPACT_STREAM_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
 const savedQueryUrns = new Set();
@@ -48,9 +59,22 @@ test.beforeAll(async ({ request }) => {
 		data: 'urn:load:'
 	});
 	expect([200, 201, 204]).toContain(namespace.status());
+
+	const reviewCreated = await request.put(REVIEW_REPOSITORY_URL, {
+		headers: { 'Content-Type': 'text/turtle' },
+		data: repositoryConfiguration(REVIEW_REPOSITORY_ID)
+	});
+	expect([200, 201, 204]).toContain(reviewCreated.status());
+	const reviewLoaded = await request.post(`${REVIEW_REPOSITORY_URL}/statements`, {
+		headers: { 'Content-Type': 'application/n-quads' },
+		data: Array.from({ length: 120 }, (_, index) => `<urn:spacing:subject-${index}> <urn:spacing:predicate> `
+			+ `"${index === 0 ? 'Long readable fixture '.repeat(20) : index}" <urn:spacing:graph> .`).join('\n')
+	});
+	expect([200, 204]).toContain(reviewLoaded.status());
 });
 
 test.afterAll(async ({ request }) => {
+	await deleteRepository(request, SERVER_BASE_URL, REVIEW_REPOSITORY_ID);
 	for (const urn of savedQueryUrns) {
 		const deletedQuery = await request.post(SAVED_QUERIES_URL, { form: { delete: urn } });
 		expect([200, 204]).toContain(deletedQuery.status());
@@ -1184,127 +1208,6 @@ test('main Table and Records reach first, middle, and last rows through native s
 	expect(monitor.errors).toEqual([]);
 });
 
-test('Auto table keeps the bottom scroll anchor visible across desktop and mobile resizing', async ({ page }, testInfo) => {
-	const monitor = monitorExecutions(page);
-	await page.setViewportSize({ width: 1280, height: 720 });
-	await page.goto(REVIEW_QUERY_URL, { waitUntil: 'domcontentloaded' });
-	await page.locator('#query-form').waitFor({ state: 'visible', timeout: 15000 });
-	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	await setEditor(page, 'SELECT ?s ?p ?o WHERE { ?s ?p ?o } ORDER BY ?s');
-	await page.locator('#exec').click();
-	await expect.poll(() => monitor.executions.length).toBe(1);
-	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
-	const result = page.locator('#query-results .query-result-layout');
-	await expectCompletedRows(result.locator('.query-result-status'), 120, 120);
-	const firstRow = result.locator('tbody tr[data-query-row-index="0"]');
-	await expect(firstRow).toContainText('Long readable fixture');
-	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
-	await options.click();
-	const layout = result.locator('select[name="result-layout"]');
-	await expect(layout).toHaveValue('auto');
-	async function visibleAutoOwner() {
-		let owner;
-		let previousSignature = '';
-		let stableSamples = 0;
-		await expect.poll(async () => {
-			const state = await result.evaluate(element => {
-				const table = element.querySelector('.query-result-table-wrap');
-				const records = element.querySelector('.query-result-records');
-				const effectiveLayout = element.getAttribute('data-effective-layout');
-				const active = effectiveLayout === 'table' ? table : effectiveLayout === 'records' ? records : null;
-				const inactive = effectiveLayout === 'table' ? records : effectiveLayout === 'records' ? table : null;
-				const bounds = active && active.getBoundingClientRect();
-				return {
-					effectiveLayout,
-					width: element.getBoundingClientRect().width,
-					activeVisible: !!active && !active.hidden && bounds.width > 0 && bounds.height > 0,
-					inactiveHidden: !!inactive && inactive.hidden,
-					activeHeight: bounds && bounds.height
-				};
-			});
-			if ((state.effectiveLayout !== 'table' && state.effectiveLayout !== 'records')
-					|| !state.activeVisible || !state.inactiveHidden) {
-				stableSamples = 0;
-				previousSignature = '';
-				return null;
-			}
-			const expectedWidth = page.viewportSize().width < 600 ? state.width < 600 : state.width > 900;
-			if (!expectedWidth) {
-				stableSamples = 0;
-				previousSignature = '';
-				return null;
-			}
-			const signature = JSON.stringify([state.effectiveLayout, state.width, state.activeHeight]);
-			stableSamples = signature === previousSignature ? stableSamples + 1 : 1;
-			previousSignature = signature;
-			if (stableSamples < 2) {
-				return null;
-			}
-			owner = { effectiveLayout: state.effectiveLayout,
-				scrollport: result.locator(state.effectiveLayout === 'table'
-					? '.query-result-table-wrap' : '.query-result-records') };
-			return state.effectiveLayout;
-		}, { message: 'Auto should commit a visible result scrollport after resize' }).toMatch(/^(table|records)$/);
-		return owner;
-	}
-	async function waitForLastVisibleAutoRow(interaction, scrollToEnd) {
-		const owner = await visibleAutoOwner();
-		const { effectiveLayout, scrollport } = owner;
-		if (scrollToEnd) {
-			await scrollToResultEnd(scrollport, page);
-		}
-		const targetSelector = effectiveLayout === 'table'
-			? 'tbody tr[data-query-row-index="119"]' : '[data-query-record-index="119"]';
-		const rowSelector = effectiveLayout === 'table'
-			? 'tbody tr[data-query-row-index]' : '[data-query-record-index]';
-		const geometry = await waitForStableVisibleRow(scrollport, targetSelector, rowSelector,
-			`auto-${effectiveLayout}`, 120, interaction, testInfo);
-		expect(geometry.targetVisible, `${interaction} row 120 should intersect the active ${effectiveLayout} scrollport`).toBe(true);
-		expect(geometry.renderedIndexes.length).toBeGreaterThan(0);
-		expect(geometry.renderedIndexes.length).toBeLessThan(120);
-		return { effectiveLayout, ...geometry };
-	}
-	const desktop = await waitForLastVisibleAutoRow('desktop-1280x720', true);
-	expect(desktop.effectiveLayout).toBe('table');
-
-	await page.setViewportSize({ width: 390, height: 844 });
-	const mobile = await waitForLastVisibleAutoRow('mobile-390x844', false);
-	await page.setViewportSize({ width: 1280, height: 720 });
-	const restored = await waitForLastVisibleAutoRow('desktop-return-1280x720', false);
-	expect(restored.effectiveLayout).toBe('table');
-
-	await layout.selectOption('records');
-	await expect.poll(async () => {
-		const bounds = await result.locator('.query-result-records').boundingBox();
-		return !!bounds && bounds.width > 0 && bounds.height > 0;
-	}, { message: 'Records scrollport should be visible after selecting that layout' }).toBe(true);
-	const recordsScrollport = result.locator('.query-result-records');
-	await scrollToResultEnd(recordsScrollport, page);
-	const recordsDesktop = await waitForStableVisibleRow(recordsScrollport,
-		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
-		'records-desktop-1280x720', testInfo);
-	expect(recordsDesktop.targetVisible).toBe(true);
-	expect(recordsDesktop.renderedIndexes.length).toBeLessThan(120);
-	await page.setViewportSize({ width: 390, height: 844 });
-	const recordsMobile = await waitForStableVisibleRow(recordsScrollport,
-		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
-		'records-mobile-390x844', testInfo);
-	expect(recordsMobile.targetVisible).toBe(true);
-	expect(recordsMobile.renderedIndexes.length).toBeLessThan(120);
-	await page.setViewportSize({ width: 1280, height: 720 });
-	const recordsRestored = await waitForStableVisibleRow(recordsScrollport,
-		'[data-query-record-index="119"]', '[data-query-record-index]', 'records', 120,
-		'records-return-1280x720', testInfo);
-	expect(recordsRestored.targetVisible).toBe(true);
-	expect(recordsRestored.renderedIndexes.length).toBeLessThan(120);
-	await testInfo.attach('auto-table-scroll-anchor-120.json', {
-		body: Buffer.from(JSON.stringify({ desktop, mobile, restored, recordsDesktop, recordsMobile, recordsRestored }, null, 2)),
-		contentType: 'application/json'
-	});
-	expect(monitor.executions).toHaveLength(1);
-	expect(monitor.errors).toEqual([]);
-});
-
 test('saved streamed result widths use the first ten rows across batches and layouts', async ({ page }, testInfo) => {
 	const monitor = monitorExecutions(page);
 	const query = resultColumnWidthQuery(120);
@@ -1781,13 +1684,18 @@ async function expectCompletedRows(status, loadedRows, totalRows) {
 
 async function scrollToResultEnd(scrollport, page) {
 	await expect(scrollport).toBeVisible();
-	await scrollport.hover();
+	await pointAtVisibleResult(scrollport, page);
 	let state = await readResultScrollProgress(scrollport);
 	let usedKeyboardFallback = false;
 	for (let attempt = 0; attempt < 24 && !state.lastVisible; attempt++) {
-		await scrollport.hover();
+		await pointAtVisibleResult(scrollport, page);
 		const previous = state;
-		await page.mouse.wheel(0, Math.max(450, Math.floor(state.clientHeight * 0.75)));
+		// A result that scrolls with the page is followed by the page footer: the wheel stops at the result's end
+		// rather than scrolling its last rows above the window.
+		const step = Math.min(Math.max(450, Math.floor(state.clientHeight * 0.75)), state.distanceToEnd);
+		if (step > 0) {
+			await page.mouse.wheel(0, step);
+		}
 		const advanced = await expect.poll(async () => {
 			state = await readResultScrollProgress(scrollport);
 			return state.lastVisible || state.scrollTop > previous.scrollTop || state.lastIndex > previous.lastIndex;
@@ -1817,13 +1725,18 @@ async function scrollToResultEnd(scrollport, page) {
 
 async function scrollToResultStart(scrollport, page) {
 	await expect(scrollport).toBeVisible();
-	await scrollport.hover();
+	await pointAtVisibleResult(scrollport, page);
 	let state = await readResultScrollProgress(scrollport);
 	let usedKeyboardFallback = false;
 	for (let attempt = 0; attempt < 24 && !state.firstVisible; attempt++) {
-		await scrollport.hover();
+		await pointAtVisibleResult(scrollport, page);
 		const previous = state;
-		await page.mouse.wheel(0, -Math.max(450, Math.floor(state.clientHeight * 0.75)));
+		// A result that scrolls with the page has the query form above it: the wheel stops at the result's start
+		// rather than scrolling its first rows below the window.
+		const step = Math.min(Math.max(450, Math.floor(state.clientHeight * 0.75)), state.distanceToStart);
+		if (step > 0) {
+			await page.mouse.wheel(0, -step);
+		}
 		const advanced = await expect.poll(async () => {
 			state = await readResultScrollProgress(scrollport);
 			return state.firstVisible || state.scrollTop < previous.scrollTop || state.firstIndex < previous.firstIndex;
@@ -1851,6 +1764,28 @@ async function scrollToResultStart(scrollport, page) {
 	}
 }
 
+/**
+ * Moves the pointer over the visible part of a result without scrolling it: a result that scrolls with the page is
+ * taller than the window, and Firefox's hover() scrolls such an element until its center is in view.
+ */
+async function pointAtVisibleResult(scrollport, page) {
+	const visiblePoint = () => scrollport.evaluate(element => {
+		const box = element.getBoundingClientRect();
+		const top = Math.max(0, box.top);
+		const bottom = Math.min(window.innerHeight, box.bottom);
+		const left = Math.max(0, box.left);
+		const right = Math.min(document.documentElement.clientWidth, box.right);
+		return bottom > top && right > left ? { x: (left + right) / 2, y: (top + bottom) / 2 } : null;
+	});
+	let point = await visiblePoint();
+	if (!point) {
+		await scrollport.scrollIntoViewIfNeeded();
+		point = await visiblePoint();
+	}
+	expect(point, 'the result should have a visible part to point at').toBeTruthy();
+	await page.mouse.move(point.x, point.y);
+}
+
 async function readResultScrollProgress(scrollport) {
 	return scrollport.evaluate(element => {
 		const isRecords = element.matches('.query-result-records');
@@ -1865,9 +1800,14 @@ async function readResultScrollProgress(scrollport) {
 		const indexName = isRecords ? 'data-query-record-index' : 'data-query-row-index';
 		const rowSelector = isRecords ? '[data-query-record-index]' : 'tr[data-query-row-index]';
 		const indexes = Array.from(element.querySelectorAll(rowSelector), row => Number(row.getAttribute(indexName)));
+		// Results scroll with the page (app-shell plan M4.1) unless they keep an inner scroller (full screen, or more
+		// rows than the browser can lay out); the visible part is the scroller's box or the part of it in the window.
+		const ownScroller = element.scrollHeight > element.clientHeight + 1
+			&& /^(?:auto|scroll)$/.test(getComputedStyle(element).overflowY);
 		const viewport = element.getBoundingClientRect();
-		const viewportTop = viewport.top + element.clientTop;
-		const viewportBottom = viewportTop + element.clientHeight;
+		const viewportTop = ownScroller ? viewport.top + element.clientTop : Math.max(0, viewport.top);
+		const viewportBottom = ownScroller ? viewportTop + element.clientHeight
+			: Math.min(window.innerHeight, viewport.bottom);
 		const firstRow = totalRows ? element.querySelector(`${isRecords ? '[data-query-record-index' : 'tr[data-query-row-index'}="0"]`)
 			: null;
 		const lastRow = totalRows ? element.querySelector(`${isRecords ? '[data-query-record-index' : 'tr[data-query-row-index'}="${totalRows - 1}"]`)
@@ -1880,9 +1820,13 @@ async function readResultScrollProgress(scrollport) {
 			return bounds.bottom > viewportTop && bounds.top < viewportBottom;
 		};
 		return {
-			scrollTop: element.scrollTop,
-			maximum: Math.max(0, element.scrollHeight - element.clientHeight),
-			clientHeight: element.clientHeight,
+			scrollSource: ownScroller ? 'element' : 'page',
+			scrollTop: ownScroller ? element.scrollTop : window.scrollY,
+			maximum: ownScroller ? Math.max(0, element.scrollHeight - element.clientHeight)
+				: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+			clientHeight: Math.max(0, viewportBottom - viewportTop),
+			distanceToStart: ownScroller ? Infinity : Math.max(0, Math.ceil(-viewport.top)),
+			distanceToEnd: ownScroller ? Infinity : Math.max(0, Math.ceil(viewport.bottom - window.innerHeight)),
 			firstIndex: indexes.length ? Math.min(...indexes) : -1,
 			lastIndex: indexes.length ? Math.max(...indexes) : -1,
 			totalRows,
@@ -1905,13 +1849,36 @@ async function readTableColumnBoundaries(scrollport) {
 
 async function scrollToResultMiddle(scrollport, page) {
 	await expect(scrollport).toBeVisible();
-	await scrollport.hover();
-	const start = await scrollport.evaluate(element => element.scrollTop);
-	const middleDelta = await scrollport.evaluate(element =>
-		Math.floor((element.scrollHeight - element.clientHeight) / 2));
-	await page.mouse.wheel(0, middleDelta);
-	await expect.poll(() => scrollport.evaluate(element => element.scrollTop))
-		.toBeGreaterThan(start);
+	await pointAtVisibleResult(scrollport, page);
+	// An inner scroller moves by half its scroll range; a result that scrolls with the page (app-shell plan M4.1)
+	// moves the page until the middle of the result is in the middle of the window.
+	const scrollPosition = () => scrollport.evaluate(element => element.scrollHeight > element.clientHeight + 1
+		&& /^(?:auto|scroll)$/.test(getComputedStyle(element).overflowY) ? element.scrollTop : window.scrollY);
+	const start = await scrollPosition();
+	const middleDelta = await scrollport.evaluate(element => {
+		if (element.scrollHeight > element.clientHeight + 1
+				&& /^(?:auto|scroll)$/.test(getComputedStyle(element).overflowY)) {
+			return Math.floor((element.scrollHeight - element.clientHeight) / 2);
+		}
+		const bounds = element.getBoundingClientRect();
+		return Math.floor(bounds.top + bounds.height / 2 - window.innerHeight / 2);
+	});
+	// Firefox scrolls at most about one page per wheel event, so the wheel turns until the middle is reached.
+	const target = start + middleDelta;
+	let position = start;
+	for (let attempt = 0; attempt < 24 && position < target - 1; attempt++) {
+		const previous = position;
+		await pointAtVisibleResult(scrollport, page);
+		await page.mouse.wheel(0, target - position);
+		const advanced = await expect.poll(async () => {
+			position = await scrollPosition();
+			return position > previous;
+		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
+		if (!advanced) {
+			break;
+		}
+	}
+	expect(position, 'native wheel input should scroll the result towards its middle').toBeGreaterThan(start);
 }
 
 async function readRowScrollState(scrollport, targetSelector, rowSelector) {
@@ -1921,14 +1888,25 @@ async function readRowScrollState(scrollport, targetSelector, rowSelector) {
 			? 'data-query-record-index' : 'data-query-row-index'));
 		const targetElement = element.querySelector(selectors.targetSelector);
 		const target = targetElement && targetElement.getBoundingClientRect();
-		const bounds = element.getBoundingClientRect();
+		// The visible part of the result: its inner scroller's box, or the part of it inside the window when the
+		// result scrolls with the page (app-shell plan M4.1).
+		const ownScroller = element.scrollHeight > element.clientHeight + 1
+			&& /^(?:auto|scroll)$/.test(getComputedStyle(element).overflowY);
+		const box = element.getBoundingClientRect();
+		const bounds = ownScroller ? box : {
+			top: Math.max(0, box.top),
+			bottom: Math.min(window.innerHeight, box.bottom),
+			height: Math.max(0, Math.min(window.innerHeight, box.bottom) - Math.max(0, box.top))
+		};
 		return {
 			rowNavigationControlCount: document.querySelectorAll('.query-result-row-position').length,
 			resultStatus: element.closest('.query-result-layout')?.querySelector('.query-result-status')?.textContent,
-			scrollTop: element.scrollTop,
+			scrollSource: ownScroller ? 'element' : 'page',
+			scrollTop: ownScroller ? element.scrollTop : window.scrollY,
 			scrollHeight: element.scrollHeight,
 			clientHeight: element.clientHeight,
-			maxScrollTop: element.scrollHeight - element.clientHeight,
+			maxScrollTop: ownScroller ? element.scrollHeight - element.clientHeight
+				: document.documentElement.scrollHeight - window.innerHeight,
 			viewport: { top: bounds.top, bottom: bounds.bottom, height: bounds.height },
 			firstRenderedIndex: rows.length ? getIndex(rows[0]) : null,
 			lastRenderedIndex: rows.length ? getIndex(rows[rows.length - 1]) : null,

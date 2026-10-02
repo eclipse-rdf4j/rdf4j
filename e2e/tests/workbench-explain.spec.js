@@ -1,63 +1,57 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
+const {
+    deleteRepository,
+    repositoryPageUrl,
+    serverBaseUrl,
+    uniqueRepositoryId
+} = require('./workbench-test-helpers');
 
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
-    'http://localhost:8080/rdf4j-workbench').replace(/\/+$/, '');
-const WORKBENCH_URL = `${WORKBENCH_BASE_URL}/`;
-const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/testrepo1/query`;
+// Each test used to delete and re-create a repository named testrepo1 through the Delete and Create pages of a
+// server on localhost:8080, then insert the chain data through the Update page. The spec now creates its own LMDB
+// repository with the same index order (spoc,posc,ospc, the Create page's default) and data once, through the
+// server's REST API.
+const REPOSITORY_ID = uniqueRepositoryId('workbench-explain');
+const QUERY_URL = repositoryPageUrl(REPOSITORY_ID, 'query');
 const JOIN_QUERY = `select ?b where {
   ?a ?b ?c.
   ?c ?d ?f.
 }`;
 
+test.beforeAll(async ({ request }) => {
+    const repositoryUrl = `${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}`;
+    const created = await request.put(repositoryUrl, {
+        headers: { 'Content-Type': 'text/turtle' },
+        data: `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#>.
+[] a config:Repository ; config:rep.id "${REPOSITORY_ID}" ; rdfs:label "Workbench explain LMDB fixture" ;
+   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [ config:sail.type "rdf4j:LmdbStore" ; lmdb:tripleIndexes "spoc,posc,ospc" ] ].`
+    });
+    expect([200, 201, 204]).toContain(created.status());
+    const loaded = await request.post(`${repositoryUrl}/statements`, {
+        headers: { 'Content-Type': 'application/n-triples' },
+        data: `<urn:a1> <urn:b1> <urn:c1> .
+<urn:c1> <urn:d1> <urn:f1> .
+<urn:a2> <urn:b2> <urn:c2> .
+<urn:c2> <urn:d2> <urn:f2> .
+<urn:a3> <urn:b3> <urn:c3> .
+<urn:c3> <urn:d3> <urn:f3> .
+`
+    });
+    expect([200, 204]).toContain(loaded.status());
+});
+
+test.afterAll(async ({ request }) => {
+    await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
+});
+
 test.beforeEach(async ({ page }) => {
     page.on('dialog', dialog => {
         dialog.dismiss();
     });
-
-    await page.goto(WORKBENCH_URL);
-    await page.getByText('Delete repository').click();
-    await page.waitForSelector('#id');
-
-    if (await page.locator('#id option[value="testrepo1"]').count() > 0) {
-        await page.locator('#id').selectOption('testrepo1');
-        // Deleting asks for the typed repository id in a dialog (plan task M6.6).
-        await page.locator('#delete-actions button[type="submit"]').click();
-        await page.getByRole('dialog').getByRole('textbox').fill('testrepo1');
-        await page.getByRole('dialog').getByRole('button', { name: 'Delete repository' }).click();
-        await page.getByText('List of Repositories').click();
-    }
 });
-
-async function createLmdbRepo(page) {
-    await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create`);
-    await page.waitForSelector('#type');
-    await page.locator('#type').selectOption('lmdb');
-    await page.locator('#id').fill('testrepo1');
-    await page.getByText('Next').click();
-    await page.waitForSelector('#create');
-    await page.locator('#create').click();
-    await expect(page.locator('#workbench-summary h2').first()).toHaveText('Repository');
-}
-
-async function insertChainData(page) {
-    await page.goto(`${WORKBENCH_BASE_URL}/repositories/testrepo1/update`);
-    await page.waitForSelector('.CodeMirror');
-    await page.evaluate(() => {
-        document.getElementsByClassName('CodeMirror')[0].CodeMirror.setValue(`INSERT DATA {
-  <urn:a1> <urn:b1> <urn:c1> .
-  <urn:c1> <urn:d1> <urn:f1> .
-  <urn:a2> <urn:b2> <urn:c2> .
-  <urn:c2> <urn:d2> <urn:f2> .
-  <urn:a3> <urn:b3> <urn:c3> .
-  <urn:c3> <urn:d3> <urn:f3> .
-}`);
-    });
-    await page.getByRole('button', { name: 'Execute' }).click();
-    // The update is posted from the page, which stays and shows a tick (plan tasks M10.1 and M14.2).
-    await waitForWriteDone(page, 'update');
-}
 
 async function waitForExplanation(page) {
     await page.waitForFunction(() => {
@@ -73,9 +67,6 @@ async function setPrimaryQuery(page, query) {
 }
 
 test('Executed explanation hides telemetry stability stats for LMDB queries', async ({ page }) => {
-    await createLmdbRepo(page);
-    await insertChainData(page);
-
     await page.goto(QUERY_URL);
     await page.waitForSelector('.CodeMirror');
     await setPrimaryQuery(page, JOIN_QUERY);
@@ -102,9 +93,6 @@ test('Executed explanation hides telemetry stability stats for LMDB queries', as
 });
 
 test('Text explanation highlighting preserves server plaintext and toggles without refetching', async ({ page }) => {
-    await createLmdbRepo(page);
-    await insertChainData(page);
-
     const explainRequests = [];
     const consoleErrors = [];
     page.on('console', message => {
@@ -217,19 +205,19 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
 });
 
 test('Closing comparison cancels stale work and preserves the primary result', async ({ page }) => {
-    await createLmdbRepo(page);
-    await insertChainData(page);
-
     await page.goto(QUERY_URL);
     await page.waitForSelector('.CodeMirror');
     const primaryQuery = 'SELECT ?s WHERE { ?s ?p ?o }';
     const compareQuery = 'ASK { ?s ?p ?o }';
     await setPrimaryQuery(page, primaryQuery);
     await page.locator('#exec').click();
-    const resultFrame = page.frameLocator('#query-results-frame');
-    await expect(resultFrame.locator('body')).toContainText('urn:a1');
-    const primaryResultText = await resultFrame.locator('body').innerText();
-    const resultFrameUrl = await page.locator('#query-results-frame').getAttribute('src');
+    // The result streams into the page (no iframe since the redesign); marking its root shows below that closing the
+    // comparison keeps this very result instead of rendering or executing it again.
+    const result = page.locator('#query-results [data-query-stream-root]');
+    await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
+    await expect(result.locator('tbody')).toContainText('urn:a1');
+    const primaryResultText = await result.innerText();
+    await result.evaluate(element => element.setAttribute('data-test-primary-result', 'true'));
 
     await page.locator('#explain-trigger').click();
     await page.waitForFunction(() => {
@@ -351,10 +339,14 @@ test('Closing comparison cancels stale work and preserves the primary result', a
         await expect(page.locator('#query-compare-layout')).not.toHaveClass(/query-compare-layout--active/);
         await expect(page.locator('#query-compare-close')).toBeHidden();
         await expect(page.locator('#compare-toggle')).toBeFocused();
-        await expect(page.locator('#query-results-frame')).toBeVisible();
-        await expect(page.locator('#query-results-frame')).toHaveAttribute('src', resultFrameUrl);
-        await expect(resultFrame.locator('body')).toContainText('urn:a1');
-        expect(await resultFrame.locator('body').innerText()).toBe(primaryResultText);
+        // The explanation and the result are tabs of one output card (app-shell plan M3.3): the result is behind
+        // the Results tab while the explanation is shown.
+        await page.locator('#query-output-tab-results').click();
+        await expect(result).toBeVisible();
+        await expect(result).toHaveAttribute('data-test-primary-result', 'true');
+        await expect(result.locator('tbody')).toContainText('urn:a1');
+        await expect.poll(() => result.innerText()).toBe(primaryResultText);
+        await page.locator('#query-output-tab-explanation').click();
         expect(await page.evaluate(() => document.querySelector('.CodeMirror').CodeMirror.getValue()))
             .toBe(primaryQuery);
         await expect.poll(() => cancelledRequestIds).toContain(compareRequestId);
@@ -387,9 +379,6 @@ test('Closing comparison cancels stale work and preserves the primary result', a
 });
 
 test('Query editor and Explain match develop light theme and preserve dark colors on live switches', async ({ page }) => {
-    await createLmdbRepo(page);
-    await insertChainData(page);
-
     await page.goto(QUERY_URL);
     await page.waitForSelector('.CodeMirror');
     await setPrimaryQuery(page, `SELECT ?subject WHERE {

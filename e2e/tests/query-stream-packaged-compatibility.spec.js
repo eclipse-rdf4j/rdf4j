@@ -12,12 +12,11 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `query-stream-compat-${process.pid}-${Date.now()}`;
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('query-stream-compat');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const NDJSON_ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
@@ -182,7 +181,11 @@ test('streams 20000 query results before completion with a bounded table window'
 	await page.waitForFunction(() => window.__queryStreamScaleMetrics.terminalAt !== null, null, { timeout: 60000 });
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 	const result = page.locator('#query-results .query-result-layout');
-	await expect(result.locator('.query-result-status')).toHaveText(`${rowCount} results.`);
+	// The status names the row count with the browser's number format and the server's elapsed time (result states
+	// redesign, fa6a07914c); the count must still be the full logical count.
+	const formattedRowCount = await page.evaluate(count => new Intl.NumberFormat().format(count), rowCount);
+	await expect(result.locator('.query-result-status'))
+		.toHaveText(new RegExp(`^${formattedRowCount.replace(/[.]/g, '\\.')} rows · complete in [\\d,.\\s]+ ms$`));
 	await assertOneStreamingPost(monitor);
 
 	const options = result.locator('.query-result-toolbar__disclosures button').filter({ hasText: 'Display' });
@@ -195,9 +198,10 @@ test('streams 20000 query results before completion with a bounded table window'
 		rows.map(row => Number(row.getAttribute('data-query-row-index'))));
 	expect(rowsAtStart).toContain(0);
 
+	// Results scroll with the page (app-shell plan M4.1; only results taller than the browser's scroll capacity keep
+	// an inner scroller), so the window is scrolled to the middle and then to the end of the table.
 	await tableWrap.evaluate(element => {
-		element.scrollTop = element.scrollHeight / 2;
-		element.dispatchEvent(new Event('scroll'));
+		window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY + element.scrollHeight / 2);
 	});
 	await expect.poll(async () => {
 		const indexes = await tableWrap.locator('tbody tr[data-query-row-index]').evaluateAll(rows =>
@@ -206,8 +210,7 @@ test('streams 20000 query results before completion with a bounded table window'
 	}).toBe(true);
 
 	await tableWrap.evaluate(element => {
-		element.scrollTop = element.scrollHeight;
-		element.dispatchEvent(new Event('scroll'));
+		window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY + element.scrollHeight);
 	});
 	await expect.poll(async () => {
 		const indexes = await tableWrap.locator('tbody tr[data-query-row-index]').evaluateAll(rows =>
@@ -270,7 +273,10 @@ test('renders graph, empty tuple, and terminal query errors', async ({ page }) =
 
 	await executeAndWait(page, monitor, 'SELECT ?value WHERE { FILTER(false) }');
 	await expect(page.locator('#query-results table.data tbody tr')).toHaveCount(0);
-	await expect(page.locator('#query-results .query-result-status')).toContainText(/No results/i);
+	// "No results" is the empty state below the toolbar now; the status line counts the rows (fa6a07914c).
+	await expect(page.locator('#query-results .query-result-empty')).toBeVisible();
+	await expect(page.locator('#query-results .query-result-empty__title')).toHaveText('No results');
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^0 rows · complete/);
 
 	await executeAndWait(page, monitor, 'SELECT WHERE {');
 	await expect(page.locator('#query-results [role="alert"]')).toBeVisible();
@@ -315,7 +321,8 @@ test('uses terminal batch metadata for Load more and fullscreen state', async ({
 	expect(monitor.executions.every(execution => new URLSearchParams(execution.body).get('limit_query') === null))
 		.toBe(true);
 
-	const fullscreen = page.locator('#query-results-fullscreen');
+	// The streamed result owns its Full screen button; the page's legacy header button stays hidden.
+	const fullscreen = page.locator('#query-results [data-query-stream-root] .query-results__fullscreen');
 	await expect(fullscreen).toBeVisible();
 	await fullscreen.click();
 	await expect(page.locator('#query-results')).toHaveClass(/query-results--fullscreen/);

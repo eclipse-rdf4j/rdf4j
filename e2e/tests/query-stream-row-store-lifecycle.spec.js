@@ -12,21 +12,19 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { serverBaseUrl, uniqueRepositoryId, waitForRoute, workbenchBaseUrl } = require('./workbench-test-helpers');
 
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
-	|| 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const SERVER_BASE_URL = serverBaseUrl();
 const ROW_STORE_DATABASE = 'rdf4j-workbench-query-results';
 const ROW_STORE_RECOVERY_PREFIX = 'rdf4j.workbench.query-results.pending-disposal.v1:';
 const ROW_COUNT = 20000;
 const SCROLL_ROW_COUNT = 320;
-const QUERY_REPOSITORY_ID = `query-row-lifecycle-query-${process.pid}-${Date.now().toString(36)}`;
+const QUERY_REPOSITORY_ID = uniqueRepositoryId('query-row-lifecycle-query');
 const QUERY_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}/query`;
 const SUMMARY_URL = `${WORKBENCH_BASE_URL}/repositories/${QUERY_REPOSITORY_ID}/summary`;
-const SCROLL_REPOSITORY_ID = `query-row-lifecycle-scroll-${process.pid}-${Date.now().toString(36)}`;
+const SCROLL_REPOSITORY_ID = uniqueRepositoryId('query-row-lifecycle-scroll');
 const SCROLL_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}`;
 const SCROLL_URL = `${WORKBENCH_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}/contexts`;
 const SCROLL_SUMMARY_URL = `${WORKBENCH_BASE_URL}/repositories/${SCROLL_REPOSITORY_ID}/summary`;
