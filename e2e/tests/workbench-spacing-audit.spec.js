@@ -194,7 +194,11 @@ async function capture(page, info, route, state, coverage = 'live backend') {
 	const name = label.replace(/[^\w.-]/g, '-'), json = info.outputPath(`${name}-geometry.json`), png = info.outputPath(`${name}.png`);
 	fs.writeFileSync(json, JSON.stringify({ route, state, coverage, ...measured }, null, 2));
 	await info.attach(`${label}-geometry`, { path: json, contentType: 'application/json' });
-	await page.screenshot({ path: png, fullPage: true, caret: 'hide' });
+	// WebKit cannot capture more than 32767 pixels in a dimension; a long page (Explore with every row at 320 px) is
+	// then captured as its viewport. The screenshot is evidence only; the assertions use the measured geometry.
+	const pageHeight = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)
+		* window.devicePixelRatio);
+	await page.screenshot({ path: png, fullPage: pageHeight <= 32767, caret: 'hide' });
 	await info.attach(`${label}-screenshot`, { path: png, contentType: 'image/png' });
 	expect(measured.meaningfulText.trim(), `${label}: the route must have meaningful rendered content`).not.toBe('');
 	expect(measured.pageOverflow, `${label}: horizontal overflow must remain in a bounded content region`).toBeLessThanOrEqual(1);

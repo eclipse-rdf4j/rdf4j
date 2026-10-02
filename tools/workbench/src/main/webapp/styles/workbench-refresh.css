@@ -1354,6 +1354,11 @@ html {
 	scrollbar-gutter: stable;
 }
 
+/* Keep scrolled-to and focused controls out from under the sticky context bar. */
+html:has(body.workbench-body) {
+	scroll-padding-top: var(--workbench-contextbar-height);
+}
+
 body.workbench-body table.dataentry {
 	border-collapse: collapse;
 }

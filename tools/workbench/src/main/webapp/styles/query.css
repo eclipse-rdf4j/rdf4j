@@ -220,10 +220,11 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror[data-wor
     border-radius: 4px;
 }
 
-/* Results come into view under the sticky context bar after an execution starts. */
+/* Results come into view under the sticky context bar after an execution starts; the page's scroll padding already
+ * keeps them clear of the bar. */
 .query-results,
 .query-output {
-    scroll-margin-top: calc(var(--workbench-contextbar-height, 56px) + 16px);
+    scroll-margin-top: 16px;
 }
 
 /* Output card (M3.3): Results and Explanation are tabs of one card below the editor card, so running

@@ -1707,6 +1707,17 @@ async function scrollToResultEnd(scrollport, page) {
 			if (!state.lastVisible && state.scrollTop === previous.scrollTop
 					&& state.lastIndex === previous.lastIndex) {
 				await scrollport.press('End');
+				state = await readResultScrollProgress(scrollport);
+			}
+			if (!state.lastVisible && state.scrollSource === 'page' && state.scrollTop === previous.scrollTop
+					&& state.lastIndex === previous.lastIndex) {
+				// WebKit does not pass keys from the result to the page that scrolls it; End on the page does.
+				await page.evaluate(() => document.activeElement && document.activeElement.blur());
+				await page.keyboard.press('End');
+				await expect.poll(async () => {
+					state = await readResultScrollProgress(scrollport);
+					return state.lastVisible;
+				}, { timeout: 1500 }).toBe(true).catch(() => {});
 			}
 			usedKeyboardFallback = true;
 		}
@@ -1863,18 +1874,21 @@ async function scrollToResultMiddle(scrollport, page) {
 		const bounds = element.getBoundingClientRect();
 		return Math.floor(bounds.top + bounds.height / 2 - window.innerHeight / 2);
 	});
-	// Firefox scrolls at most about one page per wheel event, so the wheel turns until the middle is reached.
+	// Engines do not scroll exactly the wheel delta: Firefox moves at most about one page per wheel event, and WebKit
+	// on Linux scales the delta (it can overshoot). The wheel turns, either way, until the middle is close.
 	const target = start + middleDelta;
+	const tolerance = await scrollport.evaluate(element => Math.max(48, Math.min(element.clientHeight,
+		window.innerHeight) / 4));
 	let position = start;
-	for (let attempt = 0; attempt < 24 && position < target - 1; attempt++) {
+	for (let attempt = 0; attempt < 24 && Math.abs(target - position) > tolerance; attempt++) {
 		const previous = position;
 		await pointAtVisibleResult(scrollport, page);
 		await page.mouse.wheel(0, target - position);
-		const advanced = await expect.poll(async () => {
+		const moved = await expect.poll(async () => {
 			position = await scrollPosition();
-			return position > previous;
+			return position !== previous;
 		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
-		if (!advanced) {
+		if (!moved) {
 			break;
 		}
 	}

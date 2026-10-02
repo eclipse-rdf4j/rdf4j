@@ -66,26 +66,37 @@ async function hasVisibleIntermediateMotion(locator, lowerBound = 0, upperBound 
 }
 
 /**
- * Watches an element on every animation frame for up to two seconds and remembers whether it was seen mid-motion. A
- * short eased motion can finish between two polls from the test process, so the sampling happens in the page.
+ * Watches an element on every animation frame for up to two seconds and remembers whether it was seen mid-motion: a
+ * running animation with its height ('height'), its open details height ('details') or its opacity ('opacity')
+ * between the end states. A short eased motion can finish between two polls from the test process, so the sampling
+ * happens in the page. Start recording before the action that starts the motion.
  */
-async function recordIntermediateMotion(locator) {
-	await locator.evaluate(element => {
+async function recordIntermediateMotion(locator, kind = 'height') {
+	await locator.evaluate((element, motionKind) => {
 		const record = { seen: false };
 		element.__workbenchMotionRecord = record;
 		const deadline = performance.now() + 2000;
+		const intermediate = () => {
+			if (motionKind === 'opacity') {
+				const opacity = parseFloat(getComputedStyle(element).opacity);
+				return opacity > 0.02 && opacity < 0.98;
+			}
+			const summary = motionKind === 'details' ? element.querySelector(':scope > summary') : null;
+			const lower = summary ? summary.getBoundingClientRect().height : 0;
+			const height = element.getBoundingClientRect().height;
+			return height > lower + 1 && height < element.scrollHeight - 1;
+		};
 		const sample = () => {
 			const running = element.getAnimations({ subtree: false })
 				.some(animation => animation.playState === 'running');
-			const height = element.getBoundingClientRect().height;
-			if (running && height > 1 && height < element.scrollHeight - 1) {
+			if (running && intermediate()) {
 				record.seen = true;
 			} else if (performance.now() < deadline) {
 				requestAnimationFrame(sample);
 			}
 		};
 		requestAnimationFrame(sample);
-	});
+	}, kind);
 }
 
 async function wasSeenInIntermediateMotion(locator) {
@@ -396,33 +407,36 @@ test('native disclosures and compare panes animate their outer content only', as
 	await expect(examplesSummary).toHaveAttribute('aria-expanded', 'false');
 	await expect.poll(() => examples.evaluate(element => element.open)).toBe(false);
 	await examplesSummary.focus();
+	await recordIntermediateMotion(examples, 'details');
 	await page.keyboard.press('Enter');
 	await expect.poll(() => examples.evaluate(element => element.open)).toBe(true);
-	expect(await activeMotionCount(examples)).toBeGreaterThan(0);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(examples)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(examples)).toBe(true);
+	await recordIntermediateMotion(examples, 'details');
 	await examplesSummary.press('Enter');
 	await expect(examplesSummary).toHaveAttribute('aria-expanded', 'false');
 	await expect.poll(() => examplesItems.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(examples)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(examples)).toBe(true);
 	await waitForOwnedAnimations(examples);
 	await expect.poll(() => examples.evaluate(element => element.open)).toBe(false);
 
 	await openRoute(page, QUERY_URL, 'query');
 	await runPrimaryQuery(page);
-	await page.locator('#compare-toggle').click();
 	const comparePane = page.locator('#query-compare-pane');
+	await recordIntermediateMotion(comparePane, 'opacity');
+	await page.locator('#compare-toggle').click();
 	await expect(comparePane).toBeVisible();
-	expect(await activeMotionCount(comparePane)).toBeGreaterThan(0);
-	await expect.poll(() => hasIntermediateOpacityMotion(comparePane)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(comparePane)).toBe(true);
+	await waitForOwnedAnimations(comparePane);
 	const compareLayout = page.locator('#query-compare-layout');
 	await expect.poll(() => compareLayout.evaluate(element =>
 		element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
 	expect(parseFloat(await compareLayout.evaluate(element => getComputedStyle(element).columnGap))).toBeCloseTo(16, 1);
+	await recordIntermediateMotion(comparePane, 'opacity');
 	await page.locator('#query-compare-close').click();
 	await expect(page.locator('#compare-toggle')).toBeFocused();
 	await expect(comparePane).toHaveAttribute('aria-hidden', 'true');
 	expect(await comparePane.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasIntermediateOpacityMotion(comparePane)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(comparePane)).toBe(true);
 	await waitForOwnedAnimations(comparePane);
 	await expect.poll(() => compareLayout.evaluate(element =>
 		element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
