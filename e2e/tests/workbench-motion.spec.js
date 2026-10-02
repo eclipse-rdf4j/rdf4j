@@ -1,10 +1,17 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { serverBaseUrl, waitForRoute, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
-	'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL ||
-	'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
+// Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): "a new query reverses the
+// loading indicator exit animation" and the result fade-in that runPrimaryQuery checked belonged to the result iframe
+// execution path, removed on purpose (plan workbench-app-shell-and-critique-fixes-20260930, Decision M9.1). The streamed
+// renderer shows and hides #query-results-loading with its busy state, without motion, so there is no exit animation
+// to reverse; workbench-spacing-audit.spec.js "query output controls ..." checks the loading line while a request is
+// pending. Menu groups are no longer disclosures (same plan, M2.4), so the native <details> motion that the menu groups
+// showed is checked on the Remove page's Examples disclosure, which uses the same shared code (decoratePage).
+
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const SERVER_BASE_URL = serverBaseUrl();
 const REPOSITORY_ID = `workbench-motion-${process.pid}-${Date.now()}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
@@ -31,6 +38,12 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async ({ request }) => {
 	await request.delete(REPOSITORY_URL);
 });
+
+/** Open a page and wait until its view is mounted: the page renders before its controls are bound. */
+async function openRoute(page, url, viewId) {
+	await page.goto(url);
+	await waitForRoute(page, viewId);
+}
 
 async function activeMotionCount(locator) {
 	return locator.evaluate(element => element.getAnimations({ subtree: false })
@@ -82,9 +95,9 @@ async function runPrimaryQuery(page) {
 	await page.locator('#exec').click();
 	const results = page.locator('#query-results');
 	await expect(results).toBeVisible();
-	expect(await activeMotionCount(results)).toBeGreaterThan(0);
-	await expect.poll(() => hasIntermediateOpacityMotion(results)).toBe(true);
-	await page.frameLocator('#query-results-frame').locator('#rdf4j-query-result').waitFor({ state: 'attached' });
+	// The result streams into the page (the fade-in belonged to the removed result iframe path, see the note above).
+	await expect(results.locator('[data-query-stream-root]')).toBeVisible();
+	await expect(results).toHaveAttribute('aria-busy', 'false');
 	await expect(results).toBeVisible();
 	await page.locator('#explain-trigger').click();
 	await expect.poll(() => page.locator('#query-explanation').textContent()).toMatch(/\S/);
@@ -94,7 +107,7 @@ async function runPrimaryQuery(page) {
 test('query explanation grows into view when Explain opens it', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	const explanationRow = page.locator('#query-explanation-row');
@@ -121,7 +134,7 @@ test('query explanation grows into view when Explain opens it', async ({ page })
 
 test('comparison explanation reverses cleanly and respects reduced motion', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	await page.locator('#explain-trigger').click();
@@ -176,7 +189,7 @@ test('an initial explanation error settles in the animated row', async ({ page }
 			await route.continue();
 		}
 	});
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	const explanationRow = page.locator('#query-explanation-row');
@@ -195,7 +208,7 @@ test('an initial explanation error settles in the animated row', async ({ page }
 
 test('reduced motion reveals the initial explanation without animation', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'reduce' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	const state = await page.locator('#query-explanation-row').evaluate(element => {
@@ -213,7 +226,7 @@ test('reduced motion reveals the initial explanation without animation', async (
 
 test('refreshing an open explanation does not restart its entrance motion', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	await page.locator('#explain-trigger').click();
@@ -257,7 +270,7 @@ test('refreshing an open explanation does not restart its entrance motion', asyn
 });
 
 test('closing a focused comparison explanation returns focus to Compare', async ({ page }) => {
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	await page.locator('#explain-trigger').click();
@@ -265,6 +278,8 @@ test('closing a focused comparison explanation returns focus to Compare', async 
 	await page.locator('#compare-toggle').click();
 	await expect(page.locator('#query-explanation-compare')).toContainText(/\S/);
 	const compareCopy = page.locator('#copy-explanation-compare');
+	// "Loading explanation..." already matches the text check above; Copy is enabled once the explanation arrived.
+	await expect(compareCopy).toBeEnabled();
 	await compareCopy.focus();
 	await expect(compareCopy).toBeFocused();
 	await page.evaluate(() => workbench.query.toggleCompareMode());
@@ -275,7 +290,7 @@ test('closing a focused comparison explanation returns focus to Compare', async 
 test('query options animate reversibly while semantic state and focus update immediately', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 
 	const toggle = page.locator('#query-options-toggle');
 	const panel = page.locator('#query-options-panel');
@@ -289,7 +304,9 @@ test('query options animate reversibly while semantic state and focus update imm
 	await expect.poll(() => hasVisibleIntermediateMotion(panel)).toBe(true);
 	await waitForOwnedAnimations(panel);
 
-	await panel.locator('#limit_query').focus();
+	// The result limit left Query settings (results stream whole and "Load more" continues them); the timeout is its
+	// first control now.
+	await panel.locator('#query-timeout').focus();
 	await page.evaluate(() => document.getElementById('query-options-toggle').click());
 	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 	await expect(toggle).toBeFocused();
@@ -326,7 +343,7 @@ test('query options animate reversibly while semantic state and focus update imm
 
 test('live reduced-motion changes settle only the requested disclosure state', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	const toggle = page.locator('#query-options-toggle');
 	const panel = page.locator('#query-options-panel');
 	await toggle.click();
@@ -341,28 +358,29 @@ test('live reduced-motion changes settle only the requested disclosure state', a
 	await expect(panel).toBeHidden();
 });
 
-test('navigation groups and compare panes animate their outer content only', async ({ page }) => {
+test('native disclosures and compare panes animate their outer content only', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(QUERY_URL);
+	await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/remove`, 'remove');
 
-	const repositoryGroup = page.locator(
-		'#navigation .workbench-nav-group[data-workbench-menu-group="repositories"] details');
-	const repositorySummary = repositoryGroup.locator('summary');
-	const repositoryItems = repositoryGroup.locator('ul.group');
-	await expect.poll(() => repositoryGroup.evaluate(element => element.open)).toBe(false);
-	await repositorySummary.focus();
+	const examples = page.locator('#remove-examples');
+	const examplesSummary = examples.locator(':scope > summary');
+	const examplesItems = examples.locator(':scope > ul');
+	await expect(examplesSummary).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(() => examples.evaluate(element => element.open)).toBe(false);
+	await examplesSummary.focus();
 	await page.keyboard.press('Enter');
-	await expect.poll(() => repositoryGroup.evaluate(element => element.open)).toBe(true);
-	expect(await activeMotionCount(repositoryGroup)).toBeGreaterThan(0);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(repositoryGroup)).toBe(true);
-	await repositorySummary.press('Enter');
-	await expect(repositorySummary).toHaveAttribute('aria-expanded', 'false');
-	await expect.poll(() => repositoryItems.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasVisibleIntermediateDetailsMotion(repositoryGroup)).toBe(true);
-	await waitForOwnedAnimations(repositoryGroup);
-	await expect.poll(() => repositoryGroup.evaluate(element => element.open)).toBe(false);
+	await expect.poll(() => examples.evaluate(element => element.open)).toBe(true);
+	expect(await activeMotionCount(examples)).toBeGreaterThan(0);
+	await expect.poll(() => hasVisibleIntermediateDetailsMotion(examples)).toBe(true);
+	await examplesSummary.press('Enter');
+	await expect(examplesSummary).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(() => examplesItems.evaluate(element => element.inert)).toBe(true);
+	await expect.poll(() => hasVisibleIntermediateDetailsMotion(examples)).toBe(true);
+	await waitForOwnedAnimations(examples);
+	await expect.poll(() => examples.evaluate(element => element.open)).toBe(false);
 
+	await openRoute(page, QUERY_URL, 'query');
 	await runPrimaryQuery(page);
 	await page.locator('#compare-toggle').click();
 	const comparePane = page.locator('#query-compare-pane');
@@ -387,7 +405,7 @@ test('navigation groups and compare panes animate their outer content only', asy
 
 test('completed disclosures release their fill effects and follow natural sizing', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	const toggle = page.locator('#query-options-toggle');
 	const panel = page.locator('#query-options-panel');
 	await toggle.click();
@@ -413,7 +431,7 @@ test('completed disclosures release their fill effects and follow natural sizing
 	expect.soft(await retainedForwardFillCount(panel)).toBe(0);
 
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
+	await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`, 'create');
 	const advancedToggle = page.locator('#create-advanced-toggle');
 	const advancedPanel = page.locator('#create-advanced-panel');
 	await advancedToggle.click();
@@ -429,67 +447,6 @@ test('completed disclosures release their fill effects and follow natural sizing
 	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
 	const grownHeight = await advancedPanel.evaluate(element => element.getBoundingClientRect().height);
 	expect.soft(grownHeight - advancedHeight).toBeGreaterThanOrEqual(70);
-});
-
-test('a new query reverses the loading indicator exit animation', async ({ page }) => {
-	await page.addInitScript(() => {
-		const animate = Element.prototype.animate;
-		Element.prototype.animate = function(keyframes, options) {
-			const animation = animate.call(this, keyframes, options);
-			const frames = Array.isArray(keyframes) ? keyframes : [keyframes];
-			const lastFrame = frames[frames.length - 1] || {};
-			if (this.id === 'query-results-loading' && String(lastFrame.opacity) === '0') {
-				animation.pause();
-				window.dispatchEvent(new Event('workbench-test-loading-exit-paused'));
-			}
-			return animation;
-		};
-	});
-	await page.goto(QUERY_URL);
-	const exitPaused = page.evaluate(() => new Promise(resolve =>
-		window.addEventListener('workbench-test-loading-exit-paused', resolve, { once: true })));
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { "first" } }'));
-	await page.locator('#exec').click();
-	await exitPaused;
-	await expect(page.frameLocator('#query-results-frame').locator('body')).toContainText('first');
-
-	let releaseSecondRequest;
-	let resolveSecondRequestStarted;
-	const secondRequestGate = new Promise(resolve => { releaseSecondRequest = resolve; });
-	const secondRequestStarted = new Promise(resolve => { resolveSecondRequestStarted = resolve; });
-	const queryRoute = `**/repositories/${REPOSITORY_ID}/query**`;
-	await page.route(queryRoute, async route => {
-		const request = route.request();
-		const parameters = request.method() === 'GET'
-			? new URL(request.url()).searchParams
-			: new URLSearchParams(request.postData() || '');
-		if (parameters.get('action') === 'exec') {
-			resolveSecondRequestStarted();
-			await secondRequestGate;
-		}
-		await route.continue();
-	});
-	try {
-		await page.locator('.CodeMirror').first().evaluate(element =>
-			element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { "second" } }'));
-		await page.locator('#exec').click();
-		await secondRequestStarted;
-		const loadingState = await page.locator('#query-results-loading').evaluate(element => ({
-			hidden: element.hidden,
-			ariaHidden: element.getAttribute('aria-hidden'),
-			animationStates: element.getAnimations({ subtree: false }).map(animation => animation.playState)
-		}));
-		expect(loadingState.hidden).toBe(false);
-		expect(loadingState.ariaHidden).toBe('false');
-		expect(loadingState.animationStates).toContain('running');
-	} finally {
-		releaseSecondRequest();
-		await page.unroute(queryRoute);
-		await page.locator('#query-results-loading').evaluate(element => {
-			element.getAnimations({ subtree: false }).forEach(animation => animation.play());
-		}).catch(() => {});
-	}
 });
 
 test('primary query and form actions show compact keyboard press feedback in both themes', async ({ page }) => {
@@ -551,7 +508,7 @@ test('primary query and form actions show compact keyboard press feedback in bot
 	}
 
 	for (const theme of ['light', 'dark']) {
-		await page.goto(QUERY_URL);
+		await openRoute(page, QUERY_URL, 'query');
 		await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 		await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 		await page.evaluate(() => {
@@ -562,9 +519,10 @@ test('primary query and form actions show compact keyboard press feedback in bot
 				}
 			}, true);
 		});
-		await verifyPressedAction('#exec', '.query-action--primary', theme);
+		// Execute uses the shared button component (.query-action--primary became .workbench-action--primary, M1.3).
+		await verifyPressedAction('#exec', '.workbench-action--primary', theme);
 
-		await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
+		await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`, 'create');
 		await page.evaluate(theme => window.RDF4JWorkbenchTheme.setPreference(theme), theme);
 		await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 		await page.evaluate(() => {
@@ -582,7 +540,7 @@ test('primary query and form actions show compact keyboard press feedback in bot
 test('shared form and mobile navigation disclosures reverse within narrow layouts', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`);
+	await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory`, 'create');
 
 	const advancedToggle = page.locator('#create-advanced-toggle');
 	const advancedPanel = page.locator('#create-advanced-panel');
@@ -638,7 +596,7 @@ test('shared form and mobile navigation disclosures reverse within narrow layout
 	await expect(advancedPanel).toBeHidden();
 
 	await page.setViewportSize({ width: 320, height: 844 });
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`);
+	await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`, 'add');
 	const importToggle = page.locator('#add-import-settings-toggle');
 	const importPanel = page.locator('#add-import-settings-panel');
 	await expect(importPanel).toBeHidden();
@@ -675,7 +633,7 @@ test('shared form and mobile navigation disclosures reverse within narrow layout
 
 test('diff overlay fades while modal accessibility and focus restore synchronously', async ({ page }) => {
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
-	await page.goto(QUERY_URL);
+	await openRoute(page, QUERY_URL, 'query');
 	const compareToggle = page.locator('#compare-toggle');
 	await runPrimaryQuery(page);
 	await compareToggle.click();
