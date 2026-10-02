@@ -12,13 +12,37 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const {
+	deleteRepository,
+	memoryRepositoryConfiguration,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	waitForRoute,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8090/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8090/rdf4j-workbench').replace(/\/+$/, '');
-const REPOSITORY_ID = `workbench-visual-followup-${process.pid}-${Date.now()}`;
+// Changed with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md; decisions in
+// .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md). Query results stream into the page instead of
+// the retired result iframe. Retired:
+// - "expanded result disclosures leave space before table and record results at wide and narrow widths": the result
+//   Display and Download panes open over the results by design (M14.3) instead of pushing them down;
+//   workbench-settings-panes.spec.js "result Display/Download opens over the page and closes with Escape or a press
+//   outside it" checks at 1440 and 390 px that they move nothing, lie on top and stay in the viewport.
+// - "mobile result pagination remains reachable inside the embedded result frame": it scrolled the retired frame to
+//   reach the page controls; a result now loads up to one million rows and continues with Load more
+//   (workbench-query-load-more.spec.js "Execute requests one million rows by default and renders no result page
+//   controls"), and "mobile result layouts append and scroll locally within the viewport" checks that Load more is
+//   reachable at 390 and 320 px.
+// Migrated: the Query settings pane has no select any more (rows per page is gone), so the policy-hidden select is the
+// explanation format; the compare-mode navigation toggle sits at the start of the primary editor header (M3.3)
+// instead of in the removed compare toolbar beside Copy; result rows scroll with the page under a pinned copy of the
+// header row (M4.1) instead of inside an inner scroller with page controls.
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-visual-followup');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const VISUAL_ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY;
 
@@ -31,7 +55,7 @@ const CREATION_TYPES = [
 test.beforeAll(async ({ request }) => {
 	const created = await request.put(REPOSITORY_URL, {
 		headers: { 'Content-Type': 'text/turtle' },
-		data: repositoryConfiguration(REPOSITORY_ID)
+		data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Workbench visual follow-up fixture')
 	});
 	expect([200, 201, 204]).toContain(created.status());
 	const loaded = await request.post(`${REPOSITORY_URL}/statements`, {
@@ -46,8 +70,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	const removed = await request.delete(REPOSITORY_URL);
-	expect([200, 204, 404]).toContain(removed.status());
+	await deleteRepository(request, SERVER_BASE_URL, REPOSITORY_ID);
 });
 
 test('query, form, theme, and embedded selects use one native shared-chevron treatment', async ({ page }) => {
@@ -59,19 +82,19 @@ test('query, form, theme, and embedded selects use one native shared-chevron tre
 	console.log(`QUERY_SELECT_VIOLATIONS ${JSON.stringify(queryViolations)}`);
 	expect(queryViolations).toEqual([]);
 
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'load' });
+	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
 	await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
 		'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
 	await page.locator('#exec').click();
-	const resultFrame = page.frameLocator('#query-results-frame');
-	await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(3);
-	await resultFrame.locator('#query-result-download-toggle').click();
-	await expect(resultFrame.locator('#query-result-download-panel')).toBeVisible();
-	const resultFormats = await resultFrame.locator('#query-result-download-panel select').count();
-	await resultFrame.locator('#query-result-options-toggle').click();
-	await expect(resultFrame.locator('#query-result-options-panel')).toBeVisible();
-	const resultOptions = await resultFrame.locator('#query-result-options-panel select').count();
-	const embeddedViolations = await selectViolations(resultFrame);
+	const result = page.locator('#query-results [data-query-stream-root]');
+	await expect(result.locator('table.data tbody tr[data-query-row-index]')).toHaveCount(3);
+	await result.locator('.query-result-download-toggle').click();
+	await expect(result.locator('.query-result-download-panel')).toBeVisible();
+	const resultFormats = await result.locator('.query-result-download-panel select').count();
+	await result.locator('.query-result-options-toggle').click();
+	await expect(result.locator('.query-result-options-panel')).toBeVisible();
+	const resultOptions = await result.locator('.query-result-options-panel select').count();
+	const embeddedViolations = await selectViolations(page.locator('#query-results'));
 	console.log(`EMBEDDED_SELECT_VIOLATIONS ${JSON.stringify({ resultFormats, resultOptions, embeddedViolations })}`);
 	expect(resultFormats).toBeGreaterThan(0);
 	expect(resultOptions).toBeGreaterThan(0);
@@ -98,13 +121,17 @@ test('query, form, theme, and embedded selects use one native shared-chevron tre
 test('policy-hidden controls also hide their shared visual wrappers', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('#query-options-toggle').click();
-	const pageSize = page.locator('#limit_query');
-	await expect(pageSize).toBeVisible();
-	await pageSize.evaluate(select => {
+	await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
+		'SELECT * WHERE { VALUES ?s { "hidden controls" } }');
+	await enterCompareMode(page);
+	// The policy hides the explanation format select when every format is disabled.
+	const formatSelect = page.locator('#explain-format');
+	await expect(formatSelect).toBeVisible();
+	await formatSelect.evaluate(select => {
 		select.hidden = true;
 	});
-	const selectWrapper = page.locator('#limit_query').locator('xpath=..');
+	const selectWrapper = formatSelect.locator('xpath=..');
+	await expect(selectWrapper).toHaveClass(/workbench-select-control/);
 	const selectVisibility = await selectWrapper.evaluate(wrapper => ({
 		display: getComputedStyle(wrapper).display,
 		chevronVisible: wrapper.querySelector('.workbench-select-chevron').getBoundingClientRect().width > 0
@@ -112,9 +139,6 @@ test('policy-hidden controls also hide their shared visual wrappers', async ({ p
 	console.log(`POLICY_HIDDEN_SELECT_WRAPPER ${JSON.stringify(selectVisibility)}`);
 	await expect(selectWrapper).toBeHidden();
 
-	await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
-		'SELECT * WHERE { VALUES ?s { "hidden controls" } }');
-	await enterCompareMode(page);
 	const sidebarToggle = page.locator('#query-sidebar-toggle');
 	await expect(sidebarToggle).toBeVisible();
 	await sidebarToggle.evaluate(button => {
@@ -131,87 +155,6 @@ test('policy-hidden controls also hide their shared visual wrappers', async ({ p
 	await captureResponsiveCompareState(page, 'policy-hidden-wrappers-1440.png', { fullPage: false });
 });
 
-test('expanded result disclosures leave space before table and record results at wide and narrow widths', async ({ page }) => {
-	for (const width of [1440, 390]) {
-		await page.setViewportSize({ width, height: 1000 });
-		await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-		await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
-			'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-		await page.locator('#exec').click();
-		const frame = page.frameLocator('#query-results-frame');
-		await expect(frame.locator('table.data tbody tr')).toHaveCount(3);
-
-		for (const resultLayout of ['table', 'records']) {
-			await frame.locator('#query-result-options-toggle').click();
-			await expect(frame.locator('#query-result-options-panel')).toBeVisible();
-			await frame.locator('#result-layout').selectOption(resultLayout);
-			await expect(frame.locator('#query-result-layout')).toHaveAttribute('data-effective-layout', resultLayout);
-			await expect.poll(() => disclosureResultGap(frame, '#query-result-options-panel', resultLayout)).toBeGreaterThanOrEqual(8);
-
-			await frame.locator('#query-result-options-toggle').click();
-			await frame.locator('#query-result-download-toggle').click();
-			await expect(frame.locator('#query-result-download-panel')).toBeVisible();
-			await expect.poll(() => disclosureResultGap(frame, '#query-result-download-panel', resultLayout))
-				.toBeGreaterThanOrEqual(8);
-			console.log(`RESULT_DISCLOSURE_GAP ${width}px ${resultLayout}`);
-			await frame.locator('#query-result-download-toggle').click();
-		}
-	}
-});
-
-test('mobile result pagination remains reachable inside the embedded result frame', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 900 });
-	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('dark'));
-	const values = Array.from({ length: 125 }, (_, index) => `(<urn:page:${index}> "${index}")`).join(' ');
-	const query = `SELECT ?s ?label WHERE { VALUES (?s ?label) { ${values} } }`;
-	await page.locator('.CodeMirror').first().evaluate((editor, queryText) => editor.CodeMirror.setValue(queryText), query);
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await expect(frame.locator('table.data tbody tr')).toHaveCount(100);
-	await expect(page.locator('#query-results-loading')).toBeHidden();
-	await expect(frame.locator('#nextX')).toBeVisible();
-
-	const beforeScroll = await page.locator('#query-results-frame').evaluate(frameElement => {
-		const document = frameElement.contentDocument;
-		const button = document.getElementById('nextX');
-		const buttonBounds = button.getBoundingClientRect();
-		return {
-			frameHeight: frameElement.getBoundingClientRect().height,
-			viewportHeight: document.documentElement.clientHeight,
-			documentHeight: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
-			buttonTop: buttonBounds.top,
-			buttonBottom: buttonBounds.bottom,
-			scrollY: document.defaultView.scrollY
-		};
-	});
-	console.log(`RESULT_FRAME_PAGINATION_BEFORE_SCROLL ${JSON.stringify(beforeScroll)}`);
-	expect(beforeScroll.documentHeight).toBeGreaterThan(beforeScroll.viewportHeight);
-
-	await frame.locator('#nextX').scrollIntoViewIfNeeded();
-	const afterScroll = await page.locator('#query-results-frame').evaluate(frameElement => {
-		const document = frameElement.contentDocument;
-		const buttonBounds = document.getElementById('nextX').getBoundingClientRect();
-		return {
-			viewportHeight: document.documentElement.clientHeight,
-			buttonTop: buttonBounds.top,
-			buttonBottom: buttonBounds.bottom,
-			scrollY: document.defaultView.scrollY
-		};
-	});
-	console.log(`RESULT_FRAME_PAGINATION_AFTER_SCROLL ${JSON.stringify(afterScroll)}`);
-	expect(afterScroll.scrollY).toBeGreaterThan(0);
-	expect(afterScroll.buttonTop).toBeGreaterThanOrEqual(0);
-	expect(afterScroll.buttonBottom).toBeLessThanOrEqual(afterScroll.viewportHeight);
-	if (VISUAL_ARTIFACT_DIRECTORY) {
-		const directory = path.join(VISUAL_ARTIFACT_DIRECTORY, 'final', 'dark-expanded');
-		fs.mkdirSync(directory, { recursive: true });
-		await page.locator('#query-results-frame').scrollIntoViewIfNeeded();
-		await page.screenshot({ path: path.join(directory,
-			'query-result-pagination-reachable-390-dark.png'), fullPage: false });
-	}
-});
-
 test('query result table headers stay visible while scrolling rows on desktop and mobile', async ({ page }) => {
 	const pageErrors = [];
 	page.on('pageerror', error => pageErrors.push(error.message));
@@ -224,98 +167,86 @@ test('query result table headers stay visible while scrolling rows on desktop an
 	await page.locator('.CodeMirror').first().evaluate((editor, queryText) => editor.CodeMirror.setValue(queryText), query);
 	await page.locator('#exec').click();
 	const results = page.locator('#query-results');
+	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 15000 });
+	await expect(results.locator('.query-result-status')).toHaveText(/^125 rows · complete/);
 	await expect(results.locator('.query-result-table-wrap')).toBeVisible();
 	await expect(results.locator('.query-result-table-wrap table.data tbody tr').first()).toBeVisible();
-	const pagePaging = results.locator('nav[aria-label="Query result paging"]');
-	await expect(pagePaging.locator('.query-result-navigation__label')).toHaveText('Page 1 of 2');
 	const optionsToggle = results.locator('.query-result-options-toggle');
-	const optionsPanel = results.locator('.query-result-disclosure-panels .query-disclosure__panel').nth(1);
+	const optionsPanel = results.locator('.query-result-options-panel');
 	await optionsToggle.click();
 	await expect(optionsPanel).toBeVisible();
 	await results.locator('select[name="result-layout"]').selectOption('table');
 	await expect(results.locator('.query-result-layout')).toHaveAttribute('data-effective-layout', 'table');
 	await optionsToggle.click();
+	await expect(optionsPanel).toBeHidden();
 
 	const screenshotPrefix = process.env.WORKBENCH_STICKY_HEADER_SCREENSHOT_PREFIX
 		|| '/private/tmp/workbench-query-sticky-header';
 	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
 		await page.setViewportSize(viewport);
-		await expect(pagePaging).toBeVisible();
 		if (viewport.width < 480) {
 			await optionsToggle.click();
 			await results.locator('input[name="result-wrap-values"]').setChecked(false);
 			await optionsToggle.click();
+			await expect(optionsPanel).toBeHidden();
 		}
+		await expect(results.locator('.query-result-layout')).toHaveAttribute('data-effective-layout', 'table');
 		const tableWrap = results.locator('.query-result-table-wrap');
-		const before = await tableWrap.evaluate(element => {
-			const navigation = element.ownerDocument.querySelector('nav[aria-label="Query result paging"]');
-			const navigationBounds = navigation.getBoundingClientRect();
-			const bounds = element.getBoundingClientRect();
-			return {
-				wrapTop: bounds.top,
-				navigationTop: navigationBounds.top,
-				navigationBottom: navigationBounds.bottom,
-				clientHeight: element.clientHeight,
-				scrollHeight: element.scrollHeight
-			};
-		});
-		expect(before.scrollHeight, `table must scroll vertically at ${viewport.width}px`).toBeGreaterThan(before.clientHeight);
+		// Rows scroll with the page (M4.1): scroll until the table's own header row is 160 px under the context bar.
 		await tableWrap.evaluate(element => {
-			element.scrollTop = Math.min(160, element.scrollHeight);
+			const contextBar = document.querySelector('#workbench-contextbar').getBoundingClientRect();
+			window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - contextBar.bottom + 160);
 		});
-		await expect.poll(() => tableWrap.evaluate(element => element.scrollTop),
-			{ message: `table scrolls vertically at ${viewport.width}px` }).toBeGreaterThan(0);
+		await expect.poll(() => page.evaluate(() => window.scrollY),
+			{ message: `the page scrolls the rows at ${viewport.width}px` }).toBeGreaterThan(0);
+		const pinnedHeader = results.locator('.query-result-floating-head__viewport');
+		await expect(pinnedHeader, `the pinned header row shows at ${viewport.width}px`).toBeVisible();
 		const after = await tableWrap.evaluate(element => {
 			const document = element.ownerDocument;
-			const navigation = document.querySelector('nav[aria-label="Query result paging"]');
-			const navigationBounds = navigation.getBoundingClientRect();
-			const bounds = element.getBoundingClientRect();
-			const header = element.querySelector('thead th');
+			const floating = document.querySelector('#query-results .query-result-floating-head');
+			const pinned = floating.querySelector('.query-result-floating-head__viewport');
+			const pinnedBounds = pinned.getBoundingClientRect();
+			const header = pinned.querySelector('thead th');
+			const headerCount = pinned.querySelectorAll('thead th').length;
 			const bodyRow = Array.from(element.querySelectorAll('tbody tr'))
-				.find(row => row.cells.length === element.querySelectorAll('thead th').length);
+				.find(row => row.cells.length === headerCount && row.getBoundingClientRect().top >= pinnedBounds.bottom);
 			const headerBounds = header.getBoundingClientRect();
-			const headerStyle = getComputedStyle(header);
 			return {
-				wrapTop: bounds.top,
-				headerTop: headerBounds.top,
-				headerBackground: headerStyle.backgroundColor,
-				headerZIndex: headerStyle.zIndex,
-				navigationTop: navigationBounds.top,
-				navigationBottom: navigationBounds.bottom,
-				scrollTop: element.scrollTop,
+				scrollY: window.scrollY,
+				contextBarBottom: document.querySelector('#workbench-contextbar').getBoundingClientRect().bottom,
+				tableHeaderBottom: element.querySelector('thead').getBoundingClientRect().bottom,
+				headerTop: pinnedBounds.top,
+				headerBackground: getComputedStyle(header).backgroundColor,
+				headerZIndex: getComputedStyle(floating).zIndex,
 				scrollWidth: element.scrollWidth,
 				clientWidth: element.clientWidth,
 				headerCellLeft: headerBounds.left,
 				bodyCellLeft: bodyRow ? bodyRow.cells[0].getBoundingClientRect().left : null
 			};
 		});
-		console.log(`QUERY_RESULT_STICKY_HEADER ${JSON.stringify({ viewport, before, after })}`);
-		await results.scrollIntoViewIfNeeded();
+		console.log(`QUERY_RESULT_STICKY_HEADER ${JSON.stringify({ viewport, after })}`);
 		await page.screenshot({ path: `${screenshotPrefix}-${viewport.width}px.png`, fullPage: false });
-		expect(Math.abs(after.headerTop - after.wrapTop),
-			`table column header stays at the scroller top at ${viewport.width}px`)
+		expect(after.tableHeaderBottom, `the table's own header row has scrolled under the context bar at ${viewport.width}px`)
+			.toBeLessThanOrEqual(after.contextBarBottom);
+		expect(Math.abs(after.headerTop - after.contextBarBottom),
+			`table column header stays pinned just under the context bar at ${viewport.width}px`)
 			.toBeLessThanOrEqual(1);
 		expect(after.headerBackground, `table column header remains opaque at ${viewport.width}px`)
 			.not.toBe('rgba(0, 0, 0, 0)');
 		expect(Number(after.headerZIndex), `table column header stacks above body rows at ${viewport.width}px`)
 			.toBeGreaterThan(0);
-		expect(after.headerTop, `sticky column header stays below the page controls at ${viewport.width}px`)
-			.toBeGreaterThanOrEqual(after.navigationBottom - 1);
-		expect(after.navigationTop, `page controls remain visible at ${viewport.width}px`)
-			.toBeGreaterThanOrEqual(0);
-		expect(after.navigationBottom, `page controls remain in the viewport at ${viewport.width}px`)
-			.toBeLessThanOrEqual(viewport.height);
-		expect(after.navigationTop, `page controls remain in place while table rows scroll at ${viewport.width}px`)
-			.toBeCloseTo(before.navigationTop, 1);
 		if (viewport.width < 480) {
 			await tableWrap.evaluate(element => {
 				element.scrollLeft = 120;
 			});
+			await expect.poll(() => tableWrap.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
 			const horizontal = await tableWrap.evaluate(element => {
-				const headerCell = element.querySelector('thead th');
-				const headerCount = element.querySelectorAll('thead th').length;
+				const pinned = element.ownerDocument.querySelector('#query-results .query-result-floating-head__viewport');
+				const pinnedBounds = pinned.getBoundingClientRect();
+				const headerCell = pinned.querySelector('thead th');
+				const headerCount = pinned.querySelectorAll('thead th').length;
 				const bodyRow = Array.from(element.querySelectorAll('tbody tr'))
-					.find(row => row.cells.length === headerCount);
+					.find(row => row.cells.length === headerCount && row.getBoundingClientRect().top >= pinnedBounds.bottom);
 				return {
 					scrollLeft: element.scrollLeft,
 					scrollWidth: element.scrollWidth,
@@ -325,16 +256,18 @@ test('query result table headers stay visible while scrolling rows on desktop an
 				};
 			});
 			console.log(`QUERY_RESULT_STICKY_HEADER_HORIZONTAL ${JSON.stringify(horizontal)}`);
+			await page.screenshot({ path: `${screenshotPrefix}-${viewport.width}px-scrolled.png`, fullPage: false });
 			expect(horizontal.scrollWidth).toBeGreaterThan(horizontal.clientWidth);
 			expect(horizontal.scrollLeft).toBeGreaterThan(0);
 			expect(Math.abs(horizontal.headerCellLeft - horizontal.bodyCellLeft))
 				.toBeLessThanOrEqual(1);
 		}
+		await page.evaluate(() => window.scrollTo(0, 0));
 	}
 	expect(pageErrors).toEqual([]);
 });
 
-test('compare mode collapses and restores navigation without reserving an empty sidebar', async ({ page }) => {
+test('compare mode collapses and restores navigation without reserving an empty sidebar', async ({ page, browserName }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
 	await page.locator('#explain-trigger').click();
@@ -352,46 +285,23 @@ test('compare mode collapses and restores navigation without reserving an empty 
 	expect(closed.mainLeft).toBeLessThan(80);
 	expect(closed.documentOverflow).toBeLessThanOrEqual(0);
 	const sidebarToggle = page.locator('#query-sidebar-toggle');
+	// Reach the toggle by keyboard from the control before it: the control after it is the query editor, which keeps
+	// Shift+Tab for unindenting. WebKit moves Tab between buttons only with Alt.
+	const nextControl = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
 	await sidebarToggle.focus();
-	await page.keyboard.press('Tab');
-	await page.keyboard.press('Shift+Tab');
-	const closedToggle = await sidebarToggle.evaluate(button => {
-		const box = button.getBoundingClientRect();
-		const style = getComputedStyle(button);
-		const action = button.closest('.workbench-action');
-		const compare = document.querySelector('#query-compare-layout').getBoundingClientRect();
-		const toolbar = document.querySelector('#query-compare-toolbar');
-		const copyBox = document.querySelector('#query-compare-copy').getBoundingClientRect();
-		const header = document.querySelector('#workbench-contextbar').getBoundingClientRect();
-		return {
-			width: box.width,
-			height: box.height,
-			left: box.left,
-			right: box.right,
-			toolbarContainsToggle: toolbar.contains(button),
-			togglePrecedesCopy: box.right <= copyBox.left,
-			centerOffset: Math.abs((box.top + box.bottom) / 2 - (copyBox.top + copyBox.bottom) / 2),
-			headerOverlap: box.top < header.bottom && box.bottom > header.top
-				&& box.left < header.right && box.right > header.left,
-			focusVisible: button.matches(':focus-visible'),
-			buttonOutlineWidth: parseFloat(style.outlineWidth),
-			actionOutlineWidth: parseFloat(getComputedStyle(action).outlineWidth),
-			compareTop: compare.top,
-			compareBottom: compare.bottom,
-			overlapsCompare: box.left < compare.right && box.right > compare.left
-				&& box.top < compare.bottom && box.bottom > compare.top
-		};
-	});
+	await page.keyboard.press(`Shift+${nextControl}`);
+	await page.keyboard.press(nextControl);
+	const closedToggle = await compareToggleGeometry(sidebarToggle);
 	console.log(`COMPARE_SIDEBAR_TOGGLE_CLOSED ${JSON.stringify(closedToggle)}`);
 	expect(closedToggle.width).toBeGreaterThanOrEqual(36);
 	expect(closedToggle.height).toBeGreaterThanOrEqual(36);
-	expect(closedToggle.toolbarContainsToggle).toBe(true);
-	expect(closedToggle.togglePrecedesCopy).toBe(true);
+	expect(closedToggle.editorHeaderContainsToggle).toBe(true);
+	expect(closedToggle.togglePrecedesLabel).toBe(true);
 	expect(closedToggle.centerOffset).toBeLessThanOrEqual(2);
 	expect(closedToggle.headerOverlap).toBe(false);
 	expect(closedToggle.focusVisible).toBe(true);
 	expect(Math.max(closedToggle.buttonOutlineWidth, closedToggle.actionOutlineWidth)).toBeGreaterThanOrEqual(2);
-	expect(closedToggle.overlapsCompare).toBe(false);
+	expect(closedToggle.overlapsEditor).toBe(false);
 
 	const queryFormLeftBeforeOpen = await page.locator('.query-form')
 		.evaluate(element => element.getBoundingClientRect().left);
@@ -558,31 +468,13 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 	expect(Math.max(...touchTargets390.map(action => action.wrapperHeight))
 		- Math.min(...touchTargets390.map(action => action.wrapperHeight))).toBeLessThanOrEqual(1);
 	await toggle.focus();
-	const closed = await toggle.evaluate(button => {
-		const box = button.getBoundingClientRect();
-		const toolbar = document.querySelector('#query-compare-toolbar');
-		const copy = document.querySelector('#query-compare-copy').getBoundingClientRect();
-		const header = document.querySelector('#workbench-contextbar').getBoundingClientRect();
-		return {
-			width: box.width,
-			height: box.height,
-			activeElementId: document.activeElement && document.activeElement.id,
-			toolbarContainsToggle: toolbar.contains(button),
-			togglePrecedesCopy: box.right <= copy.left,
-			centerOffset: Math.abs((box.top + box.bottom) / 2 - (copy.top + copy.bottom) / 2),
-			focusVisible: button.matches(':focus-visible'),
-			buttonOutlineWidth: parseFloat(getComputedStyle(button).outlineWidth),
-			actionOutlineWidth: parseFloat(getComputedStyle(button.closest('.workbench-action')).outlineWidth),
-			headerOverlap: box.top < header.bottom && box.bottom > header.top
-				&& box.left < header.right && box.right > header.left
-		};
-	});
+	const closed = await compareToggleGeometry(toggle);
 	console.log(`COMPARE_SIDEBAR_TOGGLE_MOBILE ${JSON.stringify(closed)}`);
 	expect(closed.width).toBeGreaterThanOrEqual(44);
 	expect(closed.height).toBeGreaterThanOrEqual(44);
 	expect(closed.activeElementId).toBe('query-sidebar-toggle');
-	expect(closed.toolbarContainsToggle).toBe(true);
-	expect(closed.togglePrecedesCopy).toBe(true);
+	expect(closed.editorHeaderContainsToggle).toBe(true);
+	expect(closed.togglePrecedesLabel).toBe(true);
 	expect(closed.centerOffset).toBeLessThanOrEqual(2);
 	expect(Math.max(closed.buttonOutlineWidth, closed.actionOutlineWidth)).toBeGreaterThanOrEqual(2);
 	expect(closed.headerOverlap).toBe(false);
@@ -759,6 +651,38 @@ async function waitForCompareTransition(page) {
 	});
 }
 
+/**
+ * Where the compare-mode navigation toggle sits: at the start of the primary editor header, before the "Query" label
+ * (M3.3 moved it there from the removed compare toolbar), and how it shows keyboard focus.
+ */
+async function compareToggleGeometry(toggle) {
+	return toggle.evaluate(button => {
+		const box = button.getBoundingClientRect();
+		const editorHeader = document.querySelector('#query-primary-pane .query-editor-header');
+		const label = editorHeader.querySelector('.query-form__label').getBoundingClientRect();
+		const header = document.querySelector('#workbench-contextbar').getBoundingClientRect();
+		const editors = Array.from(document.querySelectorAll('.query-compare-pane .CodeMirror'))
+			.map(editor => editor.getBoundingClientRect());
+		return {
+			width: box.width,
+			height: box.height,
+			left: box.left,
+			right: box.right,
+			activeElementId: document.activeElement && document.activeElement.id,
+			editorHeaderContainsToggle: editorHeader.contains(button),
+			togglePrecedesLabel: box.right <= label.left,
+			centerOffset: Math.abs((box.top + box.bottom) / 2 - (label.top + label.bottom) / 2),
+			headerOverlap: box.top < header.bottom && box.bottom > header.top
+				&& box.left < header.right && box.right > header.left,
+			focusVisible: button.matches(':focus-visible'),
+			buttonOutlineWidth: parseFloat(getComputedStyle(button).outlineWidth),
+			actionOutlineWidth: parseFloat(getComputedStyle(button.closest('.workbench-action')).outlineWidth),
+			overlapsEditor: editors.some(editor => box.left < editor.right && box.right > editor.left
+				&& box.top < editor.bottom && box.bottom > editor.top)
+		};
+	});
+}
+
 async function compareActionTargets(page) {
 	return page.locator('#query-sidebar-toggle, #query-compare-copy, #query-compare-swap, #query-compare-close')
 		.evaluateAll(elements => elements.map(element => {
@@ -882,16 +806,6 @@ async function selectViolations(scope) {
 		|| !select.arrowInsideSelectBoundary));
 }
 
-async function disclosureResultGap(frame, panelSelector, resultLayout) {
-	return frame.locator('#query-result-layout').evaluate((layout, args) => {
-		const panel = document.querySelector(args.panelSelector);
-		const firstResult = args.resultLayout === 'records'
-			? document.querySelector('#query-result-records .query-result-record')
-			: document.querySelector('#query-result-table-wrap table.data');
-		return firstResult.getBoundingClientRect().top - panel.getBoundingClientRect().bottom;
-	}, { panelSelector, resultLayout });
-}
-
 async function compareGeometry(page) {
 	return page.evaluate(() => ({
 		mainLeft: document.querySelector('#content').getBoundingClientRect().left,
@@ -936,12 +850,4 @@ async function compareMenuGeometry(page) {
 			})
 		};
 	});
-}
-
-function repositoryConfiguration(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "Workbench visual follow-up fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ].`;
 }

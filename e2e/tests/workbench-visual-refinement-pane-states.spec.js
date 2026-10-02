@@ -12,22 +12,37 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const {
+	deleteRepository,
+	memoryRepositoryConfiguration,
+	runQuery,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	waitForRoute,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8090/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8090/rdf4j-workbench').replace(/\/+$/, '');
+// Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the result streams into
+// the page instead of the retired result iframe, its toggles carry per-result id suffixes (selected by class), and the
+// result Display pane (formerly "Options") holds the result layout: the rows-per-page select is gone because a result
+// loads up to one million rows and continues with Load more (workbench-query-load-more.spec.js "Execute requests one
+// million rows by default and renders no result page controls"). Opening one result pane closes the other (M14.3).
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
 	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
 const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final', 'states');
-const REPOSITORY_ID = `workbench-visual-pane-states-${process.pid}-${Date.now()}`;
+const REPOSITORY_ID = uniqueRepositoryId('workbench-visual-pane-states');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
 test.beforeAll(async ({ request }) => {
 	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	const response = await request.put(REPOSITORY_URL, {
 		headers: { 'Content-Type': 'text/turtle' },
-		data: repositoryConfiguration(REPOSITORY_ID)
+		data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Workbench visual state fixture')
 	});
 	expect([200, 201, 204]).toContain(response.status());
 	const loaded = await request.post(`${REPOSITORY_URL}/statements`, {
@@ -43,8 +58,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	const response = await request.delete(REPOSITORY_URL);
-	expect([200, 204, 404]).toContain(response.status());
+	await deleteRepository(request, SERVER_BASE_URL, REPOSITORY_ID);
 });
 
 test('captures actual query explanation, comparison, result disclosure, and form states', async ({ page }) => {
@@ -117,18 +131,17 @@ test('captures actual query explanation, comparison, result disclosure, and form
 	await page.setViewportSize({ width: 1440, height: 1000 });
 
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`);
-	await page.locator('.CodeMirror').first().evaluate((editor, query) => editor.CodeMirror.setValue(query),
-		'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
-	await page.locator('#exec').click();
-	const resultFrame = page.frameLocator('#query-results-frame');
-	await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(3);
-	await resultFrame.locator('#query-result-download-toggle').press('Enter');
-	await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'true');
-	await expect(resultFrame.locator('#Accept')).toBeVisible();
+	await waitForRoute(page, 'query');
+	await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
+	const result = page.locator('#query-results [data-query-stream-root]');
+	await expect(result.locator('table.data tbody tr[data-query-row-index]')).toHaveCount(3);
+	await result.locator('.query-result-download-toggle').press('Enter');
+	await expect(result.locator('.query-result-download-toggle')).toHaveAttribute('aria-expanded', 'true');
+	await expect(result.locator('.query-result-download-panel select[name="Accept"]')).toBeVisible();
 	await captureState(page, 'query-result-download-open-1440-light.png');
-	await resultFrame.locator('#query-result-options-toggle').press('Enter');
-	await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
-	await expect(resultFrame.locator('#limit_query')).toBeVisible();
+	await result.locator('.query-result-options-toggle').press('Enter');
+	await expect(result.locator('.query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+	await expect(result.locator('.query-result-options-panel select[name="result-layout"]')).toBeVisible();
 	await captureState(page, 'query-result-options-open-1440-light.png');
 
 	await openPage(page, `repositories/${REPOSITORY_ID}/add`);
@@ -210,12 +223,4 @@ async function captureState(page, fileName) {
 		animations: 'disabled',
 		caret: 'hide'
 	});
-}
-
-function repositoryConfiguration(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "Workbench visual state fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ].`;
 }

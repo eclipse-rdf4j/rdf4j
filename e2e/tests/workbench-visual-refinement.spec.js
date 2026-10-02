@@ -1,14 +1,37 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const {
+	deleteRepository,
+	memoryRepositoryConfiguration,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	waitForRoute,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8090/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8090/rdf4j-workbench').replace(/\/+$/, '');
+// Changed with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md; decisions in
+// .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md):
+// - "empty navigation, query actions, ...": the empty menu on the server page is gone (task M2.1, one navigation
+//   model everywhere; workbench-navigation.spec.js "the server page shows the same menu and server as every other
+//   page"); Save query and Query settings no longer stack full width at narrow widths (M3.3 action row: they sit at
+//   the end of the row and wrap); the panes open over the page below their toolbar and inside their card instead of
+//   pushing the next toggle down (M14.3; workbench-settings-panes.spec.js).
+// - "explanation toolbar groups ...": the explanation controls are one toolbar (M3.3): the settings group (level,
+//   format, Config) and the action group (Copy, Download, Compare | Explain again).
+// - Information's key/value list stacks the label above its value below 600 px (M1.4), so the label/value text gap is
+//   measured at 1440 px and the 390 px check is that the value starts below its label. Remove's danger action is the
+//   button itself (M6.5), so there is no inner submit input whose transparency could be checked.
+// - Export no longer shows an empty preview table: an empty preview is the empty state "No statements to show."
+//   (Export redesign, 2026-10-01), so the narrow centering check covers the three browse tables only.
+// - Query results stream into the page instead of the retired result iframe.
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
 	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
-const REPOSITORY_ID = `workbench-visual-contract-${process.pid}-${Date.now()}`;
+const REPOSITORY_ID = uniqueRepositoryId('workbench-visual-contract');
 const EMPTY_REPOSITORY_ID = `${REPOSITORY_ID}-empty`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const EMPTY_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${EMPTY_REPOSITORY_ID}`;
@@ -20,7 +43,7 @@ test.beforeAll(async ({ request }) => {
 	]) {
 		const response = await request.put(repositoryUrl, {
 			headers: { 'Content-Type': 'text/turtle' },
-			data: repositoryConfiguration(repositoryId)
+			data: memoryRepositoryConfiguration(repositoryId, 'Workbench visual contract fixture')
 		});
 		expect([200, 201, 204]).toContain(response.status());
 	}
@@ -36,33 +59,13 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	for (const repositoryUrl of [REPOSITORY_URL, EMPTY_REPOSITORY_URL]) {
-		const response = await request.delete(repositoryUrl);
-		expect([200, 204, 404]).toContain(response.status());
+	for (const repositoryId of [REPOSITORY_ID, EMPTY_REPOSITORY_ID]) {
+		await deleteRepository(request, SERVER_BASE_URL, repositoryId);
 	}
 });
 
-test('empty navigation, query actions, metadata, and editor retain balanced geometry', async ({ page }) => {
+test('query actions, metadata, and editor retain balanced geometry', async ({ page }) => {
 	test.setTimeout(90_000);
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await openPage(page, 'repositories/NONE/server');
-	const navigation = await page.evaluate(() => {
-		const disclosure = document.querySelector('#workbench-navigation-disclosure');
-		const main = document.querySelector('#content');
-		const nav = document.querySelector('#navigation');
-					return {
-			items: nav.querySelectorAll('ul.maingroup > li').length,
-			navigationHeight: nav.getBoundingClientRect().height,
-			disclosureHeight: disclosure.getBoundingClientRect().height,
-			mainLeft: main.getBoundingClientRect().left
-		};
-	});
-	console.log(`EMPTY_NAV_GEOMETRY ${JSON.stringify(navigation)}`);
-	expect.soft(navigation.items).toBe(0);
-	expect.soft(navigation.navigationHeight).toBe(0);
-	expect.soft(navigation.disclosureHeight).toBe(0);
-	expect.soft(navigation.mainLeft).toBeLessThan(80);
-
 	await page.setViewportSize({ width: 320, height: 900 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
 	for (const width of [320, 390]) {
@@ -89,7 +92,9 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 				saveWidth: save.width,
 				optionsWidth: options.width,
 				primaryToSaveGap: save.top - primary.bottom,
-				saveToOptionsGap: options.top - save.bottom,
+				// Save query and Query settings wrap at the end of the action row (M3.3): stacked at 320 px, side by
+				// side at 390 px. Either way they keep at least the 8 px control gap between them.
+				saveToOptionsGap: options.top >= save.bottom ? options.top - save.bottom : options.left - save.right,
 				toolbarWidth: toolbar.width,
 				stacked: options.top >= save.bottom
 			};
@@ -100,9 +105,6 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 		expect.soft(queryActions.paddingLeft).toBeGreaterThanOrEqual(12);
 		expect.soft(queryActions.paddingRight).toBeGreaterThanOrEqual(12);
 		expect.soft(queryActions.controlGap).toBeGreaterThanOrEqual(8);
-		expect.soft(queryActions.stacked).toBe(true);
-		expect.soft(queryActions.saveWidth).toBeGreaterThanOrEqual(queryActions.toolbarWidth - 2);
-		expect.soft(queryActions.optionsWidth).toBeGreaterThanOrEqual(queryActions.toolbarWidth - 2);
 		expect.soft(queryActions.primaryToSaveGap).toBeGreaterThanOrEqual(8);
 		expect.soft(queryActions.saveToOptionsGap).toBeGreaterThanOrEqual(8);
 		await captureState(page, `query-actions-${width}-closed.png`);
@@ -121,11 +123,15 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 				const toolbarBox = document.querySelector('.query-actions-toolbar').getBoundingClientRect();
 				const toggle = document.querySelector(toggleSelector);
 				const panel = document.querySelector(panelSelector);
+				const cardBox = document.querySelector('#query-form').getBoundingClientRect();
 				const owner = toggle.parentElement;
 				const nextToggle = toggleSelector === '#save-query-toggle'
 					? document.querySelector('#query-options-toggle')
 					: null;
-				const saveChildren = Array.from(document.querySelector('#save-query-panel').children);
+				// The Save query fields in document order (they sit in the pane's content wrapper).
+				const saveSequence = Array.from(document.querySelector('#save-query-panel')
+					.querySelectorAll('label[for="query-name"], #query-name, .query-option, #save'))
+					.map(child => child.id || child.className.split(' ')[0] || child.tagName);
 				const anchorX = parseFloat(getComputedStyle(panel).getPropertyValue('--workbench-disclosure-anchor-x'));
 				return {
 					panelTop: panelBox.top,
@@ -139,27 +145,31 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 					panelAnchorCenter: panelBox.left + anchorX,
 					toolbarLeft: toolbarBox.left,
 					toolbarRight: toolbarBox.right,
+					toolbarBottom: toolbarBox.bottom,
 					toolbarWidth: toolbarBox.width,
+					cardLeft: cardBox.left,
+					cardRight: cardBox.right,
 					panelOwnedByDisclosure: owner.contains(panel),
 					disclosureDisplay: getComputedStyle(owner).display,
-					nextToggleTop: nextToggle ? nextToggle.getBoundingClientRect().top : null,
-					saveSequence: saveChildren.map(child => child.id || child.className || child.tagName)
+					nextToggleBottom: nextToggle ? nextToggle.getBoundingClientRect().bottom : null,
+					saveSequence
 				};
 			}, { toggleSelector: toggle, panelSelector: panel });
 			console.log(`QUERY_DISCLOSURE_GEOMETRY ${width}px ${toggle} ${JSON.stringify(panelGeometry)}`);
 			expect(panelGeometry.panelTop).toBeGreaterThanOrEqual(panelGeometry.toggleBottom - 1);
-			expect(panelGeometry.panelLeft).toBeGreaterThanOrEqual(panelGeometry.toolbarLeft - 1);
-			expect(panelGeometry.panelRight).toBeLessThanOrEqual(panelGeometry.toolbarRight + 1);
+			// The pane opens over the page inside its card (M14.3), which can be wider than the action toolbar.
+			expect(panelGeometry.panelLeft).toBeGreaterThanOrEqual(panelGeometry.cardLeft - 1);
+			expect(panelGeometry.panelRight).toBeLessThanOrEqual(panelGeometry.cardRight + 1);
 			expect(panelGeometry.panelOwnedByDisclosure).toBe(true);
 			expect.soft(Math.abs(panelGeometry.panelAnchorCenter - panelGeometry.toggleCenter)).toBeLessThanOrEqual(1);
 			if (width <= 600) {
-				expect.soft(panelGeometry.panelTop - panelGeometry.toggleBottom).toBeGreaterThanOrEqual(7);
-				expect.soft(panelGeometry.panelTop - panelGeometry.toggleBottom).toBeLessThanOrEqual(10);
-				expect.soft(Math.abs(panelGeometry.panelLeft - panelGeometry.toggleLeft)).toBeLessThanOrEqual(1);
+				// A pane in a toolbar opens below the whole toolbar, so it covers none of the toolbar's buttons.
+				expect.soft(panelGeometry.panelTop - panelGeometry.toolbarBottom).toBeGreaterThanOrEqual(7);
+				expect.soft(panelGeometry.panelTop - panelGeometry.toolbarBottom).toBeLessThanOrEqual(10);
 				expect.soft(panelGeometry.panelRight - panelGeometry.panelLeft)
 					.toBeGreaterThanOrEqual(panelGeometry.toolbarWidth - 2);
-				if (panelGeometry.nextToggleTop !== null) {
-					expect.soft(panelGeometry.nextToggleTop).toBeGreaterThanOrEqual(panelGeometry.panelBottom - 1);
+				if (panelGeometry.nextToggleBottom !== null) {
+					expect.soft(panelGeometry.nextToggleBottom).toBeLessThanOrEqual(panelGeometry.panelTop + 1);
 				}
 			}
 			if (toggle === '#save-query-toggle') {
@@ -172,26 +182,37 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 		}
 	}
 
+	// Information is a key/value list (M1.4): two columns on desktop, the label stacked above its value below 600 px.
+	const informationGeometry = async () => page.locator('#workbench-information .workbench-kv__row').first()
+		.evaluate(row => {
+			const label = row.querySelector('dt').getBoundingClientRect();
+			const value = row.querySelector('dd').getBoundingClientRect();
+			const labelRange = document.createRange();
+			labelRange.selectNodeContents(row.querySelector('dt'));
+			const valueRange = document.createRange();
+			valueRange.selectNodeContents(row.querySelector('dd'));
+			const labelText = labelRange.getBoundingClientRect();
+			const valueText = valueRange.getBoundingClientRect();
+			return {
+				cellGap: value.left - label.right,
+				textGap: valueText.left - labelText.right,
+				stackedTextGap: valueText.top - labelText.bottom,
+				valuePadding: parseFloat(getComputedStyle(row).columnGap)
+			};
+		});
 	await page.setViewportSize({ width: 390, height: 900 });
 	await setTheme(page, 'dark');
 	await openPage(page, `repositories/${REPOSITORY_ID}/information`);
-	const informationGap = await page.locator('#workbench-information .workbench-kv__row').first().evaluate(row => {
-		const label = row.querySelector('dt').getBoundingClientRect();
-		const value = row.querySelector('dd').getBoundingClientRect();
-		const labelRange = document.createRange();
-		labelRange.selectNodeContents(row.querySelector('dt'));
-		const valueRange = document.createRange();
-		valueRange.selectNodeContents(row.querySelector('dd'));
-		return {
-			cellGap: value.left - label.right,
-			textGap: valueRange.getBoundingClientRect().left - labelRange.getBoundingClientRect().right,
-			valuePadding: parseFloat(getComputedStyle(row).columnGap)
-		};
-	});
-	console.log(`INFORMATION_VALUE_GAP ${JSON.stringify(informationGap)}`);
-	expect.soft(informationGap.textGap).toBeGreaterThanOrEqual(8);
-	expect.soft(informationGap.valuePadding).toBeGreaterThanOrEqual(8);
+	const narrowInformation = await informationGeometry();
+	console.log(`INFORMATION_VALUE_GAP 390px ${JSON.stringify(narrowInformation)}`);
+	expect.soft(narrowInformation.stackedTextGap, 'the value text starts below its label at 390 px')
+		.toBeGreaterThanOrEqual(0);
 	await captureState(page, 'information-dark-390.png');
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	const wideInformation = await informationGeometry();
+	console.log(`INFORMATION_VALUE_GAP 1440px ${JSON.stringify(wideInformation)}`);
+	expect.soft(wideInformation.textGap).toBeGreaterThanOrEqual(8);
+	expect.soft(wideInformation.valuePadding).toBeGreaterThanOrEqual(8);
 
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await setTheme(page, 'light');
@@ -199,9 +220,6 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 	await openPage(page, `repositories/${REPOSITORY_ID}/remove`);
 	const dangerStyle = await page.locator('#remove-form .workbench-action--danger-outline').evaluate(action => {
 		const style = getComputedStyle(action);
-		// Remove's action is a button since plan task M6.5; older actions wrap an input.
-		const input = action.querySelector('input[type="submit"]') || action;
-		const inputStyle = getComputedStyle(input);
 		const colorProbe = document.createElement('span');
 		colorProbe.style.color = 'var(--workbench-danger)';
 		colorProbe.style.backgroundColor = 'var(--workbench-surface)';
@@ -211,9 +229,8 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 		const surface = tokenStyle.backgroundColor;
 		colorProbe.remove();
 		return {
+			tagName: action.tagName,
 			color: style.color,
-			inputColor: inputStyle.color,
-			inputBackgroundColor: inputStyle.backgroundColor,
 			borderColor: style.borderTopColor,
 			backgroundColor: style.backgroundColor,
 			danger,
@@ -221,9 +238,9 @@ test('empty navigation, query actions, metadata, and editor retain balanced geom
 		};
 	});
 	console.log(`REMOVE_DANGER_STYLE ${JSON.stringify(dangerStyle)}`);
+	// Remove's action is the button itself since plan task M6.5 (it no longer wraps a transparent submit input).
+	expect.soft(dangerStyle.tagName).toBe('BUTTON');
 	expect.soft(dangerStyle.color).toBe(dangerStyle.danger);
-	expect.soft(dangerStyle.inputColor).toBe(dangerStyle.danger);
-	expect.soft(dangerStyle.inputBackgroundColor).toBe('rgba(0, 0, 0, 0)');
 	expect.soft(dangerStyle.borderColor).toBe(dangerStyle.danger);
 	expect.soft(dangerStyle.backgroundColor).toBe(dangerStyle.surface);
 
@@ -248,20 +265,23 @@ test('explanation toolbar groups use deliberate spacing without an offset', asyn
 	await page.locator('.CodeMirror').first().evaluate(editor => editor.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	await page.locator('#explain-trigger').click();
 	await expect.poll(() => page.locator('#query-explanation').textContent()).toMatch(/\S/);
-	const spacing = await page.locator('#query-explanation-controls-row').evaluate(row => {
-		const controls = row.querySelector('.query-form__field--controls');
-		const settings = controls.querySelector('#primary-explain-settings');
+	// One explanation toolbar (M3.3): the settings group (level, format, Config) and the action group, which holds
+	// the utility controls (Copy, Download, Compare) and the repeat controls (Explain again).
+	const spacing = await page.locator('.query-explanation-toolbar').evaluate(row => {
+		const settings = row.querySelector('.query-explanation-toolbar__settings');
+		const controls = row.querySelector('#query-explanation-controls-row');
 		const rerun = controls.querySelector('#primary-explain-repeat-controls');
 		const utility = controls.querySelector('#primary-explain-utility-controls');
 		return {
 			marginLeft: parseFloat(getComputedStyle(row).marginLeft),
 			controlsMarginLeft: parseFloat(getComputedStyle(controls).marginLeft),
-			groupGap: parseFloat(getComputedStyle(controls).columnGap),
+			groupGap: controls.getBoundingClientRect().left - settings.getBoundingClientRect().right,
 			settingsGap: parseFloat(getComputedStyle(settings).columnGap),
 			rerunGap: parseFloat(getComputedStyle(rerun).columnGap),
 			utilityExists: Boolean(utility),
 			utilityGap: utility ? parseFloat(getComputedStyle(utility).columnGap) : 0,
-			utilityControls: utility ? utility.querySelectorAll('button, input[type="button"]').length : 0
+			utilityControls: utility ? Array.from(utility.querySelectorAll('button, input[type="button"]'))
+				.filter(control => control.getClientRects().length > 0).map(control => control.id) : []
 		};
 	});
 	console.log(`EXPLANATION_TOOLBAR_SPACING ${JSON.stringify(spacing)}`);
@@ -272,7 +292,7 @@ test('explanation toolbar groups use deliberate spacing without an offset', asyn
 	expect(spacing.rerunGap).toBeGreaterThanOrEqual(8);
 	expect(spacing.utilityExists).toBe(true);
 	expect(spacing.utilityGap).toBeGreaterThanOrEqual(8);
-	expect(spacing.utilityControls).toBe(2);
+	expect(spacing.utilityControls).toEqual(['copy-explanation', 'download-explanation', 'compare-toggle']);
 });
 
 test('preview actions stay separate and empty result messages belong after table headings', async ({ page }) => {
@@ -311,8 +331,7 @@ test('preview actions stay separate and empty result messages belong after table
 	for (const route of [
 		['namespaces', 'namespaces-results'],
 		['contexts', 'contexts-results'],
-		['types', 'types-results'],
-		['export', 'export-results']
+		['types', 'types-results']
 	]) {
 		await openPage(page, `repositories/${EMPTY_REPOSITORY_ID}/${route[0]}`);
 		const table = page.locator(`#${route[1]} table.data`);
@@ -328,6 +347,16 @@ test('preview actions stay separate and empty result messages belong after table
 		expect.soft(tableState.statusVisible).toBe(true);
 		await captureState(page, `empty-${route[0]}-table-1440.png`);
 	}
+
+	// An empty Export preview is one empty-state message instead of a table (Export redesign).
+	await openPage(page, `repositories/${EMPTY_REPOSITORY_ID}/export`);
+	await page.locator('#export-preview-form button[type="submit"]').click();
+	await waitForRoute(page, 'export', { url: (url) => url.searchParams.get('action') === 'preview' });
+	const emptyPreview = page.locator('#export-results .workbench-empty[role="status"]');
+	await expect(emptyPreview).toBeVisible();
+	await expect(emptyPreview).toHaveText('No statements to show.');
+	await expect(page.locator('#export-results table.data')).toHaveCount(0);
+	await captureState(page, 'empty-export-preview-1440.png');
 });
 
 test('narrow empty table messages center across their responsive table', async ({ page }) => {
@@ -335,8 +364,7 @@ test('narrow empty table messages center across their responsive table', async (
 	for (const route of [
 		['namespaces', 'namespaces-results'],
 		['contexts', 'contexts-results'],
-		['types', 'types-results'],
-		['export', 'export-results']
+		['types', 'types-results']
 	]) {
 		await openPage(page, `repositories/${EMPTY_REPOSITORY_ID}/${route[0]}`);
 		const alignment = await page.locator(`#${route[1]} table.data`).evaluate(table => {
@@ -476,16 +504,19 @@ test('Add format selection keeps its shared chevron clear of supported labels', 
 test('empty tuple and graph query tables remain free of preview-only status rows', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, `repositories/${REPOSITORY_ID}/query`);
-	const resultFrame = page.frameLocator('#query-results-frame');
 	const cases = [
 		['tuple', 'SELECT ?s WHERE { BIND(<urn:visual:absent> AS ?s) FILTER(false) }'],
 		['graph', 'CONSTRUCT { <urn:visual:s> <urn:visual:p> <urn:visual:o> } WHERE { FILTER(false) }']
 	];
+	let previousRoot = null;
 	for (const [kind, query] of cases) {
 		await page.locator('.CodeMirror').first().evaluate((editor, text) => editor.CodeMirror.setValue(text), query);
 		await page.locator('#exec').click();
-		await expect(resultFrame.locator('#rdf4j-query-result')).toBeAttached();
-		const state = await resultFrame.locator('table.data').evaluateAll(tables => tables.map(table => ({
+		// Each execution streams a new result root into the page; wait until this execution's result is complete.
+		const resultRoot = await waitForNewCompleteResult(page, previousRoot);
+		previousRoot = resultRoot;
+		const result = page.locator(`#query-results [data-query-stream-root][id="${resultRoot}"]`);
+		const state = await result.locator('table.data').evaluateAll(tables => tables.map(table => ({
 			rows: table.querySelectorAll('tbody tr').length,
 			statusRows: table.querySelectorAll('tbody [role="status"]').length
 		})));
@@ -495,6 +526,18 @@ test('empty tuple and graph query tables remain free of preview-only status rows
 		await captureState(page, `query-empty-${kind}-result-1440.png`);
 	}
 });
+
+/** Waits for a result root other than previousRoot whose execution has finished, and returns its id. */
+async function waitForNewCompleteResult(page, previousRoot) {
+	const handle = await page.waitForFunction(previous => {
+		const results = document.querySelector('#query-results');
+		const root = results && results.querySelector('[data-query-stream-root]');
+		const status = root && root.querySelector('.query-result-status');
+		return !!root && root.id !== previous && results.getAttribute('aria-busy') === 'false'
+			&& !!status && /complete/.test(status.textContent) && root.id;
+	}, previousRoot, { timeout: 30000 });
+	return handle.jsonValue();
+}
 
 async function exportContentGap(page) {
 	return page.locator('#export-results').evaluate(section => {
@@ -516,15 +559,9 @@ async function setTheme(page, theme) {
 async function openPage(page, route) {
 	await page.goto(`${WORKBENCH_BASE_URL}/${route}`, { waitUntil: 'domcontentloaded' });
 	await page.locator('#workbench-page-surface').waitFor({ state: 'visible', timeout: 15000 });
+	// Measure only once the view's scripts have mounted it (the Query editor changes the height above its actions).
+	await waitForRoute(page, route.split('?')[0].split('/').pop());
 	await page.evaluate(() => document.fonts.ready);
-}
-
-function repositoryConfiguration(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "Workbench visual contract fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ].`;
 }
 
 async function captureState(page, fileName) {

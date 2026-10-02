@@ -12,16 +12,27 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
+const {
+	memoryRepositoryConfiguration,
+	serverBaseUrl,
+	uniqueRepositoryId,
+	waitForRoute,
+	waitForWriteDone,
+	workbenchBaseUrl
+} = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8091/rdf4j-server').replace(/\/+$/, '');
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8091/rdf4j-workbench').replace(/\/+$/, '');
+// Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): query results stream into
+// the page instead of the retired result iframe. Execute posts the query with fetch (action=exec in the body), the
+// cancelled state is the result's status line, and a query error is the result's alert callout.
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
-	|| '/Users/havardottestad/.codex/visualizations/2026/09/27/01a0e2fb-705d-7ee2-9a69-d25d3da4d594/workbench-refinement';
+	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
 const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final', 'operation-states');
-const RUN_ID = `${process.pid}-${Date.now()}`;
+const RUN_ID = uniqueRepositoryId('run');
 const REPOSITORY_ID = `visual-operation-${RUN_ID}`;
 const DELETE_REPOSITORY_ID = `visual-delete-${RUN_ID}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
@@ -143,13 +154,14 @@ test('covers task-fixture operation states without touching user repositories', 
 
 	await setCodeMirror(page, 'SELECT ?s WHERE { ?s <urn:visual:name> ?name }');
 	await page.locator('#exec').click();
-	const resultFrame = page.frameLocator('#query-results-frame');
-	await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(1);
+	const results = page.locator('#query-results');
+	await expect(results.locator('[data-query-stream-root] table.data tbody tr[data-query-row-index]')).toHaveCount(1);
+	await expect(results).toHaveAttribute('aria-busy', 'false');
 	await capture(page, 'query-success-results-1440.png');
 
 	await setCodeMirror(page, 'SELECT WHERE {');
 	await page.locator('#exec').click();
-	await expect(resultFrame.locator('.error, [role="alert"]')).toBeVisible();
+	await expect(results.locator('[data-query-stream-root] [role="alert"]')).toBeVisible();
 	await capture(page, 'query-invalid-sparql-error-1440.png');
 
 	await page.setViewportSize({ width: 390, height: 900 });
@@ -163,13 +175,29 @@ test('covers task-fixture operation states without touching user repositories', 
 	const requestReceived = new Promise(resolve => {
 		queryRequestReceived = resolve;
 	});
-	await page.route(url => url.pathname.endsWith('/query') && url.searchParams.get('action') === 'exec', async route => {
+	// Execute posts the query in the page; hold that request so the loading state stays on screen. The held execution
+	// never reaches the server, so the hold also answers its cancellation (the server would answer 404 and the page
+	// would keep retrying while the test moves on).
+	let heldExecutionId = null;
+	await page.route(url => url.pathname.endsWith('/query'), async route => {
+		const request = route.request();
+		const form = new URLSearchParams(request.postData() || '');
+		if (request.method() === 'POST' && heldExecutionId !== null && form.get('action') === 'cancel-query'
+				&& form.get('query-request-id') === heldExecutionId) {
+			await route.fulfill({ status: 204 });
+			return;
+		}
+		if (heldExecutionId !== null || request.method() !== 'POST' || form.get('action') !== 'exec') {
+			await route.continue();
+			return;
+		}
+		heldExecutionId = form.get('query-request-id') || '';
 		queryRequestReceived();
 		await blockedRequest;
 		try {
 			await route.abort();
 		} catch (error) {
-			// Cancel already removed the iframe request; this is expected after the UI response is asserted.
+			// Cancel already aborted the held request; this is expected after the UI response is asserted.
 		}
 	});
 	await page.locator('#exec').click();
@@ -178,22 +206,26 @@ test('covers task-fixture operation states without touching user repositories', 
 	await expect(page.locator('#query-cancel')).toBeEnabled();
 	await capture(page, 'query-loading-cancel-enabled-390.png');
 	await page.locator('#query-cancel').click();
-	await expect(page.locator('#query-results-status')).toHaveText('Query cancelled.');
+	await expect(page.locator('#query-results [data-query-stream-root] .query-result-status'))
+		.toHaveText('Query cancelled.');
 	await expect(page.locator('#query-cancel')).toBeDisabled();
 	await capture(page, 'query-cancelled-loading-cleared-390.png');
 	releaseBlockedRequest();
-	await page.unrouteAll({ behavior: 'wait' });
+	// The hold stays installed and lets every later request through: Cancel aborted the held fetch in the page, and
+	// Firefox cannot stop intercepting a request that the page has already aborted (unrouting it fails with
+	// NS_BINDING_ABORTED).
 
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openPage(page, 'repositories/NONE/delete');
 	await expect(page.locator('#delete-feedback')).toBeEmpty();
 	await page.locator('#id').selectOption(DELETE_REPOSITORY_ID);
-	await page.route(url => url.pathname.endsWith('/delete') && url.searchParams.has('checkSafe'), route =>
+	const safetyCheck = url => url.pathname.endsWith('/delete') && url.searchParams.has('checkSafe');
+	await page.route(safetyCheck, route =>
 		route.fulfill({ status: 503, contentType: 'text/plain', body: 'fixture safety-check failure' }));
 	await page.locator('#delete-actions button[type="submit"]').click();
 	await expect(page.locator('#delete-feedback')).toContainText('problem with the server');
 	await capture(page, 'delete-safety-check-error-1440.png');
-	await page.unrouteAll();
+	await page.unroute(safetyCheck);
 	// Deleting asks for the typed repository id in a dialog (plan task M6.6).
 	await page.locator('#delete-actions button[type="submit"]').click();
 	const deleteDialog = page.getByRole('dialog', { name: `Delete repository ${DELETE_REPOSITORY_ID}?` });
@@ -220,7 +252,7 @@ test('covers task-fixture operation states without touching user repositories', 
 async function createRepository(request, repositoryId) {
 	const response = await request.put(`${SERVER_BASE_URL}/repositories/${repositoryId}`, {
 		headers: { 'Content-Type': 'text/turtle' },
-		data: repositoryConfiguration(repositoryId)
+		data: memoryRepositoryConfiguration(repositoryId, 'Workbench disposable operation fixture')
 	});
 	expect([200, 201, 204]).toContain(response.status());
 }
@@ -242,12 +274,4 @@ async function capture(page, fileName) {
 		animations: 'disabled',
 		caret: 'hide'
 	});
-}
-
-function repositoryConfiguration(repositoryId) {
-	return `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "Workbench disposable operation fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ].`;
 }

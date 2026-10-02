@@ -1,10 +1,41 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const {
+    deleteRepository,
+    memoryRepositoryConfiguration,
+    repositoryPageUrl,
+    serverBaseUrl,
+    uniqueRepositoryId,
+    waitForRoute,
+    workbenchBaseUrl
+} = require('./workbench-test-helpers.js');
 
-const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
-    'http://localhost:8080/rdf4j-workbench').replace(/\/+$/, '');
-const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL ||
-    WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server')).replace(/\/+$/, '');
+// Retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): "dark theme gives the
+// unchanged Workbench brand images a light contrast plate" asserted the white logo plate that plan task M2.5 of
+// .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md replaced with light-ink dark logos;
+// workbench-shell.spec.js "dark mode shows the light-ink logo without a white plate" checks the dark logo and the
+// transparent brand background.
+
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('dark-result-theme');
+
+test.beforeAll(async ({ request }) => {
+    const repository = `${serverBaseUrl()}/repositories/${REPOSITORY_ID}`;
+    const create = await request.put(repository, {
+        headers: { 'Content-Type': 'text/turtle' },
+        data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Dark result theme fixture')
+    });
+    expect([200, 201, 204]).toContain(create.status());
+    const statements = await request.post(`${repository}/statements`, {
+        headers: { 'Content-Type': 'application/n-triples' },
+        data: '<http://example.org/person> <http://schema.org/name> "Dark theme row" .'
+    });
+    expect([200, 201, 204]).toContain(statements.status());
+});
+
+test.afterAll(async ({ request }) => {
+    await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
+});
 
 test('Workbench follows system theme and remembers an explicit preference without a selector', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
@@ -17,6 +48,8 @@ test('Workbench follows system theme and remembers an explicit preference withou
     await page.goto(`${WORKBENCH_BASE_URL}/repositories`);
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    // The shell renders after the document loads; look for a theme selector only once the page is shown.
+    await waitForRoute(page, 'repositories');
     await expect(page.locator('#workbench-theme, .workbench-theme-control')).toHaveCount(0);
     await page.evaluate(() => window.RDF4JWorkbenchTheme.setPreference('light'));
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -64,10 +97,18 @@ test('Workbench follows system theme and remembers an explicit preference withou
 test('uses the calculated blue palette and preserves the original RDF4J logo', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto(`${WORKBENCH_BASE_URL}/repositories`);
+    // The shell (and with it the logo) renders after the document loads.
+    await waitForRoute(page, 'repositories');
+    // The brand holds a light and a dark image pair (plan task M2.5); the light theme shows the original logo.
+    const visibleLogo = '#logo img:not(.product):visible';
+    await expect(page.locator(visibleLogo)).toHaveCount(1);
+    await expect.poll(() => page.locator(visibleLogo).evaluate(image => image.complete && image.naturalWidth > 0))
+        .toBe(true);
 
     const palette = await page.evaluate(() => {
         const style = getComputedStyle(document.documentElement);
-        const logo = document.querySelector('#logo img');
+        const logo = Array.from(document.querySelectorAll('#logo img:not(.product)'))
+            .find(image => image.getClientRects().length > 0);
         return {
             canvas: style.getPropertyValue('--workbench-canvas').trim(),
             surface: style.getPropertyValue('--workbench-surface').trim(),
@@ -100,22 +141,6 @@ test('uses the calculated blue palette and preserves the original RDF4J logo', a
     });
 });
 
-test('dark theme gives the unchanged Workbench brand images a light contrast plate', async ({ page }) => {
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await page.addInitScript(() => localStorage.removeItem('rdf4j-workbench-theme'));
-    await page.goto(`${WORKBENCH_BASE_URL}/repositories`);
-
-    const brandStyle = await page.locator('#logo').evaluate(brand => ({
-        background: getComputedStyle(brand).backgroundColor,
-        logoFilter: getComputedStyle(brand.querySelector('img:not(.product)')).filter,
-        productFilter: getComputedStyle(brand.querySelector('img.product')).filter
-    }));
-
-    expect(brandStyle.background).toBe('rgb(255, 255, 255)');
-    expect(brandStyle.logoFilter).toBe('none');
-    expect(brandStyle.productFilter).toBe('none');
-});
-
 test('dark creation forms keep field labels on the form surface', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.addInitScript(() => localStorage.removeItem('rdf4j-workbench-theme'));
@@ -126,43 +151,21 @@ test('dark creation forms keep field labels on the form surface', async ({ page 
     expect(labelBackground).toBe('rgba(0, 0, 0, 0)');
 });
 
-test('dark query results keep tuple rows on the dark surface inside the embedded frame', async ({ page, request }) => {
-    const repositoryId = `dark-result-theme-${process.pid}-${Date.now()}`;
-    const repositoryConfig = `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "Dark result theme fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ].`;
-    const repository = `${SERVER_BASE_URL}/repositories/${repositoryId}`;
-    const create = await request.put(repository, {
-        headers: { 'Content-Type': 'text/turtle' },
-        data: repositoryConfig
-    });
-    expect([200, 201, 204]).toContain(create.status());
+test('dark query results keep tuple rows on the dark surface', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.addInitScript(() => localStorage.removeItem('rdf4j-workbench-theme'));
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
+    await waitForRoute(page, 'query');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.locator('.CodeMirror').first().evaluate(element =>
+        element.CodeMirror.setValue('SELECT ?person ?name WHERE { ?person <http://schema.org/name> ?name }'));
+    await page.locator('#exec').click();
 
-    try {
-        const statements = await request.post(`${repository}/statements`, {
-            headers: { 'Content-Type': 'application/n-triples' },
-            data: '<http://example.org/person> <http://schema.org/name> "Dark theme row" .'
-        });
-        expect([200, 201, 204]).toContain(statements.status());
-        await page.emulateMedia({ colorScheme: 'dark' });
-        await page.addInitScript(() => localStorage.removeItem('rdf4j-workbench-theme'));
-        await page.goto(`${WORKBENCH_BASE_URL}/repositories/${repositoryId}/query`);
-        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-        await page.locator('.CodeMirror').first().evaluate(element =>
-            element.CodeMirror.setValue('SELECT ?person ?name WHERE { ?person <http://schema.org/name> ?name }'));
-        await page.locator('#exec').click();
-
-        const resultFrame = page.frameLocator('#query-results-frame');
-        const resultCell = resultFrame.locator('#query-result-embedded table.data tbody td').first();
-        await expect(resultCell).toContainText('http://example.org/person');
-        const resultFrameTheme = await resultFrame.locator('html').getAttribute('data-theme');
-        const rowBackground = await resultCell.evaluate(element => getComputedStyle(element).backgroundColor);
-        expect(resultFrameTheme).toBe('dark');
-        expect(rowBackground).not.toBe('rgb(255, 255, 255)');
-    } finally {
-        const remove = await request.delete(repository);
-        expect([200, 204, 404]).toContain(remove.status());
-    }
+    // The result streams into the page (the embedded result frame is gone), so it shares the page's theme.
+    const resultCell = page.locator('#query-results [data-query-stream-root] table.data tbody td').first();
+    await expect(resultCell).toContainText('http://example.org/person');
+    const resultTheme = await page.locator('html').getAttribute('data-theme');
+    const rowBackground = await resultCell.evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(resultTheme).toBe('dark');
+    expect(rowBackground).not.toBe('rgb(255, 255, 255)');
 });
