@@ -131,7 +131,7 @@ var workbench;
             var content = outlet.querySelector('#query-page-content') || outlet;
             var renderer = workbench.queryPage;
             var initialPost = ctx.state && ctx.state.initialPost;
-            var disposeRenderer = function () { };
+            var disposeRenderer = function (reason) { };
             var restore = null;
             if (renderer) {
                 disposeRenderer = renderer.renderInto(content, ctx.model, ctx.context);
@@ -178,7 +178,8 @@ var workbench;
                     }
                 }
                 unmount();
-                disposeRenderer();
+                // Leaving within the tab keeps the result for this repository's next Query page (M13.4).
+                disposeRenderer(reason);
             };
             // Kept alive (M11.3), the page drops its window and document listeners; a running query keeps running.
             cleanup.suspend = function () {

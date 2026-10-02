@@ -566,3 +566,59 @@ test('deleting a saved query shows the remaining ones without loading a document
 	expect(documents).toEqual([]);
 	expect(pageErrors).toEqual([]);
 });
+
+// Plan task M13.4 (user request): each repository keeps its Query results in the browser tab.
+test('each repository keeps its Query results in the tab, and a new tab starts without them', async ({ page, context, request }) => {
+	const other = uniqueRepositoryId('workbench-router-other');
+	await createSeededRepository(request, serverBaseUrl(), other, { graphs: [] });
+	try {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const executions = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+				executions.push(request.url());
+			}
+		});
+		const editor = page.locator('.CodeMirror').first();
+		const status = page.locator('#query-results .query-result-status');
+		const run = async (items) => {
+			const text = `SELECT ?item WHERE { VALUES ?item { ${items.map((item) => `"${item}"`).join(' ')} } }`;
+			await editor.evaluate((element, value) => element.CodeMirror.setValue(value), text);
+			await page.locator('#exec').click();
+			await expect(status).toContainText(`${items.length} rows`);
+			return text;
+		};
+		const switchTo = async (repositoryId) => {
+			await page.locator('#workbench-repository-switcher').click();
+			await page.locator(`#workbench-repository-options a[data-repository-id="${repositoryId}"]`).click();
+			await waitForRoute(page, 'query', { url: new RegExp(`/repositories/${repositoryId}/query$`) });
+		};
+
+		await openRoute(page, 'query');
+		const first = await run(['a1', 'a2', 'a3']);
+		await menuLink(page, 'Summary').click();
+		await expectRoute(page, 'summary');
+		await menuLink(page, 'Query').click();
+		await expectRoute(page, 'query');
+		await expect(status).toContainText('3 rows');
+		expect(executions).toHaveLength(1);
+
+		await switchTo(other);
+		await expect(page.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
+		await run(['b1', 'b2']);
+		await switchTo(REPOSITORY_ID);
+		await expect(status).toContainText('3 rows');
+		expect(await editor.evaluate((element) => element.CodeMirror.getValue())).toBe(first);
+		await switchTo(other);
+		await expect(status).toContainText('2 rows');
+		expect(executions, 'no query ran again').toHaveLength(2);
+
+		const second = await context.newPage();
+		await second.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
+		await waitForRoute(second, 'query');
+		await expect(second.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
+		await second.close();
+	} finally {
+		await deleteRepository(request, serverBaseUrl(), other);
+	}
+});

@@ -825,6 +825,105 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
     assert.equal(leavingPage.target.querySelectorAll('.query-result-layout').length, 0);
 });
 
+// Plan task M13.4 (user request): a Query page left for another page keeps its result for its repository, and the
+// next Query page of that repository shows it again without running the query.
+test('a repository\'s query result waits for its next Query page, which shows it without running again', async () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    const window = queryStream.__testWindow;
+    const listeners = new Map();
+    window.addEventListener = (type, listener) => listeners.set(type, (listeners.get(type) || []).concat([listener]));
+    window.removeEventListener = (type, listener) => listeners.set(type,
+        (listeners.get(type) || []).filter(handler => handler !== listener));
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['item'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'kept row' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 1,
+            'result-has-more': false, 'result-next-offset': 1 } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    let executions = 0;
+    window.fetch = async () => {
+        executions += 1;
+        const bytes = new TextEncoder().encode(records);
+        let delivered = false;
+        return { body: { getReader: () => ({
+            read: async () => delivered ? { done: true } : (delivered = true, { done: false, value: bytes }),
+            cancel: async () => {}
+        }) } };
+    };
+    const worker = new InMemoryWorker();
+    const document = new FakeDocument();
+    const executed = 'SELECT ?item WHERE { VALUES ?item { "kept row" } }';
+    /** A Query page: its form (with the given editor text) and results area, as the view renders them. */
+    function page(repositoryId, text, model) {
+        document.body.children.slice().forEach(node => document.body.removeChild(node));
+        const form = document.createElement('form');
+        form.setAttribute('id', 'query-form');
+        form.setAttribute('action', 'query');
+        const query = document.createElement('textarea');
+        query.name = 'query';
+        query.value = text || '';
+        form.appendChild(query);
+        const timeout = document.createElement('input');
+        timeout.name = 'query-timeout';
+        timeout.value = '60';
+        form.appendChild(timeout);
+        const action = document.createElement('input');
+        action.name = 'action';
+        action.type = 'hidden';
+        action.value = 'exec';
+        form.appendChild(action);
+        const target = document.createElement('section');
+        target.setAttribute('id', 'query-results');
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+        const dispose = workbench.queryPage.renderInto(document.body, model || {}, {
+            executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
+            rowStoreOptions: { workerFactory: () => worker }
+        });
+        return { form, query, timeout, target, dispose };
+    }
+    const settle = async (condition) => {
+        for (let attempt = 0; attempt < 30 && !condition(); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    };
+
+    const first = page('repo-a', executed);
+    first.timeout.value = '30';
+    first.form.trigger('submit');
+    await settle(() => /1 row · complete/.test(first.target.textContent));
+    assert.match(first.target.textContent, /1 row · complete/);
+    first.dispose('navigate');
+    await settle(() => false);
+    assert.equal(worker.rows.length, 1, 'the result waits with its rows');
+
+    assert.equal(first.target.querySelectorAll('.query-result-layout').length, 0,
+        'the results area is empty for the next page, which may be rendered into the same element');
+    const other = page('repo-b');
+    assert.equal(other.target.querySelectorAll('.query-result-layout').length, 0, 'another repository starts empty');
+    other.dispose('navigate');
+
+    // The form may still hold text from the page shown before (the next page is rendered into the same elements).
+    const again = page('repo-a', 'SELECT * WHERE { ?left ?over ?text }');
+    assert.equal(again.target.querySelectorAll('.query-result-layout').length, 1, 'the result is shown again');
+    assert.match(again.target.textContent, /1 row · complete/);
+    assert.equal(again.query.value, executed, 'with the query that produced it');
+    assert.equal(again.timeout.value, '30', 'and its settings');
+    assert.equal(executions, 1, 'without running it again');
+    again.dispose('navigate');
+
+    const own = page('repo-a', 'ASK {}', { vars: ['queryLn', 'query'],
+        rows: [[{ kind: 'literal', value: 'SPARQL' }, { kind: 'literal', value: 'ASK {}' }]] });
+    await settle(() => worker.rows.length === 0);
+    assert.equal(own.target.querySelectorAll('.query-result-layout').length, 0,
+        'a page with its own query starts afresh');
+    assert.equal(worker.rows.length, 0, 'and releases the waiting result');
+    own.dispose();
+});
+
 // Task M4.3 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: literals read as values.
 test('formatRdfTerm shows literal values without quotes or datatype suffixes', () => {
     const queryStream = loadQueryStreamApi();

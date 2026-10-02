@@ -2061,6 +2061,8 @@ namespace workbench {
             private publishedSummary = '';
             private previousLabelledBy: string = null;
             private resultHeadingId: string;
+            /** Stops following the full-screen state of the results area (it changes when the result moves). */
+            private presentationDisposer: () => void = () => {};
             private batchContexts: { start: number; end: number; scope: string;
                 namespaces: { prefix: string; name: string }[] }[] = [];
 
@@ -2341,8 +2343,7 @@ namespace workbench {
                     this.installPageEndIntent(pageView);
                     this.listenWindow(pageView, 'resize', onPageScroll, false);
                 }
-                this.disposers.push(workbench.resultFullscreen.addPresentationListener(this.target,
-                    enabled => this.setFullscreenPresentation(enabled)));
+                this.followPresentation();
                 this.installAutoLayoutObserver();
                 this.renderAndReport();
             }
@@ -2800,20 +2801,58 @@ namespace workbench {
                 this.booleanResult.appendChild(copy);
             }
 
-            dispose() {
-                if (this.disposed) {
+            /**
+             * Show this result in another results area of the same document, as it is: rows, layout, page and the
+             * running request stay (M13.4). The area it leaves gets its own heading reference back.
+             */
+            moveTo(target: any, executionForm?: any): void {
+                if (this.disposed || !target || target === this.target && this.root.parentNode === target) {
                     return;
                 }
-                this.disposed = true;
-                this.rowRenderGeneration++;
-                this.recordRenderGeneration++;
-                this.tableWrap.removeEventListener('scroll', this.onScroll, false);
-                this.records.removeEventListener('scroll', this.onScroll, false);
+                this.leaveTarget();
+                this.target = target;
+                this.previousLabelledBy = target.getAttribute('aria-labelledby');
+                target.setAttribute('aria-labelledby', this.resultHeadingId);
+                this.legacyHeader = target.querySelector ? target.querySelector('.query-results__header') : null;
+                if (this.legacyHeader) {
+                    this.legacyHeaderHidden = this.legacyHeader.hidden;
+                    this.legacyHeader.hidden = true;
+                }
+                target.appendChild(this.root);
+                this.followPresentation();
+                if (executionForm) {
+                    this.options.executionForm = executionForm;
+                }
+                // Lay out again in the new area: now, or when the renderer is shown again.
+                if (this.suspended) {
+                    this.renderDeferred = true;
+                } else {
+                    this.renderAndReport();
+                }
+            }
+
+            /**
+             * Take the result out of its results area while it waits for another Query page (M13.4): the next page
+             * may be rendered into the same element, and must start empty.
+             */
+            detach(): void {
+                if (!this.disposed) {
+                    this.leaveTarget();
+                }
+            }
+
+            private followPresentation(): void {
+                this.presentationDisposer = workbench.resultFullscreen.addPresentationListener(this.target,
+                    enabled => this.setFullscreenPresentation(enabled));
+            }
+
+            /** Give the results area back as it was before this result: not full screen, its own labels, empty. */
+            private leaveTarget(): void {
                 if (this.target.getAttribute('data-fullscreen') === 'true') {
                     workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
                 }
-                this.disposers.forEach(dispose => dispose());
-                this.disposers = [];
+                this.presentationDisposer();
+                this.presentationDisposer = () => {};
                 if (this.legacyHeader) {
                     this.legacyHeader.hidden = this.legacyHeaderHidden;
                 }
@@ -2827,6 +2866,20 @@ namespace workbench {
                 if (this.root.parentNode === this.target) {
                     this.target.removeChild(this.root);
                 }
+            }
+
+            dispose() {
+                if (this.disposed) {
+                    return;
+                }
+                this.disposed = true;
+                this.rowRenderGeneration++;
+                this.recordRenderGeneration++;
+                this.tableWrap.removeEventListener('scroll', this.onScroll, false);
+                this.records.removeEventListener('scroll', this.onScroll, false);
+                this.leaveTarget();
+                this.disposers.forEach(dispose => dispose());
+                this.disposers = [];
                 if (this.downloadFrame && this.downloadFrame.parentNode) {
                     this.downloadFrame.parentNode.removeChild(this.downloadFrame);
                     this.downloadFrame = null;
@@ -4330,6 +4383,11 @@ namespace workbench {
             /** Kept alive (M11.3): the result renderer stops and starts listening to the window. */
             suspend?(): void;
             resume?(): void;
+            /** The main Query form's result, kept for its repository between Query pages (M13.4). */
+            hasResult?(): boolean;
+            executedRequest?(): URLSearchParams;
+            shelve?(): void;
+            adopt?(form: any, target: any): void;
             dispose(): void;
             hasActiveRequest(): boolean;
             changePageOffset(offset: number): boolean;
@@ -4744,6 +4802,28 @@ namespace workbench {
                 loadMore: loadMore,
                 cancel: () => cancel(true),
                 cancelOnLeave: () => cancel(true, true),
+                hasResult: () => !!renderer && !disposed,
+                executedRequest: () => frozenBody ? new URLSearchParams(frozenBody.toString()) : null,
+                // Kept for its repository while no Query page shows it (M13.4): hidden like a kept-alive page.
+                shelve: () => {
+                    if (renderer) {
+                        renderer.suspend();
+                        renderer.detach();
+                    }
+                },
+                // Shown by the next Query page of its repository, in that page's form and results area.
+                adopt: (nextForm: any, nextTarget: any) => {
+                    form = nextForm;
+                    target = nextTarget;
+                    if (renderer) {
+                        renderer.moveTo(nextTarget, nextForm);
+                        nextTarget.hidden = false;
+                        showResultTab(nextTarget);
+                        renderer.resume();
+                    }
+                    setQueryRequestId(activeId);
+                    setQueryCancelVisible(!!activeId);
+                },
                 suspend: () => {
                     if (renderer) {
                         renderer.suspend();
@@ -4859,9 +4939,83 @@ namespace workbench {
             var mountedForm: any = null;
             var mountedController: BoundExecutionController = null;
             var mountedSubmitHandler: (event: any) => void = null;
-            var mountedDispose: () => void = null;
+            var mountedDispose: (reason?: string) => void = null;
 
-            export function renderInto(mount: any, model: any, shellContext: any): () => void {
+            /**
+             * Results waiting for the next Query page of their repository (M13.4), the one left longest ago first;
+             * a page left in the tab keeps its result, so going back to that repository's Query page shows it again.
+             */
+            interface ShelvedResult {
+                repositoryId: string;
+                controller: BoundExecutionController;
+            }
+            var shelved: ShelvedResult[] = [];
+            var maxShelvedResults = 4;
+            var shelfPageHide: (event: any) => void = null;
+
+            function takeShelved(repositoryId: string): BoundExecutionController {
+                var match = shelved.filter(entry => entry.repositoryId === repositoryId)[0];
+                if (!match) {
+                    return null;
+                }
+                shelved.splice(shelved.indexOf(match), 1);
+                return match.controller;
+            }
+
+            function shelve(repositoryId: string, controller: BoundExecutionController): void {
+                var replaced = takeShelved(repositoryId);
+                if (replaced) {
+                    replaced.dispose();
+                }
+                controller.shelve();
+                shelved.push({ repositoryId: repositoryId, controller: controller });
+                if (shelved.length > maxShelvedResults) {
+                    shelved.shift().controller.dispose();
+                }
+                if (!shelfPageHide && typeof window !== 'undefined' && window.addEventListener) {
+                    // A tab that is closed or reloaded releases the waiting results like the shown one.
+                    shelfPageHide = (event: any) => {
+                        if (!event || event.persisted !== true) {
+                            markCurrentRowStoresForRecovery(event);
+                            shelved.splice(0).forEach(entry => entry.controller.dispose());
+                        }
+                    };
+                    window.addEventListener('pagehide', shelfPageHide, false);
+                }
+            }
+
+            /**
+             * The query a Query page opens with (Edit on Saved queries answers one), from its page model; the form
+             * cannot tell, because the next page may be rendered into the same, already edited, elements.
+             */
+            function pageModelQuery(model: any): string {
+                var vars: string[] = model && Array.isArray(model.vars) ? model.vars : [];
+                var row = model && Array.isArray(model.rows) ? model.rows[0] : null;
+                var index = vars.indexOf('query');
+                var value = row && index >= 0 ? row[index] : null;
+                return value && typeof value === 'object' ? String(value.value || '') : value ? String(value) : '';
+            }
+
+            /** Put the request that produced a result back into the Query form: its text and its settings. */
+            function restoreExecutedRequest(form: any, request: URLSearchParams): void {
+                if (!request) {
+                    return;
+                }
+                formControls(form).forEach(control => {
+                    var type = String(control && control.type || '').toLowerCase();
+                    if (!control || !control.name || type === 'hidden' || type === 'submit' || type === 'button'
+                            || type === 'file') {
+                        return;
+                    }
+                    if (type === 'checkbox' || type === 'radio') {
+                        control.checked = request.getAll(control.name).indexOf(String(control.value)) >= 0;
+                    } else if (request.has(control.name)) {
+                        control.value = request.get(control.name);
+                    }
+                });
+            }
+
+            export function renderInto(mount: any, model: any, shellContext: any): (reason?: string) => void {
                 disposeMountedPage();
                 var document = mount && mount.ownerDocument;
                 var formId = shellContext && shellContext.executionFormId || 'query-form';
@@ -4880,14 +5034,27 @@ namespace workbench {
                 }
 
                 mountedForm = form;
-                mountedController = bindMainQueryForm(form, target, {
-                    workbench: shellContext && shellContext.workbench,
-                    features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
-                    rowStoreOptions: shellContext && shellContext.rowStoreOptions,
-                    downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
-                    downloadLimits: shellContext && shellContext.downloadLimits,
-                    maxDomRows: shellContext && shellContext.maxDomRows
-                });
+                var repositoryId = shellContext && shellContext.repositoryId || '';
+                var waiting = takeShelved(repositoryId);
+                if (waiting && pageModelQuery(model).trim()) {
+                    // A page that opens with its own query (Edit on Saved queries) starts afresh.
+                    waiting.dispose();
+                    waiting = null;
+                }
+                if (waiting) {
+                    restoreExecutedRequest(form, waiting.executedRequest());
+                    waiting.adopt(form, target);
+                    mountedController = waiting;
+                } else {
+                    mountedController = bindMainQueryForm(form, target, {
+                        workbench: shellContext && shellContext.workbench,
+                        features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
+                        rowStoreOptions: shellContext && shellContext.rowStoreOptions,
+                        downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
+                        downloadLimits: shellContext && shellContext.downloadLimits,
+                        maxDomRows: shellContext && shellContext.maxDomRows
+                    });
+                }
                 mountedSubmitHandler = (event: any) => {
                     if (event && typeof event.preventDefault === 'function') {
                         event.preventDefault();
@@ -4914,12 +5081,17 @@ namespace workbench {
                 if (typeof window !== 'undefined' && window.addEventListener) {
                     window.addEventListener('pagehide', onPageHide, false);
                 }
-                mountedDispose = () => {
+                // Leaving for another page in the tab ('navigate') keeps a result for this repository (M13.4).
+                mountedDispose = (reason?: string) => {
                     form.removeEventListener('submit', mountedSubmitHandler, false);
                     if (typeof window !== 'undefined' && window.removeEventListener) {
                         window.removeEventListener('pagehide', onPageHide, false);
                     }
-                    mountedController.dispose();
+                    if (reason === 'navigate' && repositoryId && mountedController.hasResult()) {
+                        shelve(repositoryId, mountedController);
+                    } else {
+                        mountedController.dispose();
+                    }
                     mountedForm = null;
                     mountedController = null;
                     mountedSubmitHandler = null;
@@ -4990,7 +5162,7 @@ namespace workbench {
 
     /** Stable lifecycle hook used by the shared Workbench page bootstrap. */
     export module queryPage {
-        export function renderInto(mount: any, model: any, shellContext: any): () => void {
+        export function renderInto(mount: any, model: any, shellContext: any): (reason?: string) => void {
             return queryStream.queryPage.renderInto(mount, model, shellContext);
         }
 

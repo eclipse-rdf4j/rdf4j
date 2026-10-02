@@ -181,7 +181,7 @@ module workbench {
             const content = outlet.querySelector('#query-page-content') || outlet;
             const renderer: any = (workbench as any).queryPage;
             const initialPost = ctx.state && ctx.state.initialPost;
-            let disposeRenderer = (): void => {};
+            let disposeRenderer = (reason?: 'navigate' | 'pagehide'): void => {};
             let restore: () => void = null;
             if (renderer) {
                 disposeRenderer = renderer.renderInto(content, ctx.model, ctx.context);
@@ -224,7 +224,8 @@ module workbench {
                     }
                 }
                 unmount();
-                disposeRenderer();
+                // Leaving within the tab keeps the result for this repository's next Query page (M13.4).
+                disposeRenderer(reason);
             };
             // Kept alive (M11.3), the page drops its window and document listeners; a running query keeps running.
             cleanup.suspend = () => {
