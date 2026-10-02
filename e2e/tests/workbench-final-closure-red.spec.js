@@ -1,9 +1,21 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { runQuery, serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = 'workbench-final-closure-20260924';
+// Migrated and retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md). The query
+// result is read in the page (#query-results [data-query-stream-root]) instead of the retired iframe (plan task M9.1),
+// and Load more replaced the result's paging (design/workbench-loadmore-20260930/handoff.md: no Next/Previous or
+// page-size controls for query results). Retired: "paging wrapper remains wholly visible after real frame scrolling"
+// (the iframe's own scrolling and the result paging buttons are both gone; Load more is checked by
+// workbench-query-load-more.spec.js); "embedded result paging uses an accessible group without an orphan label" (the
+// result has no paging group any more); "mobile result toolbar keeps title and fullscreen above disclosures" (the
+// result heading is visually hidden in the output card since plan task M3.5 and the actions share one toolbar row,
+// which workbench-dropdown-detail-parity.spec.js "dynamic result details keep distinct triggers and responsive
+// Format-style fields" checks at 390px; the rest measured scrolling inside the iframe).
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-final-closure');
 const REPOSITORY_BASE_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
 test.beforeAll(async ({ request }) => {
@@ -33,12 +45,12 @@ test.afterAll(async ({ request }) => {
 test('semantic action icons and padding activate native controls while disabled paging stays inert', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
-	const cancel = page.locator('form[action="create"] input[data-href="repositories"]');
+	const cancel = page.locator('form[action="create"] [data-workbench-action="cancel"] input[type="button"]');
 	const cancelWrapper = cancel.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]');
 	await expect(cancel).toBeVisible();
 	await page.evaluate(() => {
 		window.__closureAction = '';
-		const input = document.querySelector('input[data-href="repositories"]');
+		const input = document.querySelector('form[action="create"] [data-workbench-action="cancel"] input[type="button"]');
 		input.addEventListener('click', event => {
 			window.__closureAction = 'cancel';
 			event.preventDefault();
@@ -50,6 +62,7 @@ test('semantic action icons and padding activate native controls while disabled 
 
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	const create = page.locator('form[action="create"] #create');
+	await expect(create).toBeVisible();
 	const createWrapper = create.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]');
 	await page.evaluate(() => {
 		window.__closureAction = '';
@@ -65,62 +78,23 @@ test('semantic action icons and padding activate native controls while disabled 
 	await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
 	await expect.poll(() => page.evaluate(() => window.__closureAction)).toBe('create');
 
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s WHERE { ?s <http://example.org/name> ?o } LIMIT 2'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await frame.locator('#previousX').waitFor({ state: 'visible' });
-	const disabledPaging = frame.locator('#previousX');
+	// Query results have no paging since Load more replaced it; Explore keeps its paging buttons, which are native
+	// buttons of the shared component and disabled on a resource's only page.
+	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E`,
+		{ waitUntil: 'domcontentloaded' });
+	const disabledPaging = page.locator('#explore-pagination #previousX');
+	await expect(disabledPaging).toBeVisible();
 	await expect(disabledPaging).toBeDisabled();
-	await page.locator('#query-results-frame').evaluate(frameElement => {
-		frameElement.contentDocument.querySelector('#previousX').ownerDocument.defaultView.__closureAction = '';
-	});
-	await frame.locator('#previousX').evaluate(element => {
+	const pagedUrl = page.url();
+	await disabledPaging.evaluate(element => {
+		window.__closureAction = '';
 		element.addEventListener('click', () => {
-			element.ownerDocument.defaultView.__closureAction = 'previous';
+			window.__closureAction = 'previous';
 		});
 	});
-	const disabledWrapper = frame.locator('#previousX').locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]');
-	await disabledWrapper.locator('.workbench-action-icon').click({ force: true });
-	await expect.poll(() => page.locator('#query-results-frame').evaluate(frameElement =>
-		frameElement.contentDocument.defaultView.__closureAction)).toBe('');
-});
-
-test('paging wrapper remains wholly visible after real frame scrolling', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	const values = Array.from({ length: 120 }, (_, index) =>
-		`("row-${index}" <http://example.org/p> "value-${index}")`).join(' ');
-	const pagingQuery = `SELECT ?s ?p ?o WHERE { VALUES (?s ?p ?o) { ${values} } }`;
-	await page.locator('.CodeMirror').first().evaluate((element, query) =>
-		element.CodeMirror.setValue(query), pagingQuery);
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await frame.locator('#query-result-layout').waitFor({ state: 'attached' });
-	const frameElement = page.locator('#query-results-frame');
-	await frameElement.scrollIntoViewIfNeeded();
-	const frameBox = await frameElement.boundingBox();
-	expect(frameBox).toBeTruthy();
-	await page.mouse.move(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height - 24);
-	await page.mouse.wheel(0, 50000);
-	await expect.poll(() => frameElement.evaluate(element => element.contentDocument.documentElement.scrollTop))
-		.toBeGreaterThan(0);
-	const geometry = await frame.locator('#nextX').evaluate(element => {
-		const wrapper = element.closest('.workbench-action');
-		const wrapperRect = wrapper.getBoundingClientRect();
-		return {
-			wrapperBottom: wrapperRect.bottom,
-			controlBottom: element.getBoundingClientRect().bottom,
-			viewport: element.ownerDocument.defaultView.innerHeight,
-			scrollTop: element.ownerDocument.documentElement.scrollTop
-		};
-	});
-	expect(geometry.scrollTop).toBeGreaterThan(0);
-	expect(geometry.wrapperBottom).toBeLessThanOrEqual(geometry.viewport + 1);
-	expect(geometry.controlBottom).toBeLessThanOrEqual(geometry.viewport + 1);
+	await disabledPaging.click({ force: true });
+	await expect.poll(() => page.evaluate(() => window.__closureAction)).toBe('');
+	expect(page.url(), 'disabled paging does not navigate').toBe(pagedUrl);
 });
 
 test('compare actions are labelled together and activate from their icon hit area', async ({ page }) => {
@@ -136,18 +110,22 @@ test('compare actions are labelled together and activate from their icon hit are
 	await page.locator('#explain-compare-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	const toolbar = page.locator('#query-compare-toolbar');
-	await expect(toolbar).toContainText(/copy/i);
 	await expect(toolbar).toContainText(/swap/i);
 	await expect(toolbar).toContainText(/refresh|compare/i);
 	await expect(toolbar).toContainText(/diff/i);
+	// Each plan column's header holds its own labelled Copy icon button since plan task M3.3.
+	for (const copy of ['#query-compare-copy', '#copy-explanation-compare']) {
+		await expect(page.locator(copy)).toBeVisible();
+		await expect(page.locator(copy)).toHaveAccessibleName(/copy/i);
+	}
 	await page.evaluate(() => {
 		window.__compareClicked = false;
 		document.querySelector('#query-compare-swap').addEventListener('click', () => {
 			window.__compareClicked = true;
 		});
 	});
-	const swapWrapper = page.locator('#query-compare-swap').locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]');
-	await swapWrapper.locator('.workbench-action-icon').click();
+	// Swap is a native button of the shared component (plan task M1.3), so its icon is inside the button.
+	await page.locator('#query-compare-swap .workbench-action-icon').click();
 	await expect.poll(() => page.evaluate(() => window.__compareClicked)).toBe(true);
 });
 
@@ -189,7 +167,7 @@ test('saved query replaces legacy bookmark and keeps one visible YASQE fullscree
 	expect(state.shapes.every(shape => shape.stroke !== 'none' && shape.stroke === shape.color)).toBe(true);
 });
 
-test('mobile compare controls use full native hit areas and hide the obsolete sidebar glyph', async ({ page }) => {
+test('mobile compare controls use full native hit areas and a touch-sized navigation toggle', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
 	await page.locator('.CodeMirror').first().evaluate(element =>
@@ -201,43 +179,63 @@ test('mobile compare controls use full native hit areas and hide the obsolete si
 	await page.locator('.CodeMirror').nth(1).evaluate(element => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
 	await page.locator('#explain-compare-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
-	const controls = await page.locator(
-		'#query-compare-copy, #query-compare-swap, #explain-compare-trigger, #copy-explanation, #explanation-settings-toggle, #explain-trigger'
-	).evaluateAll(elements => elements.map(element => {
+	// In compare mode each plan column has its own Copy icon button and the toolbar's #copy-explanation is hidden
+	// (plan task M3.3), so the compare column's copy button takes its place.
+	const controlIds = ['#query-compare-copy', '#query-compare-swap', '#explain-compare-trigger', '#copy-explanation-compare',
+		'#explanation-settings-toggle', '#explain-trigger'];
+	const controls = await page.locator(controlIds.join(', ')).evaluateAll(elements => elements.map(element => {
 		const style = getComputedStyle(element);
 		const rect = element.getBoundingClientRect();
 		return {
 			id: element.id,
+			iconButton: element.classList.contains('workbench-action--icon'),
+			width: rect.width,
 			height: rect.height,
 			padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
-			visible: style.display !== 'none' && style.visibility !== 'hidden'
+			visible: style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0
 		};
 	}));
-	const refreshIcon = await page.locator('#explain-compare-trigger-icon').evaluate(element => {
-		const bounds = Array.from(element.querySelectorAll('path'))
-			.map(shape => shape.getBoundingClientRect())
-			.reduce((union, rect) => ({
-				left: Math.min(union.left, rect.left),
-				top: Math.min(union.top, rect.top),
-				right: Math.max(union.right, rect.right),
-				bottom: Math.max(union.bottom, rect.bottom)
-			}), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
-		return {
-			viewBox: element.getAttribute('viewBox'),
-			shapeWidth: Number.isFinite(bounds.left) ? bounds.right - bounds.left : 0,
-			shapeHeight: Number.isFinite(bounds.top) ? bounds.bottom - bounds.top : 0
-		};
-	});
+	// "Refresh explanations" is a text button now; every action icon the compare controls draw (not the small
+	// disclosure chevron) must fill its 24px view box.
+	const icons = await page.locator(controlIds.map(id => `${id} svg:not(.workbench-disclosure-chevron)`).join(', '))
+		.evaluateAll(elements =>
+			elements.map(element => {
+				const bounds = Array.from(element.querySelectorAll('path, circle, rect, line, polyline, polygon'))
+					.map(shape => shape.getBoundingClientRect())
+					.reduce((union, rect) => ({
+						left: Math.min(union.left, rect.left),
+						top: Math.min(union.top, rect.top),
+						right: Math.max(union.right, rect.right),
+						bottom: Math.max(union.bottom, rect.bottom)
+					}), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+				return {
+					control: element.closest('button')?.id,
+					viewBox: element.getAttribute('viewBox'),
+					shapeWidth: Number.isFinite(bounds.left) ? bounds.right - bounds.left : 0,
+					shapeHeight: Number.isFinite(bounds.top) ? bounds.bottom - bounds.top : 0
+				};
+			}));
+	expect(controls).toHaveLength(controlIds.length);
 	expect(controls.every(control => control.visible), 'compare controls should remain visible').toBe(true);
 	expect(controls.every(control => control.height >= 44), 'native compare controls need coarse-pointer hit targets').toBe(true);
-	expect(controls.every(control => control.padding >= 16), 'native compare controls need horizontal hit-area padding').toBe(true);
-	expect(refreshIcon.viewBox, 'refresh icon paths should share their 24px coordinate system').toBe('0 0 24 24');
-	expect(refreshIcon.shapeWidth, 'refresh icon should occupy its visible control').toBeGreaterThan(8);
-	expect(refreshIcon.shapeHeight, 'refresh icon should occupy its visible control').toBeGreaterThan(8);
-	await expect(page.locator('#query-sidebar-toggle')).toBeHidden();
+	// Icon buttons are 44px squares on touch layouts (plan task M2.9); text buttons keep horizontal padding.
+	expect(controls.every(control => control.iconButton ? control.width >= 44 : control.padding >= 16),
+		`native compare controls need horizontal hit areas: ${JSON.stringify(controls)}`).toBe(true);
+	expect(icons.length, 'compare controls draw icons').toBeGreaterThan(0);
+	for (const icon of icons) {
+		expect(icon.viewBox, `${icon.control} icon paths should share their 24px coordinate system`).toBe('0 0 24 24');
+		expect(icon.shapeWidth, `${icon.control} icon should occupy its visible control`).toBeGreaterThan(8);
+		expect(icon.shapeHeight, `${icon.control} icon should occupy its visible control`).toBeGreaterThan(8);
+	}
+	// Compare mode keeps its "Show navigation" toggle at the start of the primary editor header on every width (plan
+	// task M3.3); on a phone it is a full touch target rather than the old hidden sidebar glyph.
+	const sidebarToggle = await page.locator('#query-sidebar-toggle').boundingBox();
+	expect(sidebarToggle, 'compare mode shows its navigation toggle').toBeTruthy();
+	expect(sidebarToggle.width).toBeGreaterThanOrEqual(44);
+	expect(sidebarToggle.height).toBeGreaterThanOrEqual(44);
 });
 
-test('mobile explanation input actions use the complete label hit area', async ({ page }) => {
+test('mobile explanation actions use their complete button hit area', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
 	await page.locator('.CodeMirror').first().evaluate(element =>
@@ -245,30 +243,28 @@ test('mobile explanation input actions use the complete label hit area', async (
 	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#rerun-explanation')).toBeVisible({ timeout: 10000 });
 	const actionIds = ['#rerun-explanation', '#download-explanation', '#compare-toggle'];
+	// The explanation actions are native buttons of the shared component (plan task M1.3) instead of inputs inside a
+	// label hit area, so the button's own box is the hit area; Download is an icon button (plan task M3.3).
 	const actions = await page.locator(actionIds.join(', ')).evaluateAll(elements => elements.map(element => {
-		const wrapper = element.closest('.workbench-action');
-		const hitArea = wrapper?.querySelector('.workbench-action-hit-area');
 		const rect = element.getBoundingClientRect();
 		const style = getComputedStyle(element);
 		return {
 			id: element.id,
+			tag: element.tagName,
+			action: element.classList.contains('workbench-action'),
+			iconButton: element.classList.contains('workbench-action--icon'),
+			width: rect.width,
 			height: rect.height,
-			padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
-			hitArea: Boolean(hitArea),
-			wrapper: wrapper ? {
-				top: wrapper.getBoundingClientRect().top,
-				bottom: wrapper.getBoundingClientRect().bottom,
-				width: wrapper.getBoundingClientRect().width
-			} : null
+			padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
 		};
 	}));
 	expect(actions).toHaveLength(actionIds.length);
-	expect(actions.every(action => action.height >= 44), 'input explanation actions need coarse-pointer hit targets')
+	expect(actions.every(action => action.height >= 44), 'explanation actions need coarse-pointer hit targets')
 		.toBe(true);
-	expect(actions.every(action => action.padding >= 16), 'input explanation actions need horizontal hit-area padding')
-		.toBe(true);
-	expect(actions.every(action => action.hitArea), 'input explanation actions need a label hit area')
-		.toBe(true);
+	expect(actions.every(action => action.iconButton ? action.width >= 44 : action.padding >= 16),
+		`explanation actions need horizontal hit areas: ${JSON.stringify(actions)}`).toBe(true);
+	expect(actions.every(action => action.tag === 'BUTTON' && action.action),
+		'explanation actions are native buttons whose whole box is the hit area').toBe(true);
 
 	await page.evaluate(() => {
 		window.__explanationInputAction = '';
@@ -279,14 +275,14 @@ test('mobile explanation input actions use the complete label hit area', async (
 			event.stopImmediatePropagation();
 		}, true);
 	});
-	const downloadWrapper = page.locator('#download-explanation')
-		.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]');
-	await downloadWrapper.locator('.workbench-action-icon').click();
+	const download = page.locator('#download-explanation');
+	await download.locator('.workbench-action-icon').click();
 	await expect.poll(() => page.evaluate(() => window.__explanationInputAction))
 		.toBe('download');
-	const wrapperBox = await downloadWrapper.boundingBox();
-	expect(wrapperBox).toBeTruthy();
-	await page.mouse.click(wrapperBox.x + wrapperBox.width - 2, wrapperBox.y + wrapperBox.height / 2);
+	await page.evaluate(() => { window.__explanationInputAction = ''; });
+	const downloadBox = await download.boundingBox();
+	expect(downloadBox).toBeTruthy();
+	await page.mouse.click(downloadBox.x + downloadBox.width - 2, downloadBox.y + downloadBox.height / 2);
 	await expect.poll(() => page.evaluate(() => window.__explanationInputAction))
 		.toBe('download');
 });
@@ -294,191 +290,102 @@ test('mobile explanation input actions use the complete label hit area', async (
 test('result disclosures keep labels above controls inside grouped panels', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" } }'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await frame.locator('#query-result-download-toggle').press('Enter');
-	await frame.locator('#query-result-options-toggle').press('Enter');
-	await expect(frame.locator('#query-result-download-panel')).toBeVisible();
-	await expect(frame.locator('#query-result-options-panel')).toBeVisible();
+	await runQuery(page, 'SELECT * WHERE { VALUES ?s { "one" "two" } }');
+	const result = page.locator('#query-results [data-query-stream-root]');
+	// Only one pane of a toolbar is open at a time since plan task M14.3, so Download and Display are measured in turn.
+	const measurePanel = (toggleSelector, panelSelector) => result.evaluate((root, selectors) => {
+		const panel = root.querySelector(selectors.panel);
+		const toggle = root.querySelector(selectors.toggle);
+		const radii = style => [style.borderTopLeftRadius, style.borderTopRightRadius,
+			style.borderBottomRightRadius, style.borderBottomLeftRadius];
+		const panelStyle = getComputedStyle(panel);
+		const fieldContainer = panel.querySelector('.query-result-fields');
+		const items = Array.from(fieldContainer.children).filter(item => item.getClientRects().length > 0);
+		const firstRowBottom = Math.min(...items.map(item => item.getBoundingClientRect().bottom));
+		const fields = Array.from(panel.querySelectorAll('.query-result-field'));
+		const checks = Array.from(panel.querySelectorAll('.query-result-check'));
+		return {
+			background: panelStyle.backgroundColor,
+			border: panelStyle.borderTopWidth,
+			radius: radii(panelStyle),
+			toggleRadius: radii(getComputedStyle(toggle)),
+			clientWidth: panel.clientWidth,
+			scrollWidth: panel.scrollWidth,
+			// Items that start above the bottom of the shortest item share the first row: the panel's columns.
+			columns: items.filter(item => item.getBoundingClientRect().top < firstRowBottom).length,
+			fieldTops: fields.map(field => field.getBoundingClientRect().top),
+			fieldStyles: fields.map(field => {
+				const style = getComputedStyle(field);
+				return { border: style.borderTopWidth, background: style.backgroundColor, radius: radii(style) };
+			}),
+			labels: fields.map(field => {
+				const label = field.querySelector(':scope > span');
+				const control = field.querySelector('select, input');
+				return {
+					labelBottom: label.getBoundingClientRect().bottom,
+					controlTop: control.getBoundingClientRect().top
+				};
+			}),
+			checks: checks.map(check => {
+				const input = check.querySelector('input');
+				// The check's text is the label's own text node since the streamed renderer.
+				const text = document.createRange();
+				const textNode = Array.from(check.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+				text.selectNodeContents(textNode || check);
+				const inputRect = input.getBoundingClientRect();
+				const textRect = text.getBoundingClientRect();
+				return {
+					display: getComputedStyle(check).display,
+					inputTop: inputRect.top,
+					textTop: textRect.top,
+					inputBottom: inputRect.bottom,
+					textBottom: textRect.bottom
+				};
+			})
+		};
+	}, { toggle: toggleSelector, panel: panelSelector });
+	const panels = [];
+	for (const [toggle, panel] of [
+		['.query-result-download-toggle', '.query-result-download-panel'],
+		['.query-result-options-toggle', '.query-result-options-panel']
+	]) {
+		await result.locator(toggle).press('Enter');
+		await expect(result.locator(panel)).toBeVisible();
+		await expect.poll(() => result.locator(panel).evaluate(element => element.getAnimations().length)).toBe(0);
+		panels.push(await measurePanel(toggle, panel));
+	}
+	const [download, options] = panels;
 
-	const metrics = await page.locator('#query-results-frame').evaluate(frameElement => {
-		const document = frameElement.contentDocument;
-		const rows = Array.from(document.querySelectorAll(
-			'#query-result-download-panel .query-result-controls tr, #query-result-options-panel .query-result-controls tr'));
-		const rowMetrics = rows.map(row => {
-			const label = row.querySelector('th');
-			const controls = Array.from(row.querySelectorAll('select, input, button'));
-			if (!label || controls.length === 0) {
-				return null;
-			}
-			const labelRect = label.getBoundingClientRect();
-			return {
-				labelBottom: labelRect.bottom,
-				controlTop: Math.min(...controls.map(control => control.getBoundingClientRect().top))
-			};
-		}).filter(Boolean);
-		const panelStyles = ['#query-result-download-panel', '#query-result-options-panel'].map(selector => {
-			const panel = document.querySelector(selector);
-			const style = getComputedStyle(panel);
-			return {
-				background: style.backgroundColor,
-				border: style.borderTopWidth,
-				radius: [style.borderTopLeftRadius, style.borderTopRightRadius,
-					style.borderBottomRightRadius, style.borderBottomLeftRadius]
-			};
-		});
-		const toggleStyles = ['#query-result-download-toggle', '#query-result-options-toggle'].map(selector => {
-			const style = getComputedStyle(document.querySelector(selector));
-			return [style.borderTopLeftRadius, style.borderTopRightRadius,
-				style.borderBottomRightRadius, style.borderBottomLeftRadius];
-		});
-		const fieldStyles = Array.from(document.querySelectorAll(
-			'#query-result-download-panel .query-result-field, #query-result-options-panel .query-result-field'))
-			.map(field => {
-			const style = getComputedStyle(field);
-			return {
-				border: style.borderTopWidth,
-				background: style.backgroundColor,
-				radius: [style.borderTopLeftRadius, style.borderTopRightRadius,
-					style.borderBottomRightRadius, style.borderBottomLeftRadius]
-			};
-		});
-		const panelWidths = ['#query-result-download-panel', '#query-result-options-panel'].map(selector => {
-			const panel = document.querySelector(selector);
-			return {
-				clientWidth: panel.clientWidth,
-				scrollWidth: panel.scrollWidth
-			};
-		});
-		const optionsGridColumns = getComputedStyle(
-			document.querySelector('#query-result-options-panel .query-result-fields')).gridTemplateColumns;
-		const fieldMetrics = ['#query-result-download-panel', '#query-result-options-panel'].map(selector => {
-			const panel = document.querySelector(selector);
-			const fields = Array.from(panel.querySelectorAll('.query-result-field'));
-			const checks = Array.from(panel.querySelectorAll('.query-result-check'));
-			return {
-				fieldCount: fields.length,
-				fieldTops: fields.map(field => field.getBoundingClientRect().top),
-				gridColumns: getComputedStyle(panel.querySelector('.query-result-fields')).gridTemplateColumns,
-				checks: checks.map(check => {
-					const input = check.querySelector('input');
-					const text = check.querySelector('span');
-					const inputRect = input.getBoundingClientRect();
-					const textRect = text.getBoundingClientRect();
-					return {
-						display: getComputedStyle(check).display,
-						inputTop: inputRect.top,
-						textTop: textRect.top,
-						inputBottom: inputRect.bottom,
-						textBottom: textRect.bottom
-					};
-				})
-			};
-		});
-		return { rowMetrics, panelStyles, toggleStyles, fieldStyles, panelWidths, optionsGridColumns, fieldMetrics };
-	});
-
-	expect(metrics.fieldMetrics.flatMap(panel => panel.fieldTops).length).toBeGreaterThanOrEqual(4);
-	expect(metrics.panelStyles.every(panel => panel.background !== 'rgba(0, 0, 0, 0)' && panel.border === '1px'),
+	// The result page-size select is gone (Load more replaced it): Download has Format and Limit, Display has Layout
+	// and two checkboxes.
+	expect(panels.flatMap(panel => panel.fieldTops).length).toBeGreaterThanOrEqual(3);
+	expect(panels.flatMap(panel => panel.labels).every(field => field.labelBottom <= field.controlTop + 1),
+		'result field labels sit above their controls').toBe(true);
+	expect(panels.every(panel => panel.background !== 'rgba(0, 0, 0, 0)' && panel.border === '1px'),
 		'open result panels should be visible grouped surfaces').toBe(true);
-	expect(metrics.panelStyles.every(panel => panel.radius.every(radius => parseFloat(radius) >= 6)),
+	expect(panels.every(panel => panel.radius.every(radius => parseFloat(radius) >= 6)),
 		'open result panels should keep rounded corners').toBe(true);
-	expect(metrics.toggleStyles.every(radii => radii.every(radius => parseFloat(radius) >= 6)),
+	expect(panels.every(panel => panel.toggleRadius.every(radius => parseFloat(radius) >= 6)),
 		'open disclosure controls should keep rounded corners').toBe(true);
-	expect(metrics.fieldStyles.every(row => row.border === '0px'),
+	const fieldStyles = panels.flatMap(panel => panel.fieldStyles);
+	expect(fieldStyles.every(row => row.border === '0px'),
 		'result fields should share one inset panel instead of individual cards').toBe(true);
-	expect(metrics.fieldStyles.every(row => row.background === 'rgba(0, 0, 0, 0)'),
+	expect(fieldStyles.every(row => row.background === 'rgba(0, 0, 0, 0)'),
 		'result fields should not introduce nested card backgrounds').toBe(true);
-	expect(metrics.fieldStyles.every(row => row.radius.every(radius => parseFloat(radius) === 0)),
+	expect(fieldStyles.every(row => row.radius.every(radius => parseFloat(radius) === 0)),
 		'result fields should not introduce nested rounded cards').toBe(true);
-	expect(metrics.panelWidths.every(panel => panel.scrollWidth <= panel.clientWidth + 1),
-		'open result panels should stay within the result frame').toBe(true);
-	expect(metrics.optionsGridColumns.split(' ').filter(Boolean).length,
-		'wide result options should use a compact multi-column field grid').toBeGreaterThanOrEqual(2);
-	expect(metrics.fieldMetrics[0].fieldCount).toBeGreaterThanOrEqual(2);
-	expect(metrics.fieldMetrics[1].fieldCount).toBeGreaterThanOrEqual(2);
-	expect(metrics.fieldMetrics[0].gridColumns.split(' ').filter(Boolean).length,
-		'download controls should keep format, limit, and action in a compact grid').toBeGreaterThanOrEqual(3);
-	expect(metrics.fieldMetrics[1].checks.length).toBeGreaterThanOrEqual(2);
-	expect(metrics.fieldMetrics.flatMap(panel => panel.checks).every(check =>
+	expect(panels.every(panel => panel.scrollWidth <= panel.clientWidth + 1),
+		'open result panels should stay within the result card').toBe(true);
+	expect(options.columns, 'wide result options should use a compact multi-column field row').toBeGreaterThanOrEqual(2);
+	expect(download.fieldTops.length).toBeGreaterThanOrEqual(2);
+	expect(options.fieldTops.length).toBeGreaterThanOrEqual(1);
+	expect(download.columns, 'download controls should keep format, limit, and action in one compact row')
+		.toBeGreaterThanOrEqual(3);
+	expect(options.checks.length).toBeGreaterThanOrEqual(2);
+	expect(panels.flatMap(panel => panel.checks).every(check =>
 		['flex', 'inline-flex'].includes(check.display) && Math.abs(check.inputTop - check.textTop) < 10 &&
 		Math.abs(check.inputBottom - check.textBottom) < 10),
 		'checkboxes should remain inline with their labels').toBe(true);
-});
-
-test('embedded result paging uses an accessible group without an orphan label', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { "one" "two" } }'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	const navigation = frame.locator('.query-result-navigation');
-	await expect(navigation).toHaveAttribute('role', 'group');
-	await expect(navigation).toHaveAttribute('aria-label', /Results offset/i);
-	await expect(navigation.locator('.query-result-navigation__label')).toHaveCount(0);
-	await expect(navigation.locator('#previousX')).toBeVisible();
-	await expect(navigation.locator('#nextX')).toBeVisible();
-});
-
-test('mobile result toolbar keeps title and fullscreen above disclosures', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 1000 });
-	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { VALUES (?s ?p ?o) { ("one" <http://example.org/p> "long literal value one") ("two" <http://example.org/p> "long literal value two") ("three" <http://example.org/p> "long literal value three") } }'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	const geometry = await page.locator('#query-results-frame').evaluate(frameElement => {
-		const document = frameElement.contentDocument;
-		const rect = selector => document.querySelector(selector).getBoundingClientRect();
-		return {
-			title: rect('#query-result-embedded-header h2'),
-			fullscreen: rect('#query-result-fullscreen'),
-			download: rect('#query-result-download-toggle'),
-			options: rect('#query-result-options-toggle')
-		};
-	});
-	expect(geometry.title.width).toBeGreaterThan(0);
-	expect(geometry.fullscreen.width).toBeGreaterThan(0);
-	expect(geometry.download.top).toBeGreaterThanOrEqual(
-		Math.max(geometry.title.bottom, geometry.fullscreen.bottom) - 1,
-		'mobile result disclosures should occupy the row below title and fullscreen');
-	expect(geometry.options.top).toBeGreaterThanOrEqual(
-		Math.max(geometry.title.bottom, geometry.fullscreen.bottom) - 1);
-	await frame.locator('#query-result-download-toggle').press('Enter');
-	await frame.locator('#query-result-options-toggle').press('Enter');
-	await expect(frame.locator('#query-result-options-panel')).toBeVisible();
-	const frameElement = page.locator('#query-results-frame');
-	await frameElement.scrollIntoViewIfNeeded();
-	const frameBox = await frameElement.boundingBox();
-	expect(frameBox).toBeTruthy();
-	await page.mouse.move(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height - 20);
-	await page.mouse.wheel(0, 10000);
-	await expect.poll(() => frameElement.evaluate(element => element.contentDocument.documentElement.scrollTop))
-		.toBeGreaterThan(0);
-	const scrolledGeometry = await frameElement.evaluate(frameElement => {
-		const document = frameElement.contentDocument;
-		const rect = selector => document.querySelector(selector).getBoundingClientRect();
-		return {
-			title: rect('#query-result-embedded-header h2'),
-			fullscreen: rect('#query-result-fullscreen'),
-			download: rect('#query-result-download-toggle'),
-			options: rect('#query-result-options-toggle')
-		};
-	});
-	expect(scrolledGeometry.title.top).toBeGreaterThanOrEqual(-1,
-		'result title should remain visible while scrolling the embedded frame');
-	expect(scrolledGeometry.fullscreen.top).toBeGreaterThanOrEqual(-1,
-		'fullscreen control should remain visible while scrolling the embedded frame');
-	expect(scrolledGeometry.download.top).toBeGreaterThanOrEqual(-1,
-		'Download control should remain visible while an embedded panel is scrolled');
-	expect(scrolledGeometry.options.top).toBeGreaterThanOrEqual(-1,
-		'Result options control should remain visible while an embedded panel is scrolled');
 });
 
 test('query editor utilities stay readable beside the Explain tree action', async ({ page }) => {
@@ -492,16 +399,29 @@ test('query editor utilities stay readable beside the Explain tree action', asyn
 			const rect = element.getBoundingClientRect();
 			return { color: style.color, opacity: style.opacity, width: rect.width, height: rect.height };
 		}));
-	const explainIcon = await page.locator('#explain-trigger .query-action-icon').evaluate(element => ({
-		circles: element.querySelectorAll('circle').length,
-		connectors: element.querySelectorAll('path').length
-	}));
+	// The editor overlay buttons use the muted ink token (plan task M1.8) instead of the retired slate rgb(71, 85, 105).
+	const mutedInk = await page.evaluate(() => {
+		const probe = document.createElement('span');
+		probe.style.color = 'var(--workbench-muted)';
+		document.querySelector('.query-page').append(probe);
+		const color = getComputedStyle(probe).color;
+		probe.remove();
+		return color;
+	});
+	// The shared Explain icon draws its three plan nodes as arcs of one path, with the connectors as line segments.
+	const explainIcon = await page.locator('#explain-trigger .workbench-action-icon--explain').evaluate(element => {
+		const data = Array.from(element.querySelectorAll('path')).map(path => path.getAttribute('d')).join(' ');
+		return {
+			nodes: (data.match(/a/gi) || []).length + element.querySelectorAll('circle').length,
+			connectors: /l/i.test(data)
+		};
+	});
 	expect(editorIcons.length).toBeGreaterThan(0);
-	expect(editorIcons.every(icon => icon.color === 'rgb(71, 85, 105)'),
-		'editor utility icons should use readable slate controls').toBe(true);
+	expect(editorIcons.every(icon => icon.color === mutedInk),
+		`editor utility icons should use the muted control ink ${mutedInk}: ${JSON.stringify(editorIcons)}`).toBe(true);
 	expect(editorIcons.every(icon => icon.opacity === '1' && icon.width >= 18 && icon.height >= 18),
 		'editor utility icons should keep a stable visible geometry').toBe(true);
-	expect(explainIcon).toEqual({ circles: 3, connectors: 1 });
+	expect(explainIcon).toEqual({ nodes: 3, connectors: true });
 });
 
 test('Diff stays compact around its rendered content and compare actions stay flat', async ({ page }) => {

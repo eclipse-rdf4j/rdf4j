@@ -1,10 +1,17 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute, waitForWriteDone } = require('./workbench-test-helpers');
+const { serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl } = require('./workbench-test-helpers');
 const fs = require('node:fs');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
+// Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the Add URL field fills
+// its form card (plan task M1.6, "one form layout") instead of a 320-560px range; Load more replaced the result
+// page-size select and the Query settings limit (design/workbench-loadmore-20260930/handoff.md), so the result checks
+// use the Download Format and Limit selects; the advanced Create settings are grouped, so every group's last field is
+// checked. "sizes short repository fields ..." still fails for the federation template: its Repository title has no
+// size and is narrower than its Repository ID, unlike every other template (a product bug, kept failing on purpose).
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const REPOSITORY_ID = `workbench-form-sizing-${process.pid}-${Date.now()}`;
 const REPOSITORY_BASE_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const SAVED_QUERY_NAME = `size-${process.pid}-${Date.now()}`.slice(0, 32);
@@ -338,6 +345,12 @@ test.describe('Workbench configuration and option sizing', () => {
 		routePage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/add`);
 		await routePage.locator('label[for="source-url"]').click();
 		geometry.url = await routePage.locator('#url').evaluate(element => Math.round(element.getBoundingClientRect().width));
+		geometry.urlCardContent = await routePage.locator('#url').evaluate(element => {
+			const card = element.closest('.workbench-form-card');
+			const style = getComputedStyle(card);
+			return Math.round(card.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+				- parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth));
+		});
 		const importSettings = routePage.locator('#add-import-settings');
 		if (!(await importSettings.locator(':scope > .workbench-disclosure__toggle').getAttribute('aria-expanded') === 'true')) {
 			await importSettings.locator(':scope > .workbench-disclosure__toggle').click();
@@ -356,7 +369,10 @@ test.describe('Workbench configuration and option sizing', () => {
 		console.log(`SEMANTIC_SIZING ${JSON.stringify(geometry)}`);
 		if (geometry.server >= 320) violations.push(`server credential ${geometry.server}px`);
 		if (geometry.password >= 320) violations.push(`password ${geometry.password}px`);
-		if (geometry.url < 320 || geometry.url > 560) violations.push(`URL ${geometry.url}px`);
+		// Every text control of a form card fills the card's content box since plan task M1.6 ("one form layout").
+		if (Math.abs(geometry.url - geometry.urlCardContent) > 1) {
+			violations.push(`URL ${geometry.url}px in a ${geometry.urlCardContent}px form card`);
+		}
 		if (geometry.baseUri < 320 || geometry.baseUri > 600) violations.push(`base URI ${geometry.baseUri}px`);
 		if (geometry.context < 320 || geometry.context > 600) violations.push(`context ${geometry.context}px`);
 		// Namespaces are edited in their table row since plan task M6.3, so the old form widths no longer apply.
@@ -568,19 +584,23 @@ test.describe('Workbench configuration and option sizing', () => {
 		await waitForSettledDisclosure(optionsPanel);
 		const options = await optionsPanel.evaluate(element => {
 			const size = selector => Math.round(element.querySelector(selector).getBoundingClientRect().width);
-			return { layout: size('[id^="result-layout-"]'), limit: size('[id^="stream-result-limit-"]') };
+			return { layout: size('[id^="result-layout-"]') };
 		});
 		console.log(`EMBEDDED_RESULT_OPTIONS ${JSON.stringify(options)}`);
 		expect(options.layout, 'result layout selector should not fill its grid track').toBeLessThan(260);
-		expect(options.limit, 'result limit should fit its short options').toBeLessThan(180);
 		await result.locator('.query-result-download-toggle').click();
 		const downloadPanel = queryResultPanels(result).nth(0);
 		await expect(downloadPanel).toBeVisible();
 		await waitForSettledDisclosure(downloadPanel);
-		const download = await downloadPanel.locator('[id^="Accept-"]')
-			.evaluate(element => Math.round(element.getBoundingClientRect().width));
-		console.log(`EMBEDDED_DOWNLOAD_FORMAT ${download}`);
-		expect(download, 'download format selector should fit its option labels').toBeLessThan(520);
+		const download = await downloadPanel.evaluate(element => {
+			const size = selector => Math.round(element.querySelector(selector).getBoundingClientRect().width);
+			return { format: size('[id^="Accept-"]'), limit: size('[id^="download_limit-"]') };
+		});
+		console.log(`EMBEDDED_DOWNLOAD_FORMAT ${JSON.stringify(download)}`);
+		expect(download.format, 'download format selector should fit its option labels').toBeLessThan(520);
+		// The result page-size select is gone (Load more replaced result paging); the download limit is the result's
+		// remaining short-option select.
+		expect(download.limit, 'download limit should fit its short options').toBeLessThan(180);
 		await expect(page.locator('.CodeMirror').first()).toBeVisible();
 	});
 
@@ -627,15 +647,9 @@ test.describe('Workbench configuration and option sizing', () => {
 				await routePage.close();
 			}
 
+			// Query settings no longer hold a result limit select (#limit_query): Load more replaced result paging and
+			// page sizes (design/workbench-loadmore-20260930/handoff.md), so the Query page's selects are the result's.
 			const queryPage = await openWorkbenchPageInNewPage(context, `repositories/${REPOSITORY_ID}/query`, { width, height: 1000 });
-			await queryPage.locator('#query-options-toggle').click();
-			const queryOptionHeight = await queryPage.locator('#limit_query')
-				.evaluate(element => Math.round(element.getBoundingClientRect().height));
-			const expectedHeight = width <= 900 ? 44 : 36;
-			console.log(`QUERY_OPTION_SELECT_HEIGHT ${JSON.stringify({ width, expectedHeight, queryOptionHeight })}`);
-			if (Math.abs(queryOptionHeight - expectedHeight) > 1) {
-				violations.push(`Query options selector at ${width}px is ${queryOptionHeight}px, expected ${expectedHeight}px`);
-			}
 			await queryPage.locator('.CodeMirror').first().evaluate(element =>
 				element.CodeMirror.setValue('SELECT ?s ?p ?o WHERE { ?s ?p ?o }'));
 			await queryPage.locator('#exec').click();
@@ -665,17 +679,11 @@ test.describe('Workbench configuration and option sizing', () => {
 			const optionsPanel = queryResultPanels(result).nth(1);
 			await expect(optionsPanel).toBeVisible();
 			await waitForSettledDisclosure(optionsPanel);
+			// Display holds one select (Layout) since the result page-size select was removed; the two selects that
+			// share a row are Download's Format and Limit.
 			const resultControls = await optionsPanel.evaluate(element => {
-				const bounds = selector => {
-					const rect = element.querySelector(selector).getBoundingClientRect();
-					return { height: Math.round(rect.height), centerY: Math.round(rect.top + rect.height / 2) };
-				};
-				return {
-					layout: bounds('[id^="result-layout-"]'),
-					limit: bounds('[id^="stream-result-limit-"]'),
-					labelTops: Array.from(element.querySelectorAll('.query-result-field > span'))
-						.slice(0, 2).map(label => Math.round(label.getBoundingClientRect().top))
-				};
+				const rect = element.querySelector('[id^="result-layout-"]').getBoundingClientRect();
+				return { layout: { height: Math.round(rect.height), centerY: Math.round(rect.top + rect.height / 2) } };
 			});
 			await result.locator('.query-result-download-toggle').click();
 			const downloadPanel = queryResultPanels(result).nth(0);
@@ -683,10 +691,16 @@ test.describe('Workbench configuration and option sizing', () => {
 			await waitForSettledDisclosure(downloadPanel);
 			const downloadControls = await downloadPanel.evaluate(element => {
 				const select = element.querySelector('[id^="Accept-"]').getBoundingClientRect();
+				const limit = element.querySelector('[id^="download_limit-"]').getBoundingClientRect();
 				const button = element.querySelector('.query-result-download-action').getBoundingClientRect();
 				return {
 					selectHeight: Math.round(select.height),
+					limitHeight: Math.round(limit.height),
 					buttonHeight: Math.round(button.height),
+					selectCenterDifference: Math.abs(Math.round(select.top + select.height / 2) -
+						Math.round(limit.top + limit.height / 2)),
+					labelTops: Array.from(element.querySelectorAll('.query-result-field > span'))
+						.slice(0, 2).map(label => Math.round(label.getBoundingClientRect().top)),
 					centerDifference: Math.abs(Math.round(select.top + select.height / 2) -
 						Math.round(button.top + button.height / 2))
 				};
@@ -694,11 +708,11 @@ test.describe('Workbench configuration and option sizing', () => {
 			console.log(`EMBEDDED_CONTROL_GEOMETRY ${JSON.stringify({ width, resultControls, downloadControls })}`);
 			const resultExpectedHeight = width <= 900 ? 44 : 36;
 			if (Math.abs(resultControls.layout.height - resultExpectedHeight) > 1 ||
-				Math.abs(resultControls.limit.height - resultExpectedHeight) > 1) {
-				violations.push(`Embedded result selectors at ${width}px have heights ${resultControls.layout.height}/${resultControls.limit.height}px`);
+				Math.abs(downloadControls.limitHeight - resultExpectedHeight) > 1) {
+				violations.push(`Embedded result selectors at ${width}px have heights ${resultControls.layout.height}/${downloadControls.limitHeight}px`);
 			}
-			if (width > 900 && (Math.abs(resultControls.layout.centerY - resultControls.limit.centerY) > 1 ||
-				Math.abs(resultControls.labelTops[0] - resultControls.labelTops[1]) > 1)) {
+			if (width > 900 && (downloadControls.selectCenterDifference > 1 ||
+				Math.abs(downloadControls.labelTops[0] - downloadControls.labelTops[1]) > 1)) {
 				violations.push(`Embedded result option fields are vertically misaligned at ${width}px`);
 			}
 			if (Math.abs(downloadControls.selectHeight - resultExpectedHeight) > 1 ||
@@ -810,21 +824,26 @@ test.describe('Workbench configuration and option sizing', () => {
 		const violations = [];
 		const createPage = await openWorkbenchPageInNewPage(context, 'repositories/NONE/create?type=memory-rdfs-dt');
 		await createPage.locator('#create-advanced-toggle').click();
+		// The advanced settings are grouped now, so every group has a last field; each of them is checked.
 		const creationGeometry = await createPage.locator(
 			'.workbench-advanced__field:last-child'
-		).evaluate(row => {
+		).evaluateAll(rows => rows.map(row => {
 			const label = row.querySelector(':scope > label, :scope > span').getBoundingClientRect();
 			const control = row.querySelector('.workbench-advanced__control').getBoundingClientRect();
 			return {
+				text: row.innerText.trim().split('\n')[0],
 				rowDisplay: getComputedStyle(row).display,
 				labelBottom: Math.round(label.bottom),
 				controlTop: Math.round(control.top),
 				fieldCount: row.parentElement.children.length
 			};
-		});
+		}));
 		console.log(`CREATE_ADVANCED_FIELD_RHYTHM ${JSON.stringify(creationGeometry)}`);
-		if (creationGeometry.controlTop < creationGeometry.labelBottom + 3) {
-			violations.push('The last advanced Create field places its label inline with the control');
+		expect(creationGeometry.length, 'the advanced Create settings have fields').toBeGreaterThan(0);
+		for (const field of creationGeometry) {
+			if (field.controlTop < field.labelBottom + 3) {
+				violations.push(`The last advanced Create field "${field.text}" places its label inline with the control`);
+			}
 		}
 		await createPage.close();
 		for (const width of [1440, 320]) {

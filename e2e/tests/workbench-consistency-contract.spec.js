@@ -1,9 +1,20 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const { runQuery, serverBaseUrl, uniqueRepositoryId, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
-const REPOSITORY_ID = `workbench-consistency-${Date.now()}`;
+// Migrated and retired with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md). The query
+// result is read in the page (#query-results [data-query-stream-root]) instead of the retired iframe (plan task M9.1).
+// Retired: "short embedded results do not expose the Workbench canvas below their content" measured the iframe's own
+// document below a short result, which no longer exists; "embedded tuple result heading remains the paging script
+// target" protected the heading that tuple.js paging wrote into, and Load more replaced result paging
+// (design/workbench-loadmore-20260930/handoff.md: no Next/Previous or page-size controls for query results).
+// "query, update, and saved editor utilities stay outlined and clear of long first lines" still fails: the Query
+// editor reserves 3.5rem beside its lines for two 28px overlay buttons, so its Share button covers the end of a long
+// first line (a product bug, kept failing on purpose).
+
+const SERVER_BASE_URL = serverBaseUrl();
+const WORKBENCH_BASE_URL = workbenchBaseUrl();
+const REPOSITORY_ID = uniqueRepositoryId('workbench-consistency');
 const REPOSITORY_BASE_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const LONG_LINE_QUERY = `SELECT ?subject ?predicate ?object WHERE { ?subject ?predicate ?object BIND("${'long-value-'.repeat(42)}" AS ?longText) }`;
 
@@ -77,9 +88,16 @@ async function readControlSignature(page, locator) {
 		}
 		return control;
 	});
+	// Safari moves focus to buttons with Option+Tab.
+	const nextControl = page.context().browser()?.browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
 	await control.focus();
-	await page.keyboard.press('Tab');
-	await page.keyboard.press('Shift+Tab');
+	await page.keyboard.press(nextControl);
+	await page.keyboard.press(`Shift+${nextControl}`);
+	// Firefox lets Tab leave the document after its last tab stop (Add's Upload), and Shift+Tab then lands on the
+	// stop before it; focus the control again, which keeps the keyboard focus indicator.
+	if (!(await control.evaluate(element => element === document.activeElement))) {
+		await control.focus();
+	}
 	const signature = await locator.evaluate(element => {
 		const style = getComputedStyle(element);
 		const bounds = element.getBoundingClientRect();
@@ -105,12 +123,11 @@ async function readControlSignature(page, locator) {
 test('query, upload, create, saved, and embedded controls share their locked action tokens', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('.CodeMirror').first().evaluate(element => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 2'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	await frame.locator('#query-result-options-toggle').click();
-	const embeddedField = frame.locator('#result-layout');
+	await runQuery(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 2');
+	const result = page.locator('#query-results [data-query-stream-root]');
+	await result.locator('.query-result-options-toggle').click();
+	const embeddedField = result.locator('[id^="result-layout-"]');
+	await expect(embeddedField).toBeVisible();
 	await embeddedField.focus();
 	await page.keyboard.press('Tab');
 	await page.keyboard.press('Shift+Tab');
@@ -132,29 +149,8 @@ test('query, upload, create, saved, and embedded controls share their locked act
 			focusIndicator: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2
 		};
 	});
-	const embeddedControl = frame.locator('#previousX');
-	await embeddedControl.evaluate(element => { element.disabled = false; });
-	await page.mouse.move(0, 0);
-	await embeddedControl.focus();
-	const embeddedAction = await embeddedControl.evaluate(element => {
-		const wrapper = element.closest('.workbench-action');
-		const style = getComputedStyle(wrapper);
-		const bounds = wrapper.getBoundingClientRect();
-		return {
-			fontFamily: style.fontFamily,
-			fontSize: style.fontSize,
-			fontWeight: style.fontWeight,
-			height: Math.round(bounds.height),
-			borderRadius: style.borderRadius,
-			borderColor: style.borderColor,
-			outlineStyle: style.outlineStyle,
-			outlineWidth: style.outlineWidth,
-			outlineColor: style.outlineColor,
-			outlineOffset: style.outlineOffset,
-			focusIndicator: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2,
-			boxShadow: style.boxShadow
-		};
-	});
+	// The result's paging buttons are gone (Load more replaced result paging); its secondary action is Full screen.
+	const embeddedAction = await readControlSignature(page, result.locator('.query-results__fullscreen'));
 
 	const queryAction = await readControlSignature(page, page.locator('#exec'));
 	await page.locator('#save-query-toggle').click();
@@ -304,36 +300,38 @@ test('desktop navigation surface keeps its locked width and gutter', async ({ pa
 	expect(metrics.gap).toBe(24);
 });
 
-test('Saved Query actions use the two-column mobile grid and wrapping metadata', async ({ page }) => {
+// The saved-query row offers Execute, Show details, Edit and Delete as one wrapping row of buttons (the streamed page
+// model replaced the XSLT row with its Link action and two-column grid; Show details and Edit are text buttons since
+// plan tasks M1.3 and M5.6), so the grid positions and the eye and pencil icons are no longer checked.
+test('Saved Query actions keep touch-sized controls and wrapping metadata on mobile', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	const queryName = `mobile-layout-${Date.now()}`;
 	await saveQuery(page, queryName);
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/saved-queries`);
 	const row = page.locator('.saved-query-row').filter({ hasText: queryName });
 	await expect(row).toBeVisible();
-	const actionBoxes = await row.locator('.workbench-action').evaluateAll(elements => elements.map(element => {
+	const actions = row.locator('.saved-query-actions .workbench-action');
+	const actionBoxes = await actions.evaluateAll(elements => elements.map(element => {
 		const rect = element.getBoundingClientRect();
-		return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+		const row = element.closest('.saved-query-row');
+		const rowStyle = getComputedStyle(row);
+		const rowBounds = row.getBoundingClientRect();
+		return {
+			label: element.querySelector('input')?.value || element.textContent.trim(),
+			x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right,
+			rowContentLeft: rowBounds.left + parseFloat(rowStyle.borderLeftWidth) + parseFloat(rowStyle.paddingLeft),
+			rowContentRight: rowBounds.right - parseFloat(rowStyle.borderRightWidth) - parseFloat(rowStyle.paddingRight)
+		};
 	}));
-	expect(actionBoxes).toHaveLength(5);
-	const [execute, link, show, edit, remove] = actionBoxes;
-	for (const action of [execute, link, show, edit, remove]) {
-		expect(action.height).toBeGreaterThanOrEqual(44);
+	expect(actionBoxes.map(action => action.label)).toEqual(['Execute', 'Show details', 'Edit', 'Delete…']);
+	for (const action of actionBoxes) {
+		expect(action.height, `${action.label} is a touch target`).toBeGreaterThanOrEqual(44);
+		expect(action.x, `${action.label} starts inside its row`).toBeGreaterThanOrEqual(action.rowContentLeft - 1);
+		expect(action.right, `${action.label} wraps inside its row`).toBeLessThanOrEqual(action.rowContentRight + 1);
 	}
-	expect(execute.y).toBeCloseTo(link.y, 0);
-	expect(show.y).toBeCloseTo(edit.y, 0);
-	expect(show.y).toBeGreaterThan(execute.y);
-	expect(remove.y).toBeGreaterThan(show.y);
-	expect(execute.x).toBeCloseTo(show.x, 0);
-	expect(remove.x).toBeCloseTo(execute.x, 0);
-	await expect(row.locator('.workbench-action').nth(0).locator('.workbench-action-icon')).toHaveClass(/workbench-action-icon--execute/);
-	await expect(row.locator('.workbench-action').nth(0).locator('.workbench-action-icon path'))
+	await expect(actions.nth(0).locator('.workbench-action-icon')).toHaveClass(/workbench-action-icon--execute/);
+	await expect(actions.nth(0).locator('.workbench-action-icon path'))
 		.toHaveAttribute('d', 'M8 5 19 12 8 19V5Z');
-	await expect(row.locator('.workbench-action').nth(2).locator('.workbench-action-icon')).toHaveClass(/workbench-action-icon--eye/);
-	await expect(row.locator('.workbench-action').nth(2).locator('.workbench-action-icon circle')).toHaveCount(1);
-	await expect(row.locator('.workbench-action').nth(3).locator('.workbench-action-icon')).toHaveClass(/workbench-action-icon--edit/);
-	await expect(row.locator('.workbench-action').nth(3).locator('.workbench-action-icon path').first())
-		.toHaveAttribute('d', /10a2\.1 2\.1 0 0 0-3-3l-10 10/);
 	await row.locator('.saved-query-toggle').click();
 	// The details are a key/value list (plan task M5.6).
 	const metadata = row.locator('[id$="-metadata"]');
@@ -392,14 +390,19 @@ test('administration and embedded result table headers share one typography and 
 		}));
 	}
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('.CodeMirror').first().evaluate(element => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 2'));
-	await page.locator('#exec').click();
-	const embeddedResult = page.frameLocator('#query-results-frame').locator('#query-result-layout');
-	await embeddedResult.waitFor({ state: 'attached' });
-	const embeddedHeader = page.frameLocator('#query-results-frame')
-		.locator('#query-result-table-wrap table.data th').first();
+	await runQuery(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 2');
+	const embeddedHeader = page.locator('#query-results [data-query-stream-root] [id^="query-result-table-wrap-"] table.data th')
+		.first();
 	await embeddedHeader.waitFor();
-	signatures.push(await embeddedHeader.evaluate(element => {
+	const codeFont = await page.evaluate(() => {
+		const probe = document.createElement('span');
+		probe.style.fontFamily = 'var(--workbench-code-font)';
+		document.querySelector('#query-results').append(probe);
+		const family = getComputedStyle(probe).fontFamily;
+		probe.remove();
+		return family;
+	});
+	const embeddedSignature = await embeddedHeader.evaluate(element => {
 		const style = getComputedStyle(element);
 		return {
 			fontFamily: style.fontFamily,
@@ -411,7 +414,10 @@ test('administration and embedded result table headers share one typography and 
 			borderBottomWidth: style.borderBottomWidth,
 			padding: style.padding
 		};
-	}));
+	});
+	// Result headers show ?variable in the code font since plan task M4.3; everything else matches the page tables.
+	expect(embeddedSignature.fontFamily, 'result headers use the code font token').toBe(codeFont);
+	signatures.push({ ...embeddedSignature, fontFamily: signatures[0].fontFamily });
 	for (const signature of signatures) {
 		expect(signature).toMatchObject({ fontSize: '13px', fontWeight: '600' });
 	}
@@ -518,11 +524,9 @@ test('query and result utility disclosures share action typography and control g
 			fontSize: '13px', fontWeight: '600', height: 36, borderRadius: '7px', gap: '8px'
 		});
 	}
-	await page.locator('.CodeMirror').first().evaluate(element => element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o } LIMIT 2'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	const resultToggles = await frame.locator('#query-result-download-toggle,#query-result-options-toggle')
+	await runQuery(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 2');
+	const resultToggles = await page.locator('#query-results [data-query-stream-root]')
+		.locator('.query-result-download-toggle, .query-result-options-toggle')
 		.evaluateAll(elements => elements.map(element => {
 			const style = getComputedStyle(element);
 			return {
@@ -533,6 +537,7 @@ test('query and result utility disclosures share action typography and control g
 				gap: style.gap
 			};
 		}));
+	expect(resultToggles).toHaveLength(2);
 	for (const [index, signature] of resultToggles.entries()) {
 		expect(signature, `embedded result utility disclosure ${index}`).toMatchObject({
 			fontSize: '13px', fontWeight: '600', borderRadius: '7px', gap: '8px'
@@ -574,9 +579,22 @@ test('saved query metadata exposes separators between all label and value pairs'
 test('query and update editors and explanations use one responsive code font token', async ({ page }) => {
 	const expectedFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 	const routes = [
-		{ route: `repositories/${REPOSITORY_ID}/query`, selector: '.query-page .CodeMirror pre' },
-		{ route: `repositories/${REPOSITORY_ID}/update`, selector: '#update-editor .CodeMirror pre' }
+		// Code lines, not CodeMirror's measuring pre, which it replaces whenever it measures text.
+		{ route: `repositories/${REPOSITORY_ID}/query`, selector: '.query-page .CodeMirror-code pre' },
+		{ route: `repositories/${REPOSITORY_ID}/update`, selector: '#update-editor .CodeMirror-code pre' }
 	];
+	// A line that CodeMirror re-renders after it was found reads as an empty style; read a connected element.
+	const readCodeFont = async locator => {
+		let signature = null;
+		await expect.poll(async () => {
+			signature = await locator.evaluate(element => element.isConnected ? {
+				fontFamily: getComputedStyle(element).fontFamily,
+				fontSize: getComputedStyle(element).fontSize
+			} : null);
+			return signature !== null;
+		}).toBe(true);
+		return signature;
+	};
 	for (const viewport of [{ width: 1440, size: '14px' }, { width: 390, size: '13px' }]) {
 		await page.setViewportSize({ width: viewport.width, height: 1000 });
 		const signatures = [];
@@ -584,68 +602,16 @@ test('query and update editors and explanations use one responsive code font tok
 			await openWorkbenchPage(page, entry.route);
 			const code = page.locator(entry.selector).first();
 			await expect(code).toBeAttached();
-			signatures.push(await code.evaluate(element => ({
-				fontFamily: getComputedStyle(element).fontFamily,
-				fontSize: getComputedStyle(element).fontSize
-			})));
+			signatures.push(await readCodeFont(code));
 		}
 		await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
 		const explanation = page.locator('#query-explanation');
 		await expect(explanation).toBeAttached();
-		signatures.push(await explanation.evaluate(element => ({
-			fontFamily: getComputedStyle(element).fontFamily,
-			fontSize: getComputedStyle(element).fontSize
-		})));
+		signatures.push(await readCodeFont(explanation));
 		for (const signature of signatures) {
 			expect(signature).toEqual({ fontFamily: expectedFamily, fontSize: viewport.size });
 		}
 	}
-});
-
-test('short embedded results do not expose the Workbench canvas below their content', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('.CodeMirror').first().evaluate(element => element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { <urn:a> <urn:b> <urn:c> } }'));
-	await page.locator('#exec').click();
-	const frame = page.frameLocator('#query-results-frame');
-	await frame.locator('#rdf4j-query-result').waitFor({ state: 'attached' });
-	const metrics = await page.locator('#query-results-frame').evaluate(iframe => {
-		const document = iframe.contentDocument;
-		const body = document.body;
-		const bodyBounds = body.getBoundingClientRect();
-		return {
-			viewportHeight: document.documentElement.clientHeight,
-			documentHeight: document.documentElement.scrollHeight,
-			bodyBottom: bodyBounds.bottom,
-			bodyBackground: getComputedStyle(body).backgroundColor,
-			rootBackground: getComputedStyle(document.documentElement).backgroundColor,
-			navigationBottom: document.querySelector('.query-result-navigation').getBoundingClientRect().bottom
-		};
-	});
-	expect(metrics.bodyBackground).toBe('rgb(255, 255, 255)');
-	expect(metrics.rootBackground).toBe('rgb(255, 255, 255)');
-	expect(metrics.bodyBottom).toBeGreaterThanOrEqual(metrics.viewportHeight - 1);
-	expect(metrics.documentHeight).toBeLessThanOrEqual(metrics.viewportHeight + 1);
-	expect(metrics.navigationBottom).toBeLessThanOrEqual(metrics.bodyBottom);
-});
-
-test('embedded tuple result heading remains the paging script target', async ({ page }) => {
-	const tupleErrors = [];
-	page.on('pageerror', error => {
-		if (error.stack?.includes('/scripts/tuple.js')) {
-			tupleErrors.push(error.message);
-		}
-	});
-	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	await page.locator('.CodeMirror').first().evaluate(element =>
-		element.CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { "paging-title" } }'));
-	await page.locator('#exec').click();
-	const resultFrame = page.frameLocator('#query-results-frame');
-	const resultHeading = resultFrame.locator('#query-result-embedded-header h2');
-	await resultHeading.waitFor({ state: 'visible' });
-	await expect(resultHeading).toHaveAttribute('id', 'title_heading');
-	await expect(resultHeading).toContainText('Query Result');
-	expect(tupleErrors).toEqual([]);
 });
 
 test('saved query entries share one island and stay separated at desktop and mobile widths', async ({ page }) => {
@@ -735,9 +701,12 @@ test('execute and explain actions reuse one icon metaphor across query forms', a
 		r: child.getAttribute('r')
 	})));
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
-	const queryExecute = await readShape(page.locator('#exec .query-action-icon'));
-	const queryExplain = await readShape(page.locator('#explain-trigger .query-action-icon'));
-	const rerunExplain = await readShape(page.locator('#rerun-explanation').locator('xpath=../..').locator('.workbench-action-icon'));
+	// The Query page's actions are buttons of the shared component (plan task M1.3) with the shared icons. "Explain
+	// again" is a text action of the explanation toolbar (plan task M3.3; mockup 03 gives it a refresh glyph, not the
+	// Explain icon), so instead of comparing the two, the Explain trigger must show the shared Explain icon.
+	const queryExecute = await readShape(page.locator('#exec .workbench-action-icon'));
+	await expect(page.locator('#explain-trigger .workbench-action-icon')).toHaveClass(/workbench-action-icon--explain/);
+	const queryExplain = await readShape(page.locator('#explain-trigger .workbench-action-icon'));
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/update`);
 	const updateExecute = await readShape(page.locator('#update-actions .workbench-action-icon'));
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/namespaces`);
@@ -751,7 +720,7 @@ test('execute and explain actions reuse one icon metaphor across query forms', a
 	const savedExecute = await readShape(savedRow.locator('.workbench-action--primary .workbench-action-icon'));
 	expect(queryExecute).toEqual(updateExecute);
 	expect(updateExecute).toEqual(savedExecute);
-	expect(queryExplain).toEqual(rerunExplain);
+	expect(queryExplain).not.toEqual(queryExecute);
 	expect(namespaceUpdateShape).not.toEqual(queryExecute);
 });
 

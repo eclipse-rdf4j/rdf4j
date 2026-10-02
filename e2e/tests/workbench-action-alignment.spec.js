@@ -13,9 +13,16 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
+const { serverBaseUrl, workbenchBaseUrl } = require('./workbench-test-helpers.js');
 
-const SERVER = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
-const WORKBENCH = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
+// Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): results and
+// explanations are tabs of one output card (#query-output, plan task M3.3), so the result card's outer edge is that
+// card's border box. The result iframe is gone (plan task M9.1), so "main desktop actions ..." no longer focuses it
+// before entering full screen through the query adapter; the adapter's entry and exit keep their checks. The long-content
+// stress widens the fixed-layout result table, as an unwrapped long value does, instead of one cell.
+
+const SERVER = serverBaseUrl();
+const WORKBENCH = workbenchBaseUrl();
 const RUN = `${process.pid}-${Date.now().toString(36)}`;
 const REPOSITORY = `workbench-action-alignment-${RUN}`;
 const SAVED_QUERY_NAME = `align-${RUN.replace(/[^a-z0-9]/gi, '').slice(-16)}`;
@@ -39,6 +46,7 @@ async function measureMainAlignment(page) {
 		};
 		const queryCard = document.getElementById('query-form');
 		const resultCard = document.getElementById('query-results');
+		const outputCard = document.getElementById('query-output');
 		const editorOptions = document.getElementById('query-options-toggle');
 		const resultToolbar = resultCard.querySelector('.query-result-toolbar');
 		const toolbarRect = resultToolbar.getBoundingClientRect();
@@ -75,7 +83,7 @@ async function measureMainAlignment(page) {
 			viewportWidth: document.documentElement.clientWidth,
 			documentScrollWidth: document.documentElement.scrollWidth,
 			expectedActionGap: parseFloat(getComputedStyle(document.body).getPropertyValue('--workbench-control-gap')),
-			queryCard: rect(queryCard), resultCard: rect(resultCard),
+			queryCard: rect(queryCard), resultCard: rect(resultCard), outputCard: rect(outputCard),
 			queryCardContentRight: contentRight(queryCard), resultCardContentRight: contentRight(resultCard),
 			rendererPaddingRight: parseFloat(getComputedStyle(resultMount).paddingRight),
 			editorOptions: rect(editorOptions), editorOptionsVisible: visible(editorOptions),
@@ -90,7 +98,7 @@ function assertMainAlignment(geometry, viewportWidth, { requireNaturalFit = true
 	expect.soft(geometry.documentScrollWidth, `${viewportWidth}px: the page has no horizontal overflow`)
 		.toBeLessThanOrEqual(geometry.viewportWidth);
 	expect.soft(Math.abs((geometry.queryCard.right - geometry.queryCardContentRight)
-		- (geometry.resultCard.right - geometry.resultCardContentRight)),
+		- (geometry.outputCard.right - geometry.resultCardContentRight)),
 	`${viewportWidth}px: editor and result cards share one inset`).toBeLessThanOrEqual(0.5);
 	expect.soft(Math.abs(geometry.queryCardContentRight - geometry.resultCardContentRight),
 	`${viewportWidth}px: editor and result content edges align`).toBeLessThanOrEqual(0.5);
@@ -364,72 +372,33 @@ test('main desktop actions share the card content edge and one row', async ({ pa
 	await expect(fullScreen).toHaveAttribute('aria-pressed', 'false');
 	await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains('query-results__fullscreen')))
 		.toBe(true);
-	const fallbackFrameWasHidden = await page.evaluate(() => {
-		const frame = document.getElementById('query-results-frame');
-		const wasHidden = frame.hidden;
-		frame.hidden = false;
-		frame.focus();
-		return wasHidden;
+	// Entering and leaving full screen through the query adapter (the keyboard shortcut's path) moves focus to the
+	// result's Full screen control and gives it back when full screen ends.
+	await fullScreen.focus();
+	await page.evaluate(() => {
+		const results = document.getElementById('query-results');
+		const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
+		window.workbench.query.toggleResultsFullscreen(results, button);
 	});
-	await expect.poll(() => page.evaluate(() =>
-		document.activeElement === document.getElementById('query-results-frame')))
-		.toBe(true);
-	const focusedFallbackFrame = await page.evaluate(() =>
-		document.activeElement === document.getElementById('query-results-frame'));
-	let entered = false;
-	let restoredParentControl = false;
-	let bodyUnlocked = false;
-	try {
-		await page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
-			window.workbench.query.toggleResultsFullscreen(results, button);
-		});
-		await expect(page.locator('#query-results')).toHaveAttribute('data-fullscreen', 'true');
-		await expect.poll(() => page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
-			return window.workbench.resultFullscreen.currentTarget() === results
-				&& document.activeElement === button;
-		})).toBe(true);
-		entered = await page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
-			return results.getAttribute('data-fullscreen') === 'true'
-				&& window.workbench.resultFullscreen.currentTarget() === results
-				&& document.activeElement === button;
-		});
-		await page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
-			window.workbench.query.toggleResultsFullscreen(results, button);
-		});
-		await expect(page.locator('#query-results')).not.toHaveAttribute('data-fullscreen', 'true');
-		await expect.poll(() => page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
-			return document.activeElement === button
-				&& !document.body.classList.contains('query-results-fullscreen-active');
-		})).toBe(true);
-		restoredParentControl = await page.evaluate(() => {
-			const results = document.getElementById('query-results');
-			return document.activeElement === results.querySelector('.query-result-toolbar .query-results__fullscreen');
-		});
-		bodyUnlocked = await page.evaluate(() =>
-			!document.body.classList.contains('query-results-fullscreen-active'));
-	} finally {
-		await page.evaluate(wasHidden => {
-			document.getElementById('query-results-frame').hidden = wasHidden;
-		}, fallbackFrameWasHidden);
-	}
-	const iframeFocusRestoration = { focusedFallbackFrame, entered, restoredParentControl, bodyUnlocked };
-	expect(iframeFocusRestoration.focusedFallbackFrame,
-		'the focused legacy result iframe provides the parent document focus scenario').toBe(true);
-	expect(iframeFocusRestoration.entered,
-		`main fullscreen enters through the query adapter: ${JSON.stringify(iframeFocusRestoration)}`).toBe(true);
-	expect(iframeFocusRestoration.restoredParentControl,
-		'main fullscreen restores focus to its Full screen control after an iframe-owned entry').toBe(true);
-	expect(iframeFocusRestoration.bodyUnlocked, 'iframe focus restoration exits fullscreen cleanly').toBe(true);
+	await expect(page.locator('#query-results')).toHaveAttribute('data-fullscreen', 'true');
+	await expect.poll(() => page.evaluate(() => {
+		const results = document.getElementById('query-results');
+		const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
+		return window.workbench.resultFullscreen.currentTarget() === results
+			&& document.activeElement === button;
+	}), 'main fullscreen enters through the query adapter').toBe(true);
+	await page.evaluate(() => {
+		const results = document.getElementById('query-results');
+		const button = results.querySelector('.query-result-toolbar .query-results__fullscreen');
+		window.workbench.query.toggleResultsFullscreen(results, button);
+	});
+	await expect(page.locator('#query-results')).not.toHaveAttribute('data-fullscreen', 'true');
+	await expect.poll(() => page.evaluate(() => {
+		const results = document.getElementById('query-results');
+		return document.activeElement === results.querySelector('.query-result-toolbar .query-results__fullscreen');
+	}), 'main fullscreen restores focus to its Full screen control after an adapter entry').toBe(true);
+	expect(await page.evaluate(() => !document.body.classList.contains('query-results-fullscreen-active')),
+		'the query adapter exits fullscreen cleanly').toBe(true);
 	await page.setViewportSize({ width: 1280, height: 1000 });
 	const stress = await result.evaluate(root => {
 		const longLabel = ' action with a long descriptive label';
@@ -440,10 +409,12 @@ test('main desktop actions share the card content edge and one row', async ({ pa
 		for (const label of [title, fullscreenLabel, downloadLabel, optionsLabel]) {
 			if (label) label.textContent = label.textContent.trim() + longLabel.repeat(4);
 		}
-		const cell = root.querySelector('.query-result-table-wrap tbody td');
-		if (cell) {
-			cell.style.whiteSpace = 'nowrap';
-			cell.style.minWidth = '1400px';
+		// The result table has a fixed layout whose width the renderer sets from its columns (plan task M4), so a
+		// wide cell no longer widens it; the table itself is made as wide as a long unwrapped value would make it.
+		const table = root.querySelector('.query-result-table-wrap table.data');
+		if (table) {
+			table.style.width = '1400px';
+			table.style.minWidth = '1400px';
 		}
 		const scrollport = root.querySelector('.query-result-table-wrap');
 		return { scrollportWidth: scrollport?.clientWidth, scrollWidth: scrollport?.scrollWidth };
