@@ -3339,10 +3339,10 @@ module workbench {
                             <span id="explain-trigger-spinner" class="query-explain-spinner" aria-hidden="true"></span>
                             <span id="explain-trigger-cancel-action" class="workbench-action workbench-action--danger-outline query-explain-cancel"
                                 ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                data-workbench-action="cancel"><span id="explain-trigger-cancel-icon" aria-hidden="true"></span>
-                                <input id="explain-trigger-cancel" type="button" value="Cancel" aria-hidden="true" disabled
+                                data-workbench-action="cancel">${icon(runtime, 'cancel')}<span class="workbench-action-label"><input
+                                    id="explain-trigger-cancel" type="button" value="Cancel" aria-hidden="true" disabled
                                     ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                    @click=${() => invoke('workbench.query.cancelExplain')} /></span>
+                                    @click=${() => invoke('workbench.query.cancelExplain')} /></span></span>
                         </div>
                         <div class="workbench-action-toolbar__actions">
                             <div class="workbench-action-toolbar__group">${saveDisclosure}${optionsDisclosure}</div>

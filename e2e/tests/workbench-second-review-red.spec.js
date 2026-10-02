@@ -381,10 +381,6 @@ test('query starts without an empty result island and Explain cancel has a label
 	await page.waitForFunction(() => window.__workbenchPageshowSeen === true);
 	await expect(page.locator('#query-results')).toHaveCount(1);
 	await expect(page.locator('#query-results')).toBeHidden();
-	// Known product bug (stale spec migration, 2026-10-02): when the Query page moved from XSLT to Lit (commit
-	// 11d8f194ca), the Explain Cancel action kept its wrapper but lost its cancel icon (an empty
-	// #explain-trigger-cancel-icon is left) and the .workbench-action-label around its input, so the running
-	// Explain shows a field-bordered input inside the red outline. Create's Cancel shows the intended markup.
 	const cancel = page.locator('#explain-trigger-cancel');
 	const cancelRoot = cancel.locator(
 		'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]'
