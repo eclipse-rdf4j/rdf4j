@@ -1873,15 +1873,6 @@ var workbench;
                 return;
             }
             workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, open, true);
-            if (open) {
-                // Near the bottom of a short window the pane would open past it: scroll just enough to show all of it.
-                // scrollHeight is the opened height even while the opening motion is still running.
-                var view = panel.ownerDocument && panel.ownerDocument.defaultView;
-                var overflow = view ? panel.getBoundingClientRect().top + panel.scrollHeight - view.innerHeight : 0;
-                if (overflow > 0) {
-                    view.scrollBy(0, overflow);
-                }
-            }
         }
         query_1.setExplanationSettingsOpen = setExplanationSettingsOpen;
         function toggleExplanationSettings() {

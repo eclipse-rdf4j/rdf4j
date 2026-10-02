@@ -1050,6 +1050,24 @@ var workbench;
     }
     workbench.releaseDisclosure = releaseDisclosure;
     /** Open or close a pane; an open pane listens for a press outside it and for Escape (M14.3). */
+    /**
+     * A pane that opens over the page (M14.3) past the bottom of the window scrolls the page just enough to show it,
+     * but never so far that its button goes under the sticky context bar (the page's top scroll padding).
+     */
+    function revealOpenedPane(button, panel, height) {
+        if (typeof window.scrollBy !== 'function' || window.getComputedStyle(panel).position !== 'absolute') {
+            return;
+        }
+        var overflow = panel.getBoundingClientRect().top + height - window.innerHeight;
+        if (overflow <= 0) {
+            return;
+        }
+        var clearTop = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+        var distance = Math.min(overflow, button.getBoundingClientRect().top - clearTop);
+        if (distance > 0) {
+            window.scrollBy(0, distance);
+        }
+    }
     function setDisclosureExpanded(button, panel, owner, expanded, animate) {
         applyDisclosureExpanded(button, panel, owner, expanded, animate);
         syncDisclosureDismiss();
@@ -1136,6 +1154,9 @@ var workbench;
             panel.hidden = !expanded;
             restoreMotionStyles(panel, styles);
             return;
+        }
+        if (expanded) {
+            revealOpenedPane(button, panel, endHeight);
         }
         panel.style.overflow = 'hidden';
         var startBox = expanded && !existingMotion

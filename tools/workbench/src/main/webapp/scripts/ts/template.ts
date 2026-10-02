@@ -1209,6 +1209,25 @@ module workbench {
     }
 
     /** Open or close a pane; an open pane listens for a press outside it and for Escape (M14.3). */
+    /**
+     * A pane that opens over the page (M14.3) past the bottom of the window scrolls the page just enough to show it,
+     * but never so far that its button goes under the sticky context bar (the page's top scroll padding).
+     */
+    function revealOpenedPane(button: HTMLElement, panel: HTMLElement, height: number): void {
+        if (typeof window.scrollBy !== 'function' || window.getComputedStyle(panel).position !== 'absolute') {
+            return;
+        }
+        var overflow = panel.getBoundingClientRect().top + height - window.innerHeight;
+        if (overflow <= 0) {
+            return;
+        }
+        var clearTop = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+        var distance = Math.min(overflow, button.getBoundingClientRect().top - clearTop);
+        if (distance > 0) {
+            window.scrollBy(0, distance);
+        }
+    }
+
     export function setDisclosureExpanded(button: HTMLButtonElement, panel: HTMLElement, owner: HTMLElement,
                                          expanded: boolean, animate?: boolean): void {
         applyDisclosureExpanded(button, panel, owner, expanded, animate);
@@ -1297,6 +1316,9 @@ module workbench {
             panel.hidden = !expanded;
             restoreMotionStyles(panel, styles);
             return;
+        }
+        if (expanded) {
+            revealOpenedPane(button, panel, endHeight);
         }
         panel.style.overflow = 'hidden';
         var startBox = expanded && !existingMotion
