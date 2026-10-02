@@ -906,10 +906,12 @@ var workbench;
                 : '/';
         }
         function setWorkbenchCookie(name, value) {
-            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
         function clearWorkbenchCookie(name) {
-            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
         function shouldPersistPrimaryQueryCookieValue(queryValue) {
             return !queryValue || queryValue.length <= 2048;

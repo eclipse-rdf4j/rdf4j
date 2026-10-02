@@ -1517,7 +1517,7 @@ var workbench;
             if (!documentObject || typeof documentObject.cookie !== 'string') {
                 return;
             }
-            documentObject.cookie = 'show-datatypes=' + String(show) + '; max-age=31536000';
+            documentObject.cookie = 'show-datatypes=' + String(show) + '; max-age=31536000; SameSite=Lax';
         }
         function booleanResultLabel(workbenchInfo, value) {
             var key = value ? 'true.label' : 'false.label';
@@ -4148,7 +4148,8 @@ var workbench;
             var pathname = document.location && document.location.pathname || '/';
             var pathSegments = pathname.split('/');
             var cookiePath = pathSegments.length > 1 && pathSegments[1] ? '/' + pathSegments[1] : '/';
-            document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath;
+            document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath
+                + '; SameSite=Lax';
         }
         /**
          * Ask the server to cancel a query. In the page the Query page's retrying request is used; a page that is

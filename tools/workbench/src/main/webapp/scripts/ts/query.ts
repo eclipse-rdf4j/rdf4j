@@ -1209,11 +1209,13 @@ module workbench {
         }
 
         function setWorkbenchCookie(name: string, value: string): void {
-            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
 
         function clearWorkbenchCookie(name: string): void {
-            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
 
         function shouldPersistPrimaryQueryCookieValue(queryValue: string): boolean {

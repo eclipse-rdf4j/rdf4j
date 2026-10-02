@@ -408,7 +408,7 @@ module workbench {
                 exdate.setDate(exdate.getDate() + exdays);
                 document.cookie = c_name + "=" + value + 
                     ((exdays == null) ? "" : 
-                    "; expires=" + exdate.toUTCString());
+                    "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
             }
 
             /** Datatype tags (span.rdf-datatype) are hidden by a page class, so no cell needs re-rendering. */
