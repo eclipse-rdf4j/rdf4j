@@ -72,10 +72,20 @@ function loadQueryStreamApi(workbench = {}) {
             removeItem(key) { localValues.delete(key); }
         }
     };
+    const documentListeners = new Map();
     const context = vm.createContext({
         workbench,
         window: testWindow,
-        document: { activeElement: null, cookie: '' },
+        // An open disclosure pane listens on the document for presses outside it and Escape (plan task M14.3).
+        document: {
+            activeElement: null, cookie: '', documentElement: { clientWidth: 1000 },
+            addEventListener(type, listener) {
+                documentListeners.set(type, (documentListeners.get(type) || new Set()).add(listener));
+            },
+            removeEventListener(type, listener) {
+                (documentListeners.get(type) || new Set()).delete(listener);
+            }
+        },
         Event: class { constructor(type) { this.type = type; } },
         TextDecoder: require('node:util').TextDecoder,
         URLSearchParams
@@ -87,6 +97,7 @@ function loadQueryStreamApi(workbench = {}) {
     context.workbench.queryStream.__testLocalValues = localValues;
     context.workbench.queryStream.__testResizeListeners = resizeListeners;
     context.workbench.queryStream.__testDisclosureObservers = disclosureObservers;
+    context.workbench.queryStream.__testDocumentListeners = documentListeners;
     return context.workbench.queryStream;
 }
 
@@ -1099,44 +1110,51 @@ test('result toolbar preserves typed native downloads, panels, and fullscreen ha
     assert.equal(target.getAttribute('aria-labelledby'), legacyHeading.getAttribute('id'));
 });
 
-test('result disclosure panels measure their trigger and stay inside the result mount', async () => {
+test('result disclosure panels open below their trigger and stay inside the result card', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
-    const target = document.createElement('section');
-    document.body.appendChild(target);
+    // The result card (plan task M14.3: panes open over the page and stay inside their card).
+    const card = document.createElement('section');
+    card.className = 'query-output';
+    Object.assign(card.style, { borderLeftWidth: '0px', borderRightWidth: '0px', paddingLeft: '0px', paddingRight: '0px' });
+    Object.assign(card, { clientLeft: 0, clientTop: 0, scrollLeft: 0, scrollTop: 0 });
+    document.body.appendChild(card);
+    const target = document.createElement('div');
+    card.appendChild(target);
 	const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
 	await renderer.accept({ type: 'view', id: 'tuple' });
 	await renderer.accept({ type: 'vars', values: ['value'] });
 	await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'visible' }]] });
 	await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
 	const panel = document.getElementById(renderer.optionsToggle.getAttribute('aria-controls'));
-	const panelTrack = panel.parentNode;
 	const observer = queryStream.__testDisclosureObservers[0];
-	assert.equal(panelTrack.classList.contains('workbench-disclosure-track'), true);
-	assert.equal(observer.observed.has(panelTrack), true,
-		'the shared anchor observer should watch the final result panel track');
-	assert.equal(observer.observed.has(renderer.optionsToggle.parentNode), false,
-		'the observer should not retain the detached trigger owner as the options panel track');
+	assert.equal(panel.parentNode.classList.contains('workbench-disclosure-track'), true);
 	const rect = (left, top, width, height) => ({
         left, top, width, height, right: left + width, bottom: top + height
     });
-    panel.parentNode.getBoundingClientRect = () => rect(100, 10, 800, 600);
+    card.getBoundingClientRect = () => rect(100, 10, 800, 600);
     renderer.optionsToggle.getBoundingClientRect = () => rect(840, 10, 80, 36);
     panel.getBoundingClientRect = () => rect(100, 50, 320, 200);
+    panel.offsetParent = card;
 
     renderer.optionsToggle.trigger('click');
 
-    assert.equal(panel.style.getPropertyValue('--workbench-disclosure-panel-start'), '480px',
-        'the panel should shift left when its trigger is near the result mount edge');
+	assert.equal(observer.observed.has(card), true,
+		'the shared anchor observer should watch the result card, whose growth moves the trigger');
+    assert.equal(panel.style.getPropertyValue('--workbench-disclosure-left'), '480px',
+        'the panel should shift left when its trigger is near the result card edge');
+    assert.equal(panel.style.getPropertyValue('--workbench-disclosure-top'), '36px', 'just below the trigger');
 	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '300px',
 		'the panel arrow should remain centered under its trigger after clamping');
 	assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
 	renderer.optionsToggle.getBoundingClientRect = () => rect(400, 10, 80, 36);
 	observer.callback();
-	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-panel-start'), '60px',
-		'resizing should refresh the panel position against its final shared track');
+	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-left'), '60px',
+		'resizing should refresh the panel position against its card');
 	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '280px');
 	renderer.dispose();
+	assert.equal(queryStream.__testDocumentListeners.get('pointerdown').size, 0,
+		'disposing an open pane stops listening for presses outside it');
 });
 
 test('query result toolbar toggles expose stable semantic classes', () => {

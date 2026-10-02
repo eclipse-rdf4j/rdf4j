@@ -498,9 +498,10 @@ test.describe('Workbench configuration and option sizing', () => {
 
 	test('Add preserves uploaded graph contexts by default and only overrides them when asked', async ({ page, request }) => {
 		await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
-		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
+		// Advanced settings open over the form and close on a press outside them (plan task M14.3).
+		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('#baseURI').fill('https://example.org/base/');
 		// An empty "Target graph" keeps the graphs named in the data (plan task M5.5 removed the override checkbox).
 		await expect(page.locator('#context')).toBeEnabled();
@@ -512,6 +513,8 @@ test.describe('Workbench configuration and option sizing', () => {
 		].join('\n'));
 		await page.locator('#text').blur();
 		await expect(page.locator('#Content-Type')).toHaveValue('application/trig');
+		// The open pane covers the buttons below it until it is closed.
+		await page.locator('#add-import-settings-toggle').click();
 		await page.getByRole('button', { name: 'Upload' }).click();
 		await waitForWriteDone(page, 'add');
 
@@ -525,9 +528,9 @@ test.describe('Workbench configuration and option sizing', () => {
 		expect(nquads).not.toContain('<https://example.org/base/default> <http://example.org/p> "default" <https://example.org/base/> .');
 
 		await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
-		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('label[for="source-text"]').click();
 		await expect(page.locator('#source-text')).toBeChecked();
+		await page.locator('#add-import-settings-toggle').click();
 		await page.locator('#baseURI').fill('https://example.org/other/');
 		await page.locator('#context').fill('<http://example.org/override>');
 		await page.locator('#Content-Type').selectOption('application/trig');
@@ -536,6 +539,7 @@ test.describe('Workbench configuration and option sizing', () => {
 			'<http://example.org/graph-2> { <named-2> <http://example.org/p> "named-2" . }'
 		].join('\n'));
 		await expect(page.locator('#Content-Type')).toHaveValue('application/trig');
+		await page.locator('#add-import-settings-toggle').click();
 		await page.getByRole('button', { name: 'Upload' }).click();
 		await waitForWriteDone(page, 'add');
 

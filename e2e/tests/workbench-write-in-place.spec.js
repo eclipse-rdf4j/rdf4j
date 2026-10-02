@@ -194,7 +194,7 @@ test('a write whose request fails says so on its page and can be sent again', as
 
 	const status = page.locator('#update-form .workbench-submit-status');
 	await expect(status).toHaveAttribute('data-state', 'failed');
-	await expect(status).toHaveText('No answer from the server; check the repository before trying again.');
+	await expect(status).toHaveText('The server did not confirm this; check the repository before trying again.');
 	await expect(status.locator('[data-workbench-icon="error"]')).toBeVisible();
 	await expect(page.locator('#update-form [type="submit"]')).toBeEnabled();
 	await expect(page).toHaveURL(/\/update$/);

@@ -223,9 +223,13 @@ test('shared detail disclosure restores keyboard access and releases dynamic obs
 		filename: 'template.js'
 	});
 	const api = context.workbench.detailDisclosure;
+	// Panes stay inside their card, which the shared observer watches (plan task M14.3).
+	const card = document.createElement('section');
+	card.className = 'query-output';
+	document.body.appendChild(card);
 	const track = document.createElement('div');
 	track.className = 'workbench-disclosure-track';
-	document.body.appendChild(track);
+	card.appendChild(track);
 	const disclosures = ['Download', 'Options'].map((label, index) => {
 		const disclosure = api.create(document, {
 			id: `dynamic-${index}`, toggleId: `dynamic-toggle-${index}`,
@@ -233,7 +237,7 @@ test('shared detail disclosure restores keyboard access and releases dynamic obs
 		});
 		disclosure.toggle.getClientRects = () => [{ width: 40, height: 36 }];
 		disclosure.panel.contains = () => false;
-		document.body.appendChild(disclosure.owner);
+		card.appendChild(disclosure.owner);
 		track.appendChild(disclosure.panel);
 		const dispose = api.bind(disclosure.toggle, disclosure.panel, disclosure.owner);
 		return { ...disclosure, dispose };
@@ -253,7 +257,7 @@ test('shared detail disclosure restores keyboard access and releases dynamic obs
 	assert.deepEqual(Array.from(resizeListeners), [], 'the shared resize listener should be removed after the last panel');
 	assert.equal(observers.length, 1, 'panels in one result should share one resize observer');
 	assert.equal(observers[0].disconnected, true, 'disposing the result should release its resize observer');
-	assert.ok(observers[0].unobserved.includes(track), 'the shared result panel track should be unobserved');
+	assert.ok(observers[0].unobserved.includes(card), 'the shared result card should be unobserved');
 	assert.equal(disclosures[0].toggle.eventHandlers.get('click').length, 0,
 		'disposing the result should detach the toggle callback');
 });

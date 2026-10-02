@@ -2411,7 +2411,7 @@ module workbench {
                 }
                 submission.state = outcome === 'done' ? 'done' : outcome === 'failed' ? 'failed' : 'idle';
                 submission.message = outcome === 'done' ? done : outcome === 'failed'
-                    ? 'No answer from the server; check the repository before trying again.' : '';
+                    ? 'The server did not confirm this; check the repository before trying again.' : '';
                 renderAgain(form, model, context, runtime);
                 if (outcome === 'done' && after) {
                     after();

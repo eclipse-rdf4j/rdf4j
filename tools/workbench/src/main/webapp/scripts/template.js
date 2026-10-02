@@ -440,6 +440,9 @@ var workbench;
     var disclosureAnchorObserver = null;
     var disclosureAnchorResizeListenerInstalled = false;
     var disclosureAnchorRefreshPending = false;
+    var disclosureDismissInstalled = false;
+    /** The cards a pane that opens over the page stays inside (M14.3). */
+    var disclosureBoundsSelector = '.workbench-island, .workbench-form-card, .query-output, .workbench-page-surface';
     function inlineStyleValue(element, property) {
         var style = element.style;
         return style && style.getPropertyValue ? style.getPropertyValue(property) : style ? style[property] || '' : '';
@@ -824,38 +827,86 @@ var workbench;
         return panel.closest('.workbench-disclosure-track, .query-actions-toolbar, .query-result-disclosure-panels')
             || panel.closest('.workbench-disclosure');
     }
-    function refreshDisclosureAnchor(button, panel, track) {
-        if (!button || !panel || !track || panel.hidden || button.hidden || button.disabled
-            || button.getClientRects().length === 0) {
+    function disclosureBounds(panel) {
+        return panel.closest(disclosureBoundsSelector);
+    }
+    /**
+     * The horizontal room a pane has: the viewport less 8 px on either side, its card's content box, and the padding
+     * box of every element between them that clips what overflows it sideways (the result area does).
+     */
+    function disclosureRoom(panel, bounds) {
+        var room = { left: 8, right: document.documentElement.clientWidth - 8 };
+        for (var box = panel.parentNode; box && box.getBoundingClientRect; box = box === bounds ? null : box.parentNode) {
+            var style = window.getComputedStyle(box);
+            var card = box === bounds;
+            if (card || /^(clip|hidden|auto|scroll)$/.test(style.overflowX)) {
+                var rect = box.getBoundingClientRect();
+                room.left = Math.max(room.left, rect.left + parseFloat(style.borderLeftWidth)
+                    + (card ? parseFloat(style.paddingLeft) : 0));
+                room.right = Math.min(room.right, rect.right - parseFloat(style.borderRightWidth)
+                    - (card ? parseFloat(style.paddingRight) : 0));
+            }
+        }
+        return room;
+    }
+    /**
+     * Place an open pane over the page (M14.3): just below its button, or below the whole toolbar the button is in
+     * so that it never covers the toolbar's other buttons, with its end at the button's end (its start in
+     * right-to-left text), moved inward to stay inside its card, and no wider than the card's content. The
+     * stylesheet positions the panel absolutely from these values, so opening it moves nothing.
+     */
+    function refreshDisclosureAnchor(button, panel, bounds) {
+        var frame = panel.offsetParent;
+        if (!frame || panel.hidden || button.hidden || button.disabled || button.getClientRects().length === 0) {
             return;
         }
-        panel.style.setProperty('--workbench-disclosure-panel-start', '0px');
-        var trackRect = track.getBoundingClientRect();
-        var panelRect = panel.getBoundingClientRect();
+        var room = disclosureRoom(panel, bounds);
+        panel.style.setProperty('--workbench-disclosure-max-width', Math.max(0, room.right - room.left) + 'px');
         var buttonRect = button.getBoundingClientRect();
-        if (trackRect.width <= 0 || panelRect.width <= 0) {
-            return;
-        }
-        var direction = window.getComputedStyle(track).direction;
-        var availableInlineStart = Math.max(0, trackRect.width - panelRect.width);
-        var desiredInlineStart = direction === 'rtl'
-            ? trackRect.right - buttonRect.left - panelRect.width
-            : buttonRect.right - trackRect.left - panelRect.width;
-        var inlineStart = Math.max(0, Math.min(availableInlineStart, desiredInlineStart));
-        var panelLeft = direction === 'rtl'
-            ? trackRect.right - inlineStart - panelRect.width
-            : trackRect.left + inlineStart;
-        var buttonCenter = (buttonRect.left + buttonRect.right) / 2;
-        var anchorOffset = Math.max(4, Math.min(panelRect.width - 4, buttonCenter - panelLeft));
-        panel.style.setProperty('--workbench-disclosure-panel-start', inlineStart + 'px');
+        var width = panel.getBoundingClientRect().width;
+        var start = window.getComputedStyle(panel).direction === 'rtl' ? buttonRect.left : buttonRect.right - width;
+        var left = Math.max(room.left, Math.min(room.right - width, start));
+        var toolbar = button.closest('.workbench-action-toolbar');
+        var bottom = toolbar ? toolbar.getBoundingClientRect().bottom : buttonRect.bottom;
+        var frameRect = frame.getBoundingClientRect();
+        panel.style.setProperty('--workbench-disclosure-left', (left - frameRect.left - frame.clientLeft + frame.scrollLeft) + 'px');
+        panel.style.setProperty('--workbench-disclosure-top', (bottom - frameRect.top - frame.clientTop + frame.scrollTop) + 'px');
+        var anchorOffset = Math.max(4, Math.min(width - 4, (buttonRect.left + buttonRect.right) / 2 - left));
         panel.style.setProperty('--workbench-disclosure-anchor-x', anchorOffset + 'px');
     }
     function refreshDisclosureAnchors() {
         disclosureAnchorRefreshPending = false;
         for (var i = 0; i < disclosureAnchors.length; i++) {
-            var anchor = disclosureAnchors[i];
-            refreshDisclosureAnchor(anchor.button, anchor.panel, anchor.track);
+            placeDisclosure(disclosureAnchors[i]);
         }
+    }
+    /** Stop watching an anchor's card unless another pane is in it too. */
+    function unwatchDisclosureBounds(anchor) {
+        var bounds = anchor.bounds;
+        anchor.bounds = null;
+        for (var i = 0; i < disclosureAnchors.length; i++) {
+            if (disclosureAnchors[i].bounds === bounds) {
+                return;
+            }
+        }
+        if (bounds && disclosureAnchorObserver) {
+            disclosureAnchorObserver.unobserve(bounds);
+        }
+    }
+    /**
+     * Place a pane, and watch the card it is in now: a card that grows (a taller editor, a new callout) moves the
+     * button the pane hangs from, and a pane may be bound before it is placed in its card.
+     */
+    function placeDisclosure(anchor) {
+        var bounds = disclosureBounds(anchor.panel);
+        if (bounds !== anchor.bounds) {
+            unwatchDisclosureBounds(anchor);
+            anchor.bounds = bounds;
+            if (bounds && disclosureAnchorObserver) {
+                disclosureAnchorObserver.observe(bounds);
+            }
+        }
+        refreshDisclosureAnchor(anchor.button, anchor.panel, bounds);
     }
     function scheduleDisclosureAnchorRefresh() {
         if (disclosureAnchorRefreshPending) {
@@ -870,16 +921,13 @@ var workbench;
         }
     }
     function registerDisclosureAnchor(button, panel) {
-        var track = disclosureAnchorTrack(panel);
-        if (!track) {
-            return;
-        }
         for (var i = 0; i < disclosureAnchors.length; i++) {
             if (disclosureAnchors[i].panel === panel) {
-                return;
+                return disclosureAnchors[i];
             }
         }
-        disclosureAnchors.push({ button: button, panel: panel, track: track });
+        var anchor = { button: button, panel: panel, bounds: null };
+        disclosureAnchors.push(anchor);
         if (!disclosureAnchorResizeListenerInstalled) {
             window.addEventListener('resize', scheduleDisclosureAnchorRefresh);
             disclosureAnchorResizeListenerInstalled = true;
@@ -891,9 +939,53 @@ var workbench;
         if (disclosureAnchorObserver) {
             disclosureAnchorObserver.observe(button);
             disclosureAnchorObserver.observe(panel);
-            disclosureAnchorObserver.observe(track);
         }
-        refreshDisclosureAnchor(button, panel, track);
+        placeDisclosure(anchor);
+        return anchor;
+    }
+    function expandedDisclosures() {
+        return panelDisclosureStates.filter(function (state) {
+            return state.expanded;
+        });
+    }
+    /** A press outside an open pane and its toggle closes the pane (M14.3). */
+    function dismissDisclosuresOutside(event) {
+        var target = event.target;
+        expandedDisclosures().forEach(function (state) {
+            if (!state.panel.contains(target) && !state.button.contains(target)) {
+                setDisclosureExpanded(state.button, state.panel, state.owner, false, true);
+            }
+        });
+    }
+    /** Escape in an open pane, or on its toggle, closes the pane; focus returns to the toggle (M14.3). */
+    function dismissDisclosureOnEscape(event) {
+        if (event.key !== 'Escape' || event.defaultPrevented) {
+            return;
+        }
+        var focused = document.activeElement;
+        expandedDisclosures().forEach(function (state) {
+            if (state.panel.contains(focused) || state.button === focused) {
+                event.preventDefault();
+                setDisclosureExpanded(state.button, state.panel, state.owner, false, true);
+                state.button.focus();
+            }
+        });
+    }
+    /** Listen for presses and Escape only while a pane is open. */
+    function syncDisclosureDismiss() {
+        var listen = expandedDisclosures().length > 0;
+        if (listen === disclosureDismissInstalled) {
+            return;
+        }
+        disclosureDismissInstalled = listen;
+        if (listen) {
+            document.addEventListener('pointerdown', dismissDisclosuresOutside, true);
+            document.addEventListener('keydown', dismissDisclosureOnEscape, false);
+        }
+        else {
+            document.removeEventListener('pointerdown', dismissDisclosuresOutside, true);
+            document.removeEventListener('keydown', dismissDisclosureOnEscape, false);
+        }
     }
     function releaseDisclosure(button, panel, owner) {
         if (!panel) {
@@ -908,29 +1000,16 @@ var workbench;
                 panelDisclosureStates.splice(stateIndex, 1);
             }
         }
-        var releasedTrack = null;
         for (var anchorIndex = disclosureAnchors.length - 1; anchorIndex >= 0; anchorIndex--) {
             var anchor = disclosureAnchors[anchorIndex];
             if (anchor.panel === panel || button && anchor.button === button) {
-                releasedTrack = anchor.track;
-                if (disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
+                if (disclosureAnchorObserver) {
                     disclosureAnchorObserver.unobserve(anchor.button);
                     disclosureAnchorObserver.unobserve(anchor.panel);
                 }
                 disclosureAnchors.splice(anchorIndex, 1);
+                unwatchDisclosureBounds(anchor);
             }
-        }
-        var trackStillObserved = false;
-        if (releasedTrack) {
-            for (var remainingIndex = 0; remainingIndex < disclosureAnchors.length; remainingIndex++) {
-                if (disclosureAnchors[remainingIndex].track === releasedTrack) {
-                    trackStillObserved = true;
-                    break;
-                }
-            }
-        }
-        if (!trackStillObserved && releasedTrack && disclosureAnchorObserver && disclosureAnchorObserver.unobserve) {
-            disclosureAnchorObserver.unobserve(releasedTrack);
         }
         if (disclosureAnchors.length === 0) {
             if (disclosureAnchorResizeListenerInstalled) {
@@ -945,13 +1024,20 @@ var workbench;
         if (owner) {
             owner.classList.remove('is-open');
         }
+        syncDisclosureDismiss();
     }
     workbench.releaseDisclosure = releaseDisclosure;
+    /** Open or close a pane; an open pane listens for a press outside it and for Escape (M14.3). */
     function setDisclosureExpanded(button, panel, owner, expanded, animate) {
+        applyDisclosureExpanded(button, panel, owner, expanded, animate);
+        syncDisclosureDismiss();
+    }
+    workbench.setDisclosureExpanded = setDisclosureExpanded;
+    function applyDisclosureExpanded(button, panel, owner, expanded, animate) {
         if (!button || !panel) {
             return;
         }
-        registerDisclosureAnchor(button, panel);
+        var anchor = registerDisclosureAnchor(button, panel);
         var state = panelDisclosureState(button, panel, owner);
         if (button.hidden || button.disabled) {
             state.expanded = false;
@@ -991,8 +1077,8 @@ var workbench;
             if (owner) {
                 owner.classList.toggle('is-open', expanded);
             }
-            if (expanded && anchorTrack) {
-                refreshDisclosureAnchor(button, panel, anchorTrack);
+            if (expanded) {
+                placeDisclosure(anchor);
             }
             return;
         }
@@ -1011,8 +1097,8 @@ var workbench;
             button.focus();
         }
         panel.hidden = false;
-        if (expanded && anchorTrack) {
-            refreshDisclosureAnchor(button, panel, anchorTrack);
+        if (expanded) {
+            placeDisclosure(anchor);
         }
         panel.inert = expanded ? state.inert : true;
         if (expanded && state.ariaHidden === null) {
@@ -1048,7 +1134,6 @@ var workbench;
             }
         });
     }
-    workbench.setDisclosureExpanded = setDisclosureExpanded;
     function setElementExpanded(element, expanded, animate) {
         if (!element || element.hidden) {
             return;

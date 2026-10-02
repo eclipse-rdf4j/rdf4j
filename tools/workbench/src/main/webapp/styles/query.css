@@ -652,6 +652,11 @@ body.query-results-fullscreen-active {
 	background: var(--query-surface);
 }
 
+/* An open Download or Display pane hangs over the rows and the pinned header row (M14.3). */
+.query-result-toolbar:has(.workbench-disclosure__panel:not([hidden])) {
+	z-index: 4;
+}
+
 .query-result-toolbar__header h2,
 .query-result-embedded-header h2 {
 	min-width: 0;

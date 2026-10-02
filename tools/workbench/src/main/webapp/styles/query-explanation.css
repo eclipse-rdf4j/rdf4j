@@ -359,13 +359,9 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     z-index: 9;
 }
 
-/* The open Config panel sits in its own row under the toolbar, sized to its content. */
+/* The open Config panel opens over the explanation, below its toggle (M14.3); the track takes no room. */
 .query-explanation-settings-track {
-    display: flex;
-}
-
-.query-explanation-settings-track:has(> .query-explanation-settings__panel:not([hidden])) {
-    margin: 0 0 var(--workbench-space-subgroup, 16px);
+    display: contents;
 }
 
 .query-explanation-settings__panel {

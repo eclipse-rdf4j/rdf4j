@@ -296,23 +296,10 @@ body.query-result-embedded-body .workbench-action-toolbar__primary > h2 {
 	display: none;
 }
 
-.workbench-action-toolbar__panels {
-	display: grid;
-	flex-basis: 100%;
-	grid-template-columns: minmax(0, 1fr);
-	width: 100%;
-	min-width: 0;
-}
-
-.workbench-action-toolbar__panels:not(:has(> :not([hidden]))) {
-	display: none;
-}
-
-.workbench-action-toolbar .workbench-action-toolbar__panels > .workbench-disclosure__panel {
-	grid-row: auto;
-	width: fit-content;
-	max-width: 100%;
-	margin-block-start: 0;
+.workbench-action-toolbar__panels,
+.workbench-disclosure-track {
+	/* The panes in a track open over the page (M14.3); the track itself takes no room. */
+	display: contents;
 }
 
 @media (max-width: 900px) {
@@ -369,18 +356,19 @@ body.query-result-embedded-body .workbench-disclosure__toggle:focus-visible {
 	outline-offset: 2px;
 }
 
+/* A pane opens over the page, below its toggle (M14.3): template.ts sets --workbench-disclosure-top and -left in the
+ * box the panel is positioned in, and --workbench-disclosure-max-width to its card's content width. */
 body.workbench-body .workbench-disclosure__panel,
 body.query-result-embedded-body .workbench-disclosure__panel {
-	position: relative;
+	position: absolute;
+	top: calc(var(--workbench-disclosure-top, 100%) + var(--workbench-space-related));
+	left: var(--workbench-disclosure-left, 0px);
 	display: block;
-	grid-column: 1 / -1;
-	grid-row: 2;
 	box-sizing: border-box;
-	width: fit-content;
+	width: max-content;
 	min-width: 0;
-	max-width: min(44rem, calc(100vw - 32px));
-	margin: var(--workbench-space-related) 0 0;
-	margin-inline-start: var(--workbench-disclosure-panel-start, 0px);
+	max-width: min(44rem, var(--workbench-disclosure-max-width, calc(100vw - 32px)));
+	margin: 0;
 	padding: var(--workbench-control-inset);
 	border: 1px solid var(--workbench-soft-rule);
 	border-radius: var(--workbench-radius);
@@ -475,7 +463,7 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 @media (max-width: 640px) {
 	body.workbench-body .workbench-disclosure__panel,
 	body.query-result-embedded-body .workbench-disclosure__panel {
-		width: min(100%, calc(100vw - 32px));
+		width: var(--workbench-disclosure-max-width, calc(100vw - 32px));
 		max-width: calc(100vw - 32px);
 	}
 
