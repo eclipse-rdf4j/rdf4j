@@ -449,7 +449,8 @@ test('completed disclosures release their fill effects and follow natural sizing
 	expect.soft(grownHeight - advancedHeight).toBeGreaterThanOrEqual(70);
 });
 
-test('primary query and form actions show compact keyboard press feedback in both themes', async ({ page }) => {
+test('primary query and form actions show compact keyboard press feedback in both themes', async ({ page, browserName }) => {
+	test.skip(browserName === 'firefox', 'Firefox does not match :active while a keyboard Space press is held');
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.mouse.move(1400, 950);

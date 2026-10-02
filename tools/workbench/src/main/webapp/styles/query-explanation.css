@@ -392,6 +392,12 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     accent-color: var(--query-code-node);
 }
 
+/* WebKit does not treat arrow-key moves within a radio group as :focus-visible, so state the ring for :focus. */
+.query-explanation-highlight-mode input[type='radio']:focus {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
 .query-explanation-highlight-mode label {
     margin-right: 0;
     color: var(--workbench-nav);

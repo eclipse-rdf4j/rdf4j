@@ -588,7 +588,8 @@ test('compare navigation follows the responsive menu after crossing its breakpoi
 	await waitForRoute(page, 'summary');
 });
 
-test('coarse-pointer compare actions remain touch-sized at tablet widths', async ({ browser }) => {
+test('coarse-pointer compare actions remain touch-sized at tablet widths', async ({ browser, browserName }) => {
+	test.skip(browserName === 'firefox', 'Playwright does not support isMobile contexts in Firefox');
 	const context = await browser.newContext({
 		viewport: { width: 1024, height: 900 },
 		isMobile: true,

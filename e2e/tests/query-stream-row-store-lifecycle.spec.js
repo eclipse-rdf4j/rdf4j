@@ -88,7 +88,8 @@ test.afterAll(async ({ request }) => {
 	}
 });
 
-test('releases batched query rows on reload and page navigation', async ({ page }, testInfo) => {
+test('releases batched query rows on reload and page navigation', async ({ page, browserName }, testInfo) => {
+	test.skip(browserName === 'firefox', 'Playwright Firefox does not dispatch pagehide to the page that page.reload() replaces');
 	test.setTimeout(120000);
 	const pageErrors = [];
 	const executions = [];
@@ -236,7 +237,8 @@ test('releases batched query rows on reload and page navigation', async ({ page 
 	});
 });
 
-test('closing the query tab leaves a durable marker that a fresh same-origin tab reclaims', async ({ page, context }, testInfo) => {
+test('closing the query tab leaves a durable marker that a fresh same-origin tab reclaims', async ({ page, context, browserName }, testInfo) => {
+	test.skip(browserName === 'webkit', 'Playwright WebKit never closes a page closed with runBeforeUnload: true');
 	test.setTimeout(120000);
 	await installPageLifecycleRecorder(page);
 	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });

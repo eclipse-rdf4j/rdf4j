@@ -460,7 +460,9 @@ test('query, forms, information, saved, and table routes fit every locked viewpo
 	}
 });
 
-test('native file chooser fits the shared 36 and 44 pixel control sizes', async ({ page }) => {
+test('native file chooser fits the shared 36 and 44 pixel control sizes', async ({ page, browserName }) => {
+	// WebKit styles ::file-selector-button but reports the input's own style for that pseudo-element.
+	const reportsFileButtonStyle = browserName !== 'webkit';
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/add`);
 	for (const viewport of [{ width: 1440, expected: 36 }, { width: 390, expected: 44 }]) {
 		await page.setViewportSize({ width: viewport.width, height: 1000 });
@@ -490,9 +492,11 @@ test('native file chooser fits the shared 36 and 44 pixel control sizes', async 
 		expect(controls, `Add Source file control at ${viewport.width}px`).toMatchObject({
 			fileHeight: viewport.expected,
 			formatHeight: viewport.expected,
-			fileButtonHeight: viewport.expected - 2,
-			fileButtonRadius: '6px 0px 0px 6px',
-			fileButtonFontWeight: '600',
+			...(reportsFileButtonStyle ? {
+				fileButtonHeight: viewport.expected - 2,
+				fileButtonRadius: '6px 0px 0px 6px',
+				fileButtonFontWeight: '600'
+			} : {}),
 			fileType: 'file',
 			fileName: 'shared-control-fixture.ttl',
 			fileNameField: 'content',
