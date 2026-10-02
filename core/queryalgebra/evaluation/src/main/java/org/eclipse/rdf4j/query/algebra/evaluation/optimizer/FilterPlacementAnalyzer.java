@@ -58,15 +58,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
  */
 public final class FilterPlacementAnalyzer {
 
-	public enum Reason {
-		NONE,
-		UNSTABLE_BINDINGS_OR_EFFECTS,
-		SCOPE_BOUNDARY,
-		INCOMPLETE_CUT,
-		UNSUPPORTED_OPERATOR,
-		NON_REPEATABLE_CONDITION
-	}
-
 	/** An original algebra node and the exact prospective evaluator frames at its gate. */
 	public record Site(TupleExpr argument, QueryAlgebraBindingAnalysis.ReadOnlyContext input,
 			QueryAlgebraBindingAnalysis.ReadOnlyContext conditionFrame, Set<String> retainedBindingNames,
@@ -89,35 +80,22 @@ public final class FilterPlacementAnalyzer {
 		}
 	}
 
-	public record Barrier(TupleExpr operator, Reason reason) {
-	}
-
-	public record Transition(boolean legal, Reason reason) {
-	}
-
 	/** Immutable placements for this structural generation; all complete cuts are expanded only on demand. */
 	public final class Envelope {
-		private final int id;
 		private final Filter filter;
 		private final Site originalSite;
-		private final Set<String> stableNames;
 		private final List<Alternative> singletonAlternatives;
-		private final List<Barrier> barriers;
 		private final boolean repeatable;
 		private final boolean originProjectionPreserved;
 
 		private Envelope(Filter filter) {
-			this.id = filterIds.get(filter);
 			this.filter = filter;
-			FilterPlacementRules rules = new FilterPlacementRules(filter, analysis);
-			this.stableNames = Set.copyOf(rules.stableNames());
 			this.originalSite = site(filter.getArg(), filter, analysis);
 			this.repeatable = filter.getClass() == Filter.class
 					&& AlgebraEvaluationSafety.isRepeatable(filter.getCondition());
-			List<Barrier> foundBarriers = new ArrayList<>();
 			List<Alternative> found = new ArrayList<>();
 			if (repeatable) {
-				Search search = new Search(filter, true, foundBarriers, argument -> true, originalSite);
+				Search search = new Search(filter, true, argument -> true, originalSite);
 				this.originProjectionPreserved = search.originProjectionPreserved;
 				if (originProjectionPreserved) {
 					search.forEachRemaining(found::add);
@@ -125,19 +103,12 @@ public final class FilterPlacementAnalyzer {
 					// An island can inherit inputs whose condition visibility depends on an enclosing operator.
 					// Keep that existing gate when the private subtree cannot represent its projection faithfully.
 					found.add(new Alternative(List.of(originalSite)));
-					foundBarriers.add(new Barrier(filter.getArg(), Reason.SCOPE_BOUNDARY));
 				}
 			} else {
 				this.originProjectionPreserved = true;
 				found.add(new Alternative(List.of(originalSite)));
-				foundBarriers.add(new Barrier(filter.getArg(), Reason.NON_REPEATABLE_CONDITION));
 			}
 			this.singletonAlternatives = List.copyOf(found);
-			this.barriers = List.copyOf(foundBarriers);
-		}
-
-		public int id() {
-			return id;
 		}
 
 		public Filter filter() {
@@ -146,10 +117,6 @@ public final class FilterPlacementAnalyzer {
 
 		public Site originalSite() {
 			return originalSite;
-		}
-
-		public Set<String> stableNames() {
-			return stableNames;
 		}
 
 		public boolean repeatable() {
@@ -176,7 +143,7 @@ public final class FilterPlacementAnalyzer {
 			if (!repeatable || !originProjectionPreserved) {
 				return admissibleSite.test(originalSite.argument()) ? singletonAlternatives : List.of();
 			}
-			return () -> new Search(filter, false, new ArrayList<>(), admissibleSite, originalSite);
+			return () -> new Search(filter, false, admissibleSite, originalSite);
 		}
 
 		/**
@@ -263,11 +230,6 @@ public final class FilterPlacementAnalyzer {
 			return Optional.of(new Alternative(sites));
 		}
 
-		/** Semantic boundaries encountered while finding singleton placements; physical barriers are separate. */
-		public List<Barrier> barriers() {
-			return barriers;
-		}
-
 		public boolean isCurrent() {
 			return FilterPlacementAnalyzer.this.isCurrent();
 		}
@@ -281,7 +243,6 @@ public final class FilterPlacementAnalyzer {
 	private final Map<QueryModelNode, Integer> nodeIds = new IdentityHashMap<>();
 	private final Map<QueryModelNode, QueryModelNode> parents = new IdentityHashMap<>();
 	private final Map<TupleExpr, Boolean> scopeFlags = new IdentityHashMap<>();
-	private final Map<Filter, Integer> filterIds = new IdentityHashMap<>();
 	private final Map<Filter, TupleExpr> filterArguments = new IdentityHashMap<>();
 	private final Map<TupleExpr, List<TupleExpr>> tupleChildren = new IdentityHashMap<>();
 
@@ -303,7 +264,6 @@ public final class FilterPlacementAnalyzer {
 				}
 			}
 			if (node instanceof Filter filter) {
-				filterIds.put(filter, filterIds.size());
 				filterArguments.put(filter, filter.getArg());
 			}
 		}
@@ -370,7 +330,7 @@ public final class FilterPlacementAnalyzer {
 	}
 
 	public Envelope analyze(Filter filter) {
-		if (!filterIds.containsKey(filter)) {
+		if (!filterArguments.containsKey(filter)) {
 			throw new IllegalArgumentException("The filter does not belong to this algebra generation");
 		}
 		if (!isCurrent()) {
@@ -384,42 +344,13 @@ public final class FilterPlacementAnalyzer {
 		if (!isCurrent()) {
 			throw new IllegalStateException("Filter placements must be rebuilt after an algebra rewrite");
 		}
-		List<Envelope> result = new ArrayList<>(filterIds.size());
+		List<Envelope> result = new ArrayList<>(filterArguments.size());
 		for (QueryModelNode node : nodes) {
 			if (node instanceof Filter filter) {
 				result.add(new Envelope(filter));
 			}
 		}
 		return List.copyOf(result);
-	}
-
-	/** Checks one adjacent singleton move; UNION and intersection distribution require a complete cut. */
-	public Transition transition(Filter filter, TupleExpr from, TupleExpr to) {
-		Objects.requireNonNull(from);
-		Objects.requireNonNull(to);
-		Envelope envelope = analyze(filter);
-		if (!envelope.repeatable()) {
-			return new Transition(false, Reason.NON_REPEATABLE_CONDITION);
-		}
-		if (to instanceof QueryRoot) {
-			return new Transition(false, Reason.UNSUPPORTED_OPERATOR);
-		}
-		if (envelope.singletonAlternatives().stream().noneMatch(a -> a.cut().getFirst().argument() == from)) {
-			return new Transition(false, Reason.UNSTABLE_BINDINGS_OR_EFFECTS);
-		}
-		Cut source = cut(List.of(from));
-		Layout layout = new Layout(filter);
-		layout.install(source);
-		if (downward(layout, from).stream().anyMatch(c -> c.size() == 1 && c.getFirst() == to)) {
-			return new Transition(true, Reason.NONE);
-		}
-		if (effectiveParent(from, filter) == to
-				&& reverseMoveIsLegal(layout, source, cut(List.of(to)), List.of(from), to)) {
-			return new Transition(true, Reason.NONE);
-		}
-		return new Transition(false, to instanceof Union || to instanceof Intersection
-				? Reason.INCOMPLETE_CUT
-				: Reason.UNSTABLE_BINDINGS_OR_EFFECTS);
 	}
 
 	public boolean isCurrent() {
@@ -441,18 +372,16 @@ public final class FilterPlacementAnalyzer {
 	private final class Search implements Iterator<Alternative> {
 		private final Filter filter;
 		private final boolean singletonsOnly;
-		private final List<Barrier> barriers;
 		private final Predicate<TupleExpr> admissibleSite;
 		private final Layout layout;
 		private final boolean originProjectionPreserved;
 		private final ArrayDeque<Cut> pending = new ArrayDeque<>();
 		private final Set<List<Integer>> visited = new HashSet<>();
 
-		private Search(Filter filter, boolean singletonsOnly, List<Barrier> barriers,
+		private Search(Filter filter, boolean singletonsOnly,
 				Predicate<TupleExpr> admissibleSite, Site originalSite) {
 			this.filter = filter;
 			this.singletonsOnly = singletonsOnly;
-			this.barriers = barriers;
 			this.admissibleSite = admissibleSite;
 			this.layout = new Layout(filter);
 			TupleExpr origin = filterArguments.get(filter);
@@ -486,14 +415,6 @@ public final class FilterPlacementAnalyzer {
 						add(replace(current, List.of(argument), replacement));
 					}
 				}
-				if (children.isEmpty()
-						&& (argument instanceof UnaryTupleOperator || argument instanceof BinaryTupleOperator)) {
-					barriers.add(new Barrier(argument, TupleExprs.isVariableScopeChange(argument)
-							? Reason.SCOPE_BOUNDARY
-							: supportedOperator(argument)
-									? Reason.UNSTABLE_BINDINGS_OR_EFFECTS
-									: Reason.UNSUPPORTED_OPERATOR));
-				}
 				TupleExpr parent = effectiveParent(argument, filter);
 				if (parent == null || parent instanceof QueryRoot || !admissibleSite.test(parent)) {
 					continue;
@@ -502,7 +423,6 @@ public final class FilterPlacementAnalyzer {
 				if (parent instanceof Union || parent instanceof Intersection) {
 					TupleExpr sibling = sibling(parent, argument, filter);
 					if (singletonsOnly || !containsIdentity(current.arguments, sibling)) {
-						barriers.add(new Barrier(parent, Reason.INCOMPLETE_CUT));
 						continue;
 					}
 					replaced = List.of(argument, sibling);
@@ -514,10 +434,6 @@ public final class FilterPlacementAnalyzer {
 				if (disjoint(proposed.arguments, filter)
 						&& reverseMoveIsLegal(layout, current, proposed, replaced, parent)) {
 					add(proposed);
-				} else {
-					barriers.add(new Barrier(parent, TupleExprs.isVariableScopeChange(parent)
-							? Reason.SCOPE_BOUNDARY
-							: Reason.UNSTABLE_BINDINGS_OR_EFFECTS));
 				}
 			}
 			return new Alternative(sites);
@@ -717,13 +633,6 @@ public final class FilterPlacementAnalyzer {
 
 	private static boolean sameIdentities(List<TupleExpr> left, List<TupleExpr> right) {
 		return left.size() == right.size() && left.stream().allMatch(node -> containsIdentity(right, node));
-	}
-
-	private static boolean supportedOperator(TupleExpr node) {
-		return node instanceof Join || node instanceof LeftJoin || node instanceof Union
-				|| node instanceof Intersection || node instanceof Difference || node instanceof Filter
-				|| node instanceof Extension || node instanceof Distinct || node instanceof Reduced
-				|| node instanceof QueryRoot || node instanceof Order;
 	}
 
 	private static Site site(TupleExpr argument, Filter filter, QueryAlgebraBindingAnalysis analysis) {

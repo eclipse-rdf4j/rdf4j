@@ -46,12 +46,6 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	private BindingSet currentLeft;
 	private boolean currentLeftMatched;
 
-	public ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context)
-			throws QueryEvaluationException {
-		this(left, right, condition, bindings, context, new String[0]);
-	}
-
 	/**
 	 * @param joinAttributes names both operands may bind; right rows are bucketed by these names, including rows where
 	 *                       some are unbound, so each left row only visits the rows it can join with.

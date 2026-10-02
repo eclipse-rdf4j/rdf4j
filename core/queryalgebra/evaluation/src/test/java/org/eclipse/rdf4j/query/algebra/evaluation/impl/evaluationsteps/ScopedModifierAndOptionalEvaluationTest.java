@@ -190,7 +190,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 
 		List<BindingSet> results;
 		try (CloseableIteration<BindingSet> iteration = new ScopedLeftJoinIterator(left, right, condition, outerInput,
-				new QueryEvaluationContext.Minimal(null))) {
+				new QueryEvaluationContext.Minimal(null), new String[0])) {
 			results = QueryResults.asList(iteration);
 		}
 
@@ -212,7 +212,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 		};
 
 		try (CloseableIteration<BindingSet> results = new ScopedLeftJoinIterator(left, right, condition,
-				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null))) {
+				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null), new String[] { "x" })) {
 			assertThat(results.next()).isEqualTo(row("x", "a", "y", "first"));
 			assertThat(conditionCalls).hasValue(1);
 		}
@@ -232,7 +232,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 		};
 
 		try (CloseableIteration<BindingSet> results = new ScopedLeftJoinIterator(left, right, condition,
-				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null))) {
+				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null), new String[] { "x" })) {
 			assertThrows(IllegalStateException.class, results::hasNext);
 		}
 

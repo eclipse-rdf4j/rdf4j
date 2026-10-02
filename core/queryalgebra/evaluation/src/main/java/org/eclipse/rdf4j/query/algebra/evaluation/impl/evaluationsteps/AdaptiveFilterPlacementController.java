@@ -91,26 +91,10 @@ final class AdaptiveFilterPlacementController {
 	private boolean closed;
 	private boolean originalPlacement = true;
 
-	AdaptiveFilterPlacementController(int[] candidateCounts, LearningBudget budget) {
-		this(fixedCandidates(candidateCounts), candidateCounts.length, budget);
-	}
-
 	AdaptiveFilterPlacementController(Candidates candidates, int filters, LearningBudget budget) {
 		this.candidates = candidates;
 		this.budget = budget;
 		selected = new int[filters];
-	}
-
-	private static Candidates fixedCandidates(int[] candidateCounts) {
-		int[] counts = candidateCounts.clone();
-		int[] next = new int[counts.length];
-		return (filter, selected) -> {
-			if (counts[filter] < 2) {
-				return -1;
-			}
-			int candidate = ++next[filter] % counts[filter];
-			return candidate == selected ? ++next[filter] % counts[filter] : candidate;
-		};
 	}
 
 	void beginCohort() {

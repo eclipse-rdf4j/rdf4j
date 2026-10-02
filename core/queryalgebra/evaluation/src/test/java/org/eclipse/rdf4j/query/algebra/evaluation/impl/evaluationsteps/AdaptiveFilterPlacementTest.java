@@ -591,22 +591,17 @@ class AdaptiveFilterPlacementTest {
 		arm.setRuntimeTelemetryEnabled(true);
 		Filter otherArm = arm.clone();
 		Union union = new Union(arm, otherArm);
-		QueryEvaluationContext[] planning = new QueryEvaluationContext[1];
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
-			@Override
-			protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) {
-				planning[0] = context;
-				return super.prepare(node, context);
-			}
-		};
+		union.setRuntimeTelemetryEnabled(true);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
 		Map<BindingSet, Integer> actual = consume(strategy.precompile(new QueryRoot(union)),
 				EmptyBindingSet.getInstance());
 		assertThat(actual).hasSize(128 * 2);
 		assertThat(actual.values()).allMatch(multiplicity -> multiplicity == 2);
 		assertThat(arm.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(128);
 		assertThat(otherArm.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(128);
-		assertThat(AdaptiveFilterEvaluationStep.boundaryReason(union, planning[0]))
-				.isEqualTo("No common drainable input prefix");
+		assertThat(union.getLongMetricActual("adaptiveFilterCohortsActual"))
+				.as("the root UNION does not own an adaptive controller")
+				.isEqualTo(-1);
 		assertThat(union.getStringMetricPlanned("adaptiveFilterBoundaryPlanned"))
 				.as("declining an adapter does not change the selected ordinary Explain plan")
 				.isNull();

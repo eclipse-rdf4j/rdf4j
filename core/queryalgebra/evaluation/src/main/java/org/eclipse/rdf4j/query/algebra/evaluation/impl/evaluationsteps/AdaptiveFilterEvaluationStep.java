@@ -104,11 +104,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		return context instanceof PlanningContext;
 	}
 
-	/** Declined alternatives remain preparation data, rather than annotations on the selected ordinary plan. */
-	static String boundaryReason(TupleExpr expression, QueryEvaluationContext context) {
-		return context instanceof PlanningContext planning ? planning.boundaryReasons.get(expression) : null;
-	}
-
 	/** Opts the selected ordinary binary operator into child rebinding without replacing its physical contract. */
 	public static QueryEvaluationStep binary(QueryEvaluationContext context, TupleExpr expression,
 			QueryEvaluationStep prepared,
@@ -222,7 +217,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		TupleExpr anchor = firstFactor(expression, planning);
 		planning.partitionPrefix(envelopes, anchor);
 		if (anchor == expression) {
-			planning.boundaryReasons.put(expression, "No common drainable input prefix");
 			return preparedPrefix(expression, planning, strategy, context, standard);
 		}
 		Map<TupleExpr, Boolean> members = new IdentityHashMap<>();
@@ -241,9 +235,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 						positions.put(envelope.filter(), new PlacementSource(admitted, original,
 								envelope.earliestCompleteCut(members::containsKey).orElse(null),
 								envelope.potentialSites(members::containsKey)));
-					} else {
-						planning.boundaryReasons.put(envelope.filter(),
-								"No alternate complete cut in this drainable region");
 					}
 				}
 			}
@@ -1195,7 +1186,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		private final List<Filter> filters = new ArrayList<>();
 		private final Map<TupleExpr, List<Envelope>> regions = new IdentityHashMap<>();
 		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
-		private final Map<TupleExpr, String> boundaryReasons;
 		private final Map<Filter, TupleExpr> islandRoots;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private boolean compiledRegion;
@@ -1211,7 +1201,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 					super.meet(filter);
 				}
 			});
-			boundaryReasons = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
 			islandRoots = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
 			if (filters.isEmpty()) {
 				analysis = null;
@@ -1244,9 +1233,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			if (reason == null && physicalReady && !capable(join, Kind.JOIN)) {
 				reason = "Selected join has no drained child-rebinding contract";
 			}
-			if (reason != null) {
-				boundaryReasons.put(join, reason);
-			}
 			return reason == null;
 		}
 
@@ -1255,7 +1241,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				return false;
 			}
 			if (physicalReady && !capable(union, Kind.UNION)) {
-				boundaryReasons.put(union, "Selected UNION has no all-arm child-rebinding contract");
 				return false;
 			}
 			return true;
@@ -1266,7 +1251,6 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				return false;
 			}
 			if (physicalReady && !capable(filter, Kind.FILTER)) {
-				boundaryReasons.put(filter, "Selected FILTER has no ordinary condition/frame contract");
 				return false;
 			}
 			return true;

@@ -489,7 +489,8 @@ class OptimizerBindingAnalysisConsumersTest {
 	private static boolean isGuaranteedAtBound(TupleExpr root, Bound bound) {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
 				EmptyBindingSet.getInstance());
-		return analysis.expressionIsGuaranteed(bound.getArg(), analysis.contextAt(bound));
+		return analysis.bindingState((Var) bound.getArg(),
+				analysis.contextAt(bound)) == QueryAlgebraBindingAnalysis.BindingState.BOUND;
 	}
 
 	private static List<Bound> collectBounds(TupleExpr expression) {

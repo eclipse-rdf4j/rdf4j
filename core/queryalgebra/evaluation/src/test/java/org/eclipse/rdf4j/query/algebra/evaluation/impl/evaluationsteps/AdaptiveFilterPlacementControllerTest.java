@@ -21,7 +21,7 @@ class AdaptiveFilterPlacementControllerTest {
 
 	@Test
 	void selectionIsFrozenUntilTheInputCohortDrains() {
-		var controller = new AdaptiveFilterPlacementController(new int[] { 2 }, new LearningBudget());
+		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS - 1, 100);
 		controller.beginCohort();
 		assertThat(controller.selected(0)).isZero();
@@ -34,7 +34,7 @@ class AdaptiveFilterPlacementControllerTest {
 
 	@Test
 	void realTrialMustBeatBothInterleavedControlWindows() {
-		var controller = new AdaptiveFilterPlacementController(new int[] { 2 }, new LearningBudget());
+		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, 50);
 		assertThat(controller.selected(0)).isZero();
@@ -46,7 +46,7 @@ class AdaptiveFilterPlacementControllerTest {
 
 	@Test
 	void aFasterTrialCommitsOnlyForFutureCohorts() {
-		var controller = new AdaptiveFilterPlacementController(new int[] { 2 }, new LearningBudget());
+		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, 25);
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
@@ -57,7 +57,7 @@ class AdaptiveFilterPlacementControllerTest {
 
 	@Test
 	void trialsDoNotRequireAcceptedRowsOrCurrentPredicateEvaluations() {
-		var controller = new AdaptiveFilterPlacementController(new int[] { 2 }, new LearningBudget());
+		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 0);
 		assertThat(controller.selected(0)).isEqualTo(1);
 		assertThat(controller.trials()).isEqualTo(1);
@@ -66,8 +66,8 @@ class AdaptiveFilterPlacementControllerTest {
 	@Test
 	void oneExecutionBudgetSerializesOverlappingRegionsAndAbortReleasesIt() {
 		LearningBudget budget = new LearningBudget();
-		var first = new AdaptiveFilterPlacementController(new int[] { 2 }, budget);
-		var second = new AdaptiveFilterPlacementController(new int[] { 2 }, budget);
+		var first = withFixedCandidates(new int[] { 2 }, budget);
+		var second = withFixedCandidates(new int[] { 2 }, budget);
 		complete(first, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 		complete(second, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 		assertThat(first.trials()).isEqualTo(1);
@@ -82,7 +82,7 @@ class AdaptiveFilterPlacementControllerTest {
 
 	@Test
 	void eachOverlappingFilterCoordinateGetsItsOwnTrial() {
-		var controller = new AdaptiveFilterPlacementController(new int[] { 2, 2 }, new LearningBudget());
+		var controller = withFixedCandidates(new int[] { 2, 2 }, new LearningBudget());
 		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 		assertThat(controller.selected(0)).isEqualTo(1);
 		assertThat(controller.selected(1)).isZero();
@@ -100,7 +100,7 @@ class AdaptiveFilterPlacementControllerTest {
 		LearningBudget budget = new LearningBudget();
 		long trials = 0;
 		for (int i = 0; i < 1024; i++) {
-			var controller = new AdaptiveFilterPlacementController(new int[] { 2 }, budget);
+			var controller = withFixedCandidates(new int[] { 2 }, budget);
 			complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
 			trials += controller.trials();
 			controller.beginCohort();
@@ -110,6 +110,19 @@ class AdaptiveFilterPlacementControllerTest {
 		assertThat(trials).as("an abandoned first trial cohort must still consume a bounded start")
 				.isPositive()
 				.isLessThanOrEqualTo(512);
+	}
+
+	private static AdaptiveFilterPlacementController withFixedCandidates(int[] candidateCounts, LearningBudget budget) {
+		int[] counts = candidateCounts.clone();
+		int[] next = new int[counts.length];
+		AdaptiveFilterPlacementController.Candidates candidates = (filter, selected) -> {
+			if (counts[filter] < 2) {
+				return -1;
+			}
+			int candidate = ++next[filter] % counts[filter];
+			return candidate == selected ? ++next[filter] % counts[filter] : candidate;
+		};
+		return new AdaptiveFilterPlacementController(candidates, candidateCounts.length, budget);
 	}
 
 	private static void complete(AdaptiveFilterPlacementController controller, int cohorts, long activeNanos) {

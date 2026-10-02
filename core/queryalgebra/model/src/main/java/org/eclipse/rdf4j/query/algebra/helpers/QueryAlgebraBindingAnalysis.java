@@ -98,8 +98,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private static final Set<String> INPUT_ONLY_JOIN_ALGORITHMS = Set.of(
 			"HashJoinIteration",
-			"InnerMergeJoinIterator",
-			"IndependentJoinIteration");
+			"InnerMergeJoinIterator");
 	private static final Set<String> LEFT_ROW_JOIN_ALGORITHMS = Set.of(
 			"JoinIterator",
 			"ServiceJoinIterator",
@@ -172,23 +171,6 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment);
-	}
-
-	/**
-	 * Creates an analysis frame with API bindings guaranteed and possible inputs from reorderable sibling relations.
-	 * Possible inputs are not external bindings, so lexical scope entry does not preserve them.
-	 */
-	public static QueryAlgebraBindingAnalysis withBindingValuesAndPossibleInputs(TupleExpr root,
-			BindingSet initialBindings, Set<String> possibleInputNames) {
-		BindingSet values = initialBindings == null ? EmptyBindingSet.getInstance() : initialBindings;
-		Set<String> externalNames = new HashSet<>();
-		for (String name : values.getBindingNames()) {
-			if (values.getValue(name) != null) {
-				externalNames.add(name);
-			}
-		}
-		return new QueryAlgebraBindingAnalysis(root, values, externalNames,
-				Set.copyOf(Objects.requireNonNull(possibleInputNames, "possibleInputNames")));
 	}
 
 	/**
@@ -372,11 +354,6 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		return true;
-	}
-
-	/** Checks that the relevant incoming binding facts are identical at two evaluator positions. */
-	public boolean bindingContextsEquivalent(Set<String> names, ReadOnlyContext left, ReadOnlyContext right) {
-		return left.scopeIdentity == right.scopeIdentity && bindingFactsEquivalent(names, left, right);
 	}
 
 	/** Checks the binding facts without requiring the same lexical scope identity. */
@@ -1274,10 +1251,6 @@ public final class QueryAlgebraBindingAnalysis {
 		return ValueExprFacts.unknown();
 	}
 
-	public boolean expressionIsGuaranteed(ValueExpr expression, ReadOnlyContext input) {
-		return expressionFacts(expression, input).guaranteed;
-	}
-
 	private boolean strAccepts(ValueKind kind) {
 		return kind == ValueKind.IRI || kind == ValueKind.LITERAL || kind == ValueKind.TRIPLE;
 	}
@@ -1802,10 +1775,6 @@ public final class QueryAlgebraBindingAnalysis {
 			retained.removeAll(names);
 			return new OutputFacts(possibleOutputsKnown, guaranteedOutputsKnown, possibleOutputs, guaranteedOutputs,
 					fixedValues, valueKinds, inheritedInput, retained, overwritten, canProduceRows);
-		}
-
-		public boolean hasKnownPossibleOutput(String name) {
-			return possibleOutputsKnown && possibleOutputs.contains(name);
 		}
 
 		public boolean isKnownEmpty() {

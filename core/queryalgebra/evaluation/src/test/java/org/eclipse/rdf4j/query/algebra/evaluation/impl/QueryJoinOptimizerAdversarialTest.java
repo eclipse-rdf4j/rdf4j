@@ -71,7 +71,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -358,7 +359,7 @@ class QueryJoinOptimizerAdversarialTest {
 	}
 
 	@Test
-	void independentJoinClosesLeftWhenRightEvaluationFails() {
+	void hashJoinClosesLeftWhenRightEvaluationFails() {
 		AtomicBoolean leftClosed = new AtomicBoolean();
 		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
 			private boolean returned;
@@ -383,7 +384,8 @@ class QueryJoinOptimizerAdversarialTest {
 			throw new QueryEvaluationException("right evaluation failed");
 		};
 
-		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right, EmptyBindingSet.getInstance());
+		HashJoinIteration iteration = new HashJoinIteration(left, right, EmptyBindingSet.getInstance(), false,
+				new String[0], new QueryEvaluationContext.Minimal(null));
 		assertThatThrownBy(iteration::hasNext)
 				.isInstanceOf(QueryEvaluationException.class)
 				.hasMessage("right evaluation failed");
@@ -391,7 +393,7 @@ class QueryJoinOptimizerAdversarialTest {
 	}
 
 	@Test
-	void independentJoinDefersRightEvaluationUntilItHasALeftRow() {
+	void hashJoinDefersRightEvaluationUntilItHasALeftRow() {
 		AtomicBoolean rightEvaluated = new AtomicBoolean();
 		AtomicBoolean leftClosed = new AtomicBoolean();
 		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
@@ -415,8 +417,8 @@ class QueryJoinOptimizerAdversarialTest {
 			return new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator());
 		};
 
-		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right,
-				EmptyBindingSet.getInstance());
+		HashJoinIteration iteration = new HashJoinIteration(left, right, EmptyBindingSet.getInstance(), false,
+				new String[0], new QueryEvaluationContext.Minimal(null));
 		assertThat(rightEvaluated).as("RHS evaluation must wait until a left row exists").isFalse();
 		iteration.close();
 		assertThat(leftClosed).as("closing before consumption must close the left iteration").isTrue();

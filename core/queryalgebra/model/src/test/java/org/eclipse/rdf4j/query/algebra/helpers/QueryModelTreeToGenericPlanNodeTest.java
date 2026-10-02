@@ -255,9 +255,9 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
-	public void distinguishesIndependentAndGuardedJoinRightInputs() {
-		Join independentJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
-		independentJoin.setAlgorithm("IndependentJoinIteration");
+	public void distinguishesHashAndGuardedJoinRightInputs() {
+		Join hashJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		hashJoin.setAlgorithm("HashJoinIteration");
 		Join guardedJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
 		guardedJoin.setAlgorithm("BoundStatementPatternJoinIteration");
 		Join guardedFallbackJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
@@ -265,12 +265,12 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		Join serviceJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
 		serviceJoin.setAlgorithm("ServiceJoinIterator");
 
-		GenericPlanNode independentPlan = explain(independentJoin);
+		GenericPlanNode hashPlan = explain(hashJoin);
 		GenericPlanNode guardedPlan = explain(guardedJoin);
 		GenericPlanNode guardedFallbackPlan = explain(guardedFallbackJoin);
 		GenericPlanNode servicePlan = explain(serviceJoin);
 
-		assertBindingState(independentPlan.getPlans().get(1), "x", "unbound");
+		assertBindingState(hashPlan.getPlans().get(1), "x", "unbound");
 		assertBindingState(guardedPlan.getPlans().get(1), "x", "bound");
 		assertBindingState(guardedFallbackPlan.getPlans().get(1), "x", "bound");
 		assertBindingState(servicePlan.getPlans().get(1), "x", "bound");

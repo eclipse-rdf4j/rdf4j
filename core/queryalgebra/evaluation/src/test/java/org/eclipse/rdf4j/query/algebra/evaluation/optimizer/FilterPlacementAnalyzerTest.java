@@ -193,8 +193,6 @@ class FilterPlacementAnalyzerTest {
 		assertThat(envelope.singletonAlternatives()).singleElement()
 				.satisfies(alternative -> assertThat(alternative.cut()).containsExactly(envelope.originalSite()));
 		assertThat(alternatives(envelope)).isEqualTo(envelope.singletonAlternatives());
-		assertThat(envelope.barriers()).extracting(FilterPlacementAnalyzer.Barrier::reason)
-				.containsExactly(FilterPlacementAnalyzer.Reason.SCOPE_BOUNDARY);
 		assertThat(envelope.potentialSites(argument -> true)).containsExactly(filter.getArg());
 		assertThat(envelope.earliestCompleteCut(argument -> true).orElseThrow().cut())
 				.containsExactly(envelope.originalSite());
@@ -489,7 +487,6 @@ class FilterPlacementAnalyzerTest {
 		FilterPlacementAnalyzer analyzer = analyzer(root);
 		List<Envelope> envelopes = analyzer.analyzeAll();
 		assertThat(envelopes).extracting(Envelope::filter).containsExactly(outer, nested);
-		assertThat(envelopes).extracting(Envelope::id).containsExactly(0, 1);
 		outer.setArg(values("replacement", 3));
 		assertThatThrownBy(analyzer::analyzeAll).isInstanceOf(IllegalStateException.class);
 	}
@@ -546,8 +543,6 @@ class FilterPlacementAnalyzerTest {
 		FilterPlacementAnalyzer earlyAnalysis = analyzer(earlyRoot);
 		assertThat(singletonSites(earlyAnalysis.analyze(early))).contains(anchor, suffix, earlyJoin)
 				.doesNotContain(earlyRoot);
-		assertThat(earlyAnalysis.transition(early, anchor, earlyJoin).legal()).isTrue();
-		assertThat(earlyAnalysis.transition(early, earlyJoin, anchor).legal()).isTrue();
 
 		BindingSetAssignment lateAnchor = values("x", 1, 2);
 		BindingSetAssignment lateSuffix = values("y", 3, 4);
@@ -601,8 +596,6 @@ class FilterPlacementAnalyzerTest {
 		QueryRoot root = new QueryRoot(union);
 		FilterPlacementAnalyzer analysis = analyzer(root);
 		assertThat(singletonSites(analysis.analyze(filter))).containsExactly(left);
-		assertThat(analysis.transition(filter, left, union).reason())
-				.isEqualTo(FilterPlacementAnalyzer.Reason.INCOMPLETE_CUT);
 		assertEveryPlacementPreservesBag(root, filter, analysis.analyze(filter));
 	}
 
@@ -628,7 +621,6 @@ class FilterPlacementAnalyzerTest {
 			Filter filter = new Filter(early ? left : new Join(left, right), condition);
 			QueryRoot root = new QueryRoot(early ? new Join(filter, right) : filter);
 			Envelope envelope = analyzer(root).analyze(filter);
-			assertThat(envelope.stableNames()).contains("local");
 			if (early) {
 				assertThat(singletonSites(envelope)).containsExactly(left);
 			} else {
@@ -650,7 +642,6 @@ class FilterPlacementAnalyzerTest {
 			Filter filter = new Filter(join, condition);
 			QueryRoot root = new QueryRoot(filter);
 			Envelope envelope = analyzer(root).analyze(filter);
-			assertThat(envelope.stableNames()).contains("x");
 			assertThat(singletonSites(envelope)).contains(anchor);
 			assertEveryPlacementPreservesBag(root, filter, envelope);
 		}
@@ -812,8 +803,6 @@ class FilterPlacementAnalyzerTest {
 		Envelope envelope = analyzer(root).analyze(filter);
 		assertThat(envelope.repeatable()).isFalse();
 		assertThat(singletonSites(envelope)).containsExactly(input);
-		assertThat(envelope.barriers()).extracting(FilterPlacementAnalyzer.Barrier::reason)
-				.contains(FilterPlacementAnalyzer.Reason.NON_REPEATABLE_CONDITION);
 
 		BindingSetAssignment anchor = values("x", 1);
 		Extension effect = new Extension(new SingletonSet(),
