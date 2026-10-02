@@ -1,0 +1,6 @@
+# Codepoint escape in prefixed name : PNAME_NS
+PREFIX ns: <http://example/ns#>
+
+SELECT * {
+    ?x n\u0073:abc ?o
+}
