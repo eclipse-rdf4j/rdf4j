@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+  <head>
+    <variable name="v"/>
+    <variable name="count"/>
+  </head>
+  <results>
+    <result>
+      <binding name="v"><literal>outer</literal></binding>
+      <binding name="count"><literal>3</literal></binding>
+    </result>
+  </results>
+</sparql>

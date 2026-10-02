@@ -1,0 +1,1 @@
+SELECT ?s ?o WHERE { ?s <urn:next>/<urn:next> ?o }

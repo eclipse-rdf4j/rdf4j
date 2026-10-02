@@ -67,6 +67,9 @@ public class XmlDatatypeUtilFunction implements Function {
 		}
 
 		if (coreDatatype.isXSDDatatype()) {
+			if (coreDatatype == CoreDatatype.XSD.STRING) {
+				return BooleanLiteral.TRUE; // any lexical form is a valid xsd:string — no need to materialize
+			}
 			return BooleanLiteral.valueOf(XMLDatatypeUtil.isValidValue(literal.stringValue(), coreDatatype));
 		}
 

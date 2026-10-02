@@ -3992,7 +3992,7 @@ final class SketchJoinOrderPlanner {
 				continue;
 			}
 			BindingSetAssignment assignment = bindingSetAssignments[i];
-			if (assignment == null) {
+			if (assignment == null || !assignment.hasRepeatableBindingSets()) {
 				continue;
 			}
 			Set<Value> values = new HashSet<>();
@@ -5535,6 +5535,9 @@ final class SketchJoinOrderPlanner {
 					+ ')';
 		}
 		if (tupleExpr instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return "BSA(names=" + new TreeSet<>(assignment.getBindingNames()) + ", rows=unknown)";
+			}
 			int rows = 0;
 			for (Object ignored : assignment.getBindingSets()) {
 				rows++;

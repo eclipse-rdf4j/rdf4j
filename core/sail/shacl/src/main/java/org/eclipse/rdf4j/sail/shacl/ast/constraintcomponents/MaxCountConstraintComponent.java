@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -29,7 +28,6 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
-import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
 import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
@@ -168,23 +166,20 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 
 		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();
 
-		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,
+		var targetChain = getTargetChain();
+		Path path = targetChain.getPath().orElseThrow(IllegalStateException::new);
+
+		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,
 				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);
 		String query = effectiveTarget.getQuery(false);
 
 		if (maxCount == 0) {
 			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;
-
-			Optional<SparqlFragment> sparqlFragment = getTargetChain().getPath()
-					.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()));
-
-			String pathQuery = sparqlFragment
-					.orElseThrow(IllegalStateException::new)
+			String pathQuery = path.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+					connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
 					.getFragment();
 
 			query += "\n" + pathQuery;
-
 		} else if (maxCount > 0) {
 
 			StringBuilder paths = new StringBuilder();
@@ -193,32 +188,20 @@ public class MaxCountConstraintComponent extends AbstractConstraintComponent {
 			for (int i = 0; i < maxCount + 1; i++) {
 				StatementMatcher.Variable value = stableRandomVariableProvider.next();
 				valueVariables.add(value);
-				String pathQuery = getTargetChain().getPath()
-						.map(p -> p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
-								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of()))
-						.orElseThrow(IllegalStateException::new)
+				String pathQuery = path.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,
+						connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider, Set.of())
 						.getFragment();
 
 				paths.append(pathQuery).append("\n");
 			}
 
-			Set<String> notEquals = new HashSet<>();
-
+			List<String> notEquals = new ArrayList<>();
 			for (int i = 0; i < valueVariables.size(); i++) {
-				for (int j = 0; j < valueVariables.size(); j++) {
-					if (i == j) {
-						continue;
-					}
-					if (i > j) {
-						notEquals.add(valueVariables.get(i).asSparqlVariable() + " != "
-								+ valueVariables.get(j).asSparqlVariable());
-					} else {
-						notEquals.add(valueVariables.get(j).asSparqlVariable() + " != "
-								+ valueVariables.get(i).asSparqlVariable());
-					}
+				for (int j = i + 1; j < valueVariables.size(); j++) {
+					notEquals.add(valueVariables.get(i).asSparqlVariable() + " != "
+							+ valueVariables.get(j).asSparqlVariable());
 				}
 			}
-
 			String innerCondition = String.join(" && ", notEquals);
 
 			query += "\n" + paths.toString().trim() + "\n" + "FILTER(" + innerCondition + ")";

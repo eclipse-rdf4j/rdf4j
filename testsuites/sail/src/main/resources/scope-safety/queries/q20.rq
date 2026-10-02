@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  { VALUES ?x { "a" "a" "a" "b" } } UNION { VALUES ?x { "a" "c" } }
+  FILTER(?x = "a")
+}
