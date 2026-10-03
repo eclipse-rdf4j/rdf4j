@@ -177,4 +177,9 @@
 		<servlet-name>workbench</servlet-name>
 		<url-pattern>/repositories/*</url-pattern>
 	</servlet-mapping>
+	<!-- Browsers load module scripts only with a JavaScript type; containers such as Tomcat do not map .mjs. -->
+	<mime-mapping>
+		<extension>mjs</extension>
+		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
 </web-app>
