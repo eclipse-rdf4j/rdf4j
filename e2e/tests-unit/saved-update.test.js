@@ -124,6 +124,9 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(metadata.style.display, '');
     assert.equal(textarea.value, 'SELECT * WHERE {?s ?p ?o}');
     assert.equal(yasqe.state.instance.refreshCount, 1);
+    // A read-only query needs no completion; YASQE's default completers fetch prefix.cc and vocabularies, and
+    // YASQE deep-merges an empty list into its default one, so only null turns them off.
+    assert.equal(yasqe.state.instance.options.autocompleters, null);
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(toggle.textContent, 'Hide details');
 

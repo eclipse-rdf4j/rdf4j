@@ -96,7 +96,11 @@ module workbench {
                 if (!page.editors.has(urn)) {
                     textarea.value = textarea.value.trim();
                     textarea.style.display = '';
-                    const instance = YASQE.fromTextArea(textarea, { readOnly: 'nocursor', createShareLink: null });
+                    // A read-only query needs no completion: YASQE's default completers fetch prefix.cc and
+                    // vocabulary services from the reader's browser. YASQE deep-merges its options into its
+                    // defaults, which merges an empty list into the default one; null replaces it.
+                    const instance = YASQE.fromTextArea(textarea,
+                        { readOnly: 'nocursor', createShareLink: null, autocompleters: null });
                     page.editors.set(urn, { textarea, instance });
                     $(instance.getWrapperElement()).css({ fontSize: '14px', height: 'auto' });
                     instance.refresh();
