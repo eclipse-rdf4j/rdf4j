@@ -55,9 +55,11 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -72,6 +74,14 @@ import jakarta.servlet.http.HttpServletResponse;
 class QueryServletCoverageTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
+
+	private static final WorkbenchPrincipal ALICE = WorkbenchPrincipal.authenticated("alice");
+
+	private static final WorkbenchPrincipal BOB = WorkbenchPrincipal.authenticated("bob");
+
+	private static final WorkbenchPrincipal CAROL = WorkbenchPrincipal.authenticated("carol");
+
+	private static final WorkbenchPrincipal MALLORY = WorkbenchPrincipal.authenticated("mallory");
 
 	@AfterEach
 	void shutdownQueryStorageSingleton() throws Exception {
@@ -191,6 +201,60 @@ class QueryServletCoverageTest {
 	}
 
 	@Test
+	void getActionRejectsUnreadableSavedQuery() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		QueryStorage storage = mock(QueryStorage.class);
+		WorkbenchRequest request = savedQueryGetRequest();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		Repository repository = mock(Repository.class);
+
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"), eq(MALLORY)))
+				.thenThrow(new BadRequestException("Could not find query entry in storage."));
+		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
+
+		assertThatThrownBy(() -> servlet.service(request, response, "/transform"))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Could not find query entry in storage.");
+	}
+
+	@Test
+	void getActionReturnsReadableSavedQuery() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		QueryStorage storage = mock(QueryStorage.class);
+		WorkbenchRequest request = savedQueryGetRequest();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+		Repository repository = mock(Repository.class);
+
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"), eq(MALLORY)))
+				.thenReturn(SHORT_QUERY);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
+
+		servlet.service(request, response, "/transform");
+
+		assertThat(body.toString()).contains("\"queryText\":\"select * {?s ?p ?o .}\"");
+		verify(storage).getQueryText(anyString(), eq("owner"), eq("saved-query"), eq(MALLORY));
+	}
+
+	private WorkbenchRequest savedQueryGetRequest() {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("get");
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.getParameter("owner")).thenReturn("owner");
+		when(request.getParameter("server-user")).thenReturn("mallory");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(MALLORY);
+		return request;
+	}
+
+	@Test
 	void malformedExecErrorsAreRenderedIntoWorkbenchResults() throws Exception {
 		CookieAwareQueryServlet servlet = new CookieAwareQueryServlet();
 		Repository repository = mock(Repository.class);
@@ -249,9 +313,12 @@ class QueryServletCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "alice")).thenReturn(true);
-		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"))).thenReturn(SHORT_QUERY);
+		Repository repository = mock(Repository.class);
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(ALICE)))
+				.thenReturn(queryId);
+		when(storage.canRead(queryId, ALICE)).thenReturn(true);
+		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"), eq(ALICE))).thenReturn(SHORT_QUERY);
 		when(response.getOutputStream()).thenReturn(outputStream);
 		when(request.getParameter("action")).thenReturn("edit");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
@@ -259,12 +326,13 @@ class QueryServletCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getParameter("server-user")).thenReturn("alice");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(ALICE);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("infer")).thenReturn("false");
 		when(request.getParameter("limit_query")).thenReturn("20");
 		when(request.getParameter("query-timeout")).thenReturn("17");
 		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
 
 		servlet.doPost(request, response, "/transform");
 
@@ -283,17 +351,20 @@ class QueryServletCoverageTest {
 		WorkbenchRequest unreadableRequest = mock(WorkbenchRequest.class);
 		WorkbenchRequest unknownActionRequest = mock(WorkbenchRequest.class);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
+		Repository repository = mock(Repository.class);
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(ALICE)))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
-		when(storage.canRead(any(IRI.class), eq("alice"))).thenReturn(false);
+		when(storage.canRead(any(IRI.class), eq(ALICE))).thenReturn(false);
 		when(unreadableRequest.getParameter("action")).thenReturn("exec");
 		when(unreadableRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(unreadableRequest.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(unreadableRequest.getParameter("owner")).thenReturn("owner");
-		when(unreadableRequest.getParameter("server-user")).thenReturn("alice");
+		when(unreadableRequest.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(ALICE);
 		when(unknownActionRequest.getParameter("action")).thenReturn("surprise");
 		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
 
 		assertThatThrownBy(() -> servlet.doPost(unreadableRequest, mock(HttpServletResponse.class), "/transform"))
 				.isInstanceOf(BadRequestException.class)
@@ -319,10 +390,9 @@ class QueryServletCoverageTest {
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		when(storage.checkAccess(null)).thenReturn(false);
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.askExists(expectedRepositoryReference("unknown-repository"), "first", "")).thenReturn(false);
-		when(storage.askExists(expectedRepositoryReference(repository.getClass().getName()), "second", "bob"))
+		when(storage.askExists(expectedRepositoryReference(repository.getClass().getName()), "second", BOB))
 				.thenReturn(true);
-		when(storage.askExists(expectedRepositoryReference("https://example.org/repositories/test"), "third", "carol"))
+		when(storage.askExists(expectedRepositoryReference("https://example.org/repositories/test"), "third", CAROL))
 				.thenReturn(false);
 
 		servlet.substituteQueryStorage(storage);
@@ -336,9 +406,10 @@ class QueryServletCoverageTest {
 		servlet.setRepositoryInfo(info);
 		assertThatCode(() -> servlet.doPost(noOverwrite, response, "/transform")).doesNotThrowAnyException();
 		assertThat(body.toString()).contains("\"existed\":true").contains("\"written\":false");
-		verify(storage, never()).updateQuery(any(), anyString(), eq(false), eq(QueryLanguage.SPARQL), anyString(),
+		verify(storage, never()).updateQuery(any(), any(WorkbenchPrincipal.class), eq(false), eq(QueryLanguage.SPARQL),
+				anyString(),
 				eq(false), eq(20), eq(0));
-		verify(storage, never()).saveQuery(anyString(), eq("second"), eq("bob"), eq(false), eq(QueryLanguage.SPARQL),
+		verify(storage, never()).saveQuery(anyString(), eq("second"), eq(BOB), eq(false), eq(QueryLanguage.SPARQL),
 				anyString(), eq(false), eq(20), eq(0));
 
 		body.getBuffer().setLength(0);
@@ -346,7 +417,7 @@ class QueryServletCoverageTest {
 		servlet.setRepositoryInfo(info);
 		assertThatCode(() -> servlet.doPost(savePrivate, response, "/transform")).doesNotThrowAnyException();
 		verify(storage).saveQuery(expectedRepositoryReference("https://example.org/repositories/test"), "third",
-				"carol", false, QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
+				CAROL, false, QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"accessible\":true").contains("\"written\":true");
 	}
 
@@ -397,11 +468,13 @@ class QueryServletCoverageTest {
 		} else if ("second".equals(queryName)) {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getParameter("server-user")).thenReturn("bob");
+			when(request.getParameter("server-user")).thenReturn("spoofed-user");
+			when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(BOB);
 		} else {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getParameter("server-user")).thenReturn("carol");
+			when(request.getParameter("server-user")).thenReturn("spoofed-user");
+			when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(CAROL);
 		}
 		return request;
 	}

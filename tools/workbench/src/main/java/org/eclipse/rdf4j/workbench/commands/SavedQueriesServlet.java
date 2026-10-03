@@ -23,8 +23,10 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 import jakarta.servlet.ServletConfig;
@@ -79,15 +81,12 @@ public class SavedQueriesServlet extends TransformationServlet {
 		}
 		final boolean accessible = storage.checkAccess(this.repository);
 		if (accessible) {
-			String userName = wreq.getParameter(SERVER_USER);
-			if (null == userName) {
-				userName = "";
-			}
+			WorkbenchPrincipal currentUser = getAuthenticatedPrincipal(wreq);
 			final IRI queryURI = SimpleValueFactory.getInstance().createIRI(urn);
-			if (storage.canChange(queryURI, userName)) {
-				storage.deleteQuery(queryURI, userName);
+			if (storage.canChange(queryURI, currentUser)) {
+				storage.deleteQuery(queryURI, currentUser);
 			} else {
-				throw new BadRequestException("User '" + userName + "' may not delete query id " + urn);
+				throw new BadRequestException("Current user may not delete query id " + urn);
 			}
 		}
 		this.service(wreq, resp, xslPath);
@@ -96,15 +95,17 @@ public class SavedQueriesServlet extends TransformationServlet {
 	private void getSavedQueries(final WorkbenchRequest req, final TupleResultBuilder builder)
 			throws RDF4JException, BadRequestException {
 		final String repositoryReference = getRepositoryReference();
-		String user = req.getParameter(SERVER_USER);
-		if (null == user) {
-			user = "";
-		}
+		WorkbenchPrincipal currentUser = getAuthenticatedPrincipal(req);
 		if (!storage.checkAccess(this.repository)) {
-			throw new BadRequestException(
-					"User '" + user + "' not authorized to access repository '" + repositoryReference + "'");
+			throw new BadRequestException("Current credentials are not authorized to access repository '"
+					+ repositoryReference + "'");
 		}
-		storage.selectSavedQueries(repositoryReference, user, builder);
+		storage.selectSavedQueries(repositoryReference, currentUser, builder);
+	}
+
+	private WorkbenchPrincipal getAuthenticatedPrincipal(WorkbenchRequest req) {
+		Object principal = req.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE);
+		return principal instanceof WorkbenchPrincipal ? (WorkbenchPrincipal) principal : null;
 	}
 
 	private String getRepositoryReference() {

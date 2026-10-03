@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -39,9 +40,11 @@ import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -53,6 +56,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 
 class SavedQueriesServletTest {
+
+	private static final WorkbenchPrincipal ALICE = WorkbenchPrincipal.authenticated("alice");
+
+	private static final WorkbenchPrincipal BOB = WorkbenchPrincipal.authenticated("bob");
 
 	@Test
 	void initWrapsQueryStorageFailures() {
@@ -83,12 +90,13 @@ class SavedQueriesServletTest {
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, info);
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/saved");
 		request.setContextPath("/workbench");
-		request.addParameter("server-user", "alice");
+		request.addParameter("server-user", "spoofed-user");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE, ALICE);
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
 
-		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq("alice"), any());
+		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq(ALICE), any());
 		assertThat(response.getBody()).contains("team-query").contains("saved-queries.xsl");
 	}
 
@@ -108,7 +116,7 @@ class SavedQueriesServletTest {
 
 		servlet.service(new MockHttpServletRequest("GET", "/saved"), new CapturingHttpServletResponse());
 
-		verify(storage).selectSavedQueries(eq("https://example.org/http-repository"), eq(""), any());
+		verify(storage).selectSavedQueries(eq("https://example.org/http-repository"), isNull(), any());
 	}
 
 	@Test
@@ -128,7 +136,7 @@ class SavedQueriesServletTest {
 
 		servlet.service(new MockHttpServletRequest("GET", "/saved"), new CapturingHttpServletResponse());
 
-		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), eq(""), any());
+		verify(storage).selectSavedQueries(eq(expectedReference("test-id")), isNull(), any());
 	}
 
 	@Test
@@ -160,7 +168,7 @@ class SavedQueriesServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq("bob"))).thenReturn(false);
+		when(storage.canChange(any(IRI.class), eq(BOB))).thenReturn(false);
 
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
 
@@ -171,11 +179,11 @@ class SavedQueriesServletTest {
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.addParameter("delete", "urn:test:query");
-		request.addParameter("server-user", "bob");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE, BOB);
 
 		assertThatThrownBy(() -> servlet.service(request, new CapturingHttpServletResponse()))
 				.isInstanceOf(BadRequestException.class)
-				.hasMessageContaining("User 'bob' may not delete query id urn:test:query");
+				.hasMessageContaining("Current user may not delete query id urn:test:query");
 		verify(storage, never()).deleteQuery(any(), any());
 
 		MockHttpServletRequest blankDelete = new MockHttpServletRequest("POST", "/saved");
@@ -211,7 +219,7 @@ class SavedQueriesServletTest {
 		RepositoryInfo info = new RepositoryInfo();
 		info.setLocation(new URL("https://example.org/rdf4j-server/repositories/test"));
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq("alice"))).thenReturn(true);
+		when(storage.canChange(any(IRI.class), eq(ALICE))).thenReturn(true);
 		doAnswer(invocation -> {
 			TupleResultBuilder builder = invocation.getArgument(2);
 			builder.variables("queryName");
@@ -223,21 +231,23 @@ class SavedQueriesServletTest {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
 		request.setContextPath("/workbench");
 		request.addParameter("delete", "urn:test:query");
-		request.addParameter("server-user", "alice");
+		request.addParameter("server-user", "spoofed-user");
+		request.setAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE, ALICE);
 		CapturingHttpServletResponse response = new CapturingHttpServletResponse();
 
 		servlet.service(request, response);
 
-		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")), eq("alice"));
+		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:query")), eq(ALICE));
 		assertThat(response.getBody()).contains("remaining-query");
 	}
 
 	@Test
-	void postDeletesSavedQueryForAnonymousUsersAndSuperFactoryCanBuildStorage(@TempDir Path dataDir) throws Exception {
+	void postRejectsAnonymousDeletionAndAllowsLocalPrincipal(@TempDir Path dataDir) throws Exception {
 		QueryStorage storage = mock(QueryStorage.class);
 		Repository repository = accessibleRepository();
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.canChange(any(IRI.class), eq(""))).thenReturn(true);
+		when(storage.canChange(any(IRI.class), isNull())).thenReturn(false);
+		when(storage.canChange(any(IRI.class), eq(WorkbenchPrincipal.local()))).thenReturn(true);
 		doAnswer(invocation -> {
 			TupleResultBuilder builder = invocation.getArgument(2);
 			builder.variables("queryName");
@@ -245,11 +255,19 @@ class SavedQueriesServletTest {
 		}).when(storage).selectSavedQueries(any(), any(), any());
 
 		TestSavedQueriesServlet servlet = initServlet(storage, repository, new RepositoryInfo());
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saved");
-		request.addParameter("delete", "urn:test:anonymous");
-		servlet.service(request, new CapturingHttpServletResponse());
+		MockHttpServletRequest anonymousRequest = new MockHttpServletRequest("POST", "/saved");
+		anonymousRequest.addParameter("delete", "urn:test:anonymous");
+		assertThatThrownBy(() -> servlet.service(anonymousRequest, new CapturingHttpServletResponse()))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("Current user may not delete query id urn:test:anonymous");
 
-		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:anonymous")), eq(""));
+		MockHttpServletRequest localRequest = new MockHttpServletRequest("POST", "/saved");
+		localRequest.addParameter("delete", "urn:test:local");
+		localRequest.setAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE, WorkbenchPrincipal.local());
+		servlet.service(localRequest, new CapturingHttpServletResponse());
+
+		verify(storage).deleteQuery(eq(SimpleValueFactory.getInstance().createIRI("urn:test:local")),
+				eq(WorkbenchPrincipal.local()));
 
 		ExposedSavedQueriesServlet realServlet = new ExposedSavedQueriesServlet();
 		realServlet.setRepositoryManager(mock(RepositoryManager.class));
