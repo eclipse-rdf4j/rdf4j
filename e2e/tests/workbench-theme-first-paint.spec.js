@@ -106,10 +106,12 @@ for (const scenario of FIRST_PAINT_CASES) {
                 const allStylesheetsLoaded = stylesheetLinks.length > 0 &&
                     stylesheetLinks.every(link => link.sheet !== null);
                 // WebKit can expose a link's sheet a frame before its rules apply; the first styled frame is the
-                // first one in which the Workbench tokens resolve.
-                const tokensApplied = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--workbench-canvas').trim() !== '';
-                if (!window.__workbenchThemeFirstFrame && allStylesheetsLoaded && tokensApplied && document.body) {
+                // first one in which the Workbench tokens resolve. Styles are read only once every sheet has
+                // loaded: forcing a style flush while a sheet is still pending can stop Firefox from producing
+                // further frames.
+                const tokensApplied = allStylesheetsLoaded && !!document.body
+                    && getComputedStyle(document.documentElement).getPropertyValue('--workbench-canvas').trim() !== '';
+                if (!window.__workbenchThemeFirstFrame && tokensApplied) {
                     window.__workbenchThemeFirstFrame = readTheme();
                 }
                 if (!window.__workbenchThemeFirstFrame) {
