@@ -222,9 +222,13 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 			const form = document.querySelector('form[action="create"]');
 			const sample = () => {
 				const box = panel.getBoundingClientRect();
+				const motion = panel.getAnimations({ subtree: false })
+					.find(animation => animation.playState === 'running');
+				const progress = motion ? motion.effect.getComputedTiming().progress : null;
 				trace.samples.push({
 					hidden: panel.hidden,
 					height: box.height,
+					progress: typeof progress === 'number' ? progress : null,
 					formBottom: form.getBoundingClientRect().bottom
 				});
 				if (!panel.hidden) {
@@ -248,6 +252,7 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 		await page.waitForFunction(() => (/** @type {any} */ (window)).sharedDisclosureTrace.complete);
 		const trace = await page.evaluate(() => (/** @type {any} */ (window)).sharedDisclosureTrace.samples);
 		const closedIndex = trace.findIndex(sample => sample.hidden);
+		const opened = trace[0];
 		const previous = trace[closedIndex - 1];
 		const firstClosed = trace[closedIndex];
 		const settled = trace[trace.length - 1];
@@ -261,9 +266,11 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 			finalPanelStep,
 			finalFormStep
 		})}`);
-		// What follows the panel must not jump. The clipped panel's own last frame lands a little before the end of
-		// its eased motion, by how much depends on the engine's frame timing (up to about 3 px on WebKit on Linux).
-		expect(finalPanelStep).toBeLessThanOrEqual(4);
+		// What follows the panel must not jump. The panel's own last frame lands before the end of its eased motion,
+		// by how much depends on frame timing (a busy machine drops frames), so it is held to the motion's curve: the
+		// height still left is the part of the motion not yet run, and a motion that has run out has left nothing.
+		const remaining = previous.progress === null ? 0 : opened.height * (1 - previous.progress);
+		expect(Math.abs(previous.height - remaining), 'the last open frame lies on the closing motion').toBeLessThanOrEqual(1);
 		expect(finalFormStep).toBeLessThanOrEqual(1);
 		expect(Math.abs(firstClosed.height - settled.height)).toBeLessThanOrEqual(0.1);
 		expect(Math.abs(firstClosed.formBottom - settled.formBottom)).toBeLessThanOrEqual(0.1);

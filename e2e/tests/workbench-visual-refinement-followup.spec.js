@@ -610,10 +610,13 @@ test('coarse-pointer compare actions remain touch-sized at tablet widths', async
 
 		const actions = await compareActionTargets(page);
 		console.log(`COARSE_POINTER_COMPARE_ACTIONS ${JSON.stringify(actions)}`);
+		// A mobile WebKit page can be zoomed slightly (visualViewport.scale is not 1), and its boxes then measure a
+		// few hundred-thousandths of a pixel short of their CSS size.
+		const touchHeight = 44 - 0.01;
 		expect(actions.length).toBe(4);
 		expect(actions.every(action => action.visible)).toBe(true);
-		expect(actions.every(action => action.targetHeight >= 44)).toBe(true);
-		expect(actions.every(action => action.wrapperHeight >= 44)).toBe(true);
+		expect(actions.every(action => action.targetHeight >= touchHeight)).toBe(true);
+		expect(actions.every(action => action.wrapperHeight >= touchHeight)).toBe(true);
 		expect(Math.max(...actions.map(action => action.wrapperHeight))
 			- Math.min(...actions.map(action => action.wrapperHeight))).toBeLessThanOrEqual(1);
 		await waitForCompareTransition(page);
