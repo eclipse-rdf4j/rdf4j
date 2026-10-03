@@ -134,6 +134,57 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(toggle.textContent, 'Show details');
 });
 
+function countWrites(element, property) {
+    const prototype = Object.getPrototypeOf(element);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+    const writes = [];
+    Object.defineProperty(element, property, {
+        configurable: true,
+        get() {
+            return descriptor.get.call(this);
+        },
+        set(value) {
+            writes.push(value);
+            descriptor.set.call(this, value);
+        }
+    });
+    return writes;
+}
+
+test('saved query refresh leaves unchanged card content in place', () => {
+    // The virtual row renderer refreshes the cards on every scroll; replacing a toggle's text while it is pressed
+    // makes WebKit drop the click.
+    const harness = createFormBrowserHarness();
+    const metadata = harness.registerElement('div', { id: 'urn:query-metadata', style: { display: 'none' } });
+    const toggle = harness.registerElement('button', {
+        id: 'urn:query-toggle',
+        className: 'saved-query-toggle',
+        attributes: { 'aria-expanded': 'false', 'data-query-urn': 'urn:query' },
+        textContent: 'Show details'
+    });
+    const textarea = harness.registerElement('textarea', { id: 'urn:query-text', value: 'ASK {}' });
+    const pre = harness.registerElement('pre', { innerHTML: 'ASK {}' });
+    [metadata, toggle, textarea, pre].forEach((element) => harness.document.body.appendChild(element));
+    harness.context.YASQE = createYasqeStub(harness).api;
+    harness.loadScripts(['saved-queries.js']);
+    harness.context.workbench.savedQueries.mount(harness.document.body);
+
+    const toggleTextWrites = countWrites(toggle, 'textContent');
+    const queryWrites = countWrites(pre, 'innerHTML');
+    harness.context.workbench.savedQueries.refresh(harness.document.body);
+
+    assert.deepEqual(toggleTextWrites, []);
+    assert.deepEqual(queryWrites, []);
+
+    harness.context.workbench.savedQueries.toggle('urn:query');
+    assert.equal(toggle.textContent, 'Hide details');
+    toggleTextWrites.length = 0;
+    harness.context.workbench.savedQueries.refresh(harness.document.body);
+
+    assert.deepEqual(toggleTextWrites, []);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+});
+
 test('saved query controls bind inert data attributes to static handlers', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
