@@ -309,7 +309,7 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 		rowCountInDom: document.querySelectorAll('#contexts-results tr[data-workbench-row-index]').length,
 		firstRowText: document.querySelector('#contexts-results tr[data-workbench-row-index]')?.textContent.trim() || ''
 	}));
-	const activeStorage = await readRowStoreSnapshot(page);
+	const activeStorage = await waitForSingleGraphRowStore(page);
 	const activeStores = activeStorage.storeRecords.filter(store => store.count === SCROLL_ROW_COUNT);
 	expect(activeStores).toHaveLength(1);
 
@@ -359,7 +359,7 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 		expect(showing.persisted).toBe(false);
 		expect(restoredStorage.storeRecords.some(store => store.id === activeStores[0].id),
 			'the old page store must be reclaimed before the reloaded route creates its row store').toBe(false);
-		expect(restoredStorage.storeRecords.filter(store => store.count === SCROLL_ROW_COUNT)).toHaveLength(1);
+		await waitForSingleGraphRowStore(page);
 		// The position is applied again while the page reaches its final height, a few frames after the rows are bound.
 		// The windowed table's height sums measured and estimated row heights, so the returned page can end a pixel
 		// shorter than the one that was left when it measured other rows; its bottom is then one pixel higher.
@@ -527,7 +527,9 @@ async function readRowStoreSnapshot(page) {
 		const [storeRecords, physicalRowRecordCount] = await Promise.all([
 			new Promise((resolve, reject) => {
 				storeRequest.onsuccess = () => {
-					const records = storeRequest.result;
+					// WebKit's getAll can report a store record as undefined while the page's worker is adding or
+					// deleting stores; such an entry is not a store this snapshot can describe.
+					const records = storeRequest.result.filter(record => record && typeof record === 'object');
 					perStoreRecordCountPromises = records.map(store => new Promise((resolveCount, rejectCount) => {
 						const range = IDBKeyRange.bound([store.id, 0], [store.id, 9007199254740991]);
 						const request = rows.count(range);
@@ -564,6 +566,21 @@ async function readRowStoreSnapshot(page) {
 			orphanRowRecordCount: physicalRowRecordCount - ownedPhysicalRecords
 		};
 	}, ROW_STORE_DATABASE);
+}
+
+/**
+ * Waits until the Graphs page keeps its rows in exactly one store. The page reads the per-graph statement counts
+ * through a temporary store of their own (one row per graph, so as many rows as the page) and disposes it once the
+ * counts are shown.
+ */
+async function waitForSingleGraphRowStore(page) {
+	await expect(page.locator('#contexts-results .workbench-count-cell[aria-busy="true"]')).toHaveCount(0);
+	let snapshot;
+	await expect.poll(async () => {
+		snapshot = await readRowStoreSnapshot(page);
+		return snapshot.storeRecords.filter(store => store.count === SCROLL_ROW_COUNT).length;
+	}, { message: 'the Graphs page keeps its rows in one row store' }).toBe(1);
+	return snapshot;
 }
 
 async function waitForExecutionStoreReleased(page, baseline, storeIds) {
