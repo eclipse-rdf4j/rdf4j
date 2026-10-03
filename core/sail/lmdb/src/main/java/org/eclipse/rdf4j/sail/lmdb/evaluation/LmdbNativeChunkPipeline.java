@@ -1978,6 +1978,8 @@ final class LmdbNativeChunkPipeline {
 		final RowState row;
 		final NativeBatch batch;
 		final LmdbNativeLongArena arena;
+		final long[] entrySlots;
+		final int entryMark;
 		/** How many probe stages run in merge/zig-zag mode, for the explain engagement string. */
 		int mergeStages;
 		int index;
@@ -1989,6 +1991,8 @@ final class LmdbNativeChunkPipeline {
 			this.row = row;
 			this.batch = new NativeBatch(row.slots.length, BATCH_ROWS);
 			this.arena = stage.ownedArena();
+			this.entrySlots = row.slots.clone();
+			this.entryMark = row.mark();
 		}
 
 		@Override
@@ -2030,6 +2034,11 @@ final class LmdbNativeChunkPipeline {
 					failure = recordFailure(failure, e);
 				}
 			}
+			// Batch publication bypasses the binding trail. Restore the caller's entry mapping after upstream
+			// cleanup, including censored probes, so another strategy can reopen the same row without stale keys.
+			row.rollback(entryMark);
+			System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+			row.recomputeBoundMask();
 			throwFailure(failure);
 		}
 	}

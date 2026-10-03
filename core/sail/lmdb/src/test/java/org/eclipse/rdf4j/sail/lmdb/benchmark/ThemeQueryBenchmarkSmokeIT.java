@@ -253,6 +253,13 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	@Timeout(value = 3, unit = TimeUnit.MINUTES)
+	void medicalPractitionerGroupsRemainCompleteAcrossAdaptiveRepetitions() throws Exception {
+		assertThemeQueryCountWithAutoIrAndDirectAdjacency(Theme.MEDICAL_RECORDS, 2, ADAPTIVE_STABILITY_REPETITIONS);
+	}
+
+	@Test
 	@Disabled
 	void executeQueryReturnsExpectedCountForPharmaQueryOne() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 1);
