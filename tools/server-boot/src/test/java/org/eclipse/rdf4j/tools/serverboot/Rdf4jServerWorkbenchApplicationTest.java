@@ -26,6 +26,8 @@ import org.apache.coyote.AbstractProtocol;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
+import org.eclipse.rdf4j.http.server.compression.HttpCompressionFilter;
+import org.eclipse.rdf4j.http.server.security.RequestIntegrityFilter;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
 import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
+import org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -104,6 +107,18 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Autowired
 	@Qualifier("serverPrefixForwardFilter")
 	private FilterRegistrationBean<ServerPrefixForwardFilter> serverPrefixForwardFilter;
+
+	@Autowired
+	@Qualifier("requestIntegrityFilter")
+	private FilterRegistrationBean<RequestIntegrityFilter> requestIntegrityFilter;
+
+	@Autowired
+	@Qualifier("workbenchCsrfFilter")
+	private FilterRegistrationBean<WorkbenchCsrfFilter> workbenchCsrfFilter;
+
+	@Autowired
+	@Qualifier("httpCompressionFilter")
+	private FilterRegistrationBean<HttpCompressionFilter> httpCompressionFilter;
 
 	@Autowired
 	@Qualifier("workbenchRedirectFilter")
@@ -223,9 +238,22 @@ class Rdf4jServerWorkbenchApplicationTest {
 	void queryServletChainIsAsyncSupported() {
 		assertThat(rdf4jServerServlet.isAsyncSupported()).isTrue();
 		assertThat(rdf4jWorkbenchServlet.isAsyncSupported()).isTrue();
+		assertThat(requestIntegrityFilter.isAsyncSupported()).isTrue();
+		assertThat(workbenchCsrfFilter.isAsyncSupported()).isTrue();
 		assertThat(serverPrefixForwardFilter.isAsyncSupported()).isTrue();
 		assertThat(workbenchRedirectFilter.isAsyncSupported()).isTrue();
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
+	}
+
+	@Test
+	void requestIntegrityFiltersMatchWarDeploymentScopes() {
+		assertThat(requestIntegrityFilter.getFilter()).isInstanceOf(RequestIntegrityFilter.class);
+		assertThat(requestIntegrityFilter.getUrlPatterns()).containsExactly("/rdf4j-server/repositories/*");
+		assertThat(requestIntegrityFilter.getOrder()).isLessThan(httpCompressionFilter.getOrder());
+
+		assertThat(workbenchCsrfFilter.getFilter()).isInstanceOf(WorkbenchCsrfFilter.class);
+		assertThat(workbenchCsrfFilter.getUrlPatterns()).containsExactly("/rdf4j-workbench/repositories/*");
+		assertThat(workbenchCsrfFilter.getOrder()).isLessThan(workbenchRedirectFilter.getOrder());
 	}
 
 	@Test
@@ -250,6 +278,32 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(response.getBody()).as("Workbench XML body")
 				.contains("<?xml")
 				.contains("<sparql");
+	}
+
+	@Test
+	void embeddedWorkbenchRejectsTokenlessMutation() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+		ResponseEntity<String> response = restTemplate.exchange(
+				"http://localhost:" + port + "/rdf4j-workbench/repositories/NONE/query", HttpMethod.POST,
+				new HttpEntity<>("action=csrf-probe", headers), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	@Test
+	void embeddedServerRejectsCrossOriginBrowserMutation() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		headers.setOrigin("https://attacker.example");
+		headers.set("Sec-Fetch-Site", "cross-site");
+
+		ResponseEntity<String> response = restTemplate.exchange(
+				"http://localhost:" + port + "/rdf4j-server/repositories/NONE/statements", HttpMethod.POST,
+				new HttpEntity<>("", headers), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 	}
 
 	@Test

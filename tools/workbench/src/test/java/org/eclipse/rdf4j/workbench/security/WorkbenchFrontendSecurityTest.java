@@ -39,7 +39,9 @@ class WorkbenchFrontendSecurityTest {
 				.contains("input.name = '_csrf';")
 				.contains("'X-RDF4J-CSRF-Token': token")
 				.contains("document.addEventListener('submit'")
-				.contains("HTMLFormElement.prototype.submit = function()")
+				.contains("if (!nativeFormSubmit.rdf4jCsrfProtected)")
+				.contains("csrfProtectedFormSubmit.rdf4jCsrfProtected = true;")
+				.contains("HTMLFormElement.prototype.submit = csrfProtectedFormSubmit;")
 				.contains("nativeFormSubmit.call(this);")
 				.contains("workbench.installCsrfProtection();");
 		assertThat(webXml)
