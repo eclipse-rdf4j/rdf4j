@@ -149,10 +149,21 @@ async function deleteRepository(request, baseUrl, repositoryId) {
     return deleted ? deleted.status() : null;
 }
 
+/**
+ * Whether specs save screenshots that only document a state for a person to review (no assertion reads them).
+ * They are saved by default, but not on CI, which keeps no test output; E2E_EVIDENCE_SCREENSHOTS=true or false
+ * decides either way.
+ */
+function evidenceScreenshots() {
+    const requested = process.env.E2E_EVIDENCE_SCREENSHOTS;
+    return requested ? requested === 'true' : !process.env.CI;
+}
+
 module.exports = {
     SEED_GRAPHS,
     createSeededRepository,
     deleteRepository,
+    evidenceScreenshots,
     memoryRepositoryConfiguration,
     openQueryPage,
     repositoryPageUrl,
