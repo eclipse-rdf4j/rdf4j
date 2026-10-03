@@ -94,7 +94,7 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	const pageErrors = [];
 	const executions = [];
 	const responses = [];
-	page.on('pageerror', error => pageErrors.push(error.message));
+	page.on('pageerror', error => recordPageError(pageErrors, error));
 	page.on('request', request => {
 		if (request.method() === 'POST' && request.url().includes('/query')
 				&& (request.headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson')) {
@@ -256,7 +256,7 @@ test('closing the query tab leaves a durable marker that a fresh same-origin tab
 
 	const recoveryPage = await context.newPage();
 	const pageErrors = [];
-	recoveryPage.on('pageerror', error => pageErrors.push(error.message));
+	recoveryPage.on('pageerror', error => recordPageError(pageErrors, error));
 	await recoveryPage.goto(SUMMARY_URL, { waitUntil: 'domcontentloaded' });
 	await recoveryPage.locator('#workbench-app').waitFor({ state: 'visible' });
 	let after;
@@ -287,7 +287,7 @@ test('closing the query tab leaves a durable marker that a fresh same-origin tab
 test('data-route history return retains or rehydrates worker rows and scroll', async ({ page }, testInfo) => {
 	test.setTimeout(120000);
 	const pageErrors = [];
-	page.on('pageerror', error => pageErrors.push(error.message));
+	page.on('pageerror', error => recordPageError(pageErrors, error));
 	await installPageLifecycleRecorder(page);
 	await page.goto(SCROLL_URL, { waitUntil: 'domcontentloaded' });
 	const table = page.locator('#contexts-results table[data-workbench-row-table="true"]');
@@ -385,7 +385,7 @@ test('data-route history return retains or rehydrates worker rows and scroll', a
 test('leaving a data route in the page releases its row store, and Back rebuilds it at the same rows', async ({ page }) => {
 	test.setTimeout(120000);
 	const pageErrors = [];
-	page.on('pageerror', error => pageErrors.push(error.message));
+	page.on('pageerror', error => recordPageError(pageErrors, error));
 	await installPageLifecycleRecorder(page);
 	await page.goto(SCROLL_URL, { waitUntil: 'domcontentloaded' });
 	await waitForRoute(page, 'contexts');
@@ -433,7 +433,7 @@ test('leaving a data route in the page releases its row store, and Back rebuilds
 test('a query result kept while another page is shown is released when a newer query runs', async ({ page }) => {
 	test.setTimeout(180000);
 	const pageErrors = [];
-	page.on('pageerror', error => pageErrors.push(error.message));
+	page.on('pageerror', error => recordPageError(pageErrors, error));
 	await installPageLifecycleRecorder(page);
 	await page.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
 	await waitForRoute(page, 'query');
@@ -586,6 +586,16 @@ async function waitForExecutionStoreReleased(page, baseline, storeIds) {
 async function readLifecycleState(page) {
 	return page.evaluate(() => JSON.parse(sessionStorage.getItem('__rdf4j_query_store_lifecycle_20260928')
 		|| '{"pagehide":[],"pageshow":[]}'));
+}
+
+/**
+ * Records an uncaught page error. A ResizeObserver loop notice is the browser reporting that layout settled over more
+ * than one frame (WebKit raises it as an error event); it is not a failure of the page.
+ */
+function recordPageError(pageErrors, error) {
+	if (!/^ResizeObserver loop/.test(error.message)) {
+		pageErrors.push(error.message);
+	}
 }
 
 async function installPageLifecycleRecorder(page) {

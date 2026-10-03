@@ -66,6 +66,8 @@ function repositoryConfig(repositoryId) {
 async function openWorkbenchPage(page, route) {
 	await page.goto(`${WORKBENCH_BASE_URL}/${route}`, { waitUntil: 'load' });
 	await page.locator('#workbench-page-surface').waitFor({ state: 'attached' });
+	// Page actions are bound once the view's scripts have mounted it; a click before then does nothing (seen in WebKit).
+	await waitForRoute(page, route.split('?')[0].split('/').pop());
 	if (/\/query(?:$|[?#])/.test(route)) {
 		// The query shell is visible before its page model has been loaded and
 		// the CodeMirror form, disclosure listeners, and result controller mount.
@@ -660,6 +662,8 @@ test.describe('Workbench configuration and option sizing', () => {
 			await queryPage.locator('#exec').click();
 			const result = queryResultRoot(queryPage);
 			await expect(result).toBeVisible();
+			// Open the result's panes once the stream has finished, not while its toolbar is still being completed.
+			await expect(queryPage.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 			const mainListboxHeight = await queryPage.evaluate(() => {
 				const listbox = document.createElement('select');
 				listbox.id = 'geometry-main-listbox';

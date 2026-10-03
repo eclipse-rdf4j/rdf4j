@@ -105,7 +105,11 @@ for (const scenario of FIRST_PAINT_CASES) {
                 const stylesheetLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
                 const allStylesheetsLoaded = stylesheetLinks.length > 0 &&
                     stylesheetLinks.every(link => link.sheet !== null);
-                if (!window.__workbenchThemeFirstFrame && allStylesheetsLoaded && document.body) {
+                // WebKit can expose a link's sheet a frame before its rules apply; the first styled frame is the
+                // first one in which the Workbench tokens resolve.
+                const tokensApplied = getComputedStyle(document.documentElement)
+                    .getPropertyValue('--workbench-canvas').trim() !== '';
+                if (!window.__workbenchThemeFirstFrame && allStylesheetsLoaded && tokensApplied && document.body) {
                     window.__workbenchThemeFirstFrame = readTheme();
                 }
                 if (!window.__workbenchThemeFirstFrame) {

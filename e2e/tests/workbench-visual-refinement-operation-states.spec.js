@@ -260,6 +260,8 @@ async function createRepository(request, repositoryId) {
 async function openPage(page, route) {
 	await page.goto(`${WORKBENCH_BASE_URL}/${route}`, { waitUntil: 'domcontentloaded' });
 	await page.locator('#workbench-page-surface').waitFor({ state: 'visible', timeout: 15_000 });
+	// Page actions are bound once the view's scripts have mounted it; a click before then does nothing (seen in WebKit).
+	await waitForRoute(page, route.split('?')[0].split('/').pop());
 	await page.evaluate(() => document.fonts.ready);
 }
 
