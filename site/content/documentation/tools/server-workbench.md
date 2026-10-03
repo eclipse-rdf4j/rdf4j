@@ -300,7 +300,7 @@ This chapter will refer to URLs on a local server served from port 8080, which i
 
 ## Getting Started
 
-To start using Workbench for the first time, point your browser to `http://localhost:8080/rdf4j-workbench`. Your browser will be automatically redirected to `http://localhost:8080/rdf4j-workbench/repositories/NONE/repositories`. This page will display all repositories in the default server, as indicated by the “default-server” property in `WEB-INF/web.xml`. Normally this is set to `/rdf4j-server`. That is, the default server for Workbench is usually the RDF4J Server instance at the path `/rdf4j-server` on the same web server. To view information about the RDF4J Server instance, click on “RDF4J Server” at the top of the side menu.
+To start using Workbench for the first time, point your browser to `http://localhost:8080/rdf4j-workbench`. Your browser will be automatically redirected to `http://localhost:8080/rdf4j-workbench/repositories/NONE/repositories`. This page will display all repositories in the default server, as indicated by the “default-server” property in `WEB-INF/web.xml`. Normally this is set to `/rdf4j-server`. A relative value is resolved against the servlet container's local connector, independently of the inbound `Host` header, and must match `accepted-server-prefixes`. Configure an absolute URL when Workbench and RDF4J Server do not share a connector. To view information about the RDF4J Server instance, click on “RDF4J Server” at the top of the side menu.
 
 ### Setting the Server, Repository and User Credentials
 
