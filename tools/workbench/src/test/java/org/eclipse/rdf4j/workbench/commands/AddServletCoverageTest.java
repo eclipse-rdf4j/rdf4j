@@ -544,7 +544,7 @@ class AddServletCoverageTest {
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
-		URL url = new URL("https://example.org/data.ttl");
+		URL url = url("data.ttl", "<urn:s> <urn:p> <urn:o> .");
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
@@ -557,7 +557,8 @@ class AddServletCoverageTest {
 		when(connection.isActive()).thenReturn(false);
 		doThrow(new IllegalArgumentException("bad url"))
 				.when(connection)
-				.add(eq(url), eq("https://example.org/base"), eq(RDFFormat.TURTLE), any(Resource[].class));
+				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+						any(Resource[].class));
 
 		servlet.doPost(request, response, "/transform");
 
