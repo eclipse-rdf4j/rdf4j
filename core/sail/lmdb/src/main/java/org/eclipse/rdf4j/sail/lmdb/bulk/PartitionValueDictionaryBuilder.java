@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
@@ -45,6 +46,38 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * Partition-local external distinct and deterministic ID assignment.
  */
 final class PartitionValueDictionaryBuilder {
+
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles,
+				LmdbStoreFormat.forNewStore(config), compression, cancellationSignal);
+	}
+
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan)
+			throws IOException {
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles,
+				LmdbStoreFormat.forNewStore(config), compression, cancellationSignal, predicateIdPlan);
+	}
+
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles,
+				LmdbStoreFormat.forNewStore(config), compression, cancellationSignal, scheduler, controller);
+	}
+
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan,
+			BulkTaskScheduler scheduler, PartitionConcurrencyController controller) throws IOException {
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles,
+				LmdbStoreFormat.forNewStore(config), compression, cancellationSignal, predicateIdPlan, scheduler,
+				controller);
+	}
 
 	private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 	private static final long ENTRY_OVERHEAD_BYTES = 64L;
@@ -75,7 +108,7 @@ final class PartitionValueDictionaryBuilder {
 	private final long memoryBudgetBytes;
 	private final long configuredMemoryBudgetBytes;
 	private final int maxOpenFiles;
-	private final LmdbStoreConfig config;
+	private final LmdbStoreFormat config;
 	private final BooleanSupplier cancellationSignal;
 	private final PredicateIdPlan predicateIdPlan;
 
@@ -145,7 +178,7 @@ final class PartitionValueDictionaryBuilder {
 	}
 
 	private PartitionValueDictionaryBuilder(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
-			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan)
 			throws IOException {
 		this.compression = compression;
@@ -165,7 +198,7 @@ final class PartitionValueDictionaryBuilder {
 	}
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
-			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace,
 				compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN), cancellationSignal);
@@ -174,7 +207,7 @@ final class PartitionValueDictionaryBuilder {
 	}
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
-			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan)
 			throws IOException {
 		PartitionValueDictionaryBuilder builder = new PartitionValueDictionaryBuilder(staged, dependencies, workspace,
@@ -184,7 +217,7 @@ final class PartitionValueDictionaryBuilder {
 	}
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
-			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			PartitionConcurrencyController controller) throws IOException {
 		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace,
@@ -194,7 +227,7 @@ final class PartitionValueDictionaryBuilder {
 	}
 
 	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
-			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan,
 			BulkTaskScheduler scheduler, PartitionConcurrencyController controller) throws IOException {
 		PartitionValueDictionaryBuilder builder = new PartitionValueDictionaryBuilder(staged, dependencies, workspace,
@@ -1315,7 +1348,7 @@ final class PartitionValueDictionaryBuilder {
 			long plannedId = predicateIdPlan.idFor(canonicalKey);
 			yield plannedId == 0L ? idRanges.next(ValueIds.T_URI) : plannedId;
 		}
-		case Literal literal -> idRanges.nextLiteral(literal);
+		case Literal literal -> idRanges.nextLiteral(literal, config);
 		case BNode ignored -> idRanges.next(ValueIds.T_BNODE);
 		case TripleTerm ignored -> idRanges.next(ValueIds.T_TRIPLE);
 		default -> throw new IOException("Unsupported RDF value type " + value.getClass().getName());
@@ -1475,14 +1508,16 @@ final class PartitionValueDictionaryBuilder {
 			return ValueIds.createId(type, ordinal);
 		}
 
-		private long nextLiteral(Literal literal) throws IOException {
+		private long nextLiteral(Literal literal, LmdbStoreFormat format) throws IOException {
 			long ordinal = nextByType[ValueIds.T_LITERAL];
-			if (ordinal <= 0L || ordinal > MAX_ID_ORDINAL) {
+			long limit = format.usesCoreDatatypeLiteralReferences()
+					? ValueIds.MAX_CORE_LITERAL_REFERENCE_ORDINAL
+					: MAX_ID_ORDINAL;
+			if (ordinal <= 0L || ordinal > limit) {
 				throw new IOException("Partition dictionary ID range exhausted for T_LITERAL");
 			}
 			nextByType[ValueIds.T_LITERAL] = ordinal + 1L;
-			long encoded = ValueIds.createCoreLiteralReferenceId(ordinal, literal.getCoreDatatype());
-			return encoded == 0L ? ValueIds.createId(ValueIds.T_LITERAL, ordinal) : encoded;
+			return format.referenceId(ValueIds.T_LITERAL, ordinal, literal.getCoreDatatype());
 		}
 	}
 

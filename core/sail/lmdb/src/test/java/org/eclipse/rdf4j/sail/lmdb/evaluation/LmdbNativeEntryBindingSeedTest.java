@@ -20,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -58,12 +59,7 @@ public class LmdbNativeEntryBindingSeedTest {
 
 	@BeforeEach
 	public void setUp() {
-		// Create the store once so its properties file exists, then strip the canonical-language-tags marker to
-		// simulate a legacy store: such stores write language tags verbatim, which is what makes a term-equal
-		// binding with a different tag spelling miss the exact-representation id lookup.
-		openRepository();
-		repository.shutDown();
-		stripCanonicalLanguageTags();
+		writeLegacyProtocolProperties();
 		openRepository();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -164,20 +160,21 @@ public class LmdbNativeEntryBindingSeedTest {
 
 	private void openRepository() {
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
+						.setNativeEvaluationEnabled(true)));
 		repository.init();
 	}
 
-	private void stripCanonicalLanguageTags() {
-		Path properties = dataDir.toPath().resolve("store.properties");
-		try {
-			List<String> kept = Files.readAllLines(properties)
-					.stream()
-					.filter(line -> !line.startsWith("canonical-language-tags"))
-					.collect(Collectors.toList());
-			Files.write(properties, kept);
+	private void writeLegacyProtocolProperties() {
+		Path path = dataDir.toPath().resolve("store.properties");
+		Properties properties = new Properties();
+		properties.setProperty("version", "2");
+		properties.setProperty("triple-indexes", "spoc,posc,ospc");
+		properties.setProperty("triple-term-indexes", "spoc,cspo");
+		try (var output = Files.newOutputStream(path)) {
+			properties.store(output, "format 2 protocol fixture");
 		} catch (IOException e) {
-			throw new UncheckedIOException("Unable to rewrite " + properties, e);
+			throw new UncheckedIOException("Unable to write " + path, e);
 		}
 	}
 

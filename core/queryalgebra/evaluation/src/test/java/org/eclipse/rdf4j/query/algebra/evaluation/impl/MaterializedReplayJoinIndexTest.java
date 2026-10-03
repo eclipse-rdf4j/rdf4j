@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -214,7 +215,8 @@ class MaterializedReplayJoinIndexTest {
 					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
 				},
 				ignored -> new ThrowingRightIteration(rightFailure, rightCloseFailure, rightCloseCount), null,
-				EmptyBindingSet.getInstance(), false, List.of(), () -> factory);
+				EmptyBindingSet.getInstance(), false, List.of("shared"), () -> factory,
+				QueryExecutionPolicy.EXPERIMENTAL);
 
 		Throwable observedFailure = catchThrowable(iterator::hasNext);
 
@@ -257,7 +259,8 @@ class MaterializedReplayJoinIndexTest {
 					};
 				},
 				ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of().iterator()), null,
-				EmptyBindingSet.getInstance(), false, List.of(), () -> factory);
+				EmptyBindingSet.getInstance(), false, List.of("shared"), () -> factory,
+				QueryExecutionPolicy.EXPERIMENTAL);
 		iteratorReference.set(iterator);
 
 		Throwable observedFailure = catchThrowable(iterator::hasNext);
@@ -324,6 +327,7 @@ class MaterializedReplayJoinIndexTest {
 
 			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new ListTripleSource(statements, vf),
 					null);
+			strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
 			List<BindingSet> results = new ArrayList<>();
 			try (CloseableIteration<BindingSet> iteration = strategy.precompile(parsed.getTupleExpr())
 					.evaluate(EmptyBindingSet.getInstance())) {

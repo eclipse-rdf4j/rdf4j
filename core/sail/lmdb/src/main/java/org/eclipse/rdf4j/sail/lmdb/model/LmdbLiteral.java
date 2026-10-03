@@ -374,6 +374,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 				// with both ID's set
 				return internalID == otherLmdbLiteral.internalID;
 			}
+
 		}
 
 		init();

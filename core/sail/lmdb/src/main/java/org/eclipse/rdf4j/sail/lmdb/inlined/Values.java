@@ -73,6 +73,24 @@ public class Values {
 		return packLiteral(literal, false);
 	}
 
+	/** The exact format 2 writer codec; callers must enforce its matching legacy round-trip guard. */
+	public static long packLegacyLiteral(Literal literal) {
+		XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+		if (datatype == XSD.DATE || datatype == XSD.DATETIME || datatype == XSD.DATETIMESTAMP) {
+			return Dates.packLegacy(literal, datatype);
+		}
+		return packLiteral(literal, false, false);
+	}
+
+	/** Decodes calendar IDs with the original format 2 reader. Other inline encodings are unchanged. */
+	public static Literal unpackLegacyLiteral(long id, ValueFactory valueFactory) {
+		int type = ValueIds.getIdType(id);
+		if (type == ValueIds.T_DATE || type == ValueIds.T_DATETIME || type == ValueIds.T_DATETIMESTAMP) {
+			return Dates.unpackLegacy(id, valueFactory);
+		}
+		return unpackLiteral(id, valueFactory);
+	}
+
 	/**
 	 * Packs a literal into an inline id. With {@code orderedNumericIds} the signed integer family uses the
 	 * value-ordered (biased) type codes — written only by stores whose {@code store.properties} records
@@ -80,6 +98,15 @@ public class Values {
 	 */
 	@Experimental
 	public static long packLiteral(Literal literal, boolean orderedNumericIds) {
+		return packLiteral(literal, orderedNumericIds, true);
+	}
+
+	/**
+	 * Packs using the persisted store capabilities. Existing stores must leave {@code zeroFractionDateTimeIds} false
+	 * because their ".0" and ".00" values are identified by dictionary IDs rather than the new inline codes.
+	 */
+	@Experimental
+	public static long packLiteral(Literal literal, boolean orderedNumericIds, boolean zeroFractionDateTimeIds) {
 		XSD xsdDataType = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (xsdDataType == null) {
 			return 0L;
@@ -106,8 +133,8 @@ public class Values {
 		case NON_POSITIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNonPositiveInteger(literal)
 				: packNonPositiveInteger(literal);
 		case STRING -> packString(literal);
-		case DATETIME -> packDateTime(literal);
-		case DATETIMESTAMP -> packDateTimeStamp(literal);
+		case DATETIME -> packDateTime(literal, zeroFractionDateTimeIds);
+		case DATETIMESTAMP -> packDateTimeStamp(literal, zeroFractionDateTimeIds);
 		case DATE -> packDate(literal);
 		case BOOLEAN -> packBoolean(literal);
 		default ->
@@ -149,7 +176,7 @@ public class Values {
 		case ValueIds.T_DATETIMESTAMP -> XSD.DATETIMESTAMP;
 		case ValueIds.T_DATE -> XSD.DATE;
 		case ValueIds.T_BOOLEAN -> XSD.BOOLEAN;
-		default -> throw new IllegalArgumentException("Invalid inlined id " + id + " with id type: " + idType);
+		default -> throw new InliningException("Invalid inlined id " + id + " with id type: " + idType);
 		};
 	}
 
@@ -186,7 +213,7 @@ public class Values {
 		case ValueIds.T_ORD_NEGATIVE_INTEGER -> Integers.unpackOrderedNegativeInteger(value, valueFactory);
 		case ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> Integers.unpackOrderedNonNegativeInteger(value, valueFactory);
 		case ValueIds.T_ORD_NON_POSITIVE_INTEGER -> Integers.unpackOrderedNonPositiveInteger(value, valueFactory);
-		default -> throw new IllegalArgumentException("Invalid packed value " + value + " with id type: " + idType);
+		default -> throw new InliningException("Invalid packed value " + value + " with id type: " + idType);
 		};
 	}
 }

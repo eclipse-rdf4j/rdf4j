@@ -81,7 +81,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 		Literal custom = values.createLiteral("custom", values.createIRI("urn:test:datatype"));
 
 		File legacyDirectory = new File(directory, "legacy");
-		StoreProperties legacy = persistedProperties(legacyDirectory, "3", null);
+		StoreProperties legacy = persistedProperties(legacyDirectory, "2", null);
 		ValueStore legacyStore = new ValueStore(new File(legacyDirectory, "values"), legacy, nonInliningConfig());
 		try {
 			assertThat(ValueIds.getIdType(store(legacyStore, core))).isEqualTo(ValueIds.T_LITERAL);
@@ -129,7 +129,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 
 		StoreProperties properties = new StoreProperties(directory);
 		assertThat(properties.load()).isTrue();
-		assertThat(properties.getVersion()).isEqualTo("4");
+		assertThat(properties.getVersion()).isEqualTo("6");
 		Properties raw = new Properties();
 		try (var input = Files.newInputStream(new File(directory, StoreProperties.FILE_NAME).toPath())) {
 			raw.load(input);
@@ -142,8 +142,8 @@ class LmdbCoreDatatypeReferenceIdTest {
 	}
 
 	@Test
-	void upgradingLegacyStoreKeepsLegacyLiteralReferenceWriter(@TempDir File directory) throws Exception {
-		persistedProperties(directory, "3", null);
+	void existingLegacyStoreKeepsLegacyLiteralReferenceWriter(@TempDir File directory) throws Exception {
+		persistedProperties(directory, "2", null);
 		LmdbStore sail = new LmdbStore(directory, nonInliningConfig());
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
@@ -161,7 +161,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 
 		StoreProperties upgraded = new StoreProperties(directory);
 		assertThat(upgraded.load()).isTrue();
-		assertThat(upgraded.getVersion()).isEqualTo("4");
+		assertThat(upgraded.getVersion()).isEqualTo("2");
 		assertThat(upgraded.usesCoreDatatypeLiteralReferences()).isFalse();
 		assertThat(new File(directory, "lmdbrdf.ver")).doesNotExist();
 	}
@@ -273,7 +273,13 @@ class LmdbCoreDatatypeReferenceIdTest {
 	}
 
 	private static StoreProperties coreV1Properties(File directory) throws Exception {
-		return persistedProperties(directory, "4", CORE_V1);
+		Files.createDirectories(directory.toPath());
+		StoreProperties properties = new StoreProperties(directory);
+		LmdbStoreFormat.forNewStore(nonInliningConfig()).initializeProperties(properties);
+		properties.setTripleIndexes("spoc,posc");
+		properties.setTripleTermIndexes("spoc");
+		properties.save();
+		return properties;
 	}
 
 	private static StoreProperties persistedProperties(File directory, String version, String literalEncoding)
@@ -296,7 +302,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 	}
 
 	private static LmdbStoreConfig nonInliningConfig() {
-		return new LmdbStoreConfig("spoc,posc").setInlineLiterals(false);
+		return new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc").setInlineLiterals(false);
 	}
 
 	private static long store(ValueStore values, Literal literal) throws Exception {

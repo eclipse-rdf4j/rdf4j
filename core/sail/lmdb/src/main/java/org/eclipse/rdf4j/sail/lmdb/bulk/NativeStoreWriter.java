@@ -20,6 +20,7 @@ import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbNativeBulkStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
@@ -35,13 +36,23 @@ final class NativeStoreWriter {
 			ResolvedIdQuadSpool statements, CanonicalStagedInput staged, long memoryBudgetBytes, int maxOpenFiles,
 			int maxTransactionRecords, long maxTransactionBytes, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+		return write(generation, config, LmdbStoreFormat.forNewStore(config), values, statements, staged,
+				memoryBudgetBytes, maxOpenFiles, maxTransactionRecords, maxTransactionBytes, compression,
+				cancellationSignal, scheduler);
+	}
+
+	static WriteResult write(Path generation, LmdbStoreConfig config, LmdbStoreFormat format,
+			ValueStoreBulkRecords.Output values,
+			ResolvedIdQuadSpool statements, CanonicalStagedInput staged, long memoryBudgetBytes, int maxOpenFiles,
+			int maxTransactionRecords, long maxTransactionBytes, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
 		try (StatementIndexBulkRecords statementIndexes = StatementIndexBulkRecords.build(statements,
 				statements.path().getParent(), config.getTripleIndexes(), memoryBudgetBytes, maxOpenFiles,
 				compression, cancellationSignal, scheduler);
 				TripleTermIndexBulkRecords tripleTermIndexes = TripleTermIndexBulkRecords.build(values.tripleTerms(),
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
 						compression, cancellationSignal, scheduler);
-				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config)) {
+				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config, format)) {
 			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path(),
 					values.mainRecords().codec())) {
 				store.appendValueRecords(() -> {

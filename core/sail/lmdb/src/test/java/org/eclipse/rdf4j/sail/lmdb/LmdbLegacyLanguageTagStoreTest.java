@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
@@ -59,23 +58,18 @@ public class LmdbLegacyLanguageTagStoreTest {
 	}
 
 	private void openLegacyStore() throws IOException {
-		// create a fresh store so the on-disk layout exists, then strip the canonical-language-tags marker to
-		// simulate a store written before the property existed (absent = byte-preserving legacy encoding)
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		repository.init();
-		repository.shutDown();
+		// Explicit protocol fixture for format 2, whose absent language capability preserves the writer's bytes.
 		File propertiesFile = new File(dataDir, "store.properties");
 		Properties properties = new Properties();
-		try (FileInputStream in = new FileInputStream(propertiesFile)) {
-			properties.load(in);
-		}
-		assertThat(properties.remove("canonical-language-tags")).isNotNull();
+		properties.setProperty("version", "2");
+		properties.setProperty("triple-indexes", "spoc,posc,ospc");
+		properties.setProperty("triple-term-indexes", "spoc,cspo");
 		try (FileOutputStream out = new FileOutputStream(propertiesFile)) {
 			properties.store(out, null);
 		}
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
+						.setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI label = vf.createIRI(EX, "label");
@@ -86,7 +80,8 @@ public class LmdbLegacyLanguageTagStoreTest {
 		// byte-hash lookup mints the second record, as happens for real legacy stores written across processes
 		repository.shutDown();
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
+						.setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI label = vf.createIRI(EX, "label");

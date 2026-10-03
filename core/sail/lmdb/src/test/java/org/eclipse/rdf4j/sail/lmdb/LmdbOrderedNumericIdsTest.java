@@ -16,7 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.math.BigInteger;
+import java.nio.file.Files;
 import java.util.List;
+import java.util.Properties;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -147,23 +149,20 @@ public class LmdbOrderedNumericIdsTest {
 		}
 		StoreProperties properties = new StoreProperties(dataDir);
 		properties.load();
-		assertThat(properties.getVersion()).isEqualTo("4");
+		assertThat(properties.getVersion()).isEqualTo("6");
 		assertThat(properties.usesOrderedNumericIds()).isTrue();
 	}
 
 	@Test
-	public void legacyStoreKeepsLegacyEncodingAcrossUpgrade(@TempDir File dataDir) throws Exception {
-		// create a real store first, then rewrite its properties to look like a pre-ordered-encoding v2 store
-		// (version 2, triple indexes recorded, no numeric-id-encoding key)
-		SailRepository bootstrap = new SailRepository(
-				new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setOrderedNumericIds(false)));
-		bootstrap.getConnection().close();
-		bootstrap.shutDown();
-		StoreProperties legacy = new StoreProperties(dataDir);
-		legacy.load();
-		assertThat(legacy.usesOrderedNumericIds()).isFalse();
-		legacy.setVersion("2");
-		legacy.save();
+	public void legacyStoreKeepsLegacyEncodingAcrossReopen(@TempDir File dataDir) throws Exception {
+		// Protocol fixture for the supported develop writer, without any format-6 native generation or capabilities.
+		Properties properties = new Properties();
+		properties.setProperty("version", "2");
+		properties.setProperty("triple-indexes", "spoc,posc");
+		properties.setProperty("triple-term-indexes", "spoc,cspo");
+		try (var output = Files.newOutputStream(dataDir.toPath().resolve("store.properties"))) {
+			properties.store(output, "format 2 protocol fixture");
+		}
 
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -182,9 +181,9 @@ public class LmdbOrderedNumericIdsTest {
 
 		StoreProperties reloaded = new StoreProperties(dataDir);
 		reloaded.load();
-		assertThat(reloaded.getVersion()).as("version upgrades in place").isEqualTo("4");
+		assertThat(reloaded.getVersion()).as("existing format identity is retained").isEqualTo("2");
 		assertThat(reloaded.usesOrderedNumericIds())
-				.as("an upgraded legacy store must never adopt the ordered encoding")
+				.as("an existing legacy store must never adopt the ordered encoding")
 				.isFalse();
 	}
 }

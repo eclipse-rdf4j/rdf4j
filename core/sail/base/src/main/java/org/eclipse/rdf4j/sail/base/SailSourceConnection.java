@@ -219,7 +219,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
-				store.getEvaluationStatistics());
+				store.getEvaluationStatistics(), getSailBase().getQueryExecutionPolicy());
 		if (federatedServiceResolver != null && evalStrat instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);
 		}

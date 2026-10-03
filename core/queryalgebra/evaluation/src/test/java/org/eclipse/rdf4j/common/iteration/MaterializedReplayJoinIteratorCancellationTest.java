@@ -28,9 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -44,7 +46,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 	private static final long LONG_TIME_LIMIT_MILLIS = TimeUnit.HOURS.toMillis(1L);
 
 	@Test
-	void cancellationDuringRightMaterializationDoesNotOpenLeftAfterReplayClosed() throws Exception {
+	void experimentalEagerCancellationDuringRightMaterializationDoesNotOpenLeft() throws Exception {
 		CountDownLatch rightHasNextEntered = new CountDownLatch(1);
 		CountDownLatch resumeRight = new CountDownLatch(1);
 		AtomicInteger leftOpened = new AtomicInteger();
@@ -61,7 +63,8 @@ class MaterializedReplayJoinIteratorCancellationTest {
 			return new TrackingIteration(List.of(EmptyBindingSet.getInstance()), null, null, null);
 		};
 		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
-				EmptyBindingSet.getInstance(), true);
+				EmptyBindingSet.getInstance(), true, List.of(), DefaultCollectionFactory::new,
+				QueryExecutionPolicy.EXPERIMENTAL);
 		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
 		Thread worker = startWorker(timeout, outcome);
 
@@ -159,7 +162,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 	}
 
 	@Test
-	void cancellationBeforeMaterializedRowsArePublishedPreventsLeftCreation() throws Exception {
+	void experimentalCancellationBeforeRowsArePublishedPreventsLeftCreation() throws Exception {
 		AtomicReference<TestTimeLimitIteration> timeoutReference = new AtomicReference<>();
 		AtomicReference<Throwable> outcome = new AtomicReference<>();
 		AtomicInteger leftOpened = new AtomicInteger();
@@ -176,7 +179,8 @@ class MaterializedReplayJoinIteratorCancellationTest {
 			return new TrackingIteration(List.of(EmptyBindingSet.getInstance()), null, null, null);
 		};
 		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
-				EmptyBindingSet.getInstance(), true);
+				EmptyBindingSet.getInstance(), true, List.of(), DefaultCollectionFactory::new,
+				QueryExecutionPolicy.EXPERIMENTAL);
 		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
 		timeoutReference.set(timeout);
 		Thread worker = startWorker(timeout, outcome);
@@ -228,7 +232,9 @@ class MaterializedReplayJoinIteratorCancellationTest {
 
 		assertInstanceOf(TestTimeoutException.class, outcome.get());
 		assertTrue(replay.isClosed());
-		assertEquals(0, leftOpened.get(), "cancellation during right materialization must not open the left operand");
+		assertEquals(1, leftOpened.get(), "the default lazy replay opens its left operand before reading RHS rows");
+		assertEquals(1, rightIteration.hasNextCalls.get(),
+				"cancellation must stop the lazy replay without draining RHS");
 		assertEquals(1, rightIteration.closeCalls.get(), "the right iterator must close on the evaluation thread");
 		assertSame(worker, rightIteration.closeThread.get(), "the evaluation thread must own right iterator closure");
 	}
@@ -429,7 +435,8 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		};
 		QueryEvaluationStep right = bindings -> rightIteration;
 		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
-				EmptyBindingSet.getInstance(), false);
+				EmptyBindingSet.getInstance(), false, List.of(), DefaultCollectionFactory::new,
+				QueryExecutionPolicy.EXPERIMENTAL);
 
 		try {
 			assertSame(failure, assertThrows(RuntimeException.class, replay::hasNext));
@@ -638,6 +645,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final CountDownLatch cancellationRequested = new CountDownLatch(1);
 		private final AtomicBoolean cancellationAccepted = new AtomicBoolean();
+		private final AtomicInteger hasNextCalls = new AtomicInteger();
 		private final AtomicInteger closeCalls = new AtomicInteger();
 		private final AtomicReference<Thread> closeThread = new AtomicReference<>();
 
@@ -647,6 +655,7 @@ class MaterializedReplayJoinIteratorCancellationTest {
 
 		@Override
 		public boolean hasNext() {
+			hasNextCalls.incrementAndGet();
 			hasNextEntered.countDown();
 			await(release, "cooperative iteration release");
 			return false;

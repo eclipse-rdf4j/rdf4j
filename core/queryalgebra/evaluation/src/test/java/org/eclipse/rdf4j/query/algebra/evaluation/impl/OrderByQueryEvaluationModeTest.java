@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -138,9 +139,13 @@ public class OrderByQueryEvaluationModeTest {
 	@Test
 	public void calendarExtremaPreserveRdfTermRepresentativesInBothModes() {
 		for (QueryEvaluationMode mode : List.of(QueryEvaluationMode.STRICT, QueryEvaluationMode.STANDARD)) {
-			assertThat(evaluate(mode, EXTREMA_QUERY, "min", "max"))
-					.as("calendar extrema representatives in %s mode", mode)
+			assertThat(evaluate(mode, QueryExecutionPolicy.EXPERIMENTAL, EXTREMA_QUERY, "min", "max"))
+					.as("experimental calendar extrema representatives in %s mode", mode)
 					.containsExactlyElementsOf(EXTREMA);
+			assertThat(evaluate(mode, EXTREMA_QUERY, "min", "max"))
+					.as("default calendar extrema representatives in %s mode", mode)
+					.containsExactlyElementsOf(mode == QueryEvaluationMode.STRICT ? EXTREMA
+							: List.of(EXTREMA.get(0), EXTREMA.get(0)));
 		}
 	}
 
@@ -165,7 +170,13 @@ public class OrderByQueryEvaluationModeTest {
 	}
 
 	private List<String> evaluate(QueryEvaluationMode mode, String query, String... bindingNames) {
+		return evaluate(mode, QueryExecutionPolicy.DEFAULT, query, bindingNames);
+	}
+
+	private List<String> evaluate(QueryEvaluationMode mode, QueryExecutionPolicy policy, String query,
+			String... bindingNames) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(policy);
 		strategy.setQueryEvaluationMode(mode);
 		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		List<BindingSet> rows = QueryResults

@@ -389,6 +389,12 @@ public class QueryPlanRetrievalTest {
 		sailRepository.shutDown();
 	}
 
+	private SailRepository experimentalRepository() {
+		MemoryStore store = new MemoryStore();
+		store.setExperimentalQueryOptimizations(true);
+		return new SailRepository(store);
+	}
+
 	@Test
 	public void multipleScopesAndFilters() throws Exception {
 		String sparql = "PREFIX : <http://example.com/>\n" +
@@ -427,7 +433,7 @@ public class QueryPlanRetrievalTest {
 				"  }\n" +
 				"}";
 
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = experimentalRepository();
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
@@ -2085,7 +2091,7 @@ public class QueryPlanRetrievalTest {
 				"            p: Var (name=_const_4395d870_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
 				+
 				"            o: Var (name=idCN1)\n";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = experimentalRepository();
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.add(new StringReader("@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +

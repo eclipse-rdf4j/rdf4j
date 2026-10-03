@@ -1,5 +1,0 @@
-Description: The adaptive resolver now reserves its compressed input/output envelope, bounds open outputs by both memory and descriptor capacity, charges the output coalescing buffers, and preflights each raw statement through the staged-size sidecar before allocating it.
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ResolvedIdQuadSpoolTest
-Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ResolvedIdQuadSpoolTest.txt
-Snippet: Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.890 s; includes serial/adaptive spool equivalence, oversized-record floor/ID checks, output-handle tracking, and complete resource release.
-Full log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T231924.933892Z-42212-3631a3b5/verify.log

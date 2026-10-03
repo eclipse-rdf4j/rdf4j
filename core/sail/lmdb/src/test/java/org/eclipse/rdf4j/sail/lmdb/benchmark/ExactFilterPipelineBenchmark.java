@@ -71,8 +71,9 @@ public class ExactFilterPipelineBenchmark {
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
 		dataDir = Files.newTemporaryFolder();
-		LmdbStore store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setSketchEstimatorEnabled(true));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);
 		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();

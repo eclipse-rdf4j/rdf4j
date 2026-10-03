@@ -90,7 +90,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
+				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
+						strategy.getQueryExecutionPolicy()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, false, true),
 				FILTER_IN_VALUES_OPTIMIZER,

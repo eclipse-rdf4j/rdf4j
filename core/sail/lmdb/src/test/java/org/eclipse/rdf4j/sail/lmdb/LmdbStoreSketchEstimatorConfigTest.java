@@ -96,6 +96,7 @@ class LmdbStoreSketchEstimatorConfigTest {
 	@Test
 	void sketchEstimatorThrottleConfigIsAppliedToBackingEstimator(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
 		invokeLongSetter(config, "setSketchEstimatorThrottleEveryN", 7L);
 		invokeLongSetter(config, "setSketchEstimatorThrottleMillis", 11L);
 
@@ -111,7 +112,11 @@ class LmdbStoreSketchEstimatorConfigTest {
 	}
 
 	private static LmdbStoreConfig configWithSketchEstimatorEnabled(boolean enabled) {
-		return new LmdbStoreConfig().setSketchEstimatorEnabled(enabled);
+		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(enabled);
+		if (enabled) {
+			config.setExperimentalQueryOptimizations(true);
+		}
+		return config;
 	}
 
 	private static void invokeLongSetter(LmdbStoreConfig config, String setterName, long value) {

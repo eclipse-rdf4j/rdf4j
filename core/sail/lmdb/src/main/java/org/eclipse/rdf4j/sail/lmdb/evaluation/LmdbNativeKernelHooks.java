@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -59,7 +60,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final long[][] bindInputs;
 	private final long[][] bindPrevious;
 	private final MaskedFilter[] residuals;
-	private final ValueComparator comparator = new ValueComparator();
+	private final ValueComparator comparator;
 	private final HookMemory memory;
 	private final AggKind[] numericKinds;
 	private final Literal[][] numericSums;
@@ -133,6 +134,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			LmdbNativeKernelBindings.FilterHook[] filterHooks,
 			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected) {
 		this.source = liveRow.source;
+		SyntheticValueSource evaluationScope = liveRow.evaluationScope();
+		this.comparator = new ValueComparator(evaluationScope == null ? QueryExecutionPolicy.DEFAULT
+				: evaluationScope.queryExecutionPolicy);
 		this.memory = new HookMemory(liveRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 		try {
 			this.memory.reserveOrThrow(fixedMemoryBytes(liveRow, bindings, filterHooks, bindHooks),

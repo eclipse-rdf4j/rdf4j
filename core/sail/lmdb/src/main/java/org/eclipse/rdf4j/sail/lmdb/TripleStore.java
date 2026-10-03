@@ -39,7 +39,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.MDB_WRITEMAP;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -293,7 +292,7 @@ class TripleStore implements Closeable {
 		// Open environment
 		int flags = MDB_NOTLS;
 		if (!forceSync) {
-			flags |= MDB_NOSYNC | MDB_NOMETASYNC | MDB_WRITEMAP;
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
 		if (noReadahead) {
 			flags |= MDB_NORDAHEAD;

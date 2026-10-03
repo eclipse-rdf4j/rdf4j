@@ -699,9 +699,25 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	@Test
-	public void calendarExtremaPreserveRdfTermRepresentativesInBothModes() {
-		for (QueryEvaluationMode mode : List.of(QueryEvaluationMode.STRICT, QueryEvaluationMode.STANDARD)) {
-			assertCalendarResults(mode, CALENDAR_EXTREMA_QUERY, CALENDAR_EXTREMA, "min", "max");
+	public void calendarExtremaPreserveRdfTermRepresentativesInBothModes(@TempDir File calendarDirectories) {
+		for (boolean experimental : List.of(false, true)) {
+			LmdbStoreConfig config = new LmdbStoreConfig().setNativeEvaluationEnabled(true);
+			config.setExperimentalQueryOptimizations(experimental);
+			LmdbStore calendarStore = new LmdbStore(new File(calendarDirectories, Boolean.toString(experimental)),
+					config);
+			SailRepository calendarRepository = new SailRepository(calendarStore);
+			try {
+				calendarRepository.init();
+				for (QueryEvaluationMode mode : List.of(QueryEvaluationMode.STRICT, QueryEvaluationMode.STANDARD)) {
+					List<String> expected = !experimental && mode == QueryEvaluationMode.STANDARD
+							? List.of(CALENDAR_EXTREMA.get(0), CALENDAR_EXTREMA.get(0))
+							: CALENDAR_EXTREMA;
+					assertCalendarResults(calendarStore, calendarRepository, mode, CALENDAR_EXTREMA_QUERY, expected,
+							"min", "max");
+				}
+			} finally {
+				calendarRepository.shutDown();
+			}
 		}
 	}
 
@@ -725,14 +741,19 @@ public class LmdbNativeDifferentialFuzzTest {
 
 	private void assertCalendarResults(QueryEvaluationMode mode, String query, List<String> expected,
 			String... bindingNames) {
-		QueryEvaluationMode previousMode = store.getDefaultQueryEvaluationMode();
+		assertCalendarResults(store, lmdb, mode, query, expected, bindingNames);
+	}
+
+	private void assertCalendarResults(LmdbStore targetStore, SailRepository targetRepository, QueryEvaluationMode mode,
+			String query, List<String> expected, String... bindingNames) {
+		QueryEvaluationMode previousMode = targetStore.getDefaultQueryEvaluationMode();
 		String previousFlag = System.getProperty(NATIVE_FLAG);
 		try {
-			store.setDefaultQueryEvaluationMode(mode);
+			targetStore.setDefaultQueryEvaluationMode(mode);
 			System.setProperty(NATIVE_FLAG, "true");
-			List<String> nativeRows = calendarTerms(query, bindingNames);
+			List<String> nativeRows = calendarTerms(targetRepository, query, bindingNames);
 			System.setProperty(NATIVE_FLAG, "false");
-			List<String> genericRows = calendarTerms(query, bindingNames);
+			List<String> genericRows = calendarTerms(targetRepository, query, bindingNames);
 
 			assertThat(nativeRows)
 					.as("native calendar results in %s mode", mode)
@@ -741,7 +762,7 @@ public class LmdbNativeDifferentialFuzzTest {
 					.as("generic calendar results in %s mode", mode)
 					.containsExactlyElementsOf(expected);
 		} finally {
-			store.setDefaultQueryEvaluationMode(previousMode);
+			targetStore.setDefaultQueryEvaluationMode(previousMode);
 			if (previousFlag == null) {
 				System.clearProperty(NATIVE_FLAG);
 			} else {
@@ -750,8 +771,8 @@ public class LmdbNativeDifferentialFuzzTest {
 		}
 	}
 
-	private List<String> calendarTerms(String query, String... bindingNames) {
-		try (SailRepositoryConnection conn = lmdb.getConnection()) {
+	private List<String> calendarTerms(SailRepository targetRepository, String query, String... bindingNames) {
+		try (SailRepositoryConnection conn = targetRepository.getConnection()) {
 			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
 					.stream()
 					.flatMap(row -> Arrays.stream(bindingNames)

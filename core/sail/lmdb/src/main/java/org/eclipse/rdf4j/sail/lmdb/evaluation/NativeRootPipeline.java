@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -110,7 +111,8 @@ final class NativeRootPipeline {
 				step = new NativeSliceStep(step, slice.getOffset(), slice.getLimit());
 				description = "Slice(offset=" + slice.getOffset() + ", limit=" + slice.getLimit() + ")";
 			} else if (wrapper instanceof Order order) {
-				step = new NativeOrderStep(step, compiledOrderKeys.get(order), strict);
+				step = new NativeOrderStep(step, compiledOrderKeys.get(order), strict,
+						strategy.getQueryExecutionPolicy());
 				description = "Order(keys=" + order.getElements().size() + ")";
 			} else if (wrapper instanceof Distinct) {
 				step = new NativeDistinctStep(step);
@@ -135,7 +137,8 @@ final class NativeRootPipeline {
 			QueryEvaluationContext context) {
 		OrderKey[] keys = compileOrderKeys(order, strategy, context);
 		return keys == null ? null
-				: new NativeOrderStep(arg, keys, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
+				: new NativeOrderStep(arg, keys, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT,
+						strategy.getQueryExecutionPolicy());
 	}
 
 	private static OrderKey[] compileOrderKeys(Order order, LmdbNativeEvaluationStrategy strategy,
@@ -415,11 +418,13 @@ final class NativeRootPipeline {
 		private final QueryEvaluationStep arg;
 		private final OrderKey[] keys;
 		private final boolean strict;
+		private final QueryExecutionPolicy policy;
 
-		private NativeOrderStep(QueryEvaluationStep arg, OrderKey[] keys, boolean strict) {
+		private NativeOrderStep(QueryEvaluationStep arg, OrderKey[] keys, boolean strict, QueryExecutionPolicy policy) {
 			this.arg = arg;
 			this.keys = keys;
 			this.strict = strict;
+			this.policy = policy;
 		}
 
 		@Override
@@ -427,7 +432,8 @@ final class NativeRootPipeline {
 			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
-			return new OrderIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate));
+			return new OrderIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate),
+					policy);
 		}
 
 		@Override
@@ -454,15 +460,16 @@ final class NativeRootPipeline {
 			implements CooperativeCancellation, NativeExecutionContextCarrier {
 		private CloseableIteration<BindingSet> source;
 		private final OrderKey[] keys;
-		private final ValueComparator comparator = new ValueComparator();
+		private final ValueComparator comparator;
 		private final NativeExecutionContext executionContext;
 		private final NativeExecutionContext.Lease lease;
 		private volatile boolean cancellationRequested;
 
 		private OrderIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
-				NativeExecutionContext executionContext) {
+				NativeExecutionContext executionContext, QueryExecutionPolicy policy) {
 			this.source = source;
 			this.keys = keys;
+			this.comparator = new ValueComparator(policy);
 			this.comparator.setStrict(strict);
 			this.executionContext = executionContext;
 			this.lease = NativeExecutionContextCarrier.retain(source);

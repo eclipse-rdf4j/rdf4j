@@ -46,31 +46,35 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
 	private final LmdbStoreConfig config;
+	private final LmdbStoreFormat format;
 	private boolean closed;
 
 	public LmdbNativeBulkStore(Path directory, LmdbStoreConfig config) throws IOException {
+		this(directory, config, LmdbStoreFormat.forNewStore(config));
+	}
+
+	public LmdbNativeBulkStore(Path directory, LmdbStoreConfig config, LmdbStoreFormat format) throws IOException {
 		this.config = config;
+		this.format = format;
+		if (format.getVersion() != LmdbStoreFormat.CURRENT_VERSION) {
+			throw new IllegalArgumentException("Bulk generations require LmdbStore format 6");
+		}
 		if (config.getTripleIndexes() == null || config.getTripleIndexes().isBlank()) {
 			config.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);
 		}
 		Path normalized = directory.toAbsolutePath().normalize();
 		Files.createDirectories(normalized);
 		File root = normalized.toFile();
-		properties = new StoreProperties(root)
-				.setVersion(String.valueOf(LmdbStore.VERSION))
-				.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1)
-				.setInlineLiterals(config.getInlineLiterals())
-				.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
-		if (config.getOrderedNumericIds()) {
-			properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
-		}
+		LmdbStoreFormat.requireEmptyDirectory(root);
+		properties = new StoreProperties(root);
+		format.initializeProperties(properties);
 		LmdbStore.writeCoreLiteralReferenceMarker(normalized);
 		NamespaceStore openedNamespaces = null;
 		ValueStore openedValues = null;
 		TripleStore openedTriples = null;
 		try {
 			openedNamespaces = new NamespaceStore(root);
-			openedValues = new ValueStore(new File(root, "values"), properties, config, true);
+			openedValues = new ValueStore(new File(root, "values"), properties, config, true, null, format, true);
 			openedTriples = new TripleStore(new File(root, "triples"), properties, config, openedValues);
 		} catch (Throwable failure) {
 			closeAfterConstructorFailure(openedTriples, openedValues, openedNamespaces, failure);

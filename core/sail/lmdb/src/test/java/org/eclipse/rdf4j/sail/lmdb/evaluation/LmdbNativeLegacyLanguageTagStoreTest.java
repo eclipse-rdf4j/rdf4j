@@ -15,10 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Properties;
@@ -55,18 +53,13 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 
 	@BeforeEach
 	public void setUp() throws IOException {
-		// create the store so its properties file exists, then strip the canonical-language-tags key to
-		// simulate a store written before the property existed
-		SailRepository bootstrap = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		bootstrap.init();
-		bootstrap.shutDown();
-		removeCanonicalLanguageTagsProperty();
+		writeLegacyProtocolProperties();
 
 		// the two spellings must be written in separate store sessions: with a warm value-id cache the second
 		// spelling hits the first one's Value-keyed cache entry and reuses its id, hiding the split
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
+						.setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			conn.add(vf.createIRI(EX, "s1"), vf.createIRI(EX, "label"), vf.createLiteral("x", "en"));
@@ -74,7 +67,8 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 		repository.shutDown();
 
 		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
+						.setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			conn.add(vf.createIRI(EX, "s2"), vf.createIRI(EX, "label"), vf.createLiteral("x", "EN"));
@@ -82,22 +76,22 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 		}
 	}
 
-	private void removeCanonicalLanguageTagsProperty() throws IOException {
-		File propertiesFile = new File(dataDir, "store.properties");
-		assertThat(propertiesFile).isFile();
+	private void writeLegacyProtocolProperties() throws IOException {
+		// A labeled protocol fixture preserves legacy language bytes without relabeling a native format-6 catalog.
 		Properties properties = new Properties();
-		try (InputStream in = new FileInputStream(propertiesFile)) {
-			properties.load(in);
-		}
-		assertThat(properties.remove("canonical-language-tags")).isNotNull();
-		try (OutputStream out = new FileOutputStream(propertiesFile)) {
-			properties.store(out, null);
+		properties.setProperty("version", "2");
+		properties.setProperty("triple-indexes", "spoc,posc,ospc");
+		properties.setProperty("triple-term-indexes", "spoc,cspo");
+		try (OutputStream out = new FileOutputStream(new File(dataDir, "store.properties"))) {
+			properties.store(out, "format 2 protocol fixture");
 		}
 	}
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	private List<BindingSet> rows(String query, boolean nativeEnabled) {

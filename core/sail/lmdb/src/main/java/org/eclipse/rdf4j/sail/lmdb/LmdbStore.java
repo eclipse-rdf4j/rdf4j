@@ -77,11 +77,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * The current version of the LMDB store.
 	 */
-	/**
-	 * Version 4 adds core-datatype tags to eligible non-inline literal reference IDs in newly created stores. Existing
-	 * stores upgrade their version marker but retain the absent writer capability and continue minting legacy IDs.
-	 */
-	static final int VERSION = 4;
+	static final int VERSION = LmdbStoreFormat.CURRENT_VERSION;
 	static final String CORE_LITERAL_REFERENCE_MARKER_FILE = "lmdbrdf.ver";
 	static final String CORE_LITERAL_REFERENCE_MARKER = "rdf4j-lmdb-core-literal-reference-v1\n";
 
@@ -125,6 +121,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
 	private final LmdbStoreConfig config;
+	private LmdbStoreFormat format;
 
 	private SailStore store;
 
@@ -197,6 +194,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public LmdbStore(LmdbStoreConfig config) {
 		super();
 		this.config = config;
+		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
 		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		allowIncompleteBulkLoad = false;
 		validationOnlyOpen = false;
@@ -231,6 +229,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	LmdbStore(File dataDir, LmdbStoreConfig config, boolean allowIncompleteBulkLoad) {
 		super();
 		this.config = config;
+		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
 		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		this.allowIncompleteBulkLoad = allowIncompleteBulkLoad;
 		validationOnlyOpen = true;
@@ -339,43 +338,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	/**
-	 * Refuses to open a store whose recorded inlining setting differs from the configured one.
-	 *
-	 * Inlining is not a writer-only choice like the numeric-id encoding: it changes how a value is IDENTIFIED. With it
-	 * enabled, a short {@code xsd:string} resolves to a deterministic {@code T_SHORTSTRING} id without consulting the
-	 * dictionary at all; with it disabled the same string gets a dictionary {@code T_LITERAL} id. Every index record
-	 * already written is keyed under one of those, so opening under the opposite setting leaves those records keyed
-	 * under ids no new lookup will ever produce — plain pattern matching then returns nothing, and the filter-to-probe
-	 * pushdowns silently miss rows. Failing the open is the only safe outcome; there is no in-place migration.
-	 *
-	 * A store written before this property existed records nothing. Such a store is assumed to have used the historical
-	 * default (enabled) — which is what {@code LmdbStoreConfig} has always defaulted to — and the assumption is
-	 * recorded so the ambiguity is resolved once. A pre-existing store that deliberately disabled inlining cannot be
-	 * told apart from one that used the default, and must be recreated rather than reopened.
-	 */
-	private static void enforceInlineLiterals(StoreProperties properties, LmdbStoreConfig config) {
-		Boolean recorded = properties.getInlineLiterals();
-		boolean configured = config.getInlineLiterals();
-		if (recorded == null) {
-			properties.setInlineLiterals(configured);
-			if (!configured) {
-				throw new SailException("This store predates the inline-literals property, so it is assumed to have "
-						+ "been created with literal inlining ENABLED (the long-standing default). Opening it with "
-						+ "inlining disabled would key new lookups differently from the existing records. Either open "
-						+ "it with inlining enabled, or recreate the store.");
-			}
-			return;
-		}
-		if (recorded.booleanValue() != configured) {
-			throw new SailException("This store was created with literal inlining "
-					+ (recorded.booleanValue() ? "ENABLED" : "DISABLED") + " and cannot be opened with it "
-					+ (configured ? "ENABLED" : "DISABLED")
-					+ ". Inlining decides how a value is identified, so the existing records are keyed under ids that "
-					+ "the other setting never produces. Open the store with its original setting, or recreate it.");
-		}
-	}
-
-	/**
 	 * Initializes this LmdbStore.
 	 *
 	 * @throws SailException If this LmdbStore could not be initialized using the parameters that have been set.
@@ -416,52 +378,22 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
-			File compatibilityMarker = new File(dataDir, CORE_LITERAL_REFERENCE_MARKER_FILE);
-			boolean coreLiteralMarker = acceptsCoreLiteralReferenceMarker(compatibilityMarker);
-			boolean updateVersion = false;
-			if (properties.load()) {
-				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
-					updateVersion = upgradeStore(dataDir, properties.getVersion());
-				}
-				// existing stores keep their recorded numeric-id encoding (absent = legacy ZigZag) — never rewritten
-				enforceInlineLiterals(properties, config);
-				if (properties.usesCoreDatatypeLiteralReferences() != coreLiteralMarker) {
-					throw new SailException(
-							"The core-literal reference encoding property and compatibility marker do not "
-									+ "agree. Restore both files from the same store generation or rebuild the store.");
-				}
-			} else {
-				properties.setVersion(String.valueOf(VERSION));
-				properties.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1);
-				if (config.getOrderedNumericIds()) {
-					// newly created store: record that writers use the value-ordered inlined-numeric encoding
-					properties.setNumericIdEncoding(StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
-				}
-				// record the inlining setting so later opens can refuse to change it (see enforceInlineLiterals)
-				properties.setInlineLiterals(config.getInlineLiterals());
-				properties.setCanonicalLanguageTags(StoreProperties.CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1);
+			properties.load();
+			format = LmdbStoreFormat.resolve(dataDir, properties, config);
+			if (!properties.isLoaded()) {
+				format.initializeProperties(properties);
 				writeCoreLiteralReferenceMarker(dataDir.toPath());
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
-			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
-
-			// update version afer loading and potential internal migration within value and triple store
-			if (updateVersion) {
-				properties.setVersion(String.valueOf(VERSION));
-			}
+			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator, format,
+					getQueryExecutionPolicy());
 			properties.save();
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
-					// Model can't fit into memory, use another LmdbSailStore to store delta
-					StoreProperties overflowProperties = new StoreProperties()
-							.setLiteralReferenceEncoding(StoreProperties.LITERAL_REFERENCE_ENCODING_CORE_V1);
-					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, overflowProperties, config,
-							useSketchBasedJoinEstimator);
-					lmdbSailStore.enableMultiThreading = false;
-					return lmdbSailStore;
+					return createOverflowStore(dataDir, useSketchBasedJoinEstimator);
 				}
 			}) {
 
@@ -546,6 +478,27 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new LmdbStoreConnection(this);
+	}
+
+	@InternalUseOnly
+	public LmdbStoreFormat getFormat() {
+		return Objects.requireNonNull(format, "LmdbStore is not initialized");
+	}
+
+	/** Creates the disk-backed transaction delta when its in-memory model reaches the overflow threshold. */
+	LmdbSailStore createOverflowStore(File directory, boolean useSketchBasedJoinEstimator) throws IOException {
+		StoreProperties overflowProperties = new StoreProperties();
+		LmdbStoreFormat overflowFormat = getFormat();
+		if (overflowFormat.isLegacy()) {
+			// The transient delta must preserve the authoritative repository's literal identity too.
+			overflowProperties.setVersion(Integer.toString(overflowFormat.getVersion()));
+		} else {
+			overflowFormat.initializeProperties(overflowProperties);
+		}
+		LmdbSailStore overflowStore = new LmdbSailStore(directory, overflowProperties, config,
+				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy());
+		overflowStore.enableMultiThreading = false;
+		return overflowStore;
 	}
 
 	@Override
@@ -753,6 +706,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	boolean shouldUseSketchBasedJoinEstimator(long ignoredMaxMemoryBytes) {
+		if (!getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+			return false;
+		}
 		if (explicitEvalStratFactory != null) {
 			return false;
 		}
@@ -878,34 +834,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		public FederatedServiceResolver getFederatedServiceResolver() {
 			return LmdbStore.this.getFederatedServiceResolver();
 		}
-	}
-
-	private boolean upgradeStore(File dataDir, String version) throws SailException {
-		final int storedVersion;
-		try {
-			storedVersion = Integer.parseInt(version);
-		} catch (NumberFormatException e) {
-			throw new SailException("Unsupported LmdbStore version: " + version, e);
-		}
-		if (storedVersion < 1 || storedVersion > VERSION) {
-			throw new SailException("Unsupported LmdbStore version: " + storedVersion + " (reader supports through "
-					+ VERSION + ")");
-		}
-		return storedVersion < VERSION;
-	}
-
-	private static boolean acceptsCoreLiteralReferenceMarker(File marker) throws SailException {
-		if (!marker.exists()) {
-			return false;
-		}
-		try {
-			if (CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
-				return true;
-			}
-		} catch (IOException e) {
-			throw new SailException("Unable to read LmdbStore compatibility marker " + marker, e);
-		}
-		throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
 	}
 
 	static void writeCoreLiteralReferenceMarker(Path directory) throws IOException {

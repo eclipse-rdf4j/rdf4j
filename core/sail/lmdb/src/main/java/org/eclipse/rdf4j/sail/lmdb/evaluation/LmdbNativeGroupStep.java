@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -266,11 +267,19 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	 * with them get a fresh evaluation-scoped instance so runtime interning never lives in compiled-plan state.
 	 */
 	private NativeLmdbQuerySource evaluationSource() {
-		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation()
+				: queryExecutionPolicy().experimentalQueryOptimizations()
+						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
+						: source;
+	}
+
+	private QueryExecutionPolicy queryExecutionPolicy() {
+		return strategy == null ? QueryExecutionPolicy.DEFAULT : strategy.getQueryExecutionPolicy();
 	}
 
 	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
-		return source instanceof SyntheticValueSource ? evaluationSource() : SyntheticValueSource.forEvaluation(source);
+		return source instanceof SyntheticValueSource ? evaluationSource()
+				: SyntheticValueSource.forEvaluation(source, queryExecutionPolicy());
 	}
 
 	/**

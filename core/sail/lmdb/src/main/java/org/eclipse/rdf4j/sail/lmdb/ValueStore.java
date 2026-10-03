@@ -35,7 +35,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.MDB_WRITEMAP;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
@@ -80,6 +79,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -366,12 +366,14 @@ public class ValueStore extends AbstractValueFactory {
 	 * operation after opening an existing environment: opening a missing named database with {@code MDB_CREATE} is a
 	 * write transaction, so validation must happen before the normal auxiliary-database bootstrap.
 	 */
-	private RefCountMarkerStatus inspectRefCountMarkerBeforeStartupWrites() throws IOException {
+	private RefCountMarkerStatus inspectRefCountMarkerBeforeStartupWrites(boolean newNativeGeneration)
+			throws IOException {
 		long txn = 0;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
 			txn = pp.get(0);
+			RetiredValueIdStore.validateMetadataSchema(txn, format, newNativeGeneration);
 			IntBuffer dbiHandle = stack.mallocInt(1);
 			int rc = mdb_dbi_open(txn, (String) null, 0, dbiHandle);
 			if (rc == MDB_NOTFOUND) {
@@ -410,6 +412,9 @@ public class ValueStore extends AbstractValueFactory {
 			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
 				E(rc);
 			}
+			if (rc == MDB_SUCCESS) {
+				validateRefCountMarkerSchema(markerValue.mv_data());
+			}
 			boolean valid = rc == MDB_SUCCESS && isValidRefCountMarker(markerValue.mv_data(), nativeTransactionId);
 			return new RefCountMarkerStatus(emptyStore, valid, nativeTransactionId);
 		} finally {
@@ -435,6 +440,16 @@ public class ValueStore extends AbstractValueFactory {
 		return encoded.getInt() == (int) checksum.getValue();
 	}
 
+	private static void validateRefCountMarkerSchema(ByteBuffer marker) throws IOException {
+		if (marker == null || marker.remaining() < Integer.BYTES + 1) {
+			throw new IOException("Unsupported ValueStore ref-count metadata schema");
+		}
+		ByteBuffer encoded = marker.duplicate();
+		if (encoded.getInt() != REFCOUNT_MARKER_MAGIC || encoded.get() != REFCOUNT_MARKER_VERSION) {
+			throw new IOException("Unsupported ValueStore ref-count metadata schema");
+		}
+	}
+
 	private static byte[] encodeRefCountMarker(byte state, long nativeTransactionId) {
 		ByteBuffer encoded = ByteBuffer.allocate(REFCOUNT_MARKER_BYTES);
 		encoded.putInt(REFCOUNT_MARKER_MAGIC);
@@ -448,7 +463,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	FreshValueSession startFreshValueSessionIfEmpty() throws IOException {
-		if (freeIdsAvailable) {
+		if (format.isLegacy() || freeIdsAvailable) {
 			return null;
 		}
 		boolean empty = readTransaction(env, (stack, txn) -> {
@@ -601,13 +616,30 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 
+		private void addStoredRecordUpperBound(long dataLength, int pageSize) {
+			if (dataLength <= MAX_KEY_SIZE) {
+				addStoredRecord(dataLength, pageSize);
+				return;
+			}
+			// The largest collision key also covers either key of a short, bidirectional record. A length upper
+			// bound may cross the overflow threshold even when the actual value remains on a leaf page: retain the
+			// largest possible leaf payload as well as the upper bound's overflow pages, rather than substituting
+			// just a page-number pointer. Both counts are monotone in the upper bound.
+			addMainEntry(MAX_HASH_ID_KEY_BYTES, MAX_ID_KEY_BYTES);
+			long maxLeafData = lmdbNodeMax(pageSize) - LMDB_NODE_HEADER_BYTES - MAX_ID_KEY_BYTES;
+			addMainEntry(MAX_ID_KEY_BYTES, Math.min(dataLength, maxLeafData));
+			if (needsOverflow(MAX_ID_KEY_BYTES, dataLength, pageSize)) {
+				mainOverflowPages = add(mainOverflowPages, overflowPages(dataLength, pageSize));
+			}
+		}
+
 		private void addMainEntry(long keyLength, long valueLength) {
 			mainPuts = add(mainPuts, 1L);
 			mainEntryBytes = add(mainEntryBytes, leafEntryBytes(keyLength, valueLength));
 		}
 
 		private void addNamedDatabase(String name) {
-			addMainEntry(name.getBytes(StandardCharsets.UTF_8).length, LMDB_DATABASE_DESCRIPTOR_BYTES);
+			addMainEntry(utf8LengthUpperBound(name), LMDB_DATABASE_DESCRIPTOR_BYTES);
 		}
 
 		private void addReference() {
@@ -707,6 +739,17 @@ public class ValueStore extends AbstractValueFactory {
 	 * in the store directory and are loaded when the store is initialized.
 	 */
 	private final StoreProperties properties;
+	private final LmdbStoreFormat format;
+	private final boolean deferPersistedUnusedRecovery;
+
+	@FunctionalInterface
+	interface ValueIdLivenessChecker {
+		void filterUsedIds(Collection<Long> ids) throws IOException;
+	}
+
+	private ValueIdLivenessChecker valueIdLivenessChecker = ids -> {
+	};
+	private boolean currentTripleLivenessAvailable;
 	private final LmdbStoreConfig storeConfig;
 
 	/**
@@ -862,6 +905,7 @@ public class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 	private final boolean orderedNumericIds;
+	private final boolean zeroFractionDateTimeIds;
 	private final boolean valueOverlayEnabled;
 	private final boolean canonicalLanguageTags;
 	private final boolean coreDatatypeLiteralReferences;
@@ -888,9 +932,18 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
 			Runnable duringValueOverlayWarmupScanForTest) throws IOException {
+		this(dir, properties, config, deferAuxiliaryDatabases, duringValueOverlayWarmupScanForTest,
+				LmdbStoreFormat.fromProperties(properties, config), false);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
+			Runnable duringValueOverlayWarmupScanForTest, LmdbStoreFormat format,
+			boolean deferPersistedUnusedRecovery) throws IOException {
 		this.duringValueOverlayWarmupScanForTest = duringValueOverlayWarmupScanForTest;
 		this.dir = dir;
 		this.properties = properties;
+		this.format = Objects.requireNonNull(format);
+		this.deferPersistedUnusedRecovery = deferPersistedUnusedRecovery;
 		this.storeConfig = config;
 		this.forceSync = config.getForceSync();
 		this.noReadahead = config.getNoReadahead();
@@ -898,14 +951,15 @@ public class ValueStore extends AbstractValueFactory {
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
-		this.inlineLiterals = config.getInlineLiterals();
+		this.inlineLiterals = format.inlinesLiterals();
 		this.valueOverlayEnabled = config.getValueOverlayEnabled();
 		this.compressedValues = valueOverlayEnabled ? ValueOverlayRegistry.configured() : null;
 		// the persisted store property is the single writer gate: absent (all pre-ordered-encoding stores) means
 		// legacy ZigZag ids; LmdbStore records ordered-v1 at store creation when the config enables it
-		this.orderedNumericIds = properties.usesOrderedNumericIds();
-		this.canonicalLanguageTags = properties.usesCanonicalLanguageTags();
-		this.coreDatatypeLiteralReferences = properties.usesCoreDatatypeLiteralReferences();
+		this.orderedNumericIds = format.usesOrderedNumericIds();
+		this.zeroFractionDateTimeIds = format.usesZeroFractionDateTimeIds();
+		this.canonicalLanguageTags = format.usesCanonicalLanguageTags();
+		this.coreDatatypeLiteralReferences = format.usesCoreDatatypeLiteralReferences();
 
 		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
 				/ VALUE_CACHE_WAYS));
@@ -975,7 +1029,9 @@ public class ValueStore extends AbstractValueFactory {
 			throw failure;
 		}
 		establishRefCountIntegrity();
-		freePersistedUnusedValuesAfterRecovery();
+		if (!deferPersistedUnusedRecovery) {
+			freePersistedUnusedValuesAfterRecovery();
+		}
 		warmConfiguredValueOverlay();
 		valueStoreInitializationComplete = true;
 	}
@@ -983,7 +1039,7 @@ public class ValueStore extends AbstractValueFactory {
 	private void beginStartupInitialization() throws IOException {
 		startupInitializationInProgress = true;
 		startupExpectedLastTransactionId = lastTransactionId();
-		if (startupMarkerStatus != null && startupMarkerStatus.valid()
+		if (startupMarkerStatus != null && (startupMarkerStatus.valid() || startupMarkerStatus.emptyStore())
 				&& startupExpectedLastTransactionId != startupMarkerStatus.nativeTransactionId()) {
 			refCountRecoveryRequired = true;
 			startupMarkerStatus = new RefCountMarkerStatus(false, false, startupExpectedLastTransactionId);
@@ -1184,6 +1240,20 @@ public class ValueStore extends AbstractValueFactory {
 				try {
 					E(mdb_cursor_open(txn, lookupDbi, pp));
 					cursor = pp.get(0);
+					if (coreDatatypeLiteralReferences) {
+						// A core-reference ID contains datatype bits above its ordinal. Without the persisted
+						// counter, the last physical key need not have the greatest reference ordinal.
+						keyData.mv_data(stack.bytes(new byte[] { ID_KEY }));
+						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						while (rc == MDB_SUCCESS && isIdKey(keyData.mv_data())) {
+							nextId = Math.max(nextId, ValueIds.referenceOrdinal(data2id(keyData.mv_data())) + 1L);
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+						}
+						if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+							E(rc);
+						}
+						continue;
+					}
 
 					// set cursor after max ID
 					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
@@ -1253,6 +1323,51 @@ public class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
+	}
+
+	/** Ends public reader admission while the native environment remains available for owning-store close work. */
+	void closeReadTransactions() {
+		if (txnManager != null) {
+			txnManager.close();
+		}
+	}
+
+	/** Called only after the owning store ends its readers and writers under its store-access lock. */
+	void reclaimLegacyUnusedIdsAtClose() throws IOException {
+		if (!format.isLegacy() || !valueStoreInitializationComplete || !currentTripleLivenessAvailable
+				|| !refCountIntegrityEstablished || refCountRecoveryRequired || refCountRecoveryInProgress
+				|| writeTxn != 0 || !refCountsTxCache.isEmpty()) {
+			return;
+		}
+		// This private reader cannot span a remap after the public manager has closed. Determine the same checked
+		// reservation as startup recovery, end the reader, then grow before opening the reclaim writer.
+		long resizeTarget = LmdbUtil.readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, unusedDbi, stat));
+			if (stat.ms_entries() == 0L) {
+				return -1L;
+			}
+			long requiredSize = reservePersistedUnusedCapacity(stack, txn, stat.ms_entries());
+			return autoGrow && LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)
+					? LmdbUtil.getNewSize(pageSize, txn, requiredSize)
+					: 0L;
+		});
+		if (resizeTarget < 0L) {
+			return;
+		}
+		if (resizeTarget > 0L) {
+			resizeMapTo(resizeTarget, null);
+		}
+		writeTransaction((stack, txn) -> {
+			freeUnusedIdsAndValues(stack, txn, null);
+			return null;
+		});
+	}
+
+	void completeStoreInitialization(ValueIdLivenessChecker livenessChecker) throws IOException {
+		this.valueIdLivenessChecker = Objects.requireNonNull(livenessChecker);
+		freePersistedUnusedValuesAfterRecovery();
+		currentTripleLivenessAvailable = true;
 	}
 
 	private long reservePersistedUnusedCapacity(MemoryStack stack, long txn, long entries) throws IOException {
@@ -1977,6 +2092,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void open(boolean deferAuxiliaryDatabases) throws IOException {
+		open(deferAuxiliaryDatabases, false);
+	}
+
+	private void open(boolean deferAuxiliaryDatabases, boolean replacingNativeGeneration) throws IOException {
 		valueStoreInitializationComplete = false;
 		refCountIntegrityEstablished = false;
 		refCountRecoveryInProgress = false;
@@ -1984,6 +2103,12 @@ public class ValueStore extends AbstractValueFactory {
 		lastTrustedNativeTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
+		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
+		boolean newNativeGeneration = !nativeGenerationExists && (!properties.isLoaded() || replacingNativeGeneration);
+		if (!format.isLegacy() && !nativeGenerationExists && !newNativeGeneration) {
+			throw new IOException(
+					"Missing native ValueStore generation for existing LmdbStore format " + format.getVersion());
+		}
 		// create directory if it not exists
 		dir.mkdirs();
 
@@ -2001,7 +2126,7 @@ public class ValueStore extends AbstractValueFactory {
 		// Open environment
 		int flags = MDB_NOTLS;
 		if (!forceSync) {
-			flags |= MDB_NOSYNC | MDB_NOMETASYNC | MDB_WRITEMAP;
+			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
 		}
 		if (noReadahead) {
 			flags |= MDB_NORDAHEAD;
@@ -2010,7 +2135,14 @@ public class ValueStore extends AbstractValueFactory {
 
 		// Probe the existing environment before any MDB_CREATE/open-writer operation. This keeps a missing or stale
 		// marker from being accidentally endorsed by auxiliary database bootstrap.
-		RefCountMarkerStatus markerStatus = inspectRefCountMarkerBeforeStartupWrites();
+		RefCountMarkerStatus markerStatus;
+		try {
+			markerStatus = inspectRefCountMarkerBeforeStartupWrites(newNativeGeneration);
+		} catch (IOException | RuntimeException | Error failure) {
+			mdb_env_close(env);
+			env = 0L;
+			throw failure;
+		}
 		startupMarkerStatus = markerStatus;
 		refCountRecoveryRequired = !markerStatus.emptyStore() && !markerStatus.valid();
 		refCountIntegrityEstablished = false;
@@ -2031,6 +2163,9 @@ public class ValueStore extends AbstractValueFactory {
 		});
 		if (dbi < 0) {
 			dbi = openMainDatabaseWithCheckedWriter(markerStatus);
+			markerStatus = new RefCountMarkerStatus(markerStatus.emptyStore(), false,
+					Math.addExact(markerStatus.nativeTransactionId(), 1L));
+			startupMarkerStatus = markerStatus;
 		}
 
 		// initialize page size and set map size for env
@@ -2062,8 +2197,33 @@ public class ValueStore extends AbstractValueFactory {
 		});
 
 		txnManager.reset();
+		if (newNativeGeneration && !format.isLegacy()) {
+			authorNativeFormatFence(markerStatus);
+		}
 
 		endValueLookupMutation();
+	}
+
+	private void authorNativeFormatFence(RefCountMarkerStatus markerStatus) throws IOException {
+		long authoredTransactionId = LmdbUtil.writeTransaction(env, (stack, txn) -> {
+			long expected;
+			try {
+				expected = Math.addExact(markerStatus.nativeTransactionId(), 1L);
+			} catch (ArithmeticException overflow) {
+				throw new IOException("ValueStore native transaction ID overflow while authoring its format fence",
+						overflow);
+			}
+			if (mdb_txn_id(txn) != expected) {
+				throw new IOException(
+						"ValueStore detected an intervening native writer before authoring its format fence");
+			}
+			RetiredValueIdStore.authorFormatFenceWithTransaction(txn);
+			return mdb_txn_id(txn);
+		});
+		// Carry only the native identity consumed by our checked writer into startup. A later native writer must
+		// invalidate even the previously observed empty-dictionary proof before counts can be trusted.
+		startupMarkerStatus = new RefCountMarkerStatus(markerStatus.emptyStore(), false, authoredTransactionId);
+		txnManager.reset();
 	}
 
 	private int openMainDatabaseWithCheckedWriter(RefCountMarkerStatus markerStatus) throws IOException {
@@ -2318,17 +2478,27 @@ public class ValueStore extends AbstractValueFactory {
 					MDBVal keyData = MDBVal.calloc(stack);
 					MDBVal valueData = MDBVal.calloc(stack);
 
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST) == MDB_SUCCESS) {
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+					freeIdsAvailable = rc == MDB_SUCCESS;
+					while (rc == MDB_SUCCESS) {
 						long freedId = data2id(keyData.mv_data());
-						clearStoredHash(freedId);
-
-						// unpack value from compound id
 						long value = ValueIds.referenceOrdinal(freedId);
-						// delete entry
-						E(mdb_cursor_del(cursor, 0));
-						return value;
+						int freedType = referenceFamily(ValueIds.getIdType(freedId));
+						if (format.isLegacy() || freedType == idType) {
+							// Format 2 ordinals are global. Format 6 fresh writers allocate by reference family,
+							// so their free records can only be recycled within that same family.
+							boolean owned = referenceOrdinalOwned(stack, txn, value, idType);
+							E(mdb_cursor_del(cursor, 0));
+							if (!owned) {
+								clearStoredHash(freedId);
+								return value;
+							}
+						}
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 					}
-					freeIdsAvailable = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS;
+					if (rc != MDB_NOTFOUND) {
+						E(rc);
+					}
 					return null;
 				} finally {
 					if (cursor != 0) {
@@ -2357,13 +2527,51 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private long referenceId(int idType, long ordinal, CoreDatatype coreDatatype) {
-		if (coreDatatypeLiteralReferences && idType == ValueIds.T_LITERAL) {
-			long encoded = ValueIds.createCoreLiteralReferenceId(ordinal, coreDatatype);
-			if (encoded != 0L) {
-				return encoded;
+		return format.referenceId(idType, ordinal, coreDatatype);
+	}
+
+	private static int referenceFamily(int type) {
+		return type == ValueIds.T_CORE_LITERAL ? ValueIds.T_LITERAL : type;
+	}
+
+	private boolean referenceOrdinalOwned(MemoryStack stack, long txn, long ordinal, int requestedType)
+			throws IOException {
+		int first = format.isLegacy() ? ValueIds.T_PTR : requestedType;
+		int last = format.isLegacy() ? ValueIds.T_TRIPLE : requestedType;
+		for (int type = first; type <= last; type++) {
+			if (hasDictionaryRecord(stack, txn, ValueIds.createId(type, ordinal))) {
+				return true;
+			}
+			if (type == ValueIds.T_LITERAL && ordinal <= ValueIds.MAX_CORE_LITERAL_REFERENCE_ORDINAL) {
+				stack.push();
+				long cursor = 0L;
+				try {
+					PointerBuffer handle = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, dbi, handle));
+					cursor = handle.get(0);
+					long lowerBound = ValueIds.createId(ValueIds.T_CORE_LITERAL,
+							ordinal << ValueIds.CORE_LITERAL_DATATYPE_BITS);
+					MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(ValueStoreRecordCodec.idKey(lowerBound)));
+					MDBVal data = MDBVal.calloc(stack);
+					int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+					if (rc == MDB_SUCCESS && isIdKey(key.mv_data())) {
+						long id = data2id(key.mv_data());
+						if (ValueIds.getIdType(id) == ValueIds.T_CORE_LITERAL
+								&& ValueIds.referenceOrdinal(id) == ordinal) {
+							return true;
+						}
+					} else if (rc != MDB_NOTFOUND && rc != MDB_SUCCESS) {
+						E(rc);
+					}
+				} finally {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+					stack.pop();
+				}
 			}
 		}
-		return ValueIds.createId(idType, ordinal);
+		return false;
 	}
 
 	private long nextFreshPredicateId(FreshValueSession session) {
@@ -3102,7 +3310,7 @@ public class ValueStore extends AbstractValueFactory {
 			if (resultValue == null) {
 				// unpack inlined values if possible
 				if (ValueIds.isInlined(id)) {
-					Literal unpacked = Values.unpackLiteral(id, this);
+					Literal unpacked = format.unpackLiteral(id, this);
 					return new LmdbLiteral(revision, unpacked.getLabel(), Values.coreDatatypeOfInlined(id), id);
 				}
 
@@ -3136,7 +3344,7 @@ public class ValueStore extends AbstractValueFactory {
 	public boolean resolveValue(long id, LmdbValue value) {
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
-			Literal unpacked = Values.unpackLiteral(id, this);
+			Literal unpacked = format.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			// the id's type bits are authoritative for the (XSD core) datatype of an inlined literal
 			((LmdbLiteral) value).setDatatype(Values.coreDatatypeOfInlined(id));
@@ -3203,7 +3411,7 @@ public class ValueStore extends AbstractValueFactory {
 			ValueStoreRevision resolvedRevision, long id, LmdbValue value, long txn, MDBVal keyData,
 			MDBVal valueData, ByteBuffer keyBuffer, ValueOverlayRegistry.SnapshotLease overlay) throws IOException {
 		if (ValueIds.isInlined(id)) {
-			Literal unpacked = Values.unpackLiteral(id, this);
+			Literal unpacked = format.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			((LmdbLiteral) value).setDatatype(Values.coreDatatypeOfInlined(id));
 			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
@@ -3275,51 +3483,54 @@ public class ValueStore extends AbstractValueFactory {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
 				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+				resizeMapTo(requiredSize, activeWriteTxnCommitted);
+			}
+		}
+	}
 
-				var lockManager = txnManager.lockManager();
-				boolean readLocked = hasReadLock.get() != null;
-				if (readLocked) {
-					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
-				}
-				long stamp;
+	private void resizeMapTo(long requiredSize, boolean[] activeWriteTxnCommitted) throws IOException {
+		var lockManager = txnManager.lockManager();
+		boolean readLocked = hasReadLock.get() != null;
+		if (readLocked) {
+			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+		}
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			throw new IOException(e);
+		}
+
+		boolean activeWriteTxn = writeTxn != 0;
+		try {
+			if (activeWriteTxn) {
 				try {
-					stamp = lockManager.writeLock();
+					endTransactionInternal(true, true, activeWriteTxnCommitted);
+				} finally {
+					clearTransactionValueCaches();
+				}
+			}
+			txnManager.deactivate();
+
+			long oldMapSize = mapSize;
+			mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
+			bulkMapGrowthCount++;
+
+			logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
+
+			E(mdb_env_set_mapsize(env, mapSize));
+			if (activeWriteTxn) {
+				startTransaction(false);
+			}
+
+			txnManager.activate();
+		} finally {
+			lockManager.unlockWrite(stamp);
+			if (readLocked) {
+				try {
+					lockManager.readLock();
 				} catch (InterruptedException e) {
 					throw new IOException(e);
-				}
-
-				boolean activeWriteTxn = writeTxn != 0;
-				try {
-					if (activeWriteTxn) {
-						try {
-							endTransactionInternal(true, true, activeWriteTxnCommitted);
-						} finally {
-							clearTransactionValueCaches();
-						}
-					}
-					txnManager.deactivate();
-
-					long oldMapSize = mapSize;
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
-					bulkMapGrowthCount++;
-
-					logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
-
-					E(mdb_env_set_mapsize(env, mapSize));
-					if (activeWriteTxn) {
-						startTransaction(false);
-					}
-
-					txnManager.activate();
-				} finally {
-					lockManager.unlockWrite(stamp);
-					if (readLocked) {
-						try {
-							lockManager.readLock();
-						} catch (InterruptedException e) {
-							throw new IOException(e);
-						}
-					}
 				}
 			}
 		}
@@ -3330,16 +3541,25 @@ public class ValueStore extends AbstractValueFactory {
 	 * deliberately independent of the mutable fresh session: a failed reservation must not leave provisional IDs,
 	 * reference counts, or large-value hash entries behind.
 	 */
-	void reservePreparedValueCapacity(FreshValueSession session, Value[] values) throws IOException {
+	void reservePreparedValueCapacity(FreshValueSession session, PreparedStatementBatch batch) throws IOException {
+		reservePreparedValueClosureCapacity(session, batch.values());
+	}
+
+	/**
+	 * Reserves a value array containing every triple component, including nested components, as supplied by
+	 * {@link PreparedStatementBatch#values()}. Ordinary values may repeat; counting them again is conservative. Triple
+	 * dependencies must be present explicitly so shared nested terms are counted without recursive walks.
+	 */
+	void reservePreparedValueClosureCapacity(FreshValueSession session, Value[] values) throws IOException {
 		if (!autoGrow || session == null || values.length == 0) {
 			return;
 		}
 
 		PreparedValueFootprint footprint = new PreparedValueFootprint();
-		Set<Value> visitedValues = new HashSet<>();
-		Set<String> visitedNamespaces = new HashSet<>();
+		Set<String> namespaces = new TreeSet<>();
+		Set<String> datatypes = new TreeSet<>();
 		for (Value value : values) {
-			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, value);
+			estimateFreshValue(footprint, namespaces, datatypes, value);
 		}
 		if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
 			footprint.addMainEntry(1L, MAX_UNSIGNED_ID_BYTES);
@@ -3381,62 +3601,63 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void estimateFreshValue(FreshValueSession session, PreparedValueFootprint footprint,
-			Set<Value> visitedValues, Set<String> visitedNamespaces, Value value) {
-		if (value == null || session.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID) != LmdbValue.UNKNOWN_ID
-				|| !visitedValues.add(value) || getInlineId(value) != LmdbValue.UNKNOWN_ID) {
+	private void estimateFreshValue(PreparedValueFootprint footprint, Set<String> namespaces,
+			Set<String> datatypes, Value value) {
+		if (value == null) {
 			return;
 		}
 
-		if (value instanceof TripleTerm triple) {
-			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getSubject());
-			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getPredicate());
-			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getObject());
+		if (value instanceof TripleTerm) {
 			footprint.addTripleRecord();
 			return;
 		}
 
 		switch (value.getType()) {
 		case Value.Type.IRI:
-			IRI iri = (IRI) value;
-			String namespace = iri.getNamespace();
-			if (session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID) == LmdbValue.UNKNOWN_ID
-					&& visitedNamespaces.add(namespace)) {
-				footprint.addStoredRecord(add(1L, utf8Length(namespace)), pageSize);
-			}
-			footprint.addStoredRecord(add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8Length(iri.getLocalName()))), pageSize);
-			footprint.addReference();
+			estimateFreshIri(footprint, namespaces, (IRI) value);
 			break;
 		case Value.Type.BNode:
-			footprint.addStoredRecord(add(1L, utf8Length(((BNode) value).getID())), pageSize);
+			footprint.addStoredRecordUpperBound(add(1L, utf8LengthUpperBound(((BNode) value).getID())), pageSize);
 			break;
 		case Value.Type.Literal:
 			Literal literal = (Literal) value;
 			IRI datatype = literal.getDatatype();
 			if (datatype != null) {
-				estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, datatype);
+				if (datatypes.add(datatype.stringValue())) {
+					estimateFreshIri(footprint, namespaces, datatype);
+				}
 				footprint.addReference();
 			}
-			footprint.addStoredRecord(literalDataLength(literal), pageSize);
+			footprint.addStoredRecordUpperBound(literalDataLengthUpperBound(literal), pageSize);
 			break;
 		default:
 			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
 		}
 	}
 
-	private long literalDataLength(Literal literal) {
-		String language = literal.getLanguage().orElse(null);
-		if (canonicalLanguageTags && language != null) {
-			language = language.toLowerCase(Locale.ROOT);
+	private void estimateFreshIri(PreparedValueFootprint footprint, Set<String> namespaces, IRI iri) {
+		String namespace = iri.getNamespace();
+		if (namespaces.add(namespace)) {
+			footprint.addStoredRecordUpperBound(add(1L, utf8LengthUpperBound(namespace)), pageSize);
 		}
-		long languageLength = language == null ? 0L : utf8Length(language);
-		long languageLengthBytes = languageLength > 0x3F ? Varint.calcLengthUnsigned(languageLength) : 0L;
-		return add(2L + MAX_UNSIGNED_ID_BYTES,
-				add(languageLengthBytes, add(languageLength, utf8Length(literal.getLabel()))));
+		footprint.addStoredRecordUpperBound(
+				add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8LengthUpperBound(iri.getLocalName()))), pageSize);
+		footprint.addReference();
 	}
 
-	private static long utf8Length(String value) {
-		return value.getBytes(StandardCharsets.UTF_8).length;
+	private static long literalDataLengthUpperBound(Literal literal) {
+		String language = literal.getLanguage().orElse(null);
+		long languageLength = language == null ? 0L : utf8LengthUpperBound(language);
+		long languageLengthBytes = languageLength > 0x3F ? Varint.calcLengthUnsigned(languageLength) : 0L;
+		return add(2L + MAX_UNSIGNED_ID_BYTES,
+				add(languageLengthBytes, add(languageLength, utf8LengthUpperBound(literal.getLabel()))));
+	}
+
+	static long utf8LengthUpperBound(String value) {
+		// One UTF-16 code unit uses at most three UTF-8 bytes; a surrogate pair uses four bytes for two units,
+		// and an unpaired surrogate is replaced by one byte. Locale.ROOT lowercasing has the same byte bound:
+		// its expanding mapping, U+0130 -> U+0069 U+0307, uses three bytes for one original code unit.
+		return multiply(value.length(), 3L);
 	}
 
 	private long preparedValueReservation(MemoryStack stack, long txn, PreparedValueFootprint footprint)
@@ -4739,19 +4960,8 @@ public class ValueStore extends AbstractValueFactory {
 			}
 
 			long id = LmdbValue.UNKNOWN_ID;
-			if (inlineLiterals && value instanceof Literal) {
-				// inline value into id if possible
-				try {
-					long packedId = Values.packLiteral((Literal) value, orderedNumericIds);
-					if (packedId != 0L) {
-						Literal unpacked = Values.unpackLiteral(packedId, this);
-						if (unpacked.equals(value)) {
-							id = packedId;
-						}
-					}
-				} catch (IllegalArgumentException e) {
-					// ignore, invalid literal
-				}
+			if (value instanceof Literal literal) {
+				id = format.tryInline(literal);
 			}
 
 			if (id == LmdbValue.UNKNOWN_ID) {
@@ -5335,21 +5545,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private long getInlineId(Value value) {
-		if (!inlineLiterals || !(value instanceof Literal literal)) {
-			return LmdbValue.UNKNOWN_ID;
-		}
-		try {
-			long packedId = Values.packLiteral(literal, orderedNumericIds);
-			if (packedId != 0L) {
-				Literal unpacked = Values.unpackLiteral(packedId, this);
-				if (unpacked.equals(value)) {
-					return packedId;
-				}
-			}
-		} catch (IllegalArgumentException e) {
-			// ignore, invalid literal
-		}
-		return LmdbValue.UNKNOWN_ID;
+		return value instanceof Literal literal ? format.tryInline(literal) : LmdbValue.UNKNOWN_ID;
 	}
 
 	private void cacheStoredId(Value value, long id, boolean isOwnValue) {
@@ -5390,16 +5586,19 @@ public class ValueStore extends AbstractValueFactory {
 			return;
 		}
 		requireRefCountIntegrity("garbage collect ValueStore IDs");
+		ids = new ArrayList<>(ids);
+		valueIdLivenessChecker.filterUsedIds(ids);
 
 		if (!ids.isEmpty()) {
+			Collection<Long> candidates = ids;
 			// wrap into read txn as resizeMap expects an active surrounding read txn
 			readTransaction(env, (stack1, txn1) -> {
 				// Reserve the complete dictionary, ref-count, triple-index, and unused-ID mutation before any component
 				// count is changed. The footprint uses the actual records in this read view, not a per-edge byte
 				// heuristic.
-				resizeMap(writeTxn, reserveGarbageCollectionCapacity(stack1, txn1, ids));
+				resizeMap(writeTxn, reserveGarbageCollectionCapacity(stack1, txn1, candidates));
 
-				final Collection<Long> finalIds = ids;
+				final Collection<Long> finalIds = candidates;
 				final Collection<Long> finalNextIds = nextIds;
 				writeTransaction((stack, writeTxn) -> {
 					MDBVal revIdVal = MDBVal.calloc(stack);
@@ -5409,18 +5608,20 @@ public class ValueStore extends AbstractValueFactory {
 					ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
+					Collection<Long> existingIds = new ArrayList<>(finalIds.size());
 					for (Long id : finalIds) {
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
 						// check if id has internal references and therefore cannot be deleted
-						if (hasPositiveRefCount(stack, writeTxn, id)) {
+						if (hasPositiveRefCount(stack, writeTxn, id) || !hasDictionaryRecord(stack, writeTxn, id)) {
 							continue;
 						}
+						existingIds.add(id);
 						// mark id as unused
 						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
 					}
 
-					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					deleteValueToIdMappings(stack, writeTxn, existingIds, finalNextIds);
 
 					invalidateRevisionOnCommit = true;
 					if (nextValueEvictionTime < 0) {
@@ -5677,6 +5878,48 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private boolean hasDictionaryRecord(MemoryStack stack, long txn, long id) throws IOException {
+		if (id <= 0L || ValueIds.isInlined(id)) {
+			return false;
+		}
+		stack.push();
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+				long cursor = 0L;
+				try {
+					PointerBuffer handle = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), handle));
+					cursor = handle.get(0);
+					ByteBuffer bytes = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+					tripleTermCspoIndex.getMinKey(bytes, -1, -1, -1, id);
+					key.mv_data(bytes.flip());
+					int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+					if (rc == MDB_NOTFOUND) {
+						return false;
+					}
+					E(rc);
+					return tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(key.mv_data());
+				} finally {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			key.mv_data(stack.bytes(ValueStoreRecordCodec.idKey(id)));
+			int rc = mdb_get(txn, dbi, key, data);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			verifyOwnerRecordType(id, copyValue(data));
+			return true;
+		} finally {
+			stack.pop();
+		}
+	}
+
 	protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds) throws IOException {
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
@@ -5688,6 +5931,7 @@ public class ValueStore extends AbstractValueFactory {
 		ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 
 		boolean freeIds = false;
+		Set<Long> livenessCandidate = new HashSet<>(1);
 		long unusedIdsCursor = 0;
 		long termsCursor = 0;
 		try {
@@ -5711,10 +5955,15 @@ public class ValueStore extends AbstractValueFactory {
 						if (revisionId == 0L || revisionOfId == revisionId) {
 							idVal.mv_data(keyBb);
 							long id = Varint.readUnsigned(keyBb, keyBb.position() + 1);
-							if (hasPositiveRefCount(stack, txn, id)) {
+							livenessCandidate.clear();
+							livenessCandidate.add(id);
+							valueIdLivenessChecker.filterUsedIds(livenessCandidate);
+							if (livenessCandidate.isEmpty() || hasPositiveRefCount(stack, txn, id)
+									|| !hasDictionaryRecord(stack, txn, id)) {
 								// A stale retirement marker must not destroy a dependency that reconstruction found
 								// live. Remove
-								// only the obsolete unused marker; leave the dictionary and free-list state intact.
+								// only the obsolete hint. Missing records provide no proof that the ordinal is free:
+								// an old writer may already have reused it under a different reference type.
 								E(mdb_cursor_del(unusedIdsCursor, 0));
 								continue;
 							}
@@ -6019,6 +6268,17 @@ public class ValueStore extends AbstractValueFactory {
 				try {
 					MDBVal key = MDBVal.malloc(stack);
 					MDBVal value = MDBVal.malloc(stack);
+					int appendFlags = MDB_APPEND;
+					int last = mdb_cursor_get(cursor, key, value, MDB_LAST);
+					if (last == MDB_SUCCESS) {
+						// The main database also holds named-database catalog entries. Their keys can sort above
+						// dictionary records, so a sorted input alone does not satisfy MDB_APPEND's tail precondition.
+						if (Arrays.compareUnsigned(copyValue(key), batch.get(0).key()) >= 0) {
+							appendFlags = MDB_NOOVERWRITE;
+						}
+					} else if (last != MDB_NOTFOUND) {
+						E(last);
+					}
 					for (BulkRecord record : batch) {
 						stack.push();
 						try {
@@ -6027,13 +6287,13 @@ public class ValueStore extends AbstractValueFactory {
 							int result;
 							if (valueBytes.length <= MAX_KEY_SIZE) {
 								value.mv_data(stack.bytes(valueBytes));
-								result = mdb_cursor_put(cursor, key, value, MDB_APPEND);
+								result = mdb_cursor_put(cursor, key, value, appendFlags);
 							} else {
 								// Large values (e.g. big literals) do not fit on the fixed-size LWJGL MemoryStack.
 								// Reserve space inside LMDB and copy the payload directly into the reserved buffer,
 								// mirroring the incremental write path in persistPreparedValues.
 								value.mv_size(valueBytes.length);
-								result = mdb_cursor_put(cursor, key, value, MDB_APPEND | MDB_RESERVE);
+								result = mdb_cursor_put(cursor, key, value, appendFlags | MDB_RESERVE);
 								if (result == MDB_SUCCESS) {
 									value.mv_data().put(valueBytes);
 								}
@@ -6344,7 +6604,7 @@ public class ValueStore extends AbstractValueFactory {
 		valueStoreInitializationComplete = false;
 		deferNextIdPersistence = false;
 		nextId = 1L;
-		open(false);
+		open(false, true);
 		setNewRevision();
 		try {
 			initializeAfterOpen(storeConfig);
@@ -6572,6 +6832,12 @@ public class ValueStore extends AbstractValueFactory {
 		return ValueStoreRecordCodec.literalData(label, lang, baseDirection, datatypeID, canonicalLanguageTags);
 	}
 
+	/** Immutable value identity and writer capabilities captured before this dictionary was opened. */
+	@InternalUseOnly
+	public LmdbStoreFormat getFormat() {
+		return format;
+	}
+
 	/**
 	 * Whether newly written language tags are canonicalized (lowercased), making value-to-id resolution unique per RDF
 	 * term. Stores written before the {@code canonical-language-tags} store property existed answer {@code false} and
@@ -6588,6 +6854,11 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	public boolean usesOrderedNumericIds() {
 		return orderedNumericIds;
+	}
+
+	@InternalUseOnly
+	public boolean usesZeroFractionDateTimeIds() {
+		return zeroFractionDateTimeIds;
 	}
 
 	/** Whether this store inlines literals into ids at all; when false, no inline literal id is ever minted. */

@@ -64,7 +64,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationConstants;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -77,6 +79,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -212,12 +215,11 @@ class LmdbSailStore implements SailStore {
 	/** Persistence and regime signals handed to the adaptive cost model through every query source. */
 	private LmdbNativeCostModelContext costModelContext;
 	/**
-	 * Sketch-free learned filter selectivity. Deliberately constructed here and unconditionally, rather than inside the
-	 * {@code sketchBasedJoinEstimator != null} branch that gates {@link #filterSelectivityStats}: the engine already
-	 * measures filter pass/reject counts on every query through {@code RecordingNativeBooleanFilter}, and without a
-	 * store to receive them that measurement was discarded. Store-scoped so it accumulates across queries.
+	 * Store-scoped learned filter selectivity accumulated by {@code RecordingNativeBooleanFilter} when the experimental
+	 * query profile is enabled. It accumulates across queries independently of the sketch estimator.
 	 */
-	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity = new LmdbLearnedFilterSelectivity();
+	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity;
+	private final QueryExecutionPolicy queryExecutionPolicy;
 	private final LmdbStatementAccessArbiter.RuntimeEvidence statementAccessEvidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final ScheduledExecutorService estimatorPersistExec = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -813,6 +815,8 @@ class LmdbSailStore implements SailStore {
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
 	private final Condition storeTransactionFinished = sinkStoreAccessLock.newCondition();
+	/** Writer admission is permanently closed under sinkStoreAccessLock before native close maintenance. */
+	private boolean closing;
 
 	/**
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
@@ -850,6 +854,19 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+				LmdbStoreFormat.fromProperties(properties, config),
+				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()));
+	}
+
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy)
+			throws IOException, SailException {
+		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
+		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
+				? new LmdbLearnedFilterSelectivity()
+				: null;
+		sketchBasedJoinEstimatorEnabled &= queryExecutionPolicy.experimentalQueryOptimizations();
 		this.dataDir = dataDir;
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
@@ -871,9 +888,10 @@ class LmdbSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
+			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config, false, null, format, true);
 			this.valueStore = valueStore;
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
+			valueStore.completeStoreInitialization(tripleStore::filterUsedIds);
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -1322,25 +1340,34 @@ class LmdbSailStore implements SailStore {
 					}
 				} finally {
 					try {
-						if (valueStore != null) {
-							valueStore.close();
+						sinkStoreAccessLock.lock();
+						try {
+							closing = true;
+							storeTransactionFinished.signalAll();
+							try {
+								shutdownAndAwaitTripleStoreExecutor();
+								if (tripleStore != null) {
+									tripleStore.getTxnManager().close();
+								}
+								if (valueStore != null) {
+									valueStore.closeReadTransactions();
+									if (!storeTxnStarted.get()) {
+										valueStore.reclaimLegacyUnusedIdsAtClose();
+									}
+								}
+							} finally {
+								if (valueStore != null) {
+									valueStore.close();
+								}
+							}
+						} finally {
+							sinkStoreAccessLock.unlock();
 						}
 					} finally {
 						try {
 							if (tripleStore != null) {
 								try {
-									running.set(false);
-									opQueueSignal.release();
-									tripleStoreExecutor.shutdown();
-									try {
-										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-											logger.warn("Waiting for triple store executor to terminate");
-										}
-									} catch (InterruptedException e) {
-										Thread.currentThread().interrupt();
-										throw new InterruptedSailException(e);
-									}
-									cancelQueuedOperations();
+									shutdownAndAwaitTripleStoreExecutor();
 								} finally {
 									shutdownAndAwaitEstimatorPersistExecutor();
 									tripleStore.close();
@@ -1370,6 +1397,39 @@ class LmdbSailStore implements SailStore {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new InterruptedSailException(e);
+		}
+	}
+
+	private void shutdownAndAwaitTripleStoreExecutor() {
+		running.set(false);
+		opQueueSignal.release();
+		tripleStoreExecutor.shutdown();
+		InterruptedException interruption = null;
+		try {
+			while (true) {
+				try {
+					if (tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+						break;
+					}
+					logger.warn("Waiting for triple store executor to terminate");
+				} catch (InterruptedException failure) {
+					// The worker can still own native transactions. Finish joining before close's finally blocks
+					// release either environment, then restore and report the interruption.
+					if (interruption == null) {
+						interruption = failure;
+					} else {
+						interruption.addSuppressed(failure);
+					}
+				}
+			}
+			cancelQueuedOperations();
+		} finally {
+			if (interruption != null) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		if (interruption != null) {
+			throw new InterruptedSailException(interruption);
 		}
 	}
 
@@ -1551,7 +1611,7 @@ class LmdbSailStore implements SailStore {
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
-				statementPatternCardinalitySource, learnedFilterSelectivity);
+				statementPatternCardinalitySource, learnedFilterSelectivity, queryExecutionPolicy);
 	}
 
 	/** Store-scoped learned filter selectivity. Test hook. */
@@ -3259,9 +3319,11 @@ class LmdbSailStore implements SailStore {
 		private long startTransaction(boolean preferThreading, PreparedStatementBatch prepared, Object transactionOwner)
 				throws SailException {
 			while (true) {
+				ensureWriterAdmissionOpen();
 				while (storeTxnStarted.get() && storeTxnOwner != transactionOwner) {
 					try {
 						storeTransactionFinished.await();
+						ensureWriterAdmissionOpen();
 					} catch (InterruptedException e) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedSailException(e);
@@ -3290,6 +3352,7 @@ class LmdbSailStore implements SailStore {
 						sinkStoreAccessLock.lock();
 					}
 				}
+				ensureWriterAdmissionOpen();
 			}
 			synchronized (storeTxnStarted) {
 				boolean started = storeTxnStarted.compareAndSet(false, true);
@@ -3435,8 +3498,14 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void ensureWriterAdmissionOpen() {
+			if (closing) {
+				throw new SailException("LMDB store is closed");
+			}
+		}
+
 		private void reservePreparedImportCapacity(PreparedStatementBatch prepared) throws IOException {
-			valueStore.reservePreparedValueCapacity(freshValueSession, prepared.values());
+			valueStore.reservePreparedValueCapacity(freshValueSession, prepared);
 			long indexBytes = (TripleIndex.MAX_KEY_LENGTH + PREPARED_INDEX_ENTRY_OVERHEAD)
 					* (tripleStore.secondaryIndexCount() + 1L) * prepared.size();
 			tripleStore.reserveWriteCapacity(indexBytes);
@@ -5186,6 +5255,92 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		/** Validates cached rows as well as native cursor reads after a pinned snapshot is invalidated. */
+		private <T> CloseableIteration<? extends T> guardSnapshot(CloseableIteration<? extends T> rows) {
+			if (snapshotRevision < 0L) {
+				return rows;
+			}
+			class SnapshotIteration extends IterationWrapper<T> {
+				SnapshotIteration() {
+					super(rows);
+				}
+
+				private void validateSnapshot() {
+					try {
+						ensureSnapshot();
+					} catch (RuntimeException | Error failure) {
+						try {
+							close();
+						} catch (RuntimeException | Error cleanup) {
+							if (cleanup != failure) {
+								failure.addSuppressed(cleanup);
+							}
+						}
+						throw failure;
+					}
+				}
+
+				@Override
+				public boolean hasNext() {
+					if (!isClosed()) {
+						validateSnapshot();
+					}
+					return super.hasNext();
+				}
+
+				@Override
+				public T next() {
+					if (!isClosed()) {
+						validateSnapshot();
+					}
+					return super.next();
+				}
+
+				@Override
+				public boolean supportsSeek() {
+					return !isClosed() && rows.supportsSeek();
+				}
+
+				@Override
+				public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+					if (!isClosed()) {
+						validateSnapshot();
+						rows.seek(minValue, minInclusive, maxValue, maxInclusive);
+					}
+				}
+			}
+			class IndexedSnapshotIteration extends SnapshotIteration implements IndexReportingIterator {
+				private final IndexReportingIterator reporting;
+
+				IndexedSnapshotIteration(IndexReportingIterator reporting) {
+					this.reporting = reporting;
+				}
+
+				@Override
+				public String getIndexName() {
+					return reporting.getIndexName();
+				}
+
+				@Override
+				public long getSourceRowsScannedActual() {
+					return reporting.getSourceRowsScannedActual();
+				}
+
+				@Override
+				public long getSourceRowsMatchedActual() {
+					return reporting.getSourceRowsMatchedActual();
+				}
+
+				@Override
+				public long getSourceRowsFilteredActual() {
+					return reporting.getSourceRowsFilteredActual();
+				}
+			}
+			return rows instanceof IndexReportingIterator reporting
+					? new IndexedSnapshotIteration(reporting)
+					: new SnapshotIteration();
+		}
+
 		@Override
 		public void close() {
 			if (!closed.compareAndSet(false, true)) {
@@ -6744,7 +6899,7 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			ensureSnapshot();
 			try {
-				return new LmdbContextIterator(tripleStore.getContexts(txn), valueStore);
+				return guardSnapshot(new LmdbContextIterator(tripleStore.getContexts(txn), valueStore));
 			} catch (IOException e) {
 				throw new SailException("Unable to get contexts", e);
 			}
@@ -6755,13 +6910,13 @@ class LmdbSailStore implements SailStore {
 				Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return createStatementIterator(this, subj, pred, obj, contexts);
+				return guardSnapshot(createStatementIterator(this, subj, pred, obj, contexts));
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(this, subj, pred, obj, contexts);
+					return guardSnapshot(createStatementIterator(this, subj, pred, obj, contexts));
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
@@ -6807,12 +6962,13 @@ class LmdbSailStore implements SailStore {
 				IRI pred, Value obj, Resource... contexts) throws SailException {
 			ensureSnapshot();
 			try {
-				return createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts);
+				return guardSnapshot(createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts));
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get ordered statements, retrying", e);
 					Thread.yield();
-					return createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts);
+					return guardSnapshot(
+							createOrderedStatementIterator(this, statementOrder, subj, pred, obj, contexts));
 				} catch (IOException e2) {
 					throw new SailException("Unable to get ordered statements", e2);
 				}
@@ -6821,6 +6977,9 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			if (!queryExecutionPolicy.experimentalQueryOptimizations()) {
+				return Set.of();
+			}
 			long contextID = orderedContextId(contexts);
 			long subjPattern = subj == null ? LmdbValue.UNKNOWN_ID : 1L;
 			long predPattern = pred == null ? LmdbValue.UNKNOWN_ID : 1L;
@@ -6834,7 +6993,7 @@ class LmdbSailStore implements SailStore {
 				throws SailException {
 			ensureSnapshot();
 			try {
-				return createTripleTermIterator(subj, pred, obj);
+				return guardSnapshot(createTripleTermIterator(subj, pred, obj));
 			} catch (IOException e) {
 				throw new SailException("Unable to get triple terms", e);
 			}

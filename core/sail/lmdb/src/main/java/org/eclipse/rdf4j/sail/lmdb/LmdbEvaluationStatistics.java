@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -71,6 +72,7 @@ class LmdbEvaluationStatistics
 	 * no store supplied one, in which case filter estimates fall back to the inherited heuristic.
 	 */
 	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity;
+	private final boolean experimental;
 	private volatile boolean statementPatternCardinalityFailureLogged;
 	private final ThreadLocal<OptimizationCostScope> optimizationCostScope = new ThreadLocal<>();
 
@@ -97,12 +99,21 @@ class LmdbEvaluationStatistics
 			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
 			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource,
 			LmdbLearnedFilterSelectivity learnedFilterSelectivity) {
+		this(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
+				statementPatternCardinalitySource, learnedFilterSelectivity, QueryExecutionPolicy.EXPERIMENTAL);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
+			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource,
+			LmdbLearnedFilterSelectivity learnedFilterSelectivity, QueryExecutionPolicy policy) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.statementPatternCardinalitySource = statementPatternCardinalitySource;
-		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
-		this.filterSelectivityStats = filterSelectivityStats;
-		this.learnedFilterSelectivity = learnedFilterSelectivity;
+		this.experimental = policy.experimentalQueryOptimizations();
+		this.sketchBasedJoinEstimator = experimental ? sketchBasedJoinEstimator : null;
+		this.filterSelectivityStats = experimental ? filterSelectivityStats : null;
+		this.learnedFilterSelectivity = experimental ? learnedFilterSelectivity : null;
 	}
 
 	@Override
@@ -388,6 +399,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+		if (!experimental) {
+			return Optional.empty();
+		}
 		if (sketchBasedJoinEstimator == null) {
 			return estimatePageWalkingFactorCost(factor);
 		}
@@ -396,6 +410,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (!experimental) {
+			return Optional.empty();
+		}
 		if (sketchBasedJoinEstimator == null) {
 			return estimatePageWalkingFactorCost(factor);
 		}

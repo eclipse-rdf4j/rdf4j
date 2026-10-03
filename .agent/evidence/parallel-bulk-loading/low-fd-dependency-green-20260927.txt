@@ -1,7 +1,0 @@
-Description: Low-descriptor dependency scans now reserve the cursor, codec, bounded cache envelope, and one writer together; cache size is derived from budget; keys larger than the cache limit get a pre-allocation row envelope that can use an exclusive floor.
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ValueDependencyCollectorTest
-Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ValueDependencyCollectorTest.txt
-Snippet:
-Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.553 s -- in org.eclipse.rdf4j.sail.lmdb.bulk.ValueDependencyCollectorTest
-The 2 MiB path reports positive admitted memory, stays within budget, holds at most two scan/output handles, preserves dictionary equality, and releases leases. The 256 KiB value completes under a 64 KiB limit with an effective serial floor and identical dependency rows.
-Full verify log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T225356.130855Z-20036-4f473d4e/verify.log

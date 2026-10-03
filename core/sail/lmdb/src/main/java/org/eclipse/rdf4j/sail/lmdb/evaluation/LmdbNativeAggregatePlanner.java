@@ -315,7 +315,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// equality. The carrier also supplies the runtime interner for computed values and the shared evaluation
 		// context
 		// for generic bridges.
-		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build());
+		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build(),
+				strategy.getQueryExecutionPolicy());
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
 			slotBudgetExceeded = true;
 			return null;
@@ -565,7 +566,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		// Row roots use the same evaluation-scoped term authority as grouped roots. This keeps DISTINCT, ORDER key
 		// identity, computed values, and generic bridges in one authoritative id space even with an empty plan catalog.
-		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build());
+		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build(),
+				strategy.getQueryExecutionPolicy());
 		PatternPlan prefixPattern = null;
 		LmdbPrefixRunPlan prefixRunPlan = null;
 		if ((distinct || reduced) && orderSlots.length == 0 && arg instanceof PatternPlan) {
@@ -661,7 +663,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (containsLeftJoin(arg)) {
 			LmdbNativeAggregateCompiler.LEFTJOIN_BARE_FRAGMENTS.incrementAndGet();
 		}
-		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build());
+		NativeLmdbQuerySource stepSource = new SyntheticValueSource(source, planValueCatalog.build(),
+				strategy.getQueryExecutionPolicy());
 		return NativeRowsStep.bareFragment(stepSource, arg, layout, sourceSlots, targetNames, strictCompare, strategy,
 				expr, context, optionalOnlyNames);
 	}
@@ -894,7 +897,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 		}
 		NativeLmdbQuerySource stepSource = planValueCatalog.isEmpty() ? source
-				: new SyntheticValueSource(source, planValueCatalog.build());
+				: new SyntheticValueSource(source, planValueCatalog.build(), strategy.getQueryExecutionPolicy());
 		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { innerField }, constants[0], constants[1],
 				constants[2], UNKNOWN);
 		if (plan == null) {
@@ -996,7 +999,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 		}
 		NativeLmdbQuerySource stepSource = planValueCatalog.isEmpty() ? source
-				: new SyntheticValueSource(source, planValueCatalog.build());
+				: new SyntheticValueSource(source, planValueCatalog.build(), strategy.getQueryExecutionPolicy());
 		LmdbPrefixRunPlan plan = stepSource.prefixRunPlan(new int[] { literalField }, constants[0], constants[1],
 				constants[2], UNKNOWN);
 		if (plan == null) {

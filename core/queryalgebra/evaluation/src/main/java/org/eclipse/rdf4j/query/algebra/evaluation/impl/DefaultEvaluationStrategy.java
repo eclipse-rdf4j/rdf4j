@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -267,6 +268,50 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		};
 	}
 
+	private QueryExecutionPolicy queryExecutionPolicy = QueryExecutionPolicy.DEFAULT;
+	private boolean queryExecutionPolicyBound;
+	private boolean queryPreparationStarted;
+
+	@Override
+	public QueryExecutionPolicy getQueryExecutionPolicy() {
+		return queryExecutionPolicy;
+	}
+
+	@Override
+	public synchronized void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
+		Objects.requireNonNull(policy);
+		if ((queryExecutionPolicyBound || queryPreparationStarted) && queryExecutionPolicy != policy) {
+			throw new IllegalStateException("Query execution policy is already bound to this strategy");
+		}
+		queryExecutionPolicy = policy;
+		queryExecutionPolicyBound = true;
+	}
+
+	/** Shared preparation boundary for this strategy and backend subclasses. */
+	protected final TupleExpr prepareTupleExpr(TupleExpr expression) {
+		if (expression == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
+		return PreparedValuesSnapshot.prepare(expression);
+	}
+
+	/** A preparation phase owns snapshots; a safety-only caller scope does not imply row capture. */
+	protected final <T> T withPreparedTupleExpr(TupleExpr expression,
+			java.util.function.Function<TupleExpr, T> action) {
+		if (expression == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
+		return QueryEvaluationUtility.withPreparedQuerySafetySnapshot(expression,
+				PreparedValuesSnapshot::newPreparation,
+				action);
+	}
+
 	public DefaultEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
 		this(tripleSource, null, serviceResolver);
 	}
@@ -338,12 +383,19 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-		QueryEvaluationUtility.pinFunctions(expr);
-
-		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(expr, dataset, bindings);
-		}
-		return expr;
+		return withPreparedTupleExpr(expr, prepared -> {
+			QueryEvaluationUtility.pinFunctions(prepared);
+			TupleExpr optimized = prepared;
+			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
+					optimizer.optimize(optimizerRoot, dataset, bindings);
+					return optimizerRoot;
+				});
+			}
+			// The last pass can introduce VALUES or change a bare assignment root too.
+			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized,
+					optimizerRoot -> optimizerRoot);
+		});
 	}
 
 	@Deprecated(forRemoval = true) // this method is still in use and I think that there is quite a lot of work left
@@ -450,22 +502,22 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
-				tripleSource.getComparator());
-		if (expr instanceof QueryRoot) {
-			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
-					.findAllVariablesUsedInQuery((QueryRoot) expr);
-			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
-		}
-		return precompile(expr, context);
+		return withPreparedTupleExpr(expr, prepared -> {
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+					tripleSource.getComparator());
+			if (prepared instanceof QueryRoot) {
+				String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+						.findAllVariablesUsedInQuery((QueryRoot) prepared);
+				context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables,
+						tripleSource.getComparator());
+			}
+			return precompile(prepared, context);
+		});
 	}
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
-		}
-		return QueryEvaluationUtility.withQuerySafetySnapshot(expr, () -> precompileWithSafetySnapshot(expr, context));
+		return withPreparedTupleExpr(expr, prepared -> precompileWithSafetySnapshot(prepared, context));
 	}
 
 	private QueryEvaluationStep precompileWithSafetySnapshot(TupleExpr expr, QueryEvaluationContext context) {
@@ -722,7 +774,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
-		ValueComparator vcmp = new ValueComparator();
+		ValueComparator vcmp = new ValueComparator(getQueryExecutionPolicy());
 		vcmp.setStrict(getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
@@ -1025,6 +1077,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryValueEvaluationStep precompile(ValueExpr expr,
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		synchronized (this) {
+			queryPreparationStarted = true;
+		}
 		QueryValueEvaluationStep prepared;
 		try {
 			if (expr instanceof Var) {

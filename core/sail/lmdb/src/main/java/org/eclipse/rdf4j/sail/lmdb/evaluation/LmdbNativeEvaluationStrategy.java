@@ -187,6 +187,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 					view.setTrackTime(trackTimeShadow);
 					view.setTrackResultSize(trackResultSizeShadow);
 					view.setQueryEvaluationMode(getQueryEvaluationMode());
+					view.setQueryExecutionPolicy(getQueryExecutionPolicy());
 					if (optimizerPipelineShadow != null) {
 						view.setOptimizerPipeline(optimizerPipelineShadow);
 					}
@@ -265,21 +266,27 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
-				tripleSource.getComparator());
-		if (expr instanceof QueryRoot) {
-			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
-					.findAllVariablesUsedInQuery((QueryRoot) expr);
-			QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
-			QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables,
+		return withPreparedTupleExpr(expr, prepared -> {
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
 					tripleSource.getComparator());
-			context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
-		}
-		return precompile(expr, context);
+			if (prepared instanceof QueryRoot) {
+				String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+						.findAllVariablesUsedInQuery((QueryRoot) prepared);
+				QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
+				QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables,
+						tripleSource.getComparator());
+				context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
+			}
+			return precompile(prepared, context);
+		});
 	}
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		return withPreparedTupleExpr(expr, prepared -> precompileWithPreparedValues(prepared, context));
+	}
+
+	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
 		if (nativeEnabled && nativeSource != null) {
 			if (expr instanceof QueryRoot) {
 				return compileHostedPlan(expr, context);
@@ -335,7 +342,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = stableOrderPlanner.plan(node.getArg());
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
+				.experimentalQueryOptimizations()
+						? stableOrderPlanner.plan(node.getArg())
+						: Optional.empty();
 		if (resolution.isPresent()) {
 			return preparePartitioned(node.getArg(), resolution.get(), context);
 		}
@@ -345,7 +355,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = stableOrderPlanner.plan(node.getArg());
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
+				.experimentalQueryOptimizations()
+						? stableOrderPlanner.plan(node.getArg())
+						: Optional.empty();
 		if (resolution.isPresent()) {
 			return preparePartitioned(node.getArg(), resolution.get(), context);
 		}

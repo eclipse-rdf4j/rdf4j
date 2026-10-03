@@ -29,9 +29,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 
 /**
  * Writes the parser output once as canonical statement records and globally routed value occurrences.
@@ -61,7 +60,7 @@ final class CanonicalStatementStager implements Closeable {
 	private final Path predicateCountsPath;
 	private final Path valueDirectory;
 	private final int partitionCount;
-	private final LmdbStoreConfig config;
+	private final LmdbStoreFormat format;
 	private final BulkCompression compression;
 	private final BoundedBucketOutputLimiter outputs;
 	private final FrontCache frontCache;
@@ -78,6 +77,12 @@ final class CanonicalStatementStager implements Closeable {
 
 	CanonicalStatementStager(Path directory, LmdbStoreConfig config, int partitionCount, int maxOpenFiles,
 			long memoryBudgetBytes, BulkCompression compression) throws IOException {
+		this(directory, LmdbStoreFormat.forNewStore(config), partitionCount, maxOpenFiles, memoryBudgetBytes,
+				compression);
+	}
+
+	CanonicalStatementStager(Path directory, LmdbStoreFormat format, int partitionCount, int maxOpenFiles,
+			long memoryBudgetBytes, BulkCompression compression) throws IOException {
 		this.compression = compression;
 		this.directory = directory;
 		this.statementPath = directory.resolve("statements.lz4");
@@ -86,7 +91,7 @@ final class CanonicalStatementStager implements Closeable {
 		this.namespacePath = directory.resolve("namespaces.lz4");
 		this.predicateCountsPath = directory.resolve(PREDICATE_COUNTS_FILE_NAME);
 		this.valueDirectory = directory.resolve("value-buckets");
-		this.config = config;
+		this.format = format;
 		this.partitionCount = partitionCount;
 		this.statementDigest = CanonicalStagedInput.newSha256();
 		this.outputs = new BoundedBucketOutputLimiter(maxOpenFiles, memoryBudgetBytes);
@@ -250,15 +255,7 @@ final class CanonicalStatementStager implements Closeable {
 	}
 
 	private boolean isInline(Value value) {
-		if (!config.getInlineLiterals() || !(value instanceof Literal literal)) {
-			return false;
-		}
-		try {
-			long id = Values.packLiteral(literal, config.getOrderedNumericIds());
-			return id != 0L && Values.unpackLiteral(id, SimpleValueFactory.getInstance()).equals(literal);
-		} catch (IllegalArgumentException e) {
-			return false;
-		}
+		return InlineValueCodec.tryEncode(value, format) != 0L;
 	}
 
 	static Path valueBucketPath(Path valueDirectory, int partition) {

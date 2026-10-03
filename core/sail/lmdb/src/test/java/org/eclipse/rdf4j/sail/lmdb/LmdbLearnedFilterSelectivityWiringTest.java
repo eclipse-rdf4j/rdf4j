@@ -70,7 +70,9 @@ public class LmdbLearnedFilterSelectivityWiringTest {
 	@BeforeEach
 	public void setUp() {
 		previousRangePushdown = System.setProperty(RANGE_PUSHDOWN_PROPERTY, "false");
-		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		config.setExperimentalQueryOptimizations(true);
+		store = new LmdbStore(dataDir, config);
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();

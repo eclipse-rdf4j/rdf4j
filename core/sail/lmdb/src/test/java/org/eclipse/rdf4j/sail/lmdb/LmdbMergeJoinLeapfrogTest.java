@@ -62,10 +62,10 @@ public class LmdbMergeJoinLeapfrogTest {
 
 	@BeforeEach
 	public void setUp() {
-		LmdbStore store = new LmdbStore(new File(dataDir, "lmdb"), new LmdbStoreConfig("spoc,posc"));
-		// the LMDB-specific optimizer pipelines currently never mark merge joins (the standard pipeline is
-		// deliberately order-blind); the default strategy factory uses the order-aware standard pipeline, which
-		// is the configuration the generic merge join leapfrog targets
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(new File(dataDir, "lmdb"), config);
+		// This query asserts the physical merge-join plan, so it explicitly uses the opt-in order-aware pipeline.
 		store.setEvaluationStrategyFactory(new DefaultEvaluationStrategyFactory());
 		lmdbRepository = new SailRepository(store);
 

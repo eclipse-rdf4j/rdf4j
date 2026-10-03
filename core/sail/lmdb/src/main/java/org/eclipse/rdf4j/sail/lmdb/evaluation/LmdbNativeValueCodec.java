@@ -29,9 +29,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Dates;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor;
 import org.lwjgl.system.MemoryUtil;
@@ -47,7 +49,6 @@ final class LmdbNativeValueCodec {
 	private static final byte LITERAL_VALUE = 1;
 	private static final byte BNODE_VALUE = 2;
 	private static final byte NAMESPACE_VALUE = 4;
-	private static final int NO_FRACTION = 0x3FF;
 	private static final int NO_TIMEZONE_BITS = 0x7F;
 	private static final int CACHE_SIZE = 1 << 11;
 	private static final int MAX_UTF8_SCRATCH_BYTES = 64 << 10;
@@ -229,7 +230,18 @@ final class LmdbNativeValueCodec {
 	 * inline the value — a raw-id comparison against a store-produced id is only sound when the encodings agree.
 	 */
 	long packInlineId(DecodedValue value) {
-		return packInline(value, valueStore.inlinesLiterals(), valueStore.usesOrderedNumericIds());
+		return packInline(value, valueStore.getFormat());
+	}
+
+	static long packInline(DecodedValue value, LmdbStoreFormat format) {
+		if (value.error() || !value.literal() || value.language().isPresent() || value.label() == null) {
+			return NativeLmdbQuerySource.UNKNOWN_ID;
+		}
+		CoreDatatype datatype = value.coreDatatype();
+		if (datatype == null || datatype == CoreDatatype.NONE) {
+			return NativeLmdbQuerySource.UNKNOWN_ID;
+		}
+		return format.tryInline(SimpleValueFactory.getInstance().createLiteral(value.label(), datatype));
 	}
 
 	static long packInline(DecodedValue value, boolean orderedNumericIds) {
@@ -237,6 +249,11 @@ final class LmdbNativeValueCodec {
 	}
 
 	static long packInline(DecodedValue value, boolean inlineLiterals, boolean orderedNumericIds) {
+		return packInline(value, inlineLiterals, orderedNumericIds, true);
+	}
+
+	static long packInline(DecodedValue value, boolean inlineLiterals, boolean orderedNumericIds,
+			boolean zeroFractionDateTimeIds) {
 		if (!inlineLiterals || value.error() || !value.literal() || value.language().isPresent()
 				|| value.label() == null) {
 			return NativeLmdbQuerySource.UNKNOWN_ID;
@@ -252,7 +269,7 @@ final class LmdbNativeValueCodec {
 			// exactly may be inlined (ValueStore declines "007"^^xsd:integer the same way)
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
 			Literal literal = vf.createLiteral(value.label(), coreDatatype.getIri());
-			long packed = Values.packLiteral(literal, orderedNumericIds);
+			long packed = Values.packLiteral(literal, orderedNumericIds, zeroFractionDateTimeIds);
 			if (packed == 0L) {
 				return NativeLmdbQuerySource.UNKNOWN_ID;
 			}
@@ -328,7 +345,10 @@ final class LmdbNativeValueCodec {
 		return DecodedValue.decimal(Long.toString(value), BigDecimal.valueOf(value), datatype);
 	}
 
-	private static DecodedValue dateLiteral(long id, CoreDatatype datatype) {
+	private DecodedValue dateLiteral(long id, CoreDatatype datatype) {
+		if (valueStore != null && valueStore.getFormat().isLegacy()) {
+			return fromValue(valueStore.getFormat().unpackLiteral(id, SimpleValueFactory.getInstance()));
+		}
 		return DecodedValue.literal(formatDateTime(ValueIds.getValue(id), datatype), null,
 				datatype.getIri().stringValue(), datatype);
 	}
@@ -340,7 +360,7 @@ final class LmdbNativeValueCodec {
 		int hour = (int) ((bits >>> 22) & 0x1F);
 		int minute = (int) ((bits >>> 27) & 0x3F);
 		int second = (int) ((bits >>> 33) & 0x3F);
-		int milli = (int) ((bits >>> 39) & 0x3FF);
+		int fractionPrecision = Dates.fractionalSecondPrecision(bits);
 		int tzBits = (int) ((bits >>> 49) & 0x7F);
 
 		StringBuilder builder = new StringBuilder(32);
@@ -356,9 +376,9 @@ final class LmdbNativeValueCodec {
 			appendPadded(builder, minute, 2);
 			builder.append(':');
 			appendPadded(builder, second, 2);
-			if (milli != NO_FRACTION) {
+			if (fractionPrecision > 0) {
 				builder.append('.');
-				appendPadded(builder, milli, 3);
+				appendPadded(builder, Dates.fractionalSecondMillis(bits), fractionPrecision);
 			}
 		}
 		appendTimezone(builder, tzBits);
@@ -397,7 +417,7 @@ final class LmdbNativeValueCodec {
 		String language = data.language;
 		String label = data.text;
 		if (language != null) {
-			int direction = data.directionAndLangLength >> 6;
+			int direction = data.direction;
 			CoreDatatype datatype = direction == 0 ? CoreDatatype.RDF.LANGSTRING
 					: CoreDatatype.RDF.DIRLANGSTRING;
 			Literal.BaseDirection baseDirection = switch (direction) {
@@ -475,11 +495,22 @@ final class LmdbNativeValueCodec {
 			case LITERAL_VALUE -> {
 				long datatypeId = Varint.readUnsigned(buffer);
 				int directionAndLangLength = buffer.get() & 0xFF;
-				int languageLength = directionAndLangLength & 0x3F;
+				int direction = directionAndLangLength >>> 6;
+				int languageLength;
+				if (direction == 3) {
+					// The develop writer already uses this extended header for tags longer than 63 bytes.
+					direction = directionAndLangLength & 0x3F;
+					languageLength = Math.toIntExact(Varint.readUnsigned(buffer));
+				} else {
+					languageLength = directionAndLangLength & 0x3F;
+				}
+				if (languageLength < 0 || languageLength > buffer.remaining()) {
+					throw new IllegalArgumentException("Invalid stored language length: " + languageLength);
+				}
 				String language = languageLength == 0 ? null
 						: decodeUtf8(buffer, buffer.position(), languageLength);
 				buffer.position(buffer.position() + languageLength);
-				yield new StoredPayload(type, datatypeId, directionAndLangLength, language,
+				yield new StoredPayload(type, datatypeId, direction, language,
 						decodeUtf8(buffer, buffer.position(), buffer.remaining()));
 			}
 			default -> null;
@@ -507,7 +538,7 @@ final class LmdbNativeValueCodec {
 			language = new String(scratch, 0, languageLength, StandardCharsets.UTF_8);
 		}
 		// Only owned strings and primitive metadata survive the overlay's snapshot lease.
-		return new StoredPayload(type, record.referenceId(), (record.direction() << 6) | languageLength, language,
+		return new StoredPayload(type, record.referenceId(), record.direction(), language,
 				text);
 	}
 
@@ -551,14 +582,14 @@ final class LmdbNativeValueCodec {
 	private static final class StoredPayload {
 		final byte type;
 		final long referenceId;
-		final int directionAndLangLength;
+		final int direction;
 		final String language;
 		final String text;
 
-		StoredPayload(byte type, long referenceId, int directionAndLangLength, String language, String text) {
+		StoredPayload(byte type, long referenceId, int direction, String language, String text) {
 			this.type = type;
 			this.referenceId = referenceId;
-			this.directionAndLangLength = directionAndLangLength;
+			this.direction = direction;
 			this.language = language;
 			this.text = text;
 		}

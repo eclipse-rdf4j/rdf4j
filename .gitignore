@@ -25,6 +25,7 @@ tools/packed-algebra-checks/__pycache__/
 /final-suite-summary.txt
 /profiles/
 /.mvnf/
+**/.mvnf/
 /.verify.log
 /.initial-verify.log
 /*.verify.log

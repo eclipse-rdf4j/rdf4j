@@ -20,10 +20,12 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_sync;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
@@ -32,6 +34,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -67,6 +70,9 @@ import org.lwjgl.util.lmdb.MDBVal;
 final class RetiredValueIdStore {
 
 	private static final byte BOOT_EPOCH_KEY = 0x01;
+	private static final byte SCHEMA_KEY = 0x02;
+	private static final byte SCHEMA_VERSION = 0x01;
+	private static final byte FORMAT_KEY = 0x03;
 	/** Max length of an unsigned varint for a 64-bit value. */
 	private static final int MAX_VARINT = 9;
 
@@ -196,6 +202,64 @@ final class RetiredValueIdStore {
 		Varint.writeUnsigned(valueBb, bootEpoch);
 		dataVal.mv_data(valueBb.flip());
 		E(mdb_put(txn, metaDbi, keyVal, dataVal, 0));
+		keyVal.mv_data(stack.bytes(new byte[] { SCHEMA_KEY }));
+		dataVal.mv_data(stack.bytes(new byte[] { SCHEMA_VERSION }));
+		E(mdb_put(txn, metaDbi, keyVal, dataVal, 0));
+	}
+
+	/** Checks only owned metadata; unrelated gc_meta keys remain untouched. Call before the startup writer. */
+	static void validateMetadataSchema(long txn, LmdbStoreFormat format, boolean newNativeGeneration)
+			throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			IntBuffer handle = stack.mallocInt(1);
+			int rc = mdb_dbi_open(txn, "gc_meta", 0, handle);
+			if (rc == MDB_NOTFOUND) {
+				validateMissingFormatFence(format, newNativeGeneration);
+				return;
+			}
+			E(rc);
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { SCHEMA_KEY }));
+			MDBVal value = MDBVal.calloc(stack);
+			rc = mdb_get(txn, handle.get(0), key, value);
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+				ByteBuffer schema = value.mv_data();
+				if (schema.remaining() != 1 || schema.get(schema.position()) != SCHEMA_VERSION) {
+					throw new IOException("Unsupported ValueStore retirement metadata schema");
+				}
+			}
+			key.mv_data(stack.bytes(new byte[] { FORMAT_KEY }));
+			rc = mdb_get(txn, handle.get(0), key, value);
+			if (rc == MDB_NOTFOUND) {
+				validateMissingFormatFence(format, newNativeGeneration);
+				return;
+			}
+			E(rc);
+			ByteBuffer encodedFormat = value.mv_data();
+			if (format.isLegacy() || encodedFormat.remaining() != 1
+					|| encodedFormat.get(encodedFormat.position()) != LmdbStoreFormat.CURRENT_VERSION) {
+				throw new IOException("ValueStore native format fence does not agree with LmdbStore format "
+						+ format.getVersion());
+			}
+		}
+	}
+
+	private static void validateMissingFormatFence(LmdbStoreFormat format, boolean newNativeGeneration)
+			throws IOException {
+		if (!format.isLegacy() && !newNativeGeneration) {
+			throw new IOException("Missing ValueStore native format fence for existing LmdbStore format "
+					+ format.getVersion());
+		}
+	}
+
+	/** Authors the new-generation identity before dictionary writes; legacy generations never call this method. */
+	static void authorFormatFenceWithTransaction(long txn) throws IOException {
+		int metadata = openDatabaseWithTxn(txn, "gc_meta", MDB_CREATE);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { FORMAT_KEY }));
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { LmdbStoreFormat.CURRENT_VERSION }));
+			E(mdb_put(txn, metadata, key, value, MDB_NOOVERWRITE));
+		}
 	}
 
 	private static void syncBootEpoch(long env) throws IOException {

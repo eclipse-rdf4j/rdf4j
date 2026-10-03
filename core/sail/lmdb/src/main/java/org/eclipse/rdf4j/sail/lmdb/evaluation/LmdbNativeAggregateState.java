@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -374,7 +375,7 @@ final class AggContext {
 
 	final NativeLmdbQuerySource source;
 	final NativeTermAuthority termAuthority;
-	final ValueComparator comparator = new ValueComparator();
+	final ValueComparator comparator;
 	final boolean encounterOrderChanging;
 	final boolean deferDistinctValueAggregates;
 	private final KernelRuntime.MemoryAccount memory;
@@ -404,6 +405,9 @@ final class AggContext {
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates, KernelRuntime.MemoryAccount memory) {
 		this.source = source;
+		this.comparator = new ValueComparator(source instanceof SyntheticValueSource synthetic
+				? synthetic.queryExecutionPolicy
+				: QueryExecutionPolicy.DEFAULT);
 		this.termAuthority = source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).keyAuthority()
 				: null;
 		this.encounterOrderChanging = encounterOrderChanging;

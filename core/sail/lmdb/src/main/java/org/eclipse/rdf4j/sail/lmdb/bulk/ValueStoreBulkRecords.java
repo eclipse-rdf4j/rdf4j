@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRecordCodec;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Generates every exact main/ref-count ValueStore record before LMDB is opened.
@@ -50,6 +52,15 @@ final class ValueStoreBulkRecords {
 
 	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			LmdbStoreFormat format) throws IOException {
+		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler,
+				() -> {
+				}, () -> {
+				}, format);
+	}
+
+	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			Runnable spillOutputObserver) throws IOException {
 		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler,
 				spillOutputObserver, () -> {
@@ -59,6 +70,13 @@ final class ValueStoreBulkRecords {
 	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			Runnable spillOutputObserver, Runnable beforeReaderClose) throws IOException {
+		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler,
+				spillOutputObserver, beforeReaderClose, LmdbStoreFormat.forNewStore(new LmdbStoreConfig()));
+	}
+
+	private static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			Runnable spillOutputObserver, Runnable beforeReaderClose, LmdbStoreFormat format) throws IOException {
 		long largestSpillOutputBytes = List.of(BulkArtifact.VALUE_RECORDS, BulkArtifact.VALUE_HASHES,
 				BulkArtifact.VALUE_REFERENCE_COUNTS, BulkArtifact.TRIPLE_TERMS).stream()
 				.mapToLong(artifact -> BulkLz4.mergeOutputMemoryBytes(compression.codecFor(artifact)))
@@ -113,7 +131,8 @@ final class ValueStoreBulkRecords {
 				}
 				byte[] data = switch (value) {
 				case IRI iri -> ValueStoreRecordCodec.iriData(iri, dependencyIds[0]);
-				case Literal literal -> ValueStoreRecordCodec.literalData(literal, dependencyIds[0], true);
+				case Literal literal -> ValueStoreRecordCodec.literalData(literal, dependencyIds[0],
+						format.usesCanonicalLanguageTags());
 				case BNode bNode -> ValueStoreRecordCodec.bnodeData(bNode);
 				default -> throw new IOException("Unsupported persisted value type " + value.getClass().getName());
 				};

@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 final class InlineValueCodec {
 
@@ -23,17 +23,14 @@ final class InlineValueCodec {
 	}
 
 	static long tryEncode(Value value, LmdbStoreConfig config) {
-		if (!config.getInlineLiterals() || !(value instanceof Literal literal)) {
+		return tryEncode(value, LmdbStoreFormat.forNewStore(config));
+	}
+
+	static long tryEncode(Value value, LmdbStoreFormat format) {
+		if (!(value instanceof Literal literal)) {
 			return 0L;
 		}
-		try {
-			long id = Values.packLiteral(literal, config.getOrderedNumericIds());
-			if (id != 0L && Values.unpackLiteral(id, SimpleValueFactory.getInstance()).equals(literal)) {
-				return id;
-			}
-		} catch (IllegalArgumentException e) {
-			// Invalid or out-of-range lexical forms use ordinary ValueStore records.
-		}
-		return 0L;
+		long id = format.tryInline(literal);
+		return id == LmdbValue.UNKNOWN_ID ? 0L : id;
 	}
 }

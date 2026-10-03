@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -41,13 +44,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
  * UUID()/BNODE(), or observing injected bindings): the right operand is evaluated exactly once with the join-entry
  * bindings and its solutions are replayed against every left solution with compatible-mapping merging. A left solution
  * with no compatible candidate satisfying the condition is emitted unextended, exactly per {@code Diff} (a condition
- * error counts as not satisfied — a row-local outcome). The right operand is materialized before the left operand is
- * consumed, so its query-fatal errors surface even when the left operand is empty.
+ * error counts as not satisfied — a row-local outcome). By default rows are captured lazily in a sequential replay map;
+ * normal exhaustion still observes right-side fatal errors when the left operand is empty.
  * <p>
- * The right-side index is created by the query's configured {@link CollectionFactory}; its map controls whether records
- * stay in memory or use the configured disk-backed policy. For each left row, the index streams candidates from the
- * smallest posting for a bound shared variable and checks the remaining shared bindings without materializing a
- * candidate list.
+ * Replay storage is created by the query's configured {@link CollectionFactory}; its map controls whether records stay
+ * in memory or use the configured disk-backed policy. For each left row, the index streams candidates from the smallest
+ * posting for a bound shared variable and checks the remaining shared bindings without materializing a candidate list.
  */
 @Experimental
 public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSet> implements CooperativeCancellation {
@@ -59,6 +61,7 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	private final boolean leftJoin;
 	private final List<String> sharedBindingNames;
 	private final Supplier<CollectionFactory> collectionFactorySupplier;
+	private final boolean indexedReplay;
 	private final Object lifecycleLock = new Object();
 
 	private volatile CloseableIteration<BindingSet> leftIter;
@@ -94,6 +97,13 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin, List<String> sharedBindingNames,
 			Supplier<CollectionFactory> collectionFactorySupplier) {
+		this(left, right, condition, bindings, leftJoin, sharedBindingNames, collectionFactorySupplier,
+				QueryExecutionPolicy.DEFAULT);
+	}
+
+	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin, List<String> sharedBindingNames,
+			Supplier<CollectionFactory> collectionFactorySupplier, QueryExecutionPolicy policy) {
 		this.left = left;
 		this.right = right;
 		this.condition = condition;
@@ -101,6 +111,7 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 		this.leftJoin = leftJoin;
 		this.sharedBindingNames = List.copyOf(sharedBindingNames);
 		this.collectionFactorySupplier = collectionFactorySupplier;
+		this.indexedReplay = policy.experimentalQueryOptimizations();
 	}
 
 	@Override
@@ -120,11 +131,14 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 					return null;
 				}
 				if (currentLeft == null) {
+					publishActive(leftIter);
 					boolean hasNext = leftIter.hasNext();
 					if (stopIfCancelled()) {
 						return null;
 					}
 					if (!hasNext) {
+						// Normal exhaustion must still observe fatal errors from an independent right operand.
+						resources.drain(false);
 						return null;
 					}
 					BindingSet nextLeft = leftIter.next();
@@ -132,7 +146,7 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 						return null;
 					}
 					currentLeft = nextLeft;
-					candidateRows = resources.index.candidateRows(currentLeft);
+					candidateRows = resources.candidateRows(currentLeft);
 					currentLeftMatched = false;
 				}
 				while (candidateRows.hasNext()) {
@@ -182,18 +196,19 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	}
 
 	private void initialize() {
-		// Evaluate the right operand exactly once, before consuming the left operand: the algebra evaluates
-		// each operand independently, and materializing first also surfaces the right operand's query-fatal
-		// errors even when the left operand is empty. Solutions are snapshotted because producers may reuse
-		// mutable row objects.
+		// Open each independent operand once. The experimental profile eagerly indexes the right operand;
+		// the default profile captures it as rows are requested. Both snapshot reusable producer rows.
 		if (stopIfCancelled()) {
 			return;
 		}
-		ReplayResources createdResources = new ReplayResources(collectionFactorySupplier.get(), sharedBindingNames);
+		ReplayResources createdResources = new ReplayResources(collectionFactorySupplier.get(), sharedBindingNames,
+				indexedReplay);
 		boolean published = false;
 		Throwable primaryFailure = null;
 		try {
-			try (CloseableIteration<BindingSet> rightIter = right.evaluate(bindings)) {
+			CloseableIteration<BindingSet> rightIter = right.evaluate(bindings);
+			createdResources.rightIter = rightIter;
+			if (indexedReplay) {
 				if (!publishActive(rightIter)) {
 					return;
 				}
@@ -201,23 +216,7 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 					if (stopIfCancelled()) {
 						return;
 					}
-					while (true) {
-						if (stopIfCancelled()) {
-							return;
-						}
-						boolean hasNext = rightIter.hasNext();
-						if (stopIfCancelled()) {
-							return;
-						}
-						if (!hasNext) {
-							break;
-						}
-						BindingSet row = rightIter.next();
-						if (stopIfCancelled()) {
-							return;
-						}
-						createdResources.index.add(row);
-					}
+					createdResources.drain(true);
 				} finally {
 					detachActive(rightIter);
 				}
@@ -245,15 +244,9 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			throw failure;
 		} finally {
 			if (!published) {
-				try {
-					createdResources.close();
-				} catch (RuntimeException | Error closeFailure) {
-					if (primaryFailure == null) {
-						throw closeFailure;
-					}
-					if (closeFailure != primaryFailure) {
-						primaryFailure.addSuppressed(closeFailure);
-					}
+				Throwable failure = createdResources.close(primaryFailure);
+				if (primaryFailure == null) {
+					throwCloseFailure(failure);
 				}
 			}
 		}
@@ -313,6 +306,7 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	}
 
 	private void closeAfterFailure(Throwable failure) {
+		closeOwnedResources(failure);
 		try {
 			close();
 		} catch (Throwable closeFailure) {
@@ -346,6 +340,10 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 
 	@Override
 	protected void handleClose() {
+		throwCloseFailure(closeOwnedResources(null));
+	}
+
+	private Throwable closeOwnedResources(Throwable failure) {
 		CloseableIteration<BindingSet> iteration;
 		ReplayResources currentResources;
 		synchronized (lifecycleLock) {
@@ -361,43 +359,35 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			currentResources = resources;
 			resources = null;
 		}
-		RuntimeException runtimeFailure = null;
-		Error errorFailure = null;
 		if (iteration != null) {
 			try {
 				iteration.close();
-			} catch (RuntimeException e) {
-				runtimeFailure = e;
-			} catch (Error e) {
-				errorFailure = e;
+			} catch (RuntimeException | Error closeFailure) {
+				failure = combineFailures(failure, closeFailure);
 			}
 		}
 		if (currentResources != null) {
-			try {
-				currentResources.close();
-			} catch (RuntimeException e) {
-				if (errorFailure != null) {
-					errorFailure.addSuppressed(e);
-				} else if (runtimeFailure != null) {
-					runtimeFailure.addSuppressed(e);
-				} else {
-					runtimeFailure = e;
-				}
-			} catch (Error e) {
-				if (errorFailure != null) {
-					errorFailure.addSuppressed(e);
-				} else if (runtimeFailure != null) {
-					runtimeFailure.addSuppressed(e);
-				} else {
-					errorFailure = e;
-				}
-			}
+			failure = currentResources.close(failure);
 		}
-		if (errorFailure != null) {
-			throw errorFailure;
+		return failure;
+	}
+
+	private static Throwable combineFailures(Throwable primary, Throwable secondary) {
+		if (primary == null) {
+			return secondary;
 		}
-		if (runtimeFailure != null) {
+		if (secondary != null && secondary != primary) {
+			primary.addSuppressed(secondary);
+		}
+		return primary;
+	}
+
+	private static void throwCloseFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeFailure) {
 			throw runtimeFailure;
+		}
+		if (failure instanceof Error errorFailure) {
+			throw errorFailure;
 		}
 	}
 
@@ -414,20 +404,20 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 		return true;
 	}
 
-	private static final class ReplayResources {
+	private final class ReplayResources {
 		private final CollectionFactory collectionFactory;
 		private final BindingSetCompatibilityIndex index;
+		private final Map<Long, BindingSet> sequentialRows;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		private CloseableIteration<BindingSet> rightIter;
+		private long rowCount;
+		private boolean rightExhausted;
 
-		private ReplayResources(CollectionFactory collectionFactory, List<String> sharedBindingNames) {
+		private ReplayResources(CollectionFactory collectionFactory, List<String> sharedBindingNames, boolean indexed) {
 			this.collectionFactory = collectionFactory;
-			this.index = createIndex(collectionFactory, sharedBindingNames);
-		}
-
-		private static BindingSetCompatibilityIndex createIndex(CollectionFactory collectionFactory,
-				List<String> sharedBindingNames) {
 			try {
-				return collectionFactory.createBindingSetCompatibilityIndex(sharedBindingNames);
+				this.index = indexed ? collectionFactory.createBindingSetCompatibilityIndex(sharedBindingNames) : null;
+				this.sequentialRows = indexed ? null : collectionFactory.createMap();
 			} catch (RuntimeException | Error failure) {
 				try {
 					collectionFactory.close();
@@ -440,30 +430,115 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			}
 		}
 
-		private void close() {
+		private Iterator<BindingSet> candidateRows(BindingSet leftRow) {
+			if (index != null) {
+				return index.candidateRows(leftRow);
+			}
+			return new Iterator<>() {
+				private long position;
+
+				@Override
+				public boolean hasNext() {
+					return position < rowCount || readNext();
+				}
+
+				@Override
+				public BindingSet next() {
+					if (!hasNext()) {
+						throw new NoSuchElementException();
+					}
+					return sequentialRows.get(position++);
+				}
+			};
+		}
+
+		private boolean readNext() {
+			return readNext(true);
+		}
+
+		private boolean readNext(boolean retainRows) {
+			if (rightExhausted || closed.get() || cancellationRequested) {
+				return false;
+			}
+			CloseableIteration<BindingSet> iteration;
+			synchronized (lifecycleLock) {
+				iteration = rightIter;
+			}
+			if (iteration == null || !publishActive(iteration)) {
+				return false;
+			}
+			try {
+				boolean hasNext = iteration.hasNext();
+				if (cancellationRequested || closed.get()) {
+					return false;
+				}
+				if (!hasNext) {
+					rightExhausted = true;
+					closeRight();
+					return false;
+				}
+				BindingSet row = iteration.next();
+				if (cancellationRequested || closed.get()) {
+					return false;
+				}
+				if (retainRows) {
+					if (index != null) {
+						index.add(row);
+					} else {
+						sequentialRows.put(rowCount++, new QueryBindingSet(row));
+					}
+				}
+				return true;
+			} finally {
+				detachActive(iteration);
+			}
+		}
+
+		private void drain(boolean retainRows) {
+			while (readNext(retainRows)) {
+				// The same stream feeds either the eager index or the lazy sequential replay map.
+			}
+		}
+
+		private void closeRight() {
+			CloseableIteration<BindingSet> iteration;
+			synchronized (lifecycleLock) {
+				iteration = rightIter;
+				rightIter = null;
+				if (activeIteration == iteration) {
+					activeIteration = null;
+				}
+			}
+			if (iteration != null) {
+				iteration.close();
+			}
+		}
+
+		private Throwable close(Throwable failure) {
 			if (closed.compareAndSet(false, true)) {
-				Throwable failure = null;
 				try {
-					index.close();
+					closeRight();
 				} catch (RuntimeException | Error closeFailure) {
-					failure = closeFailure;
+					failure = combineFailures(failure, closeFailure);
+				}
+				Throwable spoolFailure = null;
+				try {
+					if (index != null) {
+						index.close();
+					} else {
+						sequentialRows.clear();
+					}
+				} catch (RuntimeException | Error closeFailure) {
+					spoolFailure = closeFailure;
 				}
 				try {
 					collectionFactory.close();
 				} catch (RuntimeException | Error closeFailure) {
-					if (failure == null) {
-						failure = closeFailure;
-					} else if (failure != closeFailure) {
-						failure.addSuppressed(closeFailure);
-					}
+					spoolFailure = combineFailures(spoolFailure, closeFailure);
 				}
-				if (failure instanceof RuntimeException runtimeFailure) {
-					throw runtimeFailure;
-				}
-				if (failure instanceof Error errorFailure) {
-					throw errorFailure;
-				}
+				failure = combineFailures(failure, spoolFailure);
 			}
+			return failure;
 		}
 	}
 }

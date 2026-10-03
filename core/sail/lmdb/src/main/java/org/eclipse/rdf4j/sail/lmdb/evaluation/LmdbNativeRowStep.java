@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -472,7 +473,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
 		return source instanceof SyntheticValueSource ? evaluationSource(bindings)
-				: SyntheticValueSource.forEvaluation(source);
+				: SyntheticValueSource.forEvaluation(source, queryExecutionPolicy());
 	}
 
 	/**
@@ -549,11 +550,20 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	NativeLmdbQuerySource evaluationSource(BindingSet bindings) {
 		return source instanceof SyntheticValueSource synthetic
 				? synthetic.forEvaluation(generatedKeys, layout, bindings)
-				: source;
+				: queryExecutionPolicy().experimentalQueryOptimizations()
+						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
+						: source;
 	}
 
 	NativeLmdbQuerySource evaluationSource() {
-		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation()
+				: queryExecutionPolicy().experimentalQueryOptimizations()
+						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
+						: source;
+	}
+
+	private QueryExecutionPolicy queryExecutionPolicy() {
+		return strategy == null ? QueryExecutionPolicy.DEFAULT : strategy.getQueryExecutionPolicy();
 	}
 
 	@Override

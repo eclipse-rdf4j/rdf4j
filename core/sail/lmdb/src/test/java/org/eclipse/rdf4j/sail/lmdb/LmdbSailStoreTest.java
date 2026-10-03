@@ -435,6 +435,7 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testExplainExecutedShowsIndexName() {
+		useNativeEvaluationForThisTest();
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			conn.add(F.createIRI("urn:materialize"), F.createIRI("urn:materialize-predicate"),
@@ -449,8 +450,9 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexUsesPsocNaturalOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
-				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
+		LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, config));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -503,8 +505,9 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexUsesPoscNaturalOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
-				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
+		LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, config));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -544,8 +547,9 @@ public class LmdbSailStoreTest {
 
 	@Test
 	public void testOrderByLmdbIndexPreservesJoinOrder(@TempDir File orderedDataDir) {
-		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir,
-				new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true)));
+		LmdbStoreConfig config = new LmdbStoreConfig("psoc,posc").setNativeEvaluationEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		Repository orderedRepo = new SailRepository(new LmdbStore(orderedDataDir, config));
 		orderedRepo.init();
 
 		IRI s3 = F.createIRI("urn:s3");
@@ -724,6 +728,7 @@ public class LmdbSailStoreTest {
 	private void useNativeEvaluationForThisTest(boolean directAdjacencyEnabled) {
 		repo.shutDown();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
 		if (directAdjacencyEnabled) {
 			config.setDirectAdjacencyEnabled(true);
 		}
@@ -1522,6 +1527,7 @@ public class LmdbSailStoreTest {
 	@Test
 	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
 		setBulkOperationSize(config, 2);
 		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
 		sail.init();

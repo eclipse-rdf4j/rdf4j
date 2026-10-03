@@ -102,22 +102,30 @@ class LmdbStoreConnectionValueMaterializationTest {
 		List<BindingSet> assignmentRows = new ArrayList<>();
 		assignment.getBindingSets().forEach(assignmentRows::add);
 
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		// Exercise the optional buffering path; prepared VALUES rows preserve binding values, not caller row identity.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
 		store.init();
 		try (SailConnection connection = store.getConnection();
 				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
 						EmptyBindingSet.getInstance(), false)) {
-			assertSame(assignmentRows.get(0), result.next());
+			assertEquivalentPreparedRow(assignmentRows.get(0), result.next());
 			assertEquals(List.of("first"), materialized);
 
-			assertSame(assignmentRows.get(1), result.next());
+			assertEquivalentPreparedRow(assignmentRows.get(1), result.next());
 			assertEquals(List.of("first", "id10", "id20", "id30"), materialized);
-			assertSame(assignmentRows.get(2), result.next());
-			assertSame(assignmentRows.get(3), result.next());
+			assertEquivalentPreparedRow(assignmentRows.get(2), result.next());
+			assertEquivalentPreparedRow(assignmentRows.get(3), result.next());
 			assertFalse(result.hasNext());
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	private static void assertEquivalentPreparedRow(BindingSet expected, BindingSet actual) {
+		assertEquals(expected, actual);
+		assertSame(expected.getValue("value"), actual.getValue("value"));
 	}
 
 	private static RecordingLmdbValue value(String name, long id, ValueStoreRevision revision,

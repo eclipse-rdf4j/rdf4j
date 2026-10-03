@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -1036,7 +1037,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
-		new QueryJoinOptimizer(new BindingSetPlacementStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+		new QueryJoinOptimizer(new BindingSetPlacementStatistics(), false, new EmptyTripleSource(),
+				QueryExecutionPolicy.EXPERIMENTAL).optimize(root, null, null);
 
 		List<String> order = joinArgs(new JoinFinder().find(root)).stream()
 				.map(QueryJoinOptimizerTest::joinArgKey)

@@ -1,9 +1,0 @@
-Description: Add a scheduler-aware dictionary entry scan that keeps its reader accounted while a compressed output is opened from the consumer.
-
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ValueStoreBulkRecordsTest#dictionaryReaderAndOutputShareTheActiveResourceEnvelope
-Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ValueStoreBulkRecordsTest.txt
-Snippet:
-Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.425 s
-ValueStoreBulkRecordsTest.dictionaryReaderAndOutputShareTheActiveResourceEnvelope: UnsupportedOperationException: scheduler-aware dictionary entry iteration is not implemented
-Full log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T233512.977628Z-66319-9b4907a6/verify.log

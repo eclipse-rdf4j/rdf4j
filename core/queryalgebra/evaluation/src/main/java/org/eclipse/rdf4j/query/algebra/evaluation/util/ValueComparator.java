@@ -16,6 +16,7 @@ import java.lang.ref.WeakReference;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 
 import javax.xml.datatype.DatatypeConstants;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
@@ -43,6 +45,15 @@ public class ValueComparator implements Comparator<Value> {
 			.withInitial(CalendarSortKeyCache::new);
 
 	private boolean strict = true;
+	private final boolean exactCalendarTies;
+
+	public ValueComparator() {
+		this(QueryExecutionPolicy.DEFAULT);
+	}
+
+	public ValueComparator(QueryExecutionPolicy policy) {
+		exactCalendarTies = Objects.requireNonNull(policy).experimentalQueryOptimizations();
+	}
 
 	@Override
 	public int compare(Value o1, Value o2) {
@@ -156,7 +167,7 @@ public class ValueComparator implements Comparator<Value> {
 		CalendarSortKeyCache cache = CALENDAR_SORT_KEY_CACHE.get();
 		CalendarSortKey left = cache.get(leftLit, leftDatatype);
 		CalendarSortKey right = cache.get(rightLit, rightDatatype);
-		return strict ? left.compareStrict(right) : left.compareStandard(right);
+		return strict ? left.compareStrict(right, exactCalendarTies) : left.compareStandard(right, exactCalendarTies);
 	}
 
 	private static final class CalendarSortKey {
@@ -300,7 +311,7 @@ public class ValueComparator implements Comparator<Value> {
 			return CalendarBoundary.from(copy.normalize());
 		}
 
-		private int compareStrict(CalendarSortKey right) {
+		private int compareStrict(CalendarSortKey right, boolean exactTies) {
 			int result = Integer.compare(datatypeRank, right.datatypeRank);
 			if (result != 0) {
 				return result;
@@ -312,10 +323,10 @@ public class ValueComparator implements Comparator<Value> {
 			if (!valid) {
 				return compareInvalid(right);
 			}
-			return compareValidBody(right);
+			return compareValidBody(right, exactTies);
 		}
 
-		private int compareStandard(CalendarSortKey right) {
+		private int compareStandard(CalendarSortKey right, boolean exactTies) {
 			int result = compareValidity(right);
 			if (result != 0) {
 				return result;
@@ -328,7 +339,7 @@ public class ValueComparator implements Comparator<Value> {
 			if (result != 0) {
 				return result;
 			}
-			return compareValidBody(right);
+			return compareValidBody(right, exactTies);
 		}
 
 		private int compareValidity(CalendarSortKey right) {
@@ -346,10 +357,13 @@ public class ValueComparator implements Comparator<Value> {
 			return result;
 		}
 
-		private int compareValidBody(CalendarSortKey right) {
+		private int compareValidBody(CalendarSortKey right, boolean exactTies) {
 			int result = compareBoundary(lowerUtc, right.lowerUtc);
 			if (result == 0) {
 				result = compareBoundary(upperUtc, right.upperUtc);
+			}
+			if (!exactTies) {
+				return result;
 			}
 			if (result == 0) {
 				result = Integer.compare(datatypeRank, right.datatypeRank);

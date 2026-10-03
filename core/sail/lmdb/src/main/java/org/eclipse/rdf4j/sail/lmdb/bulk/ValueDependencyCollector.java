@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -42,6 +43,21 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * objects on its hot path.
  */
 final class ValueDependencyCollector implements AutoCloseable {
+
+	static ValueDependencyBuckets collect(CanonicalStagedInput staged, Path workspace, int partitionCount,
+			int maxOpenFiles, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
+		return collect(staged, workspace, partitionCount, maxOpenFiles, LmdbStoreFormat.forNewStore(config),
+				compression, cancellationSignal);
+	}
+
+	static ValueDependencyBuckets collect(CanonicalStagedInput staged, Path workspace, int partitionCount,
+			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, PartitionConcurrencyController controller)
+			throws IOException {
+		return collect(staged, workspace, partitionCount, maxOpenFiles, memoryBudgetBytes,
+				LmdbStoreFormat.forNewStore(config), compression, cancellationSignal, scheduler, controller);
+	}
 
 	private static final int CACHE_CAPACITY = 16_384;
 	private static final int MAX_CACHEABLE_KEY_BYTES = 512;
@@ -63,7 +79,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 
 	private final Path directory;
 	private final int partitionCount;
-	private final LmdbStoreConfig config;
+	private final LmdbStoreFormat config;
 	private final BooleanSupplier cancellationSignal;
 	private final BulkCompression compression;
 	private final BoundedBucketOutputLimiter outputs;
@@ -75,7 +91,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 	private DataOutputStream chunkOutput;
 	private long chunkOutputRecords;
 
-	private ValueDependencyCollector(Path directory, int partitionCount, int maxOpenFiles, LmdbStoreConfig config,
+	private ValueDependencyCollector(Path directory, int partitionCount, int maxOpenFiles, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
 		this(directory, partitionCount, maxOpenFiles, 0L, config, compression, cancellationSignal, null, -1, -1L,
 				CACHE_CAPACITY, MAX_CACHEABLE_KEY_BYTES);
@@ -83,7 +99,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 
 	private ValueDependencyCollector(Path directory, int partitionCount, int maxOpenOutputs,
 			long outputBufferBudgetBytes,
-			LmdbStoreConfig config, BulkCompression compression, BooleanSupplier cancellationSignal,
+			LmdbStoreFormat config, BulkCompression compression, BooleanSupplier cancellationSignal,
 			BulkTaskScheduler scheduler, int sourcePartition, long chunkOrdinal, int cacheCapacity,
 			int maxCacheableKeyBytes) throws IOException {
 		this.compression = compression;
@@ -102,7 +118,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 	}
 
 	static ValueDependencyBuckets collect(CanonicalStagedInput staged, Path workspace, int partitionCount,
-			int maxOpenFiles, LmdbStoreConfig config, BulkCompression compression,
+			int maxOpenFiles, LmdbStoreFormat config, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
 		Path directory = workspace.resolve("dependency-buckets");
 		try (ValueDependencyCollector collector = new ValueDependencyCollector(directory, partitionCount, maxOpenFiles,
@@ -117,7 +133,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 	}
 
 	static ValueDependencyBuckets collect(CanonicalStagedInput staged, Path workspace, int partitionCount,
-			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreFormat config, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, PartitionConcurrencyController controller)
 			throws IOException {
 		Objects.requireNonNull(staged, "staged");
@@ -226,7 +242,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 	}
 
 	private static ValueDependencyBuckets collectSerialWithScheduler(CanonicalStagedInput staged, Path directory,
-			int partitionCount, int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config,
+			int partitionCount, int maxOpenFiles, long memoryBudgetBytes, LmdbStoreFormat config,
 			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler)
 			throws IOException {
 		BulkCodec inputCodec = compression.codecFor(BulkArtifact.STAGED_VALUES);
@@ -662,7 +678,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 		private final int partitionCount;
 		private final int maxOpenFiles;
 		private final long memoryBudgetBytes;
-		private final LmdbStoreConfig config;
+		private final LmdbStoreFormat config;
 		private final BulkCompression compression;
 		private final BooleanSupplier cancellationSignal;
 		private final BulkTaskScheduler scheduler;
@@ -682,7 +698,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 		private boolean closed;
 
 		private AdaptiveDependencySource(CanonicalStagedInput staged, Path directory, int partitionCount,
-				int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+				int maxOpenFiles, long memoryBudgetBytes, LmdbStoreFormat config, BulkCompression compression,
 				BooleanSupplier cancellationSignal,
 				BulkTaskScheduler scheduler, PartitionConcurrencyController controller) {
 			this.staged = staged;

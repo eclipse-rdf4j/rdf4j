@@ -780,6 +780,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
+		LmdbStore initialized = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		initialized.init();
+		initialized.shutDown();
 		writeLegacySnapshot(dataDir.toPath().resolve(SNAPSHOT_FILE));
 
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
@@ -808,9 +811,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes)
+		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)

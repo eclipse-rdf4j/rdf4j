@@ -252,7 +252,7 @@ public class ValueStoreTest {
 				Value value = SimpleValueFactory.getInstance().createBNode("historical-free-list-" + i);
 				Value[] input = { value };
 				values.add(value);
-				valueStore.reservePreparedValueCapacity(session, input);
+				valueStore.reservePreparedValueClosureCapacity(session, input);
 				valueStore.startTransaction(true);
 				ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, input);
 				ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);

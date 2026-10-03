@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -72,7 +73,7 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 
 	@Test
 	void testDistinctUsesPartitionedIteratorForVisibleStableOrder() {
-		EvaluationStrategy strategy = createStrategy();
+		EvaluationStrategy strategy = createExperimentalStrategy();
 		TupleExpr tupleExpr = parse("select distinct ?type where { ?a a ?type. }");
 
 		strategy.optimize(tupleExpr, new EvaluationStatistics(), EmptyBindingSet.getInstance());
@@ -95,7 +96,7 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 	 */
 	@Test
 	void testPartitionedDistinctReEvaluationOwnsItsCollectionFactory() {
-		EvaluationStrategy strategy = createStrategy();
+		EvaluationStrategy strategy = createExperimentalStrategy();
 		java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
 		strategy.setCollectionFactory(() -> {
 			created.incrementAndGet();
@@ -139,7 +140,7 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 
 	@Test
 	void testReducedUsesPartitionedIteratorForVisibleStableOrder() {
-		EvaluationStrategy strategy = createStrategy();
+		EvaluationStrategy strategy = createExperimentalStrategy();
 		Reduced reduced = new Reduced(((Distinct) findNode(parse("select distinct ?type where { ?a a ?type. }"),
 				Distinct.class)).getArg().clone());
 
@@ -184,7 +185,7 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 
 	@Test
 	void testRepeatedPrecompileKeepsOrderedJoinAnchorOnLeft() {
-		EvaluationStrategy strategy = createStrategy();
+		EvaluationStrategy strategy = createExperimentalStrategy();
 		TupleExpr tupleExpr = parse("select distinct ?a ?parent where { ?type <urn:parent> ?parent. ?a a ?type. }");
 
 		strategy.optimize(tupleExpr, new EvaluationStatistics(), EmptyBindingSet.getInstance());
@@ -213,6 +214,15 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 	private EvaluationStrategy createStrategy(TripleSource tripleSource) {
 		return new LmdbNativeEvaluationStrategyFactory(null).createEvaluationStrategy(null, tripleSource,
 				new EvaluationStatistics());
+	}
+
+	private EvaluationStrategy createExperimentalStrategy() {
+		return createExperimentalStrategy(new OrderedDuplicateTripleSource());
+	}
+
+	private EvaluationStrategy createExperimentalStrategy(TripleSource tripleSource) {
+		return new LmdbNativeEvaluationStrategyFactory(null).createEvaluationStrategy(null, tripleSource,
+				new EvaluationStatistics(), QueryExecutionPolicy.EXPERIMENTAL);
 	}
 
 	private TupleExpr parse(String query) {

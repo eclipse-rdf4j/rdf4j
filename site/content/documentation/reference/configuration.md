@@ -195,6 +195,25 @@ Base Sail implementations are responsible for persistence of data and handling o
 Base Sails commonly take the following parameter:
 
 - `config:sail.defaultQueryEvaluationMode` (string). Specifies the default query evaluation mode used for SPARQL queries on this store. Expected values are `STRICT` or `STANDARD`. 
+- `config:sail.experimentalQueryOptimizations` (boolean, default `false`). Enables optional query planning, learned
+  estimates, additional shared ordered access, seek hints, eager indexed replay and extra calendar exact-term ordering
+  ties. Existing backend ordering and explicitly enabled native-engine physical operators remain available. Correctness
+  fixes remain active with either setting. Configure this before repository initialization; changing it requires a repository
+  restart. JVM tuning properties do not enable this profile. The legacy predicate is
+  `http://www.openrdf.org/config/sail/base#experimentalQueryOptimizations`.
+
+For example, add the option to the base Sail configuration node:
+
+```turtle
+@prefix config: <tag:rdf4j.org,2023:config/> .
+
+[] config:sail.type "openrdf:MemoryStore" ;
+   config:sail.experimentalQueryOptimizations true .
+```
+
+Java applications can call `store.setExperimentalQueryOptimizations(true)` before initializing a MemoryStore,
+NativeStore, ElasticsearchStore or LMDB store. The corresponding `BaseSailConfig` setting also applies when a repository
+manager creates the store. Custom evaluation strategies must support the experimental policy explicitly to accept it.
 
 #### Memory Store
 

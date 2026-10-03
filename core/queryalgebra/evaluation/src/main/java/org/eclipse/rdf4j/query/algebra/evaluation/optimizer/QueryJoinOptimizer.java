@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -120,6 +121,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
+	private final boolean experimental;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
 		this(statistics, false, new EmptyTripleSource());
@@ -134,9 +136,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource) {
+		this(statistics, trackResultSize, tripleSource, QueryExecutionPolicy.DEFAULT);
+	}
+
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize, TripleSource tripleSource,
+			QueryExecutionPolicy policy) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
+		this.experimental = policy.experimentalQueryOptimizations();
 	}
 
 	/**
@@ -265,8 +273,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// ordinary statement that will consume a priority result.
 				Set<String> ordinaryEntryBoundVars = new HashSet<>(boundVars);
 				for (TupleExpr priorityArg : priorityArgs) {
-					addComputedPriorityBindings(priorityArg);
-					addProjectedConstantPrefixedBindings(priorityArg);
+					if (experimental) {
+						addComputedPriorityBindings(priorityArg);
+						addProjectedConstantPrefixedBindings(priorityArg);
+					} else {
+						boundVars.addAll(getBindingInfo(priorityArg).guaranteedOutput);
+					}
 					ordinaryEntryBoundVars.addAll(getBindingInfo(priorityArg).guaranteedOutput);
 				}
 
@@ -327,7 +339,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
 					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs, ordinaryEntryBoundVars);
 				}
-				orderedJoinArgs = placeBindingSetAssignments(orderedJoinArgs, ordinaryEntryBoundVars);
+				if (experimental) {
+					orderedJoinArgs = placeBindingSetAssignments(orderedJoinArgs, ordinaryEntryBoundVars);
+				}
 
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
@@ -357,7 +371,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						supportedOrders.retainAll(right.getSupportedOrders(tripleSource));
 
 						if (supportedOrders.isEmpty() || joinOnMultipleVars(left, right)
-								|| usesRuntimeBoundVars(initialBoundVars, left, right)
+								|| (experimental && usesRuntimeBoundVars(initialBoundVars, left, right))
 								|| joinSizeIsTooDifferent(
 										Math.max(cardinality, left.getResultSizeEstimate()),
 										right.getResultSizeEstimate())) {
@@ -575,7 +589,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Deque<TupleExpr> ret = new ArrayDeque<>();
 			Set<String> prefixBindingNames = new HashSet<>(entryBoundVars);
 			for (TupleExpr tupleExpr : orderedJoinArgs) {
-				if (tupleExpr instanceof BindingSetAssignment assignment && bindingSetCountUpToTwo(assignment) > 1) {
+				if (experimental && tupleExpr instanceof BindingSetAssignment assignment
+						&& bindingSetCountUpToTwo(assignment) > 1) {
 					prefixBindingNames.addAll(getBindingInfo(assignment).guaranteedOutput);
 				}
 			}
@@ -867,7 +882,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> primary = new ArrayList<>();
 			for (TupleExpr candidate : candidates) {
-				if (usesExistingBinding(candidate, ((StatementPattern) candidate).getVarList(), existingBindings)) {
+				if (experimental
+						&& usesExistingBinding(candidate, ((StatementPattern) candidate).getVarList(),
+								existingBindings)) {
 					primary.add(candidate);
 				}
 			}
@@ -2094,7 +2111,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				TupleExpr right, Join join, Set<String> runtimeBoundVars) {
 			if (!orderedJoinArgs.isEmpty()
 					&& !supportedOrders.isEmpty() && !joinOnMultipleVars(left, right)
-					&& !usesRuntimeBoundVars(runtimeBoundVars, left, right)
+					&& (!experimental || !usesRuntimeBoundVars(runtimeBoundVars, left, right))
 					&& !joinSizeIsTooDifferent(left.getResultSizeEstimate(), right.getResultSizeEstimate())
 					&& left instanceof StatementPattern && right instanceof StatementPattern) {
 

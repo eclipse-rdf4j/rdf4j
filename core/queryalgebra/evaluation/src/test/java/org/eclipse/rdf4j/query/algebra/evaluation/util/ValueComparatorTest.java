@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -207,21 +208,41 @@ public class ValueComparatorTest {
 		Literal sameInstantDifferentOffset = vf.createLiteral("1999-12-31T19:00:00-05:00", XSD.DATETIME);
 		Literal sameInstantDifferentDatatype = vf.createLiteral("2000-01-01T00:00:00Z", XSD.DATETIMESTAMP);
 
-		for (boolean strict : new boolean[] { true, false }) {
-			cmp.setStrict(strict);
-			assertEquals(0, cmp.compare(utc, sameLexicalForm),
-					"equal RDF terms must remain comparator-equal (strict=" + strict + ")");
-			int offsetOrder = Integer.signum(cmp.compare(utc, sameInstantDifferentOffset));
-			assertNotEquals(0, offsetOrder,
-					"different RDF terms denoting one instant need a deterministic tie-break (strict=" + strict + ")");
-			assertEquals(-offsetOrder, Integer.signum(cmp.compare(sameInstantDifferentOffset, utc)));
-		}
+		for (QueryExecutionPolicy policy : new QueryExecutionPolicy[] { QueryExecutionPolicy.DEFAULT,
+				QueryExecutionPolicy.EXPERIMENTAL }) {
+			for (boolean strict : new boolean[] { true, false }) {
+				ValueComparator comparator = new ValueComparator(policy);
+				comparator.setStrict(strict);
+				String profile = "policy=" + policy + ", strict=" + strict;
+				assertEquals(0, comparator.compare(utc, sameLexicalForm),
+						"equal RDF terms must remain comparator-equal (" + profile + ")");
 
-		cmp.setStrict(false);
-		int datatypeOrder = Integer.signum(cmp.compare(utc, sameInstantDifferentDatatype));
-		assertNotEquals(0, datatypeOrder,
-				"STANDARD comparison must tie-break equal dateTime/dateTimeStamp values by RDF term");
-		assertEquals(-datatypeOrder, Integer.signum(cmp.compare(sameInstantDifferentDatatype, utc)));
+				int offsetOrder = Integer.signum(comparator.compare(utc, sameInstantDifferentOffset));
+				if (policy == QueryExecutionPolicy.DEFAULT) {
+					assertEquals(0, offsetOrder,
+							"the default profile preserves value-equal calendar ties (" + profile + ")");
+				} else {
+					assertNotEquals(0, offsetOrder,
+							"the experimental profile deterministically orders distinct RDF terms (" + profile + ")");
+				}
+				assertEquals(-offsetOrder,
+						Integer.signum(comparator.compare(sameInstantDifferentOffset, utc)), profile);
+
+				int datatypeOrder = Integer.signum(comparator.compare(utc, sameInstantDifferentDatatype));
+				boolean datatypeTie = !strict && policy == QueryExecutionPolicy.DEFAULT;
+				if (datatypeTie) {
+					assertEquals(0, datatypeOrder,
+							"the default standard profile preserves equal cross-datatype calendar values (" + profile
+									+ ")");
+				} else {
+					assertNotEquals(0, datatypeOrder,
+							"the comparator must distinguish terms outside the default standard tie profile (" + profile
+									+ ")");
+				}
+				assertEquals(-datatypeOrder,
+						Integer.signum(comparator.compare(sameInstantDifferentDatatype, utc)), profile);
+			}
+		}
 	}
 
 	@Test

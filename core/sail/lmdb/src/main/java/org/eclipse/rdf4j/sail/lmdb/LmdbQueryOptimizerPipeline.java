@@ -71,6 +71,9 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
+		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics).getOptimizers();
+		}
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
 				new ConstantOptimizer(strategy),

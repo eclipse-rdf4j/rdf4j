@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -24,6 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
@@ -31,12 +34,116 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbNativeKernelHooksIdentityTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final int ADVERSARIAL_INDEX = 72;
 	private static final int SECOND_ADVERSARIAL_INDEX = 74;
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void parallelSourcesRetainCompileAndEvaluationPolicy(boolean experimental, boolean evaluationScoped)
+			throws IOException {
+		QueryExecutionPolicy policy = QueryExecutionPolicy.of(experimental);
+		NativeLmdbQuerySource delegate = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource.ParallelSource first = mock(NativeLmdbQuerySource.ParallelSource.class);
+		NativeLmdbQuerySource.ParallelSource second = mock(NativeLmdbQuerySource.ParallelSource.class);
+		Object storeIdSpace = new Object();
+		when(delegate.idSpace()).thenReturn(storeIdSpace);
+		when(first.idSpace()).thenReturn(storeIdSpace);
+		when(second.idSpace()).thenReturn(storeIdSpace);
+		when(delegate.openParallelSources(2)).thenReturn(new NativeLmdbQuerySource.ParallelSource[] { first, second });
+		SyntheticValueSource source = new SyntheticValueSource(delegate, PlanValueCatalog.EMPTY, policy);
+		if (evaluationScoped) {
+			source = source.forEvaluation();
+		}
+		try {
+			NativeLmdbQuerySource.ParallelSource[] workers = source.openParallelSources(2);
+			assertThat(workers).hasSize(2);
+			for (NativeLmdbQuerySource.ParallelSource worker : workers) {
+				SyntheticValueSource synthetic = (SyntheticValueSource) worker;
+				try {
+					assertThat(synthetic.queryExecutionPolicy).isSameAs(policy);
+					assertThat(synthetic.executionContext()).isSameAs(source.executionContext());
+					assertThat(synthetic.idSpace()).isSameAs(source.idSpace());
+				} finally {
+					worker.close();
+				}
+			}
+			verify(first).close();
+			verify(second).close();
+		} finally {
+			if (source.executionContext() != null) {
+				source.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void aggregateAndWorkerHooksInheritCalendarTiePolicy() {
+		Value utc = VF.createLiteral("2026-01-01T12:00:00Z", CoreDatatype.XSD.DATETIME);
+		Value offset = VF.createLiteral("2026-01-01T13:00:00+01:00", CoreDatatype.XSD.DATETIME);
+		CatalogValues values = catalogValues(utc, offset);
+		for (QueryExecutionPolicy policy : List.of(QueryExecutionPolicy.DEFAULT, QueryExecutionPolicy.EXPERIMENTAL)) {
+			for (boolean strict : List.of(false, true)) {
+				SyntheticValueSource source = new SyntheticValueSource(new CodecSource(), values.catalog, policy)
+						.forEvaluation();
+				RowState row = row(source);
+				LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+						new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+						new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+						new int[0], List.of());
+				LmdbNativeKernelHooks hooks = new LmdbNativeKernelHooks(row, bindings, bindings.filterHooks,
+						bindings.bindHooks, bindings.distinctExpected);
+				AggContext aggregate = new AggContext(source, strict);
+				try {
+					ValueComparator expected = new ValueComparator(policy);
+					expected.setStrict(strict);
+					int comparison = Integer.signum(expected.compare(utc, offset));
+					assertThat(Integer.signum(aggregate.comparator.compare(utc, offset))).isEqualTo(comparison);
+					assertThat(Integer.signum(hooks.compareValues(values.firstId, values.secondId)))
+							.isEqualTo(comparison);
+					assertThat(source.executionContext().queryExecutionPolicy).isSameAs(policy);
+					try (NativeExecutionContext child = new NativeExecutionContext(source.executionContext())) {
+						assertThat(child.queryExecutionPolicy).isSameAs(policy);
+					}
+					if (policy == QueryExecutionPolicy.DEFAULT) {
+						assertThat(comparison).isZero();
+					} else {
+						assertThat(comparison).isNotZero();
+					}
+				} finally {
+					aggregate.close();
+					close(hooks, row, source);
+				}
+			}
+		}
+	}
+
+	@Test
+	void nestedRawSourceInheritsTheActiveQueryPolicy() {
+		CodecSource rawSource = new CodecSource();
+		for (QueryExecutionPolicy policy : List.of(QueryExecutionPolicy.DEFAULT, QueryExecutionPolicy.EXPERIMENTAL)) {
+			SyntheticValueSource source = new SyntheticValueSource(rawSource, PlanValueCatalog.EMPTY, policy)
+					.forEvaluation();
+			try (SyntheticValueSource.EvaluationScope scope = SyntheticValueSource.attachEvaluation(source)) {
+				SyntheticValueSource nested = SyntheticValueSource.forEvaluation(rawSource);
+				try {
+					assertThat(nested.executionContext().queryExecutionPolicy).isSameAs(policy);
+					assertThat(nested).isSameAs(source);
+				} finally {
+					if (nested != source) {
+						nested.executionContext().close();
+					}
+				}
+			} finally {
+				source.executionContext().close();
+			}
+		}
+	}
 
 	@Test
 	void planSyntheticIdsWithOrderedIntegerBitsUseTheirRdfValuesForComparison() {

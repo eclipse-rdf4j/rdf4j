@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
@@ -55,6 +56,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** Owner of query-wide state; nested synthetic catalogs retain separate runtime-id maps but share this owner. */
 	private final NativeExecutionContext queryScopeOwner;
 	final boolean valueResolutionCacheEnabled;
+	final QueryExecutionPolicy queryExecutionPolicy;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
 	/** Lazily allocated: pure stored-ID executions never allocate a runtime interner or touch its hash tables. */
 	private volatile NativeRuntimeValueTable runtimeValues;
@@ -99,12 +101,18 @@ final class NativeExecutionContext implements AutoCloseable {
 	private int leaseCount;
 
 	NativeExecutionContext() {
+		this(QueryExecutionPolicy.DEFAULT);
+	}
+
+	NativeExecutionContext(QueryExecutionPolicy policy) {
 		this.queryScopeOwner = this;
+		this.queryExecutionPolicy = policy;
 		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent) {
 		this.queryScopeOwner = parent.queryScopeOwner;
+		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 	}
 

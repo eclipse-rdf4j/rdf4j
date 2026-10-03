@@ -59,8 +59,8 @@ class StoreProperties {
 	 * The key recording whether inlined literal ids were in use when the store was created. Unlike
 	 * {@link #NUMERIC_ID_ENCODING_KEY} this is not merely a writer gate: inlining changes how a value is IDENTIFIED, so
 	 * the two settings are not interchangeable within one store and reopening under the opposite one is refused. Absent
-	 * means a store written before this property existed; such a store is assumed to have used the historical default
-	 * (enabled), which cannot be distinguished from a store that deliberately disabled it.
+	 * means a store written before this property existed; the caller must supply its original configuration. The opener
+	 * does not persist that unrecorded assumption.
 	 */
 	static final String INLINE_LITERALS_KEY = "inline-literals";
 
@@ -72,7 +72,13 @@ class StoreProperties {
 
 	static final String CANONICAL_LANGUAGE_TAGS_LOWERCASE_V1 = "lowercase-v1";
 
+	/** Absent in existing stores: their .0/.00 dateTime literals must keep their dictionary identity. */
+	static final String DATE_TIME_ID_ENCODING_KEY = "date-time-id-encoding";
+
+	static final String DATE_TIME_ID_ENCODING_ZERO_FRACTION_V1 = "zero-fraction-v1";
+
 	protected final File propertiesFile;
+	private final Properties loadedProperties = new Properties();
 
 	protected String version;
 
@@ -87,6 +93,8 @@ class StoreProperties {
 	protected String inlineLiterals;
 
 	protected String canonicalLanguageTags;
+
+	protected String dateTimeIdEncoding;
 
 	protected boolean loaded;
 
@@ -114,12 +122,15 @@ class StoreProperties {
 				throw new IllegalStateException("Unable to load store properties from " + file, e);
 			}
 			version = properties.getProperty(VERSION_KEY);
+			loadedProperties.clear();
+			loadedProperties.putAll(properties);
 			tripleIndexes = properties.getProperty(INDEXES_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			numericIdEncoding = properties.getProperty(NUMERIC_ID_ENCODING_KEY);
 			literalReferenceEncoding = properties.getProperty(LITERAL_REFERENCE_ENCODING_KEY);
 			inlineLiterals = properties.getProperty(INLINE_LITERALS_KEY);
 			canonicalLanguageTags = properties.getProperty(CANONICAL_LANGUAGE_TAGS_KEY);
+			dateTimeIdEncoding = properties.getProperty(DATE_TIME_ID_ENCODING_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -134,6 +145,12 @@ class StoreProperties {
 		}
 		Optional.ofNullable(propertiesFile).ifPresent(file -> {
 			Properties properties = new Properties();
+			properties.putAll(loadedProperties);
+			for (String key : new String[] { VERSION_KEY, INDEXES_KEY, TRIPLE_TERM_INDEXES_KEY,
+					NUMERIC_ID_ENCODING_KEY, LITERAL_REFERENCE_ENCODING_KEY, INLINE_LITERALS_KEY,
+					CANONICAL_LANGUAGE_TAGS_KEY, DATE_TIME_ID_ENCODING_KEY }) {
+				properties.remove(key);
+			}
 			if (version != null) {
 				properties.setProperty(VERSION_KEY, version);
 			}
@@ -155,6 +172,9 @@ class StoreProperties {
 			if (canonicalLanguageTags != null) {
 				properties.setProperty(CANONICAL_LANGUAGE_TAGS_KEY, canonicalLanguageTags);
 			}
+			if (dateTimeIdEncoding != null) {
+				properties.setProperty(DATE_TIME_ID_ENCODING_KEY, dateTimeIdEncoding);
+			}
 			File parent = file.getParentFile();
 			if (parent != null) {
 				parent.mkdirs();
@@ -172,8 +192,38 @@ class StoreProperties {
 		return loaded;
 	}
 
+	String getRawProperty(String key) {
+		return switch (key) {
+		case VERSION_KEY -> version;
+		case INDEXES_KEY -> tripleIndexes;
+		case TRIPLE_TERM_INDEXES_KEY -> tripleTermIndexes;
+		case NUMERIC_ID_ENCODING_KEY -> numericIdEncoding;
+		case LITERAL_REFERENCE_ENCODING_KEY -> literalReferenceEncoding;
+		case INLINE_LITERALS_KEY -> inlineLiterals;
+		case CANONICAL_LANGUAGE_TAGS_KEY -> canonicalLanguageTags;
+		case DATE_TIME_ID_ENCODING_KEY -> dateTimeIdEncoding;
+		default -> loadedProperties.getProperty(key);
+		};
+	}
+
 	String getVersion() {
 		return version;
+	}
+
+	StoreProperties setDateTimeIdEncoding(String dateTimeIdEncoding) {
+		this.dirty = dirty || !Objects.equals(this.dateTimeIdEncoding, dateTimeIdEncoding);
+		this.dateTimeIdEncoding = dateTimeIdEncoding;
+		return this;
+	}
+
+	boolean usesZeroFractionDateTimeIds() {
+		if (dateTimeIdEncoding == null) {
+			return false;
+		}
+		if (DATE_TIME_ID_ENCODING_ZERO_FRACTION_V1.equals(dateTimeIdEncoding)) {
+			return true;
+		}
+		throw new IllegalStateException("Unsupported date-time-id-encoding: " + dateTimeIdEncoding);
 	}
 
 	StoreProperties setVersion(String version) {

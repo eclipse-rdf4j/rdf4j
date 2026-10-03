@@ -1,8 +1,0 @@
-2026-09-27 final core/sail/lmdb module verify:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs core/sail/lmdb
-Surefire log summary: Tests run: 6463, Failures: 0, Errors: 0, Skipped: 20
-Failsafe log summary: Tests run: 149, Failures: 0, Errors: 0, Skipped: 99
-mvnf XML aggregate: tests=6497, failures=0, errors=0, skipped=119
-Full log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T214746.329142Z-84771-4cf6c484/verify.log
-Report root: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/{surefire-reports,failsafe-reports}
-Build: BUILD SUCCESS, 21:50 min

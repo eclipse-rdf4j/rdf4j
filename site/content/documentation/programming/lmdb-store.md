@@ -109,7 +109,8 @@ config.setForceSync(true);
 config.setAutoGrow(false);
 // persist value hash codes across restarts, disabled by default
 config.setValueHashCacheEnabled(true);
-// enable sketch-based join estimation, disabled by default
+// enable optional query optimizations and sketch-based join estimation, both disabled by default
+config.setExperimentalQueryOptimizations(true);
 config.setSketchEstimatorEnabled(true);
 // set maximum size of value db to 1 GiB
 
@@ -126,14 +127,68 @@ next startup if that integrity metadata validates. Invalid or stale hash cache f
 the store falls back to recomputing hashes lazily.
 
 Sketch-based join estimation is disabled by default. To enable it, set
+both `LmdbStoreConfig.setExperimentalQueryOptimizations(true)` and
 `LmdbStoreConfig.setSketchEstimatorEnabled(true)` when creating the store. Repository configuration files can enable it
-with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
+with both `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` and
+`config:sail.experimentalQueryOptimizations` set to `true`.
 
 ```turtle
 @prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+@prefix config: <tag:rdf4j.org,2023:config/> .
 
-[] lmdb:sketchEstimatorEnabled true .
+[] lmdb:sketchEstimatorEnabled true ;
+   config:sail.experimentalQueryOptimizations true .
 ```
+
+## Store formats and returning to an older release
+
+Existing format-2 repositories keep their format, inlining capabilities and RDF-term encodings when this code opens or
+writes them. They are not automatically upgraded. Compatible maintenance metadata may change, but the repository can
+still be read and written by the older format-2 implementation. Use the repository's original `inlineLiterals` setting;
+a recorded setting cannot be changed by a new configuration. If an existing format-2 repository has no recorded inlining
+setting, supply its original configuration when opening it.
+
+This compatibility guarantee covers repository data and format metadata. It does not cover Java-serialized query
+algebra across RDF4J versions.
+
+Format-2 metadata cannot guarantee one stored ID per RDF term. ID-keyed native evaluation therefore uses the Java
+fallback for these repositories, even when native evaluation is enabled.
+
+Batched RDF additions to existing format-2 repositories continue to use their original encodings and native batch
+writes. The standalone bulk loader publishes a new format-6 repository and requires an empty target; it does not
+replace or upgrade an existing repository in place. These write paths do not depend on the experimental query profile.
+
+A genuinely new, empty repository uses format 6. It records an older-reader rejection marker and cannot be opened by
+the format-2 implementation, even when optional query optimizations and all three accelerators are disabled. To move
+format-6 data to an older release, export RDF with a format-6-capable reader, then import it into a fresh repository created
+by the older code. A backup of the format-6 directory remains format 6 and cannot be opened by the older reader.
+
+Experimental branch formats 3, 4 and 5 are not supported. Export those repositories using the code that created them,
+then import into a new repository. Unsupported versions and inconsistent format metadata are rejected before storage
+writers open. Removing or changing format metadata is not a supported conversion.
+
+## Optional query optimizations
+
+`experimentalQueryOptimizations` defaults to `false` for each repository. The default keeps optional planning,
+learned estimates, additional shared ordered-index access, seek hints, eager indexed replay and extra calendar
+exact-term ordering ties disabled. Existing backend ordering optimizations and explicitly enabled native-engine
+physical operators remain available.
+Ordinary LMDB query results use the existing materializer with one-row consumption. Fixes required for correct results,
+binding scope, multiplicity and error handling remain active in both profiles, as does the configured `STANDARD` or
+`STRICT` query evaluation mode.
+
+Set the configuration before constructing the store:
+
+```java
+config.setExperimentalQueryOptimizations(true);
+```
+
+Alternatively, call `store.setExperimentalQueryOptimizations(true)` before initializing the store.
+
+The RDF option is `config:sail.experimentalQueryOptimizations true` on the base Sail node, as described in
+[Sail configuration](/documentation/reference/configuration/#base-sails). Restart the repository to change the profile.
+Native evaluation, direct adjacency and the value overlay keep their own independent enable settings; selecting any of
+them does not enable this shared query profile. JVM tuning properties also cannot enable it.
 
 Native evaluation, direct adjacency, and the compressed value overlay are independent per-store startup options. They all
 default to off. Enable only the accelerators needed by a repository:

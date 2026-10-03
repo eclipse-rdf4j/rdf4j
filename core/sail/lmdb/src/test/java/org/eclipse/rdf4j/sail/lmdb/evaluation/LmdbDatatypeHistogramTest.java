@@ -21,12 +21,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -140,10 +142,10 @@ public class LmdbDatatypeHistogramTest {
 	}
 
 	@Test
-	public void legacyLiteralReferencesUseBatchedHeaderLookupWithoutSynopsis() throws Exception {
+	public void ordinaryCustomDatatypeReferencesUseBatchedHeaderLookupWithoutSynopsis() throws Exception {
 		System.setProperty(SYNOPSIS_PROPERTY, "false");
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
-		Map<String, Long> expected = openLegacyReferencedRepository(12_000);
+		Map<String, Long> expected = openOrdinaryReferencedRepository(12_000, false);
 
 		AtomicLong bulkHeaderBatches = metric("BULK_LITERAL_HEADER_BATCHES");
 		AtomicLong scalarHeaderLookups = metric("SCALAR_LITERAL_HEADER_LOOKUPS");
@@ -155,10 +157,12 @@ public class LmdbDatatypeHistogramTest {
 		long domainBefore = domainRuns.get();
 		long planeRootsBefore = planeRoots.get();
 		assertThat(histogram(DATATYPE_HISTOGRAM)).isEqualTo(expected);
-		assertThat(LmdbNativeDatatypeHistogram.RUNS.get()).isGreaterThan(runsBefore);
+		assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+				.as("optimized histogram plan: %s", optimizedHistogramPlan())
+				.isGreaterThan(runsBefore);
 		assertThat(bulkHeaderBatches.get()).isGreaterThan(bulkBefore);
 		assertThat(scalarHeaderLookups.get())
-				.as("legacy literal headers must be resolved under reusable batch transactions")
+				.as("ordinary literal headers must be resolved under reusable batch transactions")
 				.isEqualTo(scalarBefore);
 		assertThat(domainRuns.get())
 				.as("the no-synopsis path must scan OSC object roots instead of statement-prefix runs")
@@ -166,6 +170,18 @@ public class LmdbDatatypeHistogramTest {
 		assertThat(planeRoots.get())
 				.as("the additive datatype aggregate must sweep predicate planes without a global root-domain merge")
 				.isGreaterThan(planeRootsBefore);
+	}
+
+	@Test
+	public void legacyLiteralReferencesUseGenericFallbackWithExactDatatypes() throws Exception {
+		System.setProperty(SYNOPSIS_PROPERTY, "false");
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		Map<String, Long> expected = openOrdinaryReferencedRepository(1000, true);
+		long before = LmdbNativeDatatypeHistogram.RUNS.get();
+		assertThat(histogram(DATATYPE_HISTOGRAM)).isEqualTo(expected);
+		assertThat(LmdbNativeDatatypeHistogram.RUNS.get())
+				.as("format 2 lacks canonical IDs and must retain generic histogram evaluation")
+				.isEqualTo(before);
 	}
 
 	@Test
@@ -282,50 +298,88 @@ public class LmdbDatatypeHistogramTest {
 		return expected;
 	}
 
-	private Map<String, Long> openLegacyReferencedRepository(int literalCount) throws Exception {
+	private Map<String, Long> openOrdinaryReferencedRepository(int literalCount, boolean legacy) throws Exception {
 		Files.createDirectories(dataDir.toPath());
-		Properties properties = new Properties();
-		properties.setProperty("version", "3");
-		properties.setProperty("triple-indexes", "spoc,posc,ospc");
-		properties.setProperty("triple-term-indexes", "spoc");
-		properties.setProperty("inline-literals", "false");
-		properties.setProperty("canonical-language-tags", "lowercase-v1");
-		try (OutputStream output = Files.newOutputStream(dataDir.toPath().resolve("store.properties"))) {
-			properties.store(output, "legacy test store");
+		if (legacy) {
+			Properties properties = new Properties();
+			properties.setProperty("version", "2");
+			properties.setProperty("triple-indexes", "spoc,posc,ospc");
+			properties.setProperty("triple-term-indexes", "spoc");
+			properties.setProperty("inline-literals", "false");
+			try (OutputStream output = Files.newOutputStream(dataDir.toPath().resolve("store.properties"))) {
+				properties.store(output, "format 2 protocol fixture");
+			}
 		}
-		store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
-						.setInlineLiterals(false)
-						.setDirectAdjacencyEnabled(true));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				// Incremental assignment keeps alternating datatypes mixed within ordinary reference ID-ordered pages.
+				// Prepared dictionary batches sort by datatype and can validly produce uniform pages instead.
+				.setBulkOperationSize(0)
+				.setInlineLiterals(false)
+				.setDirectAdjacencyEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		store = new LmdbStore(dataDir, config);
+		assertThat(store.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
 		repository = new SailRepository(store);
 		Map<String, Long> expected = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
-			IRI predicate = vf.createIRI(EX, "legacy-p");
+			IRI predicate = vf.createIRI(EX, "referenced-p");
+			IRI[] customDatatypes = { vf.createIRI("urn:header-batch:datatype:alpha"),
+					vf.createIRI("urn:header-batch:datatype:beta") };
 			conn.begin();
 			for (int i = 0; i < literalCount; i++) {
-				Literal literal = (i & 1) == 0
-						? vf.createLiteral("legacy string literal " + i)
-						: vf.createLiteral("legacy integer literal " + i,
-								vf.createIRI("http://www.w3.org/2001/XMLSchema#integer"));
-				conn.add(vf.createIRI(EX, "legacy-s-" + i), predicate, literal);
+				Literal literal;
+				if (!legacy) {
+					literal = vf.createLiteral("ordinary referenced literal " + i, customDatatypes[i & 1]);
+				} else if ((i & 1) == 0) {
+					literal = vf.createLiteral("legacy string literal " + i);
+				} else {
+					literal = vf.createLiteral("legacy integer literal " + i,
+							vf.createIRI("http://www.w3.org/2001/XMLSchema#integer"));
+				}
+				conn.add(vf.createIRI(EX, "referenced-s-" + i), predicate, literal);
 				expected.merge(literal.getDatatype().stringValue(), 1L, Long::sum);
 			}
 			conn.commit();
+			assertThat(store.getFormat().getVersion()).isEqualTo(legacy ? 2 : 6);
+			assertThat(store.getFormat().usesCanonicalLanguageTags()).isEqualTo(!legacy);
+			Map<Long, IRI> datatypesById = new TreeMap<>(Long::compareUnsigned);
 			try (var statements = conn.getStatements(null, null, null, false)) {
-				assertThat(ValueIds.getIdType(((LmdbLiteral) statements.next().getObject()).getInternalID()))
-						.as("legacy stores retain ordinary referenced-literal IDs")
-						.isEqualTo(ValueIds.T_LITERAL);
+				while (statements.hasNext()) {
+					LmdbLiteral literal = (LmdbLiteral) statements.next().getObject();
+					assertThat(ValueIds.getIdType(literal.getInternalID()))
+							.as("the fixture must retain ordinary referenced-literal IDs without embedded datatype tags")
+							.isEqualTo(ValueIds.T_LITERAL);
+					if (!legacy) {
+						assertThat(literal.getCoreDatatype()).isEqualTo(CoreDatatype.NONE);
+					}
+					datatypesById.put(literal.getInternalID(), literal.getDatatype());
+				}
+			}
+			assertThat(datatypesById).hasSize(literalCount);
+			IRI previousDatatype = null;
+			for (IRI datatype : datatypesById.values()) {
+				if (previousDatatype != null) {
+					assertThat(datatype).as("adjacent ordinary reference IDs must exercise mixed-datatype page lookup")
+							.isNotEqualTo(previousDatatype);
+				}
+				previousDatatype = datatype;
 			}
 		}
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
-				.as("legacy-header optimization fixtures require a compacted adjacency base")
+				.as("ordinary-header fixtures require a compacted adjacency base")
 				.isTrue();
 		return expected;
 	}
 
 	private static AtomicLong metric(String name) throws ReflectiveOperationException {
 		return (AtomicLong) LmdbNativeDatatypeHistogram.class.getDeclaredField(name).get(null);
+	}
+
+	private String optimizedHistogramPlan() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			return conn.prepareTupleQuery(DATATYPE_HISTOGRAM).explain(Explanation.Level.Optimized).toString();
+		}
 	}
 
 	private Map<String, Long> histogram(String query) {

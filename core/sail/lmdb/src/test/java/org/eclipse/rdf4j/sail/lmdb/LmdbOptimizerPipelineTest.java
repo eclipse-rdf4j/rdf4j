@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -92,10 +93,12 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
-	void ordinaryStoreUsesDefaultEvaluationStrategyFactoryAndLmdbFallbackPipeline() throws Exception {
-		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
+	void defaultEvaluationStrategyFactoryUsesOptedInLmdbFallbackPipeline() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(config);
 		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
-		EvaluationStrategy strategy = createEvaluationStrategy(factory);
+		EvaluationStrategy strategy = createExperimentalEvaluationStrategy(factory);
 		List<QueryOptimizer> optimizers = optimizers(strategy);
 
 		assertInstanceOf(DefaultEvaluationStrategyFactory.class, factory);
@@ -106,8 +109,10 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void defaultEvaluationStrategyFactoryUsesSketchPipelineWhenJoinEstimationIsReady() throws Exception {
-		LmdbStore store = new LmdbStore(new LmdbStoreConfig());
+	void defaultEvaluationStrategyFactoryUsesOptedInSketchPipelineWhenJoinEstimationIsReady() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(config);
 		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
 			@Override
 			public boolean supportsJoinEstimation() {
@@ -115,7 +120,7 @@ class LmdbOptimizerPipelineTest {
 			}
 		};
 		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
-		EvaluationStrategy strategy = createEvaluationStrategy(factory, readyStatistics);
+		EvaluationStrategy strategy = createExperimentalEvaluationStrategy(factory, readyStatistics);
 		List<QueryOptimizer> optimizers = optimizers(strategy);
 
 		assertInstanceOf(DefaultEvaluationStrategyFactory.class, factory);
@@ -153,7 +158,7 @@ class LmdbOptimizerPipelineTest {
 			assertTrue(estimator.isReadyNonBlocking());
 			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
 			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
-			EvaluationStrategy strategy = createEvaluationStrategy(factory, store.getBackingStore()
+			EvaluationStrategy strategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
 					.getEvaluationStatistics());
 			List<QueryOptimizer> optimizers = optimizers(strategy);
 
@@ -205,7 +210,7 @@ class LmdbOptimizerPipelineTest {
 		try (NotifyingSailConnection connection = store.getConnection()) {
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
-			EvaluationStrategy initialStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+			EvaluationStrategy initialStrategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
 					.getEvaluationStatistics());
 			List<QueryOptimizer> initialOptimizers = optimizers(initialStrategy);
 			assertInstanceOf(LmdbNativeEvaluationStrategy.class, initialStrategy);
@@ -218,7 +223,7 @@ class LmdbOptimizerPipelineTest {
 			estimator.rebuild();
 
 			assertTrue(estimator.isReadyNonBlocking());
-			EvaluationStrategy readyStrategy = createEvaluationStrategy(factory, store.getBackingStore()
+			EvaluationStrategy readyStrategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
 					.getEvaluationStatistics());
 			List<QueryOptimizer> readyOptimizers = optimizers(readyStrategy);
 			assertInstanceOf(LmdbNativeEvaluationStrategy.class, readyStrategy);
@@ -335,7 +340,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbPipelineRunsSharedExactValuesPassAfterSketchPlanning() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
@@ -361,7 +366,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbSketchPipelineRewritesSafeColdInFilterAfterJoinPlanning() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		TupleExpr tupleExpr = parseTupleExpr("SELECT * WHERE { ?s <urn:test:name> ?name . "
 				+ "FILTER(?name IN (\"u0\", \"u1\")) }");
 
@@ -379,7 +384,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbSketchPipelineHonorsSharedExactValuesDistinctLimitOnColdAndWarmPlans() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		EvaluationStatistics statistics = new EvaluationStatistics();
 
 		for (int valueCount : List.of(1, 32, 64, 65)) {
@@ -414,7 +419,7 @@ class LmdbOptimizerPipelineTest {
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			addExactNameData(repository, 70);
-			List<QueryOptimizer> fallbackOptimizers = optimizers(createEvaluationStrategy(
+			List<QueryOptimizer> fallbackOptimizers = optimizers(createExperimentalEvaluationStrategy(
 					store.getEvaluationStrategyFactory(), store.getBackingStore().getEvaluationStatistics()));
 			assertTrue(fallbackOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 			assertFalse(fallbackOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
@@ -433,7 +438,7 @@ class LmdbOptimizerPipelineTest {
 
 			estimator.rebuild();
 			assertTrue(estimator.isReadyNonBlocking());
-			List<QueryOptimizer> readyOptimizers = optimizers(createEvaluationStrategy(
+			List<QueryOptimizer> readyOptimizers = optimizers(createExperimentalEvaluationStrategy(
 					store.getEvaluationStrategyFactory(), store.getBackingStore().getEvaluationStatistics()));
 			assertTrue(readyOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 
@@ -453,7 +458,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbPreSketchPipelineRetainsSmallLiteralFilterEvidence() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
@@ -471,7 +476,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbPreSketchFilterOptimizerDoesNotAskSketchStatsForBroadFilterTelemetry() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new FailingFilterPassStatistics())
 						.getOptimizers());
@@ -489,7 +494,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbSketchPipelineRetainsSmallLiteralFilterEvidenceAfterPlanning() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		TupleExpr tupleExpr = parseTupleExpr(ENGINEERING_Q4);
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
@@ -504,7 +509,7 @@ class LmdbOptimizerPipelineTest {
 	@Test
 	void lmdbSketchPipelineKeepsUnusedSingletonValuesAtJoinPrefix() {
 		TripleSource tripleSource = new EmptyTripleSource();
-		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		StrictEvaluationStrategy strategy = experimentalStrategy(tripleSource);
 		TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
@@ -531,9 +536,10 @@ class LmdbOptimizerPipelineTest {
 			assertTrue(estimator.isReadyNonBlocking());
 
 			TupleExpr tupleExpr = parseTupleExpr(MEDICAL_Q5_UNUSED_LIMIT);
-			EvaluationStrategy strategy = createEvaluationStrategy(store.getEvaluationStrategyFactory(), store
-					.getBackingStore()
-					.getEvaluationStatistics());
+			EvaluationStrategy strategy = createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory(),
+					store
+							.getBackingStore()
+							.getEvaluationStatistics());
 			for (QueryOptimizer optimizer : optimizers(strategy)) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
@@ -799,6 +805,16 @@ class LmdbOptimizerPipelineTest {
 		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), evaluationStatistics);
 	}
 
+	private static EvaluationStrategy createExperimentalEvaluationStrategy(EvaluationStrategyFactory factory) {
+		return createExperimentalEvaluationStrategy(factory, new EvaluationStatistics());
+	}
+
+	private static EvaluationStrategy createExperimentalEvaluationStrategy(EvaluationStrategyFactory factory,
+			EvaluationStatistics evaluationStatistics) {
+		return factory.createEvaluationStrategy((Dataset) null, new EmptyTripleSource(), evaluationStatistics,
+				QueryExecutionPolicy.EXPERIMENTAL);
+	}
+
 	public static final class LowHeapSketchGateProbe {
 
 		public static void main(String[] args) throws Exception {
@@ -848,9 +864,17 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes)
+		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
+	}
+
+	private static StrictEvaluationStrategy experimentalStrategy(TripleSource tripleSource) {
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
+		return strategy;
 	}
 
 	private static final class ProcessResult {

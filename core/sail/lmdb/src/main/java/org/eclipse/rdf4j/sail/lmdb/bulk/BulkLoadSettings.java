@@ -62,7 +62,7 @@ public record BulkLoadSettings(String tripleIndexes, String tripleTermIndexes, b
 
 	static BulkLoadSettings of(LmdbBulkLoader loader) {
 		return new BulkLoadSettings(loader.config().getTripleIndexes(), loader.config().getTripleTermIndexes(),
-				loader.config().getInlineLiterals(), loader.config().getOrderedNumericIds(),
+				loader.format().inlinesLiterals(), loader.format().usesOrderedNumericIds(),
 				loader.config().getValueHashCacheEnabled(), loader.partitionCount(), loader.parserMode(),
 				loader.memoryBudgetBytes(), loader.maxOpenFiles(), loader.workers(), loader.queueBatches(),
 				loader.writeTransactionRecords(), loader.writeTransactionBytes());

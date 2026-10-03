@@ -120,7 +120,7 @@ final class LmdbBulkLoaderEngine {
 								workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 								dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
 										loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
-										loader.config(), workspace.compression(), loader.cancellationSignal(),
+										loader.format(), workspace.compression(), loader.cancellationSignal(),
 										scheduler, loader.newPartitionConcurrencyController());
 								workspace.progress(staged.statements(), 0L);
 								workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
@@ -146,7 +146,7 @@ final class LmdbBulkLoaderEngine {
 							workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
 							dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
 									workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
-									loader.maxOpenFiles(), loader.config(), workspace.compression(),
+									loader.maxOpenFiles(), loader.format(), workspace.compression(),
 									loader.cancellationSignal(), predicateIdPlan, scheduler,
 									loader.newPartitionConcurrencyController());
 							workspace.recordDictionary(dictionary);
@@ -161,7 +161,7 @@ final class LmdbBulkLoaderEngine {
 								loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
 								loader.cancellationSignal(), scheduler, loader.newPartitionConcurrencyController());
 						resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
-								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.config(),
+								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.format(),
 								workspace.compression(), loader.cancellationSignal(), scheduler,
 								loader.newPartitionConcurrencyController());
 						workspace.recordResolved(statements, resolvedValues);
@@ -182,7 +182,7 @@ final class LmdbBulkLoaderEngine {
 						}
 						nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
 								loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
-								loader.cancellationSignal(), scheduler);
+								loader.cancellationSignal(), scheduler, loader.format());
 						workspace.recordNativeRecords(nativeValueRecords);
 						workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
 						workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
@@ -191,7 +191,7 @@ final class LmdbBulkLoaderEngine {
 
 					workspace.startPhase(BulkLoadPhase.WRITE_GENERATION);
 					NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
-							loader.config(),
+							loader.config(), loader.format(),
 							nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
 							loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
 							loader.cancellationSignal(), scheduler);
@@ -226,7 +226,7 @@ final class LmdbBulkLoaderEngine {
 
 	private static CanonicalStagedInput stage(LmdbBulkLoader loader, BulkLoadWorkspace workspace, InputStream input,
 			String baseUri, RDFFormat format) throws IOException {
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.format(),
 				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
 				workspace.compression())) {
 			parse(loader, workspace, stager, input, baseUri, format);
@@ -236,7 +236,7 @@ final class LmdbBulkLoaderEngine {
 
 	private static CanonicalStagedInput stage(LmdbBulkLoader loader, BulkLoadWorkspace workspace,
 			List<LmdbBulkLoader.PathInput> inputs) throws IOException {
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.config(),
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.format(),
 				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
 				workspace.compression())) {
 			for (LmdbBulkLoader.PathInput input : inputs) {

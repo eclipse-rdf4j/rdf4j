@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -324,26 +325,30 @@ public class ValueComparatorTransitivityTest {
 	}
 
 	private void assertStableSortAlgorithmsAgree(List<Value> values, long seed) {
-		for (boolean strict : new boolean[] { true, false }) {
-			ValueComparator cmp = new ValueComparator();
-			cmp.setStrict(strict);
+		for (QueryExecutionPolicy policy : new QueryExecutionPolicy[] { QueryExecutionPolicy.DEFAULT,
+				QueryExecutionPolicy.EXPERIMENTAL }) {
+			for (boolean strict : new boolean[] { true, false }) {
+				ValueComparator cmp = new ValueComparator(policy);
+				cmp.setStrict(strict);
 
-			Random random = new Random(seed);
+				Random random = new Random(seed);
 
-			for (int round = 0; round < 100; round++) {
-				List<Value> shuffled = new ArrayList<>(values);
-				Collections.shuffle(shuffled, random);
+				for (int round = 0; round < 100; round++) {
+					List<Value> shuffled = new ArrayList<>(values);
+					Collections.shuffle(shuffled, random);
 
-				// TimSort, as used by the generic evaluator
-				List<Value> timSorted = new ArrayList<>(shuffled);
-				timSorted.sort(cmp);
+					// TimSort, as used by the generic evaluator
+					List<Value> timSorted = new ArrayList<>(shuffled);
+					timSorted.sort(cmp);
 
-				// binary insertion sort: a different stable algorithm, as a stand-in for the
-				// merge sort used by the LMDB native engine
-				List<Value> insertionSorted = insertionSort(shuffled, cmp);
+					// binary insertion sort: a different stable algorithm, as a stand-in for the
+					// merge sort used by the LMDB native engine
+					List<Value> insertionSorted = insertionSort(shuffled, cmp);
 
-				assertEquals(insertionSorted, timSorted,
-						"stable sort algorithms must agree (strict=" + strict + ", round=" + round + ")");
+					assertEquals(insertionSorted, timSorted,
+							"stable sort algorithms must agree (policy=" + policy + ", strict=" + strict + ", round="
+									+ round + ")");
+				}
 			}
 		}
 	}
@@ -357,23 +362,29 @@ public class ValueComparatorTransitivityTest {
 				() -> "expected a determinate non-equal XML comparison for " + label(left) + " and " + label(right));
 
 		for (boolean strict : includeStrict ? new boolean[] { true, false } : new boolean[] { false }) {
-			ValueComparator cmp = new ValueComparator();
-			cmp.setStrict(strict);
-			assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
-					() -> "determinate XML order changed (strict=" + strict + "): " + label(left) + " vs "
-							+ label(right));
-			assertEquals(-Integer.signum(xmlOrder), signum(cmp.compare(right, left)),
-					() -> "reverse determinate XML order changed (strict=" + strict + "): " + label(right) + " vs "
-							+ label(left));
+			for (QueryExecutionPolicy policy : new QueryExecutionPolicy[] { QueryExecutionPolicy.DEFAULT,
+					QueryExecutionPolicy.EXPERIMENTAL }) {
+				ValueComparator cmp = new ValueComparator(policy);
+				cmp.setStrict(strict);
+				assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
+						() -> "determinate XML order changed (policy=" + policy + ", strict=" + strict + "): "
+								+ label(left) + " vs " + label(right));
+				assertEquals(-Integer.signum(xmlOrder), signum(cmp.compare(right, left)),
+						() -> "reverse determinate XML order changed (policy=" + policy + ", strict=" + strict + "): "
+								+ label(right) + " vs " + label(left));
+			}
 		}
 	}
 
 	private void assertComparatorPreservesXmlOrder(Literal left, Literal right, int xmlOrder, boolean strict) {
-		ValueComparator cmp = new ValueComparator();
-		cmp.setStrict(strict);
-		assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
-				() -> "determinate XML order changed (strict=" + strict + "): " + label(left) + " vs "
-						+ label(right));
+		for (QueryExecutionPolicy policy : new QueryExecutionPolicy[] { QueryExecutionPolicy.DEFAULT,
+				QueryExecutionPolicy.EXPERIMENTAL }) {
+			ValueComparator cmp = new ValueComparator(policy);
+			cmp.setStrict(strict);
+			assertEquals(Integer.signum(xmlOrder), signum(cmp.compare(left, right)),
+					() -> "determinate XML order changed (policy=" + policy + ", strict=" + strict + "): "
+							+ label(left) + " vs " + label(right));
+		}
 	}
 
 	private static boolean isValidCalendarLiteral(Literal literal) {
@@ -394,37 +405,43 @@ public class ValueComparatorTransitivityTest {
 	}
 
 	private void assertTotalOrder(List<Value> values, boolean strict) {
-		ValueComparator cmp = new ValueComparator();
-		cmp.setStrict(strict);
+		for (QueryExecutionPolicy policy : new QueryExecutionPolicy[] { QueryExecutionPolicy.DEFAULT,
+				QueryExecutionPolicy.EXPERIMENTAL }) {
+			ValueComparator cmp = new ValueComparator(policy);
+			cmp.setStrict(strict);
 
-		for (Value a : values) {
-			for (Value b : values) {
-				int ab = signum(cmp.compare(a, b));
-				int ba = signum(cmp.compare(b, a));
-				assertEquals(-ba, ab, () -> "antisymmetry violated (strict=" + strict + "): compare(" + label(a) + ", "
-						+ label(b) + ")=" + ab + " but compare(" + label(b) + ", " + label(a) + ")=" + ba);
-				if (ab == 0) {
-					assertEquals(a, b, () -> "calendar comparison returned zero for distinct RDF terms (strict="
-							+ strict + "): " + label(a) + " and " + label(b));
+			for (Value a : values) {
+				for (Value b : values) {
+					int ab = signum(cmp.compare(a, b));
+					int ba = signum(cmp.compare(b, a));
+					assertEquals(-ba, ab, () -> "antisymmetry violated (policy=" + policy + ", strict=" + strict
+							+ "): compare(" + label(a) + ", " + label(b) + ")=" + ab + " but compare(" + label(b)
+							+ ", " + label(a) + ")=" + ba);
+					if (ab == 0 && policy == QueryExecutionPolicy.EXPERIMENTAL) {
+						assertEquals(a, b,
+								() -> "experimental calendar ordering returned zero for distinct RDF terms (strict="
+										+ strict + "): " + label(a) + " and " + label(b));
+					}
 				}
 			}
-		}
 
-		for (Value a : values) {
-			for (Value b : values) {
-				int ab = signum(cmp.compare(a, b));
-				for (Value c : values) {
-					int bc = signum(cmp.compare(b, c));
-					int ac = signum(cmp.compare(a, c));
-					if (ab < 0 && bc < 0) {
-						assertTrue(ac < 0, () -> "transitivity violated (strict=" + strict + "): " + label(a) + " < "
-								+ label(b) + " and " + label(b) + " < " + label(c) + " but compare(" + label(a) + ", "
-								+ label(c) + ")=" + ac);
-					}
-					if (ab == 0) {
-						assertEquals(bc, ac, () -> "equality substitution violated (strict=" + strict + "): "
-								+ label(a) + " == " + label(b) + " but compare(" + label(a) + ", " + label(c) + ")="
-								+ ac + " while compare(" + label(b) + ", " + label(c) + ")=" + bc);
+			for (Value a : values) {
+				for (Value b : values) {
+					int ab = signum(cmp.compare(a, b));
+					for (Value c : values) {
+						int bc = signum(cmp.compare(b, c));
+						int ac = signum(cmp.compare(a, c));
+						if (ab < 0 && bc < 0) {
+							assertTrue(ac < 0, () -> "transitivity violated (policy=" + policy + ", strict=" + strict
+									+ "): " + label(a) + " < " + label(b) + " and " + label(b) + " < " + label(c)
+									+ " but compare(" + label(a) + ", " + label(c) + ")=" + ac);
+						}
+						if (ab == 0) {
+							assertEquals(bc, ac, () -> "equality substitution violated (policy=" + policy + ", strict="
+									+ strict + "): " + label(a) + " == " + label(b) + " but compare(" + label(a) + ", "
+									+ label(c) + ")=" + ac + " while compare(" + label(b) + ", " + label(c) + ")="
+									+ bc);
+						}
 					}
 				}
 			}

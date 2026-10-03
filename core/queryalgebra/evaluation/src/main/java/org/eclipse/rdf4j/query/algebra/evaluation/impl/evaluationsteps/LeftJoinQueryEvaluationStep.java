@@ -86,7 +86,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			List<String> joinAttributes = List.of(HashJoinIteration.hashJoinAttributeNames(leftJoin));
 			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
 			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true,
-					joinAttributes, strategy.getCollectionFactory());
+					joinAttributes, strategy.getCollectionFactory(), strategy.getQueryExecutionPolicy());
 		}
 
 		// Check whether optional join is "well designed" as defined in section

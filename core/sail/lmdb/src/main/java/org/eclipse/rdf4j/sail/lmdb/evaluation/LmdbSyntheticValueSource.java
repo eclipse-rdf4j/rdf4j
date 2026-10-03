@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -63,6 +64,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	final NativeLmdbQuerySource delegate;
 	final PlanValueCatalog catalog;
+	final QueryExecutionPolicy queryExecutionPolicy;
 	/** Runtime interner of this evaluation; null on the compile-scoped carrier. */
 	private final NativeExecutionContext context;
 	private final LmdbNativeTermAuthority authority;
@@ -73,18 +75,23 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
 	SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog) {
-		this(delegate, catalog, null, null);
+		this(delegate, catalog, QueryExecutionPolicy.DEFAULT);
+	}
+
+	SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog, QueryExecutionPolicy policy) {
+		this(delegate, catalog, null, null, policy);
 	}
 
 	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
 			NativeExecutionContext context) {
-		this(delegate, catalog, context, null);
+		this(delegate, catalog, context, null, context.queryExecutionPolicy);
 	}
 
 	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
-			NativeExecutionContext context, Object syntheticIdSpace) {
+			NativeExecutionContext context, Object syntheticIdSpace, QueryExecutionPolicy policy) {
 		this.delegate = delegate;
 		this.catalog = catalog;
+		this.queryExecutionPolicy = policy;
 		this.context = context;
 		this.authority = context == null ? null : new LmdbNativeTermAuthority(delegate, catalog, context);
 		this.syntheticIdSpace = syntheticIdSpace;
@@ -97,25 +104,34 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
 	SyntheticValueSource forEvaluation() {
 		SyntheticValueSource active = ACTIVE_EVALUATION.get();
-		if (active != null) {
+		if (active != null && active.queryExecutionPolicy == queryExecutionPolicy) {
 			if (active.delegate == delegate && active.catalog == catalog && active.generatedKeyAuthority == null) {
 				return active;
 			}
 			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
 		}
-		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext());
+		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(queryExecutionPolicy));
 	}
 
 	/** Returns the active source for a nested raw-source operator, or creates an empty-catalog evaluation source. */
 	static SyntheticValueSource forEvaluation(NativeLmdbQuerySource source) {
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		QueryExecutionPolicy policy = source instanceof SyntheticValueSource synthetic
+				? synthetic.queryExecutionPolicy
+				: active == null ? QueryExecutionPolicy.DEFAULT : active.queryExecutionPolicy;
+		return forEvaluation(source, policy);
+	}
+
+	static SyntheticValueSource forEvaluation(NativeLmdbQuerySource source, QueryExecutionPolicy policy) {
 		if (source instanceof SyntheticValueSource synthetic) {
 			return synthetic.forEvaluation();
 		}
 		SyntheticValueSource active = ACTIVE_EVALUATION.get();
-		if (active != null && active.delegate == source && active.generatedKeyAuthority == null) {
+		if (active != null && active.delegate == source && active.generatedKeyAuthority == null
+				&& active.queryExecutionPolicy == policy) {
 			return active;
 		}
-		return new SyntheticValueSource(source, PlanValueCatalog.EMPTY).forEvaluation();
+		return new SyntheticValueSource(source, PlanValueCatalog.EMPTY, policy).forEvaluation();
 	}
 
 	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
@@ -698,7 +714,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 				if (opened[i] == null || opened[i].idSpace() != delegateIdSpace) {
 					return null;
 				}
-				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace(), generatedKeyPlan);
+				// Compile-scoped siblings have no runtime context yet, but already own the repository policy.
+				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace(), generatedKeyPlan,
+						queryExecutionPolicy);
 			}
 			complete = true;
 			return result;
@@ -741,8 +759,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		private boolean closed;
 
 		private SyntheticParallelSource(ParallelSource owned, PlanValueCatalog catalog,
-				NativeExecutionContext context, Object syntheticIdSpace, NativeGeneratedKeyPlan generatedKeyPlan) {
-			super(owned, catalog, context, syntheticIdSpace);
+				NativeExecutionContext context, Object syntheticIdSpace, NativeGeneratedKeyPlan generatedKeyPlan,
+				QueryExecutionPolicy policy) {
+			super(owned, catalog, context, syntheticIdSpace, policy);
 			this.owned = owned;
 			// All sibling facades share the query-owned runtime table through the context, but each receives a
 			// delegate-bound

@@ -53,6 +53,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	private final StandardQueryOptimizerPipeline delegate;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
+	private final EvaluationStrategy strategy;
 
 	@InternalUseOnly
 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -61,10 +62,14 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 				evaluationStatistics);
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
+		this.strategy = strategy;
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
+		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+			return delegate.getOptimizers();
+		}
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 

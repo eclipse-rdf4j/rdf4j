@@ -15,16 +15,20 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -169,5 +173,31 @@ public class TransactionsPerSecondBenchmark {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
+	}
+
+	@Benchmark
+	public void veryLargerTransactionLevelReadCommitted() {
+		connection.begin(IsolationLevels.READ_COMMITTED);
+		for (int k = 0; k < 1000000; k++) {
+			Literal randomLiteral = literalGenerator.createRandomLiteral();
+			connection.add(randomResource(), randomPredicate(), randomLiteral);
+		}
+		connection.commit();
+	}
+
+	final class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc";
+
+		static LmdbStoreConfig createConfig() {
+			return createConfig(DEFAULT_TRIPLE_INDEXES);
+		}
+
+		private static LmdbStoreConfig createConfig(String tripleIndexes) {
+			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+			config.setForceSync(false);
+			config.setValueDBSize(1_073_741_824L); // 1 GiB
+			config.setTripleDBSize(1_073_741_824L); // 1 GiB
+			return config;
+		}
 	}
 }

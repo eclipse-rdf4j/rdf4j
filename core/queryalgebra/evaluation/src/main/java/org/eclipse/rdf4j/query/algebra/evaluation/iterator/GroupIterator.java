@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
@@ -493,7 +494,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Max) {
-			MaxAggregate agg = new MaxAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict());
+			MaxAggregate agg = new MaxAggregate(precompileUnaryArg(operator), shouldValueComparisonBeStrict(),
+					strategy.getQueryExecutionPolicy());
 			Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Sum) {
@@ -789,7 +791,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private class MinAggregate extends AggregateFunction<ValueCollector, Value> {
 
-		private final ValueComparator comparator = new ValueComparator();
+		private final ValueComparator comparator = new ValueComparator(strategy.getQueryExecutionPolicy());
 
 		public MinAggregate(Function<BindingSet, Value> f, boolean strict) {
 			super(f);
@@ -813,10 +815,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static class MaxAggregate extends AggregateFunction<ValueCollector, Value> {
 
-		private final ValueComparator comparator = new ValueComparator();
+		private final ValueComparator comparator;
 
-		public MaxAggregate(Function<BindingSet, Value> f, boolean strict) {
+		public MaxAggregate(Function<BindingSet, Value> f, boolean strict, QueryExecutionPolicy policy) {
 			super(f);
+			comparator = new ValueComparator(policy);
 			comparator.setStrict(strict);
 		}
 

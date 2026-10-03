@@ -217,7 +217,7 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static QuerySafetySnapshot querySafetySnapshot(QueryModelNode node) {
-		return new QuerySafetySnapshot(node);
+		return new QuerySafetySnapshot(node, null);
 	}
 
 	/** Runs one optimizer or precompile phase against a reusable identity-based query-safety snapshot. */
@@ -237,6 +237,70 @@ public class QueryEvaluationUtility {
 		} finally {
 			ACTIVE_SAFETY_SNAPSHOT.remove();
 		}
+	}
+
+	/** Captures VALUES once before analysis, then reuses the prepared phase for recursive compilation. */
+	@InternalUseOnly
+	public static <T> T withPreparedQuerySafetySnapshot(TupleExpr root,
+			Supplier<? extends QueryModelPreparation> preparationFactory,
+			java.util.function.Function<TupleExpr, T> action) {
+		Objects.requireNonNull(root, "root must not be null");
+		Objects.requireNonNull(preparationFactory, "preparationFactory must not be null");
+		Objects.requireNonNull(action, "action must not be null");
+		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
+		if (previous != null && previous.valuesPreparation != null) {
+			return action.apply((TupleExpr) previous.ensureNode(root));
+		}
+		QueryModelPreparation preparation = preparationFactory.get();
+		try {
+			TupleExpr prepared = (TupleExpr) preparation.prepare(root);
+			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation));
+			return action.apply(prepared);
+		} finally {
+			if (previous == null) {
+				ACTIVE_SAFETY_SNAPSHOT.remove();
+			} else {
+				ACTIVE_SAFETY_SNAPSHOT.set(previous);
+			}
+			preparation.close();
+		}
+	}
+
+	/** Keeps invocation-owned row capture while beginning a fresh optimizer's safety analysis after graph rewrites. */
+	@InternalUseOnly
+	public static <T> T withFreshPreparedQuerySafetySnapshot(TupleExpr root,
+			java.util.function.Function<TupleExpr, T> action) {
+		Objects.requireNonNull(root, "root must not be null");
+		Objects.requireNonNull(action, "action must not be null");
+		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
+		if (previous == null || previous.valuesPreparation == null) {
+			throw new IllegalStateException("Fresh prepared safety analysis requires an active preparation phase");
+		}
+		QueryModelPreparation preparation = previous.valuesPreparation;
+		preparation.resetTraversal();
+		TupleExpr prepared = (TupleExpr) preparation.prepare(root);
+		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation));
+		try {
+			return action.apply(prepared);
+		} finally {
+			ACTIVE_SAFETY_SNAPSHOT.set(previous);
+		}
+	}
+
+	/** Invocation-owned capture state; safety classification must not consume live VALUES before preparation. */
+	@InternalUseOnly
+	public interface QueryModelPreparation extends AutoCloseable {
+		QueryModelNode prepare(QueryModelNode root);
+
+		/** Drops graph-membership proofs between optimizer passes without recapturing shared row producers. */
+		void resetTraversal();
+
+		/** Invalidates the changed node and its ancestors before a supported query-model refresh. */
+		void invalidate(QueryModelNode changedNode);
+
+		/** Releases invocation-owned aliases and row-producer memoization without changing captured execution rows. */
+		@Override
+		void close();
 	}
 
 	/** Refreshes changed query-model facts in the active phase, if there is one. */
@@ -415,6 +479,7 @@ public class QueryEvaluationUtility {
 
 	@Experimental
 	public static final class QuerySafetySnapshot {
+		private final QueryModelPreparation valuesPreparation;
 		private final Map<QueryModelNode, NodeSafetySummary> summaries = new IdentityHashMap<>();
 		private final Map<QueryModelNode, List<QueryModelNode>> childrenByNode = new IdentityHashMap<>();
 		private final Set<QueryModelNode> unknownNodes = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -422,17 +487,44 @@ public class QueryEvaluationUtility {
 
 		/** Creates an empty snapshot that lazily classifies the first queried node. */
 		public QuerySafetySnapshot() {
+			valuesPreparation = null;
 		}
 
-		private QuerySafetySnapshot(QueryModelNode root) {
-			this();
-			analyzeMissingSubtree(root);
+		private QuerySafetySnapshot(QueryModelNode root, QueryModelPreparation valuesPreparation) {
+			this.valuesPreparation = valuesPreparation;
+			ensureNode(root);
 		}
 
-		private void ensureNode(QueryModelNode node) {
+		private QueryModelNode ensureNode(QueryModelNode node) {
+			if (valuesPreparation == null && summaries.containsKey(node)) {
+				return node;
+			}
+			QueryModelNode original = node;
+			QueryModelPreparation preparation = preparationForAnalysis();
+			if (preparation != null) {
+				node = preparation.prepare(node);
+			}
 			if (!summaries.containsKey(node)) {
 				analyzeMissingSubtree(node);
 			}
+			retainAliasFacts(original, node);
+			return node;
+		}
+
+		private void retainAliasFacts(QueryModelNode original, QueryModelNode prepared) {
+			if (original != prepared) {
+				// A public read-only snapshot retains facts for the caller's root without retaining capture ownership.
+				summaries.put(original, summaries.get(prepared).forNode(original));
+				childrenByNode.put(original, childrenByNode.getOrDefault(prepared, List.of()));
+			}
+		}
+
+		private QueryModelPreparation preparationForAnalysis() {
+			if (valuesPreparation != null) {
+				return valuesPreparation;
+			}
+			QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+			return active == null ? null : active.valuesPreparation;
 		}
 
 		private void analyzeMissingSubtree(QueryModelNode root) {
@@ -469,6 +561,17 @@ public class QueryEvaluationUtility {
 
 		/** Recomputes one edited node and propagates only changed facts to its ancestors. */
 		public void refreshFrom(QueryModelNode changedNode) {
+			QueryModelNode original = changedNode;
+			QueryModelPreparation preparation = preparationForAnalysis();
+			if (preparation != null) {
+				preparation.invalidate(changedNode);
+				changedNode = preparation.prepare(changedNode);
+			}
+			refreshFactsFrom(changedNode);
+			retainAliasFacts(original, changedNode);
+		}
+
+		private void refreshFactsFrom(QueryModelNode changedNode) {
 			boolean alreadySummarized = summaries.containsKey(changedNode);
 			ensureNode(changedNode);
 			QueryModelNode current = changedNode;
@@ -662,22 +765,22 @@ public class QueryEvaluationUtility {
 		}
 
 		public boolean isRepeatable(QueryModelNode node) {
-			ensureNode(node);
+			node = ensureNode(node);
 			return summaries.get(node).repeatable;
 		}
 
 		public boolean mayRaiseQueryFatalError(QueryModelNode node) {
-			ensureNode(node);
+			node = ensureNode(node);
 			return summaries.get(node).mayRaiseQueryFatalError;
 		}
 
 		public boolean usesMappingParameterizedEvaluation(QueryModelNode node) {
-			ensureNode(node);
+			node = ensureNode(node);
 			return summaries.get(node).mappingParameterized;
 		}
 
 		public boolean permitsBindingInjection(TupleExpr node, Set<String> injectedNames) {
-			ensureNode(node);
+			node = (TupleExpr) ensureNode(node);
 			NodeSafetySummary summary = summaries.get(node);
 			if (!summary.injectionShapeSafe || nameSets.intersects(summary.unsafeInjectionNames, injectedNames)) {
 				return false;
@@ -686,12 +789,12 @@ public class QueryEvaluationUtility {
 		}
 
 		public boolean containsLateral(QueryModelNode node) {
-			ensureNode(node);
+			node = ensureNode(node);
 			return summaries.get(node).containsLateral;
 		}
 
 		public boolean containsExtension(QueryModelNode node) {
-			ensureNode(node);
+			node = ensureNode(node);
 			return summaries.get(node).containsExtension;
 		}
 
@@ -943,6 +1046,12 @@ public class QueryEvaluationUtility {
 			this.injectionTargets = injectionTargets;
 			this.assuredBindingNames = assuredBindingNames;
 			this.referencedVariableNames = referencedVariableNames;
+		}
+
+		private NodeSafetySummary forNode(QueryModelNode original) {
+			return new NodeSafetySummary(original, repeatable, mayRaiseQueryFatalError, mappingParameterized,
+					containsLateral, containsExtension, injectionShapeSafe, unsafeInjectionNames, injectionTargets,
+					assuredBindingNames, referencedVariableNames);
 		}
 
 		@Override

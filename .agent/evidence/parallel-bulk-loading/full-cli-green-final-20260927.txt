@@ -1,5 +1,0 @@
-Evidence:
-Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs tools/lmdb-bulk-load
-Reports: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-lmdb-bulk-load/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.tools.lmdb.bulk.DiskSpaceMonitorTest.xml, .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-lmdb-bulk-load/6.2.0-SNAPSHOT/surefire-reports/TEST-org.eclipse.rdf4j.tools.lmdb.bulk.LmdbBulkLoadTest.xml, .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-lmdb-bulk-load/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.tools.lmdb.bulk.DiskSpaceMonitorTest.txt, +1 more
-Summary: tests=48, failures=0, errors=0, skipped=0, time=28.577s
-Log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260927T002039.896110Z-17141-0845f02f/verify.log

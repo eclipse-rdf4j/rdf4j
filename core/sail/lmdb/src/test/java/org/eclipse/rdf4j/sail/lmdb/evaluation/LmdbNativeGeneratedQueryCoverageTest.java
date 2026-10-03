@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -46,6 +48,7 @@ import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.Gener
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -713,11 +716,20 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		Set<StrategyDecline> declines = declineReasons(query);
 
 		assertThat(actual).containsExactlyElementsOf(expected);
-		assertThat(plannedKernels()).as("a pure general expression BIND must be planned natively").isPositive();
 		assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 				.as("a pure CONCAT BIND must open a specialization or explicitly remain semantic native; reasons=%s",
 						declines)
 				.isTrue();
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
+
+		// Ordinary adaptive dispatch may select another native proposal. The supported per-query strategy
+		// request proves this BIND's generated eligibility without relying on a hedge or cost race winner.
+		resetMetricsOnly();
+		assertThat(rows(query, true, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED))
+				.containsExactlyElementsOf(expected);
+		assertThat(plannedKernels()).as("a pure general expression BIND must be planned natively").isPositive();
+		assertThat(openedKernels()).as("the requested generated BIND kernel must execute").isPositive();
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
 	}
@@ -856,9 +868,16 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	private List<String> rows(String query, boolean unordered) {
+		return rows(query, unordered, null);
+	}
+
+	private List<String> rows(String query, boolean unordered, String forcedStrategy) {
 		List<String> result = new ArrayList<>();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 			try (TupleQueryResult tupleResult = prepared.evaluate()) {
 				while (tupleResult.hasNext()) {
@@ -883,8 +902,16 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-			Matcher matcher = KERNEL_DECLINE.matcher(
-					prepared.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Telemetry).toString());
+			collectDeclineReasons(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), declines);
+		}
+		return declines;
+	}
+
+	private void collectDeclineReasons(GenericPlanNode node, Set<StrategyDecline> declines) {
+		String recorded = node.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES);
+		if (recorded != null) {
+			// Cost-model variant keys also contain strategy names and colons; they are not capability declines.
+			Matcher matcher = KERNEL_DECLINE.matcher(recorded);
 			while (matcher.find()) {
 				String strategy = matcher.group(1);
 				if (LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY.contains(strategy)
@@ -893,7 +920,12 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				}
 			}
 		}
-		return declines;
+		List<GenericPlanNode> children = node.getPlans();
+		if (children != null) {
+			for (GenericPlanNode child : children) {
+				collectDeclineReasons(child, declines);
+			}
+		}
 	}
 
 	private static boolean serialDeclinesAreNonCapability(Set<StrategyDecline> declines) {

@@ -22,6 +22,7 @@ import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
@@ -38,6 +39,7 @@ public final class LmdbBulkLoader {
 
 	private final Path target;
 	private final LmdbStoreConfig config;
+	private final LmdbStoreFormat format;
 	private final ParserMode parserMode;
 	private final long memoryBudgetBytes;
 	private final int partitionCount;
@@ -57,6 +59,7 @@ public final class LmdbBulkLoader {
 	private LmdbBulkLoader(Builder builder) {
 		target = builder.target;
 		config = builder.config;
+		format = LmdbStoreFormat.forNewStore(config);
 		parserMode = builder.parserMode;
 		memoryBudgetBytes = builder.memoryBudgetBytes;
 		partitionCount = builder.partitionCount;
@@ -135,6 +138,10 @@ public final class LmdbBulkLoader {
 
 	LmdbStoreConfig config() {
 		return config;
+	}
+
+	LmdbStoreFormat format() {
+		return format;
 	}
 
 	ParserMode parserMode() {

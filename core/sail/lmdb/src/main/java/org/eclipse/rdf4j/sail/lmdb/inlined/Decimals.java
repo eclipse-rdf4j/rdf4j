@@ -123,7 +123,7 @@ public class Decimals {
 
 	static Literal unpackDouble(long value, ValueFactory valueFactory) {
 		if ((value & 1L) == 0) {
-			throw new IllegalArgumentException("Invalid packed double value: zero bit not set.");
+			throw new InliningException("Invalid packed double value: zero bit not set.");
 		}
 		int sign = (int) ((value >> 1) & 1);
 		long mantissa = (value >> 2) & 0x000fffffffffffffL;

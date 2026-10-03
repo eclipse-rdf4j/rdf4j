@@ -448,9 +448,11 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String indexes) {
-		return new LmdbStoreConfig(indexes)
+		LmdbStoreConfig config = new LmdbStoreConfig(indexes)
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static void rebuildSketchesForPlanning(LmdbStore store) throws InterruptedException {

@@ -738,6 +738,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -773,6 +774,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(5_000L)
 				.setOptimizerSamplingMaxRows(16);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadInterleavedDateData(repository);
@@ -812,6 +814,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingMaxMillis(100L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadNameData(repository, 300);
@@ -849,6 +852,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -879,6 +883,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -922,6 +927,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadMedicalEncounterData(repository);
@@ -1014,6 +1020,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -1047,6 +1054,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -1087,6 +1095,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				.setSketchEstimatorEnabled(true)
 				.setOptimizerSamplingEnabled(false)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
 		try {
 			loadData(repository);
@@ -1257,9 +1266,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig() {
-		return new LmdbStoreConfig()
+		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static void rebuildSketchesAndAwaitLmdbOptimizer(LmdbStore sail, LmdbSailStore backingStore)

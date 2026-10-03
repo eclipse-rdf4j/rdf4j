@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
@@ -39,6 +40,21 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  * Deterministic assigned-value stream with every namespace, datatype, and RDF-star component ID resolved.
  */
 final class ResolvedValueRecords {
+
+	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
+			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal) throws IOException {
+		return build(dictionary, workspace, maxOpenFiles, memoryBudgetBytes, LmdbStoreFormat.forNewStore(config),
+				compression, cancellationSignal);
+	}
+
+	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
+			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		return build(dictionary, workspace, maxOpenFiles, memoryBudgetBytes, LmdbStoreFormat.forNewStore(config),
+				compression, cancellationSignal, scheduler, controller);
+	}
 
 	static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 
@@ -77,7 +93,7 @@ final class ResolvedValueRecords {
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
-			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			long memoryBudgetBytes, LmdbStoreFormat config, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
 		Path bucketDirectory = workspace.resolve("value-component-buckets");
 		Path descriptorPath = workspace.resolve("assigned-values.bin");
@@ -148,7 +164,7 @@ final class ResolvedValueRecords {
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
-			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			long memoryBudgetBytes, LmdbStoreFormat config, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			PartitionConcurrencyController controller) throws IOException {
 		return buildAdaptive(dictionary, workspace, maxOpenFiles, memoryBudgetBytes, config, compression,
@@ -156,7 +172,7 @@ final class ResolvedValueRecords {
 	}
 
 	private static ResolvedValueRecords buildAdaptive(PartitionValueDictionary dictionary, Path workspace,
-			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreFormat config, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 			PartitionConcurrencyController controller) throws IOException {
 		Path bucketDirectory = workspace.resolve("value-component-buckets");
@@ -348,7 +364,7 @@ final class ResolvedValueRecords {
 		private final BulkCodec runCodec;
 		private final long memoryBudgetBytes;
 		private final int maxOpenFiles;
-		private final LmdbStoreConfig config;
+		private final LmdbStoreFormat config;
 		private final BooleanSupplier cancellationSignal;
 		private final BulkTaskScheduler scheduler;
 		private final PartitionConcurrencyController controller;
@@ -360,7 +376,7 @@ final class ResolvedValueRecords {
 
 		private AdaptiveDependencySource(PartitionValueDictionary dictionary, Path bucketDirectory, Path runDirectory,
 				BulkCodec inputCodec, BulkCodec runCodec, long memoryBudgetBytes, int maxOpenFiles,
-				LmdbStoreConfig config, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+				LmdbStoreFormat config, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
 				PartitionConcurrencyController controller) {
 			this.dictionary = dictionary;
 			this.bucketDirectory = bucketDirectory;
@@ -1131,7 +1147,7 @@ final class ResolvedValueRecords {
 		}
 
 		private void write(long owner, int component, byte[] key, ExternalLongTupleSorter sorter,
-				LmdbStoreConfig config) throws IOException {
+				LmdbStoreFormat config) throws IOException {
 			if (!CanonicalTermCodec.isNamespace(key)) {
 				long inlineId = InlineValueCodec.tryEncode(CanonicalTermCodec.decode(key), config);
 				if (inlineId != 0L && sorter != null) {
