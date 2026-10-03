@@ -12,7 +12,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl } = require('./workbench-test-helpers');
+const { evidenceScreenshots, serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -291,9 +291,10 @@ async function inspectRoute(page, route, options = {}, diagnostics = { pageError
 	const locatorCount = route.landmark
 		? await page.locator(route.landmark).count().catch(() => 0)
 		: 0;
-	const filename = `${safeName(route.name)}-1440.png`;
-	const screenshotPath = path.join(ARTIFACT_ROOT, filename);
-	await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' }).catch(() => {});
+	const screenshotPath = evidenceScreenshots() ? path.join(ARTIFACT_ROOT, `${safeName(route.name)}-1440.png`) : null;
+	if (screenshotPath) {
+		await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' }).catch(() => {});
+	}
 	const pageErrorDelta = diagnostics.pageErrors.slice(beforePageErrors);
 	const consoleErrorDelta = diagnostics.consoleErrors.slice(beforeConsoleErrors);
 	const failedRequestDelta = diagnostics.failedRequests.slice(beforeFailedRequests);
@@ -368,9 +369,11 @@ async function exerciseQueryUi(page, evidence) {
 		expect.soft(icon.iconKey, `${name} icon catalog key`).toBe(name);
 		expect.soft(icon.path, `${name} icon must not use the plus fallback`).not.toBe('M12 5v14M5 12h14');
 	}
-	const screenshotPath = path.join(ARTIFACT_ROOT, 'query-actions-1440.png');
-	await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' });
-	evidence.uiChecks[evidence.uiChecks.length - 1].screenshotPath = screenshotPath;
+	if (evidenceScreenshots()) {
+		const screenshotPath = path.join(ARTIFACT_ROOT, 'query-actions-1440.png');
+		await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' });
+		evidence.uiChecks[evidence.uiChecks.length - 1].screenshotPath = screenshotPath;
+	}
 }
 
 async function exerciseExportPreview(page, evidence) {
@@ -495,9 +498,11 @@ async function exerciseExportPreview(page, evidence) {
 	evidence.exportPreview = previewRecord;
 	console.log('EXPORT_PREVIEW_PARITY', JSON.stringify(previewRecord));
 	writeCoverage(evidence);
-	const screenshotPath = path.join(ARTIFACT_ROOT, 'export-preview-1440.png');
-	await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' });
-	evidence.exportPreview.screenshotPath = screenshotPath;
+	if (evidenceScreenshots()) {
+		const screenshotPath = path.join(ARTIFACT_ROOT, 'export-preview-1440.png');
+		await page.screenshot({ path: screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' });
+		evidence.exportPreview.screenshotPath = screenshotPath;
+	}
 	expect(previewRecord.acceptable, `export preview response/state: ${JSON.stringify(previewRecord)}`).toBeTruthy();
 }
 
@@ -585,8 +590,11 @@ async function exerciseQueries(page, evidence) {
 			record.error = error instanceof Error ? error.message : String(error);
 		}
 		record.url = page.url();
-		record.screenshotPath = path.join(ARTIFACT_ROOT, `query-${scenario.name}-1440.png`);
-		await page.screenshot({ path: record.screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' }).catch(() => {});
+		if (evidenceScreenshots()) {
+			record.screenshotPath = path.join(ARTIFACT_ROOT, `query-${scenario.name}-1440.png`);
+			await page.screenshot({ path: record.screenshotPath, fullPage: true, animations: 'disabled', caret: 'hide' })
+				.catch(() => {});
+		}
 		evidence.queries.push(record);
 		console.log('QUERY_PARITY', JSON.stringify(record));
 		writeCoverage(evidence);

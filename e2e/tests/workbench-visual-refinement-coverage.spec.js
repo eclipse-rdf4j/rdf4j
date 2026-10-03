@@ -2,6 +2,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const { evidenceScreenshots } = require('./workbench-test-helpers.js');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
@@ -100,7 +101,7 @@ test.afterAll(async ({ request }) => {
 			'',
 			'| Kind | Route/state | Theme | Width | Status | Overflow | Screenshot |',
 			'| --- | --- | --- | ---: | ---: | ---: | --- |',
-			...coverageRows.map(row => `| ${row.kind} | ${row.route} / ${row.state} | ${row.theme} | ${row.width} | ${row.status} | ${row.overflow} | [image](${path.relative(ARTIFACT_DIRECTORY, row.screenshot)}) |`)
+			...coverageRows.map(row => `| ${row.kind} | ${row.route} / ${row.state} | ${row.theme} | ${row.width} | ${row.status} | ${row.overflow} | ${row.screenshot ? `[image](${path.relative(ARTIFACT_DIRECTORY, row.screenshot)})` : 'not saved'} |`)
 		];
 		fs.mkdirSync(ARTIFACT_DIRECTORY, { recursive: true });
 		fs.writeFileSync(path.join(ARTIFACT_DIRECTORY, 'coverage-final.md'), `${lines.join('\n')}\n`);
@@ -228,10 +229,14 @@ async function captureCurrentPage(page, route, pathSuffix, theme, width, state) 
 			surfaceColor: customProperties.getPropertyValue('--workbench-surface').trim()
 		};
 	});
-	const fileName = `${safeName(route)}__${safeName(state)}__${theme}__${width}.png`;
-	const screenshot = path.join(SCREENSHOT_DIRECTORY, 'routes', fileName);
-	fs.mkdirSync(path.dirname(screenshot), { recursive: true });
-	await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
+	// The screenshot is evidence for the coverage report; the checks below use the measured metrics.
+	let screenshot = null;
+	if (evidenceScreenshots()) {
+		const fileName = `${safeName(route)}__${safeName(state)}__${theme}__${width}.png`;
+		screenshot = path.join(SCREENSHOT_DIRECTORY, 'routes', fileName);
+		fs.mkdirSync(path.dirname(screenshot), { recursive: true });
+		await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
+	}
 	if (metrics.actualTheme !== theme) {
 		layoutViolations.push(`${route}/${state} at ${width}px requested ${theme}, rendered ${metrics.actualTheme}`);
 	}
