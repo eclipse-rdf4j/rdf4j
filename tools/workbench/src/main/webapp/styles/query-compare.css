@@ -263,6 +263,8 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
 
 .query-compare-layout--closing .query-compare-pane--secondary {
     display: block;
+    /* The closing column narrows past its content's minimum width; keep that content from widening the page. */
+    overflow-x: clip;
 }
 
 @media (min-width: 901px) {

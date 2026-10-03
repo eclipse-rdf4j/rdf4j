@@ -114,15 +114,6 @@ async function hasVisibleIntermediateDetailsMotion(locator) {
 	});
 }
 
-async function hasIntermediateOpacityMotion(locator) {
-	return locator.evaluate(element => {
-		const running = element.getAnimations({ subtree: false })
-			.some(animation => animation.playState === 'running');
-		const opacity = parseFloat(getComputedStyle(element).opacity);
-		return running && opacity > 0.02 && opacity < 0.98;
-	});
-}
-
 async function waitForOwnedAnimations(locator) {
 	await expect.poll(() => activeMotionCount(locator)).toBe(0);
 }
@@ -181,6 +172,7 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 
 	const compareRow = page.locator('#query-explanation-row-compare');
 	await expect(compareRow).toBeHidden();
+	await recordIntermediateMotion(compareRow, 'opacity');
 	const opening = await compareRow.evaluate(element => new Promise(resolve => {
 		document.getElementById('compare-toggle').click();
 		// The motion may start with the next frame; its keyframes are fixed once it exists.
@@ -200,7 +192,7 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 	expect(parseFloat(opening[0].height)).toBe(0);
 	expect(parseFloat(opening[0].opacity)).toBe(0);
 	await expect(compareRow).toHaveAttribute('aria-hidden', 'false');
-	await expect.poll(() => hasIntermediateOpacityMotion(compareRow)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(compareRow)).toBe(true);
 
 	await page.locator('#compare-toggle').evaluate(element => element.click());
 	await expect(compareRow).toBeHidden();
@@ -453,6 +445,50 @@ test('native disclosures and compare panes animate their outer content only', as
 		parseFloat(getComputedStyle(element).columnGap))).toBeLessThan(0.01);
 });
 
+/** Record the widest horizontal page overflow on every frame until the compare layout has settled. */
+async function recordPageOverflowUntilSettled(page) {
+	await page.evaluate(() => {
+		const layout = document.querySelector('#query-compare-layout');
+		const recording = { widest: 0, moved: false, done: false };
+		window.__comparePageOverflow = recording;
+		const started = performance.now();
+		const sample = () => {
+			const root = document.documentElement;
+			recording.widest = Math.max(recording.widest, root.scrollWidth - root.clientWidth);
+			const moving = layout.getAnimations({ subtree: true }).some(animation => animation.playState === 'running');
+			recording.moved = recording.moved || moving;
+			if ((moving || !recording.moved) && performance.now() - started < 5000) {
+				requestAnimationFrame(sample);
+			} else {
+				recording.done = true;
+			}
+		};
+		requestAnimationFrame(sample);
+	});
+}
+
+test('opening and closing the comparison never widens the page', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await openRoute(page, QUERY_URL, 'query');
+	await runPrimaryQuery(page);
+	const recorded = () => page.evaluate(() => window.__comparePageOverflow);
+
+	await recordPageOverflowUntilSettled(page);
+	await page.locator('#compare-toggle').click();
+	await expect.poll(async () => (await recorded()).done).toBe(true);
+	const opening = await recorded();
+	expect(opening.moved, 'the comparison opens with motion').toBe(true);
+	expect(opening.widest, 'page overflow while the comparison opens').toBeLessThanOrEqual(1);
+
+	await recordPageOverflowUntilSettled(page);
+	await page.locator('#query-compare-close').click();
+	await expect.poll(async () => (await recorded()).done).toBe(true);
+	const closing = await recorded();
+	expect(closing.moved, 'the comparison closes with motion').toBe(true);
+	expect(closing.widest, 'page overflow while the comparison closes').toBeLessThanOrEqual(1);
+});
+
 test('completed disclosures release their fill effects and follow natural sizing', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openRoute(page, QUERY_URL, 'query');
@@ -692,16 +728,18 @@ test('diff overlay fades while modal accessibility and focus restore synchronous
 		element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o }'));
 	const diffTrigger = page.locator('#query-diff-trigger');
 	await expect(diffTrigger).toBeEnabled();
+	const modal = page.locator('#query-diff-modal');
+	await recordIntermediateMotion(modal, 'opacity');
 	await diffTrigger.click();
 
-	const modal = page.locator('#query-diff-modal');
 	await expect(modal).toHaveAttribute('aria-hidden', 'false');
-	expect(await activeMotionCount(modal)).toBeGreaterThan(0);
-	await expect.poll(() => hasIntermediateOpacityMotion(modal)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(modal)).toBe(true);
+	await waitForOwnedAnimations(modal);
+	await recordIntermediateMotion(modal, 'opacity');
 	await page.locator('#query-diff-close').click();
 	await expect(modal).toHaveAttribute('aria-hidden', 'true');
 	await expect(page.locator('#query-diff-trigger')).toBeFocused();
 	expect(await modal.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasIntermediateOpacityMotion(modal)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(modal)).toBe(true);
 	await waitForOwnedAnimations(modal);
 });
