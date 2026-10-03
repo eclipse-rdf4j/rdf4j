@@ -43,10 +43,9 @@ class LmdbContextIterator extends LookAheadIteration<Resource> {
 					return null;
 				}
 				contextID = record[0];
-			} while (contextID == 0);
+			} while (contextID == ValueIds.NULL_CONTEXT);
 
-			Resource context = (Resource) valueStore.getLazyValue(contextID);
-			return context;
+			return (Resource) valueStore.getLazyValue(contextID);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}

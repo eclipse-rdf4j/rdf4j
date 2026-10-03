@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -43,6 +44,8 @@ import org.junit.rules.TemporaryFolder;
  *
  */
 public class QueryBenchmarkTest {
+
+	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
 
 	private static SailRepository repository;
 	private static File dataDir;
@@ -123,13 +126,27 @@ public class QueryBenchmarkTest {
 			tempDir.create();
 			dataDir = tempDir.newFolder();
 
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-			repository = new SailRepository(new LmdbStore(dataDir, config));
+			LmdbStoreConfig config = new LmdbStoreConfig(DEFAULT_TRIPLE_INDEXES);
+			config.setSketchEstimatorEnabled(false);
+			config.setForceSync(false);
+			config.setValueDBSize(1_073_741_824L); // 1 GiB
+			config.setTripleDBSize(config.getValueDBSize());
+			var store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
 				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
 				connection.commit();
+			}
+
+			// print size of temporary folder
+			try (Stream<java.nio.file.Path> paths = java.nio.file.Files.walk(dataDir.toPath())) {
+				long folderSize = paths
+						.filter(java.nio.file.Files::isRegularFile)
+						.mapToLong(path -> path.toFile().length())
+						.sum();
+				System.out.println("Temporary folder size after data load: " + folderSize + " bytes");
 			}
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {

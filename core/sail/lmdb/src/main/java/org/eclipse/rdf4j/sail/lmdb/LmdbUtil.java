@@ -27,6 +27,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
 import org.lwjgl.PointerBuffer;
@@ -52,7 +53,7 @@ final class LmdbUtil {
 	 * Percentage free space in an LMDB db before automatically resizing the map. Default is 80%.
 	 */
 	@SuppressWarnings("StaticNonFinalField")
-	public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
+	static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
 
 	private LmdbUtil() {
 	}
@@ -182,6 +183,14 @@ final class LmdbUtil {
 	public static long getNewSize(int pageSize, long txn, long requiredSize) {
 		long nextPgno = mdbTxnMtNextPgno(txn);
 		return (nextPgno * pageSize) + requiredSize;
+	}
+
+	public static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+		int result = 0;
+		for (int i = 0; result == 0 && i < length; i++) {
+			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
+		}
+		return result;
 	}
 
 	@FunctionalInterface
