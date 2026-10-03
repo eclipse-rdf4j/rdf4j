@@ -76,6 +76,8 @@ async function settled(page) {
 			if (remaining <= 0) throw new Error(`${running.length} animation(s) still running after 5 s`);
 			await Promise.race([Promise.allSettled(running.map(animation => animation.finished)),
 				new Promise(resolve => setTimeout(resolve, Math.min(remaining, 250)))]);
+			// The Workbench commits a motion's end state in its finish event, which follows the finished promise.
+			await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 		}
 	});
 }
