@@ -88,11 +88,18 @@ test('full screen fills the screen and scrolls the table', async ({ page }) => {
 	expect(height).toBeGreaterThanOrEqual(900 * 0.8);
 	const box = await table.boundingBox();
 	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-	// Engines scale wheel deltas differently (WebKit on Linux scrolls less than the delta), so keep turning the wheel.
-	await expect.poll(async () => {
+	// WebKit on Linux scrolls one fixed line step (about 45 px) per wheel event whatever its delta, so keep turning
+	// the wheel while the table moves.
+	let scrollTop = 0;
+	for (let turn = 0; turn < 60 && scrollTop <= 500; turn++) {
 		await page.mouse.wheel(0, 600);
-		return table.evaluate(element => element.scrollTop);
-	}).toBeGreaterThan(500);
+		const previous = scrollTop;
+		await expect.poll(async () => {
+			scrollTop = await table.evaluate(element => element.scrollTop);
+			return scrollTop > previous;
+		}, { timeout: 1500 }).toBe(true);
+	}
+	expect(scrollTop).toBeGreaterThan(500);
 	await page.keyboard.press('Escape');
 	await expect(page.locator('#query-results')).not.toHaveAttribute('data-fullscreen', 'true');
 });

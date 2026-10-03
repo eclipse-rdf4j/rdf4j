@@ -1088,6 +1088,8 @@ test('cancelled execution clears busy state and a new Execute starts cleanly', a
 });
 
 test('mobile result layouts append and scroll locally within the viewport', async ({ page }, testInfo) => {
+	// Native wheel scrolling takes many small steps in WebKit on Linux.
+	test.setTimeout(120000);
 	const monitor = monitorExecutions(page);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await openQueryPage(page);
@@ -1150,6 +1152,8 @@ test('mobile result layouts append and scroll locally within the viewport', asyn
 });
 
 test('main Table and Records reach first, middle, and last rows through native scrolling', async ({ page }, testInfo) => {
+	// Native wheel scrolling takes many small steps in WebKit on Linux.
+	test.setTimeout(120000);
 	const monitor = monitorExecutions(page);
 	await page.setViewportSize({ width: 1280, height: 720 });
 	await page.goto(REVIEW_QUERY_URL, { waitUntil: 'domcontentloaded' });
@@ -1682,12 +1686,30 @@ async function expectCompletedRows(status, loadedRows, totalRows) {
 	}
 }
 
+/**
+ * Waits until a scroll position stops changing and returns it. WebKit animates wheel scrolling and adds the next
+ * wheel turn to a motion that is still running, so progress is judged only once the scroll has settled.
+ */
+async function settledScroll(read) {
+	let last = await read();
+	let unchanged = 0;
+	const deadline = Date.now() + 3000;
+	while (unchanged < 3 && Date.now() < deadline) {
+		await new Promise(resolve => setTimeout(resolve, 50));
+		const next = await read();
+		unchanged = next === last ? unchanged + 1 : 0;
+		last = next;
+	}
+	return last;
+}
+
 async function scrollToResultEnd(scrollport, page) {
 	await expect(scrollport).toBeVisible();
 	await pointAtVisibleResult(scrollport, page);
 	let state = await readResultScrollProgress(scrollport);
 	let usedKeyboardFallback = false;
-	for (let attempt = 0; attempt < 24 && !state.lastVisible; attempt++) {
+	// WebKit on Linux scrolls one fixed line step (about 45 px) per wheel event, so turn while the wheel moves the result.
+	for (let attempt = 0; attempt < 400 && !state.lastVisible; attempt++) {
 		await pointAtVisibleResult(scrollport, page);
 		const previous = state;
 		// A result that scrolls with the page is followed by the page footer: the wheel stops at the result's end
@@ -1696,10 +1718,9 @@ async function scrollToResultEnd(scrollport, page) {
 		if (step > 0) {
 			await page.mouse.wheel(0, step);
 		}
-		const advanced = await expect.poll(async () => {
-			state = await readResultScrollProgress(scrollport);
-			return state.lastVisible || state.scrollTop > previous.scrollTop || state.lastIndex > previous.lastIndex;
-		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
+		await settledScroll(async () => (await readResultScrollProgress(scrollport)).scrollTop);
+		state = await readResultScrollProgress(scrollport);
+		const advanced = state.lastVisible || state.scrollTop > previous.scrollTop || state.lastIndex > previous.lastIndex;
 		if (!advanced) {
 			await scrollport.focus();
 			await scrollport.press('PageDown');
@@ -1727,6 +1748,17 @@ async function scrollToResultEnd(scrollport, page) {
 			break;
 		}
 	}
+	if (!state.lastVisible && state.scrollSource === 'page') {
+		// WebKit on Linux scrolls one fixed line step per wheel event, so the turns above can run out first; End on
+		// the page finishes the way.
+		await page.evaluate(() => document.activeElement && document.activeElement.blur());
+		await page.keyboard.press('End');
+		await expect.poll(async () => {
+			state = await readResultScrollProgress(scrollport);
+			return state.lastVisible;
+		}, { timeout: 3000 }).toBe(true).catch(() => {});
+		usedKeyboardFallback = true;
+	}
 	expect(state.lastVisible, `native wheel input should bring the final result row into view: ${JSON.stringify(state)}`)
 		.toBe(true);
 	if (usedKeyboardFallback) {
@@ -1739,7 +1771,8 @@ async function scrollToResultStart(scrollport, page) {
 	await pointAtVisibleResult(scrollport, page);
 	let state = await readResultScrollProgress(scrollport);
 	let usedKeyboardFallback = false;
-	for (let attempt = 0; attempt < 24 && !state.firstVisible; attempt++) {
+	// WebKit on Linux scrolls one fixed line step (about 45 px) per wheel event, so turn while the wheel moves the result.
+	for (let attempt = 0; attempt < 400 && !state.firstVisible; attempt++) {
 		await pointAtVisibleResult(scrollport, page);
 		const previous = state;
 		// A result that scrolls with the page has the query form above it: the wheel stops at the result's start
@@ -1748,10 +1781,9 @@ async function scrollToResultStart(scrollport, page) {
 		if (step > 0) {
 			await page.mouse.wheel(0, -step);
 		}
-		const advanced = await expect.poll(async () => {
-			state = await readResultScrollProgress(scrollport);
-			return state.firstVisible || state.scrollTop < previous.scrollTop || state.firstIndex < previous.firstIndex;
-		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
+		await settledScroll(async () => (await readResultScrollProgress(scrollport)).scrollTop);
+		state = await readResultScrollProgress(scrollport);
+		const advanced = state.firstVisible || state.scrollTop < previous.scrollTop || state.firstIndex < previous.firstIndex;
 		if (!advanced) {
 			await scrollport.focus();
 			await scrollport.press('PageUp');
@@ -1875,20 +1907,18 @@ async function scrollToResultMiddle(scrollport, page) {
 		return Math.floor(bounds.top + bounds.height / 2 - window.innerHeight / 2);
 	});
 	// Engines do not scroll exactly the wheel delta: Firefox moves at most about one page per wheel event, and WebKit
-	// on Linux scales the delta (it can overshoot). The wheel turns, either way, until the middle is close.
+	// on Linux one fixed line step (about 45 px) whatever the delta. The wheel turns, either way, while it moves the
+	// result, until the middle is close.
 	const target = start + middleDelta;
-	const tolerance = await scrollport.evaluate(element => Math.max(48, Math.min(element.clientHeight,
-		window.innerHeight) / 4));
+	// Close enough for the middle row to be in view, and wider than one WebKit wheel step.
+	const tolerance = 60;
 	let position = start;
-	for (let attempt = 0; attempt < 24 && Math.abs(target - position) > tolerance; attempt++) {
+	for (let attempt = 0; attempt < 400 && Math.abs(target - position) > tolerance; attempt++) {
 		const previous = position;
 		await pointAtVisibleResult(scrollport, page);
 		await page.mouse.wheel(0, target - position);
-		const moved = await expect.poll(async () => {
-			position = await scrollPosition();
-			return position !== previous;
-		}, { timeout: 1500 }).toBe(true).then(() => true, () => false);
-		if (!moved) {
+		position = await settledScroll(scrollPosition);
+		if (position === previous) {
 			break;
 		}
 	}
