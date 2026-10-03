@@ -3,6 +3,10 @@
 	<display-name>RDF4J Workbench</display-name>
 	<description>RDF4J Workbench</description>
 	<filter>
+		<filter-name>request-integrity</filter-name>
+		<filter-class>org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter</filter-class>
+	</filter>
+	<filter>
 		<filter-name>redirect</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.RedirectFilter</filter-class>
 		<init-param>
@@ -22,6 +26,10 @@
 			<param-value>600</param-value>
 		</init-param>
 	</filter>
+	<filter-mapping>
+		<filter-name>request-integrity</filter-name>
+		<url-pattern>/repositories/*</url-pattern>
+	</filter-mapping>
 	<filter-mapping>
 		<filter-name>redirect</filter-name>
 		<url-pattern>/</url-pattern>
