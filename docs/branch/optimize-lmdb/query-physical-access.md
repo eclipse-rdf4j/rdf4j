@@ -40,9 +40,75 @@ Physical alternatives are local. If a bound probe cannot be opened, the enclosin
 
 Where exact encounter order matters, the source can request `statementsInEncounterOrder`; it must not replace that with another physical index order merely because the replacement contains the same rows. Ordered merge across composite inputs is a separate capability from unordered concatenation. Parallel partitioning is likewise declined when ordering, range, or source conditions are incompatible; sorted output is not inferred from a partitioned scan.
 
-## Illustrative access walkthrough (source-only)
+## A dataset and the IDs used below
 
-For a query with `?person <urn:email> ?mail` followed by a selective local `FILTER`, the statement pattern compiles to IDs and asks the source for a pattern iterator. It may choose a bound/index access or adjacency based on the pattern's bindings, order and range needs, source generation, and access costs. A later join proposal can try a batch or join family, each of which may own per-worker probes. If the source cannot offer a required synopsis, that route declines before returning rows; the ordinary statement route remains valid if the enclosing plan registered it. The generic/physical selection does not change SPARQL bag multiplicity or filter error behavior. This is a source-only access-path illustration, not an observed route or performance claim.
+The following TriG is the common example for this guide, [joins](query-joins-and-factors.md#worked-joins-over-the-same-ids), and [adjacency publication](storage-adjacency-lifecycle.md#which-row-a-snapshot-actually-reads):
+
+```trig
+@prefix : <urn:example:> .
+
+:alice :knows :bob, :carol .
+:bob   :label "Bob" .
+:carol :label "Carol" .
+:team { :alice :knows :bob . }
+```
+
+All five quads are explicit. Unless a walkthrough says otherwise, its **active query dataset restricts default-graph patterns to the stored default context**, ID `0`; `:team` is available as a named graph. This is a dataset assumption, not a consequence of writing an unqualified triple pattern. `ContextConstraint` can instead be unrestricted or contain several context IDs. The native pattern/source boundary preserves one match per visible quad when its context is unrestricted; callers must not infer merged-default-graph deduplication from an adjacency neighbor list. Named `GRAPH ?g` patterns exclude context `0` and retain `?g` in the solution mapping.
+
+Use symbolic IDs `a`, `b`, `c`, `k`, `l`, `t`, `B`, and `C` for `:alice`, `:bob`, `:carol`, `:knows`, `:label`, `:team`, `"Bob"`, and `"Carol"`. These are explanatory names, not actual allocated numbers or lexical sort order. The short labels can be inline literal IDs when the store format supports them; an ID does not necessarily refer to a dictionary record. We write `*` for the source's `UNKNOWN_ID` wildcard; it is different from context `0`.
+
+| Stored quad `(subject, predicate, object, context)` | Meaning |
+|---|---|
+| `(a,k,b,0)` | Alice knows Bob in the default context. |
+| `(a,k,c,0)` | Alice knows Carol in the default context. |
+| `(b,l,B,0)` | Bob's label. |
+| `(c,l,C,0)` | Carol's label. |
+| `(a,k,b,t)` | Alice knows Bob in the team graph. |
+
+`LmdbSailDataset.idOf()` in [`LmdbSailStore`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSailStore.java) delegates to `ValueStore.getId()` without creating a stored term. Compiler constants and incoming RDF bindings are resolved into this ID space; later joins carry these IDs in slots rather than looking the terms up again. The [value overlay guide](storage-value-overlay.md) explains the optional dictionary accelerator, inline decoding, and the durable fallback used by `getId()` and `getLazyValue()`. A failed constant lookup is not passed to a scan as a wildcard: `compileTerm()` in [`LmdbNativeAggregatePlannerBase`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAggregatePlannerBase.java) declines that native term when `idOf()` returns `UNKNOWN`. A dictionary record's absence alone is not the same test: an inline literal can still resolve to an ID, and term-equal language-tag variants require the compiler's semantic safeguards. An unknown selected graph is omitted from the fixed context list; an empty list produces an empty pattern.
+
+## From a binding to an outgoing row
+
+Consider `SELECT ?friend WHERE { :alice :knows ?friend }` under the default-context dataset above. The following is a possible admitted execution, not a claim that the optimizer always chooses adjacency:
+
+1. [`PatternPlan.openRaw()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePatternPlan.java) resolves the current row into `(a,k,*,0)`. Constants supply `a` and `k`; `?friend` has an unbound slot. The fixed dataset context supplies `0`. A later probe of the same pattern may have an outer binding in that slot and therefore a different access shape.
+2. `LmdbSailDataset.statementsArbitrated()` or `RetainedNativeProbe.open()` checks the source is open and pins its read lifetime. An exact adjacency view must correspond to the source's pinned statement revision and transaction version. When a complete FULL snapshot offers both candidates, `LmdbStatementAccessArbiter` compares their work/evidence. Otherwise `tryDirect()` can still attempt an eligible specialized adjacency shape. Eligibility, the chosen candidate, and an iterator returned by `tryOpen()` are separate events.
+3. If adjacency opens, `LmdbDirectAdjacencyStore.open()` chooses the **outgoing-explicit** plane: the subject is the root `a`, predicate `k` selects its partition, and objects are neighbors. `resolveRow()` first checks pending changes and applicable delta generations, then the base. It never reads a stale base row over a newer visible replacement. See [the revision walkthrough](storage-adjacency-lifecycle.md#which-row-a-snapshot-actually-reads).
+4. In the base case, `LmdbInMemoryAdjacencyIndex.bindPredicate()` checks coverage and translates raw predicate ID `k` to a dense predicate ordinal. `findRunByOrdinal()` asks [`ImmutablePagedQuadCsfIndex.findLocalReference()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/csf/ImmutablePagedQuadCsfIndex.java) for root `a` in that predicate/plane partition. Shard fences select a shard, page fences select a page, and a reusable page lookup cursor finds the exact root. A successful local `(page,row)` reference becomes a CSF run handle. Neither a numeric ID nor a catalog ordinal is a page address.
+5. The row's logical payload is the unsigned-ordered `(neighbor,rawContext)` pairs `{(b,0),(b,t),(c,0)}`; their actual order depends on allocated IDs. [`LmdbDirectAdjacencyIterator.next()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencyIterator.java) decodes run windows, keeps only context `0`, and reconstructs `(a,k,b,0)` and `(a,k,c,0)`. CSF fibers and context ordinals supply the pairs; a large row can span continuation pages. Exact bytes, continuation checks, and optional page/cursor acceleration are in [the CSF guide](storage-csf-format.md).
+6. `PatternPlan.bind()` checks any retained semantic range, graph scope, constants, repeated variables, and compatibility with already-bound slots. It installs `?friend=b`, then `?friend=c`, rolling back each temporary binding when advancing. An enclosing `FilterPlan` or join filter still evaluates the SPARQL expression; a page lookup does not make an arbitrary filter true. At result access, `lazyValue(b)` / `lazyValue(c)` provides RDF values for the visible bindings.
+
+The result is `:bob` and `:carol`, once each. With `GRAPH :team { :alice :knows ?friend }`, the context argument is `t` and only `(a,k,b,t)` survives. With `GRAPH ?g`, the context slot is unbound, named-graph scope rejects `0`, and the output is `(?g=t, ?friend=b)`. If a scan is deliberately unrestricted across both stored contexts and leaves context out of its mapping, it sees two `b` incidences and one `c` incidence. Projection alone does not erase those two Bob matches; a semantic deduplication operator must do that where required.
+
+## Incoming, fully bound, and wildcard-predicate lookups
+
+The same IDs produce different navigation paths as bindings change:
+
+| Request in the example dataset | Adjacency navigation, if admitted | Exact visible rows |
+|---|---|---|
+| `?who :knows :bob`, `( *,k,b,0)` | Incoming-explicit partition for `k`; root `b`; neighbor subjects `{a}` with pairs `(a,0)` and `(a,t)` before context filtering. | `(a,k,b,0)`; `?who=a`. |
+| `:alice :knows :bob`, `(a,k,b,0)` | `openBoundProbe()` resolves the outgoing row at `a` for `k`, then lower-bounds neighbor/context `(b,0)`. The complete FULL route also uses this outgoing slice. | One quad or an exact miss; no variable is produced here. |
+| `:alice ?p ?o`, `(a,*,*,0)` | Outgoing node-to-predicate projection enumerates `k` for root `a`, then visits its run. With an exact FULL snapshot, a predicate sweep can also serve when the projection declines. | `(a,k,b,0)`, `(a,k,c,0)`; `(?p=k,?o=b/c)`. |
+| `?s ?p :bob`, `(*,*,b,0)` | Incoming node-to-predicate enumeration if built and complete; otherwise an exact FULL predicate sweep or the persistent index. Incoming projection has its own build gate. | `(a,k,b,0)`; `(?s=a,?p=k)`. |
+| `?s :knows ?o`, `(*,k,*,0)` | Enumerate outgoing roots for `k` and walk each run, or a compatible incoming/ordered root route. Requires a complete root-domain proof. | Both default-context `knows` quads. |
+
+A source's `NativeProbe.wildcardAdjacency()` is another interface, used by eligible batch/kernel consumers. It binds one predicate ordinal at a time to a reusable fixed-predicate adapter; it requires a common exact FULL snapshot for the predicate domain and all planes. It is not the same capability as a bound node's node-to-predicate projection. Do not infer support for one from the presence of the other. [`LmdbDirectWildcardAdjacency`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectWildcardAdjacency.java), `LmdbDirectAdjacencyStore.bindWildcardAdjacency()`, and `open()` implement these separate routes.
+
+Explicitness belongs to the dataset/source, not a fifth field in the returned quad. An explicit source chooses outgoing-explicit or incoming-explicit; an inferred source chooses the corresponding inferred plane and LMDB database. Include-inferred evaluation can combine sources sharing the value-ID space. On this all-explicit dataset, an inferred-only source contributes no rows. If an inferencer also maintains another visible matching quad, each source's own visibility and the enclosing dataset composition govern its contribution; an adjacency iterator does not synthesize inference or perform global duplicate elimination.
+
+## The durable B-tree route for the same request
+
+If adjacency is disabled, building, SHADOW-only, unprovable for the revision, outside selected predicate coverage, or declines this shape/order, the source opens `TripleStore.getTriples()` using its pinned transaction. A missing covered row is different: adjacency can return an **empty iterator**, which is an exact answer, and needs no B-tree retry. `null` from `tryOpen()` means it has no complete answer.
+
+The ordinary index selector in [`TripleStore.rebuildIndexSelectionTable()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java) caches the best configured index for each four-field binding mask using `TripleIndex.getPatternScore()`. With the default `spoc,posc` indexes, `(a,k,*,0)` uses `spoc`: its leading bound prefix is `(a,k)`. Context `0` follows the unbound object field and is therefore a residual match check. `(*,k,b,0)` uses `posc`: `(k,b)` is the bound prefix, subject is unbound, and context is again residual. `:alice ?p ?o` uses the subject prefix in `spoc`; `?s ?p :bob` has no leading bound field in either default index, so it may scan and filter a much wider range. An additional configured object-leading index can change that last route.
+
+[`LmdbRecordIterator`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbRecordIterator.java) encodes the minimum prefix key through `TripleIndex`, selects the explicit/inferred database, and positions an LMDB cursor with `MDB_SET_RANGE` (or `MDB_FIRST` when no prefix is usable). LMDB traverses its B-tree; this code does not select a CSF page. Subsequent `MDB_NEXT` operations decode keys to quads and check every bound field that the prefix did not establish. Prefix/range termination stops the scan; skip-scan can seek past a mismatching run. Four bound fields can use one `mdb_get` exact-key lookup instead of opening a scan cursor. The key encoding is documented in [values and index records](storage-values-and-records.md#database-names-and-authoritative-rows).
+
+For `(a,k,*,0)`, this route encounters both default-context and team-context keys under the `(a,k)` prefix, rejects context `t`, and returns the same two ID quads to `PatternPlan.bind()`. The join sees the same bindings whichever physical source opened. A reusable probe retains and repositions its LMDB iterator for the next outer key; its previous iterator is no longer valid after that open.
+
+A derived-access decline does not guarantee that an authoritative read can continue: if the pinned LMDB snapshot itself has been invalidated, its snapshot checks can fail rather than silently rebind the query to a newer transaction. The fallback must preserve the original read contract.
+
+Ordered scans have an additional obligation. `TripleStore.getTriples(order,...)` needs a compatible configured key order; complete FULL adjacency can also supply predicate slices, ordered merges, or a spill sort depending on the requested field. An arbitrary unordered run is not automatically a legal ordered input. If neither route supplies the required order, the consumer must decline or use its implemented sort/fallback; the source cannot silently promise sorted rows. See [merge-join examples](query-joins-and-factors.md#ordered-merge-and-hash-over-these-relations).
 
 ## Extension and test map
 

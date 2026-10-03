@@ -79,13 +79,98 @@ Current planner and dispatch constraints:
 
 The packed vector size defaults to 2,048 rows, is clamped to 64–65,536, and is rounded down to the nearest power of two. Root batches default to 1,024 but are limited to vector size and floored at 64. Initial node capacity defaults to vector size, with the same 64 floor and vector ceiling. Exact variable ordering begins at three variables and defaults to a threshold of nine; the beam defaults to 128 and has a minimum of eight. Bulk run copies use a fixed 4,096-lane window. These are row/lane counts, not byte ceilings.
 
-## Worked examples (source-only)
+## Worked joins over the same IDs
 
-**Independent fanouts.** For `?person ex:knows ?friend . ?person ex:tag ?tag`, once `?person` is fixed, neither tail variable is needed to probe the other branch. A factorized tail can count or retain each branch's values per key. `SELECT ?person` can preserve the product multiplicity without building every pair; `SELECT DISTINCT ?person` needs only that each branch be nonempty. `SELECT ?friend ?tag` must enumerate the cross product when it returns bindings.
+Use the [five-quad dataset and symbolic IDs](query-physical-access.md#a-dataset-and-the-ids-used-below): `a/b/c` are Alice/Bob/Carol, `k/l` are knows/label, `B/C` are the label literals, and `t` is the team graph. The active dataset restricts ordinary patterns to context `0` and exposes `t` as a named graph. Each example below explains an execution that is valid **if that operator is admitted and opened**. These tiny relations do not predict cost estimates, automatic admission, or the selected optimizer plan; in particular, merge/hash minimum-row gates can reject them.
 
-**Cyclic constraints.** For `?a ex:edge ?b . ?b ex:edge ?c . ?a ex:edge ?c`, the third triple is a constraint against an already-bound ancestor pair. The f-tree cannot treat it as an independent child product; the planner must enforce the cyclic relation with intersection logic or decline to another join path.
+### A chain passes the first lookup's IDs into the second
 
-**OPTIONAL and UNION.** In `{ ?s ex:p ?x OPTIONAL { ?s ex:q ?y } } UNION { ?s ex:r ?z }`, missing right-side OPTIONAL results contribute the left mapping with the right names unbound. The UNION adds branch rows, including duplicates. A future factor operator must preserve those semantics at the boundary rather than multiplying `?x`, `?y`, and `?z` into one global product.
+```sparql
+PREFIX : <urn:example:>
+SELECT ?friend ?label WHERE {
+  :alice :knows ?friend .
+  ?friend :label ?label .
+  FILTER(?label = "Bob")
+}
+```
+
+For a nested-loop order that starts with `knows`, the first pattern requests `(a,k,*,0)`. Outgoing adjacency returns two accepted quads, or `spoc` returns the same quads after context filtering. [`JoinCursor.next()` and `openRight()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeJoinPlans.java) keep the left row installed while opening the right pattern:
+
+| Current outer slots | Inner request | Inner binding before the filter | Filter/result |
+|---|---|---|---|
+| `friend=b, label=*` | `(b,l,*,0)` | `friend=b, label=B` | `"Bob" = "Bob"`; emit Bob / `"Bob"`. |
+| `friend=c, label=*` | `(c,l,*,0)` | `friend=c, label=C` | `"Carol" = "Bob"` is false; emit nothing. |
+
+The right probe is created once and reopened for `b` and then `c`; it can reuse the predicate ordinal, page lookup cursor, and run iterator for adjacency, or reposition a retained LMDB iterator. There is no dictionary lookup of `:bob` between these two patterns: the ID already occupies `friend`. Closing/advancing the right cursor rolls back its new slots; advancing the left cursor rolls back `friend`. Compatibility checks at `PatternPlan.bind()` reject conflicts or repeated-variable mismatches before a solution reaches the filter.
+
+The `FILTER` might instead be placed at an earlier legal depth or absorbed into a safe range/constant restriction; that changes candidate work, not the required result. Literal `=` uses the native expression's SPARQL value semantics, not an unconditional comparison of raw literal IDs. If an expression needs an RDF value, the source resolves it through `lazyValue()`; [value resolution](storage-value-overlay.md) is separate from the statement lookup. If the `label` predicate is outside selected adjacency coverage, the first pattern can use adjacency and the second can use LMDB. A join does not require every child to use the same physical representation.
+
+For `GRAPH :team { :alice :knows ?friend }` followed by the default-context label pattern, the first request is `(a,k,*,t)` and supplies only `friend=b`; the next request is still `(b,l,*,0)`. The graph of the outer quad does not automatically become the inner pattern's graph.
+
+### A star keeps independent fanouts independent
+
+```sparql
+PREFIX : <urn:example:>
+SELECT ?person ?left ?right WHERE {
+  ?person :knows ?left .
+  ?person :knows ?right .
+}
+```
+
+After root `person=a` is fixed, each branch requests `(a,k,*,0)` and produces `[b,c]`. Their fresh slots differ. An ordinary nested loop emits `(a,b,b)`, `(a,b,c)`, `(a,c,b)`, `(a,c,c)`: the shared subject establishes compatibility, and the two independent object choices multiply. It must not intersect the object lists, zip `b` with `b` and `c` with `c`, or deduplicate the product to two rows.
+
+For an eligible trailing suffix, [`LmdbNativeFactorizedRows.tryCreate()` and `TailBranch.result()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedRows.java) retain/probe branch results by the prefix key rather than repeat them for every expanded row. In this standalone star, the first pattern introduces `person`, which the second probe needs, so it remains in the prefix. The two prefix rows `(a,b)` and `(a,c)` each combine with the tail's `ENUM` result `[b,c]`, yielding the four pairs above. With `SELECT ?person`, the tail can instead retain `COUNT=2` and give each of the two prefix rows weight `2`; Alice still appears four times. With `SELECT DISTINCT ?person`, the tail needs only `EXISTS`, and the final distinct result contains Alice once. If a later pattern or filter consumes `left` or `right`, the planner must retain the required scalar values or keep that branch in the flat prefix; it cannot replace it by a count.
+
+The row-tail and packed-tree planners have different admission rules. A connected fixed-predicate region admitted by [`LmdbNativePackedFtree`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtree.java) can retain an `a` root lane and separate child slices for the two fanouts, with their `2 × 2` product implicit. `Runtime.openRootProducer()` first tries equivalent complete adjacency seeds, then its implemented LMDB `ScanRootProducer`. `EdgeRuntime` can likewise use a run or its statement-probe path. Missing adjacency therefore does not invariably discard a packed tree. Unsupported algebra, masks, filters, or resource admission can still decline the candidate before output.
+
+### Shared variables are intersected; EXISTS asks for a verdict
+
+```sparql
+PREFIX : <urn:example:>
+SELECT ?friend WHERE {
+  :alice :knows ?friend .
+  ?friend :label "Bob" .
+}
+```
+
+Here both patterns constrain **the same** fresh `friend` slot. The outgoing `knows` run at `a` allows `[b,c]`; the incoming `label` run at object `B` allows `[b]`. Their context-0 intersection is `[b]`. A general nested loop obtains that answer with `(b,l,B,0)` and `(c,l,B,0)` existence/probe requests. In an admitted packed tree, unary/ancestor constraints can check the same condition while producing a child. Its `Runtime.intersectRuns()` intersects ordered primary/constraint runs, advances lagging values to a common ID, and multiplies each surviving value's incidence counts. A constraint with no match contributes zero, not a new independent fanout. If a constraint cannot supply an ordered run, `scanPrimaryRun()` performs its implemented checks instead.
+
+The related semijoin is:
+
+```sparql
+PREFIX : <urn:example:>
+SELECT ?friend WHERE {
+  :alice :knows ?friend .
+  FILTER EXISTS { ?friend :label ?label }
+}
+```
+
+With `friend=b`, the inner pattern asks whether `(b,l,*,0)` has any accepted quad; with `friend=c`, it asks `(c,l,*,0)`. Both survive once per outer row. EXISTS does not expose `label` or multiply the outer row by the number of label witnesses. NOT EXISTS reverses the verdict while preserving outer multiplicity. MINUS additionally has its shared-bound-domain rules, so it cannot indiscriminately reuse every surrounding physical slot.
+
+There is a concrete context restriction on the direct semijoin shortcut: [`AdjacencyIntersectionProbe.tryCreate()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeMembership.java) rejects fixed contexts, named-graph scope, and a constant context term. Thus **these context-0 examples use the exact pattern/membership fallback**, even if its statement probe itself uses adjacency. For an unrestricted-context single fixed-predicate pattern, the shortcut can use a complete outgoing/incoming key-domain presence test, or a lower-bound neighbor test for two bound endpoints. It returns `NOT_APPLICABLE` if it cannot prove an answer, so the caller retains its normal existence path. A domain is useful for rejection only within the scope and completeness it certifies.
+
+For cycles such as `?a :edge ?b . ?b :edge ?c . ?a :edge ?c`, the final edge constrains already-related variables. [`LmdbNativeLeapfrogJoin`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeLeapfrogJoin.java) recognizes an eligible cyclic sub-bag, enumerates one variable at a time, and intersects each pattern's allowed ID frontier under the current prefix. Direct `adjacencyFrontier()` additionally requires a known predicate and compatible subject/object position, and declines fixed/named/bound contexts, repeated slots, physical ranges, and preordered patterns. The record-iterator frontier path scans, sorts, and deduplicates values with incidence counts instead. The direct-frontier switch does not make the fixed-context example eligible for that shortcut, or make every star a leapfrog plan.
+
+### Ordered merge and hash over these relations
+
+For the chain without its filter, the two input relations are:
+
+```text
+knows in context 0:  (friend=b), (friend=c)
+label in context 0:  (friend=b,label=B), (friend=c,label=C)
+```
+
+A merge proposal must obtain a common ordered key sequence for `friend`. [`LmdbNativeMergeJoin.tryPlan()`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeMergeJoin.java) constructs ordered sides only after its two-pattern, shared-key, context, correlation, estimate, and configured source-order checks. For this shape, an incoming `knows` root scan ordered by object can provide the left key; an outgoing `label` root scan ordered by subject provides the right key. Under the default durable indexes, `posc` orders the fixed-`k` input by object, but `spoc` can require a wider subject-ordered scan with residual `l` filtering on the right. Complete adjacency has its corresponding ordered root routes. The planner may cost those scans differently or reject merge.
+
+If opened, the merge cursor compares the ID keys in unsigned order, advances/seeks the lagging side, and collects equal-key runs. Bob's one left row and one right row emit `(b,B)`; Carol's emit `(c,C)`. If a key has `m` accepted rows on one side and `n` on the other, the equal-key run emits `m × n` compatible pairs. Source ID order is not automatically the RDF term order required by arbitrary SPARQL ORDER BY expressions. Run capacity refusal uses the operator's local fallback/rescan logic; an ordered plan's fallback must preserve its promised key order.
+
+A hash proposal does not need ordered scans. [`LmdbNativeHashJoin.tryPlan()` and `HashJoinBatchCursor`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHashJoin.java) choose a build side from estimates after two-pattern, key-width, correlation, context, cost, and size checks. Suppose the `label` side is built: its ID table retains `b → [B]` and `c → [C]` as keys plus payload rows. Scanning `knows` probes key `b`, emits `(b,B)`, then probes `c`, emits `(c,C)`. Extra payloads under one key stay in that bucket's row chain; duplicate probe rows each produce the matching payloads, preserving bag multiplicity.
+
+Hash build-row limits, optional byte admission, and actual build success still apply after proposal. A refusal before published output leaves an implemented nested-loop alternative available. Grouped factor output can transport a retained **tuple** payload relation plus multiplicity; it must keep multiple payload columns zipped as rows, not turn their columns into independent fanouts. A query-memory or source failure after rows have been published propagates with cleanup; it cannot restart the whole query through another join strategy.
+
+### Algebra boundaries keep their own multiplicity
+
+In `{ ?s :knows ?x OPTIONAL { ?s :label ?y } } UNION { ?s :label ?z }`, an unmatched OPTIONAL preserves its left mapping with `y` unbound; UNION adds the branch bags. Those are separate operations from the star's product or the shared-slot intersection. Reusing a borrowed CSF run, memo, or hash table cannot cross a binding/scope boundary without the corresponding planner proof. Adjacency statement-delta overlays only choose the correct visible rows; the [dictionary value overlay](storage-value-overlay.md) only accelerates term/ID resolution. Neither overlay changes the join algebra.
 
 ## Extension and tests
 

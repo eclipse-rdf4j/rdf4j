@@ -7,15 +7,24 @@ unchanged contracts those changes rely on. Its revision roles are:
 |---|---|
 | Historical merge base | `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` |
 | Inventory snapshot | `a869fe298dc4700ce956bcaf9fece3745c57fe05` |
-| Source revision checked for this accuracy review | `a678d9a369deded63520cd86b6c30152485b7f6d` |
+| Source revision checked for the original accuracy review | `a678d9a369deded63520cd86b6c30152485b7f6d` |
 | `origin/develop` ref recorded for the historical comparison | `5eee576f5ad74725852feae859a0f9010dae10ff` |
 
-The source descriptions were checked against
+The original source descriptions were checked against
 `a678d9a369deded63520cd86b6c30152485b7f6d`, the source revision immediately
 before the guides were added in
 `d64e893cbb427b00d1a4d3a75a11fe0b04d77e70`. The ledger and its counts remain
 bounded by the historical inventory snapshot; the recorded `origin/develop`
 hash is comparison provenance, not a claim about the live ref.
+
+The worked examples in the [CSF format](storage-csf-format.md),
+[adjacency lifecycle](storage-adjacency-lifecycle.md),
+[physical access](query-physical-access.md),
+[joins and factors](query-joins-and-factors.md), and
+[value overlay](storage-value-overlay.md) guides were expanded through static
+source inspection on 2026-10-03. Those examples explain the current source
+paths and layouts; they are not executed query, build, or test results, and
+do not refresh the historical inventory counts or the other guides.
 
 The exact changed-path ledger is [changed-paths.tsv](changed-paths.tsv), with
 the path-family ownership and feature audit in
@@ -86,6 +95,8 @@ make commit, fallback, or result streaming atomic across the boxes.
 
 | Reader goal | Start here |
 |---|---|
+| Understand what CSF pages and vectors look like, down to bytes | [CSF format](storage-csf-format.md): logical rows, neighbors and contexts; packed blocks, header/section offsets, capacity accounting, and overflow/continuation pages. |
+| Follow a lookup and join from RDF terms to stored IDs and back | [Physical access](query-physical-access.md), then [join examples](query-joins-and-factors.md); use [adjacency lifecycle](storage-adjacency-lifecycle.md) for visible statement deltas and [value overlay](storage-value-overlay.md) for term resolution. |
 | Understand query strategy eligibility, generic/native hosting, and fallback | [Routing and hosts](query-routing-and-hosts.md#entry-point-and-native-source-requirements), then [strategy families](query-strategy-families.md#dispatch-points) and [arbitration](query-arbitration-and-explanation.md#candidate-admission-selection-and-opening). |
 | Change join ordering or factorized execution | [Join families](query-joins-and-factors.md#join-planning-starts-with-algebra-boundaries), [packed factorized trees](query-joins-and-factors.md#packed-factorized-trees), and [optimizer/statistics](query-optimizer-and-statistics.md#which-optimizer-pipeline-is-active); compare shared generic safeguards in [evaluator semantics](integration-query-evaluation.md#join-evaluation-when-bind-joins-are-an-as-if-optimization). |
 | Change an access method, path, expression, or code generator | [Physical access](query-physical-access.md), [paths and special operators](query-paths-and-special-operators.md), [expression semantics](query-expression-semantics.md), and [IR/code generation](query-ir-and-codegen.md). |
@@ -178,8 +189,9 @@ surfaces.
 
 ## Evidence method and compatibility notes
 
-Current source at the latest review revision
-(`a678d9a369deded63520cd86b6c30152485b7f6d`) is authoritative for mechanism,
+The original accuracy review used source revision
+`a678d9a369deded63520cd86b6c30152485b7f6d`; the worked-example refresh above
+has its own later review date. Current source is authoritative for mechanism,
 defaults, scope, lifetime, failure behavior, and property read time. The guides
 link to tests and fixtures as source coverage without claiming a passing run.
 Benchmark reports under `benchmark-results/` are historical observations tied
