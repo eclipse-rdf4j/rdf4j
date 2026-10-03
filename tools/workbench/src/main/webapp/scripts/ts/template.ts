@@ -120,11 +120,17 @@ document.addEventListener('submit', function(event) {
 
 // Native form.submit() does not dispatch a submit event. Protect dynamically
 // constructed forms and existing programmatic submissions at the shared DOM boundary.
-var nativeFormSubmit = HTMLFormElement.prototype.submit;
-HTMLFormElement.prototype.submit = function() {
-    workbench.protectSubmittedForm(this);
-    nativeFormSubmit.call(this);
-};
+if (typeof HTMLFormElement != 'undefined' && typeof HTMLFormElement.prototype.submit == 'function') {
+    var nativeFormSubmit: any = HTMLFormElement.prototype.submit;
+    if (!nativeFormSubmit.rdf4jCsrfProtected) {
+        var csrfProtectedFormSubmit: any = function() {
+            workbench.protectSubmittedForm(this);
+            nativeFormSubmit.call(this);
+        };
+        csrfProtectedFormSubmit.rdf4jCsrfProtected = true;
+        HTMLFormElement.prototype.submit = csrfProtectedFormSubmit;
+    }
+}
 
 /**
  * Code to run when the document loads: eliminate the 'noscript' warning
