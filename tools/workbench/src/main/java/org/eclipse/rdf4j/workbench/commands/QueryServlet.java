@@ -51,9 +51,11 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -630,8 +632,11 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("accessible", accessible);
 		if (accessible) {
 			final String queryName = req.getParameter("query-name");
-			String userName = getUserNameFromParameter(req, SERVER_USER);
-			final boolean existed = storage.askExists(repositoryReference, queryName, userName);
+			WorkbenchPrincipal currentUser = getAuthenticatedPrincipal(req);
+			if (currentUser == null) {
+				throw new BadRequestException("Authentication is required to save a query.");
+			}
+			final boolean existed = storage.askExists(repositoryReference, queryName, currentUser);
 			jsonObject.put("existed", existed);
 			final boolean written = Boolean.valueOf(req.getParameter("overwrite")) || !existed;
 			if (written) {
@@ -642,11 +647,12 @@ public class QueryServlet extends TransformationServlet {
 				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));
 				final int queryTimeout = req.getInt(QUERY_TIMEOUT);
 				if (existed) {
-					final IRI query = storage.selectSavedQuery(repositoryReference, userName, queryName);
-					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage,
+					final IRI query = storage.selectSavedQuery(repositoryReference, currentUser.getName(), queryName,
+							currentUser);
+					storage.updateQuery(query, currentUser, shared, queryLanguage, queryText, infer, rowsPerPage,
 							queryTimeout);
 				} else {
-					storage.saveQuery(repositoryReference, queryName, userName, shared, queryLanguage, queryText,
+					storage.saveQuery(repositoryReference, queryName, currentUser, shared, queryLanguage, queryText,
 							infer, rowsPerPage, queryTimeout);
 				}
 			}
@@ -674,6 +680,11 @@ public class QueryServlet extends TransformationServlet {
 			userName = "";
 		}
 		return userName;
+	}
+
+	private WorkbenchPrincipal getAuthenticatedPrincipal(WorkbenchRequest req) {
+		Object principal = req.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE);
+		return principal instanceof WorkbenchPrincipal ? (WorkbenchPrincipal) principal : null;
 	}
 
 	private String getExplainRequestId(WorkbenchRequest req) {
@@ -830,8 +841,9 @@ public class QueryServlet extends TransformationServlet {
 						result = "";
 					}
 				} else if ("id".equals(ref)) {
+					requireRepositoryAccess();
 					result = storage.getQueryText(getRepositoryReference(), getUserNameFromParameter(req, "owner"),
-							query);
+							query, getAuthenticatedPrincipal(req));
 				} else {
 					// if ref not recognized assume request meant "text"
 					result = query;
@@ -847,14 +859,23 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean canReadSavedQuery(WorkbenchRequest req) throws BadRequestException, RDF4JException {
 		if (req.isParameterPresent(REF)) {
-			return "id".equals(req.getParameter(REF))
-					? storage.canRead(
-							storage.selectSavedQuery(getRepositoryReference(),
-									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							getUserNameFromParameter(req, SERVER_USER))
-					: true;
+			if (!"id".equals(req.getParameter(REF))) {
+				return true;
+			}
+			requireRepositoryAccess();
+			WorkbenchPrincipal currentUser = getAuthenticatedPrincipal(req);
+			return storage.canRead(
+					storage.selectSavedQuery(getRepositoryReference(), getUserNameFromParameter(req, "owner"),
+							req.getParameter(QUERY), currentUser),
+					currentUser);
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");
+		}
+	}
+
+	private void requireRepositoryAccess() throws RepositoryException, BadRequestException {
+		if (!storage.checkAccess(repository)) {
+			throw new BadRequestException("Current credentials may not access the selected repository.");
 		}
 	}
 

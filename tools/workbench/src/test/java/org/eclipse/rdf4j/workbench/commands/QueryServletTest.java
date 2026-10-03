@@ -56,8 +56,10 @@ import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +75,10 @@ import jakarta.servlet.http.HttpServletResponse;
 public class QueryServletTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
+
+	private static final WorkbenchPrincipal CURRENT_USER = WorkbenchPrincipal.authenticated("current-user");
+
+	private static final WorkbenchPrincipal LOCAL_USER = WorkbenchPrincipal.local();
 
 	private final TestableQueryServlet servlet = new TestableQueryServlet();
 
@@ -212,10 +218,38 @@ public class QueryServletTest {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("test save name");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.getParameter("owner")).thenReturn("owner");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(CURRENT_USER);
 		QueryStorage storage = mock(QueryStorage.class);
-		when(storage.getQueryText(any(), anyString(), eq("test save name"))).thenReturn(longQuery);
+		when(storage.checkAccess(any())).thenReturn(true);
+		when(storage.getQueryText(any(), eq("owner"), eq("test save name"), eq(CURRENT_USER)))
+				.thenReturn(longQuery);
 		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(mock(Repository.class));
 		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
+	}
+
+	@Test
+	void testGetQueryTextRefIdRequiresReadAccess() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.getParameter("owner")).thenReturn("other-user");
+		when(request.getParameter("server-user")).thenReturn("other-user");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(CURRENT_USER);
+		QueryStorage storage = mock(QueryStorage.class);
+		when(storage.checkAccess(any())).thenReturn(true);
+		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"), eq(CURRENT_USER)))
+				.thenThrow(new BadRequestException("Could not find query entry in storage."));
+		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(mock(Repository.class));
+
+		assertThatThrownBy(() -> servlet.getQueryText(request))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Could not find query entry in storage.");
+		verify(storage).getQueryText(anyString(), eq("other-user"), eq("private-query"), eq(CURRENT_USER));
 	}
 
 	@Test
@@ -230,7 +264,7 @@ public class QueryServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		servlet.substituteQueryStorage(storage);
 		when(storage.checkAccess(any())).thenReturn(true);
-		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(false);
+		when(storage.askExists(any(), eq("my-query"), eq(LOCAL_USER))).thenReturn(false);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("save");
@@ -246,13 +280,15 @@ public class QueryServletTest {
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
 		when(request.getParameter("server-user")).thenReturn(null);
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(LOCAL_USER);
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
 		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
-		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
+		verify(storage).saveQuery(any(), eq("my-query"), eq(LOCAL_USER), eq(true), eq(QueryLanguage.SPARQL),
+				eq(SHORT_QUERY),
 				eq(true), eq(100), eq(17));
 	}
 
@@ -268,9 +304,9 @@ public class QueryServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		servlet.substituteQueryStorage(storage);
 		when(storage.checkAccess(any())).thenReturn(true);
-		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(true);
+		when(storage.askExists(any(), eq("my-query"), eq(LOCAL_USER))).thenReturn(true);
 		IRI savedQuery = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
-		when(storage.selectSavedQuery(any(), eq(""), eq("my-query"))).thenReturn(savedQuery);
+		when(storage.selectSavedQuery(any(), eq(""), eq("my-query"), eq(LOCAL_USER))).thenReturn(savedQuery);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("save");
@@ -286,13 +322,14 @@ public class QueryServletTest {
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
 		when(request.getParameter("server-user")).thenReturn(null);
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(LOCAL_USER);
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
 		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
-		verify(storage).updateQuery(savedQuery, "", true, QueryLanguage.SPARQL, SHORT_QUERY, true, 100, 17);
+		verify(storage).updateQuery(savedQuery, LOCAL_USER, true, QueryLanguage.SPARQL, SHORT_QUERY, true, 100, 17);
 	}
 
 	@Test
@@ -307,7 +344,7 @@ public class QueryServletTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		servlet.substituteQueryStorage(storage);
 		when(storage.checkAccess(any())).thenReturn(true);
-		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(false);
+		when(storage.askExists(any(), eq("my-query"), eq(LOCAL_USER))).thenReturn(false);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("save");
@@ -322,13 +359,15 @@ public class QueryServletTest {
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
 		when(request.getParameter("server-user")).thenReturn(null);
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(LOCAL_USER);
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
 		assertThatCode(() -> servlet.doPost(request, response, "/transformations")).doesNotThrowAnyException();
-		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL), eq(SHORT_QUERY),
+		verify(storage).saveQuery(any(), eq("my-query"), eq(LOCAL_USER), eq(true), eq(QueryLanguage.SPARQL),
+				eq(SHORT_QUERY),
 				eq(true), eq(100), eq(0));
 	}
 
@@ -353,13 +392,17 @@ public class QueryServletTest {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
 		when(request.getParameter("owner")).thenReturn("other-user");
-		when(request.getParameter("server-user")).thenReturn("current-user");
+		when(request.getParameter("server-user")).thenReturn("other-user");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(CURRENT_USER);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
 		when(request.getParameter("explain-format")).thenReturn("text");
-		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "current-user")).thenReturn(false);
-		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"), eq(CURRENT_USER)))
+				.thenReturn(queryId);
+		when(storage.canRead(queryId, CURRENT_USER)).thenReturn(false);
+		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"), eq(CURRENT_USER)))
+				.thenReturn(SHORT_QUERY);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
@@ -372,7 +415,7 @@ public class QueryServletTest {
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
 
-		verify(storage).canRead(queryId, "current-user");
+		verify(storage).canRead(queryId, CURRENT_USER);
 		verify(repository, never()).getConnection();
 	}
 

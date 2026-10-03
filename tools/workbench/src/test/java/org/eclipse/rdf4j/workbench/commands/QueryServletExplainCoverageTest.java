@@ -36,7 +36,10 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +48,8 @@ import jakarta.servlet.http.HttpServletResponse;
 class QueryServletExplainCoverageTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
+
+	private static final WorkbenchPrincipal ALICE = WorkbenchPrincipal.authenticated("alice");
 
 	@Test
 	void syncExplainPrefersMalformedCauseMessage() throws Exception {
@@ -138,18 +143,21 @@ class QueryServletExplainCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
+		Repository repository = mock(Repository.class);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "alice")).thenReturn(true);
-		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query")))
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(ALICE))).thenReturn(queryId);
+		when(storage.canRead(queryId, ALICE)).thenReturn(true);
+		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"), eq(ALICE)))
 				.thenThrow(new RepositoryException("storage boom"));
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getParameter("server-user")).thenReturn("alice");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(ALICE);
 		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
 
 		servlet.service(request, response, "/transform");
 

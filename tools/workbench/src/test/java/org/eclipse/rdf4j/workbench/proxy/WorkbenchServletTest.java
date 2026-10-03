@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -218,9 +219,11 @@ class WorkbenchServletTest {
 		TestWorkbenchServlet noCookieServlet = initServlet(remoteManager);
 		noCookieServlet.cookieHandler = new FixedCookieHandler(null);
 		noCookieServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		noCookieServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
+		MockHttpServletRequest noCookieRequest = request("/workbench/repo", "/repo");
+		noCookieServlet.service(noCookieRequest, new CapturedResponse());
 		verify(remoteManager).setUsernameAndPassword(null, null);
 		verify(remoteManager).init();
+		assertThat(noCookieRequest.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).isNull();
 
 		RemoteRepositoryManager base64Manager = mock(RemoteRepositoryManager.class);
 		when(base64Manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
@@ -230,8 +233,12 @@ class WorkbenchServletTest {
 		base64Servlet.cookieHandler = new FixedCookieHandler(
 				Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
 		base64Servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		base64Servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
+		MockHttpServletRequest base64Request = request("/workbench/repo", "/repo");
+		base64Request.addParameter("server-user", "spoofed-user");
+		base64Servlet.service(base64Request, new CapturedResponse());
 		verify(base64Manager).setUsernameAndPassword("alice", "secret");
+		assertThat(base64Request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE))
+				.isEqualTo(WorkbenchPrincipal.authenticated("alice"));
 
 		RemoteRepositoryManager rawManager = mock(RemoteRepositoryManager.class);
 		when(rawManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
@@ -240,8 +247,39 @@ class WorkbenchServletTest {
 		TestWorkbenchServlet rawServlet = initServlet(rawManager);
 		rawServlet.cookieHandler = new FixedCookieHandler("bob:hunter2");
 		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
+		MockHttpServletRequest rawRequest = request("/workbench/repo", "/repo");
+		rawServlet.service(rawRequest, new CapturedResponse());
 		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
+		assertThat(rawRequest.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE))
+				.isEqualTo(WorkbenchPrincipal.authenticated("bob"));
+
+		RemoteRepositoryManager malformedManager = mock(RemoteRepositoryManager.class);
+		when(malformedManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
+		when(malformedManager.getRepository(anyString())).thenReturn(repository);
+		when(malformedManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet malformedServlet = initServlet(malformedManager);
+		malformedServlet.cookieHandler = new FixedCookieHandler("invalid-credential");
+		malformedServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		MockHttpServletRequest malformedRequest = request("/workbench/repo", "/repo");
+		malformedServlet.service(malformedRequest, new CapturedResponse());
+		verify(malformedManager).setUsernameAndPassword(null, null);
+		assertThat(malformedRequest.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).isNull();
+	}
+
+	@Test
+	void localManagersCreateServerSideLocalPrincipal() throws Exception {
+		LocalRepositoryManager localManager = mock(LocalRepositoryManager.class);
+		when(localManager.getRepository(anyString())).thenReturn(mock(Repository.class));
+		when(localManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(localManager);
+		servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		MockHttpServletRequest request = request("/workbench/repo", "/repo");
+		request.addParameter("server-user", "spoofed-user");
+
+		servlet.service(request, new CapturedResponse());
+
+		assertThat(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE))
+				.isEqualTo(WorkbenchPrincipal.local());
 	}
 
 	@Test
