@@ -51,6 +51,7 @@ function pageResponse(events) {
 function installTestStream(workbench) {
     workbench.queryStream = {
         async recoverPendingRowStores() {},
+        watchPendingRowStores() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
@@ -560,6 +561,7 @@ function streamOf(workbench, outcome) {
     const disposed = [];
     workbench.queryStream = {
         async recoverPendingRowStores() {},
+        watchPendingRowStores() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];

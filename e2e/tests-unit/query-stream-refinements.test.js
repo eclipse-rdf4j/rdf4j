@@ -30,13 +30,16 @@ function loadQueryStreamApi(workbench = {}) {
     const sessionValues = new Map();
     const localValues = new Map();
     const resizeListeners = new Set();
+    const windowListeners = new Map();
     const disclosureObservers = [];
     const testWindow = {
         addEventListener(type, listener) {
             if (type === 'resize') resizeListeners.add(listener);
+            windowListeners.set(type, (windowListeners.get(type) || new Set()).add(listener));
         },
         removeEventListener(type, listener) {
             if (type === 'resize') resizeListeners.delete(listener);
+            (windowListeners.get(type) || new Set()).delete(listener);
         },
         dispatchEvent() { return true; },
         requestAnimationFrame(callback) { callback(); },
@@ -98,6 +101,9 @@ function loadQueryStreamApi(workbench = {}) {
     context.workbench.queryStream.__testResizeListeners = resizeListeners;
     context.workbench.queryStream.__testDisclosureObservers = disclosureObservers;
     context.workbench.queryStream.__testDocumentListeners = documentListeners;
+    context.workbench.queryStream.__testDispatchWindowEvent = (type, event) => {
+        for (const listener of [...(windowListeners.get(type) || [])]) listener(Object.assign({ type }, event));
+    };
     return context.workbench.queryStream;
 }
 
@@ -531,6 +537,44 @@ test('new same-tab row stores reclaim only stores marked by a destructive pagehi
     assert.equal(newPageStore.id, 'new-page-store');
     assert.equal(queryStream.__testLocalValues.size, 0,
         'successfully reclaimed IDs must not be deleted again by later documents');
+});
+
+test('a row store is marked for recovery on a destructive pagehide before any route owns it', async () => {
+    // A page left while it is still loading has created its page-model store but mounted no route yet.
+    const queryStream = loadQueryStreamApi();
+    const worker = new InMemoryWorker();
+    worker.storeId = 'loading-page-store';
+    await queryStream.createRowStore({ workerFactory: () => worker });
+
+    queryStream.__testDispatchWindowEvent('pagehide', { persisted: true });
+    assert.equal(queryStream.__testLocalValues.size, 0, 'a BFCache pagehide keeps the store without a marker');
+    queryStream.__testDispatchWindowEvent('pagehide', { persisted: false });
+    assert.deepEqual([...queryStream.__testLocalValues.keys()],
+        ['rdf4j.workbench.query-results.pending-disposal.v1:loading-page-store']);
+});
+
+test('a booted page reclaims stores that a replaced document marks after it started', async () => {
+    // A browser can run the replaced document's pagehide after the next document has booted and recovered.
+    const queryStream = loadQueryStreamApi();
+    const prefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
+    const workers = [];
+    queryStream.watchPendingRowStores({ workerFactory: () => {
+        const worker = new InMemoryWorker();
+        workers.push(worker);
+        return worker;
+    } });
+
+    queryStream.__testDispatchWindowEvent('storage', { key: 'unrelated', newValue: 'x' });
+    queryStream.__testWindow.localStorage.setItem(`${prefix}late-store`, 'pending');
+    queryStream.__testDispatchWindowEvent('storage', { key: `${prefix}late-store`, newValue: 'pending' });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(workers.length, 1, 'only a recovery marker starts a recovery');
+    assert.deepEqual(workers[0].messages.map(message => [message.op, message.storeId]), [['dispose', 'late-store']]);
+    assert.equal(queryStream.__testLocalValues.size, 0, 'the reclaimed store is no longer marked');
+    queryStream.__testDispatchWindowEvent('storage', { key: `${prefix}late-store`, newValue: null });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(workers.length, 1, 'removing a marker reclaims nothing');
 });
 
 test('bootstrap reclaims persisted row stores before any route rows are loaded', async () => {

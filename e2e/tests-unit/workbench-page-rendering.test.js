@@ -45,6 +45,7 @@ function installTestStreamRuntime(workbench) {
     const stores = [];
     workbench.queryStream = {
         async recoverPendingRowStores() {},
+        watchPendingRowStores() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
@@ -1505,6 +1506,7 @@ test('page bootstrap consumes the shared incremental reader and keeps streamed r
     ];
     workbench.queryStream = {
         async recoverPendingRowStores() {},
+        watchPendingRowStores() {},
         markCurrentRowStoresForRecovery() {},
         createRowStore: async () => ({
             async append(batch) { storedRows.push(...batch); return storedRows.length; },
@@ -1662,6 +1664,7 @@ test('page bootstrap recovers pending row stores before routing without creating
     const order = [];
     let fetchCount = 0;
     workbench.queryStream.recoverPendingRowStores = async () => { order.push('recover'); };
+    workbench.queryStream.watchPendingRowStores = () => { order.push('watch'); };
     const mount = {
         getAttribute(name) {
             return {
@@ -1678,7 +1681,8 @@ test('page bootstrap recovers pending row stores before routing without creating
     });
 
     assert.equal(result.status, 'skipped');
-    assert.deepEqual(order, ['recover'], 'startup recovery runs before route eligibility is considered');
+    assert.deepEqual(order, ['recover', 'watch'],
+        'startup recovery runs before route eligibility is considered, then stores marked later are watched for');
     assert.equal(stores.length, 0, 'recovery works on a route that has not created a row store');
     assert.equal(fetchCount, 0, 'recovery must not replay or fetch a non-GET route');
 });

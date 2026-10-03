@@ -1167,7 +1167,10 @@ module workbench {
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => queryStream().recoverPendingRowStores())
-                .then(() => bootstrapAfterRecovery(mount, dependencies, basePath), (error: any) => {
+                .then(() => {
+                    queryStream().watchPendingRowStores();
+                    return bootstrapAfterRecovery(mount, dependencies, basePath);
+                }, (error: any) => {
                     if (attribute(mount, 'data-workbench-fetch-page-model') === 'true') {
                         renderFailure(mount, error);
                     }

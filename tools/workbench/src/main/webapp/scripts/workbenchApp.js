@@ -1104,7 +1104,10 @@ var workbench;
             scriptSource = { basePath: basePath, dependencies: dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(function () { return queryStream().recoverPendingRowStores(); })
-                .then(function () { return bootstrapAfterRecovery(mount, dependencies, basePath); }, function (error) {
+                .then(function () {
+                queryStream().watchPendingRowStores();
+                return bootstrapAfterRecovery(mount, dependencies, basePath);
+            }, function (error) {
                 if (attribute(mount, 'data-workbench-fetch-page-model') === 'true') {
                     renderFailure(mount, error);
                 }

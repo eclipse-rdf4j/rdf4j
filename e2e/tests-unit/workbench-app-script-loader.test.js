@@ -84,7 +84,8 @@ function loadWorkbenchWithFailedEarlyThemeScript() {
     workbench.queryStream = {
         createRowStore() {},
         consumeNdjsonResponse() {},
-        recoverPendingRowStores() { return Promise.resolve(); }
+        recoverPendingRowStores() { return Promise.resolve(); },
+        watchPendingRowStores() {}
     };
     return { appendedScripts, earlyThemeScript, workbench };
 }
