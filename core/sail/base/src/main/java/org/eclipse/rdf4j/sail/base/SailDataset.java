@@ -39,8 +39,8 @@ public interface SailDataset extends SailClosable {
 	/**
 	 * Supplies optional preparation of query-owned statement-pattern values for this dataset's read view. Returned
 	 * values must remain lexically equal, must not mutate caller values, and must not retain a closed dataset or native
-	 * transaction. A null preparer preserves ordinary value handling. A supplied capturer belongs to this same read view
-	 * and must produce representations accepted by this preparer.
+	 * transaction. A null preparer preserves ordinary value handling. A supplied capturer belongs to this same read
+	 * view and must produce representations accepted by this preparer.
 	 */
 	@InternalUseOnly
 	default Function<Value, Value> getValuePreparer() {

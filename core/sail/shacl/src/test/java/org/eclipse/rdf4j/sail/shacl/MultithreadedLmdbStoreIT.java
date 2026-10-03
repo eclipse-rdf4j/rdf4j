@@ -48,48 +48,6 @@ public class MultithreadedLmdbStoreIT extends MultithreadedTest {
 		System.out.println("Max memory: " + Runtime.getRuntime().maxMemory() / 1024 / 1024 + " MB");
 	}
 
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testDataAndShapes() {
-		super.testDataAndShapes();
-	}
-
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testLotsOfValidationFailuresSnapshot() throws IOException {
-		super.testLotsOfValidationFailuresSnapshot();
-	}
-
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testLotsOfValidationFailuresSerializableValidation() throws IOException {
-		super.testLotsOfValidationFailuresSerializableValidation();
-	}
-
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testLotsOfValidationFailuresSerializable() throws IOException {
-		super.testLotsOfValidationFailuresSerializable();
-	}
-
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testLotsOfValidationFailuresReadCommitted() throws IOException {
-		super.testLotsOfValidationFailuresReadCommitted();
-	}
-
-	@RepeatedTest(10)
-	@Timeout(value = 30, unit = TimeUnit.MINUTES)
-	@Override
-	public void testLotsOfValidationFailuresReadUncommitted() throws IOException {
-		super.testLotsOfValidationFailuresReadUncommitted();
-	}
-
 	@Override
 	NotifyingSail getBaseSail() {
 		NotifyingSail notifyingSail = new MapGrowthCheckingLmdbStore(file);

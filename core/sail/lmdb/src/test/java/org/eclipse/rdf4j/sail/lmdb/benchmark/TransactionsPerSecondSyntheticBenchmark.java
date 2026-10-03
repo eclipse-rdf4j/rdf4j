@@ -47,12 +47,12 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 7)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 7)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class TransactionsPerSecondBenchmark {
+public class TransactionsPerSecondSyntheticBenchmark {
 
 	SailRepositoryConnection connection;
 	RandomLiteralGenerator literalGenerator;
