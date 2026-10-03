@@ -21,6 +21,7 @@ import java.util.concurrent.Future;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -34,6 +35,7 @@ public class AsyncIteratorBuffer extends LookAheadIteration<BindingSet> {
 
 	private final CloseableIteration<BindingSet> iteration;
 	private final ConcurrentLinkedQueue<BindingSet> queue = new ConcurrentLinkedQueue<>();
+	private final AsyncIteratorWorker worker = new AsyncIteratorWorker();
 
 	private Future<ArrayDeque<BindingSet>> future;
 
@@ -79,14 +81,49 @@ public class AsyncIteratorBuffer extends LookAheadIteration<BindingSet> {
 		}
 
 		next = queue.poll();
+		if (next == null && future.isDone() && !future.isCancelled()) {
+			awaitCompletion();
+		}
 
 	}
 
-	private void async() throws ExecutionException, InterruptedException {
+	private void awaitCompletion() {
+		try {
+			future.get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException(e);
+		} catch (ExecutionException e) {
+			throwWorkerFailure(e);
+		}
+	}
 
-		future = commonPool().submit(() -> {
-			while (iteration.hasNext()) {
+	private static void throwWorkerFailure(ExecutionException failure) {
+		Throwable cause = failure.getCause();
+		if (cause instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (cause instanceof Error error) {
+			throw error;
+		}
+		throw new RuntimeException(cause);
+	}
+
+	private void async() throws ExecutionException, InterruptedException {
+		QueryExecutionContext.ReplayContext replayContext = QueryExecutionContext.captureReplayContext();
+		Runnable readAhead = () -> {
+			while (!worker.isCancelled() && iteration.hasNext()) {
+				if (worker.isCancelled()) {
+					return;
+				}
 				queue.add(iteration.next());
+			}
+		};
+		future = worker.submit(commonPool(), () -> {
+			if (replayContext == null) {
+				readAhead.run();
+			} else {
+				replayContext.run(readAhead);
 			}
 			return null;
 		});
@@ -104,9 +141,7 @@ public class AsyncIteratorBuffer extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			if (future != null) {
-				future.cancel(true);
-			}
+			worker.cancelAndAwait();
 		} finally {
 			iteration.close();
 		}

@@ -35,7 +35,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class TransactionsPerSecondForceSyncBenchmark extends TransactionsPerSecondBenchmark {
+public class TransactionsPerSecondForceSyncBenchmark extends TransactionsPerSecondSyntheticBenchmark {
 	{
 		// enforce syncing to disk
 		forceSync = true;

@@ -12,18 +12,35 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -31,14 +48,523 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class StatementPatternQueryEvaluationStepTest {
+
+	@ParameterizedTest
+	@EnumSource(ConstantProduction.class)
+	void constantBindIsCapturedOnceAcrossRepeatedLeftRows(ConstantProduction production) {
+		CapturingTripleSource source = new CapturingTripleSource();
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("row", source.valueFactory.createIRI("urn:row:first"));
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("row", source.valueFactory.createIRI("urn:row:second"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(first, second));
+		var expression = production.folded
+				? new FunctionCall("http://www.w3.org/2005/xpath-functions#concat",
+						new ValueConstant(source.valueFactory.createLiteral(production.absent ? "ab" : "ob")),
+						new ValueConstant(source.valueFactory.createLiteral(production.absent ? "sent" : "ject")))
+				: new ValueConstant(source.valueFactory.createLiteral(production.absent ? "absent" : "object"));
+		Extension bind = new Extension(new SingletonSet(), new ExtensionElem(expression, "o"));
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate()),
+				Var.of("o"));
+		QueryRoot query = new QueryRoot(new LeftJoin(new Join(left, bind), new Union(pattern, pattern.clone())));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		var step = strategy.precompile(query);
+		assertThat(source.literalPreparations).hasValue(0);
+		List<Value> captured = new ArrayList<>();
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			while (rows.hasNext()) {
+				Value value = rows.next().getValue("o");
+				assertThat(value.stringValue()).isEqualTo(production.absent ? "absent" : "object");
+				captured.add(value);
+			}
+		}
+		assertThat(captured).hasSize(production.absent ? 2 : 4);
+		assertThat(source.literalPreparations).hasValue(1);
+		for (Value value : captured) {
+			assertThat(value).isSameAs(captured.getFirst());
+		}
+	}
+
+	@Test
+	void constantCaptureKeepsExpressionFailureAtFirstEvaluation() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		AtomicInteger evaluations = new AtomicInteger();
+		QueryValueEvaluationStep deferred = deferredConstant(evaluations);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant node, QueryEvaluationContext context) {
+				return deferred;
+			}
+		};
+		var step = strategy.precompile(new ValueConstant(source.valueFactory.createLiteral("deferred")),
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(evaluations).hasValue(0);
+		assertThat(source.owned).isEmpty();
+		assertThatThrownBy(() -> step.evaluate(EmptyBindingSet.getInstance()))
+				.isInstanceOf(ValueExprEvaluationException.class)
+				.hasMessage("delayed constant failure");
+		assertThat(evaluations).hasValue(1);
+		assertThat(source.owned).isEmpty();
+	}
+
+	@Test
+	void noCapturerPreservesTheConstantStep() {
+		AtomicInteger evaluations = new AtomicInteger();
+		QueryValueEvaluationStep deferred = deferredConstant(evaluations);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant node, QueryEvaluationContext context) {
+				return deferred;
+			}
+		};
+		var step = strategy.precompile(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("deferred")),
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(step).isSameAs(deferred);
+		assertThat(evaluations).hasValue(0);
+	}
+
+	@Test
+	void constantCaptureCachesNullWithoutIdentifierLookup() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		AtomicInteger evaluations = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant node, QueryEvaluationContext context) {
+				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep((Value) null) {
+					@Override
+					public Value evaluate(BindingSet bindings) {
+						evaluations.incrementAndGet();
+						return null;
+					}
+				};
+			}
+		};
+		var step = strategy.precompile(new ValueConstant(source.valueFactory.createLiteral("null")),
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(step.evaluate(EmptyBindingSet.getInstance())).isNull();
+		assertThat(step.evaluate(EmptyBindingSet.getInstance())).isNull();
+		assertThat(evaluations).hasValue(1);
+		assertThat(source.owned).isEmpty();
+		assertThat(source.literalPreparations).hasValue(0);
+	}
+
+	@Test
+	void constantCaptureIsSharedByConcurrentWorkers() throws Exception {
+		CapturingTripleSource source = new CapturingTripleSource();
+		AtomicInteger evaluations = new AtomicInteger();
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant node, QueryEvaluationContext context) {
+				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(node) {
+					@Override
+					public Value evaluate(BindingSet bindings) {
+						evaluations.incrementAndGet();
+						entered.countDown();
+						try {
+							if (!release.await(5, TimeUnit.SECONDS)) {
+								throw new AssertionError("Constant evaluation was not released");
+							}
+						} catch (InterruptedException failure) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(failure);
+						}
+						return super.evaluate(bindings);
+					}
+				};
+			}
+		};
+		var step = strategy.precompile(new ValueConstant(source.valueFactory.createLiteral("shared")),
+				new QueryEvaluationContext.Minimal(null));
+		try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+			try {
+				Future<Value> first = workers.submit(() -> step.evaluate(EmptyBindingSet.getInstance()));
+				assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+				CountDownLatch secondStarted = new CountDownLatch(1);
+				Future<Value> second = workers.submit(() -> {
+					secondStarted.countDown();
+					return step.evaluate(EmptyBindingSet.getInstance());
+				});
+				assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
+				release.countDown();
+				assertThat(first.get(5, TimeUnit.SECONDS)).isSameAs(second.get(5, TimeUnit.SECONDS));
+				assertThat(evaluations).hasValue(1);
+				assertThat(source.owned).hasSize(1);
+				assertThat(source.literalPreparations).hasValue(0);
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
+	private static QueryValueEvaluationStep deferredConstant(AtomicInteger evaluations) {
+		return new QueryValueEvaluationStep() {
+			@Override
+			public Value evaluate(BindingSet bindings) {
+				evaluations.incrementAndGet();
+				throw new ValueExprEvaluationException("delayed constant failure");
+			}
+
+			@Override
+			public boolean isConstant() {
+				return true;
+			}
+		};
+	}
+
+	private enum ConstantProduction {
+		VALUE_PRESENT(false, false),
+		VALUE_ABSENT(false, true),
+		FOLDED_PRESENT(true, false),
+		FOLDED_ABSENT(true, true);
+
+		private final boolean folded;
+		private final boolean absent;
+
+		ConstantProduction(boolean folded, boolean absent) {
+			this.folded = folded;
+			this.absent = absent;
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(ForeignProduction.class)
+	void externallyProducedValueIsCapturedOnceBeforeUnionFanout(ForeignProduction production) {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value value = source.valueFactory.createLiteral("object");
+		TupleFunction callback = tupleCallback(value);
+		TupleFunctionRegistry.getInstance().add(callback);
+		try {
+			DefaultEvaluationStrategy strategy = production.strategy(source);
+			TupleExpr produced = production.expression(strategy, callback, value);
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate()),
+					Var.of("o"));
+			QueryRoot query = new QueryRoot(new Join(produced, new Union(pattern, pattern.clone())));
+			try (CloseableIteration<BindingSet> rows = strategy.precompile(query)
+					.evaluate(EmptyBindingSet.getInstance())) {
+				Value first = rows.next().getValue("o");
+				Value second = rows.next().getValue("o");
+				assertThat(source.literalPreparations).hasValue(1);
+				assertThat(first).isEqualTo(value).isNotSameAs(value);
+				assertThat(second).isSameAs(first);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(callback);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(ForeignProduction.class)
+	void unusedExternallyProducedValueIsCapturedWithoutIdentifierLookup(ForeignProduction production) {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value value = source.valueFactory.createLiteral("unused external output");
+		TupleFunction callback = tupleCallback(value);
+		TupleFunctionRegistry.getInstance().add(callback);
+		try {
+			DefaultEvaluationStrategy strategy = production.strategy(source);
+			QueryRoot query = new QueryRoot(production.expression(strategy, callback, value));
+			try (CloseableIteration<BindingSet> rows = strategy.precompile(query)
+					.evaluate(EmptyBindingSet.getInstance())) {
+				Value result = rows.next().getValue("o");
+				assertThat(source.literalPreparations).hasValue(0);
+				assertThat(result).isEqualTo(value).isNotSameAs(value);
+				assertThat(source.owned).containsKey(result);
+			}
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(callback);
+		}
+	}
+
+	private static TupleFunction tupleCallback(Value value) {
+		return new TupleFunction() {
+			@Override
+			public String getURI() {
+				return "urn:test:statement-pattern-owned-output";
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory valueFactory,
+					Value... args) {
+				return new SingletonIteration<>(List.of(value));
+			}
+		};
+	}
+
+	private enum ForeignProduction {
+		TUPLE,
+		LEGACY_TUPLE,
+		EXTENDED_TUPLE,
+		SERVICE,
+		VECTORED_SERVICE;
+
+		private DefaultEvaluationStrategy strategy(TripleSource source) {
+			if (this == LEGACY_TUPLE) {
+				return new TupleFunctionEvaluationStrategy(source, null, null);
+			}
+			if (this == EXTENDED_TUPLE) {
+				return new ExtendedEvaluationStrategy(source, null, null, 0, new EvaluationStatistics());
+			}
+			return new DefaultEvaluationStrategy(source, null);
+		}
+
+		private TupleExpr expression(DefaultEvaluationStrategy strategy, TupleFunction callback, Value value) {
+			if (this == SERVICE || this == VECTORED_SERVICE) {
+				MapBindingSet result = new MapBindingSet();
+				result.addBinding("o", value);
+				FederatedService remote = mock(FederatedService.class);
+				when(remote.select(any(), anySet(), any(), any())).thenAnswer(call -> new SingletonIteration<>(result));
+				when(remote.evaluate(any(), any(), any())).thenAnswer(call -> new SingletonIteration<>(result));
+				strategy.setFederatedServiceResolver(uri -> remote);
+				Service service = new Service(
+						Var.of("service", SimpleValueFactory.getInstance().createIRI("urn:test:remote")),
+						new StatementPattern(Var.of("remoteS"), Var.of("remoteP"), Var.of("o")),
+						"{ ?remoteS ?remoteP ?o }", Map.of(), null, false);
+				return this == SERVICE ? service : new Join(new SingletonSet(), service);
+			}
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(callback.getURI());
+			call.addResultVar(Var.of("o"));
+			return call;
+		}
+	}
+
+	@Test
+	void unusedValuesInputIsCapturedWithoutIdentifierLookup() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value value = source.valueFactory.createLiteral("unused VALUES");
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("unused", value);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(input));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(new QueryRoot(assignment))
+				.evaluate(EmptyBindingSet.getInstance())) {
+			Value result = rows.next().getValue("unused");
+			assertThat(source.literalPreparations).hasValue(0);
+			assertThat(result).isEqualTo(value).isNotSameAs(value);
+		}
+		assertThat(input.getValue("unused")).isSameAs(value);
+	}
+
+	@Test
+	void unusedExternalBindingIsCapturedWithoutIdentifierLookup() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value value = source.valueFactory.createLiteral("unused external binding");
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("unused", value);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(new QueryRoot(new SingletonSet()),
+				new QueryEvaluationContext.Minimal(null)).evaluate(input)) {
+			Value result = rows.next().getValue("unused");
+			assertThat(source.literalPreparations).hasValue(0);
+			assertThat(result).isEqualTo(value).isNotSameAs(value);
+		}
+		assertThat(input.getValue("unused")).isSameAs(value);
+	}
+
+	@Test
+	void unusedExternalBindingSurvivesFixedArrayLayout() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value value = source.valueFactory.createLiteral("unused external binding");
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("unused", value);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(new QueryRoot(new SingletonSet()))
+				.evaluate(input)) {
+			Value result = rows.next().getValue("unused");
+			assertThat(source.literalPreparations).hasValue(0);
+			assertThat(result).isEqualTo(value).isNotSameAs(value);
+		}
+		assertThat(input.getValue("unused")).isSameAs(value);
+	}
+
+	@Test
+	void computedValueIsCapturedOnceBeforeUnionFanout() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value computed = source.valueFactory.createLiteral("object");
+		Extension extension = new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(computed), "o"));
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate()),
+				Var.of("o"));
+		QueryRoot query = new QueryRoot(new Join(extension, new Union(pattern, pattern.clone())));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			BindingSet first = rows.next();
+			BindingSet second = rows.next();
+			assertThat(source.literalPreparations).hasValue(1);
+			assertThat(first.getValue("o")).isEqualTo(computed).isNotSameAs(computed);
+			assertThat(second.getValue("o")).isSameAs(first.getValue("o"));
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(source.literalPreparations).hasValue(1);
+	}
+
+	@Test
+	void unusedComputedValueIsCapturedWithoutIdentifierLookup() {
+		CapturingTripleSource source = new CapturingTripleSource();
+		Value computed = source.valueFactory.createLiteral("unused");
+		QueryRoot query = new QueryRoot(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(computed), "unused")));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			Value result = rows.next().getValue("unused");
+			assertThat(result).isEqualTo(computed).isNotSameAs(computed);
+			assertThat(source.owned).containsKey(result);
+		}
+		assertThat(source.literalPreparations).hasValue(0);
+	}
+
+	private static final class CapturingTripleSource implements TripleSource {
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		private final Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("object"));
+		private final Map<Value, Boolean> owned = new IdentityHashMap<>();
+		private final AtomicInteger literalPreparations = new AtomicInteger();
+		private final Function<Value, Value> capturer = value -> {
+			if (owned.containsKey(value)) {
+				return value;
+			}
+			Value captured = value.isIRI() ? valueFactory.createIRI(value.stringValue())
+					: valueFactory.createLiteral(value.stringValue());
+			owned.put(captured, false);
+			return captured;
+		};
+		private final Function<Value, Value> preparer = value -> {
+			Value captured = capturer.apply(value);
+			if (!owned.put(captured, true) && captured.isLiteral()) {
+				literalPreparations.incrementAndGet();
+			}
+			return captured;
+		};
+
+		@Override
+		public Function<Value, Value> getValueCapturer() {
+			return capturer;
+		}
+
+		@Override
+		public Function<Value, Value> getValuePreparer() {
+			return preparer;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			if (subj != null && !subj.equals(statement.getSubject())
+					|| pred != null && !pred.equals(statement.getPredicate())
+					|| obj != null && !obj.equals(statement.getObject())) {
+				return new EmptyIteration<>();
+			}
+			return new CloseableIteratorIteration<>(List.of(statement).iterator());
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return valueFactory;
+		}
+	}
+
+	@Test
+	void preparesConstantsAndBoundContextsWithoutMutatingCallerBindings() {
+		ValueFactory factory = SimpleValueFactory.getInstance();
+		IRI subject = factory.createIRI("urn:subject");
+		IRI predicate = factory.createIRI("urn:predicate");
+		IRI graph = factory.createIRI("urn:graph");
+		Value object = factory.createLiteral("object");
+		Map<Value, Value> prepared = new IdentityHashMap<>();
+		Function<Value, Value> preparer = value -> prepared.computeIfAbsent(value, original -> {
+			Value replacement = original.isIRI() ? factory.createIRI(original.stringValue())
+					: factory.createLiteral(original.stringValue());
+			return replacement;
+		});
+		Statement statement = factory.createStatement(subject, predicate, object, graph);
+		TripleSource source = new TripleSource() {
+			@Override
+			public Function<Value, Value> getValuePreparer() {
+				return preparer;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+					Resource... contexts) {
+				assertThat(s).isSameAs(prepared.get(subject)).isNotSameAs(subject);
+				assertThat(p).isSameAs(prepared.get(predicate)).isNotSameAs(predicate);
+				assertThat(o).isSameAs(prepared.get(object)).isNotSameAs(object);
+				assertThat(contexts).containsExactly((Resource) prepared.get(graph));
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return factory;
+			}
+		};
+		StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p", predicate), Var.of("o"), Var.of("g"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("s", subject);
+		input.addBinding("o", object);
+		input.addBinding("g", graph);
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern,
+				new QueryEvaluationContext.Minimal(null), source);
+		try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+			assertThat(rows.next().getValue("o")).isSameAs(prepared.get(object));
+		}
+		assertThat(input.getValue("s")).isSameAs(subject);
+		assertThat(input.getValue("o")).isSameAs(object);
+		assertThat(input.getValue("g")).isSameAs(graph);
+		assertThat(pattern.getPredicateVar().getValue()).isSameAs(predicate);
+	}
+
+	@Test
+	void nestedTripleConstantKeepsOriginalVarParentWithoutPreparationHook() {
+		SingleStatementTripleSource source = new SingleStatementTripleSource();
+		ValueFactory factory = source.getValueFactory();
+		TripleTerm inner = factory.createTripleTerm(factory.createIRI("urn:inner"),
+				factory.createIRI("urn:predicate"), factory.createLiteral("object"));
+		TripleTerm outer = factory.createTripleTerm(factory.createIRI("urn:outer"),
+				factory.createIRI("urn:predicate"), inner);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o", outer));
+		new StatementPatternQueryEvaluationStep(pattern, new QueryEvaluationContext.Minimal(null), source);
+		assertThat(pattern.getObjectVar().getParentNode()).isSameAs(pattern);
+		assertThat(pattern.getObjectVar().getValue()).isSameAs(outer);
+	}
 
 	@Test
 	void convertIterationSkipsBindingChecks() {

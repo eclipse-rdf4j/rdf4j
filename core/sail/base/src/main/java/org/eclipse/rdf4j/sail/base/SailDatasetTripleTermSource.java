@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -116,6 +117,16 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
+	}
+
+	@Override
+	public Function<Value, Value> getValuePreparer() {
+		return dataset.getValuePreparer();
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		return dataset.getValueCapturer();
 	}
 
 	@Override

@@ -36,10 +36,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic FOAF data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 7)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3)
+@Measurement(iterations = 7)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 
@@ -125,4 +125,5 @@ public class TransactionsPerSecondBenchmarkFoaf extends BenchmarkBaseFoaf {
 		}
 		connection.commit();
 	}
+
 }

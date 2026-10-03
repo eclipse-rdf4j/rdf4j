@@ -1,0 +1,16 @@
+#cloud-config
+ssh_pwauth: false
+write_files:
+  - path: /usr/local/sbin/rdf4j-crashlab-bootstrap
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      mkdir -p /mnt/run-results /mnt/rdf4j-ro /mnt/m2-ro
+      mount -t 9p -o ro,trans=virtio,version=9p2000.L repo_ro /mnt/rdf4j-ro
+      mount -t 9p -o ro,trans=virtio,version=9p2000.L m2_ro /mnt/m2-ro
+      mount -t 9p -o trans=virtio,version=9p2000.L run_results /mnt/run-results
+      exec bash /mnt/rdf4j-ro/scripts/lmdb-crashlab/guest/@BOOT_SCRIPT@
+runcmd:
+  - [bash, /usr/local/sbin/rdf4j-crashlab-bootstrap]

@@ -31,10 +31,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -44,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -117,6 +120,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
 	private final LmdbStoreConfig config;
+
+	int getReadOnlyReplayMaxRetries() {
+		return config.getReadOnlyReplayMaxRetries();
+	}
 
 	private SailStore store;
 
@@ -354,7 +361,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
-			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 
 			// update version afer loading and potential internal migration within value and triple store
 			if (updateVersion) {
@@ -396,6 +403,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		} catch (Throwable e) {
 			// LmdbStore initialization failed, release any allocated files
 			dirLock.release();
+			logger.error("LmdbStore initialization failed for data directory: " + dataDir.getAbsolutePath(), e);
 
 			throw new SailException(e);
 		}
@@ -473,24 +481,66 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @throws SailException
 	 */
 	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
-		txnLockManager.lock();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		boolean mutexAcquired = false;
+		Lock transactionLock = null;
 		try {
+			checkTransactionAdmissionDeadline(deadline);
+			if (deadline == null) {
+				txnLockManager.lockInterruptibly();
+			} else if (!txnLockManager.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
+			mutexAcquired = true;
+			checkTransactionAdmissionDeadline(deadline);
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
 				// make sure no isolated transaction are active
-				isolatedLockManager.waitForActiveLocks();
+				waitForIsolationLocks(isolatedLockManager, deadline);
 				// mark isolation as disabled
-				return disabledIsolationLockManager.createLock(level.toString());
+				transactionLock = disabledIsolationLockManager.createLock(level.toString());
 			} else {
 				// make sure isolation is not disabled
-				disabledIsolationLockManager.waitForActiveLocks();
+				waitForIsolationLocks(disabledIsolationLockManager, deadline);
 				// mark isolated transaction as active
-				return isolatedLockManager.createLock(level.toString());
+				transactionLock = isolatedLockManager.createLock(level.toString());
 			}
+			checkTransactionAdmissionDeadline(deadline);
+			Lock admitted = transactionLock;
+			transactionLock = null;
+			return admitted;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new InterruptedSailException(e);
 		} finally {
-			txnLockManager.unlock();
+			try {
+				if (transactionLock != null) {
+					transactionLock.release();
+				}
+			} finally {
+				if (mutexAcquired) {
+					txnLockManager.unlock();
+				}
+			}
+		}
+	}
+
+	private static void waitForIsolationLocks(LockManager locks, QueryExecutionDeadline deadline)
+			throws InterruptedException {
+		checkTransactionAdmissionDeadline(deadline);
+		if (deadline == null) {
+			locks.waitForActiveLocks();
+		} else if (!locks.waitForActiveLocks(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		checkTransactionAdmissionDeadline(deadline);
+	}
+
+	private static void checkTransactionAdmissionDeadline(QueryExecutionDeadline deadline) {
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Interrupted while waiting for LMDB transaction admission");
 		}
 	}
 
@@ -505,6 +555,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	SailStore getSailStore() {
 		return store;
+	}
+
+	LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+		return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
 	}
 
 	LmdbSailStore getBackingStore() {
@@ -644,7 +699,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
-			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
+			TripleSource exposed = explicitEvalStratFactory == null ? tripleSource
+					: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
+			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, exposed, evaluationStatistics);
 		}
 
 		@Override

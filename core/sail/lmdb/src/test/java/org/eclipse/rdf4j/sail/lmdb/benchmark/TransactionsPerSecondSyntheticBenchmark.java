@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -46,12 +47,12 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 2)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
-public class TransactionsPerSecondBenchmark {
+public class TransactionsPerSecondSyntheticBenchmark {
 
 	SailRepositoryConnection connection;
 	RandomLiteralGenerator literalGenerator;
@@ -168,5 +169,27 @@ public class TransactionsPerSecondBenchmark {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
+	}
+
+	static final class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc";
+		private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
+
+		static LmdbStoreConfig createConfig() {
+			return createConfig(DEFAULT_TRIPLE_INDEXES);
+		}
+
+		static LmdbStoreConfig createAllIndexesConfig() {
+			return createConfig(ALL_TRIPLE_INDEXES);
+		}
+
+		private static LmdbStoreConfig createConfig(String tripleIndexes) {
+			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+			config.setSketchEstimatorEnabled(false);
+			config.setForceSync(false);
+			config.setTripleDBSize(1_073_741_824L); // 1 GiB
+			config.setValueDBSize(1_073_741_824L); // 1 GiB
+			return config;
+		}
 	}
 }

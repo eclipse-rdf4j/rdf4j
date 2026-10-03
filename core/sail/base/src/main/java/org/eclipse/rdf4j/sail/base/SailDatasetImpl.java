@@ -78,9 +78,35 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
+	public Function<Value, Value> getValuePreparer() {
+		return derivedFrom.getValuePreparer();
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		return derivedFrom.getValueCapturer();
+	}
+
+	@Override
 	public void close() throws SailException {
 		changes.removeRefback(this);
 		derivedFrom.close();
+	}
+
+	@Override
+	public void abandonUnobserved() throws SailException {
+		changes.removeRefback(this);
+		derivedFrom.abandonUnobserved();
+	}
+
+	@Override
+	public boolean isSnapshotCurrent() {
+		return derivedFrom.isSnapshotCurrent();
+	}
+
+	@Override
+	public boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return derivedFrom.isSnapshotCompatibleWithCurrentAdmission();
 	}
 
 	@Override

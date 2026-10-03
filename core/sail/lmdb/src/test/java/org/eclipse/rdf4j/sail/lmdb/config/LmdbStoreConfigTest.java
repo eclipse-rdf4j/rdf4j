@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -26,6 +28,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -79,6 +82,12 @@ class LmdbStoreConfigTest {
 	private static final IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
 
+	private static final IRI MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	private static final IRI MAP_GROWTH_THRESHOLD = LmdbStoreSchema.MAP_GROWTH_THRESHOLD;
+
+	private static final IRI READ_ONLY_REPLAY_MAX_RETRIES = LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES;
+
 	@Test
 	void pageCardinalityEstimatorDefaultsToEnabled() {
 		assertThat(new LmdbStoreConfig().getPageCardinalityEstimator()).isTrue();
@@ -99,6 +108,93 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeBooleanGetter(config, "getBackgroundRawSamplingEnabled")).isTrue();
 		assertThat(invokeLongGetter(config, "getBackgroundRawSamplingMaxMillisPerCycle")).isEqualTo(10L);
+	}
+
+	@Test
+	void mapGrowthReadDrainTimeoutDefaultsToThirtySeconds() {
+		assertThat(invokeLongGetter(new LmdbStoreConfig(), "getMapGrowthReadDrainTimeoutMillis"))
+				.isEqualTo(30_000L);
+	}
+
+	@Test
+	void mapGrowthThresholdDefaultsToSeventyFivePercent() {
+		assertThat(new LmdbStoreConfig().getMapGrowthThreshold()).isEqualTo(0.75d);
+	}
+
+	@Test
+	void readOnlyReplayMaxRetriesDefaultsToThree() {
+		assertThat(invokeIntGetter(new LmdbStoreConfig(), "getReadOnlyReplayMaxRetries")).isEqualTo(3);
+	}
+
+	@Test
+	void mapGrowthReadDrainTimeoutCanBeConfiguredFluently() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeLongSetter(config, "setMapGrowthReadDrainTimeoutMillis", 12_345L)).isSameAs(config);
+		assertThat(invokeLongGetter(config, "getMapGrowthReadDrainTimeoutMillis")).isEqualTo(12_345L);
+	}
+
+	@Test
+	void mapGrowthThresholdCanBeConfiguredFluentlyAndIsPerInstance() {
+		LmdbStoreConfig configured = new LmdbStoreConfig();
+		LmdbStoreConfig independent = new LmdbStoreConfig();
+
+		assertThat(configured.setMapGrowthThreshold(0.625d)).isSameAs(configured);
+		assertThat(configured.getMapGrowthThreshold()).isEqualTo(0.625d);
+		assertThat(independent.getMapGrowthThreshold()).isEqualTo(0.75d);
+	}
+
+	@ParameterizedTest
+	@ValueSource(doubles = { 0.0d, 1.0d, -0.01d, 1.01d, Double.NaN, Double.POSITIVE_INFINITY,
+			Double.NEGATIVE_INFINITY })
+	void mapGrowthThresholdMustBeFiniteAndStrictlyBetweenZeroAndOne(double threshold) {
+		assertThatIllegalArgumentException()
+				.isThrownBy(() -> new LmdbStoreConfig().setMapGrowthThreshold(threshold));
+
+		final BNode implNode = bnode();
+		final Model configModel = new ModelBuilder()
+				.add(implNode, MAP_GROWTH_THRESHOLD, Values.literal(threshold))
+				.build();
+		assertThatExceptionOfType(SailConfigException.class)
+				.isThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode));
+	}
+
+	@ParameterizedTest
+	@ValueSource(doubles = { 0.25d, 0.5d, 0.75d, 0.9d })
+	void testThatLmdbStoreConfigParseAndExportMapGrowthThreshold(double threshold) {
+		testParseAndExport(
+				MAP_GROWTH_THRESHOLD,
+				Values.literal(threshold),
+				LmdbStoreConfig::getMapGrowthThreshold,
+				threshold,
+				threshold != LmdbStoreConfig.MAP_GROWTH_THRESHOLD
+		);
+	}
+
+	@Test
+	void mapGrowthThresholdPropertyIsPreservedWhenParsedAndExported() {
+		final BNode implNode = bnode();
+		final IRI property = Values.iri(LmdbStoreSchema.NAMESPACE + "mapGrowthThreshold");
+		final Literal threshold = Values.literal(0.625d);
+		final Model configModel = new ModelBuilder()
+				.add(implNode, property, threshold)
+				.build();
+
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(configModel, implNode);
+
+		final Model exportedModel = new LinkedHashModel();
+		final Resource exportImplNode = config.export(exportedModel);
+
+		assertThat(exportedModel.contains(exportImplNode, property, threshold)).isTrue();
+	}
+
+	@Test
+	void readOnlyReplayMaxRetriesCanBeConfiguredFluently() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+
+		assertThat(invokeIntSetter(config, "setReadOnlyReplayMaxRetries", 7)).isSameAs(config);
+		assertThat(invokeIntGetter(config, "getReadOnlyReplayMaxRetries")).isEqualTo(7);
 	}
 
 	@Test
@@ -381,6 +477,30 @@ class LmdbStoreConfigTest {
 		);
 	}
 
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 5_000L, 30_000L, 90_000L })
+	void testThatLmdbStoreConfigParseAndExportMapGrowthReadDrainTimeoutMillis(final long timeoutMillis) {
+		testParseAndExportReflectiveLong(
+				MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS,
+				Values.literal(timeoutMillis),
+				"getMapGrowthReadDrainTimeoutMillis",
+				timeoutMillis,
+				timeoutMillis != 30_000L
+		);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 3, 10 })
+	void testThatLmdbStoreConfigParseAndExportReadOnlyReplayMaxRetries(final int maxRetries) {
+		testParseAndExportReflectiveInt(
+				READ_ONLY_REPLAY_MAX_RETRIES,
+				Values.literal(maxRetries),
+				"getReadOnlyReplayMaxRetries",
+				maxRetries,
+				maxRetries != 3
+		);
+	}
+
 	// TODO: Add more tests for other properties
 
 	@Test
@@ -532,6 +652,24 @@ class LmdbStoreConfigTest {
 			return (int) getter.invoke(config);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Missing LMDB config getter: " + getterName, e);
+		}
+	}
+
+	private LmdbStoreConfig invokeLongSetter(LmdbStoreConfig config, String setterName, long value) {
+		try {
+			Method setter = config.getClass().getMethod(setterName, long.class);
+			return (LmdbStoreConfig) setter.invoke(config, value);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config setter: " + setterName, e);
+		}
+	}
+
+	private LmdbStoreConfig invokeIntSetter(LmdbStoreConfig config, String setterName, int value) {
+		try {
+			Method setter = config.getClass().getMethod(setterName, int.class);
+			return (LmdbStoreConfig) setter.invoke(config, value);
+		} catch (ReflectiveOperationException e) {
+			throw new AssertionError("Missing LMDB config setter: " + setterName, e);
 		}
 	}
 

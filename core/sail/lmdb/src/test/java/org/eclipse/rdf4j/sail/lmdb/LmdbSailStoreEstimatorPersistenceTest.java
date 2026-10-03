@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -52,6 +53,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -665,6 +667,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 				commitSink.flush();
 			} finally {
 				commitSink.close();
+			}
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(committedAfterRollback,
+							p, o)) {
+				assertTrue(statements.hasNext(),
+						"a native LMDB read must see the post-rollback direct sink commit: " + store.getLmdbStats());
 			}
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertTrue(conn.hasStatement(committedAfterRollback, p, o, false),
