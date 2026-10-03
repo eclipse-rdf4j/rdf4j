@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { FakeElement } = require('./browser-fakes.js');
 const { createFormBrowserHarness } = require('./form-browser-harness.js');
 
 function appendOptions(harness, select, values) {
@@ -60,6 +61,48 @@ test('template load falls back to unauthenticated user label', () => {
     assert.equal(selectedUser.textContent, 'None');
     assert.equal(selectedUser.children.length, 1);
     assert.equal(selectedUser.children[0].className, 'disabled');
+});
+
+test('template protects loaded, event-submitted, and native-submitted POST forms', () => {
+    class FakeHTMLFormElement extends FakeElement {
+    }
+
+    const harness = createFormBrowserHarness({
+        globals: { HTMLFormElement: FakeHTMLFormElement }
+    });
+    const token = 'a'.repeat(64);
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + token;
+
+    const loadedForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
+        method: 'post'
+    }));
+    const getForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
+        method: 'get'
+    }));
+    harness.document.body.appendChild(loadedForm);
+    harness.document.body.appendChild(getForm);
+
+    harness.loadScripts([]);
+    harness.runLoadHandlers();
+
+    assert.equal(loadedForm.querySelector('input[name="_csrf"]').value, token);
+    assert.equal(getForm.querySelector('input[name="_csrf"]'), null);
+    assert.equal(harness.context.$.ajaxSettings.headers['X-RDF4J-CSRF-Token'], token);
+
+    const eventForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
+        method: 'post'
+    }));
+    harness.document.trigger('submit', { target: eventForm });
+    assert.equal(eventForm.querySelector('input[name="_csrf"]').value, token);
+
+    const nativeForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
+        method: 'post'
+    }));
+    nativeForm.submit();
+    nativeForm.submit();
+    assert.equal(nativeForm.submitCount, 2);
+    assert.equal(nativeForm.getElementsByTagName('input').length, 1);
+    assert.equal(nativeForm.querySelector('input[name="_csrf"]').value, token);
 });
 
 test('template renders credential-cookie usernames as text instead of HTML', () => {

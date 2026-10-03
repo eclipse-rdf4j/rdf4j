@@ -156,6 +156,12 @@ The RDF4J Server exposes its functionality using a [REST API](/documentation/ref
 
 In general, read operations are effected using `GET` and write operations using `PUT`, `POST` and `DELETE`. The exception to this is that POST is allowed for SPARQL queries. This is for practical reasons, because some HTTP servers have limits on the length of the parameter values for GET requests.
 
+### Browser request integrity
+
+RDF4J Server rejects state-changing browser requests when their `Origin` or `Referer` identifies another origin. Requests without browser origin metadata remain supported as non-browser API traffic. A browser client that intentionally uses the RDF4J API across origins must send `X-RDF4J-Request: true`; this triggers a CORS preflight, so the deployment's CORS policy must explicitly allow both the client origin and this header. An ordinary cross-origin HTML form cannot add that header.
+
+RDF4J Workbench additionally requires a random, session-bound token for every state-changing request. Workbench adds this token to its forms and Ajax requests automatically. Reverse proxies should preserve the public `Host` header so same-origin checks compare against the browser-visible origin.
+
 ### Security constraints and roles
 
 The association between operations and security roles is specified using security constraints in RDF4J Server’s _deployment descriptor_ - a file called `web.xml` that can be found in the `.../webapps/rdf4j-server/WEB-INF` directory. `web.xml` becomes available immediately after the installation without any security roles defined.
