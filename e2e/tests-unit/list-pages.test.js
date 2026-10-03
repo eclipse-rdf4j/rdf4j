@@ -1,55 +1,74 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createListBrowserHarness } = require('./list-browser-harness.js');
 
-function option(harness, select, value, text, selected) {
-    const element = harness.registerElement('option', {
-        value,
-        textContent: text,
-        selected: !!selected,
-        attributes: { value }
-    });
-    select.appendChild(element);
-    if (selected) {
-        select.value = value;
-    }
-    return element;
+function compilePagingSource() {
+    const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-paging-source-contract-'));
+    const outputPath = path.join(outputDirectory, 'paging.js');
+    const sourcePath = path.resolve(__dirname,
+        '../../tools/workbench/src/main/webapp/scripts/ts/paging.ts');
+    const compilation = spawnSync('tsc', [
+        '--target', 'ES2017',
+        '--lib', 'ES2017,DOM',
+        '--skipLibCheck',
+        '--outFile', outputPath,
+        sourcePath
+    ], { encoding: 'utf8' });
+    assert.equal(compilation.status, 0,
+        `paging.ts must compile for its in-repo source contract:\n${compilation.stdout}${compilation.stderr}`);
+    return outputPath;
 }
 
-test('namespaces page copies selected prefix and namespace', () => {
-    const harness = createListBrowserHarness();
-    const select = harness.registerElement('select', { id: 'prefix-select', value: 'http://xmlns.com/foaf/0.1/' });
-    const prefix = harness.registerElement('input', { id: 'prefix' });
-    const namespace = harness.registerElement('input', { id: 'namespace' });
-    option(harness, select, 'http://example.com/', 'ex', false);
-    option(harness, select, 'http://xmlns.com/foaf/0.1/', 'foaf', true);
-    [select, prefix, namespace].forEach((element) => harness.document.body.appendChild(element));
+test('export page defaults to its own preview limit instead of the Explore limit cookie', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/export'
+	});
+	const limitExport = harness.registerElement('select', { id: 'limit_export', value: '0' });
+	const limitExplore = harness.registerElement('select', { id: 'limit_explore', value: '0' });
+	harness.document.cookie = 'limit_explore=7';
+	harness.document.body.appendChild(limitExport);
+	harness.document.body.appendChild(limitExplore);
 
-    harness.loadPagingScripts(['namespaces.js']);
-    harness.context.workbench.namespaces.updatePrefix();
+	harness.loadPagingScripts(['export.js']);
+	harness.workbench.exportPage.mount(harness.document.body);
 
-    assert.equal(prefix.value, 'foaf');
-    assert.equal(namespace.value, 'http://xmlns.com/foaf/0.1/');
+	assert.equal(limitExport.value, '100');
+	assert.equal(limitExplore.value, '0');
 });
 
-test('export and tuple pages prefer query params then cookies and update result headings', () => {
-    const harness = createListBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?limit_query=20&offset=5&know_total=12'
-    });
-    const limitQuery = harness.registerElement('input', { id: 'limit_query', value: '0' });
-    const limitExplore = harness.registerElement('input', { id: 'limit_explore', value: '0' });
-    harness.document.getElementById('title_heading').innerHTML = 'Results (';
-    harness.document.cookie = 'limit_explore=7; total_result_count=99';
-    harness.document.body.appendChild(limitQuery);
-    harness.document.body.appendChild(limitExplore);
+test('export page prefers its own preview-limit query parameter', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/export?limit_export=50'
+	});
+	const limitExport = harness.registerElement('select', { id: 'limit_export', value: '0' });
+	harness.document.cookie = 'limit_export=10; limit_explore=7';
+	harness.document.body.appendChild(limitExport);
 
-    harness.loadPagingScripts(['export.js', 'tuple.js']);
-    harness.runLoadHandlers();
+	harness.loadPagingScripts(['export.js']);
+	harness.workbench.exportPage.mount(harness.document.body);
 
-    assert.equal(limitExplore.value, '7');
-    assert.equal(limitQuery.value, '20');
+	assert.equal(limitExport.value, '50');
+});
+
+test('tuple page prefers query params and updates result headings', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?limit_query=20&offset=5&know_total=12'
+	});
+	const limitQuery = harness.registerElement('input', { id: 'limit_query', value: '0' });
+	harness.document.getElementById('title_heading').innerHTML = 'Results (';
+	harness.document.cookie = 'total_result_count=99';
+	harness.document.body.appendChild(limitQuery);
+
+	harness.loadPagingScripts(['tuple.js']);
+	harness.runLoadHandlers();
+
+	assert.equal(limitQuery.value, '20');
     assert.equal(harness.document.getElementById('nextX').value, 'Next 20');
     assert.equal(harness.document.getElementById('previousX').value, 'Previous 20');
     assert.equal(harness.document.getElementById('previousX').disabled, false);
@@ -57,7 +76,8 @@ test('export and tuple pages prefer query params then cookies and update result 
     assert.equal(harness.document.getElementById('title_heading').innerHTML, 'Results (6-12 of 12)');
 });
 
-test('explore page trims duplicates, restores limits, and renders ranges', () => {
+// Repeated list items are left out by the view since M12.1 (the router renders Explore pages again in place).
+test('explore page leaves its lists to the view, restores limits, and renders ranges', () => {
     const harness = createExploreBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa&offset=2'
     });
@@ -70,16 +90,57 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     firstList.appendChild(itemB);
     firstList.appendChild(itemBDuplicate);
     firstListWrapper.appendChild(firstList);
-    harness.document.body.appendChild(firstListWrapper);
+    const surface = harness.registerElement('div', { id: 'workbench-page-surface' });
+    surface.appendChild(firstListWrapper);
+    harness.document.body.appendChild(surface);
+    // The shell's (initially empty) repository list must not be touched.
+    const popover = harness.registerElement('div', { id: 'workbench-repository-popover' });
+    const shellList = harness.registerElement('ul', { id: 'workbench-repository-options' });
+    popover.appendChild(shellList);
+    harness.document.body.appendChild(popover);
     harness.document.cookie = 'limit_explore=4; total_result_count=9';
 
     harness.loadExploreScript();
-    harness.runLoadHandlers();
+    harness.workbench.explore.mount(harness.document.body);
 
     assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
     assert.equal(harness.document.getElementById('limit_explore').value, '4');
-    assert.equal(firstList.getElementsByTagName('li').length, 1);
-    assert.equal(harness.heading.textContent, 'Explore (http://example.com/a)(3-6 of 9)');
+    assert.equal(firstList.getElementsByTagName('li').length, 3, 'rendered lists are not edited');
+    assert.equal(shellList.parentNode, popover, 'shell lists outside the page surface stay mounted');
+    assert.equal(harness.heading.textContent, 'Explore');
+    assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
+    assert.equal(harness.document.getElementById('explore-result-count').textContent, 'Rows 3–6 of 9');
+    assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
+});
+
+test('explore page without a resource empties the summary a previous page filled', () => {
+    const harness = createExploreBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'
+    });
+    const resourceValue = harness.document.getElementById('explore-resource-value');
+    const resultCount = harness.document.getElementById('explore-result-count');
+    resourceValue.textContent = 'http://example.com/a';
+    resultCount.textContent = 'Rows 1–4 of 9';
+
+    harness.loadExploreScript();
+    harness.workbench.explore.mount(harness.document.body);
+
+    assert.equal(resourceValue.textContent, '');
+    assert.equal(resultCount.textContent, '');
+    assert.equal(harness.summary.hidden, true);
+});
+
+test('explore page whose summary has no spans still restores the resource', () => {
+    const harness = createExploreBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa',
+        withoutSummarySpans: true
+    });
+
+    harness.loadExploreScript();
+    harness.workbench.explore.mount(harness.document.body);
+
+    assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
+    assert.equal(harness.summary.hidden, true, 'without its spans the summary stays hidden');
 });
 
 test('paging helpers cover url, query, and cookie branches', () => {
@@ -163,12 +224,139 @@ test('paging helpers cover url, query, and cookie branches', () => {
     paging.addLimit('query');
     assert.equal(harness.document.lastSubmittedForm.formControls.find((control) => control.name === 'limit_query').value, '7');
 
+    // Datatype tags are hidden with a page class; cells are not rewritten (plan task M5.1).
     showDataType.checked = false;
     paging.setShowDataTypesCheckboxAndSetChangeEvent();
     assert.equal(showDataType.checked, false);
-    assert.equal(link.textContent, 'ex:short');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), true);
+    assert.equal(link.textContent, 'placeholder', 'cell text is left alone');
     showDataType.checked = true;
     showDataType.trigger('change');
-    assert.equal(link.textContent, 'http://example.com/long');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
     assert.match(harness.document.cookie, /show-datatypes=true/);
+});
+
+test('mounted query streams own server paging while explicit downloads remain native', () => {
+    const changes = [];
+    const calls = [];
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        workbench: {
+            queryPage: {
+                isMounted() { return true; },
+                nextPage() { calls.push('next'); return true; },
+                previousPage() { calls.push('previous'); return true; },
+                changePageParameter(name, value) { changes.push([name, value]); return true; }
+            }
+        }
+    });
+    const limit = harness.registerElement('select', { id: 'limit_query', value: '25' });
+    const downloadLimit = harness.registerElement('input', { id: 'download_limit', value: '100' });
+    harness.document.body.appendChild(limit);
+    harness.document.body.appendChild(downloadLimit);
+    harness.runScript(compilePagingSource());
+
+    const paging = harness.context.workbench.paging;
+    paging.nextOffset('query');
+    paging.previousOffset('query');
+    paging.addPagingParam('limit_query', 50);
+    paging.addGraphParam('Accept');
+
+    assert.deepEqual(calls, ['next', 'previous']);
+    assert.deepEqual(changes, [['limit_query', 50]]);
+    assert.equal(harness.document.lastSubmittedForm.action, 'query',
+        'raw Accept downloads remain explicit browser POSTs');
+});
+
+// Plan task M9.1: with the result iframe gone, paging on the Query page goes to the mounted streamed renderer.
+test('paging hands offsets and limits to a mounted streamed query page and keeps other parameters', () => {
+    const changes = [];
+    const pages = [];
+    const queryPage = {
+        isMounted: () => true,
+        changePageParameter(name, value) {
+            changes.push([name, value]);
+            return true;
+        },
+        nextPage: () => pages.push('next'),
+        previousPage: () => pages.push('previous')
+    };
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
+        workbench: { queryPage }
+    });
+    const limit = harness.registerElement('select', { id: 'limit_query', value: '50' });
+    harness.document.body.appendChild(limit);
+    harness.loadPagingScripts([]);
+    const paging = harness.context.workbench.paging;
+
+    paging.addPagingParam('offset', 25);
+    paging.addGraphParam('limit_query');
+    paging.nextOffset('query');
+    paging.previousOffset('query');
+    assert.deepEqual(changes, [['offset', 25], ['limit_query', 50]]);
+    assert.deepEqual(pages, ['next', 'previous']);
+
+    for (const [name, value] of [['offset', -1], ['offset', 'many'], ['know_total', 3]]) {
+        paging.addPagingParam(name, value);
+        assert.equal(harness.document.lastSubmittedForm.serializeArray()
+            .some((entry) => entry.name === name), true, name + ' is posted as a page request');
+    }
+    assert.equal(changes.length, 2, 'invalid values and other parameters are not handed to the renderer');
+
+    delete queryPage.changePageParameter;
+    paging.addPagingParam('offset', 50);
+    assert.equal(changes.length, 2);
+    queryPage.isMounted = () => false;
+    paging.nextOffset('query');
+    assert.deepEqual(pages, ['next', 'previous'], 'an unmounted renderer pages through the server');
+});
+
+test('the datatype toggle starts hidden when the cookie says so and binds only inside its page', () => {
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'
+    });
+    harness.document.cookie = 'show-datatypes=false';
+    harness.loadPagingScripts([]);
+    const page = harness.registerElement('div', { id: 'page' });
+    const inside = harness.registerElement('input', { type: 'checkbox', name: 'show-datatypes', checked: true });
+    page.appendChild(inside);
+    harness.document.body.appendChild(page);
+
+    harness.context.workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent(page);
+
+    assert.equal(inside.checked, false);
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), true);
+    assert.equal(inside.listenerCount('change'), 1);
+    inside.checked = true;
+    inside.trigger('change');
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
+});
+
+// Plan task M10.1: paging that leaves the Query page goes through the router when it runs.
+test('paging links navigate in the page when the router runs, and downloads still load natively', () => {
+    const navigations = [];
+    const harness = createListBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=x&offset=0',
+        workbench: { router: { isRunning: () => true, navigate: (url, options) => navigations.push([url, options.history]) } }
+    });
+    const accept = harness.registerElement('select', { id: 'Accept', value: 'text/turtle' });
+    const limit = harness.registerElement('select', { id: 'limit_explore', value: '50' });
+    harness.document.body.appendChild(accept);
+    harness.document.body.appendChild(limit);
+    harness.loadPagingScripts([]);
+    const paging = harness.context.workbench.paging;
+    const start = harness.document.location.href;
+
+    paging.addPagingParam('offset', 10);
+    paging.addGraphParam('limit_explore');
+    assert.equal(navigations.length, 2);
+    assert.match(navigations[0][0], /offset=10/);
+    assert.equal(navigations[0][1], 'push');
+    assert.match(navigations[1][0], /limit_explore=50/);
+    assert.equal(harness.document.location.href, start, 'the page itself did not load anything');
+
+    paging.addGraphParam('Accept');
+    assert.equal(navigations.length, 2, 'a download is not a navigation');
+    assert.match(harness.document.location.href, /Accept=text%2Fturtle/);
 });

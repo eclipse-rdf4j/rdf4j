@@ -70,7 +70,7 @@ function createYasqeStub(harness) {
     };
 }
 
-test('saved queries delete permissions and toggle behavior cover both branches', () => {
+test('saved queries delete permissions and toggle behavior cover both branches', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -79,9 +79,9 @@ test('saved queries delete permissions and toggle behavior cover both branches',
         id: 'urn:query-metadata',
         style: { display: 'none' }
     });
-    const toggle = harness.registerElement('input', {
+    const toggle = harness.registerElement('button', {
         id: 'urn:query-toggle',
-        attributes: { value: 'Show' }
+        attributes: { 'aria-expanded': 'false' }
     });
     const textarea = harness.registerElement('textarea', {
         id: 'urn:query-text',
@@ -108,12 +108,13 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
 
     harness.loadScripts(['saved-queries.js']);
-    harness.runLoadHandlers();
+    harness.context.workbench.savedQueries.mount(harness.document.body);
 
     assert.equal(pre.innerHTML, 'ASK {}');
     assert.equal(queryInput.getAttribute('value'), 'DESCRIBE ?s');
 
     harness.context.workbench.savedQueries.deleteQuery('alice', 'Query 1', 'urn:query');
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
 
     harness.context.workbench.savedQueries.deleteQuery('bob', 'Query 2', 'urn:query');
@@ -123,15 +124,71 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(metadata.style.display, '');
     assert.equal(textarea.value, 'SELECT * WHERE {?s ?p ?o}');
     assert.equal(yasqe.state.instance.refreshCount, 1);
-    assert.equal(toggle.getAttribute('value'), 'Hide');
+    // A read-only query needs no completion; YASQE's default completers fetch prefix.cc and vocabularies, and
+    // YASQE deep-merges an empty list into its default one, so only null turns them off.
+    assert.equal(yasqe.state.instance.options.autocompleters, null);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(toggle.textContent, 'Hide details');
 
     harness.context.workbench.savedQueries.toggle('urn:query');
     assert.equal(textarea.style.display, 'none');
     assert.equal(yasqe.state.instance.closed, true);
-    assert.equal(toggle.getAttribute('value'), 'Show');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(toggle.textContent, 'Show details');
 });
 
-test('saved query controls bind inert data attributes to static handlers', () => {
+function countWrites(element, property) {
+    const prototype = Object.getPrototypeOf(element);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+    const writes = [];
+    Object.defineProperty(element, property, {
+        configurable: true,
+        get() {
+            return descriptor.get.call(this);
+        },
+        set(value) {
+            writes.push(value);
+            descriptor.set.call(this, value);
+        }
+    });
+    return writes;
+}
+
+test('saved query refresh leaves unchanged card content in place', () => {
+    // The virtual row renderer refreshes the cards on every scroll; replacing a toggle's text while it is pressed
+    // makes WebKit drop the click.
+    const harness = createFormBrowserHarness();
+    const metadata = harness.registerElement('div', { id: 'urn:query-metadata', style: { display: 'none' } });
+    const toggle = harness.registerElement('button', {
+        id: 'urn:query-toggle',
+        className: 'saved-query-toggle',
+        attributes: { 'aria-expanded': 'false', 'data-query-urn': 'urn:query' },
+        textContent: 'Show details'
+    });
+    const textarea = harness.registerElement('textarea', { id: 'urn:query-text', value: 'ASK {}' });
+    const pre = harness.registerElement('pre', { innerHTML: 'ASK {}' });
+    [metadata, toggle, textarea, pre].forEach((element) => harness.document.body.appendChild(element));
+    harness.context.YASQE = createYasqeStub(harness).api;
+    harness.loadScripts(['saved-queries.js']);
+    harness.context.workbench.savedQueries.mount(harness.document.body);
+
+    const toggleTextWrites = countWrites(toggle, 'textContent');
+    const queryWrites = countWrites(pre, 'innerHTML');
+    harness.context.workbench.savedQueries.refresh(harness.document.body);
+
+    assert.deepEqual(toggleTextWrites, []);
+    assert.deepEqual(queryWrites, []);
+
+    harness.context.workbench.savedQueries.toggle('urn:query');
+    assert.equal(toggle.textContent, 'Hide details');
+    toggleTextWrites.length = 0;
+    harness.context.workbench.savedQueries.refresh(harness.document.body);
+
+    assert.deepEqual(toggleTextWrites, []);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+});
+
+test('saved query controls bind inert data attributes to static handlers', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -142,12 +199,12 @@ test('saved query controls bind inert data attributes to static handlers', () =>
         id: 'urn:query-metadata',
         style: { display: 'none' }
     });
-    const toggle = harness.registerElement('input', {
+    const toggle = harness.registerElement('button', {
         id: 'urn:query-toggle',
         className: 'saved-query-toggle',
         attributes: {
             'data-query-urn': 'urn:query',
-            value: 'Show'
+            'aria-expanded': 'false'
         }
     });
     const textarea = harness.registerElement('textarea', {
@@ -171,16 +228,17 @@ test('saved query controls bind inert data attributes to static handlers', () =>
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(owner + ':secret').toString('base64'));
 
     harness.loadScripts(['saved-queries.js']);
-    harness.runLoadHandlers();
+    harness.context.workbench.savedQueries.mount(harness.document.body);
 
-    deleteButton.click();
+    deleteButton.dispatchEvent({ type: 'click', bubbles: true });
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
     assert.match(harness.confirms[0], /globalThis\.rdf4jXss=true/);
     assert.equal(harness.context.rdf4jXss, undefined);
 
-    toggle.click();
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(metadata.style.display, '');
-    assert.equal(toggle.getAttribute('value'), 'Hide');
+    assert.equal(toggle.textContent, 'Hide details');
     assert.equal(yasqe.state.instance.refreshCount, 1);
 });
 
@@ -197,6 +255,8 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
         value: ''
     });
     harness.document.body.appendChild(update);
+    const resizeHandle = harness.registerElement('div', { id: 'update-editor-resize' });
+    harness.document.body.appendChild(resizeHandle);
 
     const yasqe = createYasqeStub(harness);
     let setupCompletersArg = null;
@@ -206,25 +266,39 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
     harness.context.workbench.yasqeHelper.setupCompleters = (namespaces) => {
         setupCompletersArg = namespaces;
     };
+    const sizingInstalls = [];
+    harness.context.workbench.editorSizing.install = (cm, handle, key) => sizingInstalls.push({ handle, key });
 
     assert.equal(harness.context.workbench.update.doSubmit(), true);
 
-    harness.runLoadHandlers();
+    harness.context.workbench.update.mount(harness.document.body);
 
     const instance = yasqe.state.instance;
     assert.deepEqual(setupCompletersArg, { ex: 'http://example.com/' });
     assert.match(instance.getValue(), /INSERT DATA/);
-    assert.equal(yasqe.state.wrapper.style.fontSize, '14px');
-    assert.equal(yasqe.state.wrapper.style.width, '900px');
-    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[0].style.height, 'auto');
-    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[1].style['max-height'], '55vh');
+    // Size comes from the shared editor CSS (M3.6): no inline width or height on the editor.
+    assert.equal(yasqe.state.wrapper.style.width || '', '');
+    assert.equal(yasqe.state.wrapper.getElementsByTagName('div')[0].style.height || '', '');
     assert.equal(instance.refreshCount, 1);
+    assert.equal(sizingInstalls.length, 1);
+    assert.equal(sizingInstalls[0].handle, resizeHandle);
+    assert.equal(sizingInstalls[0].key, 'rdf4j.workbench.update-editor-height.v1');
     assert.deepEqual(JSON.parse(JSON.stringify(instance.options.createShareLink())), { update: instance.getValue() });
 
     instance.options.consumeShareLink(instance, { update: 'DELETE WHERE {}' });
     assert.equal(instance.getValue(), 'DELETE WHERE {}');
     assert.equal(harness.context.workbench.update.doSubmit(), true);
     assert.equal(instance.saveCount, 1);
+
+    // Cmd/Ctrl+Enter submits through the form's submit handler; YASQE never posts to its own endpoint.
+    assert.deepEqual(JSON.parse(JSON.stringify(instance.options.sparql)), { endpoint: '', showQueryButton: false });
+    instance.options.extraKeys['Ctrl-Enter']();
+    const form = harness.registerElement('form', { id: 'update-form' });
+    let requested = 0;
+    form.requestSubmit = () => { requested++; };
+    instance.options.extraKeys['Ctrl-Enter']();
+    instance.options.extraKeys['Cmd-Enter']();
+    assert.equal(requested, 2);
 });
 
 test('yasqe helper registers namespace completer and delegates prefix helpers', () => {
@@ -263,4 +337,62 @@ test('yasqe helper registers namespace completer and delegates prefix helpers', 
     assert.equal(completer.isValidCompletionPosition(), false);
     assert.equal(completer.preProcessToken('tok'), 'editor:tok');
     assert.equal(yasqe.state.appendPrefixCalls.length, 1);
+});
+
+// Plan task M9.1: Update and Saved queries mount, dispose and mount again.
+test('the Update route closes its editor on dispose and opens one again on the next mount', () => {
+    const harness = createFormBrowserHarness({ globals: { namespaces: {} } });
+    const page = harness.registerElement('div', { id: 'page' });
+    const update = harness.registerElement('textarea', { id: 'update', value: 'DELETE WHERE {}' });
+    page.appendChild(update);
+    page.appendChild(harness.registerElement('div', { id: 'update-editor-resize' }));
+    harness.document.body.appendChild(page);
+    const yasqe = createYasqeStub(harness);
+    harness.context.YASQE = yasqe.api;
+    harness.loadScripts(['yasqeHelper.js', 'update.js']);
+    const released = [];
+    harness.context.workbench.editorSizing.install = () => () => released.push('sizing');
+
+    const first = harness.context.workbench.update.mount(page);
+    const firstEditor = yasqe.state.instance;
+    first();
+    assert.equal(firstEditor.closed, true);
+    assert.deepEqual(released, ['sizing']);
+    assert.equal(harness.context.workbench.update.doSubmit(), true, 'a submit after dispose is harmless');
+    const second = harness.context.workbench.update.mount(page);
+
+    assert.notEqual(yasqe.state.instance, firstEditor);
+    assert.equal(yasqe.state.instance.closed, undefined);
+    second();
+});
+
+test('the Saved queries route unbinds its buttons and closes opened editors on dispose', () => {
+    const harness = createFormBrowserHarness();
+    const page = harness.registerElement('div', { id: 'page' });
+    const toggle = harness.registerElement('button', { id: 'urn-1-toggle', className: 'saved-query-toggle',
+        attributes: { 'data-query-urn': 'urn-1', 'aria-expanded': 'false' } });
+    const metadata = harness.registerElement('div', { id: 'urn-1-metadata' });
+    metadata.style.display = 'none';
+    const text = harness.registerElement('textarea', { id: 'urn-1-text', value: ' SELECT * {} ' });
+    text.style.display = 'none';
+    const remove = harness.registerElement('button', { className: 'saved-query-delete',
+        attributes: { 'data-query-owner': 'alice', 'data-query-name': 'q', 'data-query-urn': 'urn-1' } });
+    [toggle, metadata, text, remove].forEach((element) => page.appendChild(element));
+    harness.document.body.appendChild(page);
+    const yasqe = createYasqeStub(harness);
+    harness.context.YASQE = yasqe.api;
+    harness.loadScripts(['saved-queries.js']);
+
+    const first = harness.context.workbench.savedQueries.mount(page);
+    assert.equal(page.listenerCount('click'), 1, 'one stable outlet listener serves every card');
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
+    const opened = yasqe.state.instance;
+    first();
+    assert.equal(opened.closed, true, 'an opened editor is closed');
+    assert.equal(page.listenerCount('click'), 0);
+    assert.equal(toggle.listenerCount('click'), 0);
+    assert.equal(remove.listenerCount('click'), 0);
+    const second = harness.context.workbench.savedQueries.mount(page);
+    assert.equal(page.listenerCount('click'), 1, 'one stable outlet listener serves every card');
+    second();
 });

@@ -19,6 +19,8 @@ SERVER_RUNTIME="${1:-${E2E_SERVER_RUNTIME:-spring-boot}}"
 SERVER_PID=""
 DOCKER_STARTED="false"
 SPRING_BOOT_DATA_DIR=""
+# One Playwright project (chromium, firefox or webkit) to install and run; all of them when unset.
+E2E_BROWSER="${E2E_BROWSER:-}"
 
 stop_spring_boot() {
   if [ -z "${SERVER_PID:-}" ]; then
@@ -91,8 +93,13 @@ install_e2e_dependencies() {
   if [ "${E2E_SKIP_PLAYWRIGHT_INSTALL:-false}" = "true" ]; then
     echo "Skipping Playwright browser install"
   else
-    echo "Installing Playwright browsers"
-    npx playwright install --with-deps
+    if [ -n "$E2E_BROWSER" ]; then
+      echo "Installing Playwright browser ${E2E_BROWSER}"
+      npx playwright install --with-deps "$E2E_BROWSER"
+    else
+      echo "Installing Playwright browsers"
+      npx playwright install --with-deps
+    fi
   fi
 }
 
@@ -170,7 +177,15 @@ start_docker_tomcat() {
 
 run_playwright() {
   cd "$E2E_DIR"
-  npx playwright test
+  if [ "$(uname -s)" = "Linux" ] && [ -z "${FONTCONFIG_FILE:-}" ]; then
+    # Geometry specs need the same font metrics on every Linux host (see fontconfig/fonts.conf).
+    export FONTCONFIG_FILE="${E2E_DIR}/fontconfig/fonts.conf"
+  fi
+  if [ -n "$E2E_BROWSER" ]; then
+    npx playwright test --project="$E2E_BROWSER"
+  else
+    npx playwright test
+  fi
 }
 
 trap 'cleanup $?' EXIT
@@ -195,4 +210,4 @@ esac
 wait_for_rdf4j
 run_playwright
 
-echo "E2E test OK (${SERVER_RUNTIME})"
+echo "E2E test OK (${SERVER_RUNTIME}${E2E_BROWSER:+, ${E2E_BROWSER}})"

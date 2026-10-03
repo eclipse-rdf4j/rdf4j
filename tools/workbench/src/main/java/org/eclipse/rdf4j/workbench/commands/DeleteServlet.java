@@ -38,17 +38,17 @@ public class DeleteServlet extends TransformationServlet {
 	 * parameter, instead returns JSON response with safe field set to true if safe, false if not.
 	 */
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		dropRepository(req.getParameter("id"));
 		resp.sendRedirect("../");
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		String checkSafe = req.getParameter("checkSafe");
 		if (null == checkSafe) {
 			// Display the form.
-			super.service(req, resp, xslPath);
+			super.service(req, resp);
 		} else {
 			// Respond to 'checkSafe' XmlHttpRequest with JSON.
 			ObjectNode jsonObject = mapper.createObjectNode();
@@ -68,9 +68,8 @@ public class DeleteServlet extends TransformationServlet {
 	 * Presents a page where the user can choose a repository ID to delete.
 	 */
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
-		builder.transform(xslPath, "delete.xsl");
 		builder.start("readable", "writeable", "id", "description", "location");
 		builder.link(List.of(INFO));
 		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {

@@ -1367,6 +1367,18 @@ module workbench {
             return candidate.prefix < current.prefix;
         }
 
+        function valueSubtype(value: string): string {
+            var candidate = value.trim();
+            if (candidate.charAt(0) === '"' || candidate.charAt(0) === "'") {
+                return 'literal';
+            }
+            if ((candidate.charAt(0) === '<' && candidate.charAt(candidate.length - 1) === '>')
+                || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(candidate)) {
+                return 'iri';
+            }
+            return '';
+        }
+
         function compactIri(value: string, namespaces?: { [prefix: string]: string }): string {
             var iri = value.length > 1 && value.charAt(0) === '<' && value.charAt(value.length - 1) === '>'
                 ? value.substring(1, value.length - 1) : value;
@@ -1491,8 +1503,8 @@ module workbench {
 
         function heatColor(intensity: number): string {
             var clamped = Math.max(0, Math.min(1, intensity));
-            var low = [255, 247, 237];
-            var high = [239, 68, 68];
+            var low = [222, 243, 251];
+            var high = [115, 196, 226];
             var red = Math.round(low[0] + (high[0] - low[0]) * clamped);
             var green = Math.round(low[1] + (high[1] - low[1]) * clamped);
             var blue = Math.round(low[2] + (high[2] - low[2]) * clamped);
@@ -1542,6 +1554,12 @@ module workbench {
                     var tokenElement = document.createElement('span');
                     tokenElement.className = 'query-explanation-token query-explanation-token--'
                         + formattedToken.kind;
+                    if (formattedToken.kind === 'value') {
+                        var subtype = valueSubtype(formattedToken.text);
+                        if (subtype) {
+                            tokenElement.className += ' query-explanation-token--value-' + subtype;
+                        }
+                    }
                     var displayText = formattedToken.kind === 'value'
                         ? compactIri(formattedToken.text, options.namespaces) : formattedToken.text;
                     tokenElement.textContent = displayText;

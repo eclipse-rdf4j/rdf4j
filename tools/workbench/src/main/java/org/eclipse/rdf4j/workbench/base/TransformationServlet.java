@@ -20,9 +20,9 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
-import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,8 +47,6 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 
 	protected static final String INFO = "info";
 
-	private static final String TRANSFORMATIONS = "transformations";
-
 	private static final Logger LOGGER = LoggerFactory.getLogger(TransformationServlet.class);
 
 	private final Map<String, String> defaults = new HashMap<>();
@@ -60,9 +58,6 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		super.init(config);
 		cookies = new CookieHandler(config, this);
 
-		if (config.getInitParameter(TRANSFORMATIONS) == null) {
-			throw new MissingInitParameterException(TRANSFORMATIONS);
-		}
 		final Enumeration<?> names = config.getInitParameterNames();
 		while (names.hasMoreElements()) {
 			final String name = (String) names.nextElement();
@@ -88,19 +83,48 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		}
 		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
 		resp.setDateHeader("Expires", new Date().getTime() - 10000L);
-		resp.setHeader("Cache-Control", "no-cache, no-store");
+		if (WorkbenchPageProtocol.requestsHtmlNavigation(req) || WorkbenchPageProtocol.requestsPageData(req)) {
+			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
+		} else {
+			resp.setHeader("Cache-Control", "no-cache, no-store");
+		}
+		if ("GET".equalsIgnoreCase(req.getMethod()) && WorkbenchPageProtocol.requestsHtmlNavigation(req)) {
+			String viewId = WorkbenchViewRegistry.navigableViewId(getClass()).orElse(null);
+			if (viewId != null && !WorkbenchViewRegistry.bypassesPageShell(getClass(), req)) {
+				WorkbenchHtmlShell.write(req, resp, config, viewId);
+				return;
+			}
+		}
 
-		final String contextPath = req.getContextPath();
-		final String path = config.getInitParameter(TRANSFORMATIONS);
-		final String xslPath = contextPath + path;
+		String nativePostView = nativePagePostView(req);
 		try {
 			final WorkbenchRequest wreq = new WorkbenchRequest(repository, req, defaults);
 
 			cookies.updateCookies(wreq, resp, getCookieNames(wreq));
-			if ("POST".equals(req.getMethod())) {
-				doPost(wreq, resp, xslPath);
-			} else {
-				service(wreq, resp, xslPath);
+			if (nativePostView == null) {
+				if ("POST".equalsIgnoreCase(req.getMethod())) {
+					doPost(wreq, resp);
+				} else {
+					service(wreq, resp);
+				}
+				return;
+			}
+
+			WorkbenchPageModelResponseWrapper bufferedResponse = new WorkbenchPageModelResponseWrapper(resp);
+			req.setAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE, Boolean.TRUE);
+			boolean completed = false;
+			try {
+				if ("POST".equals(req.getMethod())) {
+					doPost(wreq, bufferedResponse);
+				} else {
+					service(wreq, bufferedResponse);
+				}
+				completed = true;
+			} finally {
+				req.removeAttribute(WorkbenchPageProtocol.NATIVE_HTML_POST_PAGE_MODEL_ATTRIBUTE);
+			}
+			if (completed) {
+				bufferedResponse.complete(req, config, nativePostView);
 			}
 		} catch (RuntimeException | ServletException | IOException e) {
 			throw e;
@@ -109,19 +133,25 @@ public abstract class TransformationServlet extends AbstractRepositoryServlet {
 		}
 	}
 
-	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
-			throws Exception {
-		service(wreq, resp, xslPath);
+	private String nativePagePostView(HttpServletRequest request) {
+		if (!"POST".equalsIgnoreCase(request.getMethod())
+				|| !WorkbenchPageProtocol.requestsHtmlNavigation(request)
+				|| request.getParameter("checkSafe") != null) {
+			return null;
+		}
+		return WorkbenchViewRegistry.pageRequestViewId(getClass(), request).orElse(null);
 	}
 
-	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
-			throws Exception {
-		service(getTupleResultBuilder(req, resp, resp.getOutputStream()), xslPath);
+	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp) throws Exception {
+		service(wreq, resp);
 	}
 
-	protected void service(final TupleResultBuilder writer, final String xslPath) throws Exception {
-		LOGGER.info("Call made to empty superclass implementation of service(PrintWriter,String) for path: {}",
-				xslPath);
+	protected void service(final WorkbenchRequest req, final HttpServletResponse resp) throws Exception {
+		service(getTupleResultBuilder(req, resp, resp.getOutputStream()));
+	}
+
+	protected void service(final TupleResultBuilder writer) throws Exception {
+		LOGGER.info("Call made to empty superclass implementation of service(TupleResultBuilder)");
 	}
 
 }

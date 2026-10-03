@@ -14,7 +14,7 @@ module workbench {
     export module query {
 
         /**
-         * JSON value provided by script element in document (see query.xsl).
+         * JSON value provided by the rendered query page.
          */
         declare var sparqlNamespaces: any;
         declare var Diff: any;
@@ -24,7 +24,6 @@ module workbench {
         /**
          * Holds the current selected query language.
          */
-        var currentQueryLn = '';
         var yasqe: YASQE_Instance = null;
         var compareYasqe: YASQE_Instance = null;
         var vizRenderer: any = null;
@@ -33,20 +32,35 @@ module workbench {
         var pendingDotRenderKeys: { [key: string]: string } = {};
         var activePrimaryRequestSignature: RequestSignature = null;
         var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
-        var requestIdCounter = 0;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR: JQueryXHR = null;
-        var activeQueryRequestId: string = null;
+        var resultPresentationLayout = 'auto';
+        var resultPresentationWrap = true;
+        var resultLoadingRequested = false;
+        var RESULT_LOADING_ID = 'query-results-loading';
+        var RESULT_STATUS_ID = 'query-results-status';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
+        /** Loaded only for DOT explanations (M11.1). */
+        var GRAPH_RENDERER_SCRIPTS = ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js'];
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
         var activeCompareExplainJqXHRs: JQueryXHR[] = [];
         var compareModeEnabled = false;
+        var lastPresentedCompareMode = false;
+        var lastPresentedDiffOpen = false;
         var compareSidebarOpen = false;
+        var compareNavigationDisclosureOpenBeforeCompare: boolean = null;
+        var compareNavigationNarrowModeBeforeCompare: boolean = null;
+        var compareSidebarPositionListenersInstalled = false;
+        /** Releases each pane editor's resize handle (workbench.editorSizing). */
+        var editorSizingDisposers: { [paneKey: string]: () => void } = {};
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
+        var diffModalBackgroundLocked = false;
+        var diffModalPreviousBodyOverflow = '';
+        var diffModalBackgroundState: { element: HTMLElement; inert: boolean; ariaHidden: string }[] = [];
         var explanationHighlightMode: queryExplanationHighlighter.HighlightMode = 'syntax';
         var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY =
             'rdf4j.workbench.query.explanation.hiddenProperties';
@@ -257,6 +271,9 @@ module workbench {
                 .removeClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'true')
                 .prop('disabled', true);
+            $('.workbench-action.query-explain-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true');
         }
 
         function showPrimaryExplainCancelButton(buttonId?: string): boolean {
@@ -269,6 +286,9 @@ module workbench {
                 .addClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'false')
                 .prop('disabled', false);
+            $('#' + controlIds.cancelId).closest('.workbench-action.query-explain-cancel')
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false');
             return true;
         }
 
@@ -562,38 +582,8 @@ module workbench {
             };
         }
 
-        function createFallbackRequestId(): string {
-            requestIdCounter += 1;
-
-            var timestampPart = ('000000000000' + Date.now().toString(16)).slice(-12);
-            var counterPart = ('00000000' + requestIdCounter.toString(16)).slice(-8);
-            var randomPart = '';
-            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
-
-            if (cryptoObject && cryptoObject.getRandomValues) {
-                var buffer = new Uint16Array(4);
-                cryptoObject.getRandomValues(buffer);
-                for (var i = 0; i < buffer.length; i++) {
-                    randomPart += ('0000' + buffer[i].toString(16)).slice(-4);
-                }
-            } else {
-                while (randomPart.length < 16) {
-                    randomPart += ('00000000' + Math.floor(Math.random() * 0xffffffff).toString(16)).slice(-8);
-                }
-                randomPart = randomPart.substring(0, 16);
-            }
-
-            return timestampPart + '-' + randomPart.substring(0, 4) + '-4'
-                + randomPart.substring(4, 7) + '-a' + randomPart.substring(7, 10)
-                + '-' + randomPart.substring(10, 16) + counterPart.substring(0, 6);
-        }
-
         function generateRequestId(): string {
-            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
-            if (cryptoObject && cryptoObject.randomUUID) {
-                return cryptoObject.randomUUID();
-            }
-            return createFallbackRequestId();
+            return workbench.generateRequestId();
         }
 
         function createInitialQueryPageState(): QueryPageState {
@@ -1045,47 +1035,49 @@ module workbench {
         }
 
         /**
-         * Populate reasonable default name space declarations into the query text area.
-         * The server has provided the declaration text in hidden elements.
-         */
-        export function loadNamespaces() {
-            function toggleNamespaces() {
-                workbench.query.setQueryValue(namespaces.text());
-                currentQueryLn = queryLn;
-            }
-
-            var query: string = workbench.query.getQueryValue();
-            var queryLn = $('#queryLn').val();
-            var namespaces = $('#' + queryLn + '-namespaces');
-            var last = $('#' + currentQueryLn + '-namespaces');
-            if (namespaces.length) {
-                if (!query || query.trim().length == 0) {
-                    toggleNamespaces();
-                }
-                if (last.length && (query == last.text())) {
-                    toggleNamespaces();
-                }
-            }
-        }
-
-        /**
          *Fires when the query language is changed
          */
         export function onQlChange() {
-            workbench.query.loadNamespaces();
             workbench.query.updateYasqe();
         }
+
         /**
-         * Invoked by the "clear" button. After confirming with the user,
-         * clears the query text and loads the current repository and query
-         * language name space declarations.
+         * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
+         * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
          */
-        export function resetNamespaces() {
-            if (confirm('Click OK to clear the current query text and replace' +
-                'it with the ' + $('#queryLn').val() +
-                ' namespace declarations.')) {
-                workbench.query.setQueryValue('');
-                workbench.query.loadNamespaces();
+        export function insertPrefixes() {
+            if (!isPrefixInsertionEnabled()) {
+                return;
+            }
+            var namespaces: { [prefix: string]: string } = typeof sparqlNamespaces === 'object' && sparqlNamespaces
+                ? sparqlNamespaces : {};
+            var query = getPaneRawQueryValue('primary');
+            var declared: { [prefix: string]: boolean } = {};
+            var declaration = /^\s*PREFIX\s+([^:\s]*):/gim;
+            var match: RegExpExecArray;
+            while ((match = declaration.exec(query)) !== null) {
+                declared[match[1]] = true;
+            }
+            var lines = Object.keys(namespaces).map(function(key: string) {
+                var prefix = key.charAt(key.length - 1) === ':' ? key.slice(0, -1) : key;
+                return { prefix: prefix, line: 'PREFIX ' + prefix + ': <' + namespaces[key] + '>' };
+            }).filter(function(entry: any) {
+                return !declared[entry.prefix];
+            }).sort(function(left: any, right: any) {
+                return left.prefix < right.prefix ? -1 : left.prefix > right.prefix ? 1 : 0;
+            }).map(function(entry: any) {
+                return entry.line;
+            });
+            if (!lines.length) {
+                return;
+            }
+            var text = lines.join('\n') + '\n';
+            if (yasqe) {
+                var start = { line: 0, ch: 0 };
+                yasqe.getDoc().replaceRange(text, start, start);
+                yasqe.focus();
+            } else {
+                setPaneQueryValue('primary', text + query);
             }
         }
 
@@ -1217,11 +1209,13 @@ module workbench {
         }
 
         function setWorkbenchCookie(name: string, value: string): void {
-            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
 
         function clearWorkbenchCookie(name: string): void {
-            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
 
         function shouldPersistPrimaryQueryCookieValue(queryValue: string): boolean {
@@ -1414,43 +1408,107 @@ module workbench {
             syncExplanationHighlightControls();
         }
 
+        function updateCompareSidebarNavigationPosition() {
+            var body = document.body;
+            var navigation = document.getElementById('navigation');
+            var toggle = document.getElementById('query-sidebar-toggle');
+            if (!body || !navigation || !toggle || !compareModeEnabled || !compareSidebarOpen) {
+                if (body) {
+                    body.style.removeProperty('--query-compare-nav-top');
+                    body.style.removeProperty('--query-compare-nav-left');
+                }
+                return;
+            }
+
+            var toggleBounds = toggle.getBoundingClientRect();
+            body.style.setProperty('--query-compare-nav-top', (toggleBounds.bottom + 8) + 'px');
+            body.style.setProperty('--query-compare-nav-left', toggleBounds.left + 'px');
+        }
+
         function syncCompareSidebarState() {
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
+
+            // Only an older shell renders the menu inside a details disclosure.
+            var navigationDisclosure = <HTMLDetailsElement>document.querySelector('details#workbench-navigation-disclosure');
+            if (compareModeEnabled) {
+                if (navigationDisclosure && compareNavigationDisclosureOpenBeforeCompare === null) {
+                    compareNavigationDisclosureOpenBeforeCompare = navigationDisclosure.open;
+                    compareNavigationNarrowModeBeforeCompare = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                }
+                if (navigationDisclosure && !navigationDisclosure.open) {
+                    workbench.setNativeDisclosureOpen(navigationDisclosure, true, false);
+                }
+            } else if (compareNavigationDisclosureOpenBeforeCompare !== null) {
+                if (navigationDisclosure) {
+                    var narrowNavigationMode = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                    var restoreNavigationOpen = compareNavigationDisclosureOpenBeforeCompare;
+                    if (narrowNavigationMode !== compareNavigationNarrowModeBeforeCompare) {
+                        restoreNavigationOpen = !narrowNavigationMode;
+                    }
+                    workbench.setNativeDisclosureOpen(
+                        navigationDisclosure, restoreNavigationOpen, false
+                    );
+                }
+                compareNavigationDisclosureOpenBeforeCompare = null;
+                compareNavigationNarrowModeBeforeCompare = null;
+            }
+
             $('body').toggleClass('query-compare-nav-open', compareModeEnabled && compareSidebarOpen);
 
             var sidebarToggle = $('#query-sidebar-toggle');
             var navigationTransform = '';
-            var queryWorkspaceTransform = '';
-            var sidebarToggleTransform = '';
             if (!compareModeEnabled) {
                 $('#navigation').css('transform', navigationTransform);
-                $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-                sidebarToggle.css('transform', sidebarToggleTransform);
+                $('#title_heading, #noscript-message, .query-form').css('transform', '');
                 sidebarToggle
-                    .hide()
                     .removeClass('query-sidebar-toggle--nav-open')
                     .attr('aria-hidden', 'true')
+                    .attr('aria-expanded', 'false')
                     .attr('tabindex', '-1');
+                updateCompareSidebarNavigationPosition();
                 return;
             }
 
             navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
-            queryWorkspaceTransform = compareSidebarOpen ? 'translateX(184px)' : 'translateX(0)';
-            sidebarToggleTransform = compareSidebarOpen ? 'translateX(192px)' : 'translateX(0)';
             $('#navigation').css('transform', navigationTransform);
-            $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-            sidebarToggle.css('transform', sidebarToggleTransform);
+            $('#title_heading, #noscript-message, .query-form').css('transform', '');
 
             var label = compareSidebarOpen
                 ? <string>sidebarToggle.attr('data-hide-label')
                 : <string>sidebarToggle.attr('data-show-label');
             sidebarToggle
-                .show()
                 .toggleClass('query-sidebar-toggle--nav-open', compareSidebarOpen)
                 .attr('aria-hidden', 'false')
+                .attr('aria-expanded', compareSidebarOpen ? 'true' : 'false')
                 .attr('aria-label', label)
                 .attr('title', label)
                 .removeAttr('tabindex');
+
+            updateCompareSidebarNavigationPosition();
+            if (!compareSidebarPositionListenersInstalled) {
+                window.addEventListener('resize', syncCompareSidebarState);
+                window.addEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = true;
+            }
+        }
+
+        /** Undo what compare mode changed outside the page: the menu's position, body classes and listeners. */
+        function releaseCompareChrome() {
+            if (compareSidebarPositionListenersInstalled) {
+                window.removeEventListener('resize', syncCompareSidebarState);
+                window.removeEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = false;
+            }
+            $('body').removeClass('query-compare-mode query-compare-nav-open');
+            $('#navigation').css('transform', '');
+            if (document.body) {
+                document.body.style.removeProperty('--query-compare-nav-top');
+                document.body.style.removeProperty('--query-compare-nav-left');
+            }
         }
 
         function lockExplanationDimensions(paneKey?: string) {
@@ -1718,7 +1776,8 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
-        function renderDotView(paneKey: string, explanationText: string, format: string) {
+        /** rendererLoaded: the graph renderer was already asked for once, so a missing one is reported, not loaded again. */
+        function renderDotView(paneKey: string, explanationText: string, format: string, rendererLoaded?: boolean) {
             var paneState = getPaneState(paneKey);
             var dotView = $('#' + paneState.dotViewId);
             if (format === 'dot') {
@@ -1738,6 +1797,19 @@ module workbench {
                     return;
                 }
                 pendingDotRenderKeys[paneKey] = explanationContentKey;
+                var app: any = (<any>workbench).app;
+                if (typeof Viz === 'undefined' && !rendererLoaded && app && typeof app.loadScripts === 'function') {
+                    // The graph renderer (about 2 MB) is loaded with the first DOT explanation (M11.1).
+                    dotView.html('<div>Loading graph renderer…</div>').show();
+                    var renderAfterLoad = function() {
+                        if (pendingDotRenderKeys[paneKey] === explanationContentKey) {
+                            pendingDotRenderKeys[paneKey] = '';
+                            renderDotView(paneKey, explanationText, format, true);
+                        }
+                    };
+                    app.loadScripts(GRAPH_RENDERER_SCRIPTS).then(renderAfterLoad, renderAfterLoad);
+                    return;
+                }
                 dotView.html('<div>Rendering DOT graph...</div>').show();
                 if (typeof Viz === 'undefined') {
                     dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
@@ -2222,8 +2294,12 @@ module workbench {
         }
 
         export function setExplanationSettingsOpen(open: boolean): void {
-            $('#explanation-settings-toggle').attr('aria-expanded', open ? 'true' : 'false');
-            $('#explanation-settings-panel').prop('hidden', !open);
+            var toggle = <HTMLButtonElement>document.getElementById('explanation-settings-toggle');
+            var panel = <HTMLElement>document.getElementById('explanation-settings-panel');
+            if (!toggle || !panel) {
+                return;
+            }
+            workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, open, true);
         }
 
         export function toggleExplanationSettings(): void {
@@ -2277,10 +2353,6 @@ module workbench {
                 hiddenProperties: explanationHiddenProperties,
                 namespaces: sparqlNamespaces
             });
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             $('#' + paneState.explanationId)
                 .empty()
                 .addClass('query-explanation--highlighted')
@@ -2300,10 +2372,6 @@ module workbench {
         function renderExplanation(paneKey: string, explanationText: string, format: string) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
                 $('#' + paneState.explanationId)
                     .removeClass('query-explanation--highlighted')
@@ -2364,7 +2432,6 @@ module workbench {
                 + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
                 + '||' + JSON.stringify(explanationHiddenProperties);
 
-            $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
                 paneStatus
@@ -2435,6 +2502,113 @@ module workbench {
             }
         }
 
+        function restoreFocusFromClosingExplanation(paneKey: PaneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = <HTMLElement>document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            if (!visible && row.contains && row.contains(document.activeElement)) {
+                var returnButtonId = paneKey === 'compare' ? 'compare-toggle' : 'explain-trigger';
+                var returnButton = <HTMLElement>document.getElementById(returnButtonId);
+                if (returnButton) {
+                    returnButton.focus();
+                }
+            }
+        }
+
+        function syncPaneExplanationVisibility(paneKey: PaneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = <HTMLElement>document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            workbench.setElementExpanded(row, visible, true);
+            if (paneKey === 'primary') {
+                $('.query-explanation-panel__empty').prop('hidden', visible);
+            }
+        }
+
+        function syncDiffModalPresentation(open: boolean) {
+            if (open === diffModalBackgroundLocked) {
+                return;
+            }
+            var body = document.body;
+            var backgroundElements = <HTMLElement[]>Array.prototype.slice.call(
+                document.querySelectorAll('#query-page > form, #query-page > #query-output'));
+            if (open) {
+                diffModalPreviousBodyOverflow = body ? body.style.overflow : '';
+                diffModalBackgroundState = backgroundElements.map(function(element: HTMLElement) {
+                    return {
+                        element: element,
+                        inert: !!(<any>element).inert,
+                        ariaHidden: element.getAttribute('aria-hidden')
+                    };
+                });
+                backgroundElements.forEach(function(element: HTMLElement) {
+                    (<any>element).inert = true;
+                    element.setAttribute('aria-hidden', 'true');
+                });
+                if (body) {
+                    body.style.overflow = 'hidden';
+                }
+                diffModalBackgroundLocked = true;
+                return;
+            }
+            diffModalBackgroundState.forEach(function(state) {
+                (<any>state.element).inert = state.inert;
+                if (state.ariaHidden === null) {
+                    state.element.removeAttribute('aria-hidden');
+                } else {
+                    state.element.setAttribute('aria-hidden', state.ariaHidden);
+                }
+            });
+            if (body) {
+                body.style.overflow = diffModalPreviousBodyOverflow;
+            }
+            diffModalBackgroundState = [];
+            diffModalBackgroundLocked = false;
+        }
+
+        function getDiffModalFocusableElements(): HTMLElement[] {
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            if (!dialog) {
+                return [];
+            }
+            var candidates = <HTMLElement[]>Array.prototype.slice.call(dialog.querySelectorAll(
+                'a[href], area[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+            return candidates.filter(function(element: HTMLElement) {
+                var style = window.getComputedStyle(element);
+                return !element.hasAttribute('disabled') && style.display !== 'none'
+                    && style.visibility !== 'hidden' && element.getBoundingClientRect().width > 0
+                    && element.getBoundingClientRect().height > 0;
+            });
+        }
+
+        export function handleDiffModalTab(event: any) {
+            if (!diffModalBackgroundLocked || event.key !== 'Tab') {
+                return;
+            }
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            var focusable = getDiffModalFocusableElements();
+            if (!dialog || focusable.length === 0) {
+                event.preventDefault();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            var active = <HTMLElement>document.activeElement;
+            if (!dialog.contains(active) || (!event.shiftKey && active === last)) {
+                event.preventDefault();
+                first.focus();
+            } else if (event.shiftKey && active === first) {
+                event.preventDefault();
+                last.focus();
+            }
+        }
+
         function renderQueryPageState() {
             if (!queryPageState) {
                 return;
@@ -2442,11 +2616,57 @@ module workbench {
 
             syncLegacyMachineFlags();
 
+            restoreFocusFromClosingExplanation('primary');
+            restoreFocusFromClosingExplanation('compare');
+
+            var compareLayout = <HTMLElement>document.getElementById('query-compare-layout');
+            var comparePane = <HTMLElement>document.getElementById('query-compare-pane');
+            var compareStateChanged = compareModeEnabled !== lastPresentedCompareMode;
+            if (comparePane) {
+                comparePane.setAttribute('aria-hidden', compareModeEnabled ? 'false' : 'true');
+                (<any>comparePane).inert = !compareModeEnabled;
+            }
+            if (compareStateChanged && compareLayout && comparePane) {
+                if (compareModeEnabled) {
+                    compareLayout.classList.remove('query-compare-layout--closing');
+                } else {
+                    compareLayout.classList.add('query-compare-layout--closing');
+                }
+            }
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
             $('#query-compare-controls').toggle(compareModeEnabled);
-            $('#query-diff-modal')
-                .toggleClass('query-diff-modal--open', queryPageState.diffModal.kind === 'open')
-                .attr('aria-hidden', queryPageState.diffModal.kind === 'open' ? 'false' : 'true');
+            var diffModalOpen = queryPageState.diffModal.kind === 'open';
+            var diffModal = <HTMLElement>document.getElementById('query-diff-modal');
+            var diffStateChanged = diffModalOpen !== lastPresentedDiffOpen;
+            if (diffModal) {
+                diffModal.setAttribute('aria-hidden', diffModalOpen ? 'false' : 'true');
+                (<any>diffModal).inert = !diffModalOpen;
+            }
+            if (diffStateChanged && diffModal) {
+                if (diffModalOpen) {
+                    diffModal.classList.remove('query-diff-modal--closing');
+                } else {
+                    diffModal.classList.add('query-diff-modal--closing');
+                }
+            }
+            $('#query-diff-modal').toggleClass('query-diff-modal--open', diffModalOpen);
+            syncDiffModalPresentation(diffModalOpen);
+            if (compareStateChanged && comparePane) {
+                workbench.animateElementOpacity(comparePane, compareModeEnabled, function() {
+                    if (!compareModeEnabled && compareLayout) {
+                        compareLayout.classList.remove('query-compare-layout--closing');
+                    }
+                });
+                lastPresentedCompareMode = compareModeEnabled;
+            }
+            if (diffStateChanged && diffModal) {
+                workbench.animateElementOpacity(diffModal, diffModalOpen, function() {
+                    if (!diffModalOpen) {
+                        diffModal.classList.remove('query-diff-modal--closing');
+                    }
+                });
+                lastPresentedDiffOpen = diffModalOpen;
+            }
 
             renderPanePresentation('primary');
             renderPanePresentation('compare');
@@ -2455,6 +2675,8 @@ module workbench {
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
             updateCompareActionState();
+            syncPaneExplanationVisibility('primary');
+            syncPaneExplanationVisibility('compare');
 
             if (queryPageState.diffModal.kind === 'open') {
                 renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
@@ -2822,6 +3044,10 @@ module workbench {
             ]));
         }
 
+        export function cancelServerQuery(queryRequestId: string) {
+            postCancelQuery(queryRequestId);
+        }
+
         function setQueryCancelVisible(visible: boolean) {
             $('#query-cancel')
                 .prop('disabled', !visible)
@@ -2829,40 +3055,146 @@ module workbench {
                 .toggleClass('query-cancel--visible', visible);
         }
 
-        function clearActiveQuery(queryRequestId?: string) {
-            if (queryRequestId && queryRequestId !== activeQueryRequestId) {
+
+        function setResultLoading(loading: boolean) {
+            var loadingElement = document.getElementById(RESULT_LOADING_ID);
+            if (resultLoadingRequested !== loading) {
+                resultLoadingRequested = loading;
+                if (loadingElement) {
+                    if (loading) {
+                        loadingElement.hidden = false;
+                        loadingElement.setAttribute('aria-hidden', 'false');
+                        workbench.animateElementOpacity(loadingElement, true);
+                    } else if (!loadingElement.hidden) {
+                        loadingElement.setAttribute('aria-hidden', 'true');
+                        workbench.animateElementOpacity(loadingElement, false, function() {
+                            if (!resultLoadingRequested) {
+                                loadingElement.hidden = true;
+                            }
+                        });
+                    }
+                }
+            }
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                if (loading && resultsElement.hidden) {
+                    resultsElement.hidden = false;
+                    resultsElement.setAttribute('aria-hidden', 'false');
+                    workbench.animateElementOpacity(resultsElement, true);
+                }
+                resultsElement.setAttribute('aria-busy', loading ? 'true' : 'false');
+            }
+        }
+
+        function setResultStatus(message: string) {
+            var statusElement = document.getElementById(RESULT_STATUS_ID);
+            if (statusElement) {
+                var wasEmpty = !statusElement.textContent;
+                statusElement.textContent = message || '';
+                if (message && wasEmpty) {
+                    workbench.animateElementOpacity(statusElement, true);
+                }
+            }
+            if (message) {
+                var resultsElement = document.getElementById('query-results');
+                if (resultsElement) {
+                    if (resultsElement.hidden) {
+                        resultsElement.hidden = false;
+                        resultsElement.setAttribute('aria-hidden', 'false');
+                        workbench.animateElementOpacity(resultsElement, true);
+                    }
+                }
+            }
+        }
+
+        function getResultFullscreenButton(results?: HTMLElement): HTMLButtonElement {
+            var target = results || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var streamed = target && target.querySelector
+                ? target.querySelector('[data-query-stream-root] .query-results__fullscreen') : null;
+            if (!streamed && target && target.id !== 'query-results') {
+                return target.querySelector ? <HTMLButtonElement>target.querySelector('.query-results__fullscreen') : null;
+            }
+            return <HTMLButtonElement>streamed || <HTMLButtonElement>document.getElementById('query-results-fullscreen');
+        }
+
+
+
+        function isQueryRerunEnabled(): boolean {
+            var button = <HTMLInputElement>document.getElementById('rerun-explanation');
+            return !!button && button.getAttribute('data-query-rerun-enabled') !== 'false';
+        }
+
+        function isQueryRefreshEnabled(): boolean {
+            var button = <HTMLButtonElement>document.getElementById('explain-compare-trigger');
+            return !!button && button.getAttribute('data-query-refresh-enabled') !== 'false';
+        }
+
+        function isPrefixInsertionEnabled(): boolean {
+            var button = <HTMLElement>document.getElementById('query-insert-prefixes');
+            return !button || button.getAttribute('data-editor-namespaces-enabled') !== 'false';
+        }
+
+        export function isResultsFullscreen(): boolean {
+            return workbench.resultFullscreen.isFullscreen(workbench.resultFullscreen.currentTarget()
+                || document.getElementById('query-results'));
+        }
+
+
+
+
+
+        export function setResultsFullscreen(enabled: boolean, restoreFocus: boolean = true,
+                                             target?: HTMLElement, control?: HTMLButtonElement) {
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            if (!results) {
                 return;
             }
-            activeQueryRequestId = null;
+            var button = control || getResultFullscreenButton(results);
+            workbench.resultFullscreen.set(results, button, enabled, restoreFocus);
+        }
+
+        export function getResultPresentationState(): { layout: string; wrap: boolean } {
+            return { layout: resultPresentationLayout, wrap: resultPresentationWrap };
+        }
+
+        export function applyResultPresentationState(layout: string, wrap: boolean) {
+            if (layout === 'table' || layout === 'records' || layout === 'auto') {
+                resultPresentationLayout = layout;
+            }
+            resultPresentationWrap = wrap !== false;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        function clearActiveQuery() {
             $('#query-request-id').val('');
             setQueryCancelVisible(false);
         }
 
-        function installQueryPageLifecycleHandlers() {
-            if (!window.addEventListener) {
-                return;
+        /** Leaving the page (or returning to it from the back/forward cache) starts the result area afresh. */
+        function resetResultArea() {
+            setResultsFullscreen(false, false);
+            setResultLoading(false);
+            setResultStatus('');
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                resultsElement.hidden = true;
             }
-            window.addEventListener('pagehide', function() {
-                clearActiveQuery();
-            }, false);
-            window.addEventListener('pageshow', function() {
-                clearActiveQuery();
-            }, false);
+            clearActiveQuery();
         }
-
-        function beginTrackedQuery(): boolean {
-            if (activeQueryRequestId) {
-                cancelQuery();
-            }
-
-            var queryRequestId = generateRequestId();
-            activeQueryRequestId = queryRequestId;
-            $('#query-request-id').val(queryRequestId);
-            setQueryCancelVisible(true);
-            return true;
-        }
-
-        installQueryPageLifecycleHandlers();
 
         function createStableExplanationFromResponse(
             signature: RequestSignature,
@@ -3060,6 +3392,7 @@ module workbench {
 
         function syncCompareModeVisibility() {
             $('#explain-trigger').show();
+            $('#query-compare-toolbar').prop('hidden', !compareModeEnabled);
             if (!compareModeEnabled) {
                 hideCompareExplainSpinner();
             }
@@ -3361,23 +3694,32 @@ module workbench {
          *            if true, add a URL parameter that tells the server we wish
          *            to overwrite any already saved query
          */
-        function ajaxSave(overwrite: boolean) {
-            var feedback = $('#save-feedback');
-            var url: string[] = [];
-            url[url.length] = 'query';
-            if (overwrite) {
-                url[url.length] = document.all ? ';' : '?';
-                url[url.length] = 'overwrite=true&'
-	        }
-            var href = url.join('');
-            var form = $('form[action="query"]');
+        interface SaveOperation {
+            owner: workbench.FormOwner;
+            data: string;
+            name: string;
+            feedback: JQuery;
+        }
+
+        function ajaxSave(overwrite: boolean, operation?: SaveOperation) {
+            if (!operation) {
+                var form = $('form[action="query"]');
+                operation = { owner: workbench.captureFormOwner(<HTMLFormElement>form.get(0)), data: form.serialize(),
+                    name: String($('#query-name').val() || ''), feedback: $('#save-feedback') };
+            }
+            if (!operation.owner.isCurrent()) { return; }
+            var saved = operation;
+            var feedback = saved.feedback;
+            var suffix = overwrite ? (document.all ? ';' : '?') + 'overwrite=true&' : '';
+            var href = (saved.owner.url ? new URL('query', saved.owner.url).href : 'query') + suffix;
             $.ajax({
                 url: href,
                 type: 'POST',
                 dataType: 'json',
-                data: form.serialize(),
+                data: saved.data,
                 timeout: 5000,
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    if (!saved.owner.isCurrent()) { return; }
                     feedback.removeClass().addClass('error');
                     if (textStatus == 'timeout') {
                         feedback.text('Timed out waiting for response. Uncertain if save occured.');
@@ -3387,19 +3729,26 @@ module workbench {
                     }
                 },
                 success: function(response: AjaxSaveResponse) {
+                    if (!saved.owner.isCurrent()) { return; }
                     if (response.accessible) {
                         if (response.written) {
                             feedback.removeClass().addClass('success');
                             feedback.text('Query saved.');
-                        } else {
-                            if (response.existed) {
-                                if (confirm('Query name exists. Click OK to overwrite.')) {
-                                    ajaxSave(true);
+                        } else if (response.existed) {
+                            workbench.confirmDialog.open({
+                                title: 'Replace saved query?',
+                                body: 'A saved query named "' + saved.name + '" already exists. Saving replaces it.',
+                                confirmLabel: 'Replace',
+                                danger: true
+                            }).then(function(overwrite: boolean) {
+                                if (!saved.owner.isCurrent()) { return; }
+                                if (overwrite) {
+                                    ajaxSave(true, saved);
                                 } else {
                                     feedback.removeClass().addClass('error');
                                     feedback.text('Cancelled overwriting existing query.');
                                 }
-                            }
+                            });
                         }
                     } else {
                         feedback.removeClass().addClass('error');
@@ -3419,67 +3768,113 @@ module workbench {
             //if yasqe is instantiated, make sure we save the value to the textarea
             if (yasqe) yasqe.save();
             $('#include-query-text').val('false');
-            var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
                 clearExplainSelection();
                 ajaxSave(false);
-            } else {
-                if (!beginTrackedQuery()) {
-                    return false;
-                }
-                var url: string[] = [];
-                url[url.length] = 'query';
-                if (document.all) {
-                    url[url.length] = ';';
-                } else {
-                    url[url.length] = '?';
-                }
-                workbench.addParam(url, 'action');
-                workbench.addParam(url, 'queryLn');
-                workbench.addParam(url, 'query');
-                workbench.addParam(url, 'limit_query');
-                workbench.addParam(url, 'query-timeout');
-                workbench.addParam(url, 'infer');
-                workbench.addParam(url, 'explain');
-                workbench.addParam(url, 'explain-format');
-                workbench.addParam(url, 'query-request-id');
-                var href = url.join('');
-                var loc = document.location;
-                var currentBaseLength = loc.href.length - loc.pathname.length
-                    - loc.search.length;
-                var pathLength = href.length;
-                var urlLength = pathLength + currentBaseLength;
-
-                // Published Internet Explorer restrictions on URL length, which are the
-                // most restrictive of the major browsers.
-                if (pathLength > 2048 || urlLength > 2083) {
-                    alert("Due to its length, your query will be posted in the request body. "
-                        + "It won't be possible to use a bookmark for the results page.");
-                    $('#include-query-text').val('true');
-                    allowPageToSubmitForm = true;
-                } else {
-                    // GET using the constructed URL, method exits here
-                    document.location.href = href;
-                }
+                return false;
             }
 
-            // Value returned to form submit event. If not true, prevents normal form
-            // submission.
-            return allowPageToSubmitForm;
+            var streamedQueryPage: any = (<any>workbench).queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                    && streamedQueryPage.ownsForm(queryForm)
+                    && typeof streamedQueryPage.submitExecution === 'function') {
+                return streamedQueryPage.submitExecution();
+            }
+
+            // The streamed result renderer is the only way to show results (M9.1 removed the result iframe).
+            setResultStatus('Query results are unavailable on this page.');
+            return false;
         }
 
         export function cancelQuery() {
-            var queryRequestId = activeQueryRequestId;
-            if (!queryRequestId) {
+            var streamedQueryPage: any = (<any>workbench).queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                    && streamedQueryPage.ownsForm(queryForm)
+                    && typeof streamedQueryPage.hasActiveRequest === 'function'
+                    && streamedQueryPage.hasActiveRequest()
+                    && typeof streamedQueryPage.cancelExecution === 'function') {
+                streamedQueryPage.cancelExecution();
+            }
+        }
+
+        export function toggleResultsFullscreen(target?: HTMLElement, control?: HTMLButtonElement) {
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var button = control || getResultFullscreenButton(results);
+            if (!results || !button || button.disabled
+                    || button.getAttribute('data-result-fullscreen-enabled') === 'false') {
                 return;
             }
-            window.stop();
-            postCancelQuery(queryRequestId);
-            clearActiveQuery(queryRequestId);
+            setResultsFullscreen(results.getAttribute('data-fullscreen') !== 'true', true, results, button);
+        }
+
+        var serverErrorLine: number = null;
+
+        /**
+         * Mark the editor line that a server parser error points at (gutter marker and line background); with
+         * reveal, also put the cursor there. The next edit clears the mark.
+         */
+        export function showQueryErrorLocation(line: number, column: number, reveal: boolean): void {
+            if (!yasqe || !(line >= 1)) {
+                return;
+            }
+            clearQueryErrorLocation();
+            var doc = yasqe.getDoc();
+            var index = Math.min(line - 1, Math.max(0, doc.lineCount() - 1));
+            var marker = document.createElement('span');
+            marker.className = 'query-editor-error-marker';
+            marker.title = 'The server reported a syntax error on this line';
+            yasqe.setGutterMarker(index, 'gutterErrorBar', marker);
+            yasqe.addLineClass(index, 'background', 'query-editor-error-line');
+            serverErrorLine = index;
+            if (reveal) {
+                yasqe.focus();
+                doc.setCursor({ line: index, ch: Math.max(0, column - 1) });
+                yasqe.scrollIntoView(<any>null, 80);
+            }
+        }
+
+        export function clearQueryErrorLocation(): void {
+            if (serverErrorLine === null) {
+                return;
+            }
+            if (yasqe) {
+                yasqe.setGutterMarker(serverErrorLine, 'gutterErrorBar', null);
+                yasqe.removeLineClass(serverErrorLine, 'background', 'query-editor-error-line');
+            }
+            serverErrorLine = null;
+        }
+
+        /** Show the output card below the editor and select its 'results' or 'explanation' tab. */
+        export function showOutputTab(name: string) {
+            var card = document.getElementById('query-output');
+            var tab = document.getElementById('query-output-tab-' + name);
+            if (!card || !tab) {
+                return;
+            }
+            card.hidden = false;
+            workbench.tabs.select(tab);
+        }
+
+        /** Badge the Results tab with the number of rows, from the renderer's result summary. */
+        export function updateResultsBadge(summary: any) {
+            var badge = document.getElementById('query-results-count');
+            if (!badge) {
+                return;
+            }
+            var visible = !!summary && !!summary.rows;
+            badge.hidden = !visible;
+            badge.textContent = visible
+                ? workbench.format.count(summary.total !== null && summary.total !== undefined ? summary.total : summary.rowCount)
+                : '';
         }
 
         export function runExplain(level?: string, buttonId?: string) {
+            if (buttonId === 'rerun-explanation' && !isQueryRerunEnabled()) {
+                return;
+            }
             if (compareModeEnabled) {
                 runCompareExplain(buttonId || 'explain-trigger');
                 return;
@@ -3490,6 +3885,7 @@ module workbench {
                 return;
             }
             $('#explain-level').val(effectiveLevel);
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', buttonId);
             savePaneQuery('primary');
             activeExplainRequestId += 1;
@@ -3532,6 +3928,9 @@ module workbench {
         }
 
         export function runCompareExplain(buttonId?: string) {
+            if ((!buttonId || buttonId === 'explain-compare-trigger') && !isQueryRefreshEnabled()) {
+                return;
+            }
             if (!compareModeEnabled) {
                 return;
             }
@@ -3541,6 +3940,7 @@ module workbench {
             savePaneQuery('primary');
             savePaneQuery('compare');
             var triggerButtonId = buttonId || 'explain-compare-trigger';
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', triggerButtonId);
             captureExplainButtonViewportTop('compare', triggerButtonId);
             var nextGroupId = activeCompareRequestId + 1;
@@ -3708,12 +4108,81 @@ module workbench {
             updateCompareActionState();
         }
 
+        /** True while an execution is running: Execute is disabled or Cancel is offered. */
+        function isQueryExecutionRunning(): boolean {
+            var exec = <HTMLButtonElement>document.getElementById('exec');
+            var cancel = <HTMLInputElement>document.getElementById('query-cancel');
+            return !!(exec && exec.disabled) || !!(cancel && !cancel.disabled && cancel.getAttribute('aria-hidden') !== 'true');
+        }
+
+        function clickControl(id: string): void {
+            var control = <HTMLElement>document.getElementById(id);
+            if (control && !(<HTMLButtonElement>control).disabled && !control.hidden) {
+                control.click();
+            }
+        }
+
+        function openSaveQuery(): void {
+            var toggle = <HTMLButtonElement>document.getElementById('save-query-toggle');
+            if (toggle && !toggle.hidden && toggle.getAttribute('aria-expanded') !== 'true') {
+                toggle.click();
+            }
+            var name = <HTMLInputElement>document.getElementById('query-name');
+            if (name) {
+                name.focus();
+            }
+        }
+
+        /**
+         * Editor shortcuts (M3.1). They click the same buttons as the pointer does, so the Execute and Explain
+         * click handlers still set the form's action fields and copy the editor text before submitting.
+         */
+        function queryEditorKeys(paneKey: string): any {
+            var run = function() {
+                if (!isQueryExecutionRunning()) {
+                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'exec');
+                }
+            };
+            var explain = function() {
+                if (!isQueryExecutionRunning()) {
+                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'explain-trigger');
+                }
+            };
+            var save = function() {
+                openSaveQuery();
+            };
+            return {
+                'Ctrl-Enter': run,
+                'Cmd-Enter': run,
+                'Shift-Ctrl-Enter': explain,
+                'Shift-Cmd-Enter': explain,
+                'Ctrl-S': save,
+                'Cmd-S': save
+            };
+        }
+
         function initPaneYasqe(paneKey: string, clearFeedbackOnChange?: boolean): YASQE_Instance {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(<HTMLTextAreaElement>document.getElementById(getPaneState(paneKey).queryId), {
-                consumeShareLink: null,//don't try to parse the url args. this is already done by the addLoad function below
-                persistent: null
+                consumeShareLink: null,//don't try to parse the url args. mountQueryPage already does
+                persistent: null,
+                // Queries run through the Workbench form; YASQE must never send them to its default endpoint.
+                sparql: { endpoint: '', showQueryButton: false },
+                extraKeys: queryEditorKeys(paneKey)
             });
+            var queryPage = document.getElementById('query-page');
+            if (queryPage && queryPage.getAttribute('data-editor-fullscreen-enabled') === 'false') {
+                var fullscreenControl = <HTMLElement>paneEditor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+                if (fullscreenControl) {
+                    fullscreenControl.hidden = true;
+                }
+                var extraKeys = paneEditor.getOption('extraKeys');
+                paneEditor.setOption('extraKeys', $.extend({}, extraKeys, {
+                    F11: function() {
+                        // The deployment disabled editor fullscreen in the Workbench policy.
+                    }
+                }));
+            }
             clearPanePersistedQuery(paneKey);
             $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
@@ -3726,10 +4195,17 @@ module workbench {
                     clearPanePersistedQuery('compare');
                 } else {
                     persistPrimaryQueryEditorValue(paneEditor);
+                    clearQueryErrorLocation();
                 }
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
             });
+            var sizing: any = (<any>workbench).editorSizing;
+            var resizeHandle = document.getElementById(paneKey === 'compare' ? 'query-compare-editor-resize' : 'query-editor-resize');
+            if (sizing && typeof sizing.install === 'function' && resizeHandle) {
+                releaseEditorSizing(paneKey);
+                editorSizingDisposers[paneKey] = sizing.install(paneEditor, resizeHandle, 'rdf4j.workbench.editor-height.v1');
+            }
             paneEditor.refresh();
             setPaneQueryEditor(paneKey, paneEditor);
             return paneEditor;
@@ -3750,7 +4226,16 @@ module workbench {
             initPaneYasqe('compare');
         }
 
+        function releaseEditorSizing(paneKey: string) {
+            var release = editorSizingDisposers[paneKey];
+            delete editorSizingDisposers[paneKey];
+            if (typeof release === 'function') {
+                release();
+            }
+        }
+
         function closeCompareYasqe() {
+            releaseEditorSizing('compare');
             if (compareYasqe) {
                 compareYasqe.toTextArea();
                 compareYasqe = null;
@@ -3759,6 +4244,7 @@ module workbench {
         }
 
         function closeYasqe() {
+            releaseEditorSizing('primary');
             if (yasqe) {
                 yasqe.toTextArea();
                 yasqe = null;
@@ -3785,6 +4271,30 @@ module workbench {
                 var selectedExplainLevel = <string>$('#explain-level').val() || 'Optimized';
                 requestComparePaneExplanation(selectedExplainLevel);
             }
+        }
+
+        export function closeComparePane() {
+            if (compareModeEnabled) {
+                toggleCompareMode();
+            }
+            var compareTrigger = <HTMLElement>document.getElementById('compare-toggle');
+            if (compareTrigger) {
+                compareTrigger.focus();
+            }
+        }
+
+        export function swapCompareQueries() {
+            if (!compareModeEnabled) {
+                return;
+            }
+            var primaryQuery = getPaneRawQueryValue('primary');
+            var compareQuery = getPaneRawQueryValue('compare');
+            setPaneQueryValue('primary', compareQuery);
+            setPaneQueryValue('compare', primaryQuery);
+            persistPrimaryQueryValue();
+            handleQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+            handleQueryPageInputChange('COMPARE_QUERY_CHANGED');
+            refreshVisibleQueryEditors();
         }
 
         export function toggleCompareSidebar() {
@@ -3821,6 +4331,349 @@ module workbench {
             updateCompareActionState();
         }
 
+        /**
+         * Mount the Query page in outlet (plan task M9.1): fill the editor from the URL, the session draft or the
+         * cookies, set up the explanation and compare views, and bind the page's controls. Element handlers and
+         * document handlers use the .wbQuery event namespace; the returned function removes them, the window and
+         * output listeners and pending input timers, and resets the module (resetState).
+         */
+        export function mountQueryPage(outlet: HTMLElement): () => void {
+            var page = $(outlet);
+            var bound: JQuery[] = [];
+            var timers: number[] = [];
+
+            /** Bind handler to the events of the page element that selector names, in the .wbQuery namespace. */
+            function on(selector: string, events: string, handler: (event?: any) => any) {
+                var element = page.find(selector);
+                element.on(events.split(' ').map(function(name) { return name + '.wbQuery'; }).join(' '), handler);
+                bound.push(element);
+            }
+
+            /**
+             * Gets a parameter from the URL or the cookies, preferentially in that
+             * order.
+             *
+             * @param param
+             *            the name of the parameter
+             * @returns the value of the given parameter, or something that evaluates
+             *          as false, if the parameter was not found
+             */
+            function getParameterFromUrl(param: string) {
+                var href = document.location.href;
+                var elements = href.substring(href.indexOf('?') + 1).substring(
+                    href.indexOf(';') + 1).split(decodeURIComponent('%26'));
+                var result = '';
+                for (var i = 0; elements.length - i; i++) {
+                    var pair = elements[i].split('=');
+                    var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
+                    if (pair[0] == param) {
+                        result = value;
+                    }
+                }
+                return result;
+            }
+
+            function getParameterFromUrlOrCookie(param: string) {
+                var result = getParameterFromUrl(param);
+                if (!result) {
+                    result = workbench.getCookie(param);
+                }
+                return result;
+            }
+
+            function getQueryTextFromServer(queryParam: string, refParam: string) {
+                $.getJSON('query', {
+                    action: "get",
+                    query: queryParam,
+                    ref: refParam
+                }, function(response: QueryTextResponse) {
+                    if (response.queryText) {
+                        applyLoadedPrimaryQuery(response.queryText);
+                    }
+                });
+            }
+
+            var onDocumentClick = function(event: any) {
+                if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+                    && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
+                    setExplanationSettingsOpen(false);
+                }
+            };
+            var onDocumentKeydown = function(event: any) {
+                if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
+                    handleDiffModalTab(event);
+                    return;
+                }
+                if (event.key === 'Escape' && isResultsFullscreen()) {
+                    toggleResultsFullscreen();
+                    event.preventDefault();
+                    return;
+                }
+                if (event.key === 'Escape'
+                    && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+                    setExplanationSettingsOpen(false);
+                    var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
+                    if (settingsToggle) {
+                        settingsToggle.focus();
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
+                    closeDiffModal();
+                }
+            };
+            /** The page's window and document listeners, dropped while the page is kept alive (M11.3). */
+            function listen() {
+                window.addEventListener('pagehide', resetResultArea, false);
+                window.addEventListener('pageshow', resetResultArea, false);
+                $(document).on('click.wbQuery', onDocumentClick);
+                $(document).on('keydown.wbQuery', onDocumentKeydown);
+            }
+            function unlisten() {
+                window.removeEventListener('pagehide', resetResultArea, false);
+                window.removeEventListener('pageshow', resetResultArea, false);
+                $(document).off('.wbQuery');
+            }
+            listen();
+
+            // Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
+            // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).
+            updateYasqe();
+
+            // Populate the query text area with the value of the URL query parameter, only if it is present. If
+            // it is not present in the URL query, then looks for the 'query' cookie, and sets it from that. (The
+            // cookie enables re-populating the text field with the previous query when the user returns via the
+            // browser back button.)
+            var query = getParameterFromUrl('query');
+            if (query) {
+                var ref = getParameterFromUrl('ref');
+                if (ref == 'id' || ref == 'hash') {
+                    getQueryTextFromServer(query, ref);
+                } else {
+                    setQueryValue(query);
+                    persistPrimaryQueryValue();
+                }
+            } else {
+                var initialQueryValue = getQueryValue();
+                if (initialQueryValue) {
+                    persistPrimaryQueryValue();
+                } else {
+                    var sessionDraft = getPrimaryQueryDraftSessionValue();
+                    if (sessionDraft) {
+                        setQueryValue(sessionDraft);
+                    } else {
+                        query = getParameterFromUrlOrCookie('query');
+                        if (query) {
+                            var fallbackRef = getParameterFromUrlOrCookie('ref');
+                            if (fallbackRef == 'id' || fallbackRef == 'hash') {
+                                getQueryTextFromServer(query, fallbackRef);
+                            } else {
+                                setQueryValue(query);
+                                persistPrimaryQueryValue();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Trim the query text area contents of any leading and/or trailing whitespace.
+            setQueryValue($.trim(getQueryValue()));
+            initializeExplanationView();
+            initializeCompareUi();
+            workbench.tabs.bind(<HTMLElement>outlet.querySelector('#query-output [role="tablist"]'));
+            var queryOutput = outlet.querySelector('#query-output');
+            var onResultSummary = function(event: any) {
+                updateResultsBadge(event.detail);
+            };
+            var onErrorLocation = function(event: any) {
+                var location = event.detail || {};
+                showQueryErrorLocation(location.line, location.column, !!location.reveal);
+            };
+            if (queryOutput) {
+                queryOutput.addEventListener('workbench:query-result-summary', onResultSummary);
+                queryOutput.addEventListener('workbench:query-error-location', onErrorLocation);
+            }
+
+            // Add click handlers identifying the clicked element in a hidden 'action' form field.
+            var addHandler = function(id: string, callback?: () => void) {
+                on('#' + id, 'click', function setAction() {
+                    $('#action').val(id);
+                    if (callback) {
+                        callback();
+                    }
+                });
+            };
+            addHandler('exec', function() {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            addHandler('save', function() {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            on('#copy-explanation', 'click', function() {
+                copyExplanation('primary');
+            });
+            on('#copy-explanation-compare', 'click', function() {
+                copyExplanation('compare');
+            });
+            on('#query-compare-copy', 'click', function() {
+                copyExplanation('primary');
+            });
+            on('#query-compare-swap', 'click', function() {
+                swapCompareQueries();
+            });
+            on('#download-explanation', 'click', downloadExplanation);
+            on('#explanation-highlight-syntax', 'click', function() {
+                setExplanationHighlightMode('syntax');
+            });
+            on('#explanation-highlight-hotspot', 'click', function() {
+                setExplanationHighlightMode('hotspot');
+            });
+            on('#explanation-properties-all', 'click', function() {
+                setAllExplanationPropertiesVisible(true);
+            });
+            on('#explanation-properties-none', 'click', function() {
+                setAllExplanationPropertiesVisible(false);
+            });
+            // Add event handlers to the save name field to react to changes in it.
+            on('#query-name', 'keydown cut paste', handleNameChange);
+
+            // Add event handlers to the query text area to react to changes in it.
+            function deferInputChange(handler: () => void) {
+                return function() {
+                    timers.push(window.setTimeout(handler, 0));
+                };
+            }
+            on('#query', 'keydown cut paste change', deferInputChange(function() {
+                clearFeedback();
+                notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+            }));
+            on('#query-compare', 'keydown cut paste change', deferInputChange(function() {
+                clearFeedback();
+                notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
+            }));
+            on('#explain-level', 'change', function() {
+                notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
+            });
+            on('#explain-format', 'change', function() {
+                notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+            });
+            on('#query-diff-modal', 'click', function(event) {
+                if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {
+                    closeDiffModal();
+                }
+            });
+            // Detect if there is no current authenticated user, and if so, disable the 'save privately' option.
+            if ($('#selected-user>span').is('.disabled')) {
+                page.find('#save-private').prop('checked', false).prop('disabled', true);
+            }
+
+            var suspended = false;
+            var cleanup: any = function() {
+                unlisten();
+                bound.forEach(function(element) {
+                    element.off('.wbQuery');
+                });
+                if (queryOutput) {
+                    queryOutput.removeEventListener('workbench:query-result-summary', onResultSummary);
+                    queryOutput.removeEventListener('workbench:query-error-location', onErrorLocation);
+                }
+                timers.forEach(function(timer) {
+                    clearTimeout(timer);
+                });
+                resetState();
+            };
+            // Kept alive (M11.3): hidden, the page listens to nothing outside itself and compare mode leaves the
+            // page shown instead alone; the editors, results and a running query stay as they are.
+            cleanup.suspend = function() {
+                if (!suspended) {
+                    suspended = true;
+                    unlisten();
+                    releaseCompareChrome();
+                }
+            };
+            cleanup.resume = function() {
+                if (suspended) {
+                    suspended = false;
+                    listen();
+                    syncCompareSidebarState();
+                }
+            };
+            return cleanup;
+        }
+
+        /**
+         * Return the module to the state it had before the page was mounted: close the editors and the diff
+         * modal, stop pending explanation requests and timers, and undo compare mode outside the page. The Query
+         * route's dispose and the unit tests use it.
+         */
+        export function resetState() {
+            ['primary', 'compare'].forEach(function(controllerKey: ExplainRequestControllerKey) {
+                var uiState = getExplainRequestUiState(controllerKey);
+                clearTimeout(uiState.spinnerDelayTimeoutId);
+                clearTimeout(uiState.spinnerHideTimeoutId);
+            });
+            [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function(request: JQueryXHR) {
+                if (request && typeof request.abort === 'function') {
+                    request.abort();
+                }
+            });
+            destroyDotPanZoom('primary');
+            destroyDotPanZoom('compare');
+            syncDiffModalPresentation(false);
+            releaseCompareChrome();
+            releaseEditorSizing('primary');
+            releaseEditorSizing('compare');
+            if (yasqe && typeof yasqe.toTextArea === 'function') {
+                yasqe.toTextArea();
+            }
+            if (compareYasqe && typeof compareYasqe.toTextArea === 'function') {
+                compareYasqe.toTextArea();
+            }
+                clearActiveQuery();
+                yasqe = null;
+                compareYasqe = null;
+                vizRenderer = null;
+                queryPageState = createInitialQueryPageState();
+                lastRenderedExplanationKeys = {};
+                pendingDotRenderKeys = {};
+                activePrimaryRequestSignature = null;
+                activeCompareRequestSignatures = {};
+                resetExplainRequestUiState('primary');
+                resetExplainRequestUiState('compare');
+                activeExplainRequestId = 0;
+                activeExplainJqXHR = null;
+                resultPresentationLayout = 'auto';
+                resultPresentationWrap = true;
+                var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+                if (fullscreenTarget) {
+                    setResultsFullscreen(false, false, fullscreenTarget);
+                }
+                primaryExplanationPending = false;
+                activeCompareRequestId = 0;
+                activeComparePendingRequests = 0;
+                activeCompareExplainJqXHRs = [];
+                compareModeEnabled = false;
+                compareSidebarOpen = false;
+                compareQuerySeeded = false;
+                diffNotReadyLabel = '';
+                lastDiffTriggerElement = null;
+                explanationHighlightMode = 'syntax';
+                explanationHiddenProperties = loadExplanationHiddenProperties();
+                explanationPropertyOptionsKey = '';
+                primaryPaneState.latestExplanation = '';
+                primaryPaneState.latestExplanationFormat = 'text';
+                primaryPaneState.dotPanZoomInstance = null;
+                primaryPaneState.explainButtonViewportTopBeforeRequest = null;
+                primaryPaneState.explainButtonIdBeforeRequest = '';
+                comparePaneState.latestExplanation = '';
+                comparePaneState.latestExplanationFormat = 'text';
+                comparePaneState.dotPanZoomInstance = null;
+                comparePaneState.explainButtonViewportTopBeforeRequest = null;
+                comparePaneState.explainButtonIdBeforeRequest = '';
+        }
+
         export var testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -3845,8 +4698,8 @@ module workbench {
             createDiffModalState: createDiffModalState,
             createEmptyQueryPageInputs: createEmptyQueryPageInputs,
             createErrorPaneState: createErrorPaneState,
-            createFallbackExplainServerRequestId: createFallbackRequestId,
-            createFallbackRequestId: createFallbackRequestId,
+            createFallbackExplainServerRequestId: generateRequestId,
+            createFallbackRequestId: generateRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
             createJsonTreeNode: createJsonTreeNode,
@@ -3947,14 +4800,11 @@ module workbench {
                     activeCompareRequestId: activeCompareRequestId,
                     activeCompareRequestSignatures: activeCompareRequestSignatures,
                     activePrimaryRequestSignature: activePrimaryRequestSignature,
-                    activeQueryRequestId: activeQueryRequestId,
                     compareModeEnabled: compareModeEnabled,
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
                     compareSidebarOpen: compareSidebarOpen,
-                    currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
-                    explainServerRequestIdCounter: requestIdCounter,
                     explanationHighlightMode: explanationHighlightMode,
                     explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
@@ -3963,46 +4813,7 @@ module workbench {
                     queryPageState: queryPageState
                 };
             },
-            resetInternalState: function() {
-                clearActiveQuery();
-                currentQueryLn = '';
-                yasqe = null;
-                compareYasqe = null;
-                vizRenderer = null;
-                queryPageState = createInitialQueryPageState();
-                lastRenderedExplanationKeys = {};
-                pendingDotRenderKeys = {};
-                activePrimaryRequestSignature = null;
-                activeCompareRequestSignatures = {};
-				requestIdCounter = 0;
-                resetExplainRequestUiState('primary');
-                resetExplainRequestUiState('compare');
-                activeExplainRequestId = 0;
-                activeExplainJqXHR = null;
-                activeQueryRequestId = null;
-                primaryExplanationPending = false;
-                activeCompareRequestId = 0;
-                activeComparePendingRequests = 0;
-                activeCompareExplainJqXHRs = [];
-                compareModeEnabled = false;
-                compareSidebarOpen = false;
-                compareQuerySeeded = false;
-                diffNotReadyLabel = '';
-                lastDiffTriggerElement = null;
-                explanationHighlightMode = 'syntax';
-                explanationHiddenProperties = loadExplanationHiddenProperties();
-                explanationPropertyOptionsKey = '';
-                primaryPaneState.latestExplanation = '';
-                primaryPaneState.latestExplanationFormat = 'text';
-                primaryPaneState.dotPanZoomInstance = null;
-                primaryPaneState.explainButtonViewportTopBeforeRequest = null;
-                primaryPaneState.explainButtonIdBeforeRequest = '';
-                comparePaneState.latestExplanation = '';
-                comparePaneState.latestExplanationFormat = 'text';
-                comparePaneState.dotPanZoomInstance = null;
-                comparePaneState.explainButtonViewportTopBeforeRequest = null;
-                comparePaneState.explainButtonIdBeforeRequest = '';
-            },
+            resetInternalState: resetState,
             setInternalState: function(state: any) {
                 if ('activeComparePendingRequests' in state) {
                     activeComparePendingRequests = state.activeComparePendingRequests;
@@ -4025,14 +4836,8 @@ module workbench {
                 if ('compareSidebarOpen' in state) {
                     compareSidebarOpen = state.compareSidebarOpen;
                 }
-                if ('currentQueryLn' in state) {
-                    currentQueryLn = state.currentQueryLn;
-                }
                 if ('diffNotReadyLabel' in state) {
                     diffNotReadyLabel = state.diffNotReadyLabel;
-                }
-                if ('explainServerRequestIdCounter' in state) {
-                    requestIdCounter = state.explainServerRequestIdCounter;
                 }
                 if ('explanationHiddenProperties' in state) {
                     explanationHiddenProperties = normalizeExplanationHiddenProperties(
@@ -4063,192 +4868,3 @@ module workbench {
 interface QueryTextResponse {
     queryText: string;
 }
-
-workbench.addLoad(function queryPageLoaded() {
-    /**
-     * Gets a parameter from the URL or the cookies, preferentially in that
-     * order.
-     *
-     * @param param
-     *            the name of the parameter
-     * @returns the value of the given parameter, or something that evaluates
-                  as false, if the parameter was not found
-     */
-    function getParameterFromUrl(param: string) {
-        var href = document.location.href;
-        var elements = href.substring(href.indexOf('?') + 1).substring(
-            href.indexOf(';') + 1).split(decodeURIComponent('%26'));
-        var result = '';
-        for (var i = 0; elements.length - i; i++) {
-            var pair = elements[i].split('=');
-            var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
-            if (pair[0] == param) {
-                result = value;
-            }
-        }
-        return result;
-    }
-
-    function getParameterFromUrlOrCookie(param: string) {
-        var result = getParameterFromUrl(param);
-        if (!result) {
-            result = workbench.getCookie(param);
-        }
-        return result;
-    }
-
-    function getQueryTextFromServer(queryParam: string, refParam: string) {
-        $.getJSON('query', {
-            action: "get",
-            query: queryParam,
-            ref: refParam
-        }, function(response: QueryTextResponse) {
-                if (response.queryText) {
-                    workbench.query.applyLoadedPrimaryQuery(response.queryText);
-                }
-            });
-    }
-
-    //Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
-    //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
-    workbench.query.updateYasqe();
-
-    // Populate the query text area with the value of the URL query parameter,
-    // only if it is present. If it is not present in the URL query, then
-    // looks for the 'query' cookie, and sets it from that. (The cookie
-    // enables re-populating the text field with the previous query when the
-    // user returns via the browser back button.)
-    var query = getParameterFromUrl('query');
-    if (query) {
-        var ref = getParameterFromUrl('ref');
-        if (ref == 'id' || ref == 'hash') {
-            getQueryTextFromServer(query, ref);
-        } else {
-            workbench.query.setQueryValue(query);
-            workbench.query.persistPrimaryQueryValue();
-        }
-    } else {
-        var initialQueryValue = workbench.query.getQueryValue();
-        if (initialQueryValue) {
-            workbench.query.persistPrimaryQueryValue();
-        } else {
-            var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
-            if (sessionDraft) {
-                workbench.query.setQueryValue(sessionDraft);
-            } else {
-                query = getParameterFromUrlOrCookie('query');
-                if (query) {
-                    var fallbackRef = getParameterFromUrlOrCookie('ref');
-                    if (fallbackRef == 'id' || fallbackRef == 'hash') {
-                        getQueryTextFromServer(query, fallbackRef);
-                    } else {
-                        workbench.query.setQueryValue(query);
-                        workbench.query.persistPrimaryQueryValue();
-                    }
-                }
-            }
-        }
-    }
-    workbench.query.loadNamespaces();
-
-    // Trim the query text area contents of any leading and/or trailing
-    // whitespace.
-    workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
-    workbench.query.initializeExplanationView();
-    workbench.query.initializeCompareUi();
-
-    // Add click handlers identifying the clicked element in a hidden 'action'
-    // form field.
-    var addHandler = function(id: string, callback?: () => void) {
-        $('#' + id).click(function setAction() {
-            $('#action').val(id);
-            if (callback) {
-                callback();
-            }
-        });
-    };
-    addHandler('exec', function() {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    addHandler('save', function() {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    $('#copy-explanation').click(function() {
-        workbench.query.copyExplanation('primary');
-    });
-    $('#copy-explanation-compare').click(function() {
-        workbench.query.copyExplanation('compare');
-    });
-    $('#download-explanation').click(workbench.query.downloadExplanation);
-    $('#explanation-highlight-syntax').click(function() {
-        workbench.query.setExplanationHighlightMode('syntax');
-    });
-    $('#explanation-highlight-hotspot').click(function() {
-        workbench.query.setExplanationHighlightMode('hotspot');
-    });
-    $('#explanation-settings-toggle').click(function() {
-        workbench.query.toggleExplanationSettings();
-    });
-    $(document).click(function(event) {
-        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
-            && $(event.target).closest('#explanation-settings').length === 0) {
-            workbench.query.setExplanationSettingsOpen(false);
-        }
-    });
-    $('#explanation-properties-all').click(function() {
-        workbench.query.setAllExplanationPropertiesVisible(true);
-    });
-    $('#explanation-properties-none').click(function() {
-        workbench.query.setAllExplanationPropertiesVisible(false);
-    });
-    // Add event handlers to the save name field to react to changes in it.
-    $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
-
-    // Add event handlers to the query text area to react to changes in it.
-    function deferInputChange(handler: () => void) {
-        return function() {
-            window.setTimeout(handler, 0);
-        };
-    }
-    $('#query').bind('keydown cut paste change', deferInputChange(function() {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    }));
-    $('#query-compare').bind('keydown cut paste change', deferInputChange(function() {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
-    }));
-    $('#explain-level').change(function() {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
-    });
-    $('#explain-format').change(function() {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
-    });
-    $('#query-diff-modal').click(function(event) {
-        if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {
-            workbench.query.closeDiffModal();
-        }
-    });
-    $(document).keydown(function(event) {
-        if (event.key === 'Escape'
-            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
-            workbench.query.setExplanationSettingsOpen(false);
-            var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
-            if (settingsToggle) {
-                settingsToggle.focus();
-            }
-            return;
-        }
-        if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
-            workbench.query.closeDiffModal();
-        }
-    });
-
-    // Detect if there is no current authenticated user, and if so, disable
-    // the 'save privately' option.
-    if ($('#selected-user>span').is('.disabled')) {
-        $('#save-private').prop('checked', false).prop('disabled', true);
-    }
-});

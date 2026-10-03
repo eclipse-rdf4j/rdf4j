@@ -20,12 +20,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import java.io.OutputStream;
+import java.io.StringWriter;
+import java.util.Map;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockServletContext;
@@ -43,16 +46,14 @@ class TransformationServletCoverageTest {
 
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
 		servlet.init(new TestServletConfig("transform", new MockServletContext(),
-				java.util.Map.of("transformations", "/transform", "default-queryLn", "SPARQL")));
+				Map.of("default-queryLn", "SPARQL")));
 		request.setMethod("POST");
-		request.setContextPath("/ctx");
 
 		servlet.service(request, response);
 
 		assertThat(request.getCharacterEncoding()).isEqualTo("UTF-8");
 		assertThat(servlet.lastMethod).isEqualTo("POST");
 		assertThat(servlet.lastQueryLanguage).isEqualTo("SPARQL");
-		assertThat(servlet.lastXslPath).isEqualTo("/ctx/transform");
 		verify(response).setCharacterEncoding("UTF-8");
 		verify(response).setDateHeader(eq("Expires"), anyLong());
 		verify(response).setHeader("Cache-Control", "no-cache, no-store");
@@ -66,9 +67,8 @@ class TransformationServletCoverageTest {
 
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
 		servlet.init(new TestServletConfig("transform", new MockServletContext(),
-				java.util.Map.of("transformations", "/transform", "default-queryLn", "SERQL")));
+				Map.of("default-queryLn", "SERQL")));
 		request.setMethod("GET");
-		request.setContextPath("/ctx");
 		request.setCharacterEncoding("ISO-8859-1");
 
 		servlet.service(request, response);
@@ -76,47 +76,53 @@ class TransformationServletCoverageTest {
 		assertThat(request.getCharacterEncoding()).isEqualTo("ISO-8859-1");
 		assertThat(servlet.lastMethod).isEqualTo("GET");
 		assertThat(servlet.lastQueryLanguage).isEqualTo("SERQL");
-		assertThat(servlet.lastXslPath).isEqualTo("/ctx/transform");
 	}
 
 	@Test
 	void defaultProtectedDelegatesRemainCallable() throws Exception {
 		DelegatingTransformationServlet servlet = new DelegatingTransformationServlet();
 
-		servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class), "/transform");
-		servlet.doPost(mock(WorkbenchRequest.class), mock(HttpServletResponse.class), "/transform");
+		servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class));
+		servlet.doPost(mock(WorkbenchRequest.class), mock(HttpServletResponse.class));
 
 		assertThat(servlet.serviceCalls).isEqualTo(2);
-		assertThat(servlet.lastXslPath).isEqualTo("/transform");
 		assertThat(servlet.getCookieNames()).isEmpty();
 	}
 
 	@Test
-	void initRequiresTransformationsAndDefaultBuilderServiceIsCallable() throws Exception {
-		RecordingTransformationServlet missing = new RecordingTransformationServlet();
-		missing.setRepositoryManager(mock(RepositoryManager.class));
-
-		assertThatThrownBy(() -> missing.init(new TestServletConfig("transform", new MockServletContext(),
-				java.util.Map.of())))
-						.isInstanceOf(MissingInitParameterException.class);
+	void initDoesNotRequireTransformationsAndDefaultBuilderServiceIsCallable() throws Exception {
+		RecordingTransformationServlet noTransformations = new RecordingTransformationServlet();
+		noTransformations.setRepositoryManager(mock(RepositoryManager.class));
+		noTransformations.init(new TestServletConfig("transform", new MockServletContext(), Map.of()));
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod("POST");
+		noTransformations.service(request, mock(HttpServletResponse.class));
+		assertThat(noTransformations.lastMethod).isEqualTo("POST");
 
 		NoOpTransformationServlet servlet = new NoOpTransformationServlet();
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
-		servlet.init(new TestServletConfig("transform", new MockServletContext(),
-				java.util.Map.of("transformations", "/transform")));
+		servlet.init(new TestServletConfig("transform", new MockServletContext(), Map.of()));
 
-		assertThatCode(
-				() -> servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class), "/transform"))
-						.doesNotThrowAnyException();
+		assertThatCode(() -> servlet.service(mock(WorkbenchRequest.class), mock(HttpServletResponse.class)))
+				.doesNotThrowAnyException();
 		assertThat(servlet.builderRequested).isTrue();
+	}
+
+	@Test
+	void tupleResponsesDoNotContainStylesheetInstructions() throws Exception {
+		StringWriter output = new StringWriter();
+		TupleResultBuilder builder = new TupleResultBuilder(new WorkbenchTupleResultWriter(output),
+				SimpleValueFactory.getInstance());
+		builder.start("value").result("ready").end();
+
+		assertThat(output.toString()).doesNotContain("xml-stylesheet", ".xsl");
 	}
 
 	@Test
 	void publicServiceWrapsCheckedExceptions() throws Exception {
 		FailingTransformationServlet servlet = new FailingTransformationServlet();
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
-		servlet.init(new TestServletConfig("transform", new MockServletContext(),
-				java.util.Map.of("transformations", "/transform")));
+		servlet.init(new TestServletConfig("transform", new MockServletContext(), Map.of()));
 
 		assertThatThrownBy(() -> servlet.service(new MockHttpServletRequest("GET", "/transform"),
 				mock(HttpServletResponse.class)))
@@ -128,38 +134,33 @@ class TransformationServletCoverageTest {
 	private static final class RecordingTransformationServlet extends TransformationServlet {
 		private String lastMethod;
 		private String lastQueryLanguage;
-		private String lastXslPath;
 
 		@Override
-		protected void doPost(WorkbenchRequest wreq, HttpServletResponse resp, String xslPath) {
+		protected void doPost(WorkbenchRequest request, HttpServletResponse response) {
 			lastMethod = "POST";
-			lastQueryLanguage = wreq.getParameter("queryLn");
-			lastXslPath = xslPath;
+			lastQueryLanguage = request.getParameter("queryLn");
 		}
 
 		@Override
-		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) {
+		protected void service(WorkbenchRequest request, HttpServletResponse response) {
 			lastMethod = "GET";
-			lastQueryLanguage = req.getParameter("queryLn");
-			lastXslPath = xslPath;
+			lastQueryLanguage = request.getParameter("queryLn");
 		}
 	}
 
 	private static final class DelegatingTransformationServlet extends TransformationServlet {
 		private final TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		private int serviceCalls;
-		private String lastXslPath;
 
 		@Override
-		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest req,
-				HttpServletResponse resp, OutputStream outputStream) {
+		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest request,
+				HttpServletResponse response, OutputStream outputStream) {
 			return builder;
 		}
 
 		@Override
-		protected void service(TupleResultBuilder builder, String xslPath) {
+		protected void service(TupleResultBuilder writer) {
 			serviceCalls++;
-			lastXslPath = xslPath;
 		}
 	}
 
@@ -167,8 +168,8 @@ class TransformationServletCoverageTest {
 		private boolean builderRequested;
 
 		@Override
-		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest req,
-				HttpServletResponse resp, OutputStream outputStream) {
+		protected TupleResultBuilder getTupleResultBuilder(jakarta.servlet.http.HttpServletRequest request,
+				HttpServletResponse response, OutputStream outputStream) {
 			builderRequested = true;
 			return mock(TupleResultBuilder.class);
 		}
@@ -176,7 +177,7 @@ class TransformationServletCoverageTest {
 
 	private static final class FailingTransformationServlet extends TransformationServlet {
 		@Override
-		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+		protected void service(WorkbenchRequest request, HttpServletResponse response) throws Exception {
 			throw new Exception("boom");
 		}
 	}

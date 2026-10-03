@@ -9,31 +9,11 @@ module workbench {
 
     export module add {
 
-        export function handleFormatSelection(selected: string) {
-            if (selected == 'application/x-trig' || selected == 'application/trix'
-                || selected == 'text/x-nquads') {
-                $('#useForContext').prop('checked', false);
-                $('#context').val('').prop('readOnly', false);
-            }
-        }
-
-        function setContextFromBaseURI() {
-            var baseURI = $('#baseURI').val();
-            $('#context').prop('readOnly', true);
-            $('#context').val(baseURI == '' ? '' : '<' + baseURI + '>');
-        }
-
-        export function handleBaseURIUse() {
-            if ($('#useForContext').prop('checked')) {
-                setContextFromBaseURI();
-            }
-            else {
-                $('#context').prop('readOnly', false); 
-            }
-        }
-
         export function enabledInput(selected: string) {
             var istext = (selected == 'text');
+            $('#add-source-file-panel').prop('hidden', selected != 'file');
+            $('#add-source-url-panel').prop('hidden', selected != 'url');
+            $('#add-source-text-panel').prop('hidden', !istext);
             $('#text').prop('disabled', !istext);
             var contentType = $('#Content-Type');
             $('#source-' + selected).prop('checked', true);
@@ -57,22 +37,21 @@ module workbench {
             else {
                 autodetect.prop('disabled', false);
                 autodetect.prop('selected', true);
-                var baseURI = $('#baseURI');
-                var checked = $('#useForContext').prop('checked');
                 if (isfile) {
-                    baseURI.val(file.val() == '' ? '' : encodeURI('file://'
+                    $('#baseURI').val(file.val() == '' ? '' : encodeURI('file://'
                         + file.val().replace(/\\/g, '/')));
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
                 }
                 else if (isurl) {
-                    baseURI.val(url.val());
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
+                    $('#baseURI').val(url.val());
                 }
             }
+        }
+
+        /** Route mount (plan task M7.2): show the panel of the source that is checked in this page. */
+        export function mount(outlet: HTMLElement): () => void {
+            var selected = $(outlet).find("input[name='source']:checked").val() || 'file';
+            enabledInput(selected == 'contents' ? 'text' : selected);
+            return function() {};
         }
     }
 }

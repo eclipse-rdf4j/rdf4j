@@ -26,6 +26,8 @@ const workbenchScripts = [
     'template.js',
     'tuple.js',
     'update.js',
+    'workbenchRouter.js',
+    'workbenchRoutes.js',
     'yasqeHelper.js'
 ].map((fileName) => path.resolve(repoRoot, 'tools/workbench/src/main/webapp/scripts', fileName));
 const testFiles = fs.readdirSync(__dirname)

@@ -1,0 +1,4588 @@
+/* Shared Workbench refresh styles.  Page-specific styles remain in their
+ * existing stylesheets; these rules only establish the common shell, controls
+ * and responsive surface used by the Workbench templates. */
+
+:root {
+	--workbench-canvas: #f5f9fb;
+	--workbench-surface: #ffffff;
+	--workbench-inset: #f5f9fb;
+	--workbench-ink: #14242b;
+	--workbench-body: #2f4047;
+	--workbench-nav: var(--workbench-body);
+	--workbench-muted: #4f6168;
+	--workbench-outline: #778a92;
+	--workbench-rule: var(--workbench-outline);
+	--workbench-soft-rule: #e3ecef;
+	--workbench-primary: #20576a;
+	--workbench-primary-hover: #16495a;
+	--workbench-primary-text: #ffffff;
+	--workbench-selected: #def3fb;
+	--workbench-teal: var(--workbench-primary);
+	--workbench-teal-dark: var(--workbench-primary-hover);
+	--workbench-danger: #b42318;
+	--workbench-danger-surface: #fff1f0;
+	--workbench-danger-hover: #912018;
+	--workbench-on-danger: #ffffff;
+	--workbench-warning: #8a5a00;
+	--workbench-warning-surface: #fff6e0;
+	--workbench-warning-rule: #e9c46a;
+	--workbench-success: #28734b;
+	--workbench-heatmap-low: #def3fb;
+	--workbench-heatmap-high: #73c4e2;
+	--workbench-heatmap-ink: #14242b;
+	/* CodeMirror's light syntax palette follows the cm-s-default theme bundled on develop. */
+	--workbench-editor-surface: #ffffff;
+	--workbench-editor-ink: #000000;
+	--workbench-editor-gutter: #f7f7f7;
+	--workbench-editor-gutter-border: #dddddd;
+	--workbench-editor-gutter-ink: #999999;
+	--workbench-editor-selection: #d9d9d9;
+	--workbench-editor-selection-focused: #d7d4f0;
+	--workbench-code-keyword: #770088;
+	--workbench-code-atom: #221199;
+	--workbench-code-number: #116644;
+	--workbench-code-definition: #0000ff;
+	--workbench-code-variable: #000000;
+	--workbench-code-variable-2: #0055aa;
+	--workbench-code-variable-3: #008855;
+	--workbench-code-property: #000000;
+	--workbench-code-attribute: #0000cc;
+	--workbench-code-string: #aa1111;
+	--workbench-code-string-2: #ff5500;
+	--workbench-code-meta: #555555;
+	--workbench-code-qualifier: #555555;
+	--workbench-code-builtin: #3300aa;
+	--workbench-code-bracket: #999977;
+	--workbench-code-tag: #117700;
+	--workbench-code-header: #0000ff;
+	--workbench-code-comment: #aa5500;
+	--workbench-code-operator: #000000;
+	--workbench-code-error: #ff0000;
+	--workbench-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	--workbench-control-font-size: 13px;
+	--workbench-label-font-size: 12px;
+	--workbench-body-font-size: 14px;
+	--workbench-code-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--workbench-code-font-size: 14px;
+	--workbench-sidebar-width: 184px;
+	--workbench-desktop-gutter: 24px;
+	--workbench-mobile-gutter: 12px;
+	--workbench-control-height: 36px;
+	--workbench-contextbar-height: 56px;
+	--workbench-touch-height: 44px;
+	/* Distances express relationships; each layout owner applies its role once. */
+	--workbench-space-association: 4px;
+	--workbench-space-related: 8px;
+	--workbench-space-field: 12px;
+	--workbench-space-subgroup: 16px;
+	--workbench-space-section: 24px;
+	--workbench-card-inset: var(--workbench-space-section);
+	--workbench-control-inset: 12px;
+	--workbench-control-gap: var(--workbench-space-related);
+	--workbench-form-gap: var(--workbench-space-field);
+	--workbench-field-gap: var(--workbench-space-association);
+	--workbench-radius: 10px;
+	--workbench-control-radius: 7px;
+	--workbench-focus: #20576a;
+	--workbench-shadow: 0 2px 8px rgba(15, 23, 42, .05);
+	--workbench-motion-press: 120ms;
+	--workbench-motion-disclosure: 180ms;
+	--workbench-motion-layout: 220ms;
+	--workbench-motion-spin: 800ms;
+	--workbench-motion-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Page-level corrections keep the shared shell and each operation island
+ * visually distinct without changing the legacy page contracts. */
+body.workbench-body #workbench-page-surface:has(> form),
+body.workbench-body #workbench-page-surface:has(> .workbench-island),
+body.workbench-body #workbench-page-surface:has(> #saved-queries),
+body.workbench-body #workbench-page-surface:has(> .workbench-callout:only-child) {
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+/* A page that is only an error (M13.6): the callout is the page, with no empty card around it. */
+body.workbench-body #workbench-page-surface > .workbench-callout:only-child {
+	margin-bottom: 0;
+}
+
+/* One content width (M1.5): the surface is capped at --workbench-content-max and every card fills it;
+ * form pages cap their form card at 760px with .workbench-form-card. */
+body.workbench-body #workbench-page-surface {
+	max-width: var(--workbench-content-max, 1200px);
+}
+
+body.workbench-body #workbench-page-surface > form,
+body.workbench-body #workbench-page-surface > .workbench-island,
+body.workbench-body #workbench-page-surface > #saved-queries {
+	box-sizing: border-box;
+	width: 100%;
+	margin: 0 0 24px;
+	padding: 20px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+}
+
+body.workbench-body #workbench-page-surface > form:last-child,
+body.workbench-body #workbench-page-surface > .workbench-island:last-child,
+body.workbench-body #workbench-page-surface > #saved-queries:last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body #saved-queries > .saved-query-row + .saved-query-row {
+	margin-top: 24px;
+	padding-top: 24px;
+	border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body #saved-queries > .saved-queries-empty {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body #saved-queries > .saved-queries-empty p {
+	margin: 0;
+}
+
+body.workbench-body #saved-queries > .saved-queries-empty a {
+	color: var(--workbench-primary);
+	font-weight: 600;
+}
+
+body.workbench-body #workbench-page-surface > .workbench-form-card {
+	max-width: 760px;
+}
+
+body.workbench-body .workbench-prose {
+	max-width: 72ch;
+}
+
+body.workbench-body #workbench-page-surface > details.workbench-options {
+	box-sizing: border-box;
+	padding: 0;
+}
+
+body.workbench-body form[action="create"] table.dataentry,
+body.workbench-body form[action="create"] table.dataentry tbody {
+	display: block;
+	width: fit-content;
+	max-width: min(100%, 600px);
+	border-spacing: 0;
+	margin: 0;
+}
+
+body.workbench-body form[action="create"] table.dataentry tr {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--workbench-field-gap);
+	margin: 0 0 var(--workbench-form-gap);
+	padding: 0;
+}
+
+body.workbench-body .workbench-page-surface form[action="create"] table.dataentry th,
+body.workbench-body .workbench-page-surface form[action="create"] table.dataentry td {
+	display: block;
+	width: 100%;
+	padding: 0;
+	font-size: 14px;
+	text-align: left;
+}
+
+body.workbench-body form[action="create"] table.dataentry th {
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+body.workbench-body form[action="create"] table.dataentry tr:last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body form[action="create"] table.dataentry th > label {
+	display: block;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced {
+	max-width: 600px;
+}
+
+body.workbench-body .workbench-form-subgroup {
+	margin-block-start: var(--workbench-space-subgroup);
+}
+
+body.workbench-body form[action="create"] input[type="text"],
+body.workbench-body form[action="create"] select,
+body.workbench-body form[action="create"] textarea {
+	width: auto;
+	max-width: 100%;
+}
+
+body.workbench-body form[action="create"] input[data-field-role="repository-id"] {
+	box-sizing: border-box;
+	width: min(100%, 16rem);
+	max-width: 100%;
+}
+
+body.workbench-body form[action="create"] input[type="button"],
+body.workbench-body form[action="create"] input[type="submit"] {
+	width: auto;
+	min-width: 0;
+}
+
+/* Cards own their content edge; action rows only own spacing and wrapping. */
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__primary {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+}
+
+body.workbench-body #content .workbench-action-toolbar__primary > h2,
+body.query-result-embedded-body .workbench-action-toolbar__primary > h2 {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	position: static;
+	margin: 0;
+	padding: 0;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-action-toolbar__actions {
+	display: contents;
+}
+
+.workbench-action-toolbar__actions > button {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.workbench-action-toolbar__group > .workbench-disclosure {
+	display: contents;
+}
+
+/* Only the group's own controls count: the controls in a pane that follows its toggle do not keep the group. */
+.workbench-action-toolbar__group:not(:has(> :is(button, input):not([hidden]),
+		> .workbench-disclosure > :is(button, input):not([hidden]))) {
+	display: none;
+}
+
+.workbench-action-toolbar__panels,
+.workbench-disclosure-track {
+	/* The panes in a track open over the page (M14.3); the track itself takes no room. */
+	display: contents;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body,
+	body.query-result-embedded-body {
+		--workbench-card-inset: var(--workbench-space-subgroup);
+	}
+}
+
+/* One shared surface, trigger, field layout, anchor, and responsive contract for
+ * every settings/action dropdown. Callers may choose placement and content only. */
+:where(body.workbench-body, body.query-result-embedded-body) .workbench-disclosure {
+	position: relative;
+	display: inline-grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-items: start;
+	max-width: 100%;
+	min-width: 0;
+	vertical-align: top;
+}
+
+body.workbench-body .workbench-disclosure__toggle,
+body.query-result-embedded-body .workbench-disclosure__toggle {
+	box-sizing: border-box;
+	display: inline-flex;
+	justify-self: start;
+	width: fit-content;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--workbench-control-gap);
+	min-height: var(--workbench-control-height);
+	max-width: 100%;
+	margin: 0;
+	padding: 0 var(--workbench-control-inset);
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-disclosure__toggle:hover,
+body.workbench-body .workbench-disclosure.is-open > .workbench-disclosure__toggle,
+body.query-result-embedded-body .workbench-disclosure__toggle:hover,
+body.query-result-embedded-body .workbench-disclosure.is-open > .workbench-disclosure__toggle {
+	border-color: var(--workbench-teal);
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-disclosure__toggle:focus-visible,
+body.query-result-embedded-body .workbench-disclosure__toggle:focus-visible {
+	outline: 3px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+/* A pane opens over the page, below its toggle (M14.3): template.ts sets --workbench-disclosure-top and -left in the
+ * box the panel is positioned in, and --workbench-disclosure-max-width to its card's content width. */
+body.workbench-body .workbench-disclosure__panel,
+body.query-result-embedded-body .workbench-disclosure__panel {
+	position: absolute;
+	top: calc(var(--workbench-disclosure-top, 100%) + var(--workbench-space-related));
+	left: var(--workbench-disclosure-left, 0px);
+	display: block;
+	box-sizing: border-box;
+	width: max-content;
+	min-width: 0;
+	max-width: min(44rem, var(--workbench-disclosure-max-width, calc(100vw - 32px)));
+	margin: 0;
+	padding: var(--workbench-control-inset);
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-body);
+	box-shadow: var(--workbench-shadow);
+	transform-origin: var(--workbench-disclosure-anchor-x, 50%) 0;
+	z-index: 10;
+}
+
+body.workbench-body .workbench-disclosure__panel[hidden],
+body.query-result-embedded-body .workbench-disclosure__panel[hidden] {
+	display: none !important;
+}
+
+body.workbench-body .workbench-disclosure__panel::before,
+body.query-result-embedded-body .workbench-disclosure__panel::before {
+	position: absolute;
+	top: -6px;
+	left: var(--workbench-disclosure-anchor-x, 50%);
+	width: 10px;
+	height: 10px;
+	border-top: 1px solid var(--workbench-soft-rule);
+	border-left: 1px solid var(--workbench-soft-rule);
+	background: var(--workbench-inset);
+	content: "";
+	transform: translateX(-50%) rotate(45deg);
+	transform-origin: 50% 50%;
+	 pointer-events: none;
+}
+
+body.workbench-body .workbench-disclosure__content,
+body.query-result-embedded-body .workbench-disclosure__content {
+	box-sizing: border-box;
+	display: grid;
+	align-content: start;
+	gap: var(--workbench-form-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-disclosure__fields,
+body.query-result-embedded-body .workbench-disclosure__fields {
+	box-sizing: border-box;
+	display: flex;
+	flex-flow: row wrap;
+	align-items: end;
+	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-disclosure__field,
+body.query-result-embedded-body .workbench-disclosure__field {
+	box-sizing: border-box;
+	display: grid;
+	align-content: start;
+	gap: var(--workbench-field-gap);
+	min-width: 0;
+}
+
+/* A field's label; the shared select control around a field's select is a span too, and is not a label. */
+body.workbench-body .workbench-disclosure__field > label,
+body.workbench-body .workbench-disclosure__field > span:not(.workbench-select-control),
+body.query-result-embedded-body .workbench-disclosure__field > label,
+body.query-result-embedded-body .workbench-disclosure__field > span:not(.workbench-select-control) {
+	display: block;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	line-height: 1.25;
+	margin: 0;
+	padding: 0;
+	white-space: normal;
+}
+
+body.workbench-body .workbench-disclosure__field > :is(input, select, textarea, button),
+body.query-result-embedded-body .workbench-disclosure__field > :is(input, select, textarea, button) {
+	box-sizing: border-box;
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-disclosure__actions,
+body.query-result-embedded-body .workbench-disclosure__actions {
+	display: flex;
+	align-items: center;
+	align-self: end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+}
+
+/* Query settings: Timeout ends with its "0 means no limit" help line (M3.4), so aligning the row to the fields' end
+ * would put the inferred-statements check and Insert prefixes beside the help line. The Timeout field shares the
+ * row's label, control and help tracks through a subgrid, and the other items center on its control track. The
+ * field's gaps are margins so its tracks keep the row's zero gap, and a hidden Timeout leaves no empty gaps. Below
+ * 641px the row stacks; without subgrid it keeps the shared end alignment. */
+@media (min-width: 641px) {
+	@supports (grid-template-rows: subgrid) {
+		body.workbench-body .query-options-disclosure .workbench-disclosure__fields {
+			display: grid;
+			grid-template-rows: auto auto auto;
+			justify-content: start;
+			align-items: center;
+			row-gap: 0;
+		}
+
+		body.workbench-body .query-options-disclosure .query-timeout-field {
+			grid-row: 1 / span 3;
+			grid-template-rows: subgrid;
+			row-gap: 0;
+		}
+
+		body.workbench-body .query-options-disclosure .query-timeout-field > label {
+			margin-bottom: var(--workbench-field-gap);
+		}
+
+		body.workbench-body .query-options-disclosure .query-timeout-field > .workbench-field__help {
+			margin-top: var(--workbench-field-gap);
+		}
+
+		body.workbench-body .query-options-disclosure .workbench-disclosure__fields > :not(.query-timeout-field) {
+			grid-row: 2;
+			align-self: center;
+		}
+	}
+}
+
+@media (max-width: 640px) {
+	body.workbench-body .workbench-disclosure__panel,
+	body.query-result-embedded-body .workbench-disclosure__panel {
+		width: var(--workbench-disclosure-max-width, calc(100vw - 32px));
+		max-width: calc(100vw - 32px);
+	}
+
+	body.workbench-body .workbench-disclosure__fields,
+	body.query-result-embedded-body .workbench-disclosure__fields {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		width: 100%;
+	}
+
+	body.workbench-body .workbench-disclosure__toggle,
+	body.query-result-embedded-body .workbench-disclosure__toggle {
+		min-height: var(--workbench-touch-height);
+	}
+}
+
+body.workbench-body #update-editor,
+body.workbench-body #update-editor .yasqe,
+body.workbench-body #update-editor .CodeMirror,
+body.workbench-body #update-editor .CodeMirror-scroll,
+body.workbench-body #update-editor textarea {
+	box-sizing: border-box;
+	width: 100% !important;
+	min-width: 0 !important;
+	max-width: 100% !important;
+}
+
+body.workbench-body #update-editor .CodeMirror,
+body.workbench-body #update-editor .CodeMirror pre,
+body.workbench-body .saved-query-row .yasqe .CodeMirror,
+body.workbench-body .saved-query-row .yasqe .CodeMirror pre {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-code-font-size);
+}
+
+/* Keep code clear of the overlay buttons: two 28px buttons with their gaps, placed by YASQE at the scrollbar's width
+ * plus 4px from the editor's edge, reach about 84px in from it. */
+body.workbench-body .query-page .yasqe .CodeMirror-lines,
+body.workbench-body #update-editor .yasqe .CodeMirror-lines,
+body.workbench-body .saved-query-row .yasqe .CodeMirror-lines {
+	padding-right: 5.5rem;
+}
+
+/* The vendor anchors Share to its narrow icon strip. Give that strip the
+ * editor's available width so popup bounds follow resize and fullscreen. */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons {
+	left: 0;
+	text-align: right;
+	pointer-events: none;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_buttons > * {
+	pointer-events: auto;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup {
+	box-sizing: border-box;
+	left: auto !important;
+	right: 0;
+	width: 400px;
+	max-width: 100%;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .yasqe_sharePopup textarea {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body .saved-query-row .yasqe .CodeMirror-scroll {
+	min-height: 0;
+}
+
+/* Editor overlay buttons (share link, full screen) are 28px ghost buttons (M1.8, mockup 01). YASQE's
+ * icons use 100-unit view boxes, so their strokes must not scale with the view box. */
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	margin-left: 4px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 6px;
+	background: var(--workbench-surface);
+	color: var(--workbench-muted);
+	cursor: pointer;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg:focus-visible,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg:focus-visible,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg:hover,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg:focus-visible {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg svg,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg svg,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg svg {
+	width: 16px;
+	height: 16px;
+	fill: none !important;
+	stroke: currentColor !important;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.5px;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg svg *,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg svg *,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg svg * {
+	vector-effect: non-scaling-stroke;
+	stroke-width: 1.5px;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg *,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg *,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg * {
+	fill: none !important;
+	stroke: currentColor !important;
+}
+
+body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
+body.workbench-body #update-editor .yasqe .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
+body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg.yasqe_smallscreenBtn {
+	display: none !important;
+}
+
+/* A full-screen editor covers the sticky context bar (z-index 30) and the menu; yasqe.min.css uses 9. */
+body.workbench-body .yasqe .CodeMirror-fullscreen {
+	z-index: 1000;
+}
+
+body.workbench-body .query-page .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
+body.workbench-body #update-editor .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
+body.workbench-body .saved-query-row .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn {
+	display: inline-flex !important;
+}
+
+body.workbench-body .query-page .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_fullscreenBtn,
+body.workbench-body #update-editor .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_fullscreenBtn,
+body.workbench-body .saved-query-row .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_fullscreenBtn {
+	display: none !important;
+}
+
+body.workbench-body .add-source-fields,
+body.workbench-body .add-source-fields > .workbench-field,
+body.workbench-body .add-source-panel,
+body.workbench-body .add-source-panel > input,
+body.workbench-body .add-source-panel > textarea {
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .add-source-panel[hidden] {
+	display: none !important;
+}
+
+/* Add RDF drop zone (M5.5, mockup 10): the file input is visually hidden inside it. */
+body.workbench-body .add-drop-zone {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: 100%;
+	min-height: 88px;
+	padding: 16px;
+	border: 1px dashed var(--workbench-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	text-align: center;
+	cursor: pointer;
+}
+
+body.workbench-body .add-drop-zone.add-drop-zone--active {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-selected);
+}
+
+body.workbench-body .add-drop-zone:has(input:focus-visible) {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+body.workbench-body .add-drop-zone__prompt {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+body.workbench-body .add-drop-zone label.add-drop-zone__choose {
+	display: inline;
+	margin: 0;
+	color: var(--workbench-primary);
+	font-size: inherit;
+	font-weight: inherit;
+	cursor: pointer;
+}
+
+body.workbench-body .add-drop-zone label.add-drop-zone__choose:hover {
+	text-decoration: underline;
+}
+
+body.workbench-body .add-drop-zone__formats {
+	color: var(--workbench-muted);
+	font-size: 12px;
+}
+
+body.workbench-body .add-drop-zone__file {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .add-drop-zone__file:empty {
+	display: none;
+}
+
+body.workbench-body .add-source-fields + .add-target-fields {
+	margin-top: var(--workbench-form-gap);
+}
+
+body.workbench-body #export-results > h2 {
+	margin: 0 0 12px;
+}
+
+body.workbench-body .workbench-action,
+body.query-result-embedded-body .workbench-action {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font-family: var(--workbench-font);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	line-height: 1.2;
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-action--primary,
+body.query-result-embedded-body .workbench-action--primary {
+	border-color: var(--workbench-teal);
+	background: var(--workbench-teal);
+	color: var(--workbench-primary-text);
+}
+
+body.workbench-body .workbench-action--danger-outline,
+body.query-result-embedded-body .workbench-action--danger-outline {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-surface);
+	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-action--danger,
+body.query-result-embedded-body .workbench-action--danger {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger);
+	color: var(--workbench-on-danger);
+}
+
+body.workbench-body .workbench-action--ghost,
+body.query-result-embedded-body .workbench-action--ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-action--secondary,
+body.query-result-embedded-body .workbench-action--secondary {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+}
+
+body.workbench-body .workbench-action:hover,
+body.query-result-embedded-body .workbench-action:hover {
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-action--primary:hover,
+body.query-result-embedded-body .workbench-action--primary:hover {
+	border-color: var(--workbench-teal-dark);
+	background: var(--workbench-teal-dark);
+	color: var(--workbench-primary-text);
+}
+
+body.workbench-body .workbench-action--secondary:hover,
+body.query-result-embedded-body .workbench-action--secondary:hover {
+	border-color: var(--workbench-teal);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-action--danger-outline:hover,
+body.query-result-embedded-body .workbench-action--danger-outline:hover {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-action--danger:hover,
+body.query-result-embedded-body .workbench-action--danger:hover {
+	border-color: var(--workbench-danger-hover);
+	background: var(--workbench-danger-hover);
+	color: var(--workbench-on-danger);
+}
+
+body.workbench-body .workbench-action--ghost:hover,
+body.query-result-embedded-body .workbench-action--ghost:hover {
+	border-color: transparent;
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+/* Button component (mockup 11). Put .workbench-action and one variant on a <button>, <a> or
+ * <input type="button|submit">: --primary (the page's main action), --secondary (other actions),
+ * --ghost (icon-only toolbar buttons and toggles inside toolbars), --danger (only the final confirm
+ * button of a confirmation dialog) or --danger-outline (page-level Delete, Remove and Clear).
+ * Icon-only buttons add --icon and must carry aria-label and title. Wrapper spans around a label hit
+ * area (span.workbench-action) use the same variant classes. */
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--workbench-control-gap);
+	height: var(--workbench-control-height);
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 0 var(--workbench-control-inset);
+	border-width: 1px;
+	border-style: solid;
+	border-radius: var(--workbench-control-radius);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--primary {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-primary);
+	color: var(--workbench-primary-text);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--primary:hover:not(:disabled) {
+	border-color: var(--workbench-primary-hover);
+	background: var(--workbench-primary-hover);
+	color: var(--workbench-primary-text);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary:hover:not(:disabled),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary[aria-expanded="true"],
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--secondary[aria-pressed="true"] {
+	border-color: var(--workbench-primary);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost {
+	border-color: transparent;
+	background: transparent;
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost:hover:not(:disabled),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--ghost[aria-expanded="true"] {
+	border-color: transparent;
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger);
+	color: var(--workbench-on-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger:hover:not(:disabled) {
+	border-color: var(--workbench-danger-hover);
+	background: var(--workbench-danger-hover);
+	color: var(--workbench-on-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger-outline {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-surface);
+	color: var(--workbench-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--danger-outline:hover:not(:disabled) {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+	color: var(--workbench-danger);
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action[hidden] {
+	display: none;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--icon {
+	width: var(--workbench-control-height);
+	padding: 0;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"], input[type="submit"]).workbench-action:disabled {
+	opacity: .55;
+	cursor: not-allowed;
+}
+
+/* Same breakpoint as the touch-height inputs and selects (max-width: 900px), so a button and the
+ * fields in its row keep one height. */
+@media (pointer: coarse), (max-width: 900px) {
+	:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action {
+		height: var(--workbench-touch-height);
+		min-height: var(--workbench-touch-height);
+	}
+
+	:is(body.workbench-body, body.query-result-embedded-body) :is(button, a, input[type="button"], input[type="submit"]).workbench-action--icon {
+		width: var(--workbench-touch-height);
+	}
+}
+
+body.workbench-body .workbench-action:focus-within,
+body.query-result-embedded-body .workbench-action:focus-within {
+	outline: 2px solid var(--workbench-teal);
+	outline-offset: 2px;
+}
+
+body.workbench-body .workbench-action-icon,
+body.query-result-embedded-body .workbench-action-icon {
+	flex: 0 0 16px;
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+}
+
+body.workbench-body button[data-workbench-icon]:not([hidden]),
+body.query-result-embedded-body button[data-workbench-icon]:not([hidden]) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--workbench-control-gap);
+}
+
+body.workbench-body .workbench-disclosure-chevron,
+body.query-result-embedded-body .workbench-disclosure-chevron {
+	transform: rotate(0deg);
+	transform-origin: center;
+	transition: transform var(--workbench-motion-disclosure) var(--workbench-motion-ease);
+}
+
+body.workbench-body button[aria-expanded="true"] > .workbench-disclosure-chevron,
+body.query-result-embedded-body button[aria-expanded="true"] > .workbench-disclosure-chevron,
+body.workbench-body details:not([data-workbench-motion-ready])[open] > summary > .workbench-disclosure-chevron,
+body.workbench-body details[data-workbench-motion-ready] > summary[aria-expanded="true"] > .workbench-disclosure-chevron {
+	transform: rotate(180deg);
+}
+
+body.workbench-body button > .workbench-disclosure-chevron,
+body.query-result-embedded-body button > .workbench-disclosure-chevron,
+body.workbench-body summary > .workbench-disclosure-chevron {
+	margin-inline-start: auto;
+}
+
+body.workbench-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
+body.workbench-body .workbench-disclosure__toggle,
+body.workbench-body .query-compare-toolbar button:not(:disabled),
+body.workbench-body .workbench-page-surface details.workbench-options > summary,
+body.workbench-body .workbench-page-surface details.workbench-save > summary,
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary,
+body.query-result-embedded-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
+body.query-result-embedded-body .workbench-disclosure__toggle {
+	transition: color var(--workbench-motion-press) var(--workbench-motion-ease),
+		background-color var(--workbench-motion-press) var(--workbench-motion-ease),
+		border-color var(--workbench-motion-press) var(--workbench-motion-ease),
+		box-shadow var(--workbench-motion-press) var(--workbench-motion-ease);
+}
+
+body.workbench-body .workbench-action:has(
+		> :is(.workbench-action-label, .workbench-action-hit-area) > :is(button[hidden], input[hidden])),
+body.query-result-embedded-body .workbench-action:has(
+		> :is(.workbench-action-label, .workbench-action-hit-area) > :is(button[hidden], input[hidden])) {
+	display: none !important;
+}
+
+body.workbench-body .workbench-action:not(:has(:disabled)),
+body.query-result-embedded-body .workbench-action:not(:has(:disabled)),
+body.workbench-body .query-page .query-actions-toolbar__primary > :is(button, input[type="button"], input[type="submit"]):not(:disabled) {
+	transition: box-shadow var(--workbench-motion-press) var(--workbench-motion-ease);
+}
+
+body.workbench-body .workbench-action:has(input:active):not(:has(input:disabled)),
+body.workbench-body .workbench-action:has(button:active:not(:disabled)),
+body.query-result-embedded-body .workbench-action:has(input:active):not(:has(input:disabled)),
+body.query-result-embedded-body .workbench-action:has(button:active:not(:disabled)),
+body.workbench-body .query-page .query-actions-toolbar__primary > :is(button, input[type="button"], input[type="submit"]):active:not(:disabled) {
+	box-shadow: inset 0 0 0 1px currentColor;
+}
+
+body.workbench-body .workbench-disclosure__toggle:active,
+body.workbench-body .query-compare-toolbar button:active:not(:disabled),
+body.workbench-body .workbench-page-surface details.workbench-options > summary:active,
+body.workbench-body .workbench-page-surface details.workbench-save > summary:active,
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary:active,
+body.query-result-embedded-body .workbench-disclosure__toggle:active {
+	background-color: var(--workbench-selected);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-disclosure-chevron,
+	body.query-result-embedded-body .workbench-disclosure-chevron {
+		transition: none;
+	}
+	body.workbench-body .workbench-action button,
+	body.workbench-body .workbench-action,
+	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button,
+	input[type="button"],
+	input[type="submit"]),
+	body.workbench-body .workbench-disclosure__toggle,
+	body.workbench-body .query-compare-toolbar button,
+	body.workbench-body .workbench-page-surface details.workbench-options > summary,
+	body.workbench-body .workbench-page-surface details.workbench-save > summary,
+	body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary,
+	body.query-result-embedded-body .workbench-action button,
+	body.query-result-embedded-body .workbench-action,
+	body.query-result-embedded-body .workbench-disclosure__toggle {
+		transition: none;
+	}
+}
+
+body.workbench-body .workbench-action-hit-area,
+body.query-result-embedded-body .workbench-action-hit-area {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	min-height: calc(var(--workbench-control-height) - 2px);
+	padding: 0 var(--workbench-control-inset);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	color: inherit;
+	cursor: pointer;
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-action-label,
+body.query-result-embedded-body .workbench-action-label {
+	display: inline-flex;
+	align-items: center;
+}
+
+body.workbench-body .workbench-action--disabled,
+body.query-result-embedded-body .workbench-action--disabled {
+	opacity: .55;
+}
+
+body.workbench-body input:disabled,
+body.workbench-body button:disabled,
+body.query-result-embedded-body input:disabled,
+body.query-result-embedded-body button:disabled {
+	opacity: .55;
+	cursor: not-allowed;
+}
+
+body.workbench-body .workbench-action:has(input:disabled) .workbench-action-icon,
+body.query-result-embedded-body .workbench-action:has(input:disabled) .workbench-action-icon {
+	opacity: .55;
+}
+
+body.workbench-body .workbench-action-hit-area:focus-visible,
+body.query-result-embedded-body .workbench-action-hit-area:focus-visible {
+	outline: 0;
+}
+
+body.workbench-body .workbench-page-meta {
+	box-sizing: border-box;
+	max-width: 100%;
+	margin: -8px 0 16px;
+	color: var(--workbench-muted);
+	font-size: 14px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body #explore-resource-value {
+	display: block;
+	color: var(--workbench-ink);
+	font-weight: 600;
+}
+
+body.workbench-body #explore-result-count {
+	display: block;
+	margin-top: 2px;
+}
+
+/* Relation topics are layout groups, not intrinsic-width table columns. */
+body.workbench-body .workbench-explore-groups {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--workbench-space-subgroup);
+	min-width: 0;
+	max-width: 100%;
+	margin-bottom: var(--workbench-space-section);
+}
+
+body.workbench-body .workbench-explore-groups > div {
+	display: grid;
+	align-content: start;
+	gap: var(--workbench-space-section);
+	min-width: 0;
+}
+
+body.workbench-body .workbench-explore-groups > div:only-child {
+	grid-column: 1 / -1;
+}
+
+body.workbench-body .workbench-explore-groups section {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-explore-groups h3 {
+	margin: 0 0 var(--workbench-control-gap);
+	white-space: normal;
+}
+
+body.workbench-body .workbench-explore-groups ul {
+	margin: 0;
+	padding-inline-start: var(--workbench-space-section);
+}
+
+@media (max-width: 900px) {
+	body.workbench-body .workbench-explore-groups {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--workbench-space-section);
+	}
+}
+
+body.workbench-body .workbench-page-surface table.data,
+body.workbench-body .workbench-page-surface table.dataentry {
+	font-family: var(--workbench-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body #content.workbench-main .workbench-page-surface table.data th,
+body.workbench-body #content.workbench-main .workbench-page-surface table.data td,
+body.workbench-body #content.workbench-main .workbench-page-surface table.dataentry th,
+body.workbench-body #content.workbench-main .workbench-page-surface table.dataentry td {
+	font-size: var(--workbench-control-font-size);
+	line-height: 1.5;
+}
+
+body.workbench-body .workbench-status-icon {
+	display: inline-block;
+	width: 18px;
+	height: 18px;
+	vertical-align: middle;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+}
+
+body.workbench-body .workbench-status-icon--readable,
+body.workbench-body .workbench-status-icon--writeable {
+	color: var(--workbench-teal);
+}
+
+body.workbench-body .workbench-status-icon--positive {
+	color: var(--workbench-success);
+}
+
+body.workbench-body .workbench-status-icon--negative {
+	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-responsive-records {
+	min-width: 0;
+}
+
+/* Windowed route lists reuse their row elements for other rows as the window moves, so no row may be the
+ * browser's scroll anchor: anchoring would hold a reused row in place and push the page toward the end. */
+body.workbench-body :is(table[data-workbench-row-table="true"], [data-workbench-row-list="true"]) {
+	overflow-anchor: none;
+}
+
+/* Empty states sit directly in their card: no inset box (M1.5, mockup 02). */
+body.workbench-body .workbench-empty {
+	margin: 0;
+	padding: 24px 16px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--workbench-muted);
+	font-size: 14px;
+	text-align: center;
+}
+
+body.workbench-body .workbench-page-surface .workbench-empty-table-message {
+	padding: 16px;
+	border: 0;
+	border-radius: 0;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	text-align: center;
+}
+
+body.workbench-body .workbench-responsive-records table.data td[data-label]::before {
+	display: none;
+}
+
+@media (max-width: 600px) {
+	body.workbench-body #workbench-page-surface > form,
+	body.workbench-body #workbench-page-surface > .workbench-island,
+	body.workbench-body #workbench-page-surface > #saved-queries {
+	width: 100%;
+	margin-bottom: 16px;
+	padding: 16px;
+	}
+
+	body.workbench-body #workbench-page-surface > form:not(:has(#update-editor)) {
+		width: 100%;
+	}
+
+	body.workbench-body form[action="create"] table.dataentry,
+	body.workbench-body form[action="create"] table.dataentry tbody {
+	max-width: 100%;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data {
+	width: 100%;
+	border: 0;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data thead {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data tbody,
+	body.workbench-body .workbench-responsive-records table.data tr,
+	body.workbench-body .workbench-responsive-records table.data td {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data tr {
+	margin: 0 0 12px;
+	padding: 10px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td {
+		display: grid;
+		grid-template-columns: minmax(6rem, 35%) minmax(0, 1fr);
+	gap: 8px;
+	padding: 7px 0;
+	border: 0;
+		font-size: var(--workbench-body-font-size);
+		line-height: 1.5;
+		overflow-wrap: anywhere;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td.workbench-empty-table-message {
+		display: block;
+		text-align: center;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td.workbench-empty-table-message::before {
+		display: none;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td::before {
+	display: block;
+	content: attr(data-label);
+	color: var(--workbench-muted);
+		font-size: var(--workbench-label-font-size);
+		font-weight: 600;
+		line-height: 1.5;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td > *,
+	body.workbench-body .workbench-responsive-records table.data td > .resource {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	}
+}
+
+html {
+	color-scheme: light;
+	background-color: var(--workbench-canvas);
+	background-image: none;
+}
+
+html:has(body.query-result-embedded-body) {
+	background: var(--workbench-surface);
+}
+
+#workbench-app {
+	display: contents;
+}
+
+/* Base layer that replaces the retired pre-redesign stylesheet (styles/default/screen.css).
+ * Keep it to component rules; element-wide resets belong to the components that need them. */
+html {
+	scrollbar-gutter: stable;
+}
+
+/* Keep scrolled-to and focused controls out from under the sticky context bar. */
+html:has(body.workbench-body) {
+	scroll-padding-top: var(--workbench-contextbar-height);
+}
+
+body.workbench-body table.dataentry {
+	border-collapse: collapse;
+}
+
+body.workbench-body table.dataentry th {
+	text-align: left;
+	vertical-align: top;
+}
+
+body.workbench-body #logo.workbench-brand img {
+	vertical-align: middle;
+}
+
+body.workbench-body {
+	display: grid;
+	grid-template-columns: calc(var(--workbench-sidebar-width) + var(--workbench-desktop-gutter)) minmax(0, 1fr);
+	grid-template-areas:
+		"header header"
+		"nav main"
+		". footer";
+	column-gap: var(--workbench-desktop-gutter);
+	margin: 0;
+	min-width: 0;
+	background: var(--workbench-canvas);
+	background-image: none;
+	color: var(--workbench-ink);
+	font-family: var(--workbench-font);
+	font-size: var(--workbench-body-font-size);
+	line-height: 1.5;
+	overflow-x: visible;
+}
+
+body.workbench-body:has(#navigation > ul.maingroup:empty) .workbench-navigation-disclosure {
+	display: none;
+}
+
+@media (min-width: 901px) {
+	body.workbench-body:has(#navigation > ul.maingroup:empty) {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas:
+			"header"
+			"main"
+			"footer";
+		column-gap: 0;
+	}
+
+	body.workbench-body:has(#navigation > ul.maingroup:empty) #content.workbench-main {
+		margin-left: var(--workbench-desktop-gutter);
+	}
+}
+
+body.workbench-body a:link,
+body.workbench-body a:visited,
+body.workbench-body a:active {
+	color: var(--workbench-teal);
+	text-decoration: none;
+}
+
+body.workbench-body a:hover {
+	color: var(--workbench-teal-dark);
+	text-decoration: underline;
+}
+
+body.workbench-body a:focus-visible,
+body.workbench-body button:focus-visible,
+body.workbench-body input:focus-visible,
+body.workbench-body select:focus-visible,
+body.workbench-body textarea:focus-visible,
+body.workbench-body summary:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+/* Context bar (M2.3, mockups 01 and 04): one 56px sticky row with the brand and the server,
+ * repository and user switchers; each switcher opens an anchored popover. */
+body.workbench-body #workbench-contextbar.workbench-contextbar {
+	grid-area: header;
+	position: sticky;
+	top: 0;
+	z-index: 30;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	height: var(--workbench-contextbar-height);
+	margin: 0 0 24px;
+	padding: 0 24px;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+	background: var(--workbench-surface);
+}
+
+body.workbench-body .workbench-contextbar .workbench-brand,
+body.workbench-body .workbench-contextbar .workbench-brand:link,
+body.workbench-body .workbench-contextbar .workbench-brand:visited {
+	gap: 8px;
+	margin-right: 16px;
+	color: inherit;
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-contextbar .workbench-brand img {
+	height: 28px;
+	max-height: 28px;
+}
+
+body.workbench-body .workbench-contextbar .workbench-brand img.product {
+	height: 18px;
+	max-height: 18px;
+}
+
+body.workbench-body .workbench-switcher {
+	position: relative;
+	min-width: 0;
+}
+
+/* Only the repository switcher gives up width (its title truncates); the others keep their size. */
+body.workbench-body .workbench-switcher:not([data-workbench-switcher="repository"]) {
+	flex: 0 0 auto;
+}
+
+body.workbench-body .workbench-switcher:not([data-workbench-switcher="repository"]) .workbench-switcher__value {
+	overflow: visible;
+}
+
+body.workbench-body .workbench-switcher__button {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	max-width: 100%;
+	height: 40px;
+	margin: 0;
+	padding: 0 10px;
+	border: 1px solid transparent;
+	border-radius: var(--workbench-control-radius);
+	background: transparent;
+	color: var(--workbench-ink);
+	font: 400 var(--workbench-body-font-size)/1.2 var(--workbench-font);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-switcher__button:hover,
+body.workbench-body .workbench-switcher__button[aria-expanded="true"] {
+	border-color: var(--workbench-soft-rule);
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-switcher__button > .workbench-action-icon {
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-switcher__key {
+	color: var(--workbench-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+}
+
+body.workbench-body .workbench-switcher__value {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+	overflow: hidden;
+	font-weight: 600;
+	text-overflow: ellipsis;
+}
+
+body.workbench-body .workbench-switcher__title,
+body.workbench-body .workbench-switcher__value--empty,
+body.workbench-body .workbench-switcher__button--user .workbench-switcher__value {
+	color: var(--workbench-muted);
+	font-weight: 400;
+}
+
+body.workbench-body .workbench-switcher__chevron {
+	width: 14px;
+	height: 14px;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-contextbar__divider {
+	flex: 0 0 1px;
+	width: 1px;
+	height: 24px;
+	background: var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-contextbar__spacer {
+	flex: 1 1 auto;
+}
+
+body.workbench-body .workbench-popover {
+	position: absolute;
+	top: calc(100% + 6px);
+	left: 0;
+	z-index: 40;
+	box-sizing: border-box;
+	width: 380px;
+	max-width: calc(100vw - 24px);
+	padding: 8px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: 0 12px 32px rgba(15, 23, 42, .14);
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+}
+
+body.workbench-body .workbench-popover[hidden] {
+	display: none;
+}
+
+body.workbench-body .workbench-popover--end {
+	right: 0;
+	left: auto;
+	width: 300px;
+}
+
+body.workbench-body .workbench-popover .workbench-kv {
+	padding: 4px 8px;
+}
+
+body.workbench-body .workbench-popover .workbench-kv__row {
+	grid-template-columns: 64px minmax(0, 1fr);
+	column-gap: 12px;
+}
+
+body.workbench-body .workbench-popover__text {
+	margin: 4px 8px 8px;
+}
+
+body.workbench-body .workbench-popover__search {
+	position: relative;
+	display: flex;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+body.workbench-body .workbench-popover__search > .workbench-action-icon {
+	position: absolute;
+	left: 12px;
+	color: var(--workbench-muted);
+	pointer-events: none;
+}
+
+body.workbench-body .workbench-popover__search input {
+	box-sizing: border-box;
+	width: 100%;
+	height: var(--workbench-control-height);
+	padding: 0 12px 0 36px;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: inherit;
+}
+
+body.workbench-body .workbench-popover__list {
+	max-height: min(320px, 50vh);
+	margin: 0;
+	padding: 0;
+	overflow: auto;
+	list-style: none;
+}
+
+body.workbench-body .workbench-popover__list > li {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body .workbench-popover__list > li[hidden] {
+	display: none;
+}
+
+body.workbench-body .workbench-popover__option,
+body.workbench-body .workbench-popover__option:link,
+body.workbench-body .workbench-popover__option:visited {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 8px 10px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-popover__option:hover,
+body.workbench-body .workbench-popover__option:focus-visible,
+body.workbench-body .workbench-popover__option[aria-current="true"] {
+	background: var(--workbench-selected);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-popover__option-id {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-popover__option-title {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-popover__status {
+	margin: 0;
+	padding: 0 10px;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-popover__status:empty {
+	display: none;
+}
+
+body.workbench-body .workbench-popover__footer {
+	display: flex;
+	flex-direction: column;
+	margin-top: 4px;
+	padding-top: 4px;
+	border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-popover__footer a,
+body.workbench-body .workbench-popover__footer a:link,
+body.workbench-body .workbench-popover__footer a:visited {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-popover__footer a:hover {
+	background: var(--workbench-inset);
+	text-decoration: none;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body #workbench-contextbar.workbench-contextbar {
+		gap: 8px;
+		margin-bottom: 0;
+		padding: 0 12px;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-brand img.product,
+	html[data-theme="dark"] body.workbench-body .workbench-contextbar .workbench-brand img.product,
+	body.workbench-body .workbench-switcher__key,
+	body.workbench-body .workbench-switcher__title {
+		display: none;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-brand {
+		margin-right: 4px;
+	}
+}
+
+@media (max-width: 600px) {
+	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
+	body.workbench-body .workbench-contextbar__divider,
+	body.workbench-body .workbench-switcher__button--user .workbench-switcher__value {
+		display: none;
+	}
+}
+
+body.workbench-body .workbench-brand {
+	float: none;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex: 0 0 auto;
+	min-width: 0;
+}
+
+body.workbench-body .workbench-brand img {
+	max-height: 40px;
+	width: auto;
+}
+
+body.workbench-body .workbench-brand img.product {
+	margin-left: 0;
+	max-width: 180px;
+}
+
+body.workbench-body .workbench-theme-control {
+	order: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	flex: 0 0 auto;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-theme-control select {
+	box-sizing: border-box;
+	width: auto;
+	min-width: 7rem;
+	max-width: 100%;
+	height: var(--workbench-control-height);
+	min-height: var(--workbench-control-height);
+	padding: 0 10px;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: 400 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.workbench-body .workbench-navigation-disclosure {
+	grid-area: nav;
+	align-self: start;
+	position: static;
+	box-sizing: border-box;
+	width: var(--workbench-sidebar-width);
+	/* No top margin: the menu rests where it sticks (top below), so it does not move when the page scrolls (M13.1). */
+	margin: 0 0 0 var(--workbench-desktop-gutter);
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+}
+
+body.workbench-body #navigation.workbench-nav {
+	position: static;
+	box-sizing: border-box;
+	display: block;
+	width: auto;
+	margin: 0;
+	padding: 12px 8px;
+	border: 0;
+	background: transparent;
+	font-family: inherit;
+	font-size: 13px;
+	font-weight: 400;
+}
+
+body.workbench-body #navigation.workbench-nav ul,
+body.workbench-body #navigation.workbench-nav ul.group {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	list-style: none;
+}
+
+body.workbench-body #navigation.workbench-nav > ul > li {
+	margin: 0 0 8px;
+	padding: 0;
+	background: transparent;
+}
+
+body.workbench-body #navigation.workbench-nav > ul > li:last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body #navigation.workbench-nav ul.group {
+	margin: 2px 0 0;
+	padding: 0;
+	border: 0;
+	font-size: 13px;
+}
+
+/* Menu groups (M2.4): an uppercase 11px label that is not interactive, followed by its items. */
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__label {
+	display: block;
+	padding: 12px 8px 4px;
+	color: var(--workbench-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	line-height: 1.3;
+	text-transform: uppercase;
+}
+
+body.workbench-body #navigation.workbench-nav > ul > li:first-child > .workbench-nav-group__label {
+	padding-top: 4px;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .workbench-nav-group__label {
+	padding: 0;
+}
+
+@media (min-width: 901px) {
+	/* The menu stays in view while long pages scroll. */
+	body.workbench-body .workbench-navigation-disclosure {
+		position: sticky;
+		top: calc(var(--workbench-contextbar-height) + 24px);
+		max-height: calc(100vh - var(--workbench-contextbar-height) - 48px);
+		overflow: auto;
+	}
+}
+
+body.workbench-body #navigation.workbench-nav ul.group li {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__disclosure {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body #navigation.workbench-nav a,
+body.workbench-body #navigation.workbench-nav span.disabled,
+body.workbench-body #navigation.workbench-nav .query-nav-group-label {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 32px;
+	padding: 6px 8px;
+	border-radius: 7px;
+	color: var(--workbench-nav);
+	line-height: 1.25;
+}
+
+/* A query running out of sight, or its results ready (M13.5): a small ring at the end of the Query item. */
+body.workbench-body .workbench-nav-activity {
+	box-sizing: border-box;
+	flex: none;
+	width: 10px;
+	height: 10px;
+	margin-left: auto;
+	border: 2px solid var(--workbench-primary);
+	border-radius: 50%;
+}
+
+body.workbench-body .workbench-nav-activity[data-activity="running"] {
+	border-right-color: transparent;
+	animation: workbench-nav-activity-spin .9s linear infinite;
+}
+
+body.workbench-body .workbench-nav-activity[data-activity="ready"] {
+	background: var(--workbench-primary);
+}
+
+@keyframes workbench-nav-activity-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-nav-activity[data-activity="running"] {
+		animation: none;
+	}
+}
+
+body.workbench-body #navigation.workbench-nav a:hover {
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body #navigation.workbench-nav li.current > a,
+body.workbench-body #navigation.workbench-nav li.current > span {
+	border-left: 3px solid var(--workbench-nav);
+	padding-left: 5px;
+	background: var(--workbench-soft-rule);
+	color: var(--workbench-ink);
+	font-weight: 600;
+}
+
+body.workbench-body #navigation.workbench-nav .query-nav-group-label {
+	padding-top: 8px;
+	padding-bottom: 4px;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary {
+	min-height: 32px;
+	list-style: none;
+	cursor: pointer;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary::-webkit-details-marker {
+	display: none;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary::marker {
+	content: "";
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group__chevron {
+	margin-inline-start: auto;
+}
+
+body.workbench-body #navigation.workbench-nav .workbench-nav-group--single > a,
+body.workbench-body #navigation.workbench-nav .workbench-nav-group--single > span.disabled {
+	margin: 0;
+}
+
+body.workbench-body #navigation.workbench-nav .disabled {
+	color: var(--workbench-muted);
+	opacity: .62;
+}
+
+body.workbench-body .query-nav-icon,
+body.workbench-body .workbench-menu-icon,
+body.workbench-body .workbench-menu-chevron,
+body.workbench-body .workbench-nav-group__chevron {
+	box-sizing: border-box;
+	flex: 0 0 auto;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+}
+
+body.workbench-body #content.workbench-main {
+	grid-area: main;
+	box-sizing: border-box;
+	position: relative;
+	top: 0;
+	width: auto;
+	min-height: 0;
+	margin: 24px 24px 0 0;
+	padding: 0 0 24px;
+	font-size: 14px;
+}
+
+body.workbench-body #content.workbench-main > h1,
+body.workbench-body #title_heading {
+	margin: 0 0 16px;
+	padding: 0;
+	border: 0;
+	color: var(--workbench-ink);
+	font-family: inherit;
+	font-size: 24px;
+	font-weight: 600;
+	line-height: 1.25;
+	white-space: normal;
+}
+
+body.workbench-body #noscript-message {
+	margin-bottom: 16px;
+}
+
+body.workbench-body .workbench-page-surface {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 180px;
+	padding: 24px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+}
+
+body.workbench-body .workbench-page-surface > form:first-child,
+body.workbench-body .workbench-page-surface > .query-shell {
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-page-surface h2,
+body.workbench-body .workbench-page-surface h3 {
+	margin: 0 0 12px;
+	color: var(--workbench-ink);
+	font-family: inherit;
+}
+
+/* Heading scale (mockup 11): page title 24px/600, section title (h2 in a card) 18px/600,
+ * card sub-section (h3) 14px/600, field label 12px/600, helper text 12px muted, body 14px/1.5. */
+body.workbench-body .workbench-page-surface h2 {
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+body.workbench-body .workbench-page-surface h3 {
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+/* A callout keeps its own padding when it opens a card (M13.6): it is a bordered box, not a heading. */
+body.workbench-body .workbench-page-surface .workbench-island > :first-child:not(.workbench-callout),
+body.workbench-body .workbench-page-surface .workbench-island > section:first-child > :first-child:not(.workbench-callout) {
+	margin-top: 0;
+	padding-top: 0;
+}
+
+body.workbench-body .workbench-page-surface .workbench-island > .workbench-callout:first-child {
+	margin-top: 0;
+}
+
+/* Callouts (mockup 11): icon, optional bold title and body; info, warning and error variants. */
+body.workbench-body .workbench-callout,
+body.query-result-embedded-body .workbench-callout {
+	box-sizing: border-box;
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	max-width: 100%;
+	margin: 0 0 var(--workbench-space-subgroup);
+	padding: 12px 14px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+	font-weight: 400;
+	line-height: 1.5;
+}
+
+body.workbench-body .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout__icon {
+	flex: 0 0 18px;
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-callout__body,
+body.query-result-embedded-body .workbench-callout__body {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-callout__title,
+body.query-result-embedded-body .workbench-callout__title {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-callout--warning,
+body.query-result-embedded-body .workbench-callout--warning {
+	border-color: var(--workbench-warning-rule);
+	background: var(--workbench-warning-surface);
+}
+
+body.workbench-body .workbench-callout--warning .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout--warning .workbench-callout__icon {
+	color: var(--workbench-warning);
+}
+
+body.workbench-body .workbench-callout--error,
+body.query-result-embedded-body .workbench-callout--error {
+	border-color: var(--workbench-danger);
+	background: var(--workbench-danger-surface);
+}
+
+body.workbench-body .workbench-callout--error .workbench-callout__icon,
+body.workbench-body .workbench-callout--error .workbench-callout__title,
+body.query-result-embedded-body .workbench-callout--error .workbench-callout__icon,
+body.query-result-embedded-body .workbench-callout--error .workbench-callout__title {
+	color: var(--workbench-danger);
+}
+
+/* Menu button and menu sheet (M2.8, mockup 14): below 900px the sidebar gives way to a full-height
+ * modal sheet opened from the context bar. */
+body.workbench-body #workbench-contextbar .workbench-menu-button {
+	display: none;
+	flex: 0 0 auto;
+	width: var(--workbench-touch-height);
+	height: var(--workbench-touch-height);
+	min-height: var(--workbench-touch-height);
+}
+
+body.workbench-body .workbench-menu-sheet {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	height: 100%;
+	max-height: 100%;
+	margin: 0;
+	padding: 0 16px 24px;
+	border: 0;
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	overflow: auto;
+}
+
+body.workbench-body .workbench-menu-sheet::backdrop {
+	background: rgba(8, 14, 17, .4);
+}
+
+body.workbench-body .workbench-menu-sheet__header {
+	position: sticky;
+	top: 0;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 52px;
+	margin: 0 -16px;
+	padding: 0 12px 0 16px;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+	background: var(--workbench-surface);
+}
+
+body.workbench-body .workbench-menu-sheet__brand img {
+	height: 26px;
+}
+
+body.workbench-body .workbench-menu-sheet__repository {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-menu-sheet__context {
+	margin: 12px 0 0;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-menu-sheet__nav {
+	padding: 0;
+}
+
+body.workbench-body .workbench-menu-sheet__nav ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .workbench-menu-sheet__nav li {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body .workbench-menu-sheet__nav .workbench-nav-group__label {
+	display: block;
+	padding: 16px 8px 4px;
+	color: var(--workbench-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+}
+
+body.workbench-body .workbench-menu-sheet__nav a,
+body.workbench-body .workbench-menu-sheet__nav span.disabled {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: var(--workbench-touch-height);
+	padding: 0 12px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-menu-sheet__nav li.current > a {
+	border-left: 3px solid var(--workbench-primary);
+	padding-left: 9px;
+	background: var(--workbench-selected);
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-menu-sheet__nav span.disabled {
+	color: var(--workbench-muted);
+	opacity: .62;
+}
+
+@media (max-width: 900px) {
+	/* Through the token, so whatever sticks under the context bar (the pinned result header) follows it. */
+	:root {
+		--workbench-contextbar-height: 52px;
+	}
+
+	body.workbench-body #workbench-contextbar .workbench-menu-button {
+		display: inline-flex;
+	}
+
+	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
+	body.workbench-body .workbench-switcher[data-workbench-switcher="user"],
+	body.workbench-body .workbench-contextbar__divider {
+		display: none;
+	}
+
+	body.workbench-body:not(.query-compare-mode) .workbench-navigation-disclosure {
+		display: none;
+	}
+}
+
+/* In-shell "Repository not found" page (M2.7, mockup 13). */
+body.workbench-body #workbench-page-surface > .workbench-not-found {
+	max-width: 640px;
+	margin: 24px auto 0;
+	padding: 40px 32px;
+	text-align: center;
+}
+
+body.workbench-body .workbench-not-found .workbench-not-found__icon {
+	width: 20px;
+	height: 20px;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-not-found h2 {
+	margin: 12px 0 8px;
+	font-size: 20px;
+}
+
+body.workbench-body .workbench-not-found p {
+	margin: 0 auto 20px;
+	max-width: 52ch;
+	color: var(--workbench-body);
+}
+
+body.workbench-body .workbench-not-found code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-not-found__actions {
+	justify-content: center;
+}
+
+/* Key/value list (mockup 11): label column and value column with a soft rule between rows;
+ * the label stacks above the value below 600px. */
+body.workbench-body dl.workbench-kv {
+	margin: 0;
+	padding: 0;
+}
+
+body.workbench-body .workbench-kv__row {
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	column-gap: 16px;
+	padding: 9px 0;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-kv__row:last-child {
+	border-bottom: 0;
+}
+
+body.workbench-body .workbench-kv__row > dt {
+	margin: 0;
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	line-height: 1.5;
+}
+
+body.workbench-body .workbench-kv__row > dd {
+	min-width: 0;
+	margin: 0;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-body-font-size);
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-kv__row > dd.workbench-kv__code,
+body.workbench-body .workbench-kv__row > dd code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+@media (max-width: 600px) {
+	body.workbench-body .workbench-kv__row {
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 2px;
+	}
+}
+
+body.workbench-body .workbench-page-surface p {
+	margin: 0 0 12px;
+}
+
+body.workbench-body .workbench-page-surface > .workbench-island {
+	box-sizing: border-box;
+	margin: 0 0 20px;
+	padding: 20px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+}
+
+body.workbench-body .workbench-page-surface > .workbench-island:last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body #workbench-information > section {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+body.workbench-body #workbench-information > section + section {
+	margin-top: 18px;
+	padding-top: 18px;
+	border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body #workbench-information > section > h2 {
+	margin: 0 0 4px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-page-surface:has(.workbench-summary) {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+/* One form layout (M1.6): every field is a .workbench-field (label, control, helper; 4px apart),
+ * fields are 12px apart in a .workbench-field-stack, short paired fields share a two-column
+ * .workbench-field-grid (also spelled .workbench-form-grid), and every text control in a form card
+ * spans the card's content box. */
+body.workbench-body .workbench-field-stack {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--workbench-form-gap);
+}
+
+body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
+	width: 100%;
+	max-width: 100%;
+}
+
+/* Option panels (disclosure fields) keep controls sized to their role, such as a short limit select. */
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > :is(input:not([type]), input[type="text"], input[type="url"], input[type="number"], input[type="password"], textarea, select) {
+	box-sizing: border-box;
+	align-self: stretch;
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > .workbench-select-control {
+	display: block;
+	align-self: stretch;
+	width: 100%;
+}
+
+body.workbench-body .workbench-form-card .workbench-field:not(.workbench-disclosure__field) > .workbench-select-control > select {
+	width: 100%;
+}
+
+/* Long example IRIs and literals wrap inside the card instead of widening it. */
+body.workbench-body .workbench-form-card :is(tt, code) {
+	overflow-wrap: anywhere;
+}
+
+/* Export (user-requested redesign): the download card and the preview card. Stacked, both take the full width and
+ * the download fields sit side by side; on wide screens the download card is a column beside the preview. */
+body.workbench-body #workbench-page-surface > #export-form.workbench-form-card {
+	max-width: none;
+}
+
+body.workbench-body #export-form .export-download__fields {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	align-items: start;
+	gap: var(--workbench-form-gap) 24px;
+	width: 100%;
+	max-width: 100%;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body #export-form .export-download__fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+body.workbench-body .export-card__header {
+	margin: 0 0 var(--workbench-space-subgroup);
+}
+
+body.workbench-body .export-card__header > h2 {
+	margin: 0 0 4px;
+}
+
+body.workbench-body .export-card__header > .workbench-page-meta {
+	margin: 0;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-page-surface fieldset.workbench-segmented.export-compression {
+	margin: 0;
+}
+
+body.workbench-body .workbench-segmented__help {
+	grid-column: 1 / -1;
+	margin: 4px 0 0;
+}
+
+body.workbench-body .workbench-field__help.workbench-field__help--warning {
+	color: var(--workbench-warning);
+	font-weight: 500;
+}
+
+body.workbench-body .workbench-field__help-icon {
+	width: 14px;
+	height: 14px;
+	margin-right: 4px;
+	vertical-align: -2px;
+}
+
+body.workbench-body .export-file-name {
+	padding: 0;
+	background: none;
+	color: inherit;
+	font-family: var(--workbench-code-font);
+	font-size: inherit;
+}
+
+body.workbench-body .export-preview__controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	margin: 0 0 var(--workbench-control-gap);
+}
+
+body.workbench-body .export-preview__controls > label {
+	margin: 0;
+	font-weight: 600;
+}
+
+body.workbench-body #result-limited[hidden] {
+	display: none;
+}
+
+@media (min-width: 1200px) {
+	body.workbench-body .workbench-page-surface:has(> #export-form) {
+		display: grid;
+		grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+		align-items: start;
+		gap: 20px;
+	}
+
+	body.workbench-body .workbench-page-surface:has(> #export-form) > .workbench-island {
+		min-width: 0;
+		margin: 0;
+	}
+
+	/* The download card stays in view beside a long preview. */
+	body.workbench-body .workbench-page-surface:has(> #export-form) > #export-form {
+		position: sticky;
+		top: calc(var(--workbench-contextbar-height, 56px) + 16px);
+	}
+
+	body.workbench-body #export-form .export-download__fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+body.workbench-body .workbench-select-control,
+body.query-result-embedded-body .workbench-select-control {
+	position: relative;
+	display: inline-flex;
+	width: fit-content;
+	align-items: center;
+	max-width: 100%;
+	min-width: 0;
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-select-control:has(> select[hidden]),
+body.query-result-embedded-body .workbench-select-control:has(> select[hidden]) {
+	display: none !important;
+}
+
+body.workbench-body .workbench-select-control > select,
+body.query-result-embedded-body .workbench-select-control > select {
+	appearance: none;
+	box-sizing: border-box;
+	display: block;
+	width: auto;
+	min-width: 0;
+	max-width: 100%;
+	margin: 0;
+	padding: 7px 36px 7px 12px;
+	background-image: none;
+}
+
+body.workbench-body #export-form > .workbench-form-grid .workbench-field > .workbench-select-control,
+body.workbench-body .add-source-format .workbench-select-control {
+	display: block;
+	width: 100%;
+}
+
+body.workbench-body #export-form > .workbench-form-grid .workbench-field > .workbench-select-control > select,
+body.workbench-body .add-source-format .workbench-select-control > select {
+	width: 100%;
+}
+
+body.workbench-body .workbench-select-chevron,
+body.query-result-embedded-body .workbench-select-chevron {
+	position: absolute;
+	top: 50%;
+	right: 12px;
+	width: 16px;
+	height: 16px;
+	transform: translateY(-50%);
+	color: var(--workbench-nav);
+	pointer-events: none;
+}
+
+body.workbench-body .add-source-fields > .workbench-field.add-source-format {
+	min-width: 12rem;
+	max-width: 100%;
+}
+
+@media (max-width: 600px) {
+	body.workbench-body #export-form .workbench-form-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+body.workbench-body .workbench-field {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--workbench-field-gap);
+	min-width: 0;
+}
+
+body.workbench-body .workbench-field > input:where(:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="number"])),
+body.workbench-body .workbench-field > select,
+body.workbench-body .workbench-field > textarea {
+	align-self: flex-start;
+	width: auto;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-field > input[type="file"] {
+	align-self: stretch;
+}
+
+body.workbench-body .workbench-inline-controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-inline-controls > input,
+body.workbench-body .workbench-inline-controls > select {
+	flex: 0 1 auto;
+	width: auto;
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-field > label,
+body.workbench-body .workbench-field > .workbench-label {
+	display: block;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-field > .hint,
+body.workbench-body .hint {
+	color: var(--workbench-muted);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+body.workbench-body .workbench-check {
+	color: var(--workbench-nav);
+	font-weight: 400;
+}
+
+/* The labeled body owns the standard row; native check/radio glyphs remain
+ * compact and centered within it, including beside inputs and action buttons. */
+body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice),
+body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	min-height: var(--workbench-control-height);
+}
+
+body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice) > input:is([type="checkbox"], [type="radio"]),
+body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) > input:is([type="checkbox"], [type="radio"]) {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+/* The source choice is a segmented control without a fieldset box (M5.5, mockup 10); the page-surface fieldset
+ * rule would otherwise draw one. */
+body.workbench-body .workbench-page-surface fieldset:is(.workbench-source-tabs, .workbench-segmented) {
+	box-sizing: border-box;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0;
+	width: 100%;
+	margin: 0 0 var(--workbench-space-subgroup);
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label + label {
+	border-left-width: 0;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:not(:last-of-type) {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:not(:first-of-type) {
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) legend {
+	grid-column: 1 / -1;
+	margin-bottom: 4px;
+	padding: 0;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label {
+	position: relative;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--workbench-control-gap);
+	min-height: 36px;
+	min-width: 0;
+	padding: 0 10px;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font-weight: 500;
+	cursor: pointer;
+}
+
+/* Selected segment (M5.5, mockup 10): selected fill, a 3px primary underline and ink text. */
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:has(input:checked) {
+	background: var(--workbench-selected);
+	box-shadow: inset 0 -3px 0 var(--workbench-primary);
+	color: var(--workbench-ink);
+	font-weight: 600;
+}
+
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label:has(input:focus-visible) {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+/* Text that only assistive technology reads, such as the label of an icon-only button. */
+.workbench-visually-hidden,
+body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) input[type="radio"] {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-form-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap);
+	margin-top: var(--workbench-form-gap);
+}
+
+body.workbench-body #explore-pagination[hidden] {
+	display: none !important;
+}
+
+body.workbench-body .workbench-page-surface .WARN {
+	box-sizing: border-box;
+	max-width: 720px;
+	margin: 0 0 16px;
+	padding: 12px 14px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-inset);
+	color: var(--workbench-nav);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-summary > h2 {
+	margin: 0 0 8px;
+}
+
+body.workbench-body .workbench-summary > .workbench-kv + h2 {
+	margin-top: var(--workbench-space-section);
+}
+
+body.workbench-body .workbench-summary > .workbench-summary-config {
+	margin-top: var(--workbench-space-section);
+}
+
+body.workbench-body .workbench-page-surface .workbench-summary-config pre {
+	box-sizing: border-box;
+	max-width: 100%;
+	margin: 0;
+	padding: 14px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 8px;
+	background: var(--workbench-inset);
+	font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+body.workbench-body .workbench-page-surface form {
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+body.workbench-body .workbench-page-surface select,
+body.workbench-body .workbench-page-surface textarea {
+	box-sizing: border-box;
+	min-height: var(--workbench-control-height);
+	max-width: 100%;
+	margin: 0;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: 400 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.workbench-body .workbench-page-surface select:not([multiple]):not([size]),
+body.workbench-body .workbench-page-surface select:not([multiple])[size="1"],
+body.query-result-embedded-body .query-result-embedded select:not([multiple]):not([size]),
+body.query-result-embedded-body .query-result-embedded select:not([multiple])[size="1"] {
+	box-sizing: border-box;
+	height: var(--workbench-control-height);
+	min-height: var(--workbench-control-height);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+body.workbench-body .workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+body.workbench-body .workbench-page-surface select {
+	padding: 7px 10px;
+}
+
+body.workbench-body .workbench-page-surface input[type="file"] {
+	box-sizing: border-box;
+	display: block;
+	width: 100%;
+	height: var(--workbench-control-height);
+	min-height: var(--workbench-control-height);
+	max-width: 100%;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: 400 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.workbench-body .workbench-page-surface textarea {
+	padding: 8px 10px;
+}
+
+body.workbench-body .workbench-page-surface input[type="checkbox"],
+body.workbench-body .workbench-page-surface input[type="radio"] {
+	accent-color: var(--workbench-teal);
+}
+
+body.workbench-body .workbench-page-surface input[type="radio"] {
+	margin-inline: 3px;
+}
+
+body.workbench-body .workbench-page-surface input[type="number"] {
+	inline-size: 10ch;
+	max-inline-size: 100%;
+}
+
+/* Explore (M5.1, mockup 05): the resource form on one row, a resource card, and role groups. */
+body.workbench-body .explore-form #explore-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--workbench-space-subgroup) var(--workbench-control-gap);
+}
+
+body.workbench-body .explore-form #explore-controls > * {
+	margin: 0;
+}
+
+body.workbench-body .explore-form #explore-resource-field {
+	flex: 1 1 320px;
+	min-width: 0;
+}
+
+body.workbench-body .workbench-search-field {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+/* :is(form, #workbench-search-field) carries an id's specificity, so this outranks the generic text-input rule
+ * (body ... input:not(...) x5) wherever a search field sits inside a form. */
+body.workbench-body .workbench-page-surface :is(form, #workbench-search-field) .workbench-search-field > input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: none;
+	padding-left: 34px;
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body #explore-resource-value[hidden] {
+	display: none;
+}
+
+body.workbench-body .workbench-search-field__icon {
+	position: absolute;
+	left: 10px;
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: var(--workbench-muted);
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.75;
+	pointer-events: none;
+}
+
+body.workbench-body .explore-resource-card {
+	display: grid;
+	gap: 10px;
+	justify-items: start;
+}
+
+body.workbench-body .explore-resource-card > h2 {
+	margin: 0;
+}
+
+body.workbench-body .explore-resource-card__iri {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 100%;
+}
+
+body.workbench-body .explore-resource-card__iri > code {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	color: var(--workbench-body);
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body .explore-resource-card__types {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .explore-chip {
+	display: inline-block;
+	padding: 2px 10px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	font-size: 12px;
+	text-decoration: none;
+}
+
+/* p.…: outranks the page surface's paragraph margin, so Show more sits right under the text (M12.2). */
+body.workbench-body .explore-resource-card p.explore-resource-card__comment {
+	display: -webkit-box;
+	max-width: 72ch;
+	margin: 0;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	color: var(--workbench-body);
+}
+
+body.workbench-body .explore-resource-card p.explore-resource-card__comment.is-expanded {
+	display: block;
+}
+
+/* "Show more" continues the description (mockup 05): a text control at its left edge, right under it (M12.2).
+ * The shared button rules select with :is(button, input[type=…]), so these name the button to outrank them. */
+body.workbench-body .explore-resource-card button.explore-resource-card__more.workbench-action {
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--workbench-primary);
+	font-weight: 600;
+	height: auto;
+}
+
+/* The description and its Show more stay together, outside the card's 10px grid gap. */
+body.workbench-body .explore-resource-card__description {
+	display: grid;
+	gap: 4px;
+	justify-items: start;
+}
+
+body.workbench-body .explore-resource-card button.explore-resource-card__more.workbench-action:is(:hover, [aria-expanded="true"]) {
+	background: none;
+	color: var(--workbench-primary);
+	text-decoration: underline;
+}
+
+body.workbench-body .explore-group + .explore-group {
+	margin-top: var(--workbench-space-section);
+}
+
+body.workbench-body .explore-group__title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+
+/* Types and Graphs (M5.2, mockup 06): a card header with title, count and filter; counts are right-aligned. */
+body.workbench-body .workbench-browse-card__header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 0 0 16px;
+}
+
+body.workbench-body .workbench-browse-card__header > h2 {
+	margin: 0;
+}
+
+/* The count's auto margin pushes the filter or the Create action to the end of the header. */
+body.workbench-body .workbench-browse-card__count {
+	margin-right: auto;
+	min-width: 1.5em;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.5;
+	text-align: center;
+}
+
+body.workbench-body .workbench-browse-card__filter {
+	flex: 0 1 280px;
+	min-width: 0;
+	margin: 0;
+}
+
+body.workbench-body .workbench-browse-card table.data td {
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-browse-card table.data :is(th.workbench-count-column, td.workbench-count-cell) {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-count-cell[aria-busy="true"] {
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-browse-card table.data th[aria-sort="descending"]::after {
+	content: "\25BE";
+	margin-left: 4px;
+	font-size: 10px;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-row-actions {
+	width: 1%;
+	padding-top: 4px;
+	padding-bottom: 4px;
+	text-align: right;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-browse-card table.data td.workbench-row-actions > .workbench-action + .workbench-action {
+	margin-left: 4px;
+}
+
+/* Confirmation dialog (M6.2): a native modal dialog with its actions at the end. */
+body.workbench-body dialog.workbench-dialog {
+	box-sizing: border-box;
+	width: min(480px, calc(100vw - 32px));
+	padding: var(--workbench-card-inset, 24px);
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+	box-shadow: var(--workbench-shadow);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body dialog.workbench-dialog::backdrop {
+	background: color-mix(in srgb, var(--workbench-canvas) 75%, transparent);
+}
+
+body.workbench-body .workbench-dialog__title {
+	margin: 0 0 12px;
+	font-size: 18px;
+}
+
+body.workbench-body .workbench-dialog__body > :first-child {
+	margin-top: 0;
+}
+
+body.workbench-body .workbench-dialog__body > :last-child {
+	margin-bottom: 0;
+}
+
+body.workbench-body .workbench-dialog__field {
+	display: grid;
+	gap: 4px;
+	margin-top: var(--workbench-form-gap);
+}
+
+body.workbench-body .workbench-dialog__field > input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: var(--workbench-control-height);
+	padding: 0 var(--workbench-control-inset);
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-dialog__field > input[type="text"]:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 1px;
+}
+
+body.workbench-body .workbench-dialog__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	margin-top: var(--workbench-space-section);
+}
+
+/* Remove (M6.5, mockup 09): the live match count sits next to the button that names it. */
+body.workbench-body .remove-actions {
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap) 12px;
+}
+
+body.workbench-body .remove-actions__count {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+}
+
+/* A write sent in place (M14.2): a spinner while the server works, then a green tick, beside the button. */
+body.workbench-body .workbench-submit-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: var(--workbench-control-height);
+	color: var(--workbench-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+body.workbench-body .workbench-submit-status[data-state="done"] {
+	color: var(--workbench-success);
+}
+
+body.workbench-body .workbench-submit-status[data-state="failed"] {
+	color: var(--workbench-danger);
+}
+
+body.workbench-body .workbench-submit-status__spinner {
+	box-sizing: border-box;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--workbench-primary);
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: workbench-nav-activity-spin .9s linear infinite;
+}
+
+body.workbench-body .workbench-submit-status__icon {
+	flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-submit-status__spinner {
+		animation: none;
+	}
+}
+
+body.workbench-body .workbench-field__error {
+	margin: 0;
+	color: var(--workbench-danger);
+	font-size: var(--workbench-label-font-size);
+}
+
+body.workbench-body .workbench-field__error[hidden] {
+	display: none;
+}
+
+/* Repository list (M5.3, mockup 12): the whole row opens the repository; actions live in a small menu. */
+body.workbench-body .workbench-action-icon--more {
+	stroke-width: 3;
+}
+
+body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] {
+	cursor: pointer;
+}
+
+body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index]:hover > td {
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-repository-link {
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 999px;
+	color: var(--workbench-success);
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-access-none {
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-row-menu {
+	position: relative;
+	display: inline-block;
+}
+
+body.workbench-body .workbench-popover.workbench-row-menu__panel {
+	width: auto;
+	min-width: 180px;
+	padding: 4px;
+	text-align: left;
+	cursor: auto;
+}
+
+body.workbench-body .workbench-popover__menu {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+body.workbench-body .workbench-popover__menu a,
+body.workbench-body .workbench-popover__menu a:link,
+body.workbench-body .workbench-popover__menu a:visited {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-ink);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-popover__menu a:hover,
+body.workbench-body .workbench-popover__menu a:focus-visible {
+	background: var(--workbench-inset);
+	text-decoration: none;
+}
+
+body.workbench-body .workbench-popover__menu a.workbench-popover__danger {
+	color: var(--workbench-danger);
+}
+
+/* Namespaces (M6.3, mockup 07): prefixes and IRIs in monospace, row actions on hover or focus, editing in the row. */
+body.workbench-body .workbench-namespaces-table code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-code-font-size);
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-namespaces-table td:first-child {
+	width: 22%;
+}
+
+body.workbench-body .workbench-namespaces-table .workbench-namespace-edit > td {
+	background: var(--workbench-inset);
+}
+
+body.workbench-body #workbench-page-surface .workbench-namespaces-table .workbench-namespace-edit input[type="text"] {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: none;
+	font-family: var(--workbench-code-font);
+}
+
+@media (hover: hover) and (min-width: 601px) {
+	body.workbench-body .workbench-namespaces-table tbody tr:not(:hover):not(:focus-within) .workbench-row-actions > .workbench-action--ghost {
+		opacity: 0;
+	}
+}
+
+/* Record layout on phones: the filter takes the full width and the row actions sit on their own line. */
+@media (max-width: 600px) {
+	body.workbench-body .workbench-browse-card__filter {
+		flex-basis: 100%;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-count-cell {
+		text-align: left;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 4px;
+		width: 100%;
+		padding: 4px 0 0;
+	}
+
+	/* [data-label] outranks the record layout's td[data-label]::before rule, which comes later in this file. */
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions[data-label]::before {
+		display: none;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions:empty {
+		display: none;
+	}
+
+	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions > .workbench-action + .workbench-action {
+		margin-left: 0;
+	}
+}
+
+body.workbench-body .explore-group__count {
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+body.workbench-body .explore-group__graph {
+	color: var(--workbench-muted);
+	font-size: 12px;
+	font-weight: 400;
+}
+
+body.workbench-body .workbench-page-surface .rdf-language,
+body.workbench-body .workbench-page-surface .rdf-datatype {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 5px;
+	border-radius: 4px;
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	font-size: 11px;
+	line-height: 1.6;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-page-surface .rdf-datatype {
+	font-family: var(--workbench-code-font);
+}
+
+body.workbench-body.workbench-hide-datatypes .workbench-page-surface .rdf-datatype {
+	display: none;
+}
+
+/* A number input followed by its unit, such as "Timeout [60] seconds" (M3.4). */
+body.workbench-body .workbench-input-unit {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-input-unit__suffix {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-field__help {
+	margin: 0;
+	color: var(--workbench-muted);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+body.workbench-body .workbench-page-surface input[type="submit"],
+body.workbench-body .workbench-page-surface input[type="button"],
+body.workbench-body .workbench-page-surface button {
+	box-sizing: border-box;
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 7px var(--workbench-control-inset);
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background-color: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface input[type="file"]::file-selector-button {
+	box-sizing: border-box;
+	height: calc(var(--workbench-control-height) - 2px);
+	min-height: calc(var(--workbench-control-height) - 2px);
+	margin-right: var(--workbench-control-gap);
+	padding: 0 12px;
+	border: 0;
+	border-right: 1px solid var(--workbench-rule);
+	border-radius: calc(var(--workbench-control-radius) - 1px) 0 0 calc(var(--workbench-control-radius) - 1px);
+	background: var(--workbench-inset);
+	color: var(--workbench-nav);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface input[type="file"]::file-selector-button:hover {
+	border-color: var(--workbench-teal);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface input[type="submit"]:hover,
+body.workbench-body .workbench-page-surface input[type="button"]:hover,
+body.workbench-body .workbench-page-surface button:hover {
+	border-color: var(--workbench-teal);
+	background-color: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface input[data-href],
+body.workbench-body .workbench-page-surface button.secondary {
+	border-color: var(--workbench-rule);
+	background-color: var(--workbench-surface);
+	color: var(--workbench-nav);
+}
+
+body.workbench-body .workbench-page-surface input[data-href]:hover,
+body.workbench-body .workbench-page-surface button.secondary:hover {
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-action .workbench-action-label input[type="submit"],
+body.workbench-body .workbench-action .workbench-action-label input[type="button"],
+body.workbench-body .workbench-action .workbench-action-label button,
+body.query-result-embedded-body .workbench-action .workbench-action-label input[type="submit"],
+body.query-result-embedded-body .workbench-action .workbench-action-label input[type="button"],
+body.query-result-embedded-body .workbench-action .workbench-action-label button {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--workbench-control-gap);
+	min-height: calc(var(--workbench-control-height) - 2px);
+	margin: 0;
+	padding: 0 var(--workbench-control-inset);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	background-image: none;
+	color: inherit;
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+/* A hit area already owns the inset. Controls without it own their own. */
+body.workbench-body .workbench-action .workbench-action-hit-area .workbench-action-label :is(input, button),
+body.query-result-embedded-body .workbench-action .workbench-action-hit-area .workbench-action-label :is(input, button) {
+	padding-inline: 0;
+}
+
+body.workbench-body .workbench-action .workbench-action-label input:focus,
+body.query-result-embedded-body .workbench-action .workbench-action-label input:focus,
+body.workbench-body .workbench-action .workbench-action-label button:focus-visible,
+body.query-result-embedded-body .workbench-action .workbench-action-label button:focus-visible {
+	outline: none;
+}
+
+body.workbench-body .workbench-action--primary .workbench-action-label input,
+body.workbench-body .workbench-action--danger .workbench-action-label input,
+body.workbench-body .workbench-action--danger-outline .workbench-action-label input,
+body.query-result-embedded-body .workbench-action--primary .workbench-action-label input,
+body.query-result-embedded-body .workbench-action--danger .workbench-action-label input,
+body.query-result-embedded-body .workbench-action--danger-outline .workbench-action-label input {
+	color: inherit;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+	body.workbench-body .workbench-action-hit-area,
+	body.query-result-embedded-body .workbench-action-hit-area {
+		min-height: calc(var(--workbench-touch-height) - 2px);
+		padding-inline: 12px;
+	}
+}
+
+body.workbench-body .workbench-page-surface .error,
+body.workbench-body .workbench-page-surface .ERROR:not(.workbench-callout) {
+	box-sizing: border-box;
+	display: block;
+	max-width: 100%;
+	margin: 8px 0;
+	padding: 8px 10px;
+	border: 1px solid var(--workbench-danger);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-danger);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-page-surface .error:empty,
+body.workbench-body .workbench-page-surface .ERROR:not(.workbench-callout):empty {
+	display: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body.workbench-body .workbench-page-surface fieldset,
+body.workbench-body .workbench-page-surface .fieldset {
+	margin: 0 0 16px;
+	padding: 16px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 10px;
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-page-surface table.dataentry {
+	width: fit-content;
+	max-width: 100%;
+	border-collapse: separate;
+	border-spacing: 0 var(--workbench-form-gap);
+}
+
+body.workbench-body .workbench-page-surface table.dataentry th,
+body.workbench-body .workbench-page-surface table.dataentry td {
+	box-sizing: border-box;
+	padding: 0 12px 0 0;
+	border: 0;
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 500;
+	vertical-align: top;
+}
+
+body.workbench-body .workbench-page-surface table.dataentry th {
+	width: 14rem;
+	padding-top: 7px;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-page-surface table.dataentry th:after {
+	content: none;
+}
+
+body.workbench-body .workbench-page-surface table.dataentry td:nth-child(2) {
+	min-width: 0;
+}
+
+body.workbench-body .workbench-page-surface table.dataentry td input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([data-field-role="repository-id"]),
+body.workbench-body .workbench-page-surface table.dataentry td select,
+body.workbench-body .workbench-page-surface table.dataentry td textarea {
+	width: auto;
+	max-width: 100%;
+}
+
+body.query-result-embedded-body .query-result-embedded input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+body.query-result-embedded-body .query-result-embedded select,
+body.query-result-embedded-body .query-result-embedded textarea {
+	box-sizing: border-box;
+	min-height: var(--workbench-control-height);
+	max-width: 100%;
+	margin: 0;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	font: 400 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.query-result-embedded-body .query-result-embedded input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+body.query-result-embedded-body .query-result-embedded select {
+	padding: 7px 10px;
+}
+
+body.query-result-embedded-body .query-result-embedded button,
+body.query-result-embedded-body .query-result-embedded input[type="button"],
+body.query-result-embedded-body .query-result-embedded input[type="submit"] {
+	box-sizing: border-box;
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 7px var(--workbench-control-inset);
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+body.workbench-body .workbench-page-surface table.data,
+body.query-result-embedded-body .query-result-embedded table.data {
+	box-sizing: border-box;
+	display: table;
+	width: 100%;
+	max-width: 100%;
+	border: 0;
+	border-collapse: collapse;
+	table-layout: auto;
+	font-family: var(--workbench-font);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-page-surface table.data th,
+body.workbench-body .workbench-page-surface table.data td,
+body.query-result-embedded-body .query-result-embedded table.data th,
+body.query-result-embedded-body .query-result-embedded table.data td {
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 0;
+	border-bottom: 1px solid var(--workbench-soft-rule);
+	vertical-align: top;
+	/* Wrap at word boundaries (and at the <wbr> after / # : in IRIs); split a word only if it cannot fit (M4.2). */
+	overflow-wrap: break-word;
+	word-break: normal;
+}
+
+body.workbench-body .workbench-page-surface table.data th,
+body.query-result-embedded-body .query-result-embedded table.data th {
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	text-align: left;
+	text-transform: none;
+	white-space: nowrap;
+}
+
+body.workbench-body .workbench-page-surface table.data img {
+	max-width: 18px;
+	max-height: 18px;
+}
+
+body.workbench-body .workbench-page-surface a.resourceURL {
+	color: var(--workbench-teal);
+}
+
+body.workbench-body #footer.workbench-footer {
+	grid-area: footer;
+	box-sizing: border-box;
+	clear: both;
+	margin: 0 24px 24px 0;
+	padding: 0 0 24px;
+	color: var(--workbench-muted);
+	font-family: inherit;
+	font-size: 12px;
+}
+
+body.workbench-body #footer.workbench-footer > div {
+	padding-top: 10px;
+	border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options,
+body.workbench-body .workbench-page-surface details.workbench-save {
+	width: fit-content;
+	max-width: 100%;
+	margin: var(--workbench-form-gap) 0;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 10px;
+	background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options > summary,
+body.workbench-body .workbench-page-surface details.workbench-save > summary {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: var(--workbench-control-height);
+	gap: 8px;
+	padding: 10px 12px;
+	color: var(--workbench-nav);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	cursor: pointer;
+	list-style: none;
+	border-radius: 8px;
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options[open] > summary,
+body.workbench-body .workbench-page-surface details.workbench-save[open] > summary {
+	border-radius: 8px 8px 0 0;
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options > summary::-webkit-details-marker,
+body.workbench-body .workbench-page-surface details.workbench-save > summary::-webkit-details-marker {
+	display: none;
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options > :not(summary):not(.workbench-options__body),
+body.workbench-body .workbench-page-surface details.workbench-save > :not(summary) {
+	box-sizing: border-box;
+	width: fit-content;
+	max-width: 100%;
+	min-width: 0;
+	margin: 0 12px 12px;
+}
+
+body.workbench-body .workbench-page-surface details.workbench-options > .workbench-options__body {
+	margin: 0;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced-fields {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-items: start;
+	align-content: start;
+	gap: var(--workbench-form-gap);
+	width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__field,
+body.workbench-body form[action="create"] .workbench-advanced__control {
+	box-sizing: border-box;
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__field {
+	grid-column: 1 / -1;
+	width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group {
+	box-sizing: border-box;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	gap: var(--workbench-field-gap);
+	min-width: 0;
+	max-width: 100%;
+	width: 100%;
+	margin: 0;
+	padding: 8px 12px 12px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-radius);
+	background: var(--workbench-surface);
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group-title {
+	box-sizing: border-box;
+	max-width: 100%;
+	margin: 0;
+	padding: 0 4px;
+	color: var(--workbench-ink);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 700;
+	line-height: 1.25;
+	white-space: normal;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__group-fields {
+	box-sizing: border-box;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-content: start;
+	gap: var(--workbench-form-gap);
+	min-width: 0;
+	max-width: 100%;
+	width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__control {
+	display: grid;
+	align-content: start;
+	justify-items: start;
+	gap: var(--workbench-field-gap);
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__control > :is(input, select, textarea) {
+	box-sizing: border-box;
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__control > textarea {
+	width: min(100%, 40rem);
+}
+
+body.workbench-body form[action="create"] .workbench-advanced__control .workbench-choice-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap);
+	max-width: 100%;
+}
+
+body.workbench-body .workbench-choice {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: var(--workbench-control-height);
+	margin: 0;
+	padding: 4px 8px;
+	border-radius: var(--workbench-control-radius);
+	color: var(--workbench-body);
+	line-height: 1.35;
+	cursor: pointer;
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-choice:hover {
+	background: var(--workbench-selected);
+}
+
+body.workbench-body .workbench-choice > input[type="checkbox"],
+body.workbench-body .workbench-choice > input[type="radio"] {
+	flex: 0 0 auto;
+	margin: 0;
+	accent-color: var(--workbench-primary);
+}
+
+body.workbench-body .workbench-choice-list {
+	display: grid;
+	justify-items: start;
+	gap: 4px;
+}
+
+body.workbench-body .saved-query-row__heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--workbench-control-gap) var(--workbench-space-subgroup);
+	min-width: 0;
+	margin-bottom: var(--workbench-form-gap);
+}
+
+body.workbench-body .saved-query-row__heading > :is(h2, span) {
+	min-width: 0;
+	max-width: 100%;
+	margin: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .saved-query-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+}
+
+body.workbench-body .saved-query-actions > form {
+	margin: 0;
+}
+
+body.workbench-body .saved-query-row > .query-results {
+	--query-result-section-gap: var(--workbench-space-subgroup);
+}
+
+body.workbench-body .saved-query-row > .query-results:empty {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+}
+
+body.workbench-body .saved-query-row > .saved-query-metadata {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	margin-top: var(--workbench-space-subgroup);
+}
+
+body.workbench-body .saved-query-row > .yasqe {
+	margin-block-start: var(--workbench-space-subgroup);
+}
+
+@media (max-width: 900px) {
+	:root {
+		--workbench-code-font-size: 13px;
+	}
+
+	body.workbench-body {
+		display: block;
+	}
+
+	body.workbench-body .workbench-brand {
+		grid-area: brand;
+		order: 0;
+		gap: 8px;
+		width: fit-content;
+		max-width: 100%;
+	}
+
+	body.workbench-body .workbench-theme-control {
+		grid-area: theme;
+		order: 0;
+		justify-self: end;
+		margin-left: 0;
+	}
+
+	body.workbench-body .workbench-theme-control label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	body.workbench-body .workbench-brand img.product {
+		max-height: 32px;
+		max-width: min(35vw, 120px);
+	}
+
+	body.workbench-body .workbench-brand img {
+		max-height: 32px;
+	}
+
+	body.workbench-body .workbench-navigation-disclosure {
+		position: static;
+		width: auto;
+		margin: 12px;
+		border-radius: 10px;
+		box-shadow: var(--workbench-shadow);
+	}
+
+	body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary {
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body #navigation.workbench-nav {
+		padding: 0 10px 12px;
+	}
+
+	body.workbench-body #content.workbench-main {
+		margin: 20px 12px 0;
+		padding-bottom: 16px;
+	}
+
+	body.workbench-body #content.workbench-main > h1,
+	body.workbench-body #title_heading {
+		font-size: 24px;
+	}
+
+	body.workbench-body .workbench-page-surface {
+		padding: 16px;
+	}
+
+	body.workbench-body .workbench-page-surface > .workbench-island {
+		margin-bottom: 16px;
+		padding: 16px;
+	}
+
+	body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--workbench-form-gap);
+	}
+
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
+		align-items: stretch;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label {
+		min-height: var(--workbench-touch-height);
+		padding-inline: 4px;
+		font-size: var(--workbench-control-font-size);
+	}
+
+	body.workbench-body .workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+	body.workbench-body .workbench-page-surface textarea,
+	body.workbench-body .workbench-page-surface input[type="submit"],
+	body.workbench-body .workbench-page-surface input[type="button"],
+	body.workbench-body .workbench-page-surface button {
+		min-height: 44px;
+	}
+
+	body.workbench-body #workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+	body.workbench-body #workbench-page-surface select:not([multiple]):not([size]),
+	body.workbench-body #workbench-page-surface select:not([multiple])[size="1"],
+	body.query-result-embedded-body .query-result-embedded select:not([multiple]):not([size]),
+	body.query-result-embedded-body .query-result-embedded select:not([multiple])[size="1"] {
+		height: var(--workbench-touch-height);
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body #workbench-page-surface textarea {
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body .workbench-page-surface input[type="file"] {
+		height: var(--workbench-touch-height);
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body .workbench-page-surface input[type="file"]::file-selector-button {
+		height: calc(var(--workbench-touch-height) - 2px);
+		min-height: calc(var(--workbench-touch-height) - 2px);
+	}
+
+	body.workbench-body :is(.workbench-page-surface, .query-result-embedded) :is(.query-option, .workbench-check, .query-result-check, .workbench-choice),
+	body.query-result-embedded-body .query-result-embedded :is(.query-result-check, .workbench-choice) {
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body .workbench-action .workbench-action-label button,
+	body.query-result-embedded-body .workbench-action .workbench-action-label button,
+	body.workbench-body .workbench-action .workbench-action-label input[type="submit"],
+	body.workbench-body .workbench-action .workbench-action-label input[type="button"],
+	body.query-result-embedded-body .workbench-action .workbench-action-label input[type="submit"],
+	body.query-result-embedded-body .workbench-action .workbench-action-label input[type="button"] {
+		min-height: calc(var(--workbench-touch-height) - 2px);
+	}
+
+	body.workbench-body .workbench-action-hit-area,
+	body.query-result-embedded-body .workbench-action-hit-area {
+		min-height: calc(var(--workbench-touch-height) - 2px);
+		padding-inline: var(--workbench-control-inset);
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry,
+	body.workbench-body .workbench-page-surface table.dataentry tbody,
+	body.workbench-body .workbench-page-surface table.dataentry tr,
+	body.workbench-body .workbench-page-surface table.dataentry th,
+	body.workbench-body .workbench-page-surface table.dataentry td {
+		display: block;
+		width: 100%;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry {
+		border-spacing: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry tr {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--workbench-field-gap);
+		margin-bottom: var(--workbench-form-gap);
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry th {
+		padding: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry th > label {
+		display: block;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry td {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		justify-items: start;
+		gap: var(--workbench-field-gap);
+		padding: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry td:empty {
+		display: none;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry tr:last-child {
+		margin-bottom: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry tr:last-child:has(input[type="submit"], input[type="button"], button, .workbench-action) {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--workbench-control-gap);
+		margin-top: 0;
+	}
+
+	body.workbench-body .workbench-page-surface table.dataentry tr:last-child:has(input[type="submit"], input[type="button"], button, .workbench-action) td {
+		width: auto;
+	}
+
+	body.workbench-body .workbench-page-surface table.data {
+		display: block;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	body.workbench-body .workbench-page-surface table.data thead,
+	body.workbench-body .workbench-page-surface table.data tbody {
+		min-width: 100%;
+	}
+
+	body.workbench-body #footer.workbench-footer {
+		margin: 0 12px;
+		padding-bottom: 16px;
+	}
+}
+
+@media (max-width: 600px) {
+	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data thead,
+	body.workbench-body .workbench-responsive-records table.data thead tr {
+	display: none;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data tbody {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data tr {
+	box-sizing: border-box;
+	width: 100%;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td {
+	box-sizing: border-box;
+	padding: 7px 0;
+	}
+
+	body.workbench-body .workbench-responsive-records table.data td[data-label]::before {
+	display: block;
+	}
+
+	body.workbench-body form[action="create"] table.dataentry tr:has(#create) td:nth-child(2) {
+		display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	width: 100% !important;
+	}
+
+	body.workbench-body form[action="create"] table.dataentry tr:has(#create) input {
+		float: none !important;
+	margin: 0;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child,
+	body.workbench-body .saved-query-row > table:first-child tbody {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child tr {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		box-sizing: border-box;
+		align-items: center;
+		gap: var(--workbench-control-gap);
+		width: 100%;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child th {
+	display: block;
+	box-sizing: border-box;
+		width: 100% !important;
+		max-width: 100%;
+		grid-column: 1 / -1;
+		padding: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child td {
+		display: block;
+		box-sizing: border-box;
+		width: 100%;
+		padding: 0;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child td form {
+		width: 100%;
+		margin: 0;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child .workbench-action,
+	body.workbench-body .saved-query-row > table:first-child .workbench-action-hit-area,
+	body.workbench-body .saved-query-row > table:first-child .workbench-action-label,
+	body.workbench-body .saved-query-row > table:first-child .workbench-action-label input {
+		width: 100%;
+	}
+
+	body.workbench-body .saved-query-row > table:first-child input[type="button"],
+	body.workbench-body .saved-query-row > table:first-child input[type="submit"] {
+	min-height: calc(var(--workbench-touch-height) - 2px);
+	}
+
+	body.workbench-body .workbench-page-surface details.workbench-options > summary,
+	body.workbench-body .workbench-page-surface details.workbench-save > summary {
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body .workbench-choice {
+		min-height: var(--workbench-touch-height);
+	}
+
+	body.workbench-body .workbench-theme-control select {
+		min-height: var(--workbench-touch-height);
+		height: var(--workbench-touch-height);
+	}
+
+}
+
+html[data-theme="dark"] {
+	color-scheme: dark;
+	--workbench-canvas: #080e11;
+	--workbench-surface: #111a1d;
+	--workbench-inset: #182428;
+	--workbench-ink: #e8f0f3;
+	--workbench-body: #cedadf;
+	--workbench-nav: var(--workbench-body);
+	--workbench-muted: #9aabb2;
+	--workbench-outline: #687e87;
+	--workbench-rule: var(--workbench-outline);
+	--workbench-soft-rule: #2a3a40;
+	--workbench-primary: #73c4e2;
+	--workbench-primary-hover: #94d6ef;
+	--workbench-primary-text: #080e11;
+	--workbench-selected: #15323d;
+	--workbench-teal: var(--workbench-primary);
+	--workbench-teal-dark: var(--workbench-primary-hover);
+	--workbench-danger: #ff7c73;
+	--workbench-danger-surface: #391b1b;
+	--workbench-danger-hover: #ff9a93;
+	--workbench-on-danger: #1a0b0a;
+	--workbench-warning: #f3c969;
+	--workbench-warning-surface: #2e2512;
+	--workbench-warning-rule: #6b5420;
+	--workbench-success: #72d5a2;
+	--workbench-focus: #73c4e2;
+	--workbench-code-keyword: #73c4e2;
+	--workbench-code-variable: #c1b3ff;
+	--workbench-code-string: #94d6a2;
+	--workbench-code-number: #a9b8ff;
+	--workbench-code-comment: #9aabb2;
+	--workbench-code-error: #ff7c73;
+	--workbench-editor-surface: #111a1d;
+	--workbench-editor-ink: #cedadf;
+	--workbench-editor-gutter: #182428;
+	--workbench-editor-gutter-border: #2a3a40;
+	--workbench-editor-gutter-ink: #9aabb2;
+	--workbench-editor-selection: #15323d;
+	--workbench-editor-selection-focused: #15323d;
+	--workbench-code-atom: var(--workbench-code-keyword);
+	--workbench-code-definition: var(--workbench-code-variable);
+	--workbench-code-variable-2: var(--workbench-code-variable);
+	--workbench-code-variable-3: var(--workbench-code-variable);
+	--workbench-code-property: var(--workbench-code-variable);
+	--workbench-code-attribute: var(--workbench-code-variable);
+	--workbench-code-string-2: var(--workbench-code-string);
+	--workbench-code-meta: var(--workbench-code-keyword);
+	--workbench-code-qualifier: var(--workbench-code-keyword);
+	--workbench-code-builtin: var(--workbench-code-keyword);
+	--workbench-code-bracket: var(--workbench-code-comment);
+	--workbench-code-tag: var(--workbench-code-keyword);
+	--workbench-code-header: var(--workbench-code-keyword);
+	--workbench-code-operator: var(--workbench-code-comment);
+}
+
+body.workbench-body .query-explanation-line--hotspot {
+	color: var(--workbench-heatmap-ink);
+}
+
+body.workbench-body .query-explanation-hotspot-legend::before {
+	background: linear-gradient(90deg, var(--workbench-heatmap-low), var(--workbench-heatmap-high));
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body.workbench-body,
+html[data-theme="dark"] body.query-result-embedded-body {
+	background-color: var(--workbench-canvas);
+	background-image: none;
+	color: var(--workbench-body);
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-navigation-disclosure,
+html[data-theme="dark"] body.workbench-body .workbench-page-surface > form,
+html[data-theme="dark"] body.workbench-body .workbench-page-surface > .workbench-island,
+html[data-theme="dark"] body.workbench-body #saved-queries,
+html[data-theme="dark"] body.workbench-body .query-page > form,
+html[data-theme="dark"] body.query-result-embedded-body .query-result-embedded {
+	background-color: var(--workbench-surface);
+	color: var(--workbench-body);
+}
+
+/* Brand artwork per theme (M2.5): the dark variants draw the lettering in the dark-theme ink. */
+body.workbench-body .workbench-brand img.workbench-brand__dark,
+html[data-theme="dark"] body.workbench-body .workbench-brand img.workbench-brand__light {
+	display: none;
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-brand img.workbench-brand__dark {
+	display: inline-block;
+}
+
+body.workbench-body .workbench-theme-control select,
+body.workbench-body .workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+body.workbench-body .workbench-page-surface select,
+body.workbench-body .workbench-page-surface textarea,
+body.workbench-body .query-page input,
+body.workbench-body .query-page select,
+body.workbench-body .query-page textarea,
+body.query-result-embedded-body .query-result-embedded select,
+body.query-result-embedded-body .query-result-embedded input:not([type="checkbox"]):not([type="radio"]),
+body.query-result-embedded-body .query-result-embedded textarea {
+	color-scheme: inherit;
+}
+
+body.workbench-body .CodeMirror,
+body.query-result-embedded-body .CodeMirror {
+	box-sizing: border-box;
+	border: 1px solid var(--workbench-editor-gutter-border);
+	background: var(--workbench-editor-surface);
+	color: var(--workbench-editor-ink);
+}
+
+body.workbench-body .CodeMirror-gutters,
+body.query-result-embedded-body .CodeMirror-gutters {
+	border-right: 1px solid var(--workbench-editor-gutter-border);
+	background: var(--workbench-editor-gutter);
+}
+
+body.workbench-body .CodeMirror-linenumber,
+body.query-result-embedded-body .CodeMirror-linenumber {
+	color: var(--workbench-editor-gutter-ink);
+}
+
+body.workbench-body .CodeMirror-cursor,
+body.query-result-embedded-body .CodeMirror-cursor {
+	border-left-color: var(--workbench-ink);
+}
+
+body.workbench-body .CodeMirror-selected,
+body.query-result-embedded-body .CodeMirror-selected {
+	background: var(--workbench-editor-selection) !important;
+}
+
+body.workbench-body .CodeMirror-focused .CodeMirror-selected,
+body.query-result-embedded-body .CodeMirror-focused .CodeMirror-selected {
+	background: var(--workbench-editor-selection-focused) !important;
+}
+
+body.workbench-body .yasqe .CodeMirror-matchingtag {
+	background: var(--workbench-selected) !important;
+}
+
+body.workbench-body .CodeMirror .cm-keyword,
+body.query-result-embedded-body .CodeMirror .cm-keyword {
+	color: var(--workbench-code-keyword);
+}
+
+body.workbench-body .CodeMirror .cm-atom,
+body.query-result-embedded-body .CodeMirror .cm-atom {
+	color: var(--workbench-code-atom);
+}
+
+body.workbench-body .CodeMirror .cm-meta,
+body.query-result-embedded-body .CodeMirror .cm-meta {
+	color: var(--workbench-code-meta);
+}
+
+body.workbench-body .CodeMirror .cm-qualifier,
+body.query-result-embedded-body .CodeMirror .cm-qualifier {
+	color: var(--workbench-code-qualifier);
+}
+
+body.workbench-body .CodeMirror .cm-builtin,
+body.query-result-embedded-body .CodeMirror .cm-builtin {
+	color: var(--workbench-code-builtin);
+}
+
+body.workbench-body .CodeMirror .cm-tag,
+body.query-result-embedded-body .CodeMirror .cm-tag {
+	color: var(--workbench-code-tag);
+}
+
+body.workbench-body .CodeMirror .cm-header,
+body.query-result-embedded-body .CodeMirror .cm-header {
+	color: var(--workbench-code-header);
+}
+
+body.workbench-body .CodeMirror .cm-variable,
+body.query-result-embedded-body .CodeMirror .cm-variable {
+	color: var(--workbench-code-variable);
+}
+
+body.workbench-body .CodeMirror .cm-variable-2,
+body.query-result-embedded-body .CodeMirror .cm-variable-2 {
+	color: var(--workbench-code-variable-2);
+}
+
+body.workbench-body .CodeMirror .cm-variable-3,
+body.query-result-embedded-body .CodeMirror .cm-variable-3 {
+	color: var(--workbench-code-variable-3);
+}
+
+body.workbench-body .CodeMirror .cm-def,
+body.query-result-embedded-body .CodeMirror .cm-def {
+	color: var(--workbench-code-definition);
+}
+
+body.workbench-body .CodeMirror .cm-property,
+body.query-result-embedded-body .CodeMirror .cm-property {
+	color: var(--workbench-code-property);
+}
+
+body.workbench-body .CodeMirror .cm-attribute,
+body.query-result-embedded-body .CodeMirror .cm-attribute {
+	color: var(--workbench-code-attribute);
+}
+
+body.workbench-body .CodeMirror .cm-string,
+body.query-result-embedded-body .CodeMirror .cm-string {
+	color: var(--workbench-code-string);
+}
+
+body.workbench-body .CodeMirror .cm-string-2,
+body.query-result-embedded-body .CodeMirror .cm-string-2 {
+	color: var(--workbench-code-string-2);
+}
+
+body.workbench-body .CodeMirror .cm-number,
+body.query-result-embedded-body .CodeMirror .cm-number {
+	color: var(--workbench-code-number);
+}
+
+body.workbench-body .CodeMirror .cm-comment,
+body.query-result-embedded-body .CodeMirror .cm-comment {
+	color: var(--workbench-code-comment);
+}
+
+body.workbench-body .CodeMirror .cm-operator,
+body.query-result-embedded-body .CodeMirror .cm-operator {
+	color: var(--workbench-code-operator);
+}
+
+body.workbench-body .CodeMirror .cm-bracket,
+body.query-result-embedded-body .CodeMirror .cm-bracket {
+	color: var(--workbench-code-bracket);
+}
+
+body.workbench-body .CodeMirror .cm-error,
+body.query-result-embedded-body .CodeMirror .cm-error {
+	color: var(--workbench-code-error);
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg {
+	color: var(--workbench-body);
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg text,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg text {
+	fill: var(--workbench-ink) !important;
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg .node polygon,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg .node polygon {
+	fill: var(--workbench-surface) !important;
+	stroke: var(--workbench-outline) !important;
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg .edge path,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg .edge path {
+	stroke: var(--workbench-outline) !important;
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg .edge polygon,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg .edge polygon {
+	fill: var(--workbench-outline) !important;
+	stroke: var(--workbench-outline) !important;
+}
+
+body.workbench-body .workbench-page-surface table.data,
+body.workbench-body .workbench-page-surface table.dataentry {
+	color: var(--workbench-body);
+}
+
+body.workbench-body .workbench-page-surface table.data th,
+body.workbench-body .workbench-page-surface table.dataentry th {
+	color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface table.data td,
+body.workbench-body .workbench-page-surface table.dataentry td {
+	color: var(--workbench-body);
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data,
+html[data-theme="dark"] body.workbench-body .workbench-page-surface table.dataentry {
+	background: var(--workbench-surface);
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data th {
+	border-color: var(--workbench-soft-rule);
+	background: var(--workbench-inset);
+}
+
+html[data-theme="dark"] body.workbench-body .workbench-page-surface table.data td {
+	border-color: var(--workbench-soft-rule);
+	background: var(--workbench-surface);
+}
+
+html[data-theme="dark"] body.workbench-body form table.dataentry th {
+	background: transparent;
+}
+
+html[data-theme="dark"] body.query-result-embedded-body .query-result-embedded table.data {
+	background: var(--workbench-surface);
+}
+
+html[data-theme="dark"] body.query-result-embedded-body .query-result-embedded table.data th {
+	border-color: var(--workbench-soft-rule);
+	background: var(--workbench-inset);
+	color: var(--workbench-ink);
+}
+
+html[data-theme="dark"] body.query-result-embedded-body .query-result-embedded table.data td {
+	border-color: var(--workbench-soft-rule);
+	background: var(--workbench-surface);
+	color: var(--workbench-body);
+}
+
+html[data-theme="dark"] #query-explanation-dot-view svg > polygon,
+html[data-theme="dark"] #query-explanation-dot-view-compare svg > polygon {
+	fill: var(--workbench-surface) !important;
+}
+
+@media (max-width: 900px) {
+	body.workbench-body .workbench-theme-control select {
+		height: var(--workbench-touch-height);
+		min-height: var(--workbench-touch-height);
+	}
+}
+
+body.workbench-body .workbench-page-surface .workbench-select-control > select,
+body.workbench-body .workbench-theme-control .workbench-select-control > select,
+body.query-result-embedded-body .query-result-embedded .workbench-select-control > select {
+	padding-right: 36px;
+}
+
+/*
+ * In-page navigation (M8.1): the old page stays visible and usable; a 2px bar shows once loading takes 150 ms.
+ * It is painted as the outlet's background, so nothing on the page moves.
+ */
+body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
+	background-image: linear-gradient(90deg, transparent, var(--workbench-primary), transparent);
+	background-repeat: no-repeat;
+	background-size: 40% 2px;
+	background-position: -40% 0;
+	animation: workbench-route-progress 1.1s ease-in-out infinite;
+}
+
+@keyframes workbench-route-progress {
+	from {
+		background-position: -40% 0;
+	}
+	to {
+		background-position: 140% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
+		background-image: linear-gradient(var(--workbench-primary), var(--workbench-primary));
+		background-size: 100% 2px;
+		background-position: 0 0;
+		animation: none;
+	}
+}

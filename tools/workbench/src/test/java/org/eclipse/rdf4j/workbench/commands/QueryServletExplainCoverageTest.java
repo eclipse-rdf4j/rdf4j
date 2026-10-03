@@ -64,7 +64,7 @@ class QueryServletExplainCoverageTest {
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		servlet.setRepository(repository);
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(body.toString()).contains("\"error\":\"bad syntax\"");
@@ -87,7 +87,7 @@ class QueryServletExplainCoverageTest {
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		servlet.setRepository(repository);
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 		assertThat(body.toString()).contains("\"error\":\"Query explanation took too long\"");
@@ -109,7 +109,7 @@ class QueryServletExplainCoverageTest {
 		servlet.substituteAsyncExplainCoordinator(coordinator);
 
 		try {
-			servlet.service(request, response, "/transform");
+			servlet.service(request, response);
 
 			assertThat(body.toString()).contains("\"error\":\"Explain request already active: duplicate-request\"");
 			verify(request, never()).startAsync(any(), any());
@@ -128,7 +128,7 @@ class QueryServletExplainCoverageTest {
 		when(request.getParameter("explain")).thenReturn("Nope");
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		assertThat(body.toString()).contains("Unknown explain level 'Nope'");
 		verify(request, never()).startAsync(any(), any());
@@ -155,7 +155,7 @@ class QueryServletExplainCoverageTest {
 		when(request.getParameter("server-user")).thenReturn("alice");
 		servlet.substituteQueryStorage(storage);
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
 		assertThat(body.toString()).contains("\"error\":\"storage boom\"");
@@ -179,7 +179,7 @@ class QueryServletExplainCoverageTest {
 		when(remoteResponse.getWriter()).thenReturn(new PrintWriter(remoteBody));
 		remoteServlet.setRepository(remoteRepository);
 
-		remoteServlet.service(remoteRequest, remoteResponse, "/transform");
+		remoteServlet.service(remoteRequest, remoteResponse);
 
 		verify(remoteResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(remoteBody.toString()).contains("\"error\":\"remote boom\"");
@@ -200,7 +200,7 @@ class QueryServletExplainCoverageTest {
 		when(unsupportedResponse.getWriter()).thenReturn(new PrintWriter(unsupportedBody));
 		unsupportedServlet.setRepository(unsupportedRepository);
 
-		unsupportedServlet.service(unsupportedRequest, unsupportedResponse, "/transform");
+		unsupportedServlet.service(unsupportedRequest, unsupportedResponse);
 
 		verify(unsupportedResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(unsupportedBody.toString()).contains("Explain is not supported");
@@ -224,7 +224,7 @@ class QueryServletExplainCoverageTest {
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		servlet.setRepository(repository);
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 		assertThat(body.toString()).contains("\"error\":\"Query explanation took too long\"");
@@ -245,7 +245,7 @@ class QueryServletExplainCoverageTest {
 		when(badRequestResponse.getWriter()).thenReturn(new PrintWriter(badRequestBody));
 		badRequestServlet.setRepository(badRequestRepository);
 
-		badRequestServlet.service(badRequest, badRequestResponse, "/transform");
+		badRequestServlet.service(badRequest, badRequestResponse);
 
 		verify(badRequestResponse).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertThat(badRequestBody.toString()).contains("pre-attach bad request");
@@ -265,7 +265,7 @@ class QueryServletExplainCoverageTest {
 		when(writerResponse.getWriter()).thenThrow(new IOException("writer down"));
 		writerServlet.setRepository(writerRepository);
 
-		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse, "/transform"))
+		assertThatCode(() -> writerServlet.service(writerRequest, writerResponse))
 				.doesNotThrowAnyException();
 		verify(writerRequest, never()).startAsync(any(), any());
 	}
@@ -273,6 +273,7 @@ class QueryServletExplainCoverageTest {
 	private static WorkbenchRequest mockExplainRequest(boolean tracked, String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("explain");
+		when(request.isParameterPresent("action")).thenReturn(true);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);

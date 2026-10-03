@@ -3,6 +3,43 @@ const assert = require('node:assert/strict');
 
 const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 
+test('does not start an Explain rerun when that UI feature is disabled', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.document.getElementById('rerun-explanation').setAttribute('data-query-rerun-enabled', 'false');
+
+    harness.click('rerun-explanation');
+
+    assert.equal(harness.requestsByAction('explain').length, 0);
+});
+
+test('does not start a manual compare refresh when that UI feature is disabled', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.context.workbench.query.toggleCompareMode();
+    const automaticExplainCount = harness.requestsByAction('explain').length;
+    harness.document.getElementById('explain-compare-trigger').setAttribute('data-query-refresh-enabled', 'false');
+
+    harness.context.workbench.query.runCompareExplain();
+
+    assert.equal(harness.requestsByAction('explain').length, automaticExplainCount);
+});
+
+test('Explain transport does not impose a fixed client timeout', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.click('explain-trigger');
+
+    const request = harness.pendingExplainRequests[0];
+    assert.ok(request, 'Explain should start its asynchronous request');
+    assert.equal(Object.prototype.hasOwnProperty.call(request.options, 'timeout'), false,
+        'long-running query explanations remain governed by the configured server timeout');
+});
+
 test('cancels the active slow explain request after level change and explicit cancel', () => {
     const harness = createQueryBrowserHarness({
         serverRequestIds: ['request-1', 'request-2']

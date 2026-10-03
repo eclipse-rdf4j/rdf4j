@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -111,6 +112,54 @@ public class TestBnodesUniquenessInTransactions {
 
 			Assertions.assertEquals("node", result.get(0).getValue("o").stringValue());
 			Assertions.assertEquals("node", result.get(1).getValue("o").stringValue());
+		}
+	}
+
+	@Test
+	public void shouldDecodeBaseUriForTransactionalUpload() throws Exception {
+		String baseURI = "https://example.org/base/";
+		request.setParameter(Protocol.BASEURI_PARAM_NAME,
+				Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI)));
+
+		executeTransactionAction("<default> <http://example.org/p> \"default\" .");
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			Assertions.assertTrue(connection.hasStatement(
+					SimpleValueFactory.getInstance().createIRI(baseURI + "default"),
+					SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+					SimpleValueFactory.getInstance().createLiteral("default"), false));
+		}
+	}
+
+	@Test
+	public void shouldDecodeBaseUriForTransactionalDelete() throws Exception {
+		String baseURI = "https://example.org/base/";
+		request.setParameter(Protocol.BASEURI_PARAM_NAME,
+				Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI)));
+		executeTransactionAction("<default> <http://example.org/p> \"default\" .");
+
+		request.setParameter(Protocol.ACTION_PARAM_NAME, "DELETE");
+		request.setMethod(HttpMethod.PUT.name());
+		request.setContentType(RDFFormat.TURTLE.getDefaultMIMEType());
+		request.setContent("<default> <http://example.org/p> \"default\" .".getBytes(StandardCharsets.UTF_8));
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+		UUID transactionId = txn.getID();
+		request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		request.setPathInfo(repositoryID + "/transactions/" + transactionId);
+
+		try {
+			new TransactionController().handleRequestInternal(request, response);
+		} finally {
+			txn.close();
+			ActiveTransactionRegistry.INSTANCE.deregister(txn);
+		}
+
+		try (RepositoryConnection connection = repository.getConnection()) {
+			Assertions.assertFalse(connection.hasStatement(
+					SimpleValueFactory.getInstance().createIRI(baseURI + "default"),
+					SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+					SimpleValueFactory.getInstance().createLiteral("default"), false));
 		}
 	}
 

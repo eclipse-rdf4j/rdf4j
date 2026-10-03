@@ -14,3 +14,14 @@ test('query diff rows size to the full horizontal diff width', () => {
     assert.match(diffRowRuleMatch[1], /width:\s*max-content;/);
     assert.match(diffRowRuleMatch[1], /min-width:\s*100%;/);
 });
+
+test('query editor matching tags use the Workbench selected surface', () => {
+    const css = fs.readFileSync(
+        path.resolve(__dirname, '..', '..', 'tools/workbench/src/main/webapp/styles/workbench-refresh.css'),
+        'utf8'
+    );
+
+    const matchingTagRule = css.match(/body\.workbench-body \.yasqe \.CodeMirror-matchingtag\s*\{([^}]*)\}/);
+    assert.ok(matchingTagRule, 'Expected a Workbench override for the vendor matching-tag highlight');
+    assert.match(matchingTagRule[1], /background:\s*var\(--workbench-selected\)\s*!important/);
+});

@@ -12,27 +12,94 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+import org.eclipse.rdf4j.rio.helpers.TimeLimitRDFHandler;
+import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponse;
 
 class ExportServletCoverageTest {
 
 	@Test
 	void getCookieNamesExposeLimitAndAcceptHeaders() {
-		assertThat(new ExportServlet().getCookieNames()).containsExactly("limit_explore", "Accept");
+		assertThat(new ExportServlet().getCookieNames()).containsExactly("limit_export", "Accept", "timeout");
+	}
+
+	@Test
+	void tableRequestDoesNotRetrieveStatementsUntilPreviewIsRequested() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(request.getParameter("action")).thenReturn(null);
+
+		servlet.service(request, null, builder, connection);
+
+		verifyNoInteractions(connection);
+		verify(builder).metadata("statement-preview-requested", false);
+		verify(builder).metadata("export-timeout", 43_200);
 	}
 
 	@Test
@@ -51,36 +118,110 @@ class ExportServletCoverageTest {
 						SimpleValueFactory.getInstance().createIRI("urn:s2"),
 						SimpleValueFactory.getInstance().createIRI("urn:p"),
 						SimpleValueFactory.getInstance().createLiteral("two"));
-		when(request.getInt(ExploreServlet.LIMIT)).thenReturn(0);
-		when(connection.getStatements(null, null, null, false)).thenReturn(repositoryResult(first, second));
+		when(request.getParameter("action")).thenReturn("preview");
+		when(request.getInt("limit_export")).thenReturn(0);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			handler.handleStatement(first);
+			handler.handleStatement(second);
+			handler.endRDF();
+			return null;
+		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 
 		servlet.service(request, null, builder, connection);
 
 		verify(builder).result(first.getSubject(), first.getPredicate(), first.getObject(), first.getContext());
 		verify(builder).result(second.getSubject(), second.getPredicate(), second.getObject(), second.getContext());
+		verify(builder).metadata("statement-preview-requested", true);
+		verify(request, never()).getInt(ExploreServlet.LIMIT);
 	}
 
 	@Test
 	void exportDownloadSkipsCharacterEncodingForBinaryFormats() throws Exception {
 		ExportServlet servlet = new ExportServlet();
-		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
+		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		jakarta.servlet.http.HttpServletResponse response = mock(jakarta.servlet.http.HttpServletResponse.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
+		when(request.getParameter("action")).thenReturn("download");
 		when(request.isParameterPresent("Accept")).thenReturn(true);
 		when(request.getParameter("Accept")).thenReturn(RDFFormat.BINARY.getDefaultMIMEType());
-		when(response.getOutputStream()).thenReturn(mock(jakarta.servlet.ServletOutputStream.class));
+		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setContentType(RDFFormat.BINARY.getDefaultMIMEType());
 		verify(response).setHeader("Content-disposition", "attachment; filename=export."
 				+ RDFFormat.BINARY.getDefaultFileExtension());
-		verify(response, org.mockito.Mockito.never()).setCharacterEncoding(org.mockito.Mockito.anyString());
-		verify(connection).export(org.mockito.ArgumentMatchers.any());
+		verify(response, never()).setCharacterEncoding(anyString());
+		verify(connection).export(any());
+	}
+
+	@Test
+	void exportDownloadsCanBePlainGzipOrZipAndRetainNamedGraphs() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI context = valueFactory.createIRI("urn:graph:export");
+		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("exported"), context);
+		String rdfExtension = RDFFormat.NQUADS.getDefaultFileExtension();
+
+		for (String compression : List.of("none", "gzip", "zip")) {
+			ExportServlet servlet = new ExportServlet();
+			Repository repository = mock(Repository.class);
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			CapturingServletOutputStream output = new CapturingServletOutputStream();
+
+			servlet.setRepository(repository);
+			when(repository.getConnection()).thenReturn(connection);
+			when(request.isParameterPresent("Accept")).thenReturn(true);
+			when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+			when(request.getParameter("compression")).thenReturn(compression);
+			when(response.getOutputStream()).thenReturn(output);
+			doAnswer(invocation -> {
+				RDFHandler writer = invocation.getArgument(0);
+				writer.startRDF();
+				writer.handleStatement(statement);
+				writer.endRDF();
+				return null;
+			}).when(connection).export(any(RDFHandler.class));
+
+			servlet.service(request, response);
+
+			byte[] rdf;
+			if ("gzip".equals(compression)) {
+				verify(response).setContentType("application/gzip");
+				verify(response).setHeader("Content-disposition",
+						"attachment; filename=export." + rdfExtension + ".gz");
+				try (InputStream compressed = new GZIPInputStream(new ByteArrayInputStream(output.bytes()))) {
+					rdf = compressed.readAllBytes();
+				}
+			} else if ("zip".equals(compression)) {
+				verify(response).setContentType("application/zip");
+				verify(response).setHeader("Content-disposition", "attachment; filename=export.zip");
+				try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(output.bytes()),
+						StandardCharsets.UTF_8)) {
+					ZipEntry entry = zip.getNextEntry();
+					assertThat(entry).isNotNull();
+					assertThat(entry.getName()).isEqualTo("export." + rdfExtension);
+					rdf = zip.readAllBytes();
+					zip.closeEntry();
+					assertThat(zip.getNextEntry()).isNull();
+				}
+			} else {
+				verify(response).setContentType(RDFFormat.NQUADS.getDefaultMIMEType());
+				verify(response).setHeader("Content-disposition", "attachment; filename=export." + rdfExtension);
+				rdf = output.bytes();
+			}
+			verify(response, never()).setHeader("Content-Encoding", "gzip");
+			Model parsed = Rio.parse(new ByteArrayInputStream(rdf), "urn:base:", RDFFormat.NQUADS);
+			assertThat(parsed).contains(statement);
+		}
 	}
 
 	@Test
@@ -99,29 +240,541 @@ class ExportServletCoverageTest {
 						SimpleValueFactory.getInstance().createIRI("urn:s2"),
 						SimpleValueFactory.getInstance().createIRI("urn:p"),
 						SimpleValueFactory.getInstance().createLiteral("two"));
-		when(limitedRequest.getInt(ExploreServlet.LIMIT)).thenReturn(1);
-		when(limitedConnection.getStatements(null, null, null, false)).thenReturn(repositoryResult(first, second));
+		when(limitedRequest.getParameter("action")).thenReturn("preview");
+		when(limitedRequest.isParameterPresent("limit_export")).thenReturn(true);
+		when(limitedRequest.getInt("limit_export")).thenReturn(1);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			handler.handleStatement(first);
+			handler.handleStatement(second);
+			handler.endRDF();
+			return null;
+		}).when(limitedConnection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 
 		servlet.service(limitedRequest, null, limitedBuilder, limitedConnection);
 
 		verify(limitedBuilder).result(first.getSubject(), first.getPredicate(), first.getObject(), first.getContext());
-		verify(limitedBuilder, org.mockito.Mockito.never()).result(second.getSubject(), second.getPredicate(),
+		verify(limitedBuilder, never()).result(second.getSubject(), second.getPredicate(),
 				second.getObject(), second.getContext());
 
 		WorkbenchRequest emptyRequest = mock(WorkbenchRequest.class);
 		TupleResultBuilder emptyBuilder = mock(TupleResultBuilder.class);
 		RepositoryConnection emptyConnection = mock(RepositoryConnection.class);
-		when(emptyRequest.getInt(ExploreServlet.LIMIT)).thenReturn(5);
-		when(emptyConnection.getStatements(null, null, null, false)).thenReturn(repositoryResult());
+		when(emptyRequest.getParameter("action")).thenReturn("preview");
+		when(emptyRequest.isParameterPresent("limit_export")).thenReturn(true);
+		when(emptyRequest.getInt("limit_export")).thenReturn(5);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			handler.endRDF();
+			return null;
+		}).when(emptyConnection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 
 		servlet.service(emptyRequest, null, emptyBuilder, emptyConnection);
 
-		verify(emptyBuilder, org.mockito.Mockito.never()).result(org.mockito.ArgumentMatchers.any(),
-				org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-				org.mockito.ArgumentMatchers.any());
+		verify(emptyBuilder, never()).result(ArgumentMatchers.any(), ArgumentMatchers.any(), ArgumentMatchers.any(),
+				ArgumentMatchers.any());
+	}
+
+	@Test
+	void previewDefaultsToOneHundredAndPreservesDefaultAndNamedContexts() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource namedGraph = valueFactory.createIRI("urn:graph:preview");
+		List<Statement> statements = new java.util.ArrayList<>();
+		for (int i = 0; i < 150; i++) {
+			statements.add(valueFactory.createStatement(valueFactory.createIRI("urn:subject:" + i),
+					valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral(i),
+					i == 0 ? namedGraph : null));
+		}
+		AtomicInteger streamed = new AtomicInteger();
+		when(request.getParameter("action")).thenReturn("preview");
+		when(request.getInt("limit_export")).thenReturn(0);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			for (Statement statement : statements) {
+				streamed.incrementAndGet();
+				handler.handleStatement(statement);
+			}
+			handler.endRDF();
+			return null;
+		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
+
+		servlet.service(request, null, builder, connection);
+
+		assertThat(streamed).hasValue(100);
+		verify(builder, times(100)).result(any(Resource.class), any(IRI.class), any(Value.class),
+				nullable(Resource.class));
+		verify(builder).result(statements.get(0).getSubject(), statements.get(0).getPredicate(),
+				statements.get(0).getObject(), namedGraph);
+		verify(builder).result(statements.get(1).getSubject(), statements.get(1).getPredicate(),
+				statements.get(1).getObject(), null);
+		verify(request, never()).getInt(ExploreServlet.LIMIT);
+	}
+
+	@Test
+	void previewStopsAStreamingHttpRepositoryResponseAtOneHundredStatements() throws Exception {
+		final int statementCount = 100_000;
+		AtomicInteger statementsWritten = new AtomicInteger();
+		AtomicInteger statementsDisplayed = new AtomicInteger();
+		AtomicBoolean previewReturned = new AtomicBoolean();
+		Semaphore responsePermits = new Semaphore(1);
+		CountDownLatch responseClosed = new CountDownLatch(1);
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] protocolVersion = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, protocolVersion.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(protocolVersion);
+			}
+		});
+		server.createContext("/repositories/preview/statements", exchange -> {
+			exchange.getResponseHeaders().set("Content-Type", RDFFormat.NQUADS.getDefaultMIMEType());
+			try (exchange) {
+				exchange.sendResponseHeaders(200, 0);
+				try (OutputStream body = exchange.getResponseBody()) {
+					for (int i = 0; i < statementCount; i++) {
+						try {
+							if (!responsePermits.tryAcquire(10, TimeUnit.SECONDS)) {
+								return;
+							}
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							return;
+						}
+						if (previewReturned.get()) {
+							break;
+						}
+						String context = i == 0 ? " <urn:graph:preview>" : "";
+						String statement = "<urn:subject:" + i + "> <urn:predicate> \"value" + i + "\""
+								+ context + " .\n";
+						body.write(statement.getBytes(StandardCharsets.UTF_8));
+						body.flush();
+						statementsWritten.incrementAndGet();
+					}
+				}
+			} catch (IOException expectedClientDisconnect) {
+				// The preview limit closes the HTTP response before the full repository is transferred.
+			} finally {
+				responseClosed.countDown();
+			}
+		});
+		server.start();
+		HTTPRepository repository = new HTTPRepository(
+				"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/preview");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			TupleResultBuilder builder = mock(TupleResultBuilder.class);
+			when(request.getParameter("action")).thenReturn("preview");
+			doAnswer(invocation -> {
+				statementsDisplayed.incrementAndGet();
+				responsePermits.release();
+				return builder;
+			}).when(builder).result(any(), any(), any(), nullable(Resource.class));
+
+			new ExportServlet().service(request, null, builder, connection);
+
+			assertThat(statementsDisplayed).hasValue(100);
+			verify(builder, times(100)).result(any(Resource.class), any(IRI.class), any(Value.class),
+					nullable(Resource.class));
+			verify(builder).result(SimpleValueFactory.getInstance().createIRI("urn:subject:0"),
+					SimpleValueFactory.getInstance().createIRI("urn:predicate"),
+					SimpleValueFactory.getInstance().createLiteral("value0"),
+					SimpleValueFactory.getInstance().createIRI("urn:graph:preview"));
+			verify(builder).result(SimpleValueFactory.getInstance().createIRI("urn:subject:1"),
+					SimpleValueFactory.getInstance().createIRI("urn:predicate"),
+					SimpleValueFactory.getInstance().createLiteral("value1"), null);
+		} finally {
+			previewReturned.set(true);
+			responsePermits.release();
+			repository.shutDown();
+			server.stop(0);
+		}
+
+		assertThat(responseClosed.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(statementsWritten.get()).isLessThanOrEqualTo(101).isLessThan(statementCount);
+	}
+
+	@Test
+	void workbenchExportTimeoutOverridesOnlyItsHttpConnectionTimeoutDuringStreaming() throws Exception {
+		AtomicInteger responseDelayMillis = new AtomicInteger(250);
+		StringBuilder firstChunkBuilder = new StringBuilder();
+		for (int i = 0; i < 1_000; i++) {
+			firstChunkBuilder.append("<urn:subject:")
+					.append(i)
+					.append("> <urn:predicate> \"value")
+					.append(i)
+					.append("\" .\n");
+		}
+		String firstChunk = firstChunkBuilder.toString();
+		String finalStatement = "<urn:subject:complete> <urn:predicate> \"complete\" <urn:graph:named> .\n";
+		CountDownLatch shortTimeoutResponseClosed = new CountDownLatch(1);
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] protocolVersion = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, protocolVersion.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(protocolVersion);
+			}
+		});
+		server.createContext("/repositories/preview/statements", exchange -> {
+			exchange.getResponseHeaders().set("Content-Type", RDFFormat.NQUADS.getDefaultMIMEType());
+			int responseDelay = responseDelayMillis.get();
+			try (exchange) {
+				exchange.sendResponseHeaders(200, 0);
+				try (OutputStream body = exchange.getResponseBody()) {
+					body.write(firstChunk.getBytes(StandardCharsets.UTF_8));
+					body.flush();
+					Thread.sleep(responseDelay);
+					body.write(finalStatement.getBytes(StandardCharsets.UTF_8));
+					body.flush();
+					if (responseDelay > 1_000) {
+						byte[] padding = ("#" + "x".repeat(8_190) + "\n").getBytes(StandardCharsets.UTF_8);
+						for (int i = 0; i < 2_048; i++) {
+							body.write(padding);
+							body.flush();
+						}
+					}
+				}
+			} catch (IOException clientClosedResponse) {
+				// A selected short timeout closes this response while the next statement is delayed.
+				if (responseDelay > 1_000) {
+					shortTimeoutResponseClosed.countDown();
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		});
+		server.start();
+		String repositoryUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/preview";
+		HTTPRepository repository = new HTTPRepository(repositoryUrl);
+		((SharedHttpClientSessionManager) repository.getHttpClientSessionManager())
+				.setHttpClientConfig(RDF4JHttpClientConfig.newBuilder().socketTimeoutMs(100).build());
+		try {
+			HttpRequest directRequest = HttpRequest.newBuilder(URI.create(repositoryUrl + "/statements"))
+					.header("Accept", RDFFormat.NQUADS.getDefaultMIMEType())
+					.GET()
+					.build();
+			HttpResponse<String> directResponse = HttpClient.newHttpClient()
+					.send(directRequest,
+							HttpResponse.BodyHandlers.ofString());
+			assertThat(directResponse.statusCode()).isEqualTo(200);
+			assertThat(directResponse.body()).contains("urn:subject:0", "urn:subject:999", "urn:subject:complete",
+					"urn:graph:named");
+
+			CapturingServletOutputStream defaultTimeoutOutput = new CapturingServletOutputStream();
+			runWorkbenchDownload(repository, null, "gzip", defaultTimeoutOutput);
+			Model fullExport;
+			try (InputStream uncompressed = new GZIPInputStream(
+					new ByteArrayInputStream(defaultTimeoutOutput.bytes()))) {
+				fullExport = Rio.parse(uncompressed, "urn:base:", RDFFormat.NQUADS);
+			}
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			assertThat(fullExport).hasSize(1_001)
+					.contains(
+							valueFactory.createStatement(valueFactory.createIRI("urn:subject:0"),
+									valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("value0")),
+							valueFactory.createStatement(valueFactory.createIRI("urn:subject:complete"),
+									valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("complete"),
+									valueFactory.createIRI("urn:graph:named")));
+
+			CapturingServletOutputStream explicitTimeoutOutput = new CapturingServletOutputStream();
+			runWorkbenchDownload(repository, "5", "gzip", explicitTimeoutOutput);
+			Model explicitTimeoutExport;
+			try (InputStream uncompressed = new GZIPInputStream(
+					new ByteArrayInputStream(explicitTimeoutOutput.bytes()))) {
+				explicitTimeoutExport = Rio.parse(uncompressed, "urn:base:", RDFFormat.NQUADS);
+			}
+			assertThat(explicitTimeoutExport).hasSize(1_001);
+
+			responseDelayMillis.set(1_500);
+			CapturingServletOutputStream shortTimeoutOutput = new CapturingServletOutputStream();
+			assertThatThrownBy(() -> runWorkbenchDownload(repository, "1", "none", shortTimeoutOutput))
+					.isInstanceOf(RepositoryException.class);
+			assertThat(shortTimeoutOutput.bytes()).isNotEmpty();
+			assertThat(new String(shortTimeoutOutput.bytes(), StandardCharsets.UTF_8))
+					.contains("urn:subject:0")
+					.doesNotContain("urn:subject:complete");
+			assertThat(shortTimeoutResponseClosed.await(3, TimeUnit.SECONDS)).isTrue();
+
+			responseDelayMillis.set(250);
+			CapturingServletOutputStream unlimitedTimeoutOutput = new CapturingServletOutputStream();
+			runWorkbenchDownload(repository, "0", "gzip", unlimitedTimeoutOutput);
+			Model unlimitedExport;
+			try (InputStream uncompressed = new GZIPInputStream(
+					new ByteArrayInputStream(unlimitedTimeoutOutput.bytes()))) {
+				unlimitedExport = Rio.parse(uncompressed, "urn:base:", RDFFormat.NQUADS);
+			}
+			assertThat(unlimitedExport).hasSize(1_001);
+
+			try (RepositoryConnection unrelatedConnection = repository.getConnection()) {
+				assertThatThrownBy(() -> unrelatedConnection.exportStatements(null, null, null, false,
+						new AbstractRDFHandler() {
+						}))
+								.isInstanceOf(RepositoryException.class);
+			}
+		} finally {
+			repository.shutDown();
+			server.stop(0);
+		}
+	}
+
+	private static void runWorkbenchDownload(HTTPRepository repository, String timeout, String compression,
+			CapturingServletOutputStream output) throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(request.getParameter("action")).thenReturn("download");
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(request.getParameter("timeout")).thenReturn(timeout);
+		when(request.getParameter("compression")).thenReturn(compression);
+		if (timeout != null) {
+			when(request.getInt("timeout")).thenReturn(Integer.parseInt(timeout));
+		}
+		when(response.getOutputStream()).thenReturn(output);
+		ExportServlet servlet = new ExportServlet();
+		servlet.setRepository(repository);
+		servlet.service(request, response);
+	}
+
+	@Test
+	void explicitAllPreviewLimitRetrievesAllAvailableStatements() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		List<Statement> statements = new java.util.ArrayList<>();
+		for (int i = 0; i < 150; i++) {
+			statements.add(valueFactory.createStatement(valueFactory.createIRI("urn:subject:" + i),
+					valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral(i)));
+		}
+		AtomicInteger streamed = new AtomicInteger();
+		when(request.getParameter("action")).thenReturn("preview");
+		when(request.isParameterPresent("limit_export")).thenReturn(true);
+		when(request.getInt("limit_export")).thenReturn(0);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			for (Statement statement : statements) {
+				streamed.incrementAndGet();
+				handler.handleStatement(statement);
+			}
+			handler.endRDF();
+			return null;
+		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
+
+		servlet.service(request, null, builder, connection);
+
+		assertThat(streamed).hasValue(150);
+		verify(builder, times(150)).result(any(Resource.class), any(IRI.class), any(Value.class),
+				nullable(Resource.class));
+	}
+
+	@Test
+	void exportDownloadDefaultsToTwelveHourTimeout() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+		servlet.setRepository(repository);
+		AtomicInteger timeoutHandlerCount = new AtomicInteger();
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(0);
+			if (handler instanceof TimeLimitRDFHandler) {
+				timeoutHandlerCount.incrementAndGet();
+			}
+			handler.startRDF();
+			handler.endRDF();
+			return null;
+		}).when(connection).export(any(RDFHandler.class));
+
+		servlet.service(request, response);
+
+		assertThat(timeoutHandlerCount).hasValue(1);
+	}
+
+	@Test
+	void maximumIntegerTimeoutDoesNotOverflowMillisecondsConversion() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		AtomicInteger timeoutHandlerCount = new AtomicInteger();
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(request.getParameter("timeout")).thenReturn(Integer.toString(Integer.MAX_VALUE));
+		when(request.getInt("timeout")).thenReturn(Integer.MAX_VALUE);
+		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+		servlet.setRepository(repository);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(0);
+			if (handler instanceof TimeLimitRDFHandler) {
+				timeoutHandlerCount.incrementAndGet();
+			}
+			handler.startRDF();
+			handler.endRDF();
+			return null;
+		}).when(connection).export(any(RDFHandler.class));
+
+		servlet.service(request, response);
+
+		assertThat(timeoutHandlerCount).hasValue(1);
+	}
+
+	@Test
+	void positiveExportTimeoutStopsFurtherRdfCallbacksAtItsDeadline() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(request.getParameter("timeout")).thenReturn("1");
+		when(request.getInt("timeout")).thenReturn(1);
+		when(response.getOutputStream()).thenReturn(new CapturingServletOutputStream());
+		servlet.setRepository(repository);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(0);
+			handler.startRDF();
+			assertThat(new CountDownLatch(1).await(3, TimeUnit.SECONDS)).isFalse();
+			Statement statement = SimpleValueFactory.getInstance()
+					.createStatement(
+							SimpleValueFactory.getInstance().createIRI("urn:subject"),
+							SimpleValueFactory.getInstance().createIRI("urn:predicate"),
+							SimpleValueFactory.getInstance().createLiteral("after-timeout"));
+			handler.handleStatement(statement);
+			return null;
+		}).when(connection).export(any(RDFHandler.class));
+
+		assertThatThrownBy(() -> servlet.service(request, response))
+				.isInstanceOf(RDFHandlerException.class)
+				.hasMessage("RDFHandler took too long");
+		verify(connection).close();
+	}
+
+	@Test
+	void zeroExportTimeoutRemainsUnlimitedAndNegativeTimeoutIsRejectedBeforeDownloadHeaders() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest zeroTimeoutRequest = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(repository.getConnection()).thenReturn(connection);
+		when(zeroTimeoutRequest.isParameterPresent("Accept")).thenReturn(true);
+		when(zeroTimeoutRequest.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(zeroTimeoutRequest.getParameter("timeout")).thenReturn("0");
+		when(zeroTimeoutRequest.getInt("timeout")).thenReturn(0);
+		when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+		servlet.setRepository(repository);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(0);
+			assertThat(handler).isNotInstanceOf(TimeLimitRDFHandler.class);
+			handler.startRDF();
+			handler.endRDF();
+			return null;
+		}).when(connection).export(any(RDFHandler.class));
+
+		servlet.service(zeroTimeoutRequest, response);
+
+		WorkbenchRequest invalidRequest = mock(WorkbenchRequest.class);
+		when(invalidRequest.isParameterPresent("Accept")).thenReturn(true);
+		when(invalidRequest.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(invalidRequest.getParameter("timeout")).thenReturn("-1");
+		when(invalidRequest.getInt("timeout")).thenReturn(-1);
+		HttpServletResponse invalidResponse = mock(HttpServletResponse.class);
+
+		assertThatThrownBy(() -> servlet.service(invalidRequest, invalidResponse))
+				.isInstanceOf(BadRequestException.class);
+		verifyNoInteractions(invalidResponse);
+	}
+
+	@Test
+	void gzipNQuadsDownloadIncludesAllStatementsBeyondPreviewLimit() throws Exception {
+		ExportServlet servlet = new ExportServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource namedGraph = valueFactory.createIRI("urn:graph:complete-export");
+		List<Statement> statements = new java.util.ArrayList<>();
+		for (int i = 0; i < 150; i++) {
+			statements.add(valueFactory.createStatement(valueFactory.createIRI("urn:subject:" + i),
+					valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral(i),
+					i == 0 ? namedGraph : null));
+		}
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.getParameter("action")).thenReturn("download");
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(request.getParameter("compression")).thenReturn("gzip");
+		when(request.getParameter("timeout")).thenReturn("0");
+		when(request.getInt("limit_export")).thenReturn(100);
+		when(response.getOutputStream()).thenReturn(output);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(0);
+			handler.startRDF();
+			for (Statement statement : statements) {
+				handler.handleStatement(statement);
+			}
+			handler.endRDF();
+			return null;
+		}).when(connection).export(any(RDFHandler.class));
+
+		servlet.service(request, response);
+
+		verify(connection).export(any(RDFHandler.class));
+		try (InputStream compressed = new GZIPInputStream(new ByteArrayInputStream(output.bytes()))) {
+			Model parsed = Rio.parse(compressed, "urn:base:", RDFFormat.NQUADS);
+			assertThat(parsed).hasSize(150).contains(statements.get(0), statements.get(149));
+		}
 	}
 
 	private static RepositoryResult<Statement> repositoryResult(Statement... statements) {
 		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.of(statements).iterator()));
+	}
+
+	private static final class CapturingServletOutputStream extends ServletOutputStream {
+		private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+		@Override
+		public boolean isReady() {
+			return true;
+		}
+
+		@Override
+		public void setWriteListener(WriteListener listener) {
+		}
+
+		@Override
+		public void write(int value) {
+			output.write(value);
+		}
+
+		@Override
+		public void write(byte[] bytes, int offset, int length) {
+			output.write(bytes, offset, length);
+		}
+
+		private byte[] bytes() {
+			return output.toByteArray();
+		}
 	}
 }

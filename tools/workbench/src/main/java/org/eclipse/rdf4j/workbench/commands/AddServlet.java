@@ -57,7 +57,7 @@ public class AddServlet extends TransformationServlet {
 	private final Logger logger = LoggerFactory.getLogger(AddServlet.class);
 
 	@Override
-	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)
 			throws IOException, RepositoryException, QueryResultHandlerException {
 		try {
 			String baseURI = req.getParameter("baseURI");
@@ -85,7 +85,6 @@ public class AddServlet extends TransformationServlet {
 				resp.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
 			}
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-			builder.transform(xslPath, "add.xsl");
 			builder.start("error-message", "baseURI", CONTEXT, "Content-Type", ISOLATION_LEVEL_PARAM,
 					ISOLATION_LEVEL_OPTION, ISOLATION_LEVEL_OPTION_LABEL);
 			builder.link(List.of(INFO));
@@ -219,18 +218,16 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	@Override
-	public void service(TupleResultBuilder builder, String xslPath)
+	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
-		builder.transform(xslPath, "add.xsl");
 		builder.start();
 		builder.link(List.of(INFO));
 		builder.end();
 	}
 
 	@Override
-	protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) throws Exception {
+	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		builder.transform(xslPath, "add.xsl");
 		builder.start(ISOLATION_LEVEL_OPTION, ISOLATION_LEVEL_OPTION_LABEL, ISOLATION_LEVEL_PARAM);
 		builder.link(List.of(INFO));
 		String selected = req.getParameter(ISOLATION_LEVEL_PARAM);

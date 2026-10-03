@@ -32,6 +32,7 @@ import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -62,12 +63,15 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class QueryServletCoverageTest {
 
@@ -98,7 +102,6 @@ class QueryServletCoverageTest {
 
 			assertThat(servlet.lastDispatch).isEqualTo("GET");
 			assertThat(servlet.lastWriteQueryCookie).isFalse();
-			assertThat(servlet.lastXslPath).isEqualTo("/ctx/transform");
 		} finally {
 			servlet.destroy();
 		}
@@ -117,7 +120,60 @@ class QueryServletCoverageTest {
 
 			assertThat(servlet.lastDispatch).isEqualTo("POST");
 			assertThat(servlet.lastWriteQueryCookie).isTrue();
-			assertThat(servlet.lastXslPath).isEqualTo("/ctx/transform");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void queryExecutionNavigationPostReturnsAShellWithoutDispatchingTheQuery() throws Exception {
+		RecordingQueryServlet servlet = newInitializedServlet();
+		try {
+			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+			request.setContextPath("/ctx");
+			request.addHeader("Accept", "text/html,application/xhtml+xml");
+			request.addParameter("action", "exec");
+			String query = "ASK { <urn:é> ?p ?o } </script>";
+			request.addParameter("query", query);
+			request.addParameter("repeated", "first", "second");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			servlet.service(request, response);
+
+			assertThat(response.getContentType()).startsWith("text/html");
+			assertThat(response.getContentAsString())
+					.contains("data-workbench-view=\"query\"")
+					.contains("data-workbench-initial-post=");
+			String body = response.getContentAsString();
+			String encoded = body.replaceFirst("(?s).*data-workbench-initial-post=\"([A-Za-z0-9_-]+)\".*", "$1");
+			JsonNode descriptor = new ObjectMapper().readTree(Base64.getUrlDecoder().decode(encoded));
+			assertThat(descriptor.path("action").get(0).asText()).isEqualTo("exec");
+			assertThat(descriptor.path("query").get(0).asText()).isEqualTo(query);
+			assertThat(descriptor.path("repeated").get(0).asText()).isEqualTo("first");
+			assertThat(descriptor.path("repeated").get(1).asText()).isEqualTo("second");
+			assertThat(body).doesNotContain(query);
+			assertThat(request.getCharacterEncoding()).isEqualTo(StandardCharsets.UTF_8.name());
+			assertThat(servlet.lastDispatch).isNull();
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void explicitResultDownloadPostRemainsARawQueryRequest() throws Exception {
+		RecordingQueryServlet servlet = newInitializedServlet();
+		try {
+			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+			request.addHeader("Accept", "text/html,application/xhtml+xml");
+			request.addParameter("action", "exec");
+			request.addParameter("query", "ASK { <urn:s> ?p ?o }");
+			request.addParameter("Accept", "application/sparql-results+json");
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			servlet.service(request, response);
+
+			assertThat(servlet.lastDispatch).isEqualTo("POST");
+			assertThat(response.getContentType()).isNull();
 		} finally {
 			servlet.destroy();
 		}
@@ -178,13 +234,13 @@ class QueryServletCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 
-		when(request.getParameter("action")).thenReturn("get");
+		stubAction(request, "get");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setContentType("application/json");
 		assertThat(body.toString()).contains("\"queryText\":\"select * {?s ?p ?o .}\"");
@@ -204,7 +260,7 @@ class QueryServletCoverageTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
 				.thenThrow(new HTTPQueryEvaluationException("remote failure"));
 		when(response.getOutputStream()).thenReturn(outputStream);
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -220,7 +276,7 @@ class QueryServletCoverageTest {
 		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		assertThat(outputStream.asString())
 				.contains("error-message")
@@ -253,7 +309,7 @@ class QueryServletCoverageTest {
 		when(storage.canRead(queryId, "alice")).thenReturn(true);
 		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"))).thenReturn(SHORT_QUERY);
 		when(response.getOutputStream()).thenReturn(outputStream);
-		when(request.getParameter("action")).thenReturn("edit");
+		stubAction(request, "edit");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
@@ -266,7 +322,7 @@ class QueryServletCoverageTest {
 		when(request.getParameter("query-timeout")).thenReturn("17");
 		servlet.substituteQueryStorage(storage);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		assertThat(outputStream.asString())
 				.contains(SHORT_QUERY)
@@ -286,19 +342,19 @@ class QueryServletCoverageTest {
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
 		when(storage.canRead(any(IRI.class), eq("alice"))).thenReturn(false);
-		when(unreadableRequest.getParameter("action")).thenReturn("exec");
+		stubAction(unreadableRequest, "exec");
 		when(unreadableRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(unreadableRequest.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(unreadableRequest.getParameter("owner")).thenReturn("owner");
 		when(unreadableRequest.getParameter("server-user")).thenReturn("alice");
-		when(unknownActionRequest.getParameter("action")).thenReturn("surprise");
+		stubAction(unknownActionRequest, "surprise");
 		servlet.substituteQueryStorage(storage);
 
-		assertThatThrownBy(() -> servlet.doPost(unreadableRequest, mock(HttpServletResponse.class), "/transform"))
+		assertThatThrownBy(() -> servlet.doPost(unreadableRequest, mock(HttpServletResponse.class)))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
-		assertThatThrownBy(() -> servlet.doPost(unknownActionRequest, mock(HttpServletResponse.class), "/transform"))
+		assertThatThrownBy(() -> servlet.doPost(unknownActionRequest, mock(HttpServletResponse.class)))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("POST with unexpected action parameter value: surprise");
 	}
@@ -327,14 +383,14 @@ class QueryServletCoverageTest {
 
 		servlet.substituteQueryStorage(storage);
 
-		assertThatCode(() -> servlet.doPost(inaccessible, response, "/transform")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(inaccessible, response)).doesNotThrowAnyException();
 		assertThat(body.toString()).contains("\"accessible\":false");
 
 		body.getBuffer().setLength(0);
 		info.setLocation(null);
 		servlet.setRepository(repository);
 		servlet.setRepositoryInfo(info);
-		assertThatCode(() -> servlet.doPost(noOverwrite, response, "/transform")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(noOverwrite, response)).doesNotThrowAnyException();
 		assertThat(body.toString()).contains("\"existed\":true").contains("\"written\":false");
 		verify(storage, never()).updateQuery(any(), anyString(), eq(false), eq(QueryLanguage.SPARQL), anyString(),
 				eq(false), eq(20), eq(0));
@@ -344,7 +400,7 @@ class QueryServletCoverageTest {
 		body.getBuffer().setLength(0);
 		info.setLocation(new URL("https://example.org/repositories/test"));
 		servlet.setRepositoryInfo(info);
-		assertThatCode(() -> servlet.doPost(savePrivate, response, "/transform")).doesNotThrowAnyException();
+		assertThatCode(() -> servlet.doPost(savePrivate, response)).doesNotThrowAnyException();
 		verify(storage).saveQuery(expectedRepositoryReference("https://example.org/repositories/test"), "third",
 				"carol", false, QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"accessible\":true").contains("\"written\":true");
@@ -381,12 +437,13 @@ class QueryServletCoverageTest {
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn(queryName);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("20");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "20" });
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("0");
 		when(request.isParameterPresent("infer")).thenReturn(false);
@@ -404,6 +461,11 @@ class QueryServletCoverageTest {
 			when(request.getParameter("server-user")).thenReturn("carol");
 		}
 		return request;
+	}
+
+	private static void stubAction(WorkbenchRequest request, String action) {
+		when(request.getParameter("action")).thenReturn(action);
+		when(request.isParameterPresent("action")).thenReturn(action != null);
 	}
 
 	private static String expectedRepositoryReference(String source) {
@@ -438,7 +500,7 @@ class QueryServletCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
 
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent("Accept")).thenReturn(true);
 		when(request.getParameter("Accept")).thenReturn("text/csv");
 		when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");
@@ -449,7 +511,7 @@ class QueryServletCoverageTest {
 		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		if (gzipped) {
 			verify(response).setHeader("Content-Encoding", "gzip");
@@ -461,7 +523,6 @@ class QueryServletCoverageTest {
 	private static final class RecordingQueryServlet extends QueryServlet {
 		private String lastDispatch;
 		private Boolean lastWriteQueryCookie;
-		private String lastXslPath;
 
 		private void initializeForTests(TestServletConfig servletConfig) {
 			this.config = servletConfig;
@@ -471,17 +532,15 @@ class QueryServletCoverageTest {
 		}
 
 		@Override
-		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) {
+		protected void service(WorkbenchRequest req, HttpServletResponse resp) {
 			lastDispatch = "GET";
 			lastWriteQueryCookie = writeQueryCookie;
-			lastXslPath = xslPath;
 		}
 
 		@Override
-		protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath) {
+		protected void doPost(WorkbenchRequest req, HttpServletResponse resp) {
 			lastDispatch = "POST";
 			lastWriteQueryCookie = writeQueryCookie;
-			lastXslPath = xslPath;
 		}
 	}
 

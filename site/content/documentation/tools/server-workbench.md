@@ -134,6 +134,113 @@ followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` 
 ReadWritePaths=/var/rdf4j/
 ```
 
+### Workbench policy configuration
+
+Workbench reads its flat `workbench.properties` policy once when the web application starts. Values are merged in this order, with later values taking precedence:
+
+1. Packaged defaults at `org/eclipse/rdf4j/common/app/config/defaults/workbench.properties`.
+2. An optional classpath override at `org/eclipse/rdf4j/common/app/config/workbench.properties`.
+3. `[RDF4J_DATA]/Workbench/conf/workbench.properties`.
+
+The external file can hide Workbench pages and capabilities without changing the deployed WAR. Every key is validated
+at application startup; an unknown key, undeclared ID, malformed boolean or order, unsafe href, or invalid theme stops
+startup with a configuration error. For example:
+
+```properties
+# Show only Query under Explore and explicitly disable Summary.
+menu.items=query
+menu.groups=explore
+menu.group.explore.visible=true
+menu.item.query.order=10
+page.summary.enabled=false
+
+# Hide a whole navigation group or one item.
+menu.group.modify.visible=false
+menu.item.namespaces.visible=false
+
+# Fix the query-result download default; zero means all rows.
+query.feature.result-download-limit.enabled=false
+query.download.default-limit=0
+
+# Initial theme before the user has selected a preference.
+theme.deployment-default=system
+```
+
+An embedding application can override the packaged settings without modifying RDF4J resources by adding
+`src/main/resources/org/eclipse/rdf4j/common/app/config/workbench.properties` to its own classpath. For example, a
+Spring Boot consumer can package this file in its application JAR:
+
+```properties
+menu.item.query.label=SPARQL workspace
+menu.item.query.order=5
+query.feature.result-wrap.enabled=false
+theme.deployment-default=dark
+```
+
+That resource overrides the packaged defaults in both the Workbench WAR and Spring Boot integration. The external
+`[RDF4J_DATA]/Workbench/conf/workbench.properties` file has the final say when the same key appears in both overrides.
+
+The built-in menu IDs are `server`, `repositories`, `create`, `delete`, `summary`, `namespaces`, `contexts`, `types`, `explore`, `query`, `saved-queries`, `export`, `update`, `add`, `remove`, `clear`, and `information`. `menu.items` is a comma- or whitespace-separated list; an omitted built-in item is hidden. `menu.groups` lists groups in display order. Built-in group IDs are `server`, `repositories`, `explore`, `modify`, and `system`; the packaged defaults list and enable all five. A group must be listed and have `menu.group.<id>.visible=true` for its children to appear. Each item must also be listed and visible, and `page.<id>.enabled` can further disable its canonical page. A `true` page setting cannot restore an item or group hidden by another setting. Thus, adding a second menu link to `/query` does not make the Query page available when the built-in `query` item is omitted or hidden. The policy gates the canonical servlet behind every configured alias before proxy cache handling, redirects, or command dispatch. The raw `/info` endpoint remains available. Query and Update use the read-only `/_internal/namespaces` metadata route when the Namespaces page is hidden.
+
+The optional item keys are `menu.item.<id>.visible` (`true` or `false`), `.label`, `.order` (integer, default `0`), `.group`, `.icon`, `.href`, and `.route`. Group keys are `menu.group.<id>.visible`, `.label`, `.icon`, and `.order` (integer, default `0`). Item order sorts numerically, then by position in `menu.items`, then by ID; group order follows the same rule using position in `menu.groups`. Hrefs may be HTTP(S) URLs or application-relative paths. Opaque schemes such as `javascript:` and protocol-relative URLs are rejected at startup. To add an embedded application's page, list its ID in `menu.consumer-ids`, add it to `menu.items`, declare its group in `menu.groups`, enable the group, and provide the item's `.href`; set `.route` when the endpoint path differs from the item ID. The page is then controlled by `page.<id>.enabled` in addition to its menu visibility.
+
+Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 48 built-in IDs are stable policy keys and map to the existing Workbench controls and operations:
+
+| Feature ID | Controls or operation |
+|---|---|
+| `query-execution` | Run a query and query-backed result downloads. |
+| `query-language` | Query language selector. |
+| `query-save` | Save-query controls and save operation. |
+| `query-private-save` | Save query privately. |
+| `query-options` | Named Query options disclosure. |
+| `query-timeout` | Query timeout. |
+| `query-inferred-statements` | Include-inferred option. |
+| `query-explain` | Explain action and server operation. |
+| `explain-level-unoptimized` | Unoptimized Explain level. |
+| `explain-level-optimized` | Optimized Explain level. |
+| `explain-level-executed` | Executed Explain level. |
+| `explain-level-telemetry` | Telemetry Explain level. |
+| `explain-level-timed` | Timed Explain level. |
+| `explain-format-text` | Text Explain format. |
+| `explain-format-dot` | DOT Explain format. |
+| `explain-format-json` | JSON Explain format. |
+| `explain-highlight-syntax` | Syntax highlighting for explanations. |
+| `explain-highlight-hotspot` | Hotspot highlighting for explanations. |
+| `explain-property-selection` | Explanation property selection controls. |
+| `explain-view-text` | Text explanation view. |
+| `explain-view-dot` | DOT graph explanation view. |
+| `explain-view-json` | JSON explanation view. |
+| `explain-download` | Download explanation. |
+| `explain-copy` | Copy explanation, including the compare-pane copy action. |
+| `explain-cancel` | Cancel a pending explanation. |
+| `query-compare` | Open the comparison editor pane. |
+| `query-diff` | Show the explanation difference. |
+| `query-swap` | Swap the primary and comparison queries. |
+| `query-refresh` | Refresh the comparison explanation. |
+| `result-layout` | Tuple/graph result layout selection. |
+| `result-wrap` | Wrap long result values. |
+| `result-totals` | Display result totals. |
+| `result-paging` | Change result-page offset. |
+| `result-page-size` | Results-per-page selector. |
+| `result-page-previous` | Previous result page. |
+| `result-page-next` | Next result page. |
+| `result-download` | Download query results. |
+| `result-download-format` | Result download format selector. |
+| `result-download-format-tuple` | Tuple/boolean result download formats. |
+| `result-download-format-graph` | RDF graph result download formats. |
+| `result-download-limit` | Query-result download limit; `0` means all results. |
+| `result-show-datatypes` | Show datatype details in tuple results. |
+| `result-fullscreen` | Fullscreen for the result frame. |
+| `query-rerun` | Rerun an existing explanation. |
+| `query-cancel` | Cancel a running query. |
+| `editor-namespaces` | Clear/reload editor namespaces. |
+| `editor-sidebar` | Toggle the query sidebar. |
+| `editor-fullscreen` | YASQE editor fullscreen button and F11 shortcut. |
+
+Plan copying is controlled by `explain-copy`; `query-copy` and `editor-reset` are not built-in IDs because no matching actions are exposed. The built-in `result-download-limit` capability controls the query-results download-limit selector. Embedded applications declare additional stable feature IDs in `query.consumer-feature-ids`; unknown feature keys are rejected. `query.download.default-limit` is the fixed fallback value and defaults to `0`, meaning all results. The deployment theme default accepts `system`, `light`, or `dark`.
+
+Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` and `query-refresh` hide and disable those Explain entry points while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
+
 ### OpenTelemetry Tracing
 
 RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).

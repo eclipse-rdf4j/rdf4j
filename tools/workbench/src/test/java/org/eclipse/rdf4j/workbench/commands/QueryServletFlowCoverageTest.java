@@ -111,14 +111,13 @@ class QueryServletFlowCoverageTest {
 		RecordingServiceQueryServlet execServlet = new RecordingServiceQueryServlet();
 		WorkbenchRequest execRequest = mock(WorkbenchRequest.class);
 
-		when(execRequest.getParameter("action")).thenReturn("exec");
+		stubAction(execRequest, "exec");
 		when(execRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(execRequest.getParameter(QueryServlet.REF)).thenReturn("text");
 
-		execServlet.doPost(execRequest, mock(HttpServletResponse.class), "/transform");
+		execServlet.doPost(execRequest, mock(HttpServletResponse.class));
 
 		assertThat(execServlet.serviceCalls).isEqualTo(1);
-		assertThat(execServlet.lastXslPath).isEqualTo("/transform");
 
 		QueryServlet explainServlet = new QueryServlet();
 		Repository repository = mock(Repository.class);
@@ -136,7 +135,7 @@ class QueryServletFlowCoverageTest {
 		when(explainResponse.getWriter()).thenReturn(new PrintWriter(syncBody));
 		explainServlet.setRepository(repository);
 
-		explainServlet.doPost(syncRequest, explainResponse, "/transform");
+		explainServlet.doPost(syncRequest, explainResponse);
 
 		assertThat(syncBody.toString()).contains("\"content\":\"sync-plan\"");
 
@@ -146,7 +145,7 @@ class QueryServletFlowCoverageTest {
 		when(asyncRequest.getParameter("explain")).thenReturn("Nope");
 		when(asyncResponse.getWriter()).thenReturn(new PrintWriter(asyncBody));
 
-		explainServlet.doPost(asyncRequest, asyncResponse, "/transform");
+		explainServlet.doPost(asyncRequest, asyncResponse);
 
 		assertThat(asyncBody.toString()).contains("Unknown explain level 'Nope'");
 	}
@@ -164,22 +163,22 @@ class QueryServletFlowCoverageTest {
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
 		when(storage.canRead(any(), eq("alice"))).thenReturn(false);
-		when(missingCancelRequest.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(missingCancelRequest, "cancel-explain");
 		when(missingCancelRequest.isParameterPresent("explain-request-id")).thenReturn(false);
-		when(nullCancelRequest.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(nullCancelRequest, "cancel-explain");
 		when(nullCancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(nullCancelRequest.getParameter("explain-request-id")).thenReturn(null);
 		servlet.substituteQueryStorage(storage);
 
-		assertThatThrownBy(() -> servlet.doPost(editRequest, response, "/transform"))
+		assertThatThrownBy(() -> servlet.doPost(editRequest, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
-		assertThatThrownBy(() -> servlet.doPost(explainRequest, response, "/transform"))
+		assertThatThrownBy(() -> servlet.doPost(explainRequest, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
 
-		servlet.doPost(missingCancelRequest, response, "/transform");
-		servlet.doPost(nullCancelRequest, response, "/transform");
+		servlet.doPost(missingCancelRequest, response);
+		servlet.doPost(nullCancelRequest, response);
 
 		verify(response, times(2)).sendError(HttpServletResponse.SC_BAD_REQUEST,
 				"Missing parameter: explain-request-id");
@@ -202,7 +201,7 @@ class QueryServletFlowCoverageTest {
 		servlet.setRepository(repository);
 		servlet.substituteQueryStorage(storage);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(storage).saveQuery("https://example.org/repositories/http", "http-query", "", true,
 				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
@@ -229,7 +228,7 @@ class QueryServletFlowCoverageTest {
 		servlet.setRepositoryInfo(info);
 		servlet.substituteQueryStorage(storage);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(storage).saveQuery(localRepositoryReference("test-id"), "local-query", "", true,
 				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
@@ -264,7 +263,7 @@ class QueryServletFlowCoverageTest {
 		namespaceServlet.writeQueryCookie = true;
 		namespaceServlet.setCookieHandler(mock(CookieHandler.class));
 
-		namespaceServlet.service(namespaceRequest, namespaceResponse, "/transform");
+		namespaceServlet.service(namespaceRequest, namespaceResponse);
 
 		assertThat(namespaceOut.asString()).contains("xmlns:ex='urn:ex:'");
 
@@ -285,7 +284,7 @@ class QueryServletFlowCoverageTest {
 		malformedServlet.writeQueryCookie = true;
 		malformedServlet.setCookieHandler(mock(CookieHandler.class));
 
-		malformedServlet.service(malformedRequest, malformedResponse, "/transform");
+		malformedServlet.service(malformedRequest, malformedResponse);
 
 		assertThat(malformedOut.asString()).contains("remote syntax");
 	}
@@ -305,7 +304,7 @@ class QueryServletFlowCoverageTest {
 			servlet.writeQueryCookie = true;
 			servlet.setCookieHandler(mock(CookieHandler.class));
 
-			servlet.service(request, response, "/transform");
+			servlet.service(request, response);
 
 			assertThat(outputStream.asString()).doesNotContain(SHORT_QUERY);
 		} finally {
@@ -324,7 +323,7 @@ class QueryServletFlowCoverageTest {
 		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		if (gzipped) {
 			verify(response).setHeader("Content-Encoding", "gzip");
@@ -344,7 +343,7 @@ class QueryServletFlowCoverageTest {
 		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(response).setContentType(contentType);
 		verify(response).setHeader("Content-disposition", disposition);
@@ -352,7 +351,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest execRequest(String query, String accept, String acceptEncoding) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(query != null);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(query);
@@ -371,7 +370,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest mockExplainPostRequest(boolean async, String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("explain");
+		stubAction(request, "explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("text");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -388,7 +387,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest unreadableSavedQueryRequest(String action) {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn(action);
+		stubAction(request, action);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
@@ -399,12 +398,13 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn(queryName);
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("limit_query")).thenReturn("20");
+		when(request.getParameterValues("limit_query")).thenReturn(new String[] { "20" });
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getParameter("query-timeout")).thenReturn("0");
 		when(request.getParameter("overwrite")).thenReturn("false");
@@ -422,6 +422,11 @@ class QueryServletFlowCoverageTest {
 		return "urn:rdf4j:repository:" + java.util.UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8));
 	}
 
+	private static void stubAction(WorkbenchRequest request, String action) {
+		when(request.getParameter("action")).thenReturn(action);
+		when(request.isParameterPresent("action")).thenReturn(action != null);
+	}
+
 	private static final class CookieAwareQueryServlet extends QueryServlet {
 		private void setCookieHandler(CookieHandler cookieHandler) {
 			this.cookies = cookieHandler;
@@ -430,12 +435,10 @@ class QueryServletFlowCoverageTest {
 
 	private static final class RecordingServiceQueryServlet extends QueryServlet {
 		private int serviceCalls;
-		private String lastXslPath;
 
 		@Override
-		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath) {
+		protected void service(WorkbenchRequest req, HttpServletResponse resp) {
 			serviceCalls++;
-			lastXslPath = xslPath;
 		}
 	}
 

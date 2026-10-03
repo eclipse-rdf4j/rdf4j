@@ -21,12 +21,26 @@ module workbench {
 
         var AMP = decodeURIComponent('%26');
 
-        function addCookieToUrlQueryIfPresent(url: string, name: string){
-            var value = workbench.getCookie(name);
-            if (value) {
-                url = url + AMP + name + '=' + value;
+        function getMountedQueryPage(): any {
+            var queryPage: any = (<any>workbench).queryPage;
+            return queryPage && typeof queryPage.isMounted === 'function' && queryPage.isMounted()
+                ? queryPage : null;
+        }
+
+        function isStreamPagingParameter(name: string): boolean {
+            return name === OFFSET || name === 'limit_query' || name.indexOf('limit_') === 0;
+        }
+
+        function changeStreamPagingParameter(queryPage: any, name: string, value: any): boolean {
+            if (!queryPage || typeof queryPage.changePageParameter !== 'function'
+                    || !isStreamPagingParameter(name)) {
+                return false;
             }
-            return url;
+            var numericValue = typeof value === 'number' ? value : parseInt(String(value), 10);
+            if (!isFinite(numericValue) || numericValue < 0) {
+                return false;
+            }
+            return queryPage.changePageParameter(name, numericValue);
         }
 
         function createHiddenInput(name: string, value: string): HTMLInputElement {
@@ -85,6 +99,14 @@ module workbench {
             addCookieToFormIfPresent(form, 'ref');
         }
 
+        function addQueryOptionsToForm(form: HTMLFormElement) {
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+        }
+
         function submitGraphParamRequest(name: string, value: string) {
             var form = document.createElement('form');
             form.method = 'POST';
@@ -93,11 +115,7 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            addQueryOptionsToForm(form);
             if (name == 'Accept') {
                 addElementValueToFormIfPresent(form, 'download_limit');
             }
@@ -116,11 +134,7 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            addQueryOptionsToForm(form);
             if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
                 form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
             }
@@ -132,20 +146,36 @@ module workbench {
         }
 
         /**
-         * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
+         * Invoked in the graph and tuple result views for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         export function addGraphParam(name: string) {
             var value = <string>$('#' + name).val();
+            if (name !== 'Accept' && changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             var url = document.location.href;
             if (url.match(/query$/)) { // looking at POST query results?
                 submitGraphParamRequest(name, value);
                 return;
             }
             if (name == 'Accept') {
+                // A download: the browser saves the answer as a file.
                 url = addElementValueToUrlIfPresent(url, 'download_limit');
+                document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+                return;
             }
-            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+            go(appendParamToUrl(url, name, encodeURIComponent(value)));
+        }
+
+        /** Show url: in the page when the router runs (M10.1), by a page load otherwise. */
+        function go(url: string) {
+            var router: any = (<any>workbench).router;
+            if (router && typeof router.isRunning === 'function' && router.isRunning()) {
+                router.navigate(url, { history: 'push' });
+            } else {
+                document.location.href = url;
+            }
         }
         
         class StringMap {
@@ -182,7 +212,6 @@ module workbench {
             return rval;
         }
 
-
         /**
          * First, adds the given parameter to the URL query string. Second,
          * adds a 'know_total' parameter if its current value is 'false' or
@@ -193,6 +222,9 @@ module workbench {
          * @param {number} value The value of the query parameter.
          */
         export function addPagingParam(name: string, value: number) {
+            if (changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
+                return;
+            }
             if (document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
@@ -208,11 +240,11 @@ module workbench {
                 url += AMP + 'query=' + encodeURIComponent(workbench.getCookie('query'));
                 url += AMP + 'ref=' + encodeURIComponent(workbench.getCookie('ref'));
             }
-            document.location.href = simplifyParameters(url);
+            go(simplifyParameters(url));
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Changes the limit query
+         * Invoked in the tuple and explore views. Changes the limit query
          * parameter and navigates to the new URL.
          */
         export function addLimit(page: string) {
@@ -221,18 +253,28 @@ module workbench {
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Increments the offset query
+         * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         export function nextOffset(page: string) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.nextPage === 'function') {
+                queryPage.nextPage();
+                return;
+            }
             addPagingParam(OFFSET, getOffset() + getLimit(page));
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Decrements the offset query
+         * Invoked in the tuple and explore views. Decrements the offset query
          * parameter and navigates to the new URL.
          */
         export function previousOffset(page: string) {
+            var queryPage = getMountedQueryPage();
+            if (queryPage && typeof queryPage.previousPage === 'function') {
+                queryPage.previousPage();
+                return;
+            }
             addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
         }
 
@@ -366,27 +408,26 @@ module workbench {
                 exdate.setDate(exdate.getDate() + exdays);
                 document.cookie = c_name + "=" + value + 
                     ((exdays == null) ? "" : 
-                    "; expires=" + exdate.toUTCString());
+                    "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
             }
 
+            /** Datatype tags (span.rdf-datatype) are hidden by a page class, so no cell needs re-rendering. */
             export function setShow(show: boolean) {
                 setCookie('show-datatypes', show, 365);
-                var data = show ? 'data-longform' : 'data-shortform';
-                $('div.resource[' + data + ']').each(function() {
-                    var me = $(this);
-                    me.find('a:first').text(decodeURIComponent(me.attr(data)));
-                });
+                document.body.classList.toggle('workbench-hide-datatypes', !show);
             }
         }
 
-        export function setShowDataTypesCheckboxAndSetChangeEvent() {
+        /** Bind the "Show datatypes" checkbox (inside root when given) in the .wbRoute event namespace. */
+        export function setShowDataTypesCheckboxAndSetChangeEvent(root?: HTMLElement) {
             var hideDataTypes = (workbench.getCookie('show-datatypes') == 'false');
-            var showDTcb = $("input[name='show-datatypes']");
+            var selector = "input[name='show-datatypes']";
+            var showDTcb = root ? $(root).find(selector) : $(selector);
             if (hideDataTypes) {
                 showDTcb.prop('checked', false);
                 DataTypeVisibility.setShow(false);
             }
-            showDTcb.on('change', function() {
+            showDTcb.on('change.wbRoute', function() {
                 DataTypeVisibility.setShow(showDTcb.prop('checked'));
             });
         }

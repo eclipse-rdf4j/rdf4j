@@ -38,8 +38,8 @@
 		<servlet-name>workbench</servlet-name>
 		<servlet-class>org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway</servlet-class>
 		<init-param>
-			<param-name>transformations</param-name>
-			<param-value>/transformations</param-value>
+			<param-name>workbenchBasePath</param-name>
+			<param-value></param-value>
 		</init-param>
 		<init-param>
 			<param-name>default-server</param-name>
@@ -90,7 +90,7 @@
 		</init-param>
 		<init-param>
 			<param-name>default-query-timeout</param-name>
-			<param-value>0</param-value>
+			<param-value>60</param-value>
 		</init-param>
 		<init-param>
 			<param-name>default-Accept</param-name>
@@ -127,6 +127,10 @@
 		<init-param>
 			<param-name>/namespaces</param-name>
 			<param-value>org.eclipse.rdf4j.workbench.commands.NamespacesServlet</param-value>
+		</init-param>
+		<init-param>
+			<param-name>/_internal/namespaces</param-name>
+			<param-value>org.eclipse.rdf4j.workbench.proxy.config.WorkbenchNamespaceMetadataServlet</param-value>
 		</init-param>
 		<init-param>
 			<param-name>/contexts</param-name>
@@ -173,4 +177,9 @@
 		<servlet-name>workbench</servlet-name>
 		<url-pattern>/repositories/*</url-pattern>
 	</servlet-mapping>
+	<!-- Browsers load module scripts only with a JavaScript type; containers such as Tomcat do not map .mjs. -->
+	<mime-mapping>
+		<extension>mjs</extension>
+		<mime-type>text/javascript</mime-type>
+	</mime-mapping>
 </web-app>

@@ -4,7 +4,7 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 /**
- * Invoked by the change server form in server.xsl.
+ * Invoked by the rendered change server form.
  */
 function changeServer(event) {
     event.preventDefault();
