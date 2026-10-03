@@ -469,8 +469,8 @@ final class TxnManager {
 
 	/**
 	 * Runs a scoped short callback only when an ordinary reader permit is immediately available. Timed zero admission
-	 * honors queued ordinary callers. Returns {@code null} when not admitted; callers must use non-null callback results
-	 * to distinguish that outcome. This operation never consumes the reserved priority reader.
+	 * honors queued ordinary callers. Returns {@code null} when not admitted; callers must use non-null callback
+	 * results to distinguish that outcome. This operation never consumes the reserved priority reader.
 	 */
 	<T> T tryDoWith(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory) throws IOException {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();

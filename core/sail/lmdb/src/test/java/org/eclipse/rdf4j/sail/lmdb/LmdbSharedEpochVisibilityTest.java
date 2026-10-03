@@ -72,7 +72,8 @@ class LmdbSharedEpochVisibilityTest {
 			commitReadyStatement(store, BASE_SUBJECT, VF.createBNode("first-independent-payload"));
 			commitReadyStatement(store, APPENDED_SUBJECT, VF.createBNode("second-independent-payload"));
 			store.values.clearCaches();
-			try (SailDataset dataset = store.getBackingStore().getExplicitSailSource()
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
 					.dataset(IsolationLevels.SNAPSHOT_READ);
 					ExecutorService executor = Executors.newFixedThreadPool(2)) {
 				LmdbValue first = statementObject(dataset, BASE_SUBJECT);
@@ -99,7 +100,8 @@ class LmdbSharedEpochVisibilityTest {
 					secondResult = executor.submit(second::stringValue);
 					assertTrue(gate.bothEntered.await(5, TimeUnit.SECONDS),
 							() -> "Two independent shared Lazy payloads must progress before either decode completes "
-								+ "while ordinary reader capacity is free; paired-lock entries=" + gate.pairedEntries.get());
+									+ "while ordinary reader capacity is free; paired-lock entries="
+									+ gate.pairedEntries.get());
 					assertEquals(0, gate.pairedEntries.get(),
 							"Available ordinary readers must keep both payload decodes outside the paired Txn monitor");
 				} finally {
@@ -126,7 +128,8 @@ class LmdbSharedEpochVisibilityTest {
 		try {
 			commitReadyStatement(store, BASE_SUBJECT, VF.createLiteral("nested dictionary payload", datatype));
 			store.values.clearCaches();
-			try (SailDataset dataset = store.getBackingStore().getExplicitSailSource()
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
 					.dataset(IsolationLevels.SNAPSHOT_READ);
 					ReaderCapacity held = new ReaderCapacity(store.values.getTxnManager(), TxnManager.POOL_SIZE - 2);
 					ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -138,18 +141,20 @@ class LmdbSharedEpochVisibilityTest {
 				store.values.payloadGate = gate;
 				CountDownLatch priorityEntered = new CountDownLatch(1);
 				CountDownLatch releasePriority = new CountDownLatch(1);
-				Future<Void> priority = executor.submit(() -> store.values.getTxnManager().doWithPriority((stack, txn) -> {
-					priorityEntered.countDown();
-					awaitRelease(releasePriority);
-					return null;
-				}));
+				Future<Void> priority = executor
+						.submit(() -> store.values.getTxnManager().doWithPriority((stack, txn) -> {
+							priorityEntered.countDown();
+							awaitRelease(releasePriority);
+							return null;
+						}));
 				try {
 					assertTrue(priorityEntered.await(5, TimeUnit.SECONDS),
 							"All ordinary permits are held, so this callback must occupy the reserved priority reader");
 					if (independent) {
 						held.releaseOne();
 					}
-					assertEquals("nested dictionary payload", executor.submit(value::stringValue).get(5, TimeUnit.SECONDS),
+					assertEquals("nested dictionary payload",
+							executor.submit(value::stringValue).get(5, TimeUnit.SECONDS),
 							"Recursive datatype decoding must finish using its admitted or compatible paired handle");
 					assertEquals(datatype, ((Literal) value).getDatatype());
 					assertEquals(independent ? 0 : 1, gate.pairedEntries.get(),
@@ -301,7 +306,8 @@ class LmdbSharedEpochVisibilityTest {
 			assertAbsentFromOldNativeReader(fixture);
 			assertSame(fixture.oldSnapshot.revision(), fixture.issuingRevision,
 					"This control requires an older compatible reader in the same shared epoch, with the new ID absent");
-			try (ReaderCapacity held = new ReaderCapacity(fixture.store.values.getTxnManager(), TxnManager.POOL_SIZE - 2);
+			try (ReaderCapacity held = new ReaderCapacity(fixture.store.values.getTxnManager(),
+					TxnManager.POOL_SIZE - 2);
 					ExecutorService executor = Executors.newSingleThreadExecutor()) {
 				assertEquals(fixture.expected, executor.submit(() -> {
 					fixture.escaped.init();

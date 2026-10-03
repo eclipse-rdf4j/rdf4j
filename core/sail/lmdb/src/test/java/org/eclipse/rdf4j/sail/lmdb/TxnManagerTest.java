@@ -428,7 +428,8 @@ public class TxnManagerTest {
 			AtomicBoolean entered = new AtomicBoolean();
 			TxnManager.ReaderStartScopeFactory scope = () -> {
 				entered.set(true);
-				return () -> {};
+				return () -> {
+				};
 			};
 			assertNull(fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, scope));
 			assertFalse(entered.get(), "Unavailable ordinary capacity must not enter the native admission scope");
@@ -443,7 +444,8 @@ public class TxnManagerTest {
 				assertNotEquals(0L, txn);
 				assertTrue(scopeClosed.get(), "Application work must run after the reader-start scope closes");
 				return Boolean.FALSE;
-			}, () -> () -> scopeClosed.set(true)), "A false callback result must remain distinct from unavailable capacity");
+			}, () -> () -> scopeClosed.set(true)),
+					"A false callback result must remain distinct from unavailable capacity");
 			fixture.hold(1);
 		}
 	}
@@ -469,7 +471,8 @@ public class TxnManagerTest {
 				fixture.releaseOne();
 				firstPermitReleased = true;
 				assertFalse(family.isDone(), "The queued family requires two permits, and only one is free");
-				assertNull(fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {}),
+				assertNull(fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+				}),
 						"Immediate admission must not take the one free permit ahead of a queued ordinary family");
 			} finally {
 				if (!firstPermitReleased) {
@@ -501,7 +504,8 @@ public class TxnManagerTest {
 						assertTrue(scopeClosed.get());
 						throw callbackFailure;
 					}, () -> () -> scopeClosed.set(true))));
-			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {}),
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}),
 					"Every rejected scope or failed callback must return the only free ordinary permit");
 			fixture.hold(1);
 		}
@@ -525,7 +529,8 @@ public class TxnManagerTest {
 					readerThread.set(Thread.currentThread());
 					try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 						started.countDown();
-						return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {});
+						return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+						});
 					} finally {
 						interrupted.set(Thread.currentThread().isInterrupted());
 					}
@@ -536,7 +541,8 @@ public class TxnManagerTest {
 					readerThread.get().interrupt();
 				}
 				Future<Boolean> blocked = reader;
-				ExecutionException failure = assertThrows(ExecutionException.class, () -> blocked.get(5, TimeUnit.SECONDS));
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> blocked.get(5, TimeUnit.SECONDS));
 				if (deadlineExpires) {
 					assertInstanceOf(QueryInterruptedException.class, failure.getCause());
 				} else {
@@ -559,7 +565,8 @@ public class TxnManagerTest {
 					}
 				}
 			}
-			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {}),
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}),
 					"Canceled barrier admission must return the only free ordinary permit");
 			fixture.hold(1);
 		}
@@ -577,7 +584,8 @@ public class TxnManagerTest {
 				reader = executor.submit(() -> {
 					readerThread.set(Thread.currentThread());
 					started.countDown();
-					return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {});
+					return fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+					});
 				});
 				assertTrue(started.await(5, TimeUnit.SECONDS));
 				awaitWaitingIn(readerThread.get(), TxnManager.class.getName(), "acquireReadBarrier");
@@ -587,8 +595,10 @@ public class TxnManagerTest {
 				fixture.manager.lockManager().unlockWrite(writeStamp);
 			}
 			ExecutionException failure = assertThrows(ExecutionException.class, () -> reader.get(5, TimeUnit.SECONDS));
-			assertEquals("Transaction manager is closed", assertInstanceOf(IOException.class, failure.getCause()).getMessage());
-			assertFalse(fixture.manager.lockManager().isReaderActive(), "A rejected native start must release its read barrier");
+			assertEquals("Transaction manager is closed",
+					assertInstanceOf(IOException.class, failure.getCause()).getMessage());
+			assertFalse(fixture.manager.lockManager().isReaderActive(),
+					"A rejected native start must release its read barrier");
 		}
 	}
 
@@ -600,7 +610,8 @@ public class TxnManagerTest {
 			AtomicBoolean entered = new AtomicBoolean();
 			TxnManager.ReaderStartScopeFactory scope = () -> {
 				entered.set(true);
-				return () -> {};
+				return () -> {
+				};
 			};
 			Thread.currentThread().interrupt();
 			try {
@@ -629,7 +640,8 @@ public class TxnManagerTest {
 			try {
 				secondForeign = beginReadTxn(fixture.env);
 				IOException failure = assertThrows(IOException.class,
-						() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {}));
+						() -> fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+						}));
 				assertTrue(failure.getMessage().contains("MDB_READERS_FULL"));
 			} finally {
 				if (secondForeign != 0L) {
@@ -637,7 +649,8 @@ public class TxnManagerTest {
 				}
 				mdb_txn_abort(firstForeign);
 			}
-			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {}));
+			assertEquals(Boolean.TRUE, fixture.manager.tryDoWith((stack, txn) -> Boolean.TRUE, () -> () -> {
+			}));
 			fixture.hold(1);
 		}
 	}
@@ -647,7 +660,8 @@ public class TxnManagerTest {
 		long fixtureDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 		while (thread.isAlive()) {
 			Thread.State state = thread.getState();
-			if (methodName.equals("acquireReadBarrier") || state == Thread.State.BLOCKED || state == Thread.State.WAITING
+			if (methodName.equals("acquireReadBarrier") || state == Thread.State.BLOCKED
+					|| state == Thread.State.WAITING
 					|| state == Thread.State.TIMED_WAITING) {
 				for (StackTraceElement frame : thread.getStackTrace()) {
 					if (frame.getClassName().equals(className) && frame.getMethodName().equals(methodName)) {

@@ -87,7 +87,8 @@ class ContextAwareArraySorterTest {
 					// A child of an oversized quarter split contains at least granularity / 4 elements.
 					int maximumLeaves = length / (granularity / 4);
 					assertTrue(activations.get() <= 2 * maximumLeaves + Integer.numberOfTrailingZeros(
-							Integer.highestOneBit(maximumLeaves)), "activations must scale with tasks, not comparisons");
+							Integer.highestOneBit(maximumLeaves)),
+							"activations must scale with tasks, not comparisons");
 					assertTrue(activations.get() > 1, "large sorting must retain parallel decomposition");
 				}
 			}
@@ -125,7 +126,8 @@ class ContextAwareArraySorterTest {
 			var result = executor.submit(() -> ContextAwareArraySorter.sort(input, Integer::compare, context));
 			assertTrue(lanesEntered.await(5, TimeUnit.SECONDS),
 					() -> "recursive leaf scheduling must admit " + availableLanes
-							+ " independent pool/caller lanes before any leaf completes; observed " + activations.get());
+							+ " independent pool/caller lanes before any leaf completes; observed "
+							+ activations.get());
 			release.countDown();
 			result.get(5, TimeUnit.SECONDS);
 			assertArrayEquals(expected, input);
@@ -633,7 +635,7 @@ class ContextAwareArraySorterTest {
 						public void checkActive() {
 							if (cancelled.get()) {
 								throw cancellation;
-								}
+							}
 						}
 					};
 					try (QueryExecutionContext.Activation source = QueryExecutionContext.activateReplaySafepoint(() -> {

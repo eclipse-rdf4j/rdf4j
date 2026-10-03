@@ -831,7 +831,8 @@ class SailSourceBranchTest {
 		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
 		backing.branch.set(branch);
 
-		try (branch; ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (branch;
+				ExecutorService executor = Executors.newSingleThreadExecutor();
 				SailSink sink = branch.sink(IsolationLevels.SERIALIZABLE)) {
 			backing.executor = executor;
 			sink.observe(null, null, null, new Resource[0]);
@@ -850,7 +851,8 @@ class SailSourceBranchTest {
 		PreparedWriteTrackingBackingSource backing = new PreparedWriteTrackingBackingSource();
 		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), false);
 		backing.branch.set(branch);
-		try (branch; ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (branch;
+				ExecutorService executor = Executors.newSingleThreadExecutor();
 				SailSink sink = branch.sink(IsolationLevels.SERIALIZABLE)) {
 			backing.executor = executor;
 			sink.observe(null, null, null, new Resource[0]);

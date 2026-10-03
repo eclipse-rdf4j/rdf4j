@@ -1426,7 +1426,8 @@ class ValueStore extends AbstractValueFactory {
 			return LmdbUtil.readTransaction(env, borrowed, transaction);
 		}
 		ValueReadScope scope = new ValueReadScope(requested);
-		return txnManager.doWithPriority((stack, txn) -> withScopedValueReadContext(txn, scope, transaction), scope::open);
+		return txnManager.doWithPriority((stack, txn) -> withScopedValueReadContext(txn, scope, transaction),
+				scope::open);
 	}
 
 	private <T> T withScopedValueReadContext(long txn, ValueReadScope scope, Transaction<T> transaction)
@@ -1884,7 +1885,8 @@ class ValueStore extends AbstractValueFactory {
 				Transaction<Boolean> decode = (stack, txn) -> resolveValueFromData(id, value, valueRevision);
 				if (borrowedReadTxn.get() == null && (writeTxn == 0 || writeTxnOwner != Thread.currentThread())) {
 					ValueReadScope scope = new ValueReadScope(lazy);
-					Boolean resolved = txnManager.tryDoWith((stack, txn) -> withScopedValueReadContext(txn, scope, decode),
+					Boolean resolved = txnManager.tryDoWith(
+							(stack, txn) -> withScopedValueReadContext(txn, scope, decode),
 							scope::open);
 					if (resolved != null) {
 						return resolved;
