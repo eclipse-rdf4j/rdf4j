@@ -11,7 +11,7 @@ module workbench {
     // The following is to allow composed XSLT style sheets to each add
     // functions to the window.onload event.
     function chain(args: LoadRoutine[]): LoadRoutine {
-            return function() {
+        return function() {
             for (var i = 0; i < args.length; i++) {
                 args[i]();
             }
@@ -79,6 +79,11 @@ module workbench {
         encodeURIComponent(tag.value);
         sb[sb.length] = '&';
     }
+
+    /** Returns the display-only username cookie; reusable credentials never enter JavaScript. */
+    export function getServerUser() {
+        return getCookie('server-user');
+    }
 }
 
 /**
@@ -88,9 +93,7 @@ module workbench {
 workbench
     .addLoad(function() {
         document.getElementById('noscript-message').style.display = 'none';
-        var encoded = workbench.getCookie("server-user-password");
-        var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-        var user = decoded && decoded.substring(0, decoded.indexOf(':'));
+        var user = workbench.getServerUser();
         var selectedUser = document.getElementById('selected-user');
         if (!user || user == '""') {
             selectedUser.textContent = '';

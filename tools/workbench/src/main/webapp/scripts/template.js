@@ -73,6 +73,11 @@ var workbench;
         sb[sb.length] = '&';
     }
     workbench.addParam = addParam;
+    /** Returns the display-only username cookie; reusable credentials never enter JavaScript. */
+    function getServerUser() {
+        return getCookie('server-user');
+    }
+    workbench.getServerUser = getServerUser;
 })(workbench || (workbench = {}));
 /**
  * Code to run when the document loads: eliminate the 'noscript' warning
@@ -81,9 +86,7 @@ var workbench;
 workbench
     .addLoad(function () {
     document.getElementById('noscript-message').style.display = 'none';
-    var encoded = workbench.getCookie("server-user-password");
-    var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-    var user = decoded && decoded.substring(0, decoded.indexOf(':'));
+    var user = workbench.getServerUser();
     var selectedUser = document.getElementById('selected-user');
     if (!user || user == '""') {
         selectedUser.textContent = '';

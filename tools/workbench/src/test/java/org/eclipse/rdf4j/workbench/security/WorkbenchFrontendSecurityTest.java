@@ -28,4 +28,26 @@ class WorkbenchFrontendSecurityTest {
 				.contains("selectedUser.textContent = user;")
 				.doesNotContain("selectedUser.innerHTML = user;");
 	}
+
+	@Test
+	void browserNeverStoresOrDecodesReusableServerCredentials() throws Exception {
+		String serverForm = Files.readString(Path.of("src/main/webapp/transformations/server.xsl"));
+		String serverScript = Files.readString(Path.of("src/main/webapp/scripts/ts/server.ts"));
+		String templateScript = Files.readString(Path.of("src/main/webapp/scripts/ts/template.ts"));
+		String savedQueriesScript = Files.readString(Path.of("src/main/webapp/scripts/ts/saved-queries.ts"));
+		String bundledScripts = Files.readString(Path.of("src/main/webapp/scripts/server.js"))
+				+ Files.readString(Path.of("src/main/webapp/scripts/template.js"))
+				+ Files.readString(Path.of("src/main/webapp/scripts/saved-queries.js"));
+
+		assertThat(serverForm)
+				.contains("name=\"server-user\"")
+				.contains("name=\"server-password\"")
+				.doesNotContain("server-user-password")
+				.doesNotContain("onsubmit=");
+		assertThat(serverScript + templateScript + savedQueriesScript + bundledScripts)
+				.doesNotContain("server-user-password")
+				.doesNotContain("btoa(")
+				.doesNotContain("atob(");
+		assertThat(templateScript).contains("getCookie('server-user')");
+	}
 }
