@@ -23,9 +23,15 @@ import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.ProtocolException;
+import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -43,6 +49,7 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -52,6 +59,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.model.MediaType;
@@ -63,6 +71,17 @@ import org.mockserver.model.MediaType;
  */
 @ExtendWith(MockServerExtension.class)
 public class RDFLoaderTest {
+
+	private static final RemoteResourceAccessPolicy TEST_LOCAL_ACCESS = new RemoteResourceAccessPolicy() {
+		@Override
+		public void checkInitial(URI target) {
+		}
+
+		@Override
+		public void checkRedirect(URI source, URI target) {
+		}
+	};
+
 	@BeforeAll
 	static void defineMockServerBehavior(MockServerClient client) {
 		client.when(
@@ -128,8 +147,46 @@ public class RDFLoaderTest {
 	}
 
 	@Test
+	public void rejectsNonLocalProtocolsBeforeDereferencing() throws Exception {
+		for (String target : new String[] {
+				"ftp://127.0.0.1/data.ttl",
+				"jar:http://127.0.0.1/archive.jar!/data.ttl" }) {
+			boolean[] opened = { false };
+			URL url = new URL(null, target, new URLStreamHandler() {
+				@Override
+				protected URLConnection openConnection(URL url) throws IOException {
+					opened[0] = true;
+					throw new IOException("URL handler was opened");
+				}
+			});
+
+			RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+			assertThatThrownBy(() -> rdfLoader.load(url, null, RDFFormat.TURTLE, mock(RDFHandler.class)))
+					.isInstanceOf(IOException.class)
+					.hasMessageContaining("only HTTP(S) targets");
+			assertThat(opened[0]).isFalse();
+		}
+	}
+
+	@Test
+	public void acceptsJarWrappedLocalResources(@TempDir Path tempDir) throws Exception {
+		Path archive = tempDir.resolve("data.jar");
+		try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(archive))) {
+			outputStream.putNextEntry(new ZipEntry("data.ttl"));
+			outputStream.write("<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+			outputStream.closeEntry();
+		}
+		URL url = new URL("jar:" + archive.toUri().toURL().toExternalForm() + "!/data.ttl");
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		new RDFLoader(new ParserConfig(), getValueFactory()).load(url, null, RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).handleStatement(statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null));
+	}
+
+	@Test
 	public void testTurtleDocument(MockServerClient client) throws Exception {
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFLoader rdfLoader = localNetworkLoader();
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -145,20 +202,66 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testMultipleRedirects(MockServerClient client) throws Exception {
+	public void rejectsPrivateNetworkUrlByDefault(MockServerClient client) throws Exception {
 		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+		URL privateUrl = new URL("http://127.0.0.1:" + client.getPort() + "/Socrates.ttl");
+
+		assertThatThrownBy(() -> rdfLoader.load(privateUrl, null, null, rdfHandler))
+				.isInstanceOf(java.io.IOException.class)
+				.hasMessageContaining("Remote resource access denied");
+	}
+
+	@Test
+	public void testMultipleRedirects(MockServerClient client) throws Exception {
+		RemoteResourceAccessPolicy policy = mock(RemoteResourceAccessPolicy.class);
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory(), policy);
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
+		URI first = URI.create("http://localhost:" + client.getPort() + "/Socrates1");
+		URI second = URI.create("http://localhost:" + client.getPort() + "/Socrates2");
+		URI terminal = URI.create("http://localhost:" + client.getPort() + "/Socrates.ttl");
 
-		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates1"), null, null,
-				rdfHandler);
+		rdfLoader.load(first.toURL(), null, null, rdfHandler);
 
+		verify(policy).checkInitial(first);
+		verify(policy).checkRedirect(first, second);
+		verify(policy).checkRedirect(second, terminal);
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
 				.handleStatement(statement(iri("http://example.org/Socrates"),
 						RDF.TYPE,
 						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void validatesRedirectsFromHttpToLocalResources(MockServerClient client, @TempDir Path tempDir)
+			throws Exception {
+		Path localResource = tempDir.resolve("redirected.ttl");
+		Files.writeString(localResource, "<urn:s> <urn:p> <urn:o> .", StandardCharsets.UTF_8);
+		client.when(request().withMethod("GET").withPath("/redirect-to-local"))
+				.respond(response().withStatusCode(302).withHeader("Location", localResource.toUri().toString()));
+
+		RemoteResourceAccessPolicy policy = new RemoteResourceAccessPolicy() {
+			@Override
+			public void checkInitial(URI target) {
+			}
+
+			@Override
+			public void checkRedirect(URI source, URI target) throws java.io.IOException {
+				if (!"http".equalsIgnoreCase(target.getScheme())
+						&& !"https".equalsIgnoreCase(target.getScheme())) {
+					throw new java.io.IOException("redirect target must remain HTTP(S)");
+				}
+			}
+		};
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory(), policy);
+		URL source = new URL("http://localhost:" + client.getPort() + "/redirect-to-local");
+
+		assertThatThrownBy(() -> rdfLoader.load(source, null, RDFFormat.TURTLE, mock(RDFHandler.class)))
+				.isInstanceOf(java.io.IOException.class)
+				.hasMessageContaining("must remain HTTP(S)");
 	}
 
 	@Test
@@ -211,7 +314,7 @@ public class RDFLoaderTest {
 
 			System.setProperty("http.maxRedirects", "2"); // http.maxRedirects seems exclusive in http URL
 
-			RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+			RDFLoader rdfLoader = localNetworkLoader();
 
 			RDFHandler rdfHandler = mock(RDFHandler.class);
 			try {
@@ -238,7 +341,7 @@ public class RDFLoaderTest {
 		try {
 			final HostnameVerifier toRestoreHostnameVerifier = disableHostnameVerifier();
 			try {
-				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+				RDFLoader rdfLoader = localNetworkLoader();
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -266,6 +369,10 @@ public class RDFLoaderTest {
 			outputStream.write(bytes);
 		}
 		return buffer.toByteArray();
+	}
+
+	private static RDFLoader localNetworkLoader() {
+		return new RDFLoader(new ParserConfig(), getValueFactory(), TEST_LOCAL_ACCESS);
 	}
 
 	private static byte[] zip(String entryName, String body) throws Exception {

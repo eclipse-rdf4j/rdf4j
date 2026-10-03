@@ -85,6 +85,14 @@ For Jetty, it's just a matter of copying the war-files to `$JETTY_BASE\webapps`
 
 After you have deployed the RDF4J Workbench webapp, you should be able to access it, by default, at path `http://localhost:8080/rdf4j-workbench`. You can point your browser at this location to verify that the deployment succeeded.
 
+### Outbound URL access policy
+
+Workbench **Add** URL imports and the default RDF4J handlers for SPARQL `LOAD` and `SERVICE` accept only HTTP and HTTPS targets whose resolved addresses are globally routable. Redirects are checked again before every hop, HTTPS-to-HTTP downgrades are rejected, and loopback, link-local, private, multicast, documentation, benchmarking, and other reserved IPv4 and IPv6 ranges are blocked by default.
+
+Administrators can allow specific internal destinations with the comma-separated JVM system properties `org.eclipse.rdf4j.remote.allowedHosts` (exact host names or IP addresses) and `org.eclipse.rdf4j.remote.allowedCidrs` (IPv4 or IPv6 CIDR blocks). Configure the narrowest possible entries; an allowed host name permits all addresses returned for that exact name. The properties are read when an outbound policy instance is created, so set them before the server or Workbench initializes.
+
+This restriction applies to server-side dereferencing of caller-controlled URLs, not to general-purpose `HTTPRepository` or `RemoteRepositoryManager` clients. Embedded applications that intentionally load trusted local or private resources can inject a custom `RemoteResourceAccessPolicy`, including the explicit `RemoteResourceAccessPolicy.allowAll()` compatibility policy, into `RDFLoader` or `SPARQLServiceResolver`.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)

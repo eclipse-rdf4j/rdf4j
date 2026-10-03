@@ -20,10 +20,14 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.PrivilegedAction;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -31,6 +35,8 @@ import java.util.zip.ZipInputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.ZipUtil;
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -54,14 +60,26 @@ public class RDFLoader {
 	private final ParserConfig config;
 
 	private final ValueFactory vf;
+	private final RemoteResourceAccessPolicy remoteResourceAccessPolicy;
 
 	/**
 	 * @param config
 	 * @param vf
 	 */
 	public RDFLoader(ParserConfig config, ValueFactory vf) {
+		this(config, vf, new PublicNetworkAccessPolicy());
+	}
+
+	/**
+	 * @param config                     parser configuration
+	 * @param vf                         value factory
+	 * @param remoteResourceAccessPolicy policy checked immediately before remote connections and redirects
+	 */
+	public RDFLoader(ParserConfig config, ValueFactory vf, RemoteResourceAccessPolicy remoteResourceAccessPolicy) {
 		this.config = config;
 		this.vf = vf;
+		this.remoteResourceAccessPolicy = Objects.requireNonNull(remoteResourceAccessPolicy,
+				"remoteResourceAccessPolicy must not be null");
 	}
 
 	/**
@@ -129,9 +147,22 @@ public class RDFLoader {
 		boolean redirected;
 
 		URL requestURL = url;
+		URI previousRequestUri = null;
 		do {
 			redirected = false;
 
+			URI requestUri = toUri(requestURL);
+			if (previousRequestUri == null) {
+				// RDFLoader is also used for caller-supplied local resources. Authority-free file URLs and
+				// runtime-image URLs cannot open a remote connection; every other protocol remains subject
+				// to the configured policy, including network resources wrapped in jar URLs.
+				if (!isLocalResource(requestUri)) {
+					remoteResourceAccessPolicy.checkInitial(requestUri);
+				}
+			} else {
+				// Always validate redirects, including redirects from HTTP(S) to a non-network scheme.
+				remoteResourceAccessPolicy.checkRedirect(previousRequestUri, requestUri);
+			}
 			URLConnection con = requestURL.openConnection();
 
 			// Set appropriate Accept headers
@@ -166,6 +197,7 @@ public class RDFLoader {
 						throw new IOException("Could not find redirection location for URL: " + url);
 					}
 
+					previousRequestUri = requestUri;
 					requestURL = new URL(requestURL, redirectionLocation);
 
 					redirected = true;
@@ -192,6 +224,40 @@ public class RDFLoader {
 				load(in, baseURI, dataFormat, rdfHandler);
 			}
 		} while (redirected);
+	}
+
+	private URI toUri(URL url) throws IOException {
+		try {
+			return url.toURI();
+		} catch (URISyntaxException e) {
+			throw new IOException("Remote resource access denied: target URI is invalid", e);
+		}
+	}
+
+	private boolean isLocalResource(URI uri) throws IOException {
+		URI resource = uri;
+		String scheme = resource.getScheme();
+		while (scheme != null && "jar".equals(scheme.toLowerCase(Locale.ROOT))) {
+			String schemeSpecificPart = resource.getRawSchemeSpecificPart();
+			int entrySeparator = schemeSpecificPart == null ? -1 : schemeSpecificPart.indexOf("!/");
+			if (entrySeparator <= 0) {
+				return false;
+			}
+			try {
+				resource = new URI(schemeSpecificPart.substring(0, entrySeparator));
+			} catch (URISyntaxException e) {
+				throw new IOException("Remote resource access denied: nested JAR URI is invalid", e);
+			}
+			scheme = resource.getScheme();
+		}
+
+		if (scheme == null) {
+			return false;
+		}
+		String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+		return "jrt".equals(normalizedScheme)
+				|| ("file".equals(normalizedScheme)
+						&& (resource.getRawAuthority() == null || resource.getRawAuthority().isEmpty()));
 	}
 
 	/**
