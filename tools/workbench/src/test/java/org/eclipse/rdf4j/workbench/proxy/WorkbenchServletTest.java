@@ -21,9 +21,7 @@ import static org.mockito.Mockito.when;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
-import java.util.Base64;
 import java.util.Deque;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
@@ -208,7 +206,7 @@ class WorkbenchServletTest {
 	}
 
 	@Test
-	void remoteManagersReceiveCookieCredentials() throws Exception {
+	void remoteManagersReceiveOnlyTrustedRequestCredentials() throws Exception {
 		RemoteRepositoryManager remoteManager = mock(RemoteRepositoryManager.class);
 		Repository repository = mock(Repository.class);
 		when(remoteManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
@@ -216,32 +214,33 @@ class WorkbenchServletTest {
 		when(remoteManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
 
 		TestWorkbenchServlet noCookieServlet = initServlet(remoteManager);
-		noCookieServlet.cookieHandler = new FixedCookieHandler(null);
 		noCookieServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		noCookieServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		verify(remoteManager).setUsernameAndPassword(null, null);
 		verify(remoteManager).init();
 
-		RemoteRepositoryManager base64Manager = mock(RemoteRepositoryManager.class);
-		when(base64Manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
-		when(base64Manager.getRepository(anyString())).thenReturn(repository);
-		when(base64Manager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet base64Servlet = initServlet(base64Manager);
-		base64Servlet.cookieHandler = new FixedCookieHandler(
-				Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
-		base64Servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		base64Servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(base64Manager).setUsernameAndPassword("alice", "secret");
+		RemoteRepositoryManager authenticatedManager = mock(RemoteRepositoryManager.class);
+		when(authenticatedManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
+		when(authenticatedManager.getRepository(anyString())).thenReturn(repository);
+		when(authenticatedManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet authenticatedServlet = initServlet(authenticatedManager);
+		authenticatedServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		MockHttpServletRequest authenticatedRequest = request("/workbench/repo", "/repo");
+		authenticatedRequest.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "alice");
+		authenticatedRequest.setAttribute(WorkbenchServlet.AUTHENTICATED_PASSWORD_ATTRIBUTE, "secret");
+		authenticatedServlet.service(authenticatedRequest, new CapturedResponse());
+		verify(authenticatedManager).setUsernameAndPassword("alice", "secret");
 
-		RemoteRepositoryManager rawManager = mock(RemoteRepositoryManager.class);
-		when(rawManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
-		when(rawManager.getRepository(anyString())).thenReturn(repository);
-		when(rawManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet rawServlet = initServlet(rawManager);
-		rawServlet.cookieHandler = new FixedCookieHandler("bob:hunter2");
-		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
-		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
+		RemoteRepositoryManager missingPasswordManager = mock(RemoteRepositoryManager.class);
+		when(missingPasswordManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
+		when(missingPasswordManager.getRepository(anyString())).thenReturn(repository);
+		when(missingPasswordManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet missingPasswordServlet = initServlet(missingPasswordManager);
+		missingPasswordServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		MockHttpServletRequest missingPasswordRequest = request("/workbench/repo", "/repo");
+		missingPasswordRequest.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE, "bob");
+		missingPasswordServlet.service(missingPasswordRequest, new CapturedResponse());
+		verify(missingPasswordManager).setUsernameAndPassword("bob", "");
 	}
 
 	@Test

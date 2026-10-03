@@ -8,9 +8,7 @@ var workbench;
     var savedQueries;
     (function (savedQueries) {
         function deleteQuery(savedBy, name, urn) {
-            var encoded = workbench.getCookie("server-user-password");
-            var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-            var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
+            var currentUser = workbench.getServerUser();
             if ((!savedBy || currentUser == savedBy)) {
                 if (confirm("'"
                     + name

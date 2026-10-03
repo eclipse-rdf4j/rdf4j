@@ -16,7 +16,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.security.WorkbenchCredentialSession;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.junit.jupiter.api.Test;
@@ -105,6 +108,26 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void changeServerDoesNotPersistReusableCredentialsInABrowserCookie() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("2592000");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://remote.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("POST", "/workbench/change", "/change");
+		request.addParameter("workbench-server", "https://remote.example/rdf4j-server");
+		request.addParameter("server-user-password", Base64.getEncoder()
+				.encodeToString("alice:correct horse battery staple".getBytes(StandardCharsets.UTF_8)));
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(cookies.addedCookies).doesNotContainKey("server-user-password");
+	}
+
+	@Test
 	void serviceRedirectsWhenServerIsInvalidAndCreatesReusableWorkbenchServlets() throws Exception {
 		TestCookieHandler redirectCookies = new TestCookieHandler("7");
 		redirectCookies.cookies.put("workbench-server", "urn:bad");
@@ -145,13 +168,17 @@ class WorkbenchGatewayTest {
 
 		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
 		changeRequest.addParameter("workbench-server", "https://next.example/rdf4j-server");
-		changeRequest.addParameter("server-user-password", "encoded");
+		changeRequest.addParameter("server-user", "alice");
+		changeRequest.addParameter("server-password", "secret");
 		when(validator.isValidServer("https://next.example/rdf4j-server")).thenReturn(true);
 		CapturedResponse changeResponse = new CapturedResponse();
 		gateway.service(changeRequest, changeResponse);
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://next.example/rdf4j-server")
-				.containsEntry("server-user-password", "encoded");
+				.doesNotContainKey("server-user-password");
+		assertThat(new WorkbenchCredentialSession().read(changeRequest, new CapturedResponse(),
+				"https://next.example/rdf4j-server"))
+						.isEqualTo(new WorkbenchCredentialSession.Credentials("alice", "secret"));
 		assertThat(gateway.createdServlets.get(0).resetCount).isEqualTo(1);
 
 		gateway.destroy();
@@ -553,7 +580,7 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
-	void gatewayStoresEmptyPasswordsAndBuildsRelativeDefaultsFromSparseRequests() throws Exception {
+	void gatewayStoresEmptyPasswordsInTheSessionAndBuildsRelativeDefaultsFromSparseRequests() throws Exception {
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		ServerValidator validator = mock(ServerValidator.class);
 		when(validator.isValidServer("https://valid.example/rdf4j-server")).thenReturn(true);
@@ -564,12 +591,17 @@ class WorkbenchGatewayTest {
 				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
 		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
 		changeRequest.addParameter("workbench-server", "https://valid.example/rdf4j-server");
+		changeRequest.addParameter("server-user", "alice");
+		changeRequest.addParameter("server-password", "");
 		CapturedResponse changeResponse = new CapturedResponse();
 
 		changeGateway.service(changeRequest, changeResponse);
 
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://valid.example/rdf4j-server")
-				.containsEntry("server-user-password", "");
+				.doesNotContainKey("server-user-password");
+		assertThat(new WorkbenchCredentialSession().read(changeRequest, new CapturedResponse(),
+				"https://valid.example/rdf4j-server"))
+						.isEqualTo(new WorkbenchCredentialSession.Credentials("alice", ""));
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 
 		TestWorkbenchGateway sparseGateway = new TestWorkbenchGateway(new TestCookieHandler("10"), validator);

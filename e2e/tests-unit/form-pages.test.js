@@ -24,7 +24,8 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
     const harness = createFormBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/create?id=repo-1&title=My+Repo'
     });
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
+    harness.document.cookie = 'server-user=alice';
+    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('mallory:secret').toString('base64'));
     const field = harness.registerElement('input', {
         id: 'flag',
         type: 'checkbox'
@@ -42,7 +43,7 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
     harness.context.workbench.addParam(params, 'flag');
 
     assert.deepEqual(calls, ['first', 'second']);
-    assert.equal(harness.context.workbench.getCookie('server-user-password'), Buffer.from('alice:secret').toString('base64'));
+    assert.equal(harness.context.workbench.getServerUser(), 'alice');
     assert.deepEqual(Array.from(harness.context.workbench.getQueryStringElements()), ['id=repo-1', 'title=My+Repo']);
     assert.deepEqual(params, ['flag=', 'true', '&']);
     assert.equal(harness.document.getElementById('noscript-message').style.display, 'none');
@@ -62,10 +63,10 @@ test('template load falls back to unauthenticated user label', () => {
     assert.equal(selectedUser.children[0].className, 'disabled');
 });
 
-test('template renders credential-cookie usernames as text instead of HTML', () => {
+test('template renders display-cookie usernames as text instead of HTML', () => {
     const harness = createFormBrowserHarness();
     const payload = '<img src=x onerror=globalThis.rdf4jXss=true>';
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(payload + ':secret').toString('base64'));
+    harness.document.cookie = 'server-user=' + encodeURIComponent(payload);
 
     harness.loadScripts([]);
     harness.runLoadHandlers();
@@ -312,33 +313,31 @@ test('delete page reports generic server errors', () => {
     assert.match(feedback.textContent, /HTTP Status Text = "Forbidden"/);
 });
 
-test('server page rewrites password field when credentials are present', () => {
+test('server page submits credentials using normal form fields', () => {
     const harness = createFormBrowserHarness();
     const form = harness.registerElement('form', { id: 'server-form' });
-    const user = harness.registerElement('input', { id: 'server-user', value: 'alice' });
-    const password = harness.registerElement('input', { id: 'server-password', value: 'secret' });
+    const user = harness.registerElement('input', {
+        id: 'server-user',
+        name: 'server-user',
+        value: 'alice'
+    });
+    const password = harness.registerElement('input', {
+        id: 'server-password',
+        name: 'server-password',
+        value: 'secret'
+    });
     form.appendChild(user);
     form.appendChild(password);
     harness.document.body.appendChild(form);
 
     harness.loadScripts(['server.js']);
 
-    harness.context.changeServer({
-        target: password,
-        preventDefault() {
-        }
-    });
-    assert.equal(password.name, 'server-user-password');
-    assert.equal(password.value, Buffer.from('alice:secret').toString('base64'));
-    assert.equal(form.submitCount, 1);
+    form.submit();
 
-    password.name = '';
-    password.value = '';
-    harness.context.changeServer({
-        target: password,
-        preventDefault() {
-        }
-    });
-    assert.equal(password.name, '');
-    assert.equal(form.submitCount, 2);
+    assert.equal(user.name, 'server-user');
+    assert.equal(user.value, 'alice');
+    assert.equal(password.name, 'server-password');
+    assert.equal(password.value, 'secret');
+    assert.equal(form.submitCount, 1);
+    assert.equal(harness.context.changeServer, undefined);
 });

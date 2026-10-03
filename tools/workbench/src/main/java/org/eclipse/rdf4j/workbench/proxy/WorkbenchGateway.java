@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.security.WorkbenchCredentialSession;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 
@@ -54,6 +55,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	private CookieHandler cookies;
 
 	private ServerValidator serverValidator;
+	private WorkbenchCredentialSession credentialSession;
 
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
@@ -66,6 +68,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		}
 		this.cookies = createCookieHandler(config);
 		this.serverValidator = createServerValidator(config);
+		this.credentialSession = createCredentialSession();
 	}
 
 	@Override
@@ -146,7 +149,7 @@ public class WorkbenchGateway extends AbstractServlet {
 			// Server parameter was not present, so present entry form.
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(getTransformationUrl(req), "server.xsl");
-			builder.start("server");
+			builder.start("server", SERVER_USER);
 
 			// see if server url was still present in cookie, if so use that
 			// value as prefilled value in the form
@@ -155,7 +158,8 @@ public class WorkbenchGateway extends AbstractServlet {
 				// otherwise use the default
 				currentServer = getDefaultServer(req);
 			}
-			builder.result(currentServer);
+			WorkbenchCredentialSession.Credentials credentials = credentialSession.read(req, resp, currentServer);
+			builder.result(currentServer, credentials == null ? null : credentials.username());
 			builder.end();
 			return;
 		}
@@ -177,8 +181,17 @@ public class WorkbenchGateway extends AbstractServlet {
 		// Valid server was submitted by form. Set cookie and redirect to
 		// repository selection page.
 		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
-		final String user_password = getOptionalParameter(req, SERVER_USER_PASSWORD);
-		this.cookies.addNewCookie(req, resp, SERVER_USER_PASSWORD, user_password);
+		String username = getOptionalParameter(req, SERVER_USER);
+		String password = getOptionalParameter(req, SERVER_PASSWORD);
+		if (username.isBlank()) {
+			WorkbenchCredentialSession.Credentials submitted = WorkbenchCredentialSession
+					.decodeLegacy(getOptionalParameter(req, SERVER_USER_PASSWORD));
+			if (submitted != null) {
+				username = submitted.username();
+				password = submitted.password();
+			}
+		}
+		credentialSession.replace(req, resp, server, username, password);
 		final StringBuilder uri = new StringBuilder(req.getRequestURI());
 		uri.setLength(uri.length() - req.getPathInfo().length());
 		resetCache();
@@ -244,6 +257,11 @@ public class WorkbenchGateway extends AbstractServlet {
 		WorkbenchServlet servlet = null;
 		final ServerSelection selection = findServerSelection(req, resp);
 		final String server = selection.server;
+		WorkbenchCredentialSession.Credentials credentials = credentialSession.read(req, resp, server);
+		req.setAttribute(WorkbenchServlet.AUTHENTICATED_USERNAME_ATTRIBUTE,
+				credentials == null ? null : credentials.username());
+		req.setAttribute(WorkbenchServlet.AUTHENTICATED_PASSWORD_ATTRIBUTE,
+				credentials == null ? null : credentials.password());
 		if (servlets.containsKey(server)) {
 			servlet = servlets.get(server);
 		} else {
@@ -411,6 +429,10 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	protected ServerValidator createServerValidator(final ServletConfig config) {
 		return new ServerValidator(config);
+	}
+
+	protected WorkbenchCredentialSession createCredentialSession() {
+		return new WorkbenchCredentialSession();
 	}
 
 	protected WorkbenchServlet createWorkbenchServlet() {
