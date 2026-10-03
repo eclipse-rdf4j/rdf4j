@@ -70,7 +70,7 @@ function harness(window, model) {
         html(strings, ...values) { return { strings: Array.from(strings), values }; },
         render(template, target) { target.template = template; }
     };
-    return { mount, renderer };
+    return { mount, renderer, geometry, listeners };
 }
 
 /** The page markup with the separately rendered table body filled in. */
@@ -159,6 +159,33 @@ test('Types show a dash when counting timed out or failed', async () => {
         assert.deepEqual(countCells(page), ['—'], outcome + ' counts show a dash');
         dispose();
     }
+});
+
+test('a scroll made while the list rows are being bound moves the row window without another scroll', async () => {
+    const { workbench, window } = loadWorkbench();
+    workbench.app.loadModel = () => new Promise(() => {});
+    const model = listModel('contexts', ['context'],
+        Array.from({ length: 400 }, (_unused, index) => [iri('urn:ex:g' + index)]));
+    const page = harness(window, model);
+    let top = 0;
+    page.geometry.getBoundingClientRect = () => ({ top, height: model.rowCount * 44 });
+    const read = model.rowStore.read;
+    let reads = 0;
+    model.rowStore.read = (start, count) => {
+        reads++;
+        if (reads === 2) {
+            // The reader scrolls to the end while the first painted window is read, before scrolling is watched.
+            top = -(model.rowCount * 44 - window.innerHeight);
+        }
+        return read(start, count);
+    };
+    workbench.views.render(page.mount, model, context, page.renderer);
+    const dispose = await workbench.views.bindRowWindows(page.mount, model, context, page.renderer);
+    await settle();
+
+    assert.ok(page.listeners.has('scroll'), 'the window follows later scrolling');
+    assert.ok(model.rowStart > 300, `the row window shows the scrolled-to rows, not those from ${model.rowStart}`);
+    dispose();
 });
 
 test('Graphs fill in statements, end with the default graph and offer Explore and Clear', async () => {

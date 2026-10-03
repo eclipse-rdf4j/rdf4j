@@ -2910,6 +2910,16 @@ var workbench;
                     }
                 });
             };
+            var rowTarget = function () {
+                var targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
+                return targets.length ? targets[0] : null;
+            };
+            /** How far the rows' top has scrolled past the top of the window. */
+            var rowScrollTop = function (target) {
+                var rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
+                return Math.max(0, -Number(rectangle.top || 0));
+            };
+            var windowScrollTop = 0;
             var refreshRows = function (paint) {
                 if (paint === void 0) { paint = true; }
                 if (!hasRows || disposed) {
@@ -2917,13 +2927,12 @@ var workbench;
                 }
                 var activeGeneration = ++generation;
                 heights.resize(model.rowCount);
-                var targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
-                var target = targets.length ? targets[0] : null;
+                var target = rowTarget();
                 if (!target) {
                     return Promise.resolve();
                 }
-                var rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
-                var scrollTop = Math.max(0, -Number(rectangle.top || 0));
+                var scrollTop = rowScrollTop(target);
+                windowScrollTop = scrollTop;
                 var viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
                 var range = heights.range(scrollTop, viewportHeight, 4, 80);
                 return model.rowStore.read(range.start, range.end - range.start).then(function (rows) {
@@ -3040,6 +3049,11 @@ var workbench;
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
+                    // A scroll made while the rows were being bound reached no listener: catch up with it.
+                    var target = rowTarget();
+                    if (target && rowScrollTop(target) !== windowScrollTop) {
+                        refresh();
+                    }
                 }
                 return function () {
                     disposed = true;

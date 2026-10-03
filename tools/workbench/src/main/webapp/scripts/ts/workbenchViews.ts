@@ -3964,15 +3964,25 @@ module workbench {
                 });
             };
 
+            const rowTarget = (): any => {
+                const targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
+                return targets.length ? targets[0] : null;
+            };
+            /** How far the rows' top has scrolled past the top of the window. */
+            const rowScrollTop = (target: any): number => {
+                const rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
+                return Math.max(0, -Number(rectangle.top || 0));
+            };
+            let windowScrollTop = 0;
+
             const refreshRows = (paint: boolean = true): Promise<void> => {
                 if (!hasRows || disposed) { return Promise.resolve(); }
                 const activeGeneration = ++generation;
                 heights.resize(model.rowCount);
-                const targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
-                const target = targets.length ? targets[0] : null;
+                const target = rowTarget();
                 if (!target) { return Promise.resolve(); }
-                const rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
-                const scrollTop = Math.max(0, -Number(rectangle.top || 0));
+                const scrollTop = rowScrollTop(target);
+                windowScrollTop = scrollTop;
                 const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
                 const range = heights.range(scrollTop, viewportHeight, 4, 80);
                 return model.rowStore.read(range.start, range.end - range.start).then((rows: any[][]) => {
@@ -4074,6 +4084,11 @@ module workbench {
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
+                    // A scroll made while the rows were being bound reached no listener: catch up with it.
+                    const target = rowTarget();
+                    if (target && rowScrollTop(target) !== windowScrollTop) {
+                        refresh();
+                    }
                 }
                 return () => {
                     disposed = true;
