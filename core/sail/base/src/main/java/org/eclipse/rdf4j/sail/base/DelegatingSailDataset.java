@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -45,6 +46,16 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public String toString() {
 		return delegate.toString();
+	}
+
+	@Override
+	public Function<Value, Value> getValuePreparer() {
+		return delegate.getValuePreparer();
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		return delegate.getValueCapturer();
 	}
 
 	@Override

@@ -562,16 +562,26 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			AggregateOperator operator,
 			AggregateFunctionCall aggOperator, AggregateFunctionFactory factory) {
 		Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
-		AggregateFunction function = factory.buildFunction(precompileNAryArg(aggOperator).asUnaryEvaluator(0));
-		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+		Function<BindingSet, Value> evaluator = precompileNAryArg(aggOperator).asUnaryEvaluator(0);
+		AggregateFunction function = factory.buildFunction(
+				bindings -> QueryExecutionContext.initializeExternalValue(evaluator.apply(bindings)));
+		return new AggregatePredicateCollectorSupplier<>((bindings, distinct, collector) -> {
+			QueryExecutionContext.initializeExternalBindings(bindings);
+			function.processAggregate(bindings, distinct, collector);
+		}, predicate, factory::getCollector, ge.getName());
 	}
 
 	private AggregatePredicateCollectorSupplier<?, ?> createNAryCustomAggregate(GroupElem ge,
 			AggregateOperator operator,
 			AggregateFunctionCall aggOperator, AggregateNAryFunctionFactory factory) {
 		Supplier<Predicate<List<Value>>> predicate = createDistinctTupleValueTest(operator);
-		var function = factory.buildFunction(precompileNAryArg(aggOperator));
-		return new AggregatePredicateCollectorSupplier<>(function, predicate, factory::getCollector, ge.getName());
+		BiFunction<Integer, BindingSet, Value> evaluator = precompileNAryArg(aggOperator);
+		var function = factory.buildFunction(
+				(index, bindings) -> QueryExecutionContext.initializeExternalValue(evaluator.apply(index, bindings)));
+		return new AggregatePredicateCollectorSupplier<>((bindings, distinct, collector) -> {
+			QueryExecutionContext.initializeExternalBindings(bindings);
+			function.processAggregate(bindings, distinct, collector);
+		}, predicate, factory::getCollector, ge.getName());
 	}
 
 	private void validateNAryAggregateArity(AggregateFunctionCall aggregateOperator,

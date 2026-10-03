@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
@@ -55,8 +56,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		QueryExecutionDeadline deadline = startQueryExecutionDeadline();
 		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
 		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
-		CloseableIteration<? extends BindingSet> bindingsIter3 = null;
-		CloseableIteration<Statement> stIter = null;
+		CloseableIteration<? extends Statement> stIter = null;
 		IteratingGraphQueryResult result = null;
 		boolean allGood = false;
 		try {
@@ -92,11 +92,9 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 				}
 			};
 
-			bindingsIter3 = enforceMaxQueryTime(bindingsIter2, deadline);
-
 			// Convert the BindingSet objects to actual RDF statements
 			final ValueFactory vf = getConnection().getRepository().getValueFactory();
-			stIter = new ConvertingIteration<BindingSet, Statement>(bindingsIter3) {
+			stIter = new ConvertingIteration<BindingSet, Statement>(bindingsIter2) {
 
 				@Override
 				protected Statement convert(BindingSet bindingSet) {
@@ -112,6 +110,10 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 					}
 				}
 			};
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				stIter = getConnection().exposeIteration(stIter, SailResultValueExtractor.STATEMENTS);
+			}
+			stIter = enforceResultMaxQueryTime(stIter, deadline);
 
 			result = new IteratingGraphQueryResult(getParsedQuery().getQueryNamespaces(), stIter);
 			allGood = true;
@@ -123,8 +125,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 				try (
 						CloseableIteration<? extends BindingSet> bindingsToClose = bindingsIter1;
 						CloseableIteration<? extends BindingSet> filteredToClose = bindingsIter2;
-						CloseableIteration<? extends BindingSet> timedToClose = bindingsIter3;
-						CloseableIteration<Statement> statementsToClose = stIter;
+						CloseableIteration<? extends Statement> statementsToClose = stIter;
 						IteratingGraphQueryResult resultToClose = result) {
 					// Close the result and every intermediate iterator in reverse construction order.
 				} finally {

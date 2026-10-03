@@ -502,10 +502,11 @@ class LmdbCrashRecoveryTest {
 				.setTripleTermIndexes("spoc,cspo")
 				.save();
 
-		Process child = startIndexRewriteCrashChild(storeDir, "posc");
+		Path childOutputFile = storeDir.resolve("index-rewrite-child-output.log");
+		Process child = startIndexRewriteCrashChild(storeDir, "posc", childOutputFile);
 		try {
 			assertTrue(child.waitFor(90, TimeUnit.SECONDS), "the reindex crash child must reach its cut point");
-			String output = new String(child.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			String output = Files.readString(childOutputFile, StandardCharsets.UTF_8);
 			assertEquals(86, child.exitValue(), "the child must halt after native reindex publication: " + output);
 			assertTrue(output.contains("INDEX_REWRITE_NATIVE_COMMITTED"),
 					"the process stop must occur after reindex returned from the native commit");
@@ -836,11 +837,13 @@ class LmdbCrashRecoveryTest {
 		return new ProcessBuilder(command).redirectErrorStream(true).start();
 	}
 
-	private static Process startIndexRewriteCrashChild(Path storeDir, String indexSpecs) throws IOException {
+	private static Process startIndexRewriteCrashChild(Path storeDir, String indexSpecs, Path outputFile)
+			throws IOException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		return new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
 				IndexRewriteCrashChildMain.class.getName(), storeDir.toAbsolutePath().toString(), indexSpecs)
 						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
 						.start();
 	}
 

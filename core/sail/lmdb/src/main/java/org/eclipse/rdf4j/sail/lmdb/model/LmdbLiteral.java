@@ -18,10 +18,14 @@ import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
 public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
@@ -69,8 +73,11 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private CoreDatatype coreDatatype;
 
 	private transient volatile InternalIdentity identity;
+	private transient volatile long semanticVersion;
+	private transient volatile ChildVersion datatypeVersion;
 
 	private volatile boolean initialized = false;
+	private transient volatile boolean externallyOwned;
 
 	/*--------------*
 	 * Constructors *
@@ -168,27 +175,70 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
+		datatypeVersion = ChildVersion.capture(datatype);
 		identity = new InternalIdentity(internalID, revision);
 	}
 
 	@Override
 	public InternalIdentity getInternalIdentity() {
+		checkDatatypeVersion();
 		return identity;
+	}
+
+	private boolean stableDatatype() {
+		return datatype == null || datatypeVersion != null
+				|| coreDatatype != null && coreDatatype != CoreDatatype.NONE && datatype == coreDatatype.getIri();
+	}
+
+	private void checkDatatypeVersion() {
+		if (initialized) {
+			ChildVersion captured = datatypeVersion;
+			if (captured != null && !captured.isCurrent()) {
+				payloadChanged();
+				datatypeVersion = ChildVersion.capture(datatype);
+				coreDatatype = null;
+			}
+		}
+	}
+
+	@Override
+	public long getSemanticVersion() {
+		checkDatatypeVersion();
+		return stableDatatype() ? semanticVersion : UNKNOWN_ID;
+	}
+
+	@Override
+	public Value copyInitializedValue(Function<Value, Value> childCopier) {
+		if (!initialized) {
+			return null;
+		}
+		SimpleValueFactory factory = SimpleValueFactory.getInstance();
+		return language != null ? factory.createLiteral(label, language, baseDirection)
+				: factory.createLiteral(label, (IRI) childCopier.apply(datatype));
+	}
+
+	private void payloadChanged() {
+		if (initialized) {
+			semanticVersion++;
+			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
+		}
 	}
 
 	@Override
 	public ValueStoreRevision getValueStoreRevision() {
-		return identity.revision();
+		return getInternalIdentity().revision();
 	}
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbLiteral lmdbLiteral) {
+			payloadChanged();
 			this.label = lmdbLiteral.label;
 			this.language = lmdbLiteral.language;
 			this.baseDirection = lmdbLiteral.baseDirection;
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
+			datatypeVersion = ChildVersion.capture(datatype);
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -196,18 +246,42 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public long getInternalID() {
-		return identity.id();
+		return getInternalIdentity().id();
 	}
 
 	@Override
 	public IRI getDatatype() {
 		init();
-		return datatype;
+		return externallyOwned ? identity.revision().protectExternalValue(datatype) : datatype;
+	}
+
+	@Override
+	public void markExternallyOwned() {
+		externallyOwned = true;
+	}
+
+	@Override
+	public boolean isExternallyOwned() {
+		return externallyOwned;
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
+
+	@Override
+	public void visitValueChildren(Consumer<Value> visitor) {
+		visitor.accept(datatype);
 	}
 
 	@Override
 	public CoreDatatype getCoreDatatype() {
 		init();
+		checkDatatypeVersion();
+		if (!stableDatatype()) {
+			return CoreDatatype.from(SimpleValueFactory.getInstance().createIRI(datatype.stringValue()));
+		}
 		if (coreDatatype == null) {
 			coreDatatype = CoreDatatype.from(datatype);
 		}
@@ -215,13 +289,17 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public void setDatatype(IRI datatype) {
+		payloadChanged();
 		this.datatype = datatype;
 		coreDatatype = null;
+		datatypeVersion = ChildVersion.capture(datatype);
 	}
 
 	public void setDatatype(CoreDatatype coreDatatype) {
+		payloadChanged();
 		this.coreDatatype = coreDatatype;
 		datatype = coreDatatype.getIri();
+		datatypeVersion = null;
 	}
 
 	@Override
@@ -231,6 +309,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public void setLabel(String label) {
+		payloadChanged();
 		this.label = label;
 	}
 
@@ -247,10 +326,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	public void setBaseDirection(BaseDirection baseDirection) {
+		payloadChanged();
 		this.baseDirection = baseDirection;
 	}
 
 	public void setLanguage(String language) {
+		payloadChanged();
 		this.language = language;
 	}
 
@@ -260,6 +341,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 				if (!initialized) {
 					InternalIdentity resolving = identity;
 					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+					datatypeVersion = ChildVersion.capture(datatype);
 					initialized = resolved;
 					assert resolved;
 					if (resolved) {
@@ -276,14 +358,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			return true;
 		}
 
-		InternalIdentity own = identity;
-		if (o instanceof LmdbLiteral otherLmdbLiteral && own.id() != UNKNOWN_ID) {
-			InternalIdentity other = otherLmdbLiteral.identity;
-			if (other.id() != UNKNOWN_ID && own.revision().equals(other.revision())) {
-				// LmdbLiteral's from the same revision of the same lmdb store,
-				// with both ID's set
-				return own.id() == other.id();
-			}
+		Boolean nativeEquality = equalsNative(o);
+		if (nativeEquality != null) {
+			return nativeEquality;
 		}
 
 		init();
@@ -292,8 +369,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public int hashCode() {
-		InternalIdentity captured = identity;
-		if (captured.id() != UNKNOWN_ID) {
+		InternalIdentity captured = getInternalIdentity();
+		boolean stable = getSemanticVersion() != UNKNOWN_ID;
+		if (stable && captured.id() != UNKNOWN_ID) {
 			int cachedHash = captured.revision().getStoredHash(captured.id());
 			if (cachedHash != 0) {
 				return cachedHash;
@@ -302,7 +380,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 		init();
 		int hash = super.hashCode();
-		if (captured.id() != UNKNOWN_ID) {
+		if (stable && captured.id() != UNKNOWN_ID) {
 			captured.revision().storeHash(captured.id(), hash);
 		}
 		return hash;
@@ -343,5 +421,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		datatype = (IRI) fields.get("datatype", null);
 		coreDatatype = (CoreDatatype) fields.get("coreDatatype", null);
 		initialized = fields.get("initialized", false);
+		datatypeVersion = ChildVersion.capture(datatype);
 	}
 }

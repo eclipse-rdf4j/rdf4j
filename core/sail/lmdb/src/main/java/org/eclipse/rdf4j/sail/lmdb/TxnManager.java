@@ -113,6 +113,8 @@ final class TxnManager {
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
 	private final Semaphore priorityReaderSlot = new Semaphore(1, true);
+	/** Ordinary permit demand advertised before the final pressure scan, through admission or cancellation. */
+	private final AtomicInteger ordinaryReaderAdmissions = new AtomicInteger();
 
 	private final ReentrantLock readersFullLock = new ReentrantLock();
 	private final Condition readerInactive = readersFullLock.newCondition();
@@ -120,9 +122,11 @@ final class TxnManager {
 	private final AtomicLong lastReaderCheck = new AtomicLong(Long.MIN_VALUE);
 
 	private final Pool[] pools = new Pool[CACHED_POOLS];
-	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
+	private final StampedLongAdderLockManager lockManager = new NativeBarrier();
 
 	private volatile boolean managerClosed;
+	// Deterministic admission-race seam; only the blocking path visits it.
+	volatile Runnable beforeBlockingReaderAdmissionForTest;
 
 	TxnManager(long env, Mode mode) throws IOException {
 		this(env, mode, null);
@@ -205,7 +209,7 @@ final class TxnManager {
 	private Txn createReadTxnInternal(boolean resetOnWrite, boolean priority, QueryExecutionDeadline deadline)
 			throws IOException {
 		checkNotClosed();
-		Semaphore readerPermit = acquireReaderPermit(priority, deadline);
+		Semaphore readerPermit = acquireReaderPermits(1, priority, deadline, true);
 		return createReadTxnInternal(resetOnWrite, readerPermit, deadline);
 	}
 
@@ -478,6 +482,22 @@ final class TxnManager {
 		return permit == null ? null : doWithScoped(transaction, scopeFactory, permit, deadline);
 	}
 
+	/** Retains an ordinary current reader; the caller must close it. Never borrows the priority slot. */
+	Txn tryCreateRetainedReadTxnUnderReadLock(ReaderStartScopeFactory scopeFactory) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = tryAcquireReaderPermit(deadline, true);
+		if (permit == null) {
+			return null;
+		}
+		// Admission is nonblocking; the caller already owns its decode's native read barrier.
+		return startScopedReadTxn(false, permit, deadline, null, Function.identity(), scopeFactory);
+	}
+
+	@FunctionalInterface
+	interface IdleReaderReclaimer {
+		boolean reclaim();
+	}
+
 	private <T> T doWithScoped(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory, Semaphore permit,
 			QueryExecutionDeadline deadline) throws IOException {
 		long readStamp;
@@ -554,14 +574,19 @@ final class TxnManager {
 
 	private <T> T doWith(Transaction<T> transaction, boolean priority) throws IOException {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = acquireReaderPermit(priority, deadline);
 		long readStamp;
 		try {
 			readStamp = acquireReadBarrier(deadline);
 		} catch (InterruptedException e) {
+			releaseReaderPermit(permit);
 			Thread.currentThread().interrupt();
 			throw new SailException("Interrupted while acquiring read lock", e);
+		} catch (RuntimeException | Error failure) {
+			releaseReaderPermit(permit);
+			throw failure;
 		}
-		try (Txn txn = createReadTxnInternal(true, priority, deadline); MemoryStack stack = stackPush()) {
+		try (Txn txn = createReadTxnInternal(true, permit, deadline); MemoryStack stack = stackPush()) {
 			return transaction.exec(stack, txn.get());
 		} finally {
 			lockManager.unlockRead(readStamp);
@@ -755,6 +780,25 @@ final class TxnManager {
 	// reader admission
 	// ---------------------------------------------------------------------------------------------
 
+	boolean hasQueuedOrdinaryReaders() {
+		return ordinaryReaderAdmissions.get() != 0 || readerSlots.hasQueuedThreads();
+	}
+
+	/** A blocked pressure scan is retried at the actual native writer completion, without polling. */
+	private final class NativeBarrier extends StampedLongAdderLockManager {
+		@Override
+		public void unlockWrite(long stamp) {
+			super.unlockWrite(stamp);
+			if (ordinaryReaderAdmissions.get() != 0 && !managerClosed) {
+				try {
+					reclaimIdleReaders(Math.min(POOL_SIZE - 1, ordinaryReaderAdmissions.get()), false);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+	}
+
 	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		return acquireReaderPermit(priority, deadline);
@@ -765,12 +809,21 @@ final class TxnManager {
 	}
 
 	private Semaphore tryAcquireReaderPermit(QueryExecutionDeadline deadline) throws IOException {
+		return tryAcquireReaderPermit(deadline, false);
+	}
+
+	private Semaphore tryAcquireReaderPermit(QueryExecutionDeadline deadline, boolean underReadLock)
+			throws IOException {
 		checkQueryDeadline(deadline);
 		checkNotClosed();
 		boolean acquired = false;
 		boolean keepPermit = false;
 		try {
 			acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
+			if (!acquired) {
+				reclaimIdleReaders(1, underReadLock);
+				acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
+			}
 			checkQueryDeadline(deadline);
 			checkNotClosed();
 			keepPermit = acquired;
@@ -787,16 +840,33 @@ final class TxnManager {
 
 	private Semaphore acquireReaderPermits(int count, boolean priority, QueryExecutionDeadline deadline)
 			throws IOException {
+		return acquireReaderPermits(count, priority, deadline, false);
+	}
+
+	private Semaphore acquireReaderPermits(int count, boolean priority, QueryExecutionDeadline deadline,
+			boolean underReadLock) throws IOException {
 		checkQueryDeadline(deadline);
 		Semaphore slots = priority ? priorityReaderSlot : readerSlots;
 		boolean acquired = false;
 		boolean keepPermit = false;
+		boolean admissionAdvertised = false;
 		try {
-			if (priority && readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS)) {
-				slots = readerSlots;
+			if (!readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS)) {
+				ordinaryReaderAdmissions.addAndGet(count);
+				admissionAdvertised = true;
+				reclaimIdleReaders(count, underReadLock);
+				acquired = readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS);
+			} else {
 				acquired = true;
 			}
+			if (acquired) {
+				slots = readerSlots;
+			}
 			if (!acquired) {
+				Runnable beforeBlocking = beforeBlockingReaderAdmissionForTest;
+				if (beforeBlocking != null) {
+					beforeBlocking.run();
+				}
 				long timeoutNanos = READER_ADMISSION_TIMEOUT_NANOS;
 				if (deadline != null) {
 					long queryRemainingNanos = deadline.remainingNanos();
@@ -821,8 +891,34 @@ final class TxnManager {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for a free read transaction", e);
 		} finally {
+			if (admissionAdvertised) {
+				ordinaryReaderAdmissions.addAndGet(-count);
+			}
 			if (acquired && !keepPermit) {
 				slots.release(count);
+			}
+		}
+	}
+
+	/** Pressure alone visits parked readers; normal admission and dictionary decode never scan this set. */
+	private void reclaimIdleReaders(int count, boolean underReadLock) throws InterruptedException {
+		long stamp = underReadLock ? 0L : lockManager.tryReadLock(0, TimeUnit.NANOSECONDS);
+		if (!underReadLock && stamp == 0) {
+			return;
+		}
+		try {
+			for (Txn txn : open) {
+				IdleReaderReclaimer reclaimer = txn.idleReaderReclaimer;
+				if (reclaimer != null) {
+					reclaimer.reclaim();
+				}
+				if (readerSlots.availablePermits() >= count) {
+					break;
+				}
+			}
+		} finally {
+			if (!underReadLock) {
+				lockManager.unlockRead(stamp);
 			}
 		}
 	}
@@ -1121,6 +1217,24 @@ final class TxnManager {
 			return version;
 		}
 
+		private volatile IdleReaderReclaimer idleReaderReclaimer;
+
+		void setIdleReaderReclaimer(IdleReaderReclaimer reclaimer) {
+			idleReaderReclaimer = reclaimer;
+		}
+
+		/** The caller holds the native read barrier and exclusive ownership of this ordinary reader. */
+		synchronized void refreshCurrent() throws IOException {
+			ensureSnapshotValid();
+			if (snapshotBound) {
+				throw new IllegalStateException("Cannot refresh a membership-bound dictionary reader");
+			}
+			resetNative();
+			stale = false;
+			version++;
+			activate();
+		}
+
 		long snapshotRevision() {
 			return snapshotRevision;
 		}
@@ -1196,6 +1310,7 @@ final class TxnManager {
 					return;
 				}
 				permit = readerPermit;
+				idleReaderReclaimer = null;
 				snapshotRevision = -1;
 				releasePermit = release();
 			}

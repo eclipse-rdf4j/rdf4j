@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
@@ -55,6 +56,18 @@ class UnionSailDataset implements SailDataset {
 				"dataset1=" + dataset1 +
 				", dataset2=" + dataset2 +
 				'}';
+	}
+
+	@Override
+	public Function<Value, Value> getValuePreparer() {
+		Function<Value, Value> first = dataset1.getValuePreparer();
+		return first == dataset2.getValuePreparer() ? first : null;
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		Function<Value, Value> first = dataset1.getValueCapturer();
+		return first == dataset2.getValueCapturer() ? first : null;
 	}
 
 	@Override

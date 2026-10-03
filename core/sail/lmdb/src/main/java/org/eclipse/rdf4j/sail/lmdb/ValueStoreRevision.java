@@ -21,6 +21,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -77,6 +79,9 @@ public interface ValueStoreRevision {
 		public void valueInitialized(long id, LmdbValue value) {
 			if (valueStore != null) {
 				valueStore.cacheValue(id, value, this);
+				if (value.isExternallyOwned()) {
+					valueStore.protectExternalValue(value);
+				}
 			}
 		}
 	}
@@ -88,6 +93,10 @@ public interface ValueStoreRevision {
 		private final long revisionId;
 		private final ValueStore valueStore;
 		private final transient ValueStore.NativeValueAssociation association;
+		private final transient Lazy retainedEpoch;
+		private final transient ValueResolutionScope resolutionScope;
+		private transient volatile boolean tracked;
+		private transient ValueStore.ValueEpoch idEpoch;
 		private transient volatile WeakReference<ValueStore.ReadSnapshot> preferredSnapshot;
 
 		public Lazy(ValueStoreRevision revision) {
@@ -99,6 +108,41 @@ public interface ValueStoreRevision {
 			this.revisionId = revision.getRevisionId();
 			this.valueStore = revision.getValueStore();
 			this.association = association;
+			this.retainedEpoch = null;
+			this.resolutionScope = null;
+		}
+
+		Lazy(Lazy epoch, ValueResolutionScope resolutionScope) {
+			this.revision = epoch.unwrapped();
+			this.revisionId = epoch.revisionId;
+			this.valueStore = epoch.valueStore;
+			this.association = epoch.association;
+			this.retainedEpoch = epoch.epoch();
+			this.resolutionScope = resolutionScope;
+		}
+
+		Lazy epoch() {
+			return retainedEpoch == null ? this : retainedEpoch;
+		}
+
+		void markTracked() {
+			tracked = true;
+		}
+
+		void setIdEpoch(ValueStore.ValueEpoch epoch) {
+			idEpoch = epoch;
+		}
+
+		ValueStore.ValueEpoch idEpoch() {
+			return epoch().idEpoch;
+		}
+
+		boolean isTracked() {
+			return epoch().tracked;
+		}
+
+		ValueResolutionScope resolutionScope() {
+			return resolutionScope;
 		}
 
 		ValueStoreRevision unwrapped() {
@@ -110,11 +154,11 @@ public interface ValueStoreRevision {
 		}
 
 		void preferSnapshot(ValueStore.ReadSnapshot snapshot) {
-			preferredSnapshot = new WeakReference<>(snapshot);
+			epoch().preferredSnapshot = new WeakReference<>(snapshot);
 		}
 
 		ValueStore.ReadSnapshot preferredSnapshot() {
-			WeakReference<ValueStore.ReadSnapshot> preferred = preferredSnapshot;
+			WeakReference<ValueStore.ReadSnapshot> preferred = epoch().preferredSnapshot;
 			return preferred == null ? null : preferred.get();
 		}
 
@@ -131,6 +175,7 @@ public interface ValueStoreRevision {
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
 			if (valueStore != null && valueStore.resolveValue(id, value, this)) {
+				valueStore.protectDecodedExternalValue(value);
 				// set unwrapped version of revision
 				value.setInternalID(id, revision);
 				return true;
@@ -327,6 +372,13 @@ public interface ValueStoreRevision {
 	ValueStore getValueStore();
 
 	boolean resolveValue(long id, LmdbValue value);
+
+	/** Transfers exact cold child ownership without exposing the package-private ValueStore to model classes. */
+	@InternalUseOnly
+	default <T extends Value> T protectExternalValue(T value) {
+		ValueStore owner = getValueStore();
+		return owner == null ? value : owner.protectExternalValue(value);
+	}
 
 	/** Publishes a value only after its lazy payload and revision metadata have completed initialization. */
 	default void valueInitialized(long id, LmdbValue value) {

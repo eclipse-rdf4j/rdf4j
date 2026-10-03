@@ -2799,6 +2799,8 @@ class LmdbSailStore implements SailStore {
 		private final Txn tripleTxn;
 		private final long tripleTxnVersion;
 		private final ValueStore.ReadSnapshot valueSnapshot;
+		private final Function<Value, Value> valuePreparer;
+		private final Function<Value, Value> valueCapturer;
 		private final Map<String, String> namespaces;
 		private final long capturedNamespaceGeneration;
 		private final long capturedPublicationVersion;
@@ -2812,6 +2814,8 @@ class LmdbSailStore implements SailStore {
 			this.tripleTxn = tripleTxn;
 			this.tripleTxnVersion = tripleTxn.version();
 			this.valueSnapshot = valueSnapshot;
+			this.valuePreparer = valueStore.valuePreparer(valueSnapshot);
+			this.valueCapturer = valueStore.valueCapturer(valueSnapshot);
 			valueSnapshot.retainStableIds(tripleTxn);
 			this.namespaces = namespaces;
 			this.capturedNamespaceGeneration = capturedNamespaceGeneration;
@@ -5129,7 +5133,7 @@ class LmdbSailStore implements SailStore {
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = getId(valueSnapshot, subj);
+			subjID = getStatementId(valueSnapshot, subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
@@ -5137,7 +5141,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = getId(valueSnapshot, pred);
+			predID = getStatementId(valueSnapshot, pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
@@ -5145,7 +5149,7 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = getId(valueSnapshot, obj);
+			objID = getStatementId(valueSnapshot, obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
@@ -5160,7 +5164,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 				} else if (!context.isTripleTerm()) {
-					long contextID = getId(valueSnapshot, context);
+					long contextID = getStatementId(valueSnapshot, context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -5209,7 +5213,7 @@ class LmdbSailStore implements SailStore {
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = getId(valueSnapshot, subj);
+			subjID = getStatementId(valueSnapshot, subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -5217,7 +5221,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = getId(valueSnapshot, pred);
+			predID = getStatementId(valueSnapshot, pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -5225,7 +5229,7 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = getId(valueSnapshot, obj);
+			objID = getStatementId(valueSnapshot, obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return 0;
@@ -5240,7 +5244,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 				} else if (!context.isTripleTerm()) {
-					long contextID = getId(valueSnapshot, context);
+					long contextID = getStatementId(valueSnapshot, context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -5266,6 +5270,10 @@ class LmdbSailStore implements SailStore {
 
 	private long getId(ValueStore.ReadSnapshot valueSnapshot, Value value) throws IOException {
 		return valueSnapshot == null ? valueStore.getId(value) : valueStore.getId(valueSnapshot, value);
+	}
+
+	private long getStatementId(ValueStore.ReadSnapshot valueSnapshot, Value value) throws IOException {
+		return valueSnapshot == null ? valueStore.getId(value) : valueStore.getStatementId(valueSnapshot, value);
 	}
 
 	/**
@@ -6487,6 +6495,16 @@ class LmdbSailStore implements SailStore {
 			this.explicit = explicit;
 			this.readView = readView;
 			this.txn = readView.tripleTxn();
+		}
+
+		@Override
+		public Function<Value, Value> getValuePreparer() {
+			return readView.valuePreparer;
+		}
+
+		@Override
+		public Function<Value, Value> getValueCapturer() {
+			return readView.valueCapturer;
 		}
 
 		@Override

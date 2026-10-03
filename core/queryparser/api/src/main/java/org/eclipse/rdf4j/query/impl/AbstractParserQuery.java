@@ -41,7 +41,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter) {
 		if (getMaxExecutionTime() > 0) {
-			bindingsIter = new QueryInterruptIteration(bindingsIter, 1000L * getMaxExecutionTime());
+			bindingsIter = new QueryInterruptIteration<>(bindingsIter, 1000L * getMaxExecutionTime());
 		}
 
 		return bindingsIter;
@@ -62,10 +62,16 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 */
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter, QueryExecutionDeadline deadline) {
+		return enforceResultMaxQueryTime(bindingsIter, deadline);
+	}
+
+	/** Binds any public result shape to the deadline, including its final value preparation. */
+	protected <T> CloseableIteration<? extends T> enforceResultMaxQueryTime(
+			CloseableIteration<? extends T> iteration, QueryExecutionDeadline deadline) {
 		if (deadline != null) {
-			return new QueryInterruptIteration(bindingsIter, deadline);
+			return new QueryInterruptIteration<>(iteration, deadline);
 		}
-		return bindingsIter;
+		return iteration;
 	}
 
 	/**
@@ -89,17 +95,17 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 		return parsedQuery.toString();
 	}
 
-	private static class QueryInterruptIteration extends TimeLimitIteration<BindingSet> {
+	private static class QueryInterruptIteration<T> extends TimeLimitIteration<T> {
 
 		private final QueryExecutionDeadline deadline;
 
-		public QueryInterruptIteration(CloseableIteration<? extends BindingSet> iter,
+		public QueryInterruptIteration(CloseableIteration<? extends T> iter,
 				long timeLimit) {
 			super(iter, timeLimit);
 			deadline = null;
 		}
 
-		private QueryInterruptIteration(CloseableIteration<? extends BindingSet> iter,
+		private QueryInterruptIteration(CloseableIteration<? extends T> iter,
 				QueryExecutionDeadline deadline) {
 			super(iter, deadline);
 			this.deadline = deadline;

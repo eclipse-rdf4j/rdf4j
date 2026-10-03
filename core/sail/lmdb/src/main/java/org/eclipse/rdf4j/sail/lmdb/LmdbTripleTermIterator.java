@@ -67,7 +67,8 @@ class LmdbTripleTermIterator extends AbstractCloseableIteration<TripleTerm> impl
 
 			long termID = quad[TripleIndex.CONTEXT_IDX];
 			LmdbTripleTerm tripleTerm = new LmdbTripleTerm(
-					readSnapshot == null ? valueStore.getRevision() : readSnapshot.revision(), subj, pred, obj, termID);
+					readSnapshot == null ? valueStore.getRevision() : readSnapshot.completedRevision(), subj, pred, obj,
+					termID);
 			if (readSnapshot != null) {
 				readSnapshot.trackLazyValue(tripleTerm);
 			}

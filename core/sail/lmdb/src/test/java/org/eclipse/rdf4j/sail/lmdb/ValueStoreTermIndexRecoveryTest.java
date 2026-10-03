@@ -88,9 +88,10 @@ class ValueStoreTermIndexRecoveryTest {
 	void nativeTermIndexManifestSurvivesCrashBeforeSidecarSave(@TempDir Path storeDir) throws Exception {
 		Seed first = seedStore(storeDir, legacyConfig(), 8);
 
-		Process child = startTermIndexCrashChild(storeDir, "opsc", legacyConfig().getValueDBSize());
+		ChildProcess child = startTermIndexCrashChild(storeDir, "opsc", legacyConfig().getValueDBSize());
 		String output = awaitProcess(child, 90, TimeUnit.SECONDS);
-		assertEquals(86, child.exitValue(), "the child must stop after publishing the native term index: " + output);
+		assertEquals(86, child.process().exitValue(),
+				"the child must stop after publishing the native term index: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_NATIVE_COMMITTED"),
 				"the child must reach the post-native-commit cut point: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_OLD_PROPERTIES_STILL_ON_DISK"),
@@ -113,9 +114,10 @@ class ValueStoreTermIndexRecoveryTest {
 	void nativeTermIndexManifestSurvivesMissingPropertiesSidecar(@TempDir Path storeDir) throws Exception {
 		Seed first = seedStore(storeDir, legacyConfig(), 8);
 
-		Process child = startTermIndexCrashChild(storeDir, "opsc", legacyConfig().getValueDBSize());
+		ChildProcess child = startTermIndexCrashChild(storeDir, "opsc", legacyConfig().getValueDBSize());
 		String output = awaitProcess(child, 90, TimeUnit.SECONDS);
-		assertEquals(86, child.exitValue(), "the child must stop after publishing the native term index: " + output);
+		assertEquals(86, child.process().exitValue(),
+				"the child must stop after publishing the native term index: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_NATIVE_COMMITTED"),
 				"the child must reach the post-native-commit cut point: " + output);
 		Files.delete(storeDir.resolve(StoreProperties.FILE_NAME));
@@ -167,10 +169,10 @@ class ValueStoreTermIndexRecoveryTest {
 		assertTrue(initialMapSize > smallMapConfig().getValueDBSize(),
 				"the buffered seed write must reserve map capacity before the native term-index rebuild");
 
-		Process child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
+		ChildProcess child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
 				smallMapConfig().getValueDBSize());
 		String output = awaitProcess(child, 180, TimeUnit.SECONDS);
-		assertEquals(0, child.exitValue(), "the reindex child must complete: " + output);
+		assertEquals(0, child.process().exitValue(), "the reindex child must complete: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_REBUILD_COMPLETE"),
 				"the child must finish its complete native reindex: " + output);
 
@@ -256,9 +258,10 @@ class ValueStoreTermIndexRecoveryTest {
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void commitCallbackFailureDoesNotAbortConsumedNativeTransaction(@TempDir Path storeDir) throws Exception {
-		Process child = startChild(PostCommitFailureChildMain.class, storeDir, "", 0);
+		ChildProcess child = startChild(PostCommitFailureChildMain.class, storeDir, "", 0);
 		String output = awaitProcess(child, 60, TimeUnit.SECONDS);
-		assertEquals(0, child.exitValue(), "the committed transaction must survive close and reopen: " + output);
+		assertEquals(0, child.process().exitValue(),
+				"the committed transaction must survive close and reopen: " + output);
 		assertTrue(output.contains("VALUE_TXN_POSTCOMMIT_RECOVERED"),
 				"the child must reopen and read the value committed before the injected failure: " + output);
 	}
@@ -340,9 +343,10 @@ class ValueStoreTermIndexRecoveryTest {
 				new LmdbStoreConfig().setTripleTermIndexes(DROP_RETRY_OLD_INDEXES).setForceSync(true));
 		seeded.close();
 
-		Process child = startChild(DropMapFullRetryChildMain.class, storeDir, DROP_RETRY_NEW_INDEXES, 0);
+		ChildProcess child = startChild(DropMapFullRetryChildMain.class, storeDir, DROP_RETRY_NEW_INDEXES, 0);
 		String output = awaitProcess(child, 60, TimeUnit.SECONDS);
-		assertEquals(0, child.exitValue(), "the final index publication must retry after map growth: " + output);
+		assertEquals(0, child.process().exitValue(),
+				"the final index publication must retry after map growth: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_DROP_RETRY_COMPLETE"),
 				"the child must reopen and close the committed replacement generation: " + output);
 	}
@@ -503,32 +507,40 @@ class ValueStoreTermIndexRecoveryTest {
 		return name + name;
 	}
 
-	private static Process startTermIndexCrashChild(Path storeDir, String addedIndex, long valueMapSize)
+	private static ChildProcess startTermIndexCrashChild(Path storeDir, String addedIndex, long valueMapSize)
 			throws IOException {
 		return startChild(TermIndexCrashChildMain.class, storeDir, addedIndex, valueMapSize);
 	}
 
-	private static Process startTermIndexRebuildChild(Path storeDir, String indexSpecs, long valueMapSize)
+	private static ChildProcess startTermIndexRebuildChild(Path storeDir, String indexSpecs, long valueMapSize)
 			throws IOException {
 		return startChild(TermIndexRebuildChildMain.class, storeDir, indexSpecs, valueMapSize);
 	}
 
-	private static Process startChild(Class<?> childMain, Path storeDir, String indexSpecs, long valueMapSize)
+	private static ChildProcess startChild(Class<?> childMain, Path storeDir, String indexSpecs, long valueMapSize)
 			throws IOException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		return new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"), childMain.getName(),
+		Path outputFile = storeDir.resolve(childMain.getSimpleName() + "-child-output.log");
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				childMain.getName(),
 				storeDir.toAbsolutePath().toString(), indexSpecs, Long.toString(valueMapSize))
 						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
 						.start();
+		return new ChildProcess(process, outputFile);
 	}
 
-	private static String awaitProcess(Process child, long timeout, TimeUnit unit) throws Exception {
-		if (!child.waitFor(timeout, unit)) {
-			child.destroyForcibly();
-			assertTrue(child.waitFor(10, TimeUnit.SECONDS), "the isolated child must terminate after the timeout");
+	private static String awaitProcess(ChildProcess child, long timeout, TimeUnit unit) throws Exception {
+		if (!child.process().waitFor(timeout, unit)) {
+			child.process().destroyForcibly();
+			assertTrue(child.process().waitFor(10, TimeUnit.SECONDS),
+					"the isolated child must terminate after the timeout");
 			throw new AssertionError("the isolated term-index child did not finish within " + timeout + " " + unit);
 		}
-		return new String(child.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+		return Files.readString(child.outputFile(), StandardCharsets.UTF_8);
+	}
+
+	private record ChildProcess(Process process, Path outputFile) {
 	}
 
 	private static long valueMapSize(Path environmentDirectory) throws IOException {

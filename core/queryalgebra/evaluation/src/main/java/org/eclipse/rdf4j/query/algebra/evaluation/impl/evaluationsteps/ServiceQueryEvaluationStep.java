@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -88,6 +89,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			String baseUri = service.getBaseURI();
+			ExternalValuePreparation.initializeQueryModel(service);
+			QueryExecutionContext.initializeExternalBindings(bindings);
 
 			// special case: no free variables => perform ASK query
 			if (freeVars.isEmpty()) {

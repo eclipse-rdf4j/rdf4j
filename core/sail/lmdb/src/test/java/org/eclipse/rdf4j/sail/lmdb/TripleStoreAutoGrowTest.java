@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -278,11 +279,12 @@ public class TripleStoreAutoGrowTest {
 	public void testReindexGrowthKeepsEveryEntryAcrossReopen() throws Exception {
 		File reindexDir = new File(dataDir, "reindex-growth");
 		StatementBatch batch = createBatch(900_000L, 12_000);
-		Process reindexProcess = startReindexChild(reindexDir.toPath());
+		File outputFile = new File(dataDir, "reindex-child-output.log");
+		Process reindexProcess = startReindexChild(reindexDir.toPath(), outputFile);
 		try {
 			assertTrue(reindexProcess.waitFor(120, TimeUnit.SECONDS),
 					"The isolated reindex child must complete rather than hang on an invalid native cursor");
-			String childOutput = new String(reindexProcess.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			String childOutput = new String(Files.readAllBytes(outputFile.toPath()), StandardCharsets.UTF_8);
 			assertEquals(0, reindexProcess.exitValue(),
 					"Reindex must complete without native failure; child output: " + childOutput);
 		} finally {
@@ -437,11 +439,12 @@ public class TripleStoreAutoGrowTest {
 		return files == null ? 0 : files.length;
 	}
 
-	private static Process startReindexChild(Path dataDir) throws IOException {
+	private static Process startReindexChild(Path dataDir, File outputFile) throws IOException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		return new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
 				ReindexChild.class.getName(), dataDir.toString(), "12000")
 						.redirectErrorStream(true)
+						.redirectOutput(outputFile)
 						.start();
 	}
 

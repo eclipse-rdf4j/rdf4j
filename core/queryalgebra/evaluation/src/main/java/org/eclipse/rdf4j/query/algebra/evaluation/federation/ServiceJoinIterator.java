@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
 
@@ -95,8 +96,10 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				CloseableIteration<BindingSet> result;
+				ExternalValuePreparation.initializeQueryModel(service);
+				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation.initializeBindings(leftIter);
 				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					result = fs.evaluate(service, leftIter, service.getBaseURI());
+					result = fs.evaluate(service, externalBindings, service.getBaseURI());
 				}
 				addResultAfterReplaySafepoint(result, runtimeTelemetryEnabled);
 			} finally {

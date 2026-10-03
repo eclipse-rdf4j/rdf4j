@@ -16,10 +16,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 
 /**
@@ -33,6 +37,7 @@ public final class QueryExecutionContext {
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
 	private static final ThreadLocal<ReplaySafepoint> REPLAY_SAFEPOINT = new ThreadLocal<>();
 	private static final ThreadLocal<ReplayDeferral> REPLAY_DEFERRAL = new ThreadLocal<>();
+	private static final ThreadLocal<Consumer<Value>> EXTERNAL_VALUE_INITIALIZER = new ThreadLocal<>();
 	private static final ThreadLocal<InstalledReplayContext> INSTALLED_REPLAY_CONTEXT = new ThreadLocal<>();
 	private static volatile boolean heavyOperatorExecutionEnabled = true;
 	private static volatile int checkpointCalls;
@@ -124,11 +129,70 @@ public final class QueryExecutionContext {
 		};
 	}
 
+	/**
+	 * Installs optional preparation for values crossing into extension code. The consumer must protect the entire
+	 * reachable value tree, including nested triple terms and literal datatype IRIs, without changing value identity.
+	 * Stores may preserve deferred payloads by retaining their lifetime, or materialize them when their contract
+	 * requires it. This hook does not require eager resolution at an intermediate evaluation boundary.
+	 */
+	public static Activation activateExternalValueInitializer(Consumer<Value> initializer) {
+		Consumer<Value> previous = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> next = Objects.requireNonNull(initializer, "Initializer was null");
+		AtomicBoolean active = new AtomicBoolean(true);
+		EXTERNAL_VALUE_INITIALIZER.set(next);
+		return () -> {
+			if (active.compareAndSet(true, false) && EXTERNAL_VALUE_INITIALIZER.get() == next) {
+				setExternalValueInitializer(previous);
+			}
+		};
+	}
+
+	/** Returns the optional preparation consumer to capture at an external access boundary. */
+	public static Consumer<Value> getExternalValueInitializer() {
+		return EXTERNAL_VALUE_INITIALIZER.get();
+	}
+
+	/** Prepares an outward value while retaining its identity and the store's deferred-value policy. */
+	public static <T extends Value> T initializeExternalValue(T value) {
+		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		if (initializer != null && value != null) {
+			initializer.accept(value);
+		}
+		return value;
+	}
+
+	/** Prepares arguments only when the owning store requires external lifetime protection. */
+	public static void initializeExternalValues(Value... values) {
+		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		if (initializer != null) {
+			for (Value value : values) {
+				if (value != null) {
+					initializer.accept(value);
+				}
+			}
+		}
+	}
+
+	/** Prepares the values in bindings about to be handed to extension code. */
+	public static BindingSet initializeExternalBindings(BindingSet bindings) {
+		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		if (initializer != null && bindings != null) {
+			for (Binding binding : bindings) {
+				Value value = binding.getValue();
+				if (value != null) {
+					initializer.accept(value);
+				}
+			}
+		}
+		return bindings;
+	}
+
 	/** Captures the current replay checkpoint scopes for work dispatched to pre-existing worker threads. */
 	public static ReplayContext captureReplayContext() {
 		ReplaySafepoint safepoint = copyActiveReplaySafepoints(REPLAY_SAFEPOINT.get());
 		ReplayDeferral deferral = copyActiveReplayDeferrals(REPLAY_DEFERRAL.get());
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
 		List<WorkerScope> workerScopes = null;
 		for (ReplaySafepoint scope = safepoint; scope != null; scope = scope.previous) {
 			Supplier<WorkerScope> capture = scope.scopeOwner.workerScopeCapture;
@@ -142,9 +206,9 @@ public final class QueryExecutionContext {
 				}
 			}
 		}
-		return safepoint == null && deferral == null && deadline == null
+		return safepoint == null && deferral == null && deadline == null && initializer == null
 				? null
-				: new ReplayContext(safepoint, deferral, deadline,
+				: new ReplayContext(safepoint, deferral, deadline, initializer,
 						workerScopes == null ? List.of() : List.copyOf(workerScopes.reversed()));
 	}
 
@@ -232,7 +296,8 @@ public final class QueryExecutionContext {
 		}
 	}
 
-	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, ReplayDeferral deferral) {
+	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, ReplayDeferral deferral,
+			Consumer<Value> initializer) {
 	}
 
 	/** A captured replay checkpoint stack that can be installed around one unit of worker-thread work. */
@@ -240,13 +305,16 @@ public final class QueryExecutionContext {
 		private final ReplaySafepoint safepoint;
 		private final ReplayDeferral deferral;
 		private final QueryExecutionDeadline deadline;
+		private final Consumer<Value> initializer;
 		private final List<WorkerScope> workerScopes;
 
 		private ReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral, QueryExecutionDeadline deadline,
+				Consumer<Value> initializer,
 				List<WorkerScope> workerScopes) {
 			this.safepoint = safepoint;
 			this.deferral = deferral;
 			this.deadline = deadline;
+			this.initializer = initializer;
 			this.workerScopes = workerScopes;
 		}
 
@@ -304,20 +372,23 @@ public final class QueryExecutionContext {
 
 		private Activation install(ReplaySafepoint previousSafepoint, ReplayDeferral previousDeferral) {
 			InstalledReplayContext previousContext = INSTALLED_REPLAY_CONTEXT.get();
+			Consumer<Value> previousInitializer = EXTERNAL_VALUE_INITIALIZER.get();
 			QueryExecutionDeadline.Scope deadlineScope = QueryExecutionDeadline.enterScopedContext(deadline);
 			List<Activation> activations = workerScopes.isEmpty() ? List.of() : new ArrayList<>(workerScopes.size());
 			setReplayContext(safepoint, deferral);
+			setExternalValueInitializer(initializer);
 			try {
 				for (WorkerScope scope : workerScopes) {
 					activations.add(Objects.requireNonNull(scope.activate(), "Worker scope activation was null"));
 				}
 				INSTALLED_REPLAY_CONTEXT
-						.set(new InstalledReplayContext(this, REPLAY_SAFEPOINT.get(), REPLAY_DEFERRAL.get()));
+						.set(new InstalledReplayContext(this, REPLAY_SAFEPOINT.get(), REPLAY_DEFERRAL.get(),
+								EXTERNAL_VALUE_INITIALIZER.get()));
 			} catch (RuntimeException | Error failure) {
 				try {
 					closeWorkerScopes(activations, failure);
 				} finally {
-					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope);
+					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope, previousInitializer);
 				}
 				throw failure;
 			}
@@ -325,14 +396,16 @@ public final class QueryExecutionContext {
 				try {
 					closeWorkerScopes(activations, null);
 				} finally {
-					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope);
+					restore(previousSafepoint, previousDeferral, previousContext, deadlineScope, previousInitializer);
 				}
 			};
 		}
 
 		private static void restore(ReplaySafepoint safepoint, ReplayDeferral deferral,
-				InstalledReplayContext previousContext, QueryExecutionDeadline.Scope deadlineScope) {
+				InstalledReplayContext previousContext, QueryExecutionDeadline.Scope deadlineScope,
+				Consumer<Value> initializer) {
 			setReplayContext(safepoint, deferral);
+			setExternalValueInitializer(initializer);
 			if (previousContext == null) {
 				INSTALLED_REPLAY_CONTEXT.remove();
 			} else {
@@ -366,12 +439,22 @@ public final class QueryExecutionContext {
 			if (QueryExecutionDeadline.current() != deadline) {
 				return false;
 			}
-			if (currentSafepoint == safepoint && currentDeferral == deferral && workerScopes.isEmpty()) {
+			Consumer<Value> currentInitializer = EXTERNAL_VALUE_INITIALIZER.get();
+			if (currentSafepoint == safepoint && currentDeferral == deferral && currentInitializer == initializer
+					&& workerScopes.isEmpty()) {
 				return true;
 			}
 			InstalledReplayContext installed = INSTALLED_REPLAY_CONTEXT.get();
 			return installed != null && installed.context() == this && installed.safepoint() == currentSafepoint
-					&& installed.deferral() == currentDeferral;
+					&& installed.deferral() == currentDeferral && installed.initializer() == currentInitializer;
+		}
+	}
+
+	private static void setExternalValueInitializer(Consumer<Value> initializer) {
+		if (initializer == null) {
+			EXTERNAL_VALUE_INITIALIZER.remove();
+		} else {
+			EXTERNAL_VALUE_INITIALIZER.set(initializer);
 		}
 	}
 

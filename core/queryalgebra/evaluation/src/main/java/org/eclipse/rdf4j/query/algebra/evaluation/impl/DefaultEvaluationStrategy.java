@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -132,7 +133,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
@@ -171,6 +171,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -228,6 +229,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
 		CloseableIteration<? extends List<? extends Value>> iter;
+		QueryExecutionContext.initializeExternalValues(argValues);
 		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
 			iter = func.evaluate(valueFactory, argValues);
 		}
@@ -519,6 +521,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throw new IllegalArgumentException("expr must not be null");
 		}
 		if (!AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
+			var capturer = valueCapturer();
+			if (capturer != null) {
+				context = new ValueCapturingQueryEvaluationContext(context, capturer);
+			}
 			QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(expr, context);
 			return AdaptiveFilterEvaluationStep.scope(precompilePlanned(expr, planning), planning);
 		}
@@ -699,8 +705,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return new JoinQueryEvaluationStep(this, node, context).attachAdaptive(context, node,
+		QueryEvaluationStep step = new JoinQueryEvaluationStep(this, node, context).attachAdaptive(context, node,
 				trackResultSize || trackTime);
+		// Vectored SERVICE produces external rows without evaluating the ordinary prepared SERVICE child.
+		return node.getRightArg() instanceof Service ? captureResultValues(step) : step;
 	}
 
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
@@ -735,7 +743,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return new QueryRootQueryEvaluationStep(arg, context);
+		var capturer = valueCapturer();
+		return capturer == null ? arg : new QueryRootQueryEvaluationStep(arg, capturer);
 	}
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
@@ -770,7 +779,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		Var serviceRef = service.getServiceRef();
-		return new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver);
+		return captureResultValues(new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver));
 	}
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -791,16 +800,17 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		return new BindingSetAssignmentQueryEvaluationStep(node, context);
+		return new BindingSetAssignmentQueryEvaluationStep(node, context, valueCapturer());
 	}
 
 	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
 		private final QueryEvaluationStep arg;
-		private final QueryEvaluationContext context;
+		private final Function<Value, Value> valueCapturer;
 
-		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg, QueryEvaluationContext context) {
+		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg,
+				Function<Value, Value> valueCapturer) {
 			this.arg = arg;
-			this.context = context;
+			this.valueCapturer = valueCapturer;
 		}
 
 		@Override
@@ -809,7 +819,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			DefaultEvaluationStrategy.this.sharedValueOfNow = null;
 			CloseableIteration<BindingSet> evaluate = null;
 			try {
-				evaluate = arg.evaluate(bs);
+				evaluate = arg.evaluate(captureBindings(bs, valueCapturer));
 				var eval = evaluate;
 
 				CloseableIteration<BindingSet> closeContext = new CloseableIteration<>() {
@@ -844,6 +854,49 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
+	}
+
+	/** Captures externally produced values once before another operator can fan the row out. */
+	protected final QueryEvaluationStep captureResultValues(QueryEvaluationStep step) {
+		var capturer = valueCapturer();
+		if (capturer == null) {
+			return step;
+		}
+		return bindings -> new IterationWrapper<>(step.evaluate(bindings)) {
+			@Override
+			public BindingSet next() {
+				try {
+					return captureBindings(super.next(), capturer);
+				} catch (RuntimeException | Error failure) {
+					closeWithSuppressed(this, failure);
+					throw failure;
+				}
+			}
+		};
+	}
+
+	private Function<Value, Value> valueCapturer() {
+		// Scalar-only strategies do not need a triple source and retain the ordinary no-capability path.
+		return tripleSource == null ? null : tripleSource.getValueCapturer();
+	}
+
+	private static BindingSet captureBindings(BindingSet bindings,
+			Function<Value, Value> capturer) {
+		MutableBindingSet captured = null;
+		for (String name : bindings.getBindingNames()) {
+			Value value = bindings.getValue(name);
+			if (value != null) {
+				Value replacement = capturer.apply(value);
+				if (replacement != value) {
+					if (captured == null) {
+						// Initial API and external rows may contain columns outside the query's fixed array layout.
+						captured = new QueryBindingSet(bindings);
+					}
+					captured.setBinding(name, replacement);
+				}
+			}
+		}
+		return captured == null ? bindings : captured;
 	}
 
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
@@ -902,7 +955,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			argEpresions[i] = precompile(args.get(i), context);
 		}
 
-		return bindings -> {
+		return captureResultValues(bindings -> {
 			Value[] argValues = new Value[args.size()];
 			for (int i = 0; i < args.size(); i++) {
 				argValues[i] = argEpresions[i].evaluate(bindings);
@@ -910,7 +963,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 			return evaluate(func, expr.getResultVars(), bindings,
 					tripleSource.getValueFactory(), argValues);
-		};
+		});
 	}
 
 	public static Value getVarValue(Var var, BindingSet bindings) {
@@ -949,7 +1002,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			// new query, reset shared return value for successive calls of
 			// NOW()
 			this.sharedValueOfNow = null;
-			return precompile(expr.getArg(), context);
+			return prepare((QueryRoot) expr, context);
 		} else if (expr instanceof DescribeOperator) {
 			return prepare((DescribeOperator) expr, context);
 		} else if (expr == null) {
@@ -1080,7 +1133,47 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else {
 			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
 		}
-		return wrapValueExprTelemetry(expr, prepared);
+		return wrapValueExprTelemetry(expr, captureConstantValue(prepared));
+	}
+
+	private QueryValueEvaluationStep captureConstantValue(QueryValueEvaluationStep prepared) {
+		if (!prepared.isConstant()) {
+			return prepared;
+		}
+		var capturer = valueCapturer();
+		return capturer == null ? prepared : new CapturedConstantValueStep(prepared, capturer);
+	}
+
+	private static final class CapturedConstantValueStep implements QueryValueEvaluationStep {
+		private final QueryValueEvaluationStep prepared;
+		private final Function<Value, Value> capturer;
+		private Value value;
+		private volatile boolean captured;
+
+		private CapturedConstantValueStep(QueryValueEvaluationStep prepared, Function<Value, Value> capturer) {
+			this.prepared = prepared;
+			this.capturer = capturer;
+		}
+
+		@Override
+		public Value evaluate(BindingSet bindings) {
+			if (!captured) {
+				synchronized (this) {
+					if (!captured) {
+						// First demand preserves delayed expression errors; capture itself never looks up an ID.
+						Value result = prepared.evaluate(bindings);
+						value = result == null ? null : capturer.apply(result);
+						captured = true;
+					}
+				}
+			}
+			return value;
+		}
+
+		@Override
+		public boolean isConstant() {
+			return true;
+		}
 	}
 
 	private QueryValueEvaluationStep wrapValueExprTelemetry(ValueExpr expr, QueryValueEvaluationStep prepared) {
@@ -1139,7 +1232,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (value != null) {
 			return new ConstantQueryValueEvaluationStep(value);
 		} else {
-			java.util.function.Function<BindingSet, Value> getValue = context.getValue(var.getName());
+			Function<BindingSet, Value> getValue = context.getValue(var.getName());
 			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
 				if (hasValue.test(bindings)) {
@@ -1324,7 +1417,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Function function = FunctionRegistry.getInstance()
+		var function = FunctionRegistry.getInstance()
 				.get(node.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown function '" + node.getURI() + "'"));
 
@@ -1343,9 +1436,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (allConstant) {
 			try {
 				Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());
+				QueryExecutionContext.initializeExternalValues(argValues);
 				Value res;
 				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					res = function.evaluate(tripleSource, argValues);
+					res = function.evaluate(ExternalValueTripleSource.wrap(tripleSource,
+							QueryExecutionContext.getExternalValueInitializer()), argValues);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(res);
@@ -1355,9 +1450,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else {
 			return bindings -> {
 				Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
+				QueryExecutionContext.initializeExternalValues(argValues);
 				Value result;
 				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					result = function.evaluate(tripleSource, argValues);
+					result = function.evaluate(ExternalValueTripleSource.wrap(tripleSource,
+							QueryExecutionContext.getExternalValueInitializer()), argValues);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				return result;
@@ -1374,7 +1471,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * @param argSteps side effect this array is filled
 	 * @return if this function resolves to a constant value
 	 */
-	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context, Function function,
+	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function,
 			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
 		boolean allConstant = true;
 		if (function.mustReturnDifferentResult()) {
@@ -2000,7 +2098,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * @return a potentially constant step
 	 */
 	protected QueryValueEvaluationStep supplyUnaryValueEvaluation(UnaryValueOperator node,
-			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
+			Function<Value, Value> operation, QueryEvaluationContext context) {
 		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
 		if (argStep.isConstant()) {
 			Value value;

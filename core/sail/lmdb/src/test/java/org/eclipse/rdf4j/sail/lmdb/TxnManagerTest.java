@@ -46,6 +46,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -61,6 +62,90 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@Test
+	void ordinaryAdmissionReclaimsParkedReadersAfterWriteBarrierReleases(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicInteger reclaimed = new AtomicInteger();
+			for (TxnManager.Txn txn : fixture.readers) {
+				txn.setIdleReaderReclaimer(() -> {
+					txn.setIdleReaderReclaimer(null);
+					txn.close();
+					reclaimed.incrementAndGet();
+					return true;
+				});
+			}
+			CountDownLatch failedPressureScan = new CountDownLatch(1);
+			CountDownLatch resumeAdmission = new CountDownLatch(1);
+			fixture.manager.beforeBlockingReaderAdmissionForTest = () -> {
+				failedPressureScan.countDown();
+				try {
+					await(resumeAdmission);
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
+			};
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<TxnManager.ReaderReservation> waiter = null;
+			try {
+				waiter = executor.submit(() -> fixture.manager.reserveReadTxn(false));
+				assertTrue(failedPressureScan.await(5, TimeUnit.SECONDS),
+						"The held native write barrier must prevent the final pressure scan");
+				assertEquals(0, reclaimed.get(), "No native reader may be reclaimed under the writer barrier");
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+				writeStamp = 0L;
+				resumeAdmission.countDown();
+				try (TxnManager.ReaderReservation reservation = waiter.get(5, TimeUnit.SECONDS);
+						TxnManager.Txn acquired = reservation.start()) {
+					assertNotEquals(0L, acquired.get());
+					assertTrue(reclaimed.get() > 0,
+							"Admission must retry reclamation after the native write barrier releases");
+				}
+			} finally {
+				if (writeStamp != 0L) {
+					fixture.manager.lockManager().unlockWrite(writeStamp);
+				}
+				resumeAdmission.countDown();
+				if (waiter != null && !waiter.isDone()) {
+					waiter.cancel(true);
+				}
+				fixture.manager.beforeBlockingReaderAdmissionForTest = null;
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void underReadAdmissionReclaimsParkedReadersInsideCallerBarrier(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			AtomicInteger reclaimed = new AtomicInteger();
+			for (TxnManager.Txn txn : fixture.readers) {
+				txn.setIdleReaderReclaimer(() -> {
+					assertTrue(fixture.manager.lockManager().isReaderActive(),
+							"Native reclamation must remain inside the caller's access interval");
+					txn.setIdleReaderReclaimer(null);
+					txn.close();
+					reclaimed.incrementAndGet();
+					return true;
+				});
+			}
+			long readStamp = fixture.manager.acquireReadBarrier();
+			try {
+				try (TxnManager.Txn acquired = fixture.manager.createReadTxnUnderReadLock()) {
+					assertNotEquals(0L, acquired.get());
+					assertTrue(reclaimed.get() > 0);
+					assertTrue(fixture.manager.lockManager().isReaderActive(),
+							"Admission must retain the caller's original native access interval");
+				}
+			} finally {
+				fixture.manager.lockManager().unlockRead(readStamp);
+			}
+		}
+	}
 
 	@Test
 	public void createReadTxnBlocksWhenPoolIsExhausted(@TempDir Path dataDir) throws Exception {

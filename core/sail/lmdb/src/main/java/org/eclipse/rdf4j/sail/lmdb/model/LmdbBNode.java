@@ -16,8 +16,11 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
+import java.util.function.Function;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
 public class LmdbBNode extends SimpleBNode implements LmdbResource {
@@ -38,8 +41,25 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	 *-----------*/
 
 	private transient volatile InternalIdentity identity;
+	private transient volatile long semanticVersion;
 
 	private volatile boolean initialized = false;
+	private transient volatile boolean externallyOwned;
+
+	@Override
+	public void markExternallyOwned() {
+		externallyOwned = true;
+	}
+
+	@Override
+	public boolean isExternallyOwned() {
+		return externallyOwned;
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
 
 	/*--------------*
 	 * Constructors *
@@ -75,6 +95,23 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	}
 
 	@Override
+	public long getSemanticVersion() {
+		return semanticVersion;
+	}
+
+	@Override
+	public Value copyInitializedValue(Function<Value, Value> childCopier) {
+		return initialized ? SimpleValueFactory.getInstance().createBNode(super.getID()) : null;
+	}
+
+	private void payloadChanged() {
+		if (initialized) {
+			semanticVersion++;
+			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
+		}
+	}
+
+	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return identity.revision();
 	}
@@ -82,6 +119,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbBNode lmdbBNode) {
+			payloadChanged();
 			super.setID(lmdbBNode.getID());
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbBNode");
@@ -95,6 +133,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	@Override
 	public void setID(String id) {
+		payloadChanged();
 		super.setID(id);
 	}
 
@@ -125,14 +164,9 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 			return true;
 		}
 
-		InternalIdentity own = identity;
-		if (o instanceof LmdbBNode otherLmdbBNode && own.id() != UNKNOWN_ID) {
-			InternalIdentity other = otherLmdbBNode.identity;
-			if (other.id() != UNKNOWN_ID && own.revision().equals(other.revision())) {
-				// LmdbBNode's from the same revision of the same lmdb store,
-				// with both ID's set
-				return own.id() == other.id();
-			}
+		Boolean nativeEquality = equalsNative(o);
+		if (nativeEquality != null) {
+			return nativeEquality;
 		}
 
 		return super.equals(o);

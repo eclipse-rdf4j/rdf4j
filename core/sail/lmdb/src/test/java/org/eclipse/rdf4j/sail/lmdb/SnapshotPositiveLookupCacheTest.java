@@ -13,18 +13,24 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.withSettings;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -34,12 +40,16 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -48,6 +58,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Positive point-lookup reuse must remain bounded to the exact native view and preserve caller value semantics. */
 @Timeout(30)
@@ -69,6 +80,48 @@ class SnapshotPositiveLookupCacheTest {
 				assertEquals(id, fixture.values.getId(view.snapshot, input.value));
 				assertEquals(0, input.payloadCalls.get(), "An admitted known native ID must retain lazy lookup");
 				assertTrue(input.value.getValueStoreRevision() instanceof ValueStoreRevision.Lazy);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void knownCompletedNativeIdentityDoesNotCapturePayload(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView()) {
+				LmdbValue ready = fixture.values.getLazyValue(view.snapshot, id);
+				ready.init();
+				assertTrue(ready.getValueStoreRevision() instanceof ValueStoreRevision.Default);
+				assertEquals(view.snapshot.completedRevision(), ready.getValueStoreRevision());
+				Observed input = observe(ready, view);
+				assertEquals(id, fixture.values.getId(view.snapshot, input.value));
+				assertEquals(id, fixture.values.getId(view.snapshot, input.value));
+				assertEquals(0, input.payloadCalls.get(),
+						"An initialized native identity must not be resolved again through its lexical payload");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void knownScopedNativeIdentityDoesNotCapturePayload(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView();
+					ValueResolutionScope scope = fixture.values.openValueResolutionScope();
+					SailClosable activation = scope.activate()) {
+				LmdbValue scoped = fixture.values.getLazyValue(view.snapshot, id);
+				ValueStoreRevision.Lazy revision = (ValueStoreRevision.Lazy) scoped.getValueStoreRevision();
+				assertEquals(scope, revision.resolutionScope());
+				assertEquals(view.snapshot.revision(), revision.epoch());
+				Observed input = observe(scoped, view);
+				assertEquals(id, fixture.values.getId(view.snapshot, input.value));
+				assertEquals(id, fixture.values.getId(view.snapshot, input.value));
+				assertEquals(0, input.payloadCalls.get(),
+						"A scope wrapper must retain its admitted native identity without lexical resolution");
+				assertTrue(input.value.getValueStoreRevision() instanceof ValueStoreRevision.Lazy,
+						"Point lookup must preserve a scoped value's deferred payload");
 			}
 		}
 	}
@@ -244,6 +297,479 @@ class SnapshotPositiveLookupCacheTest {
 				assertEquals(committedId, fixture.values.getId(currentView.snapshot, input));
 			}
 			assertEquals(LmdbValue.UNKNOWN_ID, fixture.values.getId(oldView.snapshot, input));
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("literalPayloadChanges")
+	void initializedNativeLiteralMutationInvalidatesKnownId(LiteralChange change, boolean inline,
+			@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, inline, 128)) {
+			long firstId = fixture.store(change.before());
+			long secondId = fixture.store(change.after());
+			try (View view = fixture.openView()) {
+				LmdbLiteral input = (LmdbLiteral) fixture.values.getLazyValue(view.snapshot, firstId);
+				input.init();
+				assertEquals(firstId, fixture.values.getId(view.snapshot, input));
+				change.apply(input, change.after());
+				assertEquals(LmdbValue.UNKNOWN_ID, input.getInternalIdentity().id(),
+						"Changing native payload invalidates its previous dictionary association");
+				assertEquals(secondId, fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("scalarPayloadChanges")
+	void initializedNativeScalarMutationInvalidatesKnownId(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			Value first = shape == Shape.IRI_VALUE ? VF.createIRI("urn:snapshot-cache:before")
+					: VF.createBNode("snapshot-cache-before");
+			Value second = shape == Shape.IRI_VALUE ? VF.createIRI("urn:changed-namespace:snapshot-cache-after")
+					: VF.createBNode("snapshot-cache-after");
+			long firstId = fixture.store(first);
+			long secondId = fixture.store(second);
+			try (View view = fixture.openView()) {
+				LmdbValue input = fixture.values.getLazyValue(view.snapshot, firstId);
+				input.init();
+				input.setFromInitializedValue(fixture.values.getLmdbValue(second));
+				assertEquals(LmdbValue.UNKNOWN_ID, input.getInternalIdentity().id());
+				assertEquals(secondId, fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@Test
+	void initializedNativeDatatypeChildMutationInvalidatesLiteralLookup(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			IRI firstType = VF.createIRI("urn:snapshot-cache:type-before");
+			IRI secondType = VF.createIRI("urn:snapshot-cache:type-after");
+			long firstId = fixture.store(VF.createLiteral("typed", firstType));
+			long secondId = fixture.store(VF.createLiteral("typed", secondType));
+			try (View view = fixture.openView()) {
+				LmdbLiteral input = (LmdbLiteral) fixture.values.getLazyValue(view.snapshot, firstId);
+				LmdbValue datatype = (LmdbValue) input.getDatatype();
+				datatype.init();
+				assertEquals(firstId, fixture.values.getId(view.snapshot, input));
+				datatype.setFromInitializedValue(fixture.values.getLmdbValue(secondType));
+				assertEquals(secondId, fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void readyNativePreparationPreservesIdWithoutPayloadCapture(Shape shape, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView()) {
+				LmdbValue ready = fixture.values.getLazyValue(view.snapshot, id);
+				ready.init();
+				Observed observed = observe(ready, view);
+				LmdbValue prepared = (LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(observed.value);
+				assertEquals(id, prepared.getInternalIdentity().id());
+				assertEquals(0, observed.payloadCalls.get(),
+						"Preparing an already identified native value must preserve its ID without lexical capture");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pairedStatementPreparationDoesNotEnterNativeBarrier(boolean ready, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(VF.createLiteral("identified", VF.createIRI("urn:snapshot-cache:type")));
+			try (View view = fixture.openView()) {
+				LmdbValue input = fixture.values.getLazyValue(view.snapshot, id);
+				if (ready) {
+					input.init();
+				}
+				Observed observed = observe(input, view);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				CountDownLatch entered = new CountDownLatch(1);
+				long barrier = fixture.values.getTxnManager().lockManager().writeLock();
+				try {
+					Future<?> result = executor.submit(() -> {
+						entered.countDown();
+						LmdbValue prepared = (LmdbValue) fixture.values.valuePreparer(view.snapshot)
+								.apply(observed.value);
+						assertEquals(id, prepared.getInternalID());
+						assertEquals(id, ((LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(prepared))
+								.getInternalID());
+						return null;
+					});
+					assertTrue(entered.await(10, TimeUnit.SECONDS));
+					// The held gate makes this a native-admission check, independent of lookup performance.
+					result.get(1, TimeUnit.SECONDS);
+				} finally {
+					fixture.values.getTxnManager().lockManager().unlockWrite(barrier);
+					executor.shutdown();
+					assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+				}
+				assertEquals(0, observed.payloadCalls.get());
+			}
+		}
+	}
+
+	@Test
+	void statementProofDoesNotGrantStrictDictionaryMembership(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128); View oldView = fixture.openView()) {
+			IRI appended = VF.createIRI("urn:snapshot-cache:statement-only-appended");
+			long id = fixture.store(appended);
+			LmdbValue ready = fixture.values.getLazyValue(id);
+			ready.init();
+			assertEquals(oldView.snapshot.completedRevision(), ready.getValueStoreRevision());
+			LmdbValue prepared = (LmdbValue) fixture.values.valuePreparer(oldView.snapshot).apply(ready);
+			assertEquals(id, prepared.getInternalID(), "The pinned triple index safely filters appended IDs");
+			assertEquals(LmdbValue.UNKNOWN_ID, fixture.values.getId(oldView.snapshot, prepared),
+					"An index-only proof must not expose a record absent from the old dictionary reader");
+			assertEquals(LmdbValue.UNKNOWN_ID, fixture.values.getId(oldView.snapshot, ready));
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void preparedSerializationPreservesSemanticEquality(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView()) {
+				Value prepared = fixture.values.valuePreparer(view.snapshot)
+						.apply(fixture.values.getLazyValue(view.snapshot, id));
+				Value restored;
+				ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+					output.writeObject(prepared);
+				}
+				try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+					restored = (Value) input.readObject();
+				}
+				assertEquals(prepared, restored);
+				assertEquals(restored, prepared);
+				assertEquals(prepared.hashCode(), restored.hashCode());
+			}
+		}
+	}
+
+	@Test
+	void mutatedCanonicalPayloadIsNotReturnedForOriginalId(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			Literal original = VF.createLiteral("before", VF.createIRI("urn:snapshot-cache:canonical-type"));
+			long id = fixture.store(original);
+			LmdbLiteral canonical = (LmdbLiteral) fixture.values.getLazyValue(id);
+			canonical.init();
+			canonical.setLabel("after");
+			assertEquals(original, fixture.values.getLazyValue(id),
+					"Canonical and completed caches must reject changed semantic payloads");
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = Shape.class, names = { "SHORT_LITERAL", "TYPED_LITERAL", "DIRECTIONAL_LITERAL", "TRIPLE_TERM",
+			"NESTED_TRIPLE_TERM" })
+	void readyNativeTermRetainsPublishedIdWithImmutableForeignChild(Shape shape, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			IRI subject = VF.createIRI("urn:snapshot-cache:foreign-child-subject");
+			IRI predicate = VF.createIRI("urn:snapshot-cache:foreign-child-predicate");
+			Value child = shape.value();
+			TripleTerm expected = VF.createTripleTerm(subject, predicate, child);
+			long id = fixture.store(expected);
+			LmdbTripleTerm ready = new LmdbTripleTerm(fixture.values.getRevision(), subject, predicate, child, id);
+			assertEquals(id, ready.getInternalIdentity().id(),
+					"A complete native term retains its published association");
+			try (View view = fixture.openView()) {
+				assertEquals(id, fixture.values.getId(view.snapshot, ready));
+			}
+		}
+	}
+
+	@Test
+	void mutableForeignChildUsesLexicalLookupWithoutErasingPublishedAssociation(@TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			IRI subject = VF.createIRI("urn:snapshot-cache:mutable-child-subject");
+			IRI predicate = VF.createIRI("urn:snapshot-cache:mutable-child-predicate");
+			long before = fixture.store(VF.createTripleTerm(subject, predicate, VF.createLiteral("before")));
+			long after = fixture.store(VF.createTripleTerm(subject, predicate, VF.createLiteral("after")));
+			MutableLiteral child = new MutableLiteral("before");
+			LmdbTripleTerm ready = new LmdbTripleTerm(fixture.values.getRevision(), subject, predicate, child, before);
+			assertEquals(before, ready.getInternalID());
+			try (View view = fixture.openView()) {
+				assertEquals(before, fixture.values.getId(view.snapshot, ready));
+				child.changeLabel("after");
+				assertEquals(after, fixture.values.getId(view.snapshot, ready));
+			}
+		}
+	}
+
+	@Test
+	void preparedValueRebindsAfterDictionaryRetirementAndReinsert(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			Literal expected = VF.createLiteral("prepared reinsert", VF.createIRI("urn:snapshot-cache:reinsert-type"));
+			long originalId = fixture.store(expected);
+			LmdbValue prepared;
+			try (View view = fixture.openView()) {
+				prepared = (LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(expected);
+				fixture.values.protectExternalValue(prepared);
+				prepared.init();
+			}
+			ValueStoreRevision originalRevision = prepared.getValueStoreRevision();
+			fixture.values.startTransaction(true);
+			Set<Long> pending = Set.of(originalId);
+			while (!pending.isEmpty()) {
+				Set<Long> next = new HashSet<>();
+				fixture.values.gcIds(pending, next);
+				pending = next;
+			}
+			fixture.values.commit();
+			fixture.store(VF.createLiteral("replacement", expected.getDatatype()));
+			fixture.values.startTransaction(true);
+			long reinsertedId = fixture.values.storeValue(prepared);
+			fixture.values.commit();
+			assertNotEquals(originalId, reinsertedId, "Reinsert must exercise a different numeric association");
+			assertEquals(reinsertedId, prepared.getInternalID());
+			assertNotEquals(originalRevision, prepared.getValueStoreRevision());
+			assertEquals(fixture.values.getRevision(), prepared.getValueStoreRevision());
+			assertEquals(reinsertedId, fixture.values.getId(prepared));
+			assertEquals(expected.hashCode(), prepared.hashCode());
+			assertEquals(expected, prepared);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedUnknownRebindRetainsDeferredColdCapability(boolean lateExport, @TempDir Path directory)
+			throws Exception {
+		TripleTerm expected = VF.createTripleTerm(VF.createIRI("urn:prepared:rebound-subject"),
+				VF.createIRI("urn:prepared:rebound-predicate"), VF.createTripleTerm(VF.createBNode("rebound-child"),
+						VF.createIRI("urn:prepared:rebound-inner"), VF.createLiteral("rebound-label")));
+		LmdbValue held;
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(expected);
+			try (View view = fixture.openView();
+					ValueResolutionScope creator = fixture.values.openValueResolutionScope()) {
+				try (SailClosable activation = creator.activate()) {
+					held = (LmdbValue) fixture.values.valuePreparer(view.snapshot)
+							.apply(fixture.values.getLazyValue(view.snapshot, id));
+				}
+				assertFalse(held.isInitialized());
+				if (!lateExport) {
+					fixture.values.protectExternalValue(held);
+				}
+				held.setInternalID(LmdbValue.UNKNOWN_ID, view.snapshot.completedRevision());
+				assertEquals(LmdbValue.UNKNOWN_ID, held.getInternalID());
+				assertFalse(held.isInitialized(),
+						"Rebinding numeric metadata must preserve deferred semantic payloads");
+				if (lateExport) {
+					fixture.values.protectExternalValue(held);
+				}
+			}
+		}
+		assertEquals(expected, held, "Cold ownership must retain the original capability after an UNKNOWN rebind");
+		assertEquals(expected.hashCode(), held.hashCode());
+	}
+
+	@Test
+	void mutatedHashCollisionDoesNotReuseWriterLookupId(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			LmdbLiteral value = fixture.values.createLiteral("Aa");
+			fixture.values.startTransaction(true);
+			long first = fixture.values.storeValue(value);
+			int originalHash = value.hashCode();
+			value.setLabel("BB");
+			assertEquals(originalHash, value.hashCode(), "This fixture deliberately retains the original hash bucket");
+			long second = fixture.values.storeValue(value);
+			assertNotEquals(first, second, "A mutable native cache key cannot preserve the old label's dictionary ID");
+			fixture.values.commit();
+			assertEquals(VF.createLiteral("Aa"), fixture.values.getValue(first));
+			assertEquals(VF.createLiteral("BB"), fixture.values.getValue(second));
+		}
+	}
+
+	private static final class MutableLiteral extends SimpleLiteral {
+		private static final long serialVersionUID = 1L;
+
+		MutableLiteral(String label) {
+			super(label);
+		}
+
+		void changeLabel(String label) {
+			setLabel(label);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void capturedPreparedInputsSupportRawPointLookup(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView()) {
+				LmdbValue prepared = (LmdbValue) fixture.values.valueCapturer(view.snapshot).apply(shape.value());
+				assertEquals(LmdbValue.UNKNOWN_ID, prepared.getInternalID());
+				assertEquals(id, fixture.values.getId(prepared, false));
+			}
+		}
+	}
+
+	@Test
+	void capturedMissingPreparedLiteralSupportsRawPointLookup(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128); View view = fixture.openView()) {
+			Value prepared = fixture.values.valueCapturer(view.snapshot)
+					.apply(VF.createLiteral("absent", VF.createIRI("urn:snapshot-cache:absent-type")));
+			assertEquals(LmdbValue.UNKNOWN_ID, fixture.values.getId(prepared, false));
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(Shape.class)
+	void preparedNativeEqualityPreservesDeferredPayloads(Shape shape, @TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(shape.value());
+			try (View view = fixture.openView();
+					ValueResolutionScope scope = fixture.values.openValueResolutionScope();
+					SailClosable activation = scope.activate()) {
+				LmdbValue nativeValue = fixture.values.getLazyValue(view.snapshot, id);
+				LmdbValue first = (LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(nativeValue);
+				LmdbValue second = (LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(nativeValue);
+				assertFalse(nativeValue.isInitialized());
+				assertFalse(first.isInitialized());
+				assertTrue(nativeValue.equals(first));
+				assertTrue(first.equals(nativeValue));
+				assertTrue(first.equals(second));
+				assertFalse(nativeValue.isInitialized(), "Native/prepared ID equality must preserve lazy payloads");
+				assertFalse(first.isInitialized(), "Prepared/native ID equality must preserve lazy payloads");
+				assertFalse(second.isInitialized(), "Prepared/prepared ID equality must preserve lazy payloads");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedEqualityUsesLexicalFallbackAcrossStoresAndRevisions(boolean differentStore,
+			@TempDir Path directory) throws Exception {
+		try (Fixture first = new Fixture(directory.resolve("first"), false, 128)) {
+			IRI expected = VF.createIRI("urn:prepared:first");
+			long id = first.store(expected);
+			try (View firstView = first.openView()) {
+				LmdbValue firstValue = (LmdbValue) first.values.valuePreparer(firstView.snapshot)
+						.apply(first.values.getLazyValue(firstView.snapshot, id));
+				if (differentStore) {
+					try (Fixture second = new Fixture(directory.resolve("second"), false, 128)) {
+						long secondId = second.store(VF.createIRI("urn:prepared:second"));
+						assertEquals(id, secondId, "The distinct stores must actually have colliding native IDs");
+						try (View secondView = second.openView()) {
+							Value secondValue = second.values.valuePreparer(secondView.snapshot)
+									.apply(second.values.getLazyValue(secondView.snapshot, secondId));
+							assertFalse(firstValue.equals(secondValue));
+							assertFalse(secondValue.equals(firstValue));
+						}
+					}
+				} else {
+					first.values.startTransaction(true);
+					first.values.rollback();
+					try (View secondView = first.openView()) {
+						LmdbValue secondValue = (LmdbValue) first.values.valuePreparer(secondView.snapshot)
+								.apply(first.values.getLazyValue(secondView.snapshot, id));
+						assertNotEquals(firstValue.getValueStoreRevision(), secondValue.getValueStoreRevision());
+						assertTrue(firstValue.equals(secondValue));
+						assertTrue(firstValue.isInitialized(), "Different revisions require lexical equality");
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void preparedReadyParentPromotesOlderDeferredDescendant(@TempDir Path directory) throws Exception {
+		LmdbValue held;
+		TripleTerm expected = VF.createTripleTerm(VF.createIRI("urn:prepared:older-subject"),
+				VF.createIRI("urn:prepared:older-predicate"), VF.createBNode("older-prepared-child"));
+		try (Fixture fixture = new Fixture(directory, false, 128);
+				ValueResolutionScope creator = fixture.values.openValueResolutionScope()) {
+			long childId = fixture.store(expected.getObject());
+			LmdbValue child;
+			try (SailClosable activation = creator.activate()) {
+				child = fixture.values.getLazyValue(childId);
+			}
+			long olderEpoch = child.getValueStoreRevision().getRevisionId();
+			fixture.values.startTransaction(true);
+			fixture.values.rollback();
+			long parentId = fixture.store(expected);
+			LmdbTripleTerm ready = new LmdbTripleTerm(fixture.values.getRevision(), expected.getSubject(),
+					expected.getPredicate(), child, parentId);
+			fixture.values.cacheValue(parentId, ready);
+			try (View view = fixture.openView()) {
+				held = (LmdbValue) fixture.values.valuePreparer(view.snapshot).apply(ready);
+				held.init();
+				LmdbValue heldChild = (LmdbValue) ((TripleTerm) held).getObject();
+				assertFalse(heldChild.isInitialized(), "Preparing a native parent must preserve deferred descendants");
+				assertEquals(olderEpoch, heldChild.getValueStoreRevision().getRevisionId());
+				fixture.values.protectExternalValue(held);
+				creator.close();
+				assertFalse(fixture.values.unusedRevisionIds.contains(olderEpoch),
+						"Cold parent ownership must retain the descendant's actual older epoch");
+			}
+		}
+		assertEquals(expected, held);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedCompositeColdOwnershipSurvivesPublicInitAndLateExport(boolean lateExport,
+			@TempDir Path directory) throws Exception {
+		TripleTerm expected = VF.createTripleTerm(VF.createIRI("urn:prepared:subject"),
+				VF.createIRI("urn:prepared:predicate"), VF.createTripleTerm(VF.createBNode("prepared-child"),
+						VF.createIRI("urn:prepared:inner"), VF.createLiteral("prepared-label")));
+		LmdbValue held;
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			long id = fixture.store(expected);
+			try (View view = fixture.openView();
+					ValueResolutionScope creator = fixture.values.openValueResolutionScope()) {
+				try (SailClosable activation = creator.activate()) {
+					held = (LmdbValue) fixture.values.valuePreparer(view.snapshot)
+							.apply(fixture.values.getLazyValue(view.snapshot, id));
+				}
+				assertFalse(held.isInitialized());
+				if (!lateExport) {
+					fixture.values.protectExternalValue(held);
+				}
+				held.init();
+				if (lateExport) {
+					fixture.values.protectExternalValue(held);
+				}
+				held.visitValueChildren(child -> {
+					LmdbValue nativeChild = assertInstanceOf(LmdbValue.class, child);
+					assertTrue(nativeChild.isExternallyOwned(),
+							"Cold ownership must transfer to decoded children before the parent unwraps its revision");
+				});
+			}
+		}
+		assertEquals(expected, held, "Prepared descendants must remain usable after source and store close");
+	}
+
+	@Test
+	void initializedNativeNestedChildMutationInvalidatesTermLookup(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, 128)) {
+			IRI subject = VF.createIRI("urn:snapshot-cache:subject");
+			IRI predicate = VF.createIRI("urn:snapshot-cache:predicate");
+			Value first = VF.createTripleTerm(subject, predicate,
+					VF.createTripleTerm(subject, predicate, VF.createLiteral("before")));
+			Value second = VF.createTripleTerm(subject, predicate,
+					VF.createTripleTerm(subject, predicate, VF.createLiteral("after")));
+			long firstId = fixture.store(first);
+			long secondId = fixture.store(second);
+			try (View view = fixture.openView()) {
+				LmdbValue input = fixture.values.getLazyValue(view.snapshot, firstId);
+				TripleTerm outer = (TripleTerm) input;
+				TripleTerm nested = (TripleTerm) outer.getObject();
+				LmdbLiteral child = (LmdbLiteral) nested.getObject();
+				child.init();
+				assertEquals(firstId, fixture.values.getId(view.snapshot, input));
+				child.setLabel("after");
+				assertEquals(secondId, fixture.values.getId(view.snapshot, input));
+			}
 		}
 	}
 

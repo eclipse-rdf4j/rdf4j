@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -698,7 +699,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
-			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
+			TripleSource exposed = explicitEvalStratFactory == null ? tripleSource
+					: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
+			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, exposed, evaluationStatistics);
 		}
 
 		@Override

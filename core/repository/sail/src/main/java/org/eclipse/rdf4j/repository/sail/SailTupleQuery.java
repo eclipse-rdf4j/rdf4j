@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
@@ -58,6 +59,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 				try {
 					bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+					bindingsIter = getConnection().exposeIteration(bindingsIter, SailResultValueExtractor.BINDING_SETS);
 				} finally {
 					SlowQueryContextHolder.restore(previous);
 				}

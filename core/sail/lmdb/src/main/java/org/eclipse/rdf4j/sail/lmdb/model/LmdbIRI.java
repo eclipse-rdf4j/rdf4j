@@ -19,8 +19,11 @@ import java.io.ObjectStreamField;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Objects;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -53,8 +56,26 @@ public class LmdbIRI implements LmdbResource, IRI {
 	 *-----------*/
 
 	private transient volatile InternalIdentity identity;
+	private transient volatile long semanticVersion;
 
 	private volatile boolean initialized = false;
+	private transient volatile boolean externallyOwned;
+
+	@Override
+	public void markExternallyOwned() {
+		externallyOwned = true;
+	}
+
+	@Override
+	public boolean isExternallyOwned() {
+		return externallyOwned;
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
+
 	/**
 	 * The IRI string.
 	 */
@@ -108,6 +129,23 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	@Override
+	public long getSemanticVersion() {
+		return semanticVersion;
+	}
+
+	@Override
+	public Value copyInitializedValue(Function<Value, Value> childCopier) {
+		return initialized ? SimpleValueFactory.getInstance().createIRI(iriString) : null;
+	}
+
+	private void payloadChanged() {
+		if (initialized) {
+			semanticVersion++;
+			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
+		}
+	}
+
+	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return identity.revision();
 	}
@@ -115,6 +153,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbIRI initializedIRI) {
+			payloadChanged();
 			this.iriString = initializedIRI.iriString;
 			this.localNameIdx = initializedIRI.localNameIdx;
 		} else {
@@ -193,6 +232,11 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 		if (o == null) {
 			return false;
+		}
+
+		Boolean nativeEquality = equalsNative(o);
+		if (nativeEquality != null) {
+			return nativeEquality;
 		}
 
 		if (o.getClass() == LmdbIRI.class) {
@@ -279,6 +323,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	}
 
 	public void setNamespaceAndIri(String namespace, String localName) {
+		payloadChanged();
 		localNameIdx = namespace.length();
 		this.iriString = namespace + localName;
 	}

@@ -17,11 +17,14 @@ import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
 import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 
@@ -38,11 +41,14 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	};
 
 	private transient volatile InternalIdentity identity;
+	private transient volatile long semanticVersion;
+	private transient volatile ChildVersion[] childVersions;
 
 	private Resource subject;
 	private IRI predicate;
 	private Value object;
 	private volatile boolean initialized = false;
+	private transient volatile boolean externallyOwned;
 
 	public LmdbTripleTerm(ValueStoreRevision revision, long internalID) {
 		setInternalID(internalID, revision);
@@ -53,44 +59,118 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	}
 
 	public LmdbTripleTerm(ValueStoreRevision revision, Resource subject, IRI predicate, Value object, long internalID) {
-		setInternalID(internalID, revision);
 		this.subject = Objects.requireNonNull(subject, "subject must not be null");
 		this.predicate = Objects.requireNonNull(predicate, "predicate must not be null");
 		this.object = Objects.requireNonNull(object, "object must not be null");
+		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
 
 	@Override
 	public Resource getSubject() {
 		init();
-		return subject;
+		return exposeChild(subject);
 	}
 
 	@Override
 	public IRI getPredicate() {
 		init();
-		return predicate;
+		return exposeChild(predicate);
 	}
 
 	@Override
 	public Value getObject() {
 		init();
-		return object;
+		return exposeChild(object);
+	}
+
+	private <T extends Value> T exposeChild(T child) {
+		return externallyOwned ? identity.revision().protectExternalValue(child) : child;
+	}
+
+	@Override
+	public void markExternallyOwned() {
+		externallyOwned = true;
+	}
+
+	@Override
+	public boolean isExternallyOwned() {
+		return externallyOwned;
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
+
+	@Override
+	public void visitValueChildren(Consumer<Value> visitor) {
+		visitor.accept(subject);
+		visitor.accept(predicate);
+		visitor.accept(object);
 	}
 
 	@Override
 	public void setInternalID(long id, ValueStoreRevision revision) {
+		captureChildVersions();
 		identity = new InternalIdentity(id, revision);
 	}
 
 	@Override
 	public InternalIdentity getInternalIdentity() {
+		checkChildVersions();
 		return identity;
+	}
+
+	private void captureChildVersions() {
+		if (subject != null) {
+			childVersions = new ChildVersion[] { ChildVersion.capture(subject), ChildVersion.capture(predicate),
+					ChildVersion.capture(object) };
+		}
+	}
+
+	private boolean stableChildren() {
+		ChildVersion[] captured = childVersions;
+		return captured == null || captured[0] != null && captured[1] != null && captured[2] != null;
+	}
+
+	private void checkChildVersions() {
+		ChildVersion[] captured = childVersions;
+		if (initialized && captured != null) {
+			for (ChildVersion child : captured) {
+				if (child != null && !child.isCurrent()) {
+					payloadChanged();
+					captureChildVersions();
+					return;
+				}
+			}
+		}
+	}
+
+	@Override
+	public long getSemanticVersion() {
+		checkChildVersions();
+		return stableChildren() ? semanticVersion : UNKNOWN_ID;
+	}
+
+	@Override
+	public Value copyInitializedValue(Function<Value, Value> childCopier) {
+		return initialized ? SimpleValueFactory.getInstance()
+				.createTripleTerm((Resource) childCopier.apply(subject),
+						(IRI) childCopier.apply(predicate), childCopier.apply(object))
+				: null;
+	}
+
+	private void payloadChanged() {
+		if (initialized) {
+			semanticVersion++;
+			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
+		}
 	}
 
 	@Override
 	public long getInternalID() {
-		return identity.id();
+		return getInternalIdentity().id();
 	}
 
 	@Override
@@ -100,6 +180,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 				if (!initialized) {
 					InternalIdentity resolving = identity;
 					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+					captureChildVersions();
 					initialized = resolved;
 					if (resolved) {
 						resolving.revision().valueInitialized(resolving.id(), this);
@@ -111,15 +192,17 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 
 	@Override
 	public ValueStoreRevision getValueStoreRevision() {
-		return identity.revision();
+		return getInternalIdentity().revision();
 	}
 
 	@Override
 	public void setFromInitializedValue(LmdbValue initializedValue) {
 		if (initializedValue instanceof LmdbTripleTerm lmdbTripleTerm) {
+			payloadChanged();
 			this.subject = lmdbTripleTerm.subject;
 			this.predicate = lmdbTripleTerm.predicate;
 			this.object = lmdbTripleTerm.object;
+			captureChildVersions();
 		} else {
 			throw new SailException("Trying to initialize LmdbTripleTerm from non-triple-term value");
 		}
@@ -150,6 +233,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 		predicate = (IRI) fields.get("predicate", null);
 		object = (Value) fields.get("object", null);
 		initialized = fields.get("initialized", false);
+		captureChildVersions();
 	}
 
 	@Override
@@ -158,14 +242,9 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 			return true;
 		}
 
-		InternalIdentity own = identity;
-		if (o instanceof LmdbTripleTerm otherTerm && own.id() != UNKNOWN_ID) {
-			InternalIdentity other = otherTerm.identity;
-			if (other.id() != UNKNOWN_ID && own.revision().equals(other.revision())) {
-				// LmdbTripleTerm's from the same revision of the same lmdb store,
-				// with both ID's set
-				return own.id() == other.id();
-			}
+		Boolean nativeEquality = equalsNative(o);
+		if (nativeEquality != null) {
+			return nativeEquality;
 		}
 
 		init();
@@ -174,8 +253,9 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 
 	@Override
 	public int hashCode() {
-		InternalIdentity captured = identity;
-		if (captured.id() != UNKNOWN_ID) {
+		InternalIdentity captured = getInternalIdentity();
+		boolean stable = getSemanticVersion() != UNKNOWN_ID;
+		if (stable && captured.id() != UNKNOWN_ID) {
 			int cachedHash = captured.revision().getStoredHash(captured.id());
 			if (cachedHash != 0) {
 				return cachedHash;
@@ -184,7 +264,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 
 		init();
 		int hash = super.hashCode();
-		if (captured.id() != UNKNOWN_ID) {
+		if (stable && captured.id() != UNKNOWN_ID) {
 			captured.revision().storeHash(captured.id(), hash);
 		}
 		return hash;

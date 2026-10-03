@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -34,6 +35,26 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 public interface SailDataset extends SailClosable {
+
+	/**
+	 * Supplies optional preparation of query-owned statement-pattern values for this dataset's read view. Returned
+	 * values must remain lexically equal, must not mutate caller values, and must not retain a closed dataset or native
+	 * transaction. A null preparer preserves ordinary value handling. A supplied capturer belongs to this same read view
+	 * and must produce representations accepted by this preparer.
+	 */
+	@InternalUseOnly
+	default Function<Value, Value> getValuePreparer() {
+		return null;
+	}
+
+	/**
+	 * Supplies optional capture of query-produced values without looking up their identifiers. Captured values can be
+	 * prepared by {@link #getValuePreparer()} when a statement-pattern input needs them.
+	 */
+	@InternalUseOnly
+	default Function<Value, Value> getValueCapturer() {
+		return null;
+	}
 
 	/**
 	 * Called when this {@link SailDataset} is no longer is used, such as when a read operation is complete. An
