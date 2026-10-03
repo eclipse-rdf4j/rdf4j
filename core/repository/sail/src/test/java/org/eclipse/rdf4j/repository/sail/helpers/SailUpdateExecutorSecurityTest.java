@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.repository.sail.helpers;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.io.IOException;
@@ -41,5 +42,25 @@ class SailUpdateExecutorSecurityTest {
 
 		verify(connection).startUpdate(org.mockito.ArgumentMatchers.any());
 		verify(connection).endUpdate(org.mockito.ArgumentMatchers.any());
+	}
+
+	@Test
+	void sparqlLoadRejectsEveryNonHttpSourceBeforeDereferencing() throws Exception {
+		SailConnection connection = mock(SailConnection.class);
+		SailUpdateExecutor executor = new SailUpdateExecutor(connection, SimpleValueFactory.getInstance(),
+				new ParserConfig());
+
+		for (String source : new String[] {
+				"file:///etc/passwd",
+				"jar:file:///tmp/data.jar!/data.ttl",
+				"ftp://example.org/data.ttl" }) {
+			Load load = new Load(new ValueConstant(iri(source)));
+			assertThatThrownBy(() -> executor.executeUpdate(load, null, EmptyBindingSet.getInstance(), true, 0))
+					.isInstanceOf(IOException.class)
+					.hasMessageContaining("only HTTP(S) targets");
+		}
+
+		verify(connection, times(3)).startUpdate(org.mockito.ArgumentMatchers.any());
+		verify(connection, times(3)).endUpdate(org.mockito.ArgumentMatchers.any());
 	}
 }

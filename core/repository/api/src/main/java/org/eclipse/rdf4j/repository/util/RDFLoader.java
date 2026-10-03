@@ -26,6 +26,7 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.security.PrivilegedAction;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
@@ -152,8 +153,14 @@ public class RDFLoader {
 
 			URI requestUri = toUri(requestURL);
 			if (previousRequestUri == null) {
-				remoteResourceAccessPolicy.checkInitial(requestUri);
+				// RDFLoader is also used for caller-supplied local resources. Authority-free file URLs and
+				// runtime-image URLs cannot open a remote connection; every other protocol remains subject
+				// to the configured policy, including network resources wrapped in jar URLs.
+				if (!isLocalResource(requestUri)) {
+					remoteResourceAccessPolicy.checkInitial(requestUri);
+				}
 			} else {
+				// Always validate redirects, including redirects from HTTP(S) to a non-network scheme.
 				remoteResourceAccessPolicy.checkRedirect(previousRequestUri, requestUri);
 			}
 			URLConnection con = requestURL.openConnection();
@@ -225,6 +232,32 @@ public class RDFLoader {
 		} catch (URISyntaxException e) {
 			throw new IOException("Remote resource access denied: target URI is invalid", e);
 		}
+	}
+
+	private boolean isLocalResource(URI uri) throws IOException {
+		URI resource = uri;
+		String scheme = resource.getScheme();
+		while (scheme != null && "jar".equals(scheme.toLowerCase(Locale.ROOT))) {
+			String schemeSpecificPart = resource.getRawSchemeSpecificPart();
+			int entrySeparator = schemeSpecificPart == null ? -1 : schemeSpecificPart.indexOf("!/");
+			if (entrySeparator <= 0) {
+				return false;
+			}
+			try {
+				resource = new URI(schemeSpecificPart.substring(0, entrySeparator));
+			} catch (URISyntaxException e) {
+				throw new IOException("Remote resource access denied: nested JAR URI is invalid", e);
+			}
+			scheme = resource.getScheme();
+		}
+
+		if (scheme == null) {
+			return false;
+		}
+		String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+		return "jrt".equals(normalizedScheme)
+				|| ("file".equals(normalizedScheme)
+						&& (resource.getRawAuthority() == null || resource.getRawAuthority().isEmpty()));
 	}
 
 	/**

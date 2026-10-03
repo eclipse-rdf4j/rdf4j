@@ -23,10 +23,15 @@ import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.ProtocolException;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -130,8 +135,7 @@ public class RDFLoaderTest {
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(new java.io.File(this.getClass().getResource("Socrates.ttl").toURI()), null, RDFFormat.TURTLE,
-				rdfHandler);
+		rdfLoader.load(this.getClass().getResource("Socrates.ttl"), null, RDFFormat.TURTLE, rdfHandler);
 
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
@@ -139,6 +143,44 @@ public class RDFLoaderTest {
 						RDF.TYPE,
 						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void rejectsNonLocalProtocolsBeforeDereferencing() throws Exception {
+		for (String target : new String[] {
+				"ftp://127.0.0.1/data.ttl",
+				"jar:http://127.0.0.1/archive.jar!/data.ttl" }) {
+			boolean[] opened = { false };
+			URL url = new URL(null, target, new URLStreamHandler() {
+				@Override
+				protected URLConnection openConnection(URL url) throws IOException {
+					opened[0] = true;
+					throw new IOException("URL handler was opened");
+				}
+			});
+
+			RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+			assertThatThrownBy(() -> rdfLoader.load(url, null, RDFFormat.TURTLE, mock(RDFHandler.class)))
+					.isInstanceOf(IOException.class)
+					.hasMessageContaining("only HTTP(S) targets");
+			assertThat(opened[0]).isFalse();
+		}
+	}
+
+	@Test
+	public void acceptsJarWrappedLocalResources(@TempDir Path tempDir) throws Exception {
+		Path archive = tempDir.resolve("data.jar");
+		try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(archive))) {
+			outputStream.putNextEntry(new ZipEntry("data.ttl"));
+			outputStream.write("<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+			outputStream.closeEntry();
+		}
+		URL url = new URL("jar:" + archive.toUri().toURL().toExternalForm() + "!/data.ttl");
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		new RDFLoader(new ParserConfig(), getValueFactory()).load(url, null, RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).handleStatement(statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null));
 	}
 
 	@Test
@@ -190,6 +232,35 @@ public class RDFLoaderTest {
 						RDF.TYPE,
 						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void validatesRedirectsFromHttpToLocalResources(MockServerClient client, @TempDir Path tempDir)
+			throws Exception {
+		Path localResource = tempDir.resolve("redirected.ttl");
+		Files.writeString(localResource, "<urn:s> <urn:p> <urn:o> .", StandardCharsets.UTF_8);
+		client.when(request().withMethod("GET").withPath("/redirect-to-local"))
+				.respond(response().withStatusCode(302).withHeader("Location", localResource.toUri().toString()));
+
+		RemoteResourceAccessPolicy policy = new RemoteResourceAccessPolicy() {
+			@Override
+			public void checkInitial(URI target) {
+			}
+
+			@Override
+			public void checkRedirect(URI source, URI target) throws java.io.IOException {
+				if (!"http".equalsIgnoreCase(target.getScheme())
+						&& !"https".equalsIgnoreCase(target.getScheme())) {
+					throw new java.io.IOException("redirect target must remain HTTP(S)");
+				}
+			}
+		};
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory(), policy);
+		URL source = new URL("http://localhost:" + client.getPort() + "/redirect-to-local");
+
+		assertThatThrownBy(() -> rdfLoader.load(source, null, RDFFormat.TURTLE, mock(RDFHandler.class)))
+				.isInstanceOf(java.io.IOException.class)
+				.hasMessageContaining("must remain HTTP(S)");
 	}
 
 	@Test
