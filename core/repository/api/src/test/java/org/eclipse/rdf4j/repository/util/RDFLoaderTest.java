@@ -24,6 +24,7 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.ProtocolException;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
@@ -43,6 +44,7 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -63,6 +65,17 @@ import org.mockserver.model.MediaType;
  */
 @ExtendWith(MockServerExtension.class)
 public class RDFLoaderTest {
+
+	private static final RemoteResourceAccessPolicy TEST_LOCAL_ACCESS = new RemoteResourceAccessPolicy() {
+		@Override
+		public void checkInitial(URI target) {
+		}
+
+		@Override
+		public void checkRedirect(URI source, URI target) {
+		}
+	};
+
 	@BeforeAll
 	static void defineMockServerBehavior(MockServerClient client) {
 		client.when(
@@ -117,7 +130,8 @@ public class RDFLoaderTest {
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
-		rdfLoader.load(this.getClass().getResource("Socrates.ttl"), null, RDFFormat.TURTLE, rdfHandler);
+		rdfLoader.load(new java.io.File(this.getClass().getResource("Socrates.ttl").toURI()), null, RDFFormat.TURTLE,
+				rdfHandler);
 
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
@@ -129,7 +143,7 @@ public class RDFLoaderTest {
 
 	@Test
 	public void testTurtleDocument(MockServerClient client) throws Exception {
-		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFLoader rdfLoader = localNetworkLoader();
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -145,14 +159,31 @@ public class RDFLoaderTest {
 	}
 
 	@Test
-	public void testMultipleRedirects(MockServerClient client) throws Exception {
+	public void rejectsPrivateNetworkUrlByDefault(MockServerClient client) throws Exception {
 		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+		URL privateUrl = new URL("http://127.0.0.1:" + client.getPort() + "/Socrates.ttl");
+
+		assertThatThrownBy(() -> rdfLoader.load(privateUrl, null, null, rdfHandler))
+				.isInstanceOf(java.io.IOException.class)
+				.hasMessageContaining("Remote resource access denied");
+	}
+
+	@Test
+	public void testMultipleRedirects(MockServerClient client) throws Exception {
+		RemoteResourceAccessPolicy policy = mock(RemoteResourceAccessPolicy.class);
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory(), policy);
 
 		RDFHandler rdfHandler = mock(RDFHandler.class);
+		URI first = URI.create("http://localhost:" + client.getPort() + "/Socrates1");
+		URI second = URI.create("http://localhost:" + client.getPort() + "/Socrates2");
+		URI terminal = URI.create("http://localhost:" + client.getPort() + "/Socrates.ttl");
 
-		rdfLoader.load(new URL("http://localhost:" + client.getPort() + "/Socrates1"), null, null,
-				rdfHandler);
+		rdfLoader.load(first.toURL(), null, null, rdfHandler);
 
+		verify(policy).checkInitial(first);
+		verify(policy).checkRedirect(first, second);
+		verify(policy).checkRedirect(second, terminal);
 		verify(rdfHandler).startRDF();
 		verify(rdfHandler)
 				.handleStatement(statement(iri("http://example.org/Socrates"),
@@ -211,7 +242,7 @@ public class RDFLoaderTest {
 
 			System.setProperty("http.maxRedirects", "2"); // http.maxRedirects seems exclusive in http URL
 
-			RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+			RDFLoader rdfLoader = localNetworkLoader();
 
 			RDFHandler rdfHandler = mock(RDFHandler.class);
 			try {
@@ -238,7 +269,7 @@ public class RDFLoaderTest {
 		try {
 			final HostnameVerifier toRestoreHostnameVerifier = disableHostnameVerifier();
 			try {
-				RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+				RDFLoader rdfLoader = localNetworkLoader();
 
 				RDFHandler rdfHandler = mock(RDFHandler.class);
 
@@ -266,6 +297,10 @@ public class RDFLoaderTest {
 			outputStream.write(bytes);
 		}
 		return buffer.toByteArray();
+	}
+
+	private static RDFLoader localNetworkLoader() {
+		return new RDFLoader(new ParserConfig(), getValueFactory(), TEST_LOCAL_ACCESS);
 	}
 
 	private static byte[] zip(String entryName, String body) throws Exception {

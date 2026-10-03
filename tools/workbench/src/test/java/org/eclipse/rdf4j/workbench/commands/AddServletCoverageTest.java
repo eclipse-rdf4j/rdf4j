@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -26,11 +27,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPOutputStream;
 
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -109,13 +117,13 @@ class AddServletCoverageTest {
 
 	@Test
 	void doPostAddsUrlContentWithContextAndCommits() throws Exception {
-		AddServlet servlet = new AddServlet();
+		AddServlet servlet = unrestrictedServlet();
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Resource context = SimpleValueFactory.getInstance().createIRI("urn:ctx");
-		URL url = new URL("https://example.org/data.ttl");
+		URL url = url("data.ttl", "<urn:s> <urn:p> <urn:o> .");
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
@@ -130,9 +138,97 @@ class AddServletCoverageTest {
 
 		servlet.doPost(request, response, "/transform");
 
-		verify(connection).add(url, "https://example.org/base", RDFFormat.TURTLE, context);
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				eq(context));
 		verify(connection).commit();
 		verify(response).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostRejectsPrivateUrlBeforeOpeningConnection() throws Exception {
+		AtomicBoolean opened = new AtomicBoolean();
+		URL url = new URL(null, "http://127.0.0.1/private.ttl", new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL ignored) {
+				opened.set(true);
+				return mock(URLConnection.class);
+			}
+		});
+		AddServlet servlet = new AddServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+
+		assertThatThrownBy(() -> servlet.doPost(request, response, "/transform"))
+				.isInstanceOf(IOException.class)
+				.hasMessageContaining("Remote resource access denied");
+		assertThat(opened).isFalse();
+	}
+
+	@Test
+	void doPostChecksRedirectBeforeOpeningTheNextConnection() throws Exception {
+		URI initialUri = URI.create("http://example.org/start");
+		URI redirectedUri = URI.create("http://127.0.0.1/private.ttl");
+		IOException denied = new IOException("redirect denied by test policy");
+		RemoteResourceAccessPolicy policy = mock(RemoteResourceAccessPolicy.class);
+		doThrow(denied).when(policy).checkRedirect(initialUri, redirectedUri);
+		AtomicInteger openedConnections = new AtomicInteger();
+		URL url = new URL(null, initialUri.toString(), new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL target) {
+				openedConnections.incrementAndGet();
+				return new HttpURLConnection(target) {
+					@Override
+					public int getResponseCode() {
+						return HTTP_MOVED_TEMP;
+					}
+
+					@Override
+					public String getHeaderField(String name) {
+						return "Location".equalsIgnoreCase(name) ? redirectedUri.toString() : null;
+					}
+
+					@Override
+					public InputStream getInputStream() {
+						return new ByteArrayInputStream(new byte[0]);
+					}
+
+					@Override
+					public void disconnect() {
+					}
+
+					@Override
+					public boolean usingProxy() {
+						return false;
+					}
+
+					@Override
+					public void connect() {
+					}
+				};
+			}
+		});
+		AddServlet servlet = new AddServlet(policy);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+
+		assertThatThrownBy(() -> servlet.doPost(request, response, "/transform")).isSameAs(denied);
+		assertThat(openedConnections).hasValue(1);
+		verify(policy).checkInitial(initialUri);
+		verify(policy).checkRedirect(initialUri, redirectedUri);
 	}
 
 	@Test
@@ -275,7 +371,7 @@ class AddServletCoverageTest {
 		when(autodetectRequest.getParameter(ISOLATION_PARAM)).thenReturn("");
 		when(autodetectRequest.isParameterPresent("context")).thenReturn(false);
 		when(autodetectRequest.isParameterPresent("url")).thenReturn(true);
-		when(autodetectRequest.getUrl("url")).thenReturn(new URL("https://example.org/data"));
+		when(autodetectRequest.getUrl("url")).thenReturn(url("data", "not parsed"));
 
 		autodetectServlet.doPost(autodetectRequest, response, "/transform");
 
@@ -290,7 +386,7 @@ class AddServletCoverageTest {
 		when(mimeRequest.getParameter(ISOLATION_PARAM)).thenReturn("");
 		when(mimeRequest.isParameterPresent("context")).thenReturn(false);
 		when(mimeRequest.isParameterPresent("url")).thenReturn(true);
-		when(mimeRequest.getUrl("url")).thenReturn(new URL("https://example.org/data.ttl"));
+		when(mimeRequest.getUrl("url")).thenReturn(url("data.ttl", "not parsed"));
 
 		mimeServlet.doPost(mimeRequest, response, "/transform");
 
@@ -300,12 +396,12 @@ class AddServletCoverageTest {
 
 	@Test
 	void doPostAddsUrlContentWithoutContextWhenIsolationIsAbsent() throws Exception {
-		AddServlet servlet = new AddServlet();
+		AddServlet servlet = unrestrictedServlet();
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
-		URL url = new URL("https://example.org/data.ttl");
+		URL url = url("data.ttl", "<urn:s> <urn:p> <urn:o> .");
 
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
@@ -318,7 +414,8 @@ class AddServletCoverageTest {
 
 		servlet.doPost(request, response, "/transform");
 
-		verify(connection).add(url, "https://example.org/base", RDFFormat.TURTLE);
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				any(Resource[].class));
 		verify(connection, never()).commit();
 		verify(response).sendRedirect("summary");
 	}
@@ -555,6 +652,29 @@ class AddServletCoverageTest {
 		return response;
 	}
 
+	private static AddServlet unrestrictedServlet() {
+		return new AddServlet(RemoteResourceAccessPolicy.allowAll());
+	}
+
+	private static URL url(String path, String body) throws IOException {
+		return new URL(null, "https://example.org/" + path, new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL target) {
+				return new URLConnection(target) {
+					@Override
+					public InputStream getInputStream() {
+						return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+					}
+
+					@Override
+					public void connect() {
+						// The in-memory connection needs no setup.
+					}
+				};
+			}
+		});
+	}
+
 	private static byte[] gzip(String body) throws IOException {
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		try (GZIPOutputStream outputStream = new GZIPOutputStream(buffer)) {
@@ -568,6 +688,7 @@ class AddServletCoverageTest {
 		private final List<String> options;
 
 		private TestAddServlet(TupleResultBuilder builder, List<String> options) {
+			super(RemoteResourceAccessPolicy.allowAll());
 			this.builder = builder;
 			this.options = options;
 		}

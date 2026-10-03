@@ -13,14 +13,24 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.ProtocolException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLConnection;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -32,6 +42,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.RioCompression;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
@@ -51,6 +62,16 @@ public class AddServlet extends TransformationServlet {
 	private static final String ISOLATION_LEVEL_PARAM = Protocol.TRANSACTION_SETTINGS_PREFIX + IsolationLevel.NAME;
 
 	private final Logger logger = LoggerFactory.getLogger(AddServlet.class);
+	private final RemoteResourceAccessPolicy remoteResourceAccessPolicy;
+
+	public AddServlet() {
+		this(new PublicNetworkAccessPolicy());
+	}
+
+	AddServlet(RemoteResourceAccessPolicy remoteResourceAccessPolicy) {
+		this.remoteResourceAccessPolicy = Objects.requireNonNull(remoteResourceAccessPolicy,
+				"remoteResourceAccessPolicy must not be null");
+	}
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
@@ -132,29 +153,125 @@ public class AddServlet extends TransformationServlet {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
-		RDFFormat format;
-		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(url.getFile())
-					.orElseThrow(() -> new BadRequestException(
-							"Could not automatically determine Content-Type for content: " + url.getFile()));
-		} else {
-			format = Rio.getParserFormatForMIMEType(contentType)
-					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
-		}
-
 		try {
-			try (RepositoryConnection con = repository.getConnection()) {
-				boolean transactionStarted = beginIfRequested(con, isolationLevel);
-				try {
-					con.add(url, baseURI, format, context);
-					commitIfNeeded(con, transactionStarted);
-				} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {
-					rollbackIfNeeded(con, transactionStarted);
-					throw exc;
+			try (OpenedRemoteResource resource = openRemoteResource(url, contentType)) {
+				URLConnection connection = resource.connection();
+				InputStream stream = resource.stream();
+				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
+				String sourceName = resource.url().getPath();
+				String effectiveContentType = contentType;
+				if ("autodetect".equals(contentType)) {
+					String responseContentType = connection.getContentType();
+					if (responseContentType != null) {
+						int separator = responseContentType.indexOf(';');
+						String responseMimeType = separator < 0 ? responseContentType
+								: responseContentType.substring(0, separator);
+						if (Rio.getParserFormatForMIMEType(responseMimeType.trim()).isPresent()) {
+							effectiveContentType = responseMimeType.trim();
+						}
+					}
+				}
+				add(stream, effectiveBaseURI, effectiveContentType, sourceName, isolationLevel, context);
+			}
+		} catch (MalformedURLException | IllegalArgumentException exc) {
+			throw new BadRequestException(exc.getMessage(), exc);
+		}
+	}
+
+	private OpenedRemoteResource openRemoteResource(URL initialUrl, String contentType) throws IOException {
+		boolean followRedirects = HttpURLConnection.getFollowRedirects();
+		int maxRedirects = AccessController.doPrivileged(
+				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
+		URL requestUrl = initialUrl;
+		URI previousRequestUri = null;
+		int redirects = 0;
+
+		while (true) {
+			URI requestUri = toUri(requestUrl);
+			if (previousRequestUri == null) {
+				remoteResourceAccessPolicy.checkInitial(requestUri);
+			} else {
+				remoteResourceAccessPolicy.checkRedirect(previousRequestUri, requestUri);
+			}
+
+			URLConnection connection = requestUrl.openConnection();
+			setAcceptHeaders(connection, contentType, requestUrl.getPath());
+			HttpURLConnection httpConnection = connection instanceof HttpURLConnection && followRedirects
+					? (HttpURLConnection) connection
+					: null;
+			if (httpConnection != null) {
+				httpConnection.setInstanceFollowRedirects(false);
+			}
+
+			InputStream stream = connection.getInputStream();
+			if (httpConnection == null || !isRedirection(httpConnection.getResponseCode())) {
+				URL connectedUrl = connection.getURL();
+				return new OpenedRemoteResource(connectedUrl == null ? requestUrl : connectedUrl, connection, stream);
+			}
+
+			try {
+				String location = httpConnection.getHeaderField("Location");
+				if (location == null || location.isBlank()) {
+					throw new IOException("Could not find redirection location for URL: " + requestUrl);
+				}
+				if (++redirects >= maxRedirects) {
+					throw new ProtocolException("Server redirected too many times (" + redirects + ")");
+				}
+				previousRequestUri = requestUri;
+				requestUrl = new URL(requestUrl, location);
+			} finally {
+				stream.close();
+				httpConnection.disconnect();
+			}
+		}
+	}
+
+	private static URI toUri(URL url) throws IOException {
+		try {
+			return url.toURI();
+		} catch (URISyntaxException e) {
+			throw new IOException("Remote resource access denied: target URI is invalid", e);
+		}
+	}
+
+	private static boolean isRedirection(int statusCode) {
+		return statusCode / 100 == 3;
+	}
+
+	private record OpenedRemoteResource(URL url, URLConnection connection, InputStream stream)
+			implements AutoCloseable {
+		@Override
+		public void close() throws IOException {
+			try {
+				stream.close();
+			} finally {
+				if (connection instanceof HttpURLConnection) {
+					((HttpURLConnection) connection).disconnect();
 				}
 			}
-		} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {
-			throw new BadRequestException(exc.getMessage(), exc);
+		}
+	}
+
+	private void setAcceptHeaders(URLConnection connection, String contentType, String sourceName) {
+		if ("autodetect".equals(contentType)) {
+			RDFFormat inferredFormat = Rio.getParserFormatForFileName(sourceName).orElse(null);
+			if (inferredFormat != null) {
+				for (String mimeType : inferredFormat.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
+				}
+			} else {
+				for (String acceptParam : RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true,
+						null)) {
+					connection.addRequestProperty("Accept", acceptParam);
+				}
+			}
+		} else {
+			RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElse(null);
+			if (format != null) {
+				for (String mimeType : format.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
+				}
+			}
 		}
 	}
 
