@@ -653,9 +653,51 @@ body.query-results-fullscreen-active {
 	background: var(--query-surface);
 }
 
+/* In the page the toolbar scrolls with its rows: stuck at the top it would sit under the sticky context bar, and the
+ * pinned header row already names the columns. Full screen, which covers the context bar, keeps it at the top. */
+body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-toolbar {
+	position: relative;
+}
+
 /* Download and Display stay together; when the toolbar is narrow they move below the status as one row. */
 :where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar__disclosures {
 	flex-wrap: nowrap;
+}
+
+/* On phones the query actions fill each row they wrap onto, so no row is left ragged; the result toolbar keeps its
+ * controls at their own widths on one row, with Full screen as an icon named by its aria-label. */
+@media (max-width: 600px) {
+	:where(body.workbench-body) .query-actions-toolbar :is(.workbench-action-toolbar__primary, .workbench-action-toolbar__group,
+			.workbench-action-toolbar__primary > .workbench-action, .workbench-action-toolbar__group .workbench-disclosure__toggle) {
+		flex: 1 1 auto;
+	}
+
+	/* Save query and Query settings take a row each when they cannot share one. */
+	:where(body.workbench-body) .query-actions-toolbar .workbench-action-toolbar__group {
+		flex-wrap: wrap;
+	}
+
+	/* In the output card the result heading is only for assistive technology, so it takes no place in the row. */
+	.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header {
+		position: absolute;
+	}
+
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen {
+		justify-content: center;
+		min-width: var(--workbench-touch-height);
+		padding-inline: 0;
+	}
+
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
 }
 
 /* An open Download or Display pane hangs over the rows and the pinned header row (M14.3). */

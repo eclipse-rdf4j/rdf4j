@@ -19,6 +19,15 @@ let nameSequence = 0;
 
 // Share one owned repository within a worker; failures still run the teardown.
 test.describe.configure({ mode: 'default' });
+
+// The page records when it last scrolled (any scroller), so settled() can wait out smooth scrolling, such as the
+// result reveal after Execute, which is motion without an animation.
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() => {
+		addEventListener('scroll', () => { window.__workbenchLastScroll = performance.now(); },
+			{ capture: true, passive: true });
+	});
+});
 test.setTimeout(180000);
 
 test.beforeAll(async ({ request }) => {
@@ -62,8 +71,9 @@ async function removeOwnedSavedQuery(request, urn) {
 }
 
 async function settled(page) {
-	// Fonts, two frames, then every running finite animation finished (finishing one can start another). Waiting on the
-	// animations in the page returns as soon as they end; a poll from the test process waits out its interval.
+	// Fonts, two frames, then every running finite animation finished (finishing one can start another), then no scroll
+	// for 120 ms. Waiting on the animations in the page returns as soon as they end; a poll from the test process waits
+	// out its interval.
 	await page.evaluate(async () => {
 		await document.fonts.ready;
 		await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -71,13 +81,18 @@ async function settled(page) {
 		for (;;) {
 			const running = document.getAnimations().filter(animation =>
 				animation.playState === 'running' && animation.effect?.getTiming().iterations !== Infinity);
-			if (!running.length) return;
+			if (!running.length) break;
 			const remaining = deadline - performance.now();
 			if (remaining <= 0) throw new Error(`${running.length} animation(s) still running after 5 s`);
 			await Promise.race([Promise.allSettled(running.map(animation => animation.finished)),
 				new Promise(resolve => setTimeout(resolve, Math.min(remaining, 250)))]);
 			// The Workbench commits a motion's end state in its finish event, which follows the finished promise.
 			await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+		}
+		// A smooth scroll's tail can pause for several frames between 1px steps, so the page must be still for 120 ms.
+		while (performance.now() - (window.__workbenchLastScroll ?? -Infinity) < 120) {
+			if (performance.now() > deadline) throw new Error('The page was still scrolling after 5 s');
+			await new Promise(resolve => setTimeout(resolve, 30));
 		}
 	});
 }
@@ -744,12 +759,14 @@ test('S1 S3 S4 stacked legacy forms retain field and action rhythm', async ({ pa
 test('S3 stacked form grids use the shared field rhythm', async ({ page }, info) => {
 	for (const variant of ROW_VARIANTS.filter(variant => variant.width <= 768)) {
 		const measurements = [];
-		for (const [route, toggle, fields] of [
-			['NONE/server', '#server-auth-toggle', '#server-auth-panel .workbench-form-grid > .workbench-field'],
-			['add', '#add-import-settings-toggle', '#add-import-settings-panel .workbench-form-grid > .workbench-field'],
-			// Export's compression is a segmented fieldset since the Export redesign.
-			['export', null, '#export-form > .workbench-form-grid > :is(.workbench-field, fieldset)']
+		for (const [route, toggle, fields, stackedUpTo] of [
+			['NONE/server', '#server-auth-toggle', '#server-auth-panel .workbench-form-grid > .workbench-field', 768],
+			['add', '#add-import-settings-toggle', '#add-import-settings-panel .workbench-form-grid > .workbench-field', 768],
+			// Export's compression is a segmented fieldset since the Export redesign. Grid columns follow the card, so the
+			// full-width Export card still pairs its fields at 768px and stacks them on phones.
+			['export', null, '#export-form > .workbench-form-grid > :is(.workbench-field, fieldset)', 390]
 		]) {
+			if (variant.width > stackedUpTo) continue;
 			await open(page, route, variant);
 			if (toggle) { await page.locator(toggle).click(); await settled(page); }
 			const rows = await settingRows(page.locator(fields));
@@ -941,13 +958,17 @@ async function disclosureAnchor(page, result, family, info, label) {
 	const toggle = result.locator(`[id^=query-result-${family}-toggle-]`);
 	const panel = result.locator(`[id^=query-result-${family}-panel-]`);
 	await expect(panel).toBeVisible();
-	const measurement = { label, toggle: await bounds(toggle), panel: await bounds(panel),
-		scrollY: await page.evaluate(() => scrollY),
-		toolbar: await bounds(result.locator('.query-result-toolbar')),
-		panelStyle: await panel.evaluate(element => {
-			const style = getComputedStyle(element);
-			return { position: style.position, marginTop: style.marginTop, transform: style.transform };
-		}) };
+	// One synchronous read, so the trigger, its pane and the toolbar are measured at the same scroll position.
+	const measurement = { label, ...await panel.evaluate((element, toggleElement) => {
+		const box = node => {
+			const rect = node.getBoundingClientRect();
+			return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+		};
+		const style = getComputedStyle(element);
+		return { toggle: box(toggleElement), panel: box(element), scrollY,
+			toolbar: box(toggleElement.closest('.query-result-toolbar')),
+			panelStyle: { position: style.position, marginTop: style.marginTop, transform: style.transform } };
+	}, await toggle.elementHandle()) };
 	await evidence(page, info, label, measurement);
 	closeTo(measurement.panel.top - measurement.toggle.bottom, ROLES.related,
 		`${measurement.label}: result trigger → panel`);

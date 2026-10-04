@@ -1432,8 +1432,8 @@ body.workbench-body summary:focus-visible {
 	outline-offset: 2px;
 }
 
-/* Context bar (M2.3, mockups 01 and 04): one 56px sticky row with the brand and the server,
- * repository and user switchers; each switcher opens an anchored popover. */
+/* Context bar (M2.3, mockups 01 and 04): one 56px sticky row with the brand and the server and
+ * repository switchers; each switcher opens an anchored popover. */
 body.workbench-body #workbench-contextbar.workbench-contextbar {
 	grid-area: header;
 	position: sticky;
@@ -1530,8 +1530,7 @@ body.workbench-body .workbench-switcher__value {
 }
 
 body.workbench-body .workbench-switcher__title,
-body.workbench-body .workbench-switcher__value--empty,
-body.workbench-body .workbench-switcher__button--user .workbench-switcher__value {
+body.workbench-body .workbench-switcher__value--empty {
 	color: var(--workbench-muted);
 	font-weight: 400;
 }
@@ -1580,6 +1579,20 @@ body.workbench-body .workbench-popover--end {
 	width: 300px;
 }
 
+/* On phones a switcher's popover spans the context bar rather than starting at its switcher, so it stays on screen. */
+@media (max-width: 600px) {
+	body.workbench-body #workbench-contextbar .workbench-switcher {
+		position: static;
+	}
+
+	body.workbench-body #workbench-contextbar .workbench-popover {
+		right: var(--workbench-mobile-gutter);
+		left: var(--workbench-mobile-gutter);
+		width: auto;
+		max-width: none;
+	}
+}
+
 body.workbench-body .workbench-popover .workbench-kv {
 	padding: 4px 8px;
 }
@@ -1587,10 +1600,6 @@ body.workbench-body .workbench-popover .workbench-kv {
 body.workbench-body .workbench-popover .workbench-kv__row {
 	grid-template-columns: 64px minmax(0, 1fr);
 	column-gap: 12px;
-}
-
-body.workbench-body .workbench-popover__text {
-	margin: 4px 8px 8px;
 }
 
 body.workbench-body .workbench-popover__search {
@@ -1722,8 +1731,7 @@ body.workbench-body .workbench-popover__footer a:hover {
 
 @media (max-width: 600px) {
 	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
-	body.workbench-body .workbench-contextbar__divider,
-	body.workbench-body .workbench-switcher__button--user .workbench-switcher__value {
+	body.workbench-body .workbench-contextbar__divider {
 		display: none;
 	}
 }
@@ -2245,7 +2253,6 @@ body.workbench-body .workbench-menu-sheet__nav span.disabled {
 	}
 
 	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
-	body.workbench-body .workbench-switcher[data-workbench-switcher="user"],
 	body.workbench-body .workbench-contextbar__divider {
 		display: none;
 	}
@@ -2342,6 +2349,15 @@ body.workbench-body .workbench-page-surface p {
 	margin: 0 0 12px;
 }
 
+/* Prose avoids a lone last word and headings balance their lines as the window narrows. */
+body.workbench-body :is(p, li, dd, .workbench-callout, .workbench-field__help) {
+	text-wrap: pretty;
+}
+
+body.workbench-body :is(h1, h2, h3) {
+	text-wrap: balance;
+}
+
 body.workbench-body .workbench-page-surface > .workbench-island {
 	box-sizing: border-box;
 	margin: 0 0 20px;
@@ -2393,9 +2409,10 @@ body.workbench-body .workbench-field-stack {
 	gap: var(--workbench-form-gap);
 }
 
+/* Two columns whenever the card holds two 18rem fields, so the layout follows the card rather than the window. */
 body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, max(18rem, calc((100% - var(--workbench-space-subgroup)) / 2))), 1fr));
 	gap: var(--workbench-form-gap) var(--workbench-space-subgroup);
 	width: 100%;
 	max-width: 100%;
@@ -2431,17 +2448,11 @@ body.workbench-body #workbench-page-surface > #export-form.workbench-form-card {
 }
 
 body.workbench-body #export-form .export-download__fields {
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, max(18rem, calc((100% - 24px) / 2))), 1fr));
 	align-items: start;
 	gap: var(--workbench-form-gap) 24px;
 	width: 100%;
 	max-width: 100%;
-}
-
-@media (max-width: 900px) {
-	body.workbench-body #export-form .export-download__fields {
-		grid-template-columns: minmax(0, 1fr);
-	}
 }
 
 body.workbench-body .export-card__header {
@@ -2463,7 +2474,12 @@ body.workbench-body .workbench-page-surface fieldset.workbench-segmented.export-
 
 body.workbench-body .workbench-segmented__help {
 	grid-column: 1 / -1;
-	margin: 4px 0 0;
+}
+
+/* The hint under the segments sits a field gap below them, as a field's hint sits below its control; scoped to
+ * the page surface so it outranks the surface's paragraph margins. */
+body.workbench-body .workbench-page-surface .workbench-segmented label + .workbench-segmented__help {
+	margin-top: var(--workbench-field-gap);
 }
 
 body.workbench-body .workbench-field__help.workbench-field__help--warning {
@@ -2582,12 +2598,6 @@ body.query-result-embedded-body .workbench-select-chevron {
 body.workbench-body .add-source-fields > .workbench-field.add-source-format {
 	min-width: 12rem;
 	max-width: 100%;
-}
-
-@media (max-width: 600px) {
-	body.workbench-body #export-form .workbench-form-grid {
-		grid-template-columns: minmax(0, 1fr);
-	}
 }
 
 body.workbench-body .workbench-field {
@@ -3045,7 +3055,24 @@ body.workbench-body .workbench-browse-card__filter {
 	margin: 0;
 }
 
-body.workbench-body .workbench-browse-card table.data td {
+/* A filter and its action wrap as one group, which stays at the end of the header; the filter keeps room for its
+ * placeholder. */
+body.workbench-body .workbench-browse-card__tools {
+	display: flex;
+	flex: 0 1 auto;
+	align-items: center;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	margin-left: auto;
+}
+
+body.workbench-body .workbench-browse-card__tools > .workbench-browse-card__filter {
+	width: 280px;
+	min-width: 15rem;
+}
+
+/* Scoped to the page surface so it outranks the surface's top-aligned table cells, which come later. */
+body.workbench-body .workbench-page-surface .workbench-browse-card table.data td {
 	vertical-align: middle;
 }
 
@@ -3218,6 +3245,14 @@ body.workbench-body .workbench-repository-link {
 	font-weight: 600;
 }
 
+/* Pills keep one association gap whether they sit side by side or wrap below each other. */
+body.workbench-body .workbench-badges {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: var(--workbench-space-association);
+	vertical-align: middle;
+}
+
 body.workbench-body .workbench-badge {
 	display: inline-block;
 	padding: 1px 8px;
@@ -3276,10 +3311,12 @@ body.workbench-body .workbench-popover__menu a.workbench-popover__danger {
 }
 
 /* Namespaces (M6.3, mockup 07): prefixes and IRIs in monospace, row actions on hover or focus, editing in the row. */
-body.workbench-body .workbench-namespaces-table code {
+/* IRIs wrap at the <wbr> after their separators; a part is split only when it cannot fit on its own. The selector
+ * outranks the phone record layout's td > * rule, which breaks anywhere. */
+body.workbench-body table.data.workbench-namespaces-table td > code {
 	font-family: var(--workbench-code-font);
 	font-size: var(--workbench-code-font-size);
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 body.workbench-body .workbench-namespaces-table td:first-child {
@@ -3303,10 +3340,25 @@ body.workbench-body #workbench-page-surface .workbench-namespaces-table .workben
 	}
 }
 
-/* Record layout on phones: the filter takes the full width and the row actions sit on their own line. */
+/* Record layout on phones: the filter takes the full width and the row actions sit beside the first field. */
 @media (max-width: 600px) {
-	body.workbench-body .workbench-browse-card__filter {
+	body.workbench-body :is(.workbench-browse-card__filter, .workbench-browse-card__tools) {
 		flex-basis: 100%;
+	}
+
+	/* The filter fills the row beside its action; when that leaves it under 12rem, the action takes a row below. */
+	body.workbench-body .workbench-browse-card__tools {
+		flex-wrap: wrap;
+	}
+
+	body.workbench-body .workbench-browse-card__tools > .workbench-browse-card__filter {
+		flex: 1000 1 12rem;
+		width: auto;
+		min-width: 0;
+	}
+
+	body.workbench-body .workbench-browse-card__tools > .workbench-browse-card__action {
+		flex: 1 0 auto;
 	}
 
 	body.workbench-body .workbench-browse-card table.data td.workbench-count-cell {
@@ -3332,6 +3384,38 @@ body.workbench-body #workbench-page-surface .workbench-namespaces-table .workben
 
 	body.workbench-body .workbench-browse-card table.data td.workbench-row-actions > .workbench-action + .workbench-action {
 		margin-left: 0;
+	}
+
+	/* A lone row menu sits at the end of the record's first field, which grows to its touch height; the value keeps
+	 * its column and stops short of the menu. */
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr:has(> td.workbench-row-actions > :only-child) {
+		position: relative;
+	}
+
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr > td.workbench-row-actions:has(> :only-child) {
+		position: absolute;
+		/* The record's padding. */
+		top: 10px;
+		right: 10px;
+		width: auto;
+		padding: 0;
+		border: 0;
+	}
+
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr:has(> td.workbench-row-actions > :only-child) > td:first-child {
+		align-items: center;
+		/* The menu's height and, below it, the field's 1px divider. */
+		min-height: calc(var(--workbench-touch-height) + 1px);
+	}
+
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr:has(> td.workbench-row-actions > :only-child) > td:first-child > :last-child {
+		margin-right: calc(var(--workbench-touch-height) + var(--workbench-space-related));
+	}
+
+	/* The last field closes the record unless several actions follow it in a row of their own, below its divider. */
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr:not(:has(> td.workbench-row-actions > :nth-child(2))) > td:nth-last-child(1 of :not(.workbench-row-actions)),
+	body.workbench-body .workbench-page-surface .workbench-browse-card table.data tr > td.workbench-row-actions {
+		border-bottom: 0;
 	}
 }
 
@@ -3967,11 +4051,6 @@ body.workbench-body .saved-query-row > .yasqe {
 		padding: 16px;
 	}
 
-	body.workbench-body :is(.workbench-form-grid, .workbench-field-grid) {
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--workbench-form-gap);
-	}
-
 	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
 		align-items: stretch;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4087,17 +4166,6 @@ body.workbench-body .saved-query-row > .yasqe {
 
 	body.workbench-body .workbench-page-surface table.dataentry tr:last-child:has(input[type="submit"], input[type="button"], button, .workbench-action) td {
 		width: auto;
-	}
-
-	body.workbench-body .workbench-page-surface table.data {
-		display: block;
-		overflow-x: auto;
-		-webkit-overflow-scrolling: touch;
-	}
-
-	body.workbench-body .workbench-page-surface table.data thead,
-	body.workbench-body .workbench-page-surface table.data tbody {
-		min-width: 100%;
 	}
 
 	body.workbench-body #footer.workbench-footer {

@@ -214,6 +214,20 @@ body.query-compare-mode #copy-explanation {
     gap: var(--workbench-control-gap, 8px);
 }
 
+/* On phones the settings and actions fill each row they wrap onto; icon-only actions keep their square. */
+@media (max-width: 600px) {
+    .query-explanation-toolbar :is(.query-explanation-toolbar__settings, .query-explanation-toolbar__actions,
+            .query-form__field--controls-group, .workbench-select-control, .workbench-select-control > select,
+            .query-explanation-settings, .workbench-action:not(.workbench-action--icon)) {
+        flex: 1 1 auto;
+    }
+
+    body.workbench-body .query-explanation-toolbar .query-explanation-settings > .workbench-disclosure__toggle {
+        justify-self: stretch;
+        width: auto;
+    }
+}
+
 .query-explanation-toolbar .query-compare-toolbar {
     width: auto;
     margin: 0;

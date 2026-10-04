@@ -54,6 +54,18 @@ test('the context bar is one compact row', async ({ page }) => {
 	await expect(bar.locator('#workbench-server-switcher')).toContainText(new URL(serverBaseUrl()).host);
 });
 
+test('the context bar shows the user only in the server menu', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
+	const bar = page.locator('#workbench-contextbar');
+	await expect(bar.locator('.workbench-switcher__button')).toHaveCount(2);
+	await expect(bar.locator('#workbench-user-switcher')).toHaveCount(0);
+	await bar.locator('#workbench-server-switcher').click();
+	const popover = page.locator('#workbench-server-popover');
+	await expect(popover).toBeVisible();
+	await expect(popover.locator('.workbench-kv__row', { hasText: 'User' }).locator('dd')).toHaveText('Not signed in');
+});
+
 test('the repository switcher filters and chooses repositories', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl('NONE', 'repositories'), { waitUntil: 'networkidle' });

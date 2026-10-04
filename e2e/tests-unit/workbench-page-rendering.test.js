@@ -608,8 +608,8 @@ test('representative non-query templates keep Workbench form and table hooks', (
             viewId: 'namespaces',
             vars: ['prefix', 'namespace'],
             rows: [['ex', 'urn:example:']],
-            // Plan task M6.3: no form above the table; rows are edited in place.
-            expected: ['id="namespaces-results"', 'id="namespaces-filter"', 'Add namespace', 'urn:example:']
+            // Plan task M6.3: no form above the table; rows are edited in place. Namespaces may break after ':'.
+            expected: ['id="namespaces-results"', 'id="namespaces-filter"', 'Add namespace', 'urn:<wbr>example:']
         },
         {
             viewId: 'contexts',
@@ -628,8 +628,9 @@ test('representative non-query templates keep Workbench form and table hooks', (
     for (const testCase of cases) {
         const template = workbench.views.pageTemplate({ ...testCase, metadata: {} }, context, runtime);
         const text = collectTemplateText(template).join(' ');
+        const markup = flattenTemplateMarkup(template);
         for (const expected of testCase.expected) {
-            assert.ok(text.includes(expected), `${testCase.viewId} template should include ${expected}`);
+            assert.ok(text.includes(expected) || markup.includes(expected), `${testCase.viewId} template should include ${expected}`);
         }
     }
 });
@@ -803,7 +804,7 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
             expected: ['delete-form', 'name="id"', 'repo-1'] }],
         ['namespaces', { vars: ['prefix', 'namespace'], rows: [['ex', 'urn:example:']],
             pickerRows: [['ex', 'urn:example:']], rowCount: 1,
-            expected: ['namespaces-results', 'namespaces-filter', 'urn:example:'] }],
+            expected: ['namespaces-results', 'namespaces-filter', 'urn:<wbr>example:'] }],
         ['contexts', { vars: ['context'], rows: [['urn:graph']], expected: ['contexts-results', 'urn:graph'] }],
         ['types', { vars: ['type', 'count'], rows: [['urn:Type', '3']], expected: ['types-results', 'urn:Type'] }],
         ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']],
@@ -823,11 +824,11 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
     for (const [viewId, page] of routes) {
         const expected = page.expected;
         const { expected: _expected, ...pageModel } = page;
-        const output = collectTemplateText(workbench.views.pageTemplate({
-            viewId, metadata: {}, ...pageModel
-        }, context, runtime)).join(' ');
+        const template = workbench.views.pageTemplate({ viewId, metadata: {}, ...pageModel }, context, runtime);
+        const output = collectTemplateText(template).join(' ');
+        const markup = flattenTemplateMarkup(template);
         for (const marker of expected) {
-            assert.ok(output.includes(marker), `${viewId} route should render ${marker}`);
+            assert.ok(output.includes(marker) || markup.includes(marker), `${viewId} route should render ${marker}`);
         }
         assert.ok(!output.includes('Unsupported Workbench view'), `${viewId} must resolve in the route renderer`);
     }

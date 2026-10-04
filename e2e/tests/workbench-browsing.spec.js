@@ -183,6 +183,48 @@ test('Repository rows open their summary, list access as text and offer actions'
 	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary$`));
 });
 
+test('Repository row cells share one vertical centre', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
+	const row = await repositoryRow(page, REPOSITORY_ID);
+	const centres = await row.evaluate((tr) => {
+		const centre = (rect) => rect.top + rect.height / 2;
+		const cells = tr.querySelectorAll('td');
+		const title = document.createRange();
+		title.selectNodeContents(cells[1]);
+		return {
+			id: centre(cells[0].querySelector('a').getBoundingClientRect()),
+			title: centre(title.getBoundingClientRect()),
+			access: centre(cells[2].querySelector('.workbench-badge').getBoundingClientRect()),
+			actions: centre(cells[3].querySelector('button').getBoundingClientRect())
+		};
+	});
+	for (const cell of ['id', 'title', 'access']) {
+		expect(Math.abs(centres[cell] - centres.actions), `${cell} centre against the actions button`).toBeLessThanOrEqual(1);
+	}
+});
+
+test('Access pills keep one gap whether they sit side by side or stacked', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
+	const row = await repositoryRow(page, REPOSITORY_ID);
+	const arrangements = new Set();
+	// Narrowing the window by 10px at a time moves Write below Read and back as the table columns rebalance.
+	for (let width = 1440; width >= 320; width -= 10) {
+		await page.setViewportSize({ width, height: 900 });
+		const pills = await row.locator('.workbench-badge').evaluateAll((badges) => badges.map((badge) => {
+			const box = badge.getBoundingClientRect();
+			return { top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+		}));
+		expect(pills).toHaveLength(2);
+		const stacked = pills[1].top >= pills[0].bottom;
+		arrangements.add(stacked ? 'stacked' : 'side by side');
+		const gap = stacked ? pills[1].top - pills[0].bottom : pills[1].left - pills[0].right;
+		expect(gap, `${stacked ? 'vertical' : 'horizontal'} gap between the pills at ${width}px`).toBeCloseTo(4, 0);
+	}
+	expect([...arrangements].sort()).toEqual(['side by side', 'stacked']);
+});
+
 test('Repository records on phones use the labels Id, Title and Access', async ({ page }) => {
 	// The actions cell also carries its column label; its label is not shown in the record layout.
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -286,6 +328,22 @@ test('Export names the file it downloads and warns when a format would merge the
 	} else {
 		await expect(safariNote).toHaveCount(0);
 	}
+});
+
+test('Export hints sit as far below the compression segments as below the format select', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'export'), { waitUntil: 'domcontentloaded' });
+	const form = page.locator('#export-form');
+	await form.locator('#Accept').selectOption('application/n-quads');
+	await expect(form.locator('#export-format-note')).toHaveText('Keeps the named graphs.');
+	const gaps = await form.evaluate((element) => {
+		const box = (selector) => element.querySelector(selector).getBoundingClientRect();
+		return {
+			format: box('#export-format-note').top - box('.workbench-select-control').bottom,
+			compression: box('#export-compression-help').top - box('.export-compression label:last-of-type').bottom
+		};
+	});
+	expect(gaps.compression, `compression hint gap against the format hint gap ${gaps.format}px`).toBeCloseTo(gaps.format, 1);
 });
 
 test('Export previews statements in their own card without changing the download', async ({ page }) => {

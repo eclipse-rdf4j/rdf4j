@@ -642,7 +642,7 @@ module workbench {
             return icon(runtime, 'chevron', 'workbench-switcher__chevron');
         }
 
-        /** The 56px context bar (mockups 01 and 04): brand, server, repository and user switchers. */
+        /** The 56px context bar (mockups 01 and 04): brand, server and repository switchers; the server menu names the user. */
         function contextBar(context: ViewContext, active: string, runtime: LitRuntime): any {
             const h = runtime.html;
             const state = contextBarState(context);
@@ -700,19 +700,6 @@ module workbench {
                     </div>
                 </div>
                 <span class="workbench-contextbar__spacer"></span>
-                <div class="workbench-switcher" data-workbench-switcher="user">
-                    <button id="workbench-user-switcher" class="workbench-switcher__button workbench-switcher__button--user"
-                            type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-user-popover">
-                        ${icon(runtime, 'user')}<span id="selected-user" class="workbench-switcher__value">${state.user || 'Not signed in'}</span>
-                        ${switcherChevron(runtime)}
-                    </button>
-                    <div id="workbench-user-popover" class="workbench-popover workbench-popover--end" role="dialog" aria-label="User" hidden>
-                        <p class="workbench-popover__text">${state.user ? h`Signed in as <strong>${state.user}</strong>` : 'Not signed in'}</p>
-                        <div class="workbench-popover__footer">
-                            <a href=${urlFor(context, 'server')}>${icon(runtime, 'settings')}Change server or user…</a>
-                        </div>
-                    </div>
-                </div>
                 <button id="workbench-menu-button" class="workbench-action workbench-action--ghost workbench-action--icon workbench-menu-button"
                         type="button" aria-haspopup="dialog" aria-controls="workbench-menu-sheet"
                         aria-label="Menu" title="Menu">${icon(runtime, 'menu')}</button>
@@ -1268,6 +1255,17 @@ module workbench {
             }
         }
 
+        /**
+         * An IRI with a line-break opportunity (<wbr>) after each / # : ? & = -, so a narrow column wraps it at those
+         * boundaries instead of in the middle of a word; WebKit does not break after a hyphen on its own. Copied text
+         * is unchanged.
+         */
+        function breakableIri(runtime: LitRuntime, iri: string): any {
+            const parts = iri.match(/[^/#:?&=-]*(?:[/#:?&=-]+|$)/g) || [iri];
+            return parts.filter((part: string) => part.length > 0)
+                .map((part: string, position: number) => position ? runtime.html`<wbr>${part}` : part);
+        }
+
         /** Namespaces (M6.3, mockup 07): rows in prefix order, edited in place; no field is prefilled from a row. */
         function namespacesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
@@ -1318,7 +1316,7 @@ module workbench {
             </tr>`;
             const viewRow = (row: any) => h`<tr>
                 <td data-label="Prefix"><code>${row.prefix}</code></td>
-                <td data-label="Namespace"><code>${row.namespace}</code></td>
+                <td data-label="Namespace"><code>${breakableIri(runtime, row.namespace)}</code></td>
                 <td class="workbench-row-actions" data-label="Actions"><button type="button"
                         class="workbench-action workbench-action--ghost workbench-action--icon" aria-label=${'Edit ' + label(row.prefix)}
                         title="Edit" @click=${(event: any) => {
@@ -1341,6 +1339,7 @@ module workbench {
                     class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
                     <h2>Namespaces</h2><span class="workbench-browse-card__count">${formatCount(String(rows.length), context)}</span>
+                    <div class="workbench-browse-card__tools">
                     <form class="workbench-browse-card__filter" role="search" @submit=${(event: any) => event.preventDefault()}>
                         <label class="workbench-visually-hidden" for="namespaces-filter">Filter prefixes or IRIs</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input
@@ -1356,6 +1355,7 @@ module workbench {
                             state.editing = null;
                             rerender(event, true);
                         }}>${icon(runtime, 'add')}<span>Add namespace</span></button>
+                    </div>
                 </div>
                 <table class="data workbench-namespaces-table">
                     <thead><tr><th scope="col">Prefix</th><th scope="col">Namespace</th>
@@ -3618,7 +3618,7 @@ module workbench {
             }
             const disposers: Array<() => void> = [];
             const currentId = contextBarState(context).repositoryId;
-            ['server', 'repository', 'user'].forEach((name) => {
+            ['server', 'repository'].forEach((name) => {
                 const button = document.getElementById('workbench-' + name + '-switcher');
                 const panel = document.getElementById('workbench-' + name + '-popover');
                 disposers.push(popover.bind(button, panel, name === 'repository'
