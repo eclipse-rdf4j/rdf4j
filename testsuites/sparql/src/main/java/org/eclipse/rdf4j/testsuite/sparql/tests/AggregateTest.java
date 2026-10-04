@@ -56,6 +56,17 @@ public class AggregateTest extends AbstractComplianceTest {
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("ConstantCountAndSum", this::testConstantCountAndSum),
+				makeTest("WildcardAndVariableCountWithValues", this::testWildcardAndVariableCountWithValues),
+				makeTest("SumOfBoundConstantWithValues", this::testSumOfBoundConstantWithValues),
+				makeTest("ConstantSumOverTripleAndValuesJoin", this::testConstantSumOverTripleAndValuesJoin),
+				makeTest("ConstantCountOverTwoTriplePatternsAndValues",
+						this::testConstantCountOverTwoTriplePatternsAndValues),
+				makeTest("GroupedConstantCountWithTwoKeys", this::testGroupedConstantCountWithTwoKeys),
+				makeTest("EmptyValuesConstantAggregateFamily", this::testEmptyValuesConstantAggregateFamily),
+				makeTest("ConstantAndWildcardCountsAcrossValuesJoin",
+						this::testConstantAndWildcardCountsAcrossValuesJoin),
+				makeTest("ConstantAndWildcardCountsAcrossMultiMatchTripleJoin",
+						this::testConstantAndWildcardCountsAcrossMultiMatchTripleJoin),
 				makeTest("ConstantSample", this::testConstantSample),
 				makeTest("DistinctConstantAggregates", this::testDistinctConstantAggregates),
 				makeTest("ConstantAggregatesByGroup", this::testConstantAggregatesByGroup),
@@ -113,6 +124,121 @@ public class AggregateTest extends AbstractComplianceTest {
 			assertThat(bindings.getValue("s")).isEqualTo(literal("15", CoreDatatype.XSD.INTEGER));
 			assertThat(result.hasNext()).isFalse();
 		}
+	}
+
+	private void testWildcardAndVariableCountWithValues(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?all) (COUNT(?x) AS ?bound) WHERE { VALUES ?x { 1 2 3 } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("all")).isEqualTo(literal("3", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("bound")).isEqualTo(literal("3", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testSumOfBoundConstantWithValues(RepositoryConnection conn) {
+		String query = "SELECT (SUM(?one) AS ?sum) WHERE { VALUES ?x { 1 2 3 } BIND(1 AS ?one) }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("sum")).isEqualTo(literal("3", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testConstantSumOverTripleAndValuesJoin(RepositoryConnection conn) {
+		addSingleTripleFixture(conn);
+		String query = "SELECT (SUM(5) AS ?sum) WHERE { ?s ?p ?o . VALUES ?v { 1 2 3 } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("sum")).isEqualTo(literal("15", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testConstantCountOverTwoTriplePatternsAndValues(RepositoryConnection conn) {
+		addSingleTripleFixture(conn);
+		String query = "SELECT (COUNT(1) AS ?count) WHERE { ?s ?p ?o . ?s ?q ?r . VALUES ?v { 1 2 3 } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("count")).isEqualTo(literal("3", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testGroupedConstantCountWithTwoKeys(RepositoryConnection conn) {
+		String query = "SELECT ?x (COUNT(1) AS ?count) WHERE { "
+				+ "VALUES (?x ?y) { (1 1) (1 2) (2 3) } } GROUP BY ?x ORDER BY ?x";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet firstGroup = result.next();
+			assertThat(firstGroup.getValue("x")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(firstGroup.getValue("count")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+
+			assertThat(result.hasNext()).isTrue();
+			BindingSet secondGroup = result.next();
+			assertThat(secondGroup.getValue("x")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(secondGroup.getValue("count")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testEmptyValuesConstantAggregateFamily(RepositoryConnection conn) {
+		String query = "SELECT (SUM(2) AS ?sum) (AVG(2) AS ?avg) (MIN(2) AS ?min) "
+				+ "(MAX(2) AS ?max) (SAMPLE(2) AS ?sample) WHERE { VALUES ?x { } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("sum")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("avg")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("min")).isNull();
+			assertThat(bindings.getValue("max")).isNull();
+			assertThat(bindings.getValue("sample")).isNull();
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testConstantAndWildcardCountsAcrossValuesJoin(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(1) AS ?constantCount) (COUNT(*) AS ?wildcardCount) WHERE { "
+				+ "VALUES (?a ?b) { (1 2) (1 3) } VALUES (?b ?d) { (2 4) (3 5) } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("constantCount")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("wildcardCount")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testConstantAndWildcardCountsAcrossMultiMatchTripleJoin(RepositoryConnection conn) {
+		IRI subject = iri("http://example.org/a");
+		IRI predicate = iri("http://example.org/b");
+		conn.add(subject, predicate, iri("http://example.org/c"));
+		conn.add(subject, predicate, iri("http://example.org/d"));
+		String query = "SELECT (COUNT(1) AS ?constantCount) (COUNT(*) AS ?wildcardCount) "
+				+ "WHERE { ?s ?p ?o . ?s ?q ?r }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("constantCount")).isEqualTo(literal("4", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("wildcardCount")).isEqualTo(literal("4", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void addSingleTripleFixture(RepositoryConnection conn) {
+		conn.add(iri("http://example.org/a"), iri("http://example.org/b"), iri("http://example.org/c"));
 	}
 
 	private void testConstantSample(RepositoryConnection conn) {
