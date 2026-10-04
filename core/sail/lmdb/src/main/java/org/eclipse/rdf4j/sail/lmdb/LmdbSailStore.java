@@ -2191,7 +2191,9 @@ class LmdbSailStore implements SailStore {
 	private final AtomicBoolean running = new AtomicBoolean(false);
 	private volatile boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
-	private volatile boolean asyncOperationsDrained;
+	// Admission is serialized by sinkStoreAccessLock; completion publishes the immutable FIFO prefix.
+	private long asyncOperationsAdmitted;
+	private volatile AsyncDrainOperation completedAsyncDrain;
 	private volatile boolean nextTransactionAsync;
 	private volatile TxnReplayPolicy.Decision storeReplayDecision;
 	private final IdentityHashMap<Object, LmdbTransactionRetryException> failedWriterTransactions = new IdentityHashMap<>();
@@ -2220,7 +2222,10 @@ class LmdbSailStore implements SailStore {
 	boolean enableMultiThreading = true;
 
 	static ExecutorService createTripleStoreExecutor() {
-		return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("LmdbTripleStore-Ingest-", 0).factory());
+		// LMDB writers are bound to a native thread. Keep one reusable platform worker so retiring an idle
+		// ingestion task retains the native owner without rescheduling virtual continuations.
+		return Executors.newSingleThreadExecutor(
+				Thread.ofPlatform().daemon(true).name("LmdbTripleStore-Ingest-", 0).factory());
 	}
 
 	private PersistentSetFactory<Long> setFactory;
@@ -2304,9 +2309,12 @@ class LmdbSailStore implements SailStore {
 	static final Operation COMMIT_TRANSACTION = () -> {
 	};
 
-	/** Barrier that reports all preceding async triple operations complete without publishing the transaction. */
-	static final Operation DRAIN_TRANSACTION = () -> {
-	};
+	/** Barrier for one captured generation and admission prefix; completion never reads mutable producer state. */
+	private record AsyncDrainOperation(long generation, long admitted) implements Operation {
+		@Override
+		public void execute() {
+		}
+	}
 
 	/**
 	 * Special operation that rolls the current transaction back.
@@ -2501,6 +2509,7 @@ class LmdbSailStore implements SailStore {
 	private final Object asyncProgress = new Object();
 	private final AsyncSignal asyncCallerProgress = new AsyncSignal();
 	private final AsyncSignal asyncOperationAvailable = new AsyncSignal();
+	private final AtomicInteger asyncCapacityWaiters = new AtomicInteger();
 	private volatile int asyncMonitorWaiters;
 	private NativeGrowthRequest pendingNativeGrowth;
 
@@ -3501,16 +3510,31 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private void enqueueAsync(Operation operation) throws IOException {
+	private QueryExecutionDeadline checkedAsyncDeadline() {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		return deadline;
+	}
+
+	private void enqueueAsync(Operation operation) throws IOException {
+		boolean drain = operation instanceof AsyncDrainOperation;
+		QueryExecutionDeadline deadline = checkedAsyncDeadline();
 		if (deadline != null) {
-			if (deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 			operation = new DeadlineOperation(operation, deadline);
 		}
 		while (!opQueue.add(operation)) {
-			awaitAsyncProgress(() -> !opQueue.isFull());
+			// Growth service can suspend or nest producer work; each capacity wait retains its registration.
+			asyncCapacityWaiters.incrementAndGet();
+			try {
+				awaitAsyncProgress(() -> !opQueue.isFull());
+			} finally {
+				asyncCapacityWaiters.decrementAndGet();
+			}
+		}
+		if (!drain) {
+			asyncOperationsAdmitted++;
 		}
 		asyncOperationAvailable.signal();
 	}
@@ -3522,7 +3546,11 @@ class LmdbSailStore implements SailStore {
 			long observed = asyncOperationAvailable.sequence();
 			if (!opQueue.isEmpty() || !running.get()) {
 				Operation operation = opQueue.remove();
-				signalAsyncProgress();
+				// Inspect registrations after publishing capacity. A later waiter observes the free slot;
+				// an earlier hot capacity or cold rollback waiter receives this dequeue notification.
+				if (operation == null || asyncCapacityWaiters.get() != 0 || asyncMonitorWaiters != 0) {
+					signalAsyncProgress();
+				}
 				return operation;
 			}
 			asyncOperationAvailable.await(observed, Long.MAX_VALUE);
@@ -4395,6 +4423,9 @@ class LmdbSailStore implements SailStore {
 				while (opQueue.remove() != null) {
 					// Discard only after the owning native thread has finished.
 				}
+				// Direct rollback admission bypasses enqueueAsync and retires every acknowledged or abandoned prefix.
+				completedAsyncDrain = null;
+				asyncOperationsAdmitted = 0L;
 				if (pendingNativeGrowth != null && pendingNativeGrowth.finished) {
 					pendingNativeGrowth = null;
 				}
@@ -4624,9 +4655,17 @@ class LmdbSailStore implements SailStore {
 			return;
 		}
 		try {
-			asyncOperationsDrained = false;
-			enqueueAsync(DRAIN_TRANSACTION);
-			awaitAsyncProgress(() -> asyncOperationsDrained);
+			AsyncDrainOperation drain = completedAsyncDrain;
+			if (drain == null || drain.generation() != storeTxnGeneration
+					|| drain.admitted() != asyncOperationsAdmitted) {
+				drain = new AsyncDrainOperation(storeTxnGeneration, asyncOperationsAdmitted);
+				enqueueAsync(drain);
+			} else {
+				checkedAsyncDeadline();
+			}
+			AsyncDrainOperation awaited = drain;
+			// Reusing a completed prefix still services growth requests and checks native failures.
+			awaitAsyncProgress(() -> completedAsyncDrain == awaited);
 		} catch (IOException failure) {
 			throw new SailException(failure);
 		}
@@ -6189,7 +6228,8 @@ class LmdbSailStore implements SailStore {
 					multiThreadingActive = preferThreading && enableMultiThreading;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;
-					asyncOperationsDrained = false;
+					asyncOperationsAdmitted = 0L;
+					completedAsyncDrain = null;
 					asyncRollbackException = null;
 					boolean workerRequired = false;
 					boolean workerSubmitted = false;
@@ -6225,8 +6265,8 @@ class LmdbSailStore implements SailStore {
 																asyncTransactionFinished = true;
 																signalAsyncProgress();
 																break;
-															} else if (op == DRAIN_TRANSACTION) {
-																asyncOperationsDrained = true;
+															} else if (op instanceof AsyncDrainOperation drain) {
+																completedAsyncDrain = drain;
 																signalAsyncProgress();
 															} else if (op == ROLLBACK_TRANSACTION) {
 																try {
@@ -6264,25 +6304,12 @@ class LmdbSailStore implements SailStore {
 												}
 
 											}
-											// keep thread running for at least 2ms to lock-free wait for the next
-											// transaction
-											long start = 0;
-											while (running.get() && !nextTransactionAsync) {
-												if (start == 0) {
-													// System.currentTimeMillis() is expensive, so only call it when we
-													// are sure we need to wait
-													start = System.currentTimeMillis();
-												}
-
-												if (System.currentTimeMillis() - start > 2) {
-													synchronized (storeTxnStarted) {
-														if (!nextTransactionAsync) {
-															running.set(false);
-															return;
-														}
-													}
-												} else {
-													Thread.yield();
+											// Admission uses this monitor too: continue an admitted generation or let
+											// its producer submit a new task on the same dedicated native owner.
+											synchronized (storeTxnStarted) {
+												if (!nextTransactionAsync) {
+													running.set(false);
+													return;
 												}
 											}
 										}

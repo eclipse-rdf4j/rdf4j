@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +22,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -28,20 +31,27 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(value = 15, unit = TimeUnit.SECONDS)
 class LmdbAsyncHandoffTest {
@@ -73,6 +83,84 @@ class LmdbAsyncHandoffTest {
 			assertEquals(1400, fixture.countStatements());
 			assertEquals(fixture.submittedSubjects, fixture.triples.executedSubjects,
 					"the single consumer must preserve the submitted mutation order through backpressure and drain");
+			assertEquals(1, fixture.triples.commits);
+		}
+	}
+
+	@Test
+	void fullQueueCapacityResumesBeforeNextNativeMutationCompletes(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.blockNextMutation = true;
+			CountDownLatch capacityReached = new CountDownLatch(1);
+			CountDownLatch capacityAdmission = new CountDownLatch(1);
+			Future<?> transaction = fixture.submit(() -> {
+				try (SailSink sink = fixture.sink()) {
+					fixture.approve(sink, 0);
+					await(fixture.triples.mutationEntered);
+					for (int i = 1; i < 1024; i++) {
+						fixture.approve(sink, i);
+					}
+					capacityReached.countDown();
+					fixture.approve(sink, 1024);
+					capacityAdmission.countDown();
+					sink.flush();
+				}
+			});
+			await(capacityReached);
+			awaitWaiting(fixture.caller);
+			assertFalse(transaction.isDone(), "the full queue must hold the next admission");
+			fixture.triples.releaseMutation.countDown();
+			await(fixture.triples.nextMutationEntered);
+			await(capacityAdmission);
+			assertFalse(transaction.isDone(), "capacity admission must not acknowledge the held native mutation");
+			assertEquals(1, fixture.triples.executedSubjects.size());
+			fixture.triples.releaseNextMutation.countDown();
+			transaction.get(8, TimeUnit.SECONDS);
+			assertEquals(1025, fixture.countStatements());
+			assertEquals(fixture.submittedSubjects, fixture.triples.executedSubjects);
+			assertEquals(1, fixture.triples.commits);
+		}
+	}
+
+	@Test
+	void fullQueueInterruptionWaitsForRollbackAndAllowsNextGeneration(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.blockRollback = true;
+			CountDownLatch capacityReached = new CountDownLatch(1);
+			AtomicBoolean interruptRestored = new AtomicBoolean();
+			Future<?> transaction = fixture.submit(() -> {
+				try (SailSink sink = fixture.sink()) {
+					fixture.approve(sink, 0);
+					await(fixture.triples.mutationEntered);
+					for (int i = 1; i < 1024; i++) {
+						fixture.approve(sink, i);
+					}
+					capacityReached.countDown();
+					fixture.approve(sink, 1024);
+					sink.flush();
+				} catch (RuntimeException failure) {
+					interruptRestored.set(Thread.currentThread().isInterrupted());
+					throw failure;
+				}
+			});
+			await(capacityReached);
+			awaitWaiting(fixture.caller);
+			fixture.caller.get().interrupt();
+			assertFalse(transaction.isDone(), "full-queue cleanup must retain the held native owner");
+			fixture.triples.releaseMutation.countDown();
+			await(fixture.triples.rollbackEntered);
+			assertFalse(transaction.isDone(), "cleanup must await the native rollback acknowledgement");
+			assertEquals(fixture.submittedSubjects.subList(0, 1024), fixture.triples.executedSubjects,
+					"rollback admission must follow every successfully admitted mutation in FIFO order");
+			fixture.triples.releaseRollback.countDown();
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> transaction.get(8, TimeUnit.SECONDS));
+			assertTrue(hasMessage(failure, "Interrupted while waiting for the native LMDB writer"));
+			assertTrue(interruptRestored.get());
+			assertEquals(0, fixture.countStatements());
+			assertEquals(0, fixture.triples.commits);
+			fixture.commitNextTransaction();
+			assertEquals(1, fixture.countStatements());
 			assertEquals(1, fixture.triples.commits);
 		}
 	}
@@ -151,6 +239,182 @@ class LmdbAsyncHandoffTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void nativeCompletionHandsNextGenerationToAnotherProducer(boolean commit, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.releaseMutation.countDown();
+			fixture.triples.blockCommit = commit;
+			fixture.triples.blockRollback = !commit;
+			CountDownLatch entered = commit ? fixture.triples.commitEntered : fixture.triples.rollbackEntered;
+			CountDownLatch release = commit ? fixture.triples.releaseCommit : fixture.triples.releaseRollback;
+			Future<?> first = fixture.submit(() -> {
+				try (SailSink sink = fixture.sink()) {
+					fixture.approve(sink, 0);
+					if (commit) {
+						sink.flush();
+					}
+				}
+			});
+			await(entered);
+			AtomicReference<Thread> nextCaller = new AtomicReference<>();
+			CountDownLatch nextAttempted = new CountDownLatch(1);
+			try (ExecutorService nextProducer = Executors.newVirtualThreadPerTaskExecutor()) {
+				Future<?> next = nextProducer.submit(() -> {
+					nextCaller.set(Thread.currentThread());
+					try (SailSink sink = fixture.sink()) {
+						nextAttempted.countDown();
+						fixture.approve(sink, 1);
+						sink.flush();
+					}
+				});
+				try {
+					await(nextAttempted);
+					awaitWaiting(nextCaller);
+					assertFalse(next.isDone(), "a competing producer must await the preceding native completion");
+					release.countDown();
+					first.get(8, TimeUnit.SECONDS);
+					next.get(8, TimeUnit.SECONDS);
+				} finally {
+					release.countDown();
+				}
+			}
+			assertEquals(commit ? 2 : 1, fixture.countStatements());
+			assertEquals(commit ? 2 : 1, fixture.triples.commits);
+			assertEquals(fixture.submittedSubjects, fixture.triples.executedSubjects);
+			Thread owner = fixture.triples.nativeOwners.getFirst();
+			assertFalse(owner.isVirtual(), "the native owner remains a platform thread across producer handoffs");
+			for (Thread observed : fixture.triples.nativeOwners) {
+				assertSame(owner, observed, "native begin, mutation and completion retain the dedicated owner");
+			}
+		}
+	}
+
+	@Test
+	void secondFlushDrainsNewMutationBeforeDictionaryPublication(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.releaseMutation.countDown();
+			Future<?> transaction = fixture.submit(() -> {
+				Object owner = new Object();
+				try (SailSink sink = fixture.backing.getExplicitSailSource(owner).sink(IsolationLevels.NONE)) {
+					try (SailClosable publication = fixture.backing.beginPublication(owner)) {
+						fixture.approve(sink, 0);
+						sink.flush();
+						fixture.triples.blockNextMutation = true;
+						fixture.approve(sink, 1);
+						sink.flush();
+					}
+				}
+			});
+			try {
+				await(fixture.triples.nextMutationEntered);
+				awaitWaiting(fixture.caller);
+				assertFalse(transaction.isDone(), "the second flush must include its newly admitted native mutation");
+				assertEquals(0, fixture.valueCommits.get(),
+						"dictionary publication must wait for every mutation admitted after the preceding drain");
+			} finally {
+				fixture.triples.releaseNextMutation.countDown();
+			}
+			transaction.get(8, TimeUnit.SECONDS);
+			assertEquals(2, fixture.countStatements());
+			assertEquals(1, fixture.valueCommits.get());
+			assertEquals(1, fixture.triples.commits);
+			assertEquals(fixture.submittedSubjects, fixture.triples.executedSubjects);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(AfterFlush.class)
+	void nestedPublicationRetainsWorkAdmittedAfterFlush(AfterFlush change, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.releaseMutation.countDown();
+			if (change == AfterFlush.REMOVE) {
+				fixture.commitNextTransaction();
+				fixture.valueCommits.set(0);
+				fixture.triples.commits = 0;
+			}
+			fixture.submit(() -> {
+				Object owner = new Object();
+				try (SailSink sink = fixture.backing.getExplicitSailSource(owner).sink(IsolationLevels.NONE)) {
+					try (SailClosable publication = fixture.backing.beginPublication(owner)) {
+						fixture.approve(sink, 0);
+						sink.flush();
+						try (SailClosable nested = fixture.backing.beginPublication(owner)) {
+							var values = SimpleValueFactory.getInstance();
+							switch (change) {
+							case NONE -> {
+							}
+							case SCALAR -> fixture.approve(sink, 1);
+							case BULK -> sink.approveAll(Set.of(
+									values.createStatement(values.createIRI("urn:async-handoff:subject:1"), PREDICATE,
+											values.createLiteral(1)),
+									values.createStatement(values.createIRI("urn:async-handoff:subject:2"), PREDICATE,
+											values.createLiteral(2))),
+									Set.of());
+							case REMOVE -> sink.deprecate(values.createStatement(
+									values.createIRI("urn:async-handoff:subject:10000"), PREDICATE,
+									values.createLiteral(10000)));
+							case NAMESPACE -> sink.setNamespace("after", "urn:after-flush:");
+							}
+							sink.flush();
+						}
+						assertEquals(0, fixture.valueCommits.get(), "nested flushes retain their outer publication");
+					}
+				}
+			}).get(8, TimeUnit.SECONDS);
+			assertEquals(switch (change) {
+			case NONE, NAMESPACE, REMOVE -> 1;
+			case SCALAR -> 2;
+			case BULK -> 3;
+			}, fixture.countStatements());
+			try (SailDataset dataset = fixture.backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+				assertEquals(change == AfterFlush.NAMESPACE ? "urn:after-flush:" : null, dataset.getNamespace("after"));
+			}
+			assertEquals(1, fixture.triples.commits);
+		}
+	}
+
+	private enum AfterFlush {
+		NONE,
+		SCALAR,
+		BULK,
+		REMOVE,
+		NAMESPACE
+	}
+
+	@Test
+	void repeatedFlushStillChecksExpiredDeadline(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			fixture.triples.releaseMutation.countDown();
+			fixture.submit(() -> {
+				Object owner = new Object();
+				try (SailSink sink = fixture.backing.getExplicitSailSource(owner).sink(IsolationLevels.NONE)) {
+					try (SailClosable publication = fixture.backing.beginPublication(owner)) {
+						fixture.approve(sink, 0);
+						sink.flush();
+						CountDownLatch expired = new CountDownLatch(1);
+						try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1);
+								QueryExecutionDeadline.Registration registration = deadline
+										.onExpiration(expired::countDown)) {
+							await(expired);
+							try (QueryExecutionDeadline.Scope scope = deadline.enter()) {
+								assertThrows(QueryInterruptedException.class, sink::flush,
+										"a completed prefix does not exempt a later flush from cancellation");
+							}
+						}
+					}
+				}
+			}).get(8, TimeUnit.SECONDS);
+			assertEquals(0, fixture.countStatements(), "failed nested publication must roll back its drained writes");
+			assertEquals(0, fixture.valueCommits.get());
+			assertEquals(0, fixture.triples.commits);
+			fixture.commitNextTransaction();
+			assertEquals(1, fixture.countStatements(), "the next generation must remain usable after expiration");
+		}
+	}
+
 	private static void await(CountDownLatch latch) throws InterruptedException {
 		assertTrue(latch.await(5, TimeUnit.SECONDS), "the controlled handoff must reach its next phase");
 	}
@@ -183,12 +447,19 @@ class LmdbAsyncHandoffTest {
 		private final ExecutorService executor = Executors.newSingleThreadExecutor();
 		private final AtomicReference<Thread> caller = new AtomicReference<>();
 		private final List<Long> submittedSubjects = new ArrayList<>();
+		private final AtomicInteger valueCommits = new AtomicInteger();
 
 		private Fixture(Path directory) throws IOException {
 			AtomicReference<ControlledTripleStore> store = new AtomicReference<>();
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(false);
 			backing = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), config,
 					false, (dir, props, cfg) -> new ValueStore(dir, props, cfg) {
+						@Override
+						public void commit() throws IOException {
+							super.commit();
+							valueCommits.incrementAndGet();
+						}
+
 						@Override
 						public long storeValue(Value value) throws IOException {
 							long id = super.storeValue(value);
@@ -203,6 +474,9 @@ class LmdbAsyncHandoffTest {
 						return result;
 					});
 			triples = store.get();
+			// Namespace initialization uses its own writer before the transactions exercised by these tests.
+			triples.nativeOwners.clear();
+			valueCommits.set(0);
 		}
 
 		private SailSink sink() {
@@ -246,7 +520,9 @@ class LmdbAsyncHandoffTest {
 		@Override
 		public void close() throws Exception {
 			triples.releaseMutation.countDown();
+			triples.releaseNextMutation.countDown();
 			triples.releaseCommit.countDown();
+			triples.releaseRollback.countDown();
 			executor.shutdown();
 			assertTrue(executor.awaitTermination(8, TimeUnit.SECONDS), "the caller must finish before fixture cleanup");
 			backing.close();
@@ -262,11 +538,18 @@ class LmdbAsyncHandoffTest {
 		private final AtomicBoolean firstMutation = new AtomicBoolean(true);
 		private final CountDownLatch mutationEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseMutation = new CountDownLatch(1);
+		private final CountDownLatch nextMutationEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseNextMutation = new CountDownLatch(1);
 		private final CountDownLatch commitEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseCommit = new CountDownLatch(1);
+		private final CountDownLatch rollbackEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseRollback = new CountDownLatch(1);
+		private final List<Thread> nativeOwners = new CopyOnWriteArrayList<>();
 		private final List<Long> executedSubjects = new ArrayList<>();
 		private volatile boolean failMutation;
+		private volatile boolean blockNextMutation;
 		private volatile boolean blockCommit;
+		private volatile boolean blockRollback;
 		private int commits;
 
 		private ControlledTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config,
@@ -277,12 +560,17 @@ class LmdbAsyncHandoffTest {
 		@Override
 		public boolean storeTriple(long subject, long predicate, long object, long context, boolean explicit)
 				throws IOException {
+			nativeOwners.add(Thread.currentThread());
 			if (firstMutation.compareAndSet(true, false)) {
 				mutationEntered.countDown();
 				awaitNativeRelease(releaseMutation);
 				if (failMutation) {
 					throw new IOException("controlled native mutation failure");
 				}
+			} else if (blockNextMutation) {
+				blockNextMutation = false;
+				nextMutationEntered.countDown();
+				awaitNativeRelease(releaseNextMutation);
 			}
 			boolean added = super.storeTriple(subject, predicate, object, context, explicit);
 			executedSubjects.add(subject);
@@ -291,6 +579,7 @@ class LmdbAsyncHandoffTest {
 
 		@Override
 		public void commit() throws IOException {
+			nativeOwners.add(Thread.currentThread());
 			if (blockCommit) {
 				blockCommit = false;
 				commitEntered.countDown();
@@ -298,6 +587,27 @@ class LmdbAsyncHandoffTest {
 			}
 			super.commit();
 			commits++;
+		}
+
+		@Override
+		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			super.startTransaction(decision);
+			if (nativeOwners != null) {
+				nativeOwners.add(Thread.currentThread());
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			if (nativeOwners != null) {
+				nativeOwners.add(Thread.currentThread());
+			}
+			if (blockRollback) {
+				blockRollback = false;
+				rollbackEntered.countDown();
+				awaitNativeRelease(releaseRollback);
+			}
+			super.rollback();
 		}
 
 		private static void awaitNativeRelease(CountDownLatch latch) throws IOException {
