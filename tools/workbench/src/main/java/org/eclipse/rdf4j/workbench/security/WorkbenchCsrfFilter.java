@@ -93,11 +93,17 @@ public final class WorkbenchCsrfFilter implements Filter {
 		if (!create) {
 			return null;
 		}
-		byte[] random = new byte[32];
-		SECURE_RANDOM.nextBytes(random);
-		String token = HexFormat.of().formatHex(random);
-		session.setAttribute(SESSION_ATTRIBUTE, token);
-		return token;
+		synchronized (session) {
+			current = session.getAttribute(SESSION_ATTRIBUTE);
+			if (current instanceof String && !((String) current).isEmpty()) {
+				return (String) current;
+			}
+			byte[] random = new byte[32];
+			SECURE_RANDOM.nextBytes(random);
+			String token = HexFormat.of().formatHex(random);
+			session.setAttribute(SESSION_ATTRIBUTE, token);
+			return token;
+		}
 	}
 
 	private static Cookie tokenCookie(HttpServletRequest request, String token) {

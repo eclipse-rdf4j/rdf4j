@@ -87,7 +87,8 @@ test('template protects loaded, event-submitted, and native-submitted POST forms
 
     assert.equal(loadedForm.querySelector('input[name="_csrf"]').value, token);
     assert.equal(getForm.querySelector('input[name="_csrf"]'), null);
-    assert.equal(harness.context.$.ajaxSettings.headers['X-RDF4J-CSRF-Token'], token);
+    harness.context.$.ajax({ url: 'query', type: 'POST' });
+    assert.equal(harness.ajaxRequests[0].options.headers['X-RDF4J-CSRF-Token'], token);
 
     const eventForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
         method: 'post'
@@ -103,6 +104,39 @@ test('template protects loaded, event-submitted, and native-submitted POST forms
     assert.equal(nativeForm.submitCount, 2);
     assert.equal(nativeForm.getElementsByTagName('input').length, 1);
     assert.equal(nativeForm.querySelector('input[name="_csrf"]').value, token);
+});
+
+test('template refreshes CSRF tokens after session renewal for same-origin requests', () => {
+    class FakeHTMLFormElement extends FakeElement {
+    }
+
+    const harness = createFormBrowserHarness({
+        href: 'https://example.org/rdf4j-workbench/repositories/test/query',
+        globals: { HTMLFormElement: FakeHTMLFormElement }
+    });
+    const oldToken = 'a'.repeat(64);
+    const newToken = 'b'.repeat(64);
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + oldToken;
+
+    const loadedForm = harness.document.register(new FakeHTMLFormElement(harness.document, 'form', {
+        method: 'post'
+    }));
+    harness.document.body.appendChild(loadedForm);
+    harness.loadScripts([]);
+    harness.runLoadHandlers();
+
+    harness.document.cookie = 'rdf4j-workbench-csrf=' + newToken;
+    harness.document.trigger('submit', { target: loadedForm });
+    harness.context.$.ajax({ url: 'query', type: 'POST' });
+    harness.context.$.ajax({ url: 'https://attacker.example/collect', type: 'POST' });
+    harness.context.$.ajax({ url: 'http://example.org/collect', type: 'POST' });
+    harness.context.$.ajax({ url: 'https://example.org:8443/collect', type: 'POST' });
+
+    assert.equal(loadedForm.querySelector('input[name="_csrf"]').value, newToken);
+    assert.equal(harness.ajaxRequests[0].options.headers['X-RDF4J-CSRF-Token'], newToken);
+    harness.ajaxRequests.slice(1).forEach((request) => {
+        assert.equal(request.options.headers['X-RDF4J-CSRF-Token'], undefined);
+    });
 });
 
 test('template renders credential-cookie usernames as text instead of HTML', () => {

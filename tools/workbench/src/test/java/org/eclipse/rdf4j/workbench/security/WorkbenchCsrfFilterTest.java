@@ -13,7 +13,15 @@ package org.eclipse.rdf4j.workbench.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -43,6 +51,21 @@ class WorkbenchCsrfFilterTest {
 		assertThat(token.getSecure()).isTrue();
 		assertThat(token.isHttpOnly()).isFalse();
 		assertThat(token.getAttribute("SameSite")).isEqualTo("Strict");
+	}
+
+	@Test
+	void createsOneTokenWhenSafeRequestsRaceOnTheSameSession() throws Exception {
+		CoordinatedSession session = new CoordinatedSession();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<String> first = executor.submit(() -> safeRequestToken(session));
+			Future<String> second = executor.submit(() -> safeRequestToken(session));
+
+			assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(second.get(10, TimeUnit.SECONDS));
+		} finally {
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+		}
 	}
 
 	@Test
@@ -157,6 +180,15 @@ class WorkbenchCsrfFilterTest {
 				response.getCookie(WorkbenchCsrfFilter.TOKEN_COOKIE).getValue());
 	}
 
+	private String safeRequestToken(MockHttpSession session) throws Exception {
+		MockHttpServletRequest request = request("GET");
+		request.setSession(session);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		filter.doFilter(request, response, (req, resp) -> {
+		});
+		return response.getCookie(WorkbenchCsrfFilter.TOKEN_COOKIE).getValue();
+	}
+
 	private MockHttpServletRequest post(TokenState state) {
 		MockHttpServletRequest request = request("POST");
 		request.setSession(state.session());
@@ -191,5 +223,27 @@ class WorkbenchCsrfFilterTest {
 	}
 
 	private record TokenState(MockHttpSession session, String token) {
+	}
+
+	private static final class CoordinatedSession extends MockHttpSession {
+
+		private final CyclicBarrier firstReads = new CyclicBarrier(2);
+		private final AtomicInteger reads = new AtomicInteger();
+
+		@Override
+		public Object getAttribute(String name) {
+			Object value = super.getAttribute(name);
+			if (reads.getAndIncrement() < 2) {
+				try {
+					firstReads.await(10, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("Interrupted while coordinating concurrent session reads", e);
+				} catch (BrokenBarrierException | TimeoutException e) {
+					throw new AssertionError("Could not coordinate concurrent session reads", e);
+				}
+			}
+			return value;
+		}
 	}
 }

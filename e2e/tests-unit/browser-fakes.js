@@ -1001,6 +1001,7 @@ function createFragment(document, selector) {
 }
 
 function createJQuery(document, ajaxHandler) {
+    const ajaxPrefilters = [];
     const $ = (selector) => {
         if (selector instanceof FakeElement) {
             return new JQueryCollection([selector]);
@@ -1031,8 +1032,32 @@ function createJQuery(document, ajaxHandler) {
             })
             .join('&');
     };
-    $.ajax = ajaxHandler;
     $.ajaxSettings = { headers: {} };
+    $.ajax = (urlOrOptions, options) => {
+        const originalOptions = typeof urlOrOptions === 'string'
+            ? Object.assign({}, options || {}, { url: urlOrOptions })
+            : Object.assign({}, urlOrOptions || {});
+        const settings = Object.assign({}, $.ajaxSettings, originalOptions, {
+            headers: Object.assign({}, $.ajaxSettings.headers, originalOptions.headers || {})
+        });
+        if (settings.crossDomain == null) {
+            const pageUrl = new URL(document.location.href);
+            const requestUrl = new URL(settings.url || pageUrl.href, pageUrl.href);
+            settings.crossDomain = requestUrl.origin !== pageUrl.origin;
+        }
+        const jqXHR = {
+            setRequestHeader(name, value) {
+                settings.headers[name] = value;
+                return this;
+            }
+        };
+        ajaxPrefilters.forEach((prefilter) => prefilter(settings, originalOptions, jqXHR));
+        return ajaxHandler(settings);
+    };
+    $.ajaxPrefilter = (dataTypes, handler) => {
+        const prefilter = typeof dataTypes === 'function' ? dataTypes : handler;
+        ajaxPrefilters.push(prefilter);
+    };
     $.ajaxSetup = (settings = {}) => {
         $.ajaxSettings = Object.assign({}, $.ajaxSettings, settings, {
             headers: Object.assign({}, $.ajaxSettings.headers, settings.headers || {})

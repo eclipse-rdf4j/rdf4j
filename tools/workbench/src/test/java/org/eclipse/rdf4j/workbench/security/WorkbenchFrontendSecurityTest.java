@@ -30,14 +30,18 @@ class WorkbenchFrontendSecurityTest {
 	}
 
 	@Test
-	void browserAddsTheSessionTokenToEveryPostAndAjaxRequest() throws Exception {
+	void browserRefreshesTheSessionTokenForEveryPostAndSameOriginAjaxRequest() throws Exception {
 		String template = Files.readString(Path.of("src/main/webapp/scripts/ts/template.ts"));
 		String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"));
 
 		assertThat(template)
 				.contains("getCookie('rdf4j-workbench-csrf')")
 				.contains("input.name = '_csrf';")
-				.contains("'X-RDF4J-CSRF-Token': token")
+				.contains("input.value = token;")
+				.contains("$.ajaxPrefilter")
+				.contains("if (!options.crossDomain)")
+				.contains("options.headers['X-RDF4J-CSRF-Token'] = requestToken;")
+				.doesNotContain("$.ajaxSetup")
 				.contains("document.addEventListener('submit'")
 				.contains("if (!nativeFormSubmit.rdf4jCsrfProtected)")
 				.contains("csrfProtectedFormSubmit.rdf4jCsrfProtected = true;")

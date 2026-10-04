@@ -160,7 +160,7 @@ In general, read operations are effected using `GET` and write operations using 
 
 RDF4J Server rejects state-changing browser requests when their `Origin` or `Referer` identifies another origin. Requests without browser origin metadata remain supported as non-browser API traffic. A browser client that intentionally uses the RDF4J API across origins must send `X-RDF4J-Request: true`; this triggers a CORS preflight, so the deployment's CORS policy must explicitly allow both the client origin and this header. An ordinary cross-origin HTML form cannot add that header.
 
-RDF4J Workbench additionally requires a random, session-bound token for every state-changing request. Workbench adds this token to its forms and Ajax requests automatically. Reverse proxies should preserve the public `Host` header so same-origin checks compare against the browser-visible origin.
+RDF4J Workbench additionally requires a random, session-bound token for every state-changing request. Workbench adds this token to its forms and Ajax requests automatically. Reverse proxies must preserve the browser-visible `Host` and configure trusted proxy or servlet-container forwarding so `HttpServletRequest.getScheme()`, `getServerName()`, `getServerPort()`, and `isSecure()` describe the browser-visible origin. This is especially important when TLS terminates at the proxy: otherwise an external HTTPS origin is compared with the internal HTTP connector, legitimate mutations are rejected, and the Workbench token cookie is not marked `Secure`. Only accept forwarded request metadata from known proxies, not directly from untrusted clients.
 
 ### Security constraints and roles
 

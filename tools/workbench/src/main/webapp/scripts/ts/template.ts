@@ -83,16 +83,20 @@ module workbench {
     /** Adds the session-bound request-integrity token to forms and Ajax requests. */
     export function installCsrfProtection() {
         var token = getCookie('rdf4j-workbench-csrf');
-        if (!token) {
-            return;
+        if (token) {
+            var forms = document.getElementsByTagName('form');
+            for (var i = 0; i < forms.length; i++) {
+                addCsrfToken(forms[i], token);
+            }
         }
-        var forms = document.getElementsByTagName('form');
-        for (var i = 0; i < forms.length; i++) {
-            addCsrfToken(forms[i], token);
-        }
-        $.ajaxSetup({
-            headers: {
-                'X-RDF4J-CSRF-Token': token
+
+        $.ajaxPrefilter(function(options: JQueryAjaxSettings) {
+            if (!options.crossDomain) {
+                var requestToken = getCookie('rdf4j-workbench-csrf');
+                if (requestToken) {
+                    options.headers = options.headers || {};
+                    options.headers['X-RDF4J-CSRF-Token'] = requestToken;
+                }
             }
         });
     }
@@ -102,13 +106,15 @@ module workbench {
     }
 
     function addCsrfToken(form: HTMLFormElement, token: string) {
-        if (token && form.method.toLowerCase() == 'post'
-            && !form.querySelector('input[name="_csrf"]')) {
-            var input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = '_csrf';
+        if (token && form.method.toLowerCase() == 'post') {
+            var input = <HTMLInputElement>form.querySelector('input[name="_csrf"]');
+            if (!input) {
+                input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = '_csrf';
+                form.appendChild(input);
+            }
             input.value = token;
-            form.appendChild(input);
         }
     }
 }
