@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,10 +27,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.Future;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
@@ -40,6 +44,81 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class AsyncIteratorReplayContextTest {
+	@Test
+	void workerMayCancelItselfWithoutLosingItsInterrupt() throws Exception {
+		AsyncIteratorWorker worker = new AsyncIteratorWorker();
+		CountDownLatch returned = new CountDownLatch(1);
+		AtomicBoolean interrupted = new AtomicBoolean();
+		ExecutorService executor = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().factory());
+		try {
+			worker.submit(executor, () -> {
+				Thread.currentThread().interrupt();
+				worker.cancelAndAwait();
+				interrupted.set(Thread.currentThread().isInterrupted());
+				returned.countDown();
+				return null;
+			});
+			assertTrue(returned.await(5, TimeUnit.SECONDS),
+					"worker-owned cancellation must permit the worker to unwind");
+			worker.cancelAndAwait();
+			assertTrue(interrupted.get(), "reentrant cancellation must preserve an existing interrupt");
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void nestedTrackedTasksKeepTheirWorkerOwnership() throws Exception {
+		AsyncIteratorWorker worker = new AsyncIteratorWorker();
+		CountDownLatch returned = new CountDownLatch(1);
+		ExecutorService executor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.NANOSECONDS, new SynchronousQueue<>(),
+				Thread.ofPlatform().daemon().factory(), new ThreadPoolExecutor.CallerRunsPolicy());
+		try {
+			worker.submit(executor, () -> {
+				// Saturation executes the nested task on its submitting worker.
+				worker.submit(executor, () -> {
+					worker.cancelAndAwait();
+					return null;
+				});
+				worker.cancelAndAwait();
+				returned.countDown();
+				return null;
+			});
+			assertTrue(returned.await(5, TimeUnit.SECONDS),
+					"returning from a nested task must retain its enclosing worker's ownership");
+			worker.cancelAndAwait();
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void reentrantCleanupFailureStillReleasesTheWorker() throws Exception {
+		AsyncIteratorWorker worker = new AsyncIteratorWorker();
+		CountDownLatch returned = new CountDownLatch(1);
+		IllegalStateException failure = new IllegalStateException("delegate cleanup failed");
+		AtomicReference<RuntimeException> propagated = new AtomicReference<>();
+		ExecutorService executor = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().factory());
+		try {
+			worker.submit(executor, () -> {
+				try {
+					worker.cancelAndAwait();
+					throw failure;
+				} catch (RuntimeException cleanupFailure) {
+					propagated.set(cleanupFailure);
+					throw cleanupFailure;
+				} finally {
+					returned.countDown();
+				}
+			});
+			assertTrue(returned.await(5, TimeUnit.SECONDS), "a failing reentrant cleanup must still unwind");
+			worker.cancelAndAwait();
+			assertSame(failure, propagated.get());
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
 	@Test
 	void bufferPropagatesReplayFailureFromItsWorker() {
 		AsyncIteratorBuffer iteration = new AsyncIteratorBuffer(new CheckpointIteration());

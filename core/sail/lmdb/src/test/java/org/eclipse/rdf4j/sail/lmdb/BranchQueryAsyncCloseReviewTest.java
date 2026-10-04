@@ -14,12 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -34,11 +35,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.AsyncIteratorBuffer;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.AsyncIteratorDirect;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.AsyncIteratorReadAhead;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Retained branch-review reproduction. The child process bounds a worker self-deadlock. */
 class BranchQueryAsyncCloseReviewTest {
@@ -46,15 +51,39 @@ class BranchQueryAsyncCloseReviewTest {
 	@Test
 	@Timeout(value = 25, unit = TimeUnit.SECONDS)
 	void closingObservedAsyncResultMustFinishWorkerOwnedDelegateCleanup(@TempDir Path dataDir) throws Exception {
+		assertProbe(dataDir, "buffer");
+	}
+
+	@ParameterizedTest
+	@MethodSource("asyncCompositions")
+	@Timeout(value = 25, unit = TimeUnit.SECONDS)
+	void workerOwnedCleanupSupportsAllAsyncIteratorCompositions(String composition, @TempDir Path dataDir)
+			throws Exception {
+		assertProbe(dataDir, composition);
+	}
+
+	private static Stream<String> asyncCompositions() {
+		return Stream.concat(Stream.of("direct", "read-ahead"),
+				Stream.of("buffer", "direct", "read-ahead")
+						.flatMap(outer -> Stream.of("buffer", "direct", "read-ahead")
+								.map(inner -> outer + "/" + inner)));
+	}
+
+	private static void assertProbe(Path dataDir, String composition) throws Exception {
 		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
-		Process probe = new ProcessBuilder(java, "-ea", "-cp", classpath, Probe.class.getName(), dataDir.toString())
-				.redirectErrorStream(true)
-				.start();
+		Path outputFile = dataDir.resolve("probe-output.txt");
+		Process probe = new ProcessBuilder(java, "-ea", "-cp", classpath, Probe.class.getName(),
+				dataDir.resolve("store").toString(),
+				composition)
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
 		try {
-			assertTrue(probe.waitFor(15, TimeUnit.SECONDS), "the bounded review probe must terminate");
-			String output = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			boolean terminated = probe.waitFor(15, TimeUnit.SECONDS);
+			String output = Files.readString(outputFile);
 			System.out.print(output);
+			assertTrue(terminated, "the bounded review probe must terminate\n" + output);
 			assertEquals(0, probe.exitValue(), output);
 		} finally {
 			if (probe.isAlive()) {
@@ -68,6 +97,7 @@ class BranchQueryAsyncCloseReviewTest {
 		private static final CountDownLatch workerBlocked = new CountDownLatch(1);
 		private static final CountDownLatch releaseWorker = new CountDownLatch(1);
 		private static final CountDownLatch delegateClosed = new CountDownLatch(1);
+		private static final AtomicInteger delegateCloseCalls = new AtomicInteger();
 
 		public static void main(String[] arguments) {
 			int outcome = 2;
@@ -82,7 +112,7 @@ class BranchQueryAsyncCloseReviewTest {
 							@Override
 							public QueryEvaluationStep precompile(TupleExpr expression) {
 								QueryEvaluationStep step = super.precompile(expression);
-								return bindings -> new AsyncIteratorBuffer(gated(step.evaluate(bindings)));
+								return bindings -> asynchronous(gated(step.evaluate(bindings)), arguments[1]);
 							}
 						};
 					}
@@ -113,6 +143,9 @@ class BranchQueryAsyncCloseReviewTest {
 					System.out.println("PASS: observed async query closed its delegate after its worker unwound");
 					owner.close();
 					repository.shutDown();
+					if (delegateCloseCalls.get() != 1) {
+						throw new AssertionError("the async delegate must be closed exactly once");
+					}
 					outcome = 0;
 				}
 			} catch (Throwable failure) {
@@ -121,6 +154,20 @@ class BranchQueryAsyncCloseReviewTest {
 				releaseWorker.countDown();
 				System.exit(outcome);
 			}
+		}
+
+		private static CloseableIteration<BindingSet> asynchronous(CloseableIteration<BindingSet> source,
+				String composition) {
+			CloseableIteration<BindingSet> iteration = source;
+			for (String kind : composition.split("/")) {
+				iteration = switch (kind) {
+				case "buffer" -> new AsyncIteratorBuffer(iteration);
+				case "direct" -> new AsyncIteratorDirect(iteration);
+				case "read-ahead" -> new AsyncIteratorReadAhead(iteration);
+				default -> throw new IllegalArgumentException("Unknown async iterator " + kind);
+				};
+			}
+			return iteration;
 		}
 
 		private static CloseableIteration<BindingSet> gated(CloseableIteration<BindingSet> source) {
@@ -152,6 +199,7 @@ class BranchQueryAsyncCloseReviewTest {
 
 				@Override
 				protected void handleClose() {
+					delegateCloseCalls.incrementAndGet();
 					try {
 						super.handleClose();
 					} finally {

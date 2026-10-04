@@ -199,6 +199,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected final TripleSource tripleSource;
 
+	private Function<Value, Value> queryValueCapturer;
+	private volatile boolean valueCapturerInitialized;
+
 	protected final Dataset dataset;
 
 	protected FederatedServiceResolver serviceResolver;
@@ -876,8 +879,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private Function<Value, Value> valueCapturer() {
-		// Scalar-only strategies do not need a triple source and retain the ordinary no-capability path.
-		return tripleSource == null ? null : tripleSource.getValueCapturer();
+		if (!valueCapturerInitialized) {
+			synchronized (this) {
+				if (!valueCapturerInitialized) {
+					// A source owns one captured read view but may return a fresh function on each access.
+					queryValueCapturer = tripleSource == null ? null : tripleSource.getValueCapturer();
+					valueCapturerInitialized = true;
+				}
+			}
+		}
+		return queryValueCapturer;
 	}
 
 	private static BindingSet captureBindings(BindingSet bindings,
@@ -1133,15 +1144,17 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else {
 			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
 		}
-		return wrapValueExprTelemetry(expr, captureConstantValue(prepared));
+		return wrapValueExprTelemetry(expr, captureConstantValue(prepared, context));
 	}
 
-	private QueryValueEvaluationStep captureConstantValue(QueryValueEvaluationStep prepared) {
+	private QueryValueEvaluationStep captureConstantValue(QueryValueEvaluationStep prepared,
+			QueryEvaluationContext context) {
 		if (!prepared.isConstant()) {
 			return prepared;
 		}
 		var capturer = valueCapturer();
-		return capturer == null ? prepared : new CapturedConstantValueStep(prepared, capturer);
+		return capturer == null ? prepared
+				: new CapturedConstantValueStep(prepared, value -> context.captureConstant(value, capturer));
 	}
 
 	private static final class CapturedConstantValueStep implements QueryValueEvaluationStep {

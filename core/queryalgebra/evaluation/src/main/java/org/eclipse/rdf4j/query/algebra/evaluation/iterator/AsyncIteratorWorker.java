@@ -20,6 +20,7 @@ import java.util.concurrent.FutureTask;
 /** Tracks admitted asynchronous iterator work until the worker body has actually returned. */
 final class AsyncIteratorWorker {
 	private final Object monitor = new Object();
+	private final ThreadLocal<Boolean> workerThread = new ThreadLocal<>();
 	private volatile boolean cancelled;
 	private int activeWorkers;
 	private Future<?> future;
@@ -30,9 +31,16 @@ final class AsyncIteratorWorker {
 			if (!enter()) {
 				return null;
 			}
+			Boolean previous = workerThread.get();
+			workerThread.set(Boolean.TRUE);
 			try {
 				return task.call();
 			} finally {
+				if (previous == null) {
+					workerThread.remove();
+				} else {
+					workerThread.set(previous);
+				}
 				exit();
 			}
 		};
@@ -64,6 +72,12 @@ final class AsyncIteratorWorker {
 		if (submitted != null) {
 			submitted.cancel(true);
 		}
+		// A captured context may close this iterator while its worker is unwinding. Waiting from that
+		// worker would prevent it from returning; external closers still wait for all admitted work.
+		if (Boolean.TRUE.equals(workerThread.get())) {
+			return;
+		}
+		workerThread.remove();
 
 		boolean interrupted = Thread.interrupted();
 		synchronized (monitor) {

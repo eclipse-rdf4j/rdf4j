@@ -1298,6 +1298,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 
 		@Override
+		public Value captureConstant(Value value, Function<Value, Value> capturer) {
+			return delegate.captureConstant(value, capturer);
+		}
+
+		@Override
 		public Dataset getDataset() {
 			return delegate.getDataset();
 		}

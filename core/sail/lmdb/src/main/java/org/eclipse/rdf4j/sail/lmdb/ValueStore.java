@@ -154,6 +154,10 @@ class ValueStore extends AbstractValueFactory {
 
 	private static final byte HASHID_KEY = 7;
 
+	// This non-ID key is committed with reconstructed counts, never in store.properties.
+	private static final byte[] REF_COUNTS_VERSION_KEY = { 0 };
+	private static final byte[] REF_COUNTS_VERSION = { 1 };
+
 	/***
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
@@ -363,6 +367,8 @@ class ValueStore extends AbstractValueFactory {
 			termIndexManifestDbi = openTermIndexManifestDatabase();
 			initTermIndexes(config);
 			commit();
+			rebuildReferenceCountsIfNeeded();
+			freeUnusedIdsOnStartup();
 
 			// read maximum id from store
 			readTransaction(env, (stack, txn) -> {
@@ -600,7 +606,17 @@ class ValueStore extends AbstractValueFactory {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, freeDbi, stat));
 			freeIdsAvailable = stat.ms_entries() > 0;
+			return null;
+		});
+		refreshCommittedHighWater();
+		synchronized (writerAdmission) {
+			shuttingDown = false;
+		}
+	}
 
+	private void freeUnusedIdsOnStartup() throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, unusedDbi, stat));
 			if (stat.ms_entries() > 0) {
 				// free unused IDs
@@ -614,9 +630,6 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 		refreshCommittedHighWater();
-		synchronized (writerAdmission) {
-			shuttingDown = false;
-		}
 	}
 
 	private int openTermIndexManifestDatabase() throws IOException {
@@ -635,6 +648,208 @@ class ValueStore extends AbstractValueFactory {
 		// value environment without the named database, so existing stores do not grow their maps on every open.
 		resizeMap(writeTxn, LmdbUtil.MIN_FREE_SPACE);
 		return LmdbUtil.openDatabaseWithTxn(writeTxn, TERM_INDEX_MANIFEST_DATABASE, MDB_CREATE);
+	}
+
+	/**
+	 * Legacy increment readers omitted ID_KEY and could overwrite committed counts. Reconstruct from active forward
+	 * mappings before physically reclaiming retired reverse mappings. Completion and all counts share one transaction.
+	 */
+	private void rebuildReferenceCountsIfNeeded() throws IOException {
+		while (true) {
+			try {
+				LmdbUtil.writeTransaction(env, (stack, txn) -> {
+					MDBVal marker = MDBVal.calloc(stack);
+					marker.mv_data(stack.bytes(REF_COUNTS_VERSION_KEY));
+					MDBVal data = MDBVal.calloc(stack);
+					if (E(mdb_get(txn, refCountsDbi, marker, data)) == MDB_SUCCESS) {
+						if (data.mv_data().compareTo(ByteBuffer.wrap(REF_COUNTS_VERSION)) != 0) {
+							throw new IOException("Unsupported LMDB reference-count version");
+						}
+						return null;
+					}
+
+					E(mdb_drop(txn, refCountsDbi, false));
+					rebuildReferenceCounts(stack, txn);
+					data.mv_data(stack.bytes(REF_COUNTS_VERSION));
+					E(mdb_put(txn, refCountsDbi, marker, data, 0));
+					return null;
+				});
+				txnManager.reset();
+				return;
+			} catch (LmdbUtil.LmdbException e) {
+				if (e.errorCode != MDB_MAP_FULL) {
+					throw e;
+				}
+				if (!autoGrow) {
+					throw new IOException(
+							"MDB_MAP_FULL: Insufficient space to rebuild LMDB reference counts atomically", e);
+				}
+			} finally {
+				refCountsTxCache.clear();
+			}
+
+			// resizeMap commits an active writer, so grow only after the whole failed rebuild has been aborted.
+			txnManager.deactivate();
+			try {
+				long newSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, mapSize);
+				E(mdb_env_set_mapsize(env, newSize));
+				mapSize = newSize;
+			} finally {
+				txnManager.activate();
+			}
+		}
+	}
+
+	private void rebuildReferenceCounts(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer pp = stack.mallocPointer(1);
+		long valuesCursor = 0;
+		long termsCursor = 0;
+		long targetTermsCursor = 0;
+		try {
+			E(mdb_cursor_open(txn, dbi, pp));
+			valuesCursor = pp.get(0);
+			E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+			termsCursor = pp.get(0);
+			E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+			targetTermsCursor = pp.get(0);
+			validatePendingRetirements(stack, txn, targetTermsCursor);
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			key.mv_data(stack.bytes(ID_KEY));
+			int rc = E(mdb_cursor_get(valuesCursor, key, data, MDB_SET_RANGE));
+			while (rc == MDB_SUCCESS && key.mv_data().get(0) == ID_KEY) {
+				long id = data2id(key.mv_data());
+				try {
+					stack.push();
+					ByteBuffer value = data.mv_data();
+					if (hasActiveValueMapping(stack, txn, id, value)
+							&& (value.get(0) == LITERAL_VALUE || value.get(0) == URI_VALUE)) {
+						long targetId = Varint.readUnsigned(value, 1);
+						addRebuiltReference(stack, txn, targetTermsCursor, id, targetId);
+					}
+				} finally {
+					stack.pop();
+				}
+				rc = E(mdb_cursor_get(valuesCursor, key, data, MDB_NEXT));
+			}
+
+			rc = E(mdb_cursor_get(termsCursor, key, data, MDB_FIRST));
+			while (rc == MDB_SUCCESS) {
+				long[] quad = new long[4];
+				tripleTermSpocIndex.keyToQuad(key.mv_data(), quad);
+				try {
+					stack.push();
+					for (int i = 0; i < 3; i++) {
+						addRebuiltReference(stack, txn, targetTermsCursor, quad[TripleIndex.CONTEXT_IDX], quad[i]);
+					}
+				} finally {
+					stack.pop();
+				}
+				rc = E(mdb_cursor_get(termsCursor, key, data, MDB_NEXT));
+			}
+		} finally {
+			if (targetTermsCursor != 0) {
+				mdb_cursor_close(targetTermsCursor);
+			}
+			if (termsCursor != 0) {
+				mdb_cursor_close(termsCursor);
+			}
+			if (valuesCursor != 0) {
+				mdb_cursor_close(valuesCursor);
+			}
+		}
+	}
+
+	private void addRebuiltReference(MemoryStack stack, long txn, long termsCursor, long sourceId, long targetId)
+			throws IOException {
+		if (targetId != 0 && !ValueIds.isInlined(targetId) && !isActiveStoredId(stack, txn, termsCursor, targetId)) {
+			throw new IOException("Cannot rebuild LMDB reference counts: value " + sourceId
+					+ " references missing or retired value " + targetId);
+		}
+		incrementRefCount(stack, txn, targetId);
+		updateRefCounts(stack, txn);
+		refCountsTxCache.clear();
+	}
+
+	private void validatePendingRetirements(MemoryStack stack, long txn, long termsCursor) throws IOException {
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, unusedDbi, pp));
+		long cursor = pp.get(0);
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			int rc = E(mdb_cursor_get(cursor, key, data, MDB_FIRST));
+			while (rc == MDB_SUCCESS) {
+				ByteBuffer pendingKey = key.mv_data();
+				Varint.readUnsigned(pendingKey);
+				long id = data2id(pendingKey);
+				try {
+					stack.push();
+					if (isActiveStoredId(stack, txn, termsCursor, id)) {
+						throw new IOException(
+								"Cannot rebuild LMDB reference counts: pending retirement for active value "
+										+ id);
+					}
+				} finally {
+					stack.pop();
+				}
+				rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private boolean isActiveStoredId(MemoryStack stack, long txn, long termsCursor, long id) throws IOException {
+		MDBVal key = MDBVal.calloc(stack);
+		MDBVal data = MDBVal.calloc(stack);
+		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+			ByteBuffer termKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			tripleTermCspoIndex.getMinKey(termKey, -1, -1, -1, id);
+			key.mv_data(termKey.flip());
+			if (E(mdb_cursor_get(termsCursor, key, data, MDB_SET_RANGE)) != MDB_SUCCESS
+					|| !tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(key.mv_data())) {
+				return false;
+			}
+			long[] quad = new long[4];
+			tripleTermCspoIndex.keyToQuad(key.mv_data(), quad);
+			return hasActiveTripleTermMapping(stack, txn, quad);
+		}
+		key.mv_data(id2data(idBuffer(stack), id).flip());
+		return E(mdb_get(txn, dbi, key, data)) == MDB_SUCCESS
+				&& hasActiveValueMapping(stack, txn, id, data.mv_data());
+	}
+
+	private boolean hasActiveValueMapping(MemoryStack stack, long txn, long id, ByteBuffer value) throws IOException {
+		MDBVal key = MDBVal.calloc(stack);
+		MDBVal data = MDBVal.calloc(stack);
+		if (value.remaining() <= MAX_KEY_SIZE) {
+			key.mv_data(value.duplicate());
+			return E(mdb_get(txn, dbi, key, data)) == MDB_SUCCESS && data2id(data.mv_data()) == id;
+		}
+		CRC32 crc = new CRC32();
+		crc.update(value.duplicate());
+		ByteBuffer hashKey = stack.malloc(2 + 2 * Long.BYTES + 2);
+		hashKey.put(HASH_KEY);
+		Varint.writeUnsigned(hashKey, crc.getValue());
+		int hashLength = hashKey.position();
+		key.mv_data(hashKey.flip());
+		if (E(mdb_get(txn, dbi, key, data)) == MDB_SUCCESS && data2id(data.mv_data()) == id) {
+			return true;
+		}
+		hashKey.limit(hashKey.capacity()).position(hashLength);
+		hashKey.put(0, HASHID_KEY);
+		id2data(hashKey, id);
+		key.mv_data(hashKey.flip());
+		return E(mdb_get(txn, dbi, key, data)) == MDB_SUCCESS;
+	}
+
+	private boolean hasActiveTripleTermMapping(MemoryStack stack, long txn, long[] quad) throws IOException {
+		MDBVal key = MDBVal.calloc(stack);
+		ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		tripleTermSpocIndex.toKey(keyBuffer, quad[0], quad[1], quad[2], quad[3]);
+		key.mv_data(keyBuffer.flip());
+		return E(mdb_get(txn, tripleTermSpocIndex.getDB(true), key, MDBVal.calloc(stack))) == MDB_SUCCESS;
 	}
 
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
@@ -2787,82 +3002,49 @@ class ValueStore extends AbstractValueFactory {
 		this.resizeCheckpointListener = resizeCheckpointListener;
 	}
 
-	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) {
+	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) throws IOException {
 		// literals have a datatype id and URIs have a namespace id
 		if (data[0] == LITERAL_VALUE || data[0] == URI_VALUE) {
 			// skip type marker
 			long id = Varint.readUnsigned(ByteBuffer.wrap(data, 1, data.length - 1));
-			refCountsTxCache.compute(id, (k, v) -> {
-				if (v == null) {
-					try {
-						stack.push();
-						MDBVal idVal = MDBVal.calloc(stack);
-						MDBVal dataVal = MDBVal.calloc(stack);
-						idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
-						long newCount = 1;
-						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-							// update count
-							newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-						}
-						return newCount;
-					} finally {
-						stack.pop();
-					}
-				} else {
-					return v + 1;
-				}
-			});
+			incrementRefCount(stack, writeTxn, id);
 		}
 	}
 
-	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					var bb = idBuffer(stack);
-					Varint.writeUnsigned(bb, id);
-					idVal.mv_data(bb.flip());
-					long newCount = 1;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) + 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
-				}
-			} else {
-				return v + 1;
-			}
-		});
+	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
+		changeRefCount(stack, writeTxn, id, 1);
 	}
 
-	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
-		return refCountsTxCache.compute(id, (k, v) -> {
-			if (v == null) {
-				try {
-					stack.push();
-					MDBVal idVal = MDBVal.calloc(stack);
-					MDBVal dataVal = MDBVal.calloc(stack);
-					ByteBuffer idBb = idBuffer(stack).put(ID_KEY);
-					Varint.writeUnsigned(idBb, id);
-					idVal.mv_data(idBb.flip());
-					long newCount = 0;
-					if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-						// update count
-						newCount = Varint.readUnsigned(dataVal.mv_data()) - 1;
-					}
-					return newCount;
-				} finally {
-					stack.pop();
+	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) throws IOException {
+		return changeRefCount(stack, writeTxn, id, -1) == 0;
+	}
+
+	private long changeRefCount(MemoryStack stack, long txn, long id, long change) throws IOException {
+		Long count = refCountsTxCache.get(id);
+		// A missing persisted count decrements to zero; a cached count is always authoritative.
+		long updated = change > 0 ? change : 0;
+		if (count != null) {
+			updated = count + change;
+		} else {
+			try {
+				stack.push();
+				MDBVal key = MDBVal.calloc(stack);
+				key.mv_data(id2data(idBuffer(stack), id).flip());
+				MDBVal data = MDBVal.calloc(stack);
+				if (E(mdb_get(txn, refCountsDbi, key, data)) == MDB_SUCCESS) {
+					updated = Varint.readUnsigned(data.mv_data()) + change;
 				}
-			} else {
-				return v - 1;
+			} finally {
+				stack.pop();
 			}
-		}) == 0;
+		}
+		refCountsTxCache.put(id, updated);
+		return updated;
+	}
+
+	private boolean hasReferences(long txn, long id, MDBVal key, MDBVal data) throws IOException {
+		Long cachedCount = refCountsTxCache.get(id);
+		return cachedCount != null ? cachedCount > 0 : E(mdb_get(txn, refCountsDbi, key, data)) == MDB_SUCCESS;
 	}
 
 	private void updateRefCounts(MemoryStack stack, long writeTxn) throws IOException {
@@ -2875,9 +3057,7 @@ class ValueStore extends AbstractValueFactory {
 			for (Map.Entry<Long, Long> entry : refCountsTxCache.entrySet()) {
 				long count = entry.getValue();
 				idBb.clear();
-				idBb.put(ID_KEY);
-				Varint.writeUnsigned(idBb, entry.getKey());
-				idVal.mv_data(idBb.flip());
+				idVal.mv_data(id2data(idBb, entry.getKey()).flip());
 				if (count <= 0) {
 					// delete count entry
 					E(mdb_del(writeTxn, refCountsDbi, idVal, null));
@@ -4645,36 +4825,25 @@ class ValueStore extends AbstractValueFactory {
 				final Collection<Long> finalNextIds = nextIds;
 				writeTransaction((stack, writeTxn) -> {
 					MDBVal revIdVal = MDBVal.calloc(stack);
-					MDBVal idVal = MDBVal.calloc(stack);
 					MDBVal dataVal = MDBVal.calloc(stack);
 
 					ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
-					for (Long id : finalIds) {
+					Set<Long> retiredIds = deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					for (Long id : retiredIds) {
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
-						// check if id has internal references and therefore cannot be deleted
-						idVal.mv_data(revIdBb.slice().position(revLength));
-						Long refCount = refCountsTxCache.get(id);
-						if (refCount == null) {
-							if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
-								continue;
-							}
-						} else {
-							if (refCount > 0) {
-								continue;
-							}
-						}
-						// mark id as unused
+						// Mark only records retired in this transaction, once per ID across all revisions.
 						E(mdb_put(writeTxn, unusedDbi, revIdVal, dataVal, 0));
 					}
 
-					deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
-
-					invalidateRevisionOnCommit = true;
-					if (lazyRevisions.nextValueEvictionTime < 0) {
-						lazyRevisions.nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+					if (!retiredIds.isEmpty()) {
+						invalidateRevisionOnCommit = true;
+						if (lazyRevisions.nextValueEvictionTime < 0) {
+							lazyRevisions.nextValueEvictionTime = System.currentTimeMillis()
+									+ this.valueEvictionInterval;
+						}
 					}
 					return null;
 				});
@@ -4687,9 +4856,10 @@ class ValueStore extends AbstractValueFactory {
 		return 2L * idCount * (1L + Long.BYTES + 2L + Long.BYTES);
 	}
 
-	protected void deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,
+	protected Set<Long> deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,
 			Collection<Long> newGcIds)
 			throws IOException {
+		Set<Long> retiredIds = new HashSet<>();
 		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
 		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
 		MDBVal idVal = MDBVal.calloc(stack);
@@ -4706,7 +4876,10 @@ class ValueStore extends AbstractValueFactory {
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
-				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
+				idVal.mv_data(id2data(idBb.clear(), id).flip());
+				if (hasReferences(writeTxn, id, idVal, ignoreVal)) {
+					continue;
+				}
 
 				// special handling of triple terms
 				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
@@ -4725,6 +4898,14 @@ class ValueStore extends AbstractValueFactory {
 							&& tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
 						long[] quad = new long[4];
 						tripleTermCspoIndex.keyToQuad(keyVal.mv_data(), quad);
+						try {
+							stack.push();
+							if (!hasActiveTripleTermMapping(stack, writeTxn, quad)) {
+								continue;
+							}
+						} finally {
+							stack.pop();
+						}
 						for (int i = 0; i < 3; i++) {
 							if (decrementRefCount(stack, writeTxn, quad[i])) {
 								newGcIds.add(quad[i]);
@@ -4745,17 +4926,21 @@ class ValueStore extends AbstractValueFactory {
 
 							E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
 						}
+						retiredIds.add(id);
 					}
 					continue;
 				}
 
-				idVal.mv_data(id2data(idBb.clear(), id).flip());
-				// id must not have a reference count or reference count must be zero and id must have an associated
-				// value
-				Long refCount = refCountsTxCache.get(id);
-				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
-						mdb_get(writeTxn, dbi, idVal, dataVal) == 0) {
+				if (mdb_get(writeTxn, dbi, idVal, dataVal) == MDB_SUCCESS) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
+					try {
+						stack.push();
+						if (!hasActiveValueMapping(stack, writeTxn, id, dataBuffer)) {
+							continue;
+						}
+					} finally {
+						stack.pop();
+					}
 
 					// update ref count if literal or URI namespace is removed
 					if (dataBuffer.get(0) == LITERAL_VALUE || dataBuffer.get(0) == URI_VALUE) {
@@ -4780,7 +4965,9 @@ class ValueStore extends AbstractValueFactory {
 						hashVal.mv_data(hashBb);
 
 						// delete HASH -> ID association
-						if (mdb_del(writeTxn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+						if (mdb_get(writeTxn, dbi, hashVal, ignoreVal) == MDB_SUCCESS
+								&& data2id(ignoreVal.mv_data()) == id) {
+							E(mdb_del(writeTxn, dbi, hashVal, null));
 							// was first entry, find a possible next entry and make it the first
 							hashBb.put(0, HASHID_KEY);
 							hashBb.rewind();
@@ -4798,6 +4985,7 @@ class ValueStore extends AbstractValueFactory {
 									idBuffer2.position(hashLength);
 									idVal.mv_data(idBuffer2);
 
+									hashBb.put(0, HASH_KEY);
 									hashVal.mv_data(hashBb);
 
 									// HASH -> ID
@@ -4825,6 +5013,7 @@ class ValueStore extends AbstractValueFactory {
 					}
 
 					// does not delete ID -> value association
+					retiredIds.add(id);
 				}
 			}
 		} finally {
@@ -4835,6 +5024,7 @@ class ValueStore extends AbstractValueFactory {
 				mdb_cursor_close(valuesCursor);
 			}
 		}
+		return retiredIds;
 	}
 
 	protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds) throws IOException {
@@ -4870,6 +5060,12 @@ class ValueStore extends AbstractValueFactory {
 						long revisionOfId = Varint.readUnsigned(keyBb);
 						if (revisionId == 0L || revisionOfId == revisionId) {
 							idVal.mv_data(keyBb);
+							if (!freeIds && txn == writeTxn) {
+								// Empty retirement cohorts must not publish an association for an uncommitted native
+								// transaction ID: LMDB does not advance the committed ID for a no-op writer.
+								ensurePendingValueAssociation();
+								nativeMutation = true;
+							}
 
 							// add id to free list
 							E(mdb_put(txn, freeDbi, idVal, emptyVal, 0));
@@ -4965,10 +5161,7 @@ class ValueStore extends AbstractValueFactory {
 					if (resize) {
 						resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
 					}
-					ensurePendingValueAssociation();
 					freeUnusedIdsAndValues(stack, writeTxn, reclaimedRevisionIds);
-					nativeMutation = true;
-					clearCaches();
 				}
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {

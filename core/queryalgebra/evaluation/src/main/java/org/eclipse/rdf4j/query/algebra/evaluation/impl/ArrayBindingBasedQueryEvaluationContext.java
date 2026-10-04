@@ -124,6 +124,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Value captureConstant(Value value, Function<Value, Value> capturer) {
+		return context.captureConstant(value, capturer);
+	}
+
+	@Override
 	public Dataset getDataset() {
 		return context.getDataset();
 	}

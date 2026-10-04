@@ -63,11 +63,25 @@ final class LmdbUtil {
 	static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
 			IOException ioException = rc == MDB_MAP_FULL ? new MapFullException(mdb_strerror(rc))
-					: new IOException(mdb_strerror(rc));
+					: new LmdbException(rc);
 			logger.info("Possible LMDB error: {}", mdb_strerror(rc), ioException);
 			throw ioException;
 		}
 		return rc;
+	}
+
+	static class LmdbException extends IOException {
+		private static final long serialVersionUID = 1L;
+		final int errorCode;
+
+		private LmdbException(int errorCode) {
+			this(errorCode, mdb_strerror(errorCode));
+		}
+
+		private LmdbException(int errorCode, String message) {
+			super(message);
+			this.errorCode = errorCode;
+		}
 	}
 
 	static <T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
@@ -140,15 +154,15 @@ final class LmdbUtil {
 		return E(result);
 	}
 
-	static final class MapFullException extends IOException {
+	static final class MapFullException extends LmdbException {
 		private static final long serialVersionUID = 1L;
 
 		private MapFullException() {
-			super("LMDB map is full");
+			super(MDB_MAP_FULL, "LMDB map is full");
 		}
 
 		private MapFullException(String message) {
-			super(message);
+			super(MDB_MAP_FULL, message);
 		}
 	}
 

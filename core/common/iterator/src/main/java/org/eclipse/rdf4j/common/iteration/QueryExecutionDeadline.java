@@ -123,6 +123,9 @@ public final class QueryExecutionDeadline implements AutoCloseable {
 	 * also publishes expiration to registered listeners.
 	 */
 	public long remainingNanos() {
+		if (expired.get()) {
+			return 0;
+		}
 		if (closed.get()) {
 			return expired.get() ? 0 : Long.MAX_VALUE;
 		}
