@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.SoftAssertions.assertSoftly;
 import static org.eclipse.rdf4j.model.util.Literals.getIntValue;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.iri;
@@ -55,6 +56,23 @@ public class AggregateTest extends AbstractComplianceTest {
 
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
+				makeTest("ComputedNumericAggregateErrorFirst",
+						conn -> testComputedNumericAggregateError(conn, "0 2", false)),
+				makeTest("ComputedNumericAggregateErrorLast",
+						conn -> testComputedNumericAggregateError(conn, "2 0", false)),
+				makeTest("DistinctComputedNumericAggregateError",
+						conn -> testComputedNumericAggregateError(conn, "0 2 2", true)),
+				makeTest("NumericAggregatesWithOnlyExpressionErrors",
+						this::testNumericAggregatesWithOnlyExpressionErrors),
+				makeTest("BoundNonnumericAggregateError", this::testBoundNonnumericAggregateError),
+				makeTest("MalformedNumericAggregateValueFirst",
+						conn -> testMalformedNumericAggregateValue(conn, "\"invalid\"^^xsd:integer 2")),
+				makeTest("MalformedNumericAggregateValueLast",
+						conn -> testMalformedNumericAggregateValue(conn, "2 \"invalid\"^^xsd:integer")),
+				makeTest("MalformedNumericAverageValue", this::testMalformedNumericAverageValue),
+				makeTest("MalformedNumericAggregateValueByGroup", this::testMalformedNumericAggregateValueByGroup),
+				makeTest("ComputedNumericAggregateErrorInOptionalSubquery",
+						this::testComputedNumericAggregateErrorInOptionalSubquery),
 				makeTest("ConstantCountAndSum", this::testConstantCountAndSum),
 				makeTest("WildcardAndVariableCountWithValues", this::testWildcardAndVariableCountWithValues),
 				makeTest("SumOfBoundConstantWithValues", this::testSumOfBoundConstantWithValues),
@@ -112,6 +130,125 @@ public class AggregateTest extends AbstractComplianceTest {
 				makeTest("SES2361UndefCount", this::testSES2361UndefCount),
 				makeTest("SES2361UndefMax", this::testSES2361UndefMax)
 		);
+	}
+
+	private void testComputedNumericAggregateError(RepositoryConnection conn, String values, boolean distinct) {
+		String modifier = distinct ? "DISTINCT " : "";
+		String query = "SELECT (COUNT(*) AS ?rows) (COUNT(" + modifier + "1 / ?v) AS ?count) "
+				+ "(SUM(" + modifier + "1 / ?v) AS ?sum) (AVG(" + modifier + "1 / ?v) AS ?avg) "
+				+ "WHERE { VALUES ?v { " + values + " } }";
+
+		// ListEval retains expression errors. COUNT removes them, while SUM and
+		// AVG over a mixture of a numeric value and an error are themselves errors.
+		assertNumericAggregateErrorRow(conn, query, distinct ? 3 : 2, 1);
+	}
+
+	private void testNumericAggregatesWithOnlyExpressionErrors(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?rows) (COUNT(1 / ?v) AS ?count) "
+				+ "(SUM(1 / ?v) AS ?sum) (AVG(1 / ?v) AS ?avg) WHERE { VALUES ?v { 0 0 } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			List<BindingSet> bindings = QueryResults.asList(result);
+			assertThat(bindings).hasSize(1);
+			BindingSet row = bindings.get(0);
+			assertThat(row.getValue("rows")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(row.getValue("count")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+			assertThat(row.getValue("sum")).isNull();
+			// AVG is defined as zero when COUNT of its argument is zero.
+			assertThat(row.getValue("avg")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("rows", "count", "avg");
+		}
+	}
+
+	private void testBoundNonnumericAggregateError(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?rows) (COUNT(?v) AS ?count) "
+				+ "(SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE { VALUES ?v { 2 \"invalid\" } }";
+
+		assertNumericAggregateErrorRow(conn, query, 2, 2);
+	}
+
+	private void testMalformedNumericAggregateValue(RepositoryConnection conn, String values) {
+		String query = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (COUNT(*) AS ?rows) (COUNT(?v) AS ?count) (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) "
+				+ "WHERE { VALUES ?v { " + values + " } }";
+
+		assertNumericAggregateErrorRow(conn, query, 2, 2);
+	}
+
+	private void assertNumericAggregateErrorRow(RepositoryConnection conn, String query, int rows, int count) {
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			List<BindingSet> bindings = QueryResults.asList(result);
+			assertThat(bindings).hasSize(1);
+			BindingSet row = bindings.get(0);
+			assertThat(row.getValue("rows")).isEqualTo(literal(Integer.toString(rows), CoreDatatype.XSD.INTEGER));
+			assertThat(row.getValue("count")).isEqualTo(literal(Integer.toString(count), CoreDatatype.XSD.INTEGER));
+			assertSoftly(softly -> {
+				softly.assertThat(row.getValue("sum")).as("SUM").isNull();
+				softly.assertThat(row.getValue("avg")).as("AVG").isNull();
+			});
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("rows", "count");
+		}
+	}
+
+	private void testMalformedNumericAverageValue(RepositoryConnection conn) {
+		String query = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT (COUNT(*) AS ?rows) (COUNT(?v) AS ?count) (AVG(?v) AS ?avg) "
+				+ "WHERE { VALUES ?v { 2 \"invalid\"^^xsd:integer } }";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			List<BindingSet> bindings = QueryResults.asList(result);
+			assertThat(bindings).hasSize(1);
+			BindingSet row = bindings.get(0);
+			assertThat(row.getValue("rows")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(row.getValue("count")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(row.getValue("avg")).isNull();
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("rows", "count");
+		}
+	}
+
+	private void testMalformedNumericAggregateValueByGroup(RepositoryConnection conn) {
+		String query = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT ?key (COUNT(*) AS ?count) (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) WHERE { "
+				+ "VALUES (?key ?v) { (\"valid\" 2) (\"invalid\" 2) (\"valid\" 4) "
+				+ "(\"invalid\" \"invalid\"^^xsd:integer) } } GROUP BY ?key ORDER BY ?key";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			List<BindingSet> bindings = QueryResults.asList(result);
+			assertThat(bindings).hasSize(2);
+			BindingSet invalid = bindings.get(0);
+			assertThat(invalid.getValue("key")).isEqualTo(literal("invalid"));
+			assertThat(invalid.getValue("count")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(invalid.getValue("sum")).isNull();
+			assertThat(invalid.getValue("avg")).isNull();
+			assertThat(invalid.getBindingNames()).containsExactlyInAnyOrder("key", "count");
+
+			BindingSet valid = bindings.get(1);
+			assertThat(valid.getValue("key")).isEqualTo(literal("valid"));
+			assertThat(valid.getValue("count")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(valid.getValue("sum")).isEqualTo(literal("6", CoreDatatype.XSD.INTEGER));
+			assertThat(valid.getValue("avg")).isEqualTo(literal("3", CoreDatatype.XSD.DECIMAL));
+			assertThat(valid.getBindingNames()).containsExactlyInAnyOrder("key", "count", "sum", "avg");
+		}
+	}
+
+	private void testComputedNumericAggregateErrorInOptionalSubquery(RepositoryConnection conn) {
+		String query = "SELECT ?marker ?count ?sum ?avg WHERE { VALUES ?marker { 1 2 } OPTIONAL { "
+				+ "SELECT (COUNT(1 / ?v) AS ?count) (SUM(1 / ?v) AS ?sum) (AVG(1 / ?v) AS ?avg) "
+				+ "WHERE { VALUES ?v { 0 2 } } } } ORDER BY ?marker";
+
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			List<BindingSet> bindings = QueryResults.asList(result);
+			assertThat(bindings).hasSize(2);
+			for (int i = 0; i < bindings.size(); i++) {
+				BindingSet row = bindings.get(i);
+				assertThat(row.getValue("marker"))
+						.isEqualTo(literal(Integer.toString(i + 1), CoreDatatype.XSD.INTEGER));
+				assertThat(row.getValue("count")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+				assertThat(row.getValue("sum")).isNull();
+				assertThat(row.getValue("avg")).isNull();
+				assertThat(row.getBindingNames()).containsExactlyInAnyOrder("marker", "count");
+			}
+		}
 	}
 
 	private void testConstantCountAndSum(RepositoryConnection conn) {
