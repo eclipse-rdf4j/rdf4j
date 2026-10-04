@@ -17,12 +17,17 @@ import java.util.UUID;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -64,59 +69,85 @@ public class QueryStorage {
 
 	private static final String PRE = "PREFIX : <https://openrdf.org/workbench/>\n";
 
-	// SAVE needs xsd: prefix since explicit XSD data types will be substituted.
-	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + PRE
-			+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
-			+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }";
+	private static final String SAVE = PRE
+			+ "INSERT { ?query :userName ?userName ; :queryName ?queryName ; "
+			+ ":repository ?repository ; :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
+			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . } WHERE {}";
 
 	private static final String ASK_EXISTS = PRE
-			+ "ASK { [] :userName $<userName> ; :queryName $<queryName> ; :repository $<repository> . }";
+			+ "ASK { [] :userName ?userName ; :queryName ?queryName ; :repository ?repository . }";
 
-	private static final String UPDATE_FILTER = "FILTER (?user = $<userName> || ?user = \"\" ) } ";
+	private static final String UPDATE_FILTER = "FILTER (?user = ?currentUser) } ";
 
-	private static final String READ_FILTER = "FILTER (?user = $<userName> || ?user = \"\" || ?shared) } ";
+	private static final String AUTHENTICATED_READ_FILTER = "FILTER (?user = ?currentUser || ?shared) } ";
 
-	private static final String ASK_UPDATABLE = PRE + "ASK { $<query> :userName ?user . " + UPDATE_FILTER;
+	private static final String ANONYMOUS_READ_FILTER = "FILTER (?shared) } ";
 
-	private static final String ASK_READABLE = PRE + "ASK { $<query> :userName ?user  ; :shared ?shared . "
-			+ READ_FILTER;
+	private static final String ASK_UPDATABLE = PRE + "ASK { ?query :userName ?user . " + UPDATE_FILTER;
 
-	private static final String DELETE = PRE + "DELETE WHERE { $<query> :userName ?user ; ?p ?o . }";
+	private static final String ASK_READABLE_AUTHENTICATED = PRE
+			+ "ASK { ?query :userName ?user  ; :shared ?shared . " + AUTHENTICATED_READ_FILTER;
+
+	private static final String ASK_READABLE_ANONYMOUS = PRE
+			+ "ASK { ?query :userName ?user  ; :shared ?shared . " + ANONYMOUS_READ_FILTER;
+
+	private static final String DELETE = PRE
+			+ "DELETE { ?query ?p ?o . } WHERE { ?query :userName ?user ; ?p ?o . " + UPDATE_FILTER;
 
 	private static final String MATCH = ":shared ?s ; :queryLanguage ?ql ; :query ?q ; :rowsPerPage ?rpp .\n";
 
-	private static final String OPTIONAL_UPDATE_FIELDS = "OPTIONAL { $<query> :infer ?infer . }\n"
-			+ "OPTIONAL { $<query> :queryTimeout ?queryTimeout . }\n";
+	private static final String OPTIONAL_UPDATE_FIELDS = "OPTIONAL { ?query :infer ?existingInfer . }\n"
+			+ "OPTIONAL { ?query :queryTimeout ?existingQueryTimeout . }\n";
 
 	private static final String UPDATE = PRE
-			+ "DELETE { $<query> " + MATCH + "$<query> :infer ?infer .\n$<query> :queryTimeout ?queryTimeout .\n"
-			+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }\n"
-			+ "WHERE { $<query> :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
+			+ "DELETE { ?query " + MATCH
+			+ "?query :infer ?existingInfer .\n?query :queryTimeout ?existingQueryTimeout .\n"
+			+ "}\nINSERT { ?query :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
+			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . }\n"
+			+ "WHERE { ?query :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
 
-	private static final String SELECT_URI = PRE
-			+ "SELECT ?query { ?query :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> . } ";
+	private static final String SELECT_URI_AUTHENTICATED = PRE
+			+ "SELECT ?query { ?query :repository ?repository ; :userName ?user ; :queryName ?queryName ; "
+			+ ":shared ?shared . FILTER (?user = ?owner) " + AUTHENTICATED_READ_FILTER;
 
-	private static final String SELECT_TEXT = PRE
-			+ "SELECT ?queryText { [] :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> ; :query ?queryText . } ";
+	private static final String SELECT_URI_ANONYMOUS = PRE
+			+ "SELECT ?query { ?query :repository ?repository ; :userName ?user ; :queryName ?queryName ; "
+			+ ":shared ?shared . FILTER (?user = ?owner) " + ANONYMOUS_READ_FILTER;
 
-	private static final String SELECT = PRE
+	private static final String SELECT_TEXT_AUTHENTICATED = PRE
+			+ "SELECT ?queryText { [] :repository ?repository ; :userName ?user ; :queryName ?queryName ; "
+			+ ":shared ?shared ; :query ?queryText . FILTER (?user = ?owner) " + AUTHENTICATED_READ_FILTER;
+
+	private static final String SELECT_TEXT_ANONYMOUS = PRE
+			+ "SELECT ?queryText { [] :repository ?repository ; :userName ?user ; :queryName ?queryName ; "
+			+ ":shared ?shared ; :query ?queryText . FILTER (?user = ?owner) " + ANONYMOUS_READ_FILTER;
+
+	private static final String SELECT_PREFIX = PRE
 			+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage ?queryTimeout "
-			+ "{ ?query :repository $<repository> ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
+			+ "{ ?query :repository ?repository ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
 			+ ":queryLanguage ?queryLn ; :query ?queryText ; :infer ?infer ; :rowsPerPage ?rowsPerPage .\n"
-			+ "OPTIONAL { ?query :queryTimeout ?queryTimeout . }\n"
-			+ READ_FILTER + "ORDER BY ?user ?queryName";
+			+ "OPTIONAL { ?query :queryTimeout ?queryTimeout . }\n";
+
+	private static final String SELECT_AUTHENTICATED = SELECT_PREFIX + AUTHENTICATED_READ_FILTER
+			+ "ORDER BY ?user ?queryName";
+
+	private static final String SELECT_ANONYMOUS = SELECT_PREFIX + ANONYMOUS_READ_FILTER
+			+ "ORDER BY ?user ?queryName";
 
 	private final Repository queries;
 
-	private static final String USER_NAME = "$<userName>";
-
-	private static final String REPOSITORY = "$<repository>";
-
-	private static final String QUERY = "$<query>";
-
-	private static final String QUERY_NAME = "$<queryName>";
+	private static final String USER_NAME = "userName";
+	private static final String CURRENT_USER = "currentUser";
+	private static final String OWNER = "owner";
+	private static final String REPOSITORY = "repository";
+	private static final String QUERY = "query";
+	private static final String QUERY_NAME = "queryName";
+	private static final String SHARED = "shared";
+	private static final String QUERY_LANGUAGE = "queryLanguage";
+	private static final String QUERY_TEXT = "queryText";
+	private static final String INFER = "infer";
+	private static final String ROWS_PER_PAGE = "rowsPerPage";
+	private static final String QUERY_TIMEOUT = "queryTimeout";
 
 	/**
 	 * Create a new object for accessing the store of user queries.
@@ -169,7 +200,7 @@ public class QueryStorage {
 	 *
 	 * @param repository    the repository the query is associated with
 	 * @param queryName     the name for the query
-	 * @param userName      the user saving the query
+	 * @param currentUser   the authenticated principal saving the query
 	 * @param shared        whether the query is to be shared with other users
 	 * @param queryLanguage the language of the query (only SPARQL is currently supported)
 	 * @param queryText     the actual query text
@@ -178,9 +209,11 @@ public class QueryStorage {
 	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
 	 * @throws RDF4JException
 	 */
-	public void saveQuery(final String repositoryReference, final String queryName, final String userName,
+	public void saveQuery(final String repositoryReference, final String queryName,
+			final WorkbenchPrincipal currentUser,
 			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
 			final int rowsPerPage, final int queryTimeout) throws RDF4JException {
+		final String userName = requirePrincipalName(currentUser);
 		if (QueryLanguage.SPARQL != queryLanguage) {
 			throw new RepositoryException("May only save SPARQL queries, not" + queryLanguage.toString());
 		}
@@ -191,13 +224,17 @@ public class QueryStorage {
 		if (queryTimeout < 0) {
 			throw new RepositoryException("Illegal value for query timeout: " + queryTimeout);
 		}
-		this.checkQueryText(queryText);
-		final QueryStringBuilder save = new QueryStringBuilder(SAVE);
-		save.replaceURI(REPOSITORY, repositoryReference);
-		save.replaceURI(QUERY, "urn:uuid:" + UUID.randomUUID());
-		save.replaceQuote(QUERY_NAME, queryName);
-		this.replaceUpdateFields(save, userName, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
-		updateQueryRepository(save.toString());
+		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", SAVE);
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			ValueFactory valueFactory = connection.getValueFactory();
+			Update save = connection.prepareUpdate(QueryLanguage.SPARQL, SAVE);
+			save.setBinding(REPOSITORY, valueFactory.createIRI(repositoryReference));
+			save.setBinding(QUERY, valueFactory.createIRI("urn:uuid:" + UUID.randomUUID()));
+			save.setBinding(QUERY_NAME, valueFactory.createLiteral(queryName));
+			save.setBinding(USER_NAME, valueFactory.createLiteral(userName));
+			bindUpdateFields(save, valueFactory, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
+			save.execute();
+		}
 	}
 
 	/**
@@ -205,11 +242,11 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <var>true</var> if the given query was saved by the given user or the anonymous user
+	 * @return <var>true</var> if the given query was saved by the given authenticated principal
 	 */
-	public boolean canChange(final IRI query, final String currentUser)
+	public boolean canChange(final IRI query, final WorkbenchPrincipal currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
-		return performAccessQuery(ASK_UPDATABLE, query, currentUser);
+		return currentUser != null && performAccessQuery(ASK_UPDATABLE, query, currentUser);
 	}
 
 	/**
@@ -217,33 +254,40 @@ public class QueryStorage {
 	 *
 	 * @param query       the node identifying the query of interest
 	 * @param currentUser the user to check access for
-	 * @return <var>true</var> if the given query was saved by either the given user or the anonymous user, or is shared
+	 * @return <var>true</var> if the query is shared or was saved by the given authenticated principal
 	 */
-	public boolean canRead(IRI query, String currentUser)
+	public boolean canRead(IRI query, WorkbenchPrincipal currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
-		return performAccessQuery(ASK_READABLE, query, currentUser);
+		return performAccessQuery(currentUser == null ? ASK_READABLE_ANONYMOUS : ASK_READABLE_AUTHENTICATED,
+				query, currentUser);
 	}
 
-	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
+	private boolean performAccessQuery(String accessSPARQL, IRI query, WorkbenchPrincipal currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
-		final QueryStringBuilder canDelete = new QueryStringBuilder(accessSPARQL);
-		canDelete.replaceURI(QUERY, query.stringValue());
-		canDelete.replaceQuote(USER_NAME, currentUser);
-		LOGGER.info("{}", canDelete);
+		LOGGER.info("{}", accessSPARQL);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, canDelete.toString()).evaluate();
+			BooleanQuery accessQuery = connection.prepareBooleanQuery(QueryLanguage.SPARQL, accessSPARQL);
+			accessQuery.setBinding(QUERY, query);
+			if (currentUser != null) {
+				accessQuery.setBinding(CURRENT_USER,
+						connection.getValueFactory().createLiteral(currentUser.getName()));
+			}
+			return accessQuery.evaluate();
 		}
 	}
 
-	public boolean askExists(final String repositoryReference, final String queryName, final String userName)
+	public boolean askExists(final String repositoryReference, final String queryName,
+			final WorkbenchPrincipal currentUser)
 			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
-		final QueryStringBuilder ask = new QueryStringBuilder(ASK_EXISTS);
-		ask.replaceURI(REPOSITORY, repositoryReference);
-		ask.replaceQuote(QUERY_NAME, queryName);
-		ask.replaceQuote(USER_NAME, userName);
-		LOGGER.info("{}", ask);
+		final String userName = requirePrincipalName(currentUser);
+		LOGGER.info("{}", ASK_EXISTS);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, ask.toString()).evaluate();
+			ValueFactory valueFactory = connection.getValueFactory();
+			BooleanQuery ask = connection.prepareBooleanQuery(QueryLanguage.SPARQL, ASK_EXISTS);
+			ask.setBinding(REPOSITORY, valueFactory.createIRI(repositoryReference));
+			ask.setBinding(QUERY_NAME, valueFactory.createLiteral(queryName));
+			ask.setBinding(USER_NAME, valueFactory.createLiteral(userName));
+			return ask.evaluate();
 		}
 	}
 
@@ -252,17 +296,21 @@ public class QueryStorage {
 	 * canDelete() with the full credentials first.
 	 *
 	 * @param query
-	 * @param userName
+	 * @param currentUser the authenticated principal requesting the deletion
 	 * @throws RepositoryException
 	 * @throws UpdateExecutionException
 	 * @throws MalformedQueryException
 	 */
-	public void deleteQuery(final IRI query, final String userName)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		final QueryStringBuilder delete = new QueryStringBuilder(DELETE);
-		delete.replaceQuote(QueryStorage.USER_NAME, userName);
-		delete.replaceURI(QUERY, query.stringValue());
-		updateQueryRepository(delete.toString());
+	public void deleteQuery(final IRI query, final WorkbenchPrincipal currentUser)
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException, BadRequestException {
+		requireChangeAccess(query, currentUser);
+		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", DELETE);
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, DELETE);
+			delete.setBinding(CURRENT_USER, connection.getValueFactory().createLiteral(currentUser.getName()));
+			delete.setBinding(QUERY, query);
+			delete.execute();
+		}
 	}
 
 	/**
@@ -270,7 +318,7 @@ public class QueryStorage {
 	 * full credentials first.
 	 *
 	 * @param query         the query to update
-	 * @param userName      the user name
+	 * @param currentUser   the authenticated principal requesting the update
 	 * @param shared        whether to share with other users
 	 * @param queryLanguage the query language
 	 * @param queryText     the text of the query
@@ -281,15 +329,20 @@ public class QueryStorage {
 	 * @throws UpdateExecutionException if a problem occurs during the update
 	 * @throws MalformedQueryException  if a problem occurs during the update
 	 */
-	public void updateQuery(final IRI query, final String userName, final boolean shared,
+	public void updateQuery(final IRI query, final WorkbenchPrincipal currentUser, final boolean shared,
 			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
 			final int queryTimeout)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
-		update.replaceURI(QUERY, query);
-		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage,
-				queryTimeout);
-		this.updateQueryRepository(update.toString());
+			throws RepositoryException, UpdateExecutionException, MalformedQueryException, BadRequestException {
+		requireChangeAccess(query, currentUser);
+		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", UPDATE);
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			ValueFactory valueFactory = connection.getValueFactory();
+			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, UPDATE);
+			update.setBinding(QUERY, query);
+			update.setBinding(CURRENT_USER, valueFactory.createLiteral(currentUser.getName()));
+			bindUpdateFields(update, valueFactory, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
+			update.execute();
+		}
 	}
 
 	/**
@@ -298,44 +351,54 @@ public class QueryStorage {
 	 * rowsPerPage, queryTimeout. It is the responsibility of the calling code to call checkAccess() with the full
 	 * credentials first.
 	 *
-	 * @param repository that the saved queries run against
-	 * @param userName   that is requesting the saved queries
-	 * @param builder    receives a list of all the saved queries against the given repository and accessible to the
-	 *                   given user
+	 * @param repository  that the saved queries run against
+	 * @param currentUser the authenticated principal requesting the saved queries, or {@code null} for anonymous access
+	 * @param builder     receives a list of all the saved queries against the given repository and accessible to the
+	 *                    given user
 	 * @throws RepositoryException         if there's a problem connecting to the saved queries repository
 	 * @throws MalformedQueryException     if the query is not legal SPARQL
 	 * @throws QueryEvaluationException    if there is a problem while attempting to evaluate the query
 	 * @throws QueryResultHandlerException
 	 */
-	public void selectSavedQueries(final String repositoryReference, final String userName,
+	public void selectSavedQueries(final String repositoryReference, final WorkbenchPrincipal currentUser,
 			final TupleResultBuilder builder)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
-		select.replaceQuote(USER_NAME, userName);
-		select.replaceURI(REPOSITORY, repositoryReference);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			EVAL.evaluateTupleQuery(builder, connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
+			ValueFactory valueFactory = connection.getValueFactory();
+			TupleQuery select = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+					currentUser == null ? SELECT_ANONYMOUS : SELECT_AUTHENTICATED);
+			select.setBinding(REPOSITORY, valueFactory.createIRI(repositoryReference));
+			if (currentUser != null) {
+				select.setBinding(CURRENT_USER, valueFactory.createLiteral(currentUser.getName()));
+			}
+			EVAL.evaluateTupleQuery(builder, select);
 		}
 	}
 
 	/**
 	 * Returns the URI for the saved query in the given repository with the given name, owned by the given owner.
 	 *
-	 * @param repository The repository the query is associated with.
-	 * @param owner      The user that saved the query.
-	 * @param queryName  The name given to the query.
+	 * @param repository  The repository the query is associated with.
+	 * @param owner       The user that saved the query.
+	 * @param queryName   The name given to the query.
+	 * @param currentUser the authenticated principal requesting the query, or {@code null} for anonymous access
 	 * @return if it exists, the URI referring to the specified saved query.
 	 * @throws RDF4JException      if issues occur performing the necessary queries.
 	 * @throws BadRequestException if the the specified stored query doesn't exist
 	 */
-	public IRI selectSavedQuery(final String repositoryReference, final String owner, final String queryName)
+	public IRI selectSavedQuery(final String repositoryReference, final String owner, final String queryName,
+			final WorkbenchPrincipal currentUser)
 			throws RDF4JException, BadRequestException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT_URI);
-		select.replaceQuote(QueryStorage.USER_NAME, owner);
-		select.replaceURI(REPOSITORY, repositoryReference);
-		select.replaceQuote(QUERY_NAME, queryName);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString());
+			ValueFactory valueFactory = connection.getValueFactory();
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+					currentUser == null ? SELECT_URI_ANONYMOUS : SELECT_URI_AUTHENTICATED);
+			query.setBinding(OWNER, valueFactory.createLiteral(owner));
+			query.setBinding(REPOSITORY, valueFactory.createIRI(repositoryReference));
+			query.setBinding(QUERY_NAME, valueFactory.createLiteral(queryName));
+			if (currentUser != null) {
+				query.setBinding(CURRENT_USER, valueFactory.createLiteral(currentUser.getName()));
+			}
 			try (TupleQueryResult result = query.evaluate()) {
 				if (result.hasNext()) {
 					return (IRI) (result.next().getValue("query"));
@@ -348,24 +411,29 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Retrieves the specified query text. No security checks are done here. If the saved query exists, its text is
-	 * returned.
+	 * Retrieves the specified query text when it is shared or owned by the authenticated principal.
 	 *
-	 * @param repository Repository that the saved query is associated with.
-	 * @param owner      The user that saved the query.
-	 * @param queryName  The name given to the saved query.
+	 * @param repository  Repository that the saved query is associated with.
+	 * @param owner       The user that saved the query.
+	 * @param queryName   The name given to the saved query.
+	 * @param currentUser the authenticated principal requesting the query, or {@code null} for anonymous access
 	 * @return the text of the saved query, if it exists
 	 * @throws RDF4JException      if a problem occurs accessing storage
 	 * @throws BadRequestException if the specified query doesn't exist
 	 */
-	public String getQueryText(final String repositoryReference, final String owner, final String queryName)
+	public String getQueryText(final String repositoryReference, final String owner, final String queryName,
+			final WorkbenchPrincipal currentUser)
 			throws RDF4JException, BadRequestException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT_TEXT);
-		select.replaceQuote(QueryStorage.USER_NAME, owner);
-		select.replaceURI(REPOSITORY, repositoryReference);
-		select.replaceQuote(QUERY_NAME, queryName);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString());
+			ValueFactory valueFactory = connection.getValueFactory();
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+					currentUser == null ? SELECT_TEXT_ANONYMOUS : SELECT_TEXT_AUTHENTICATED);
+			query.setBinding(OWNER, valueFactory.createLiteral(owner));
+			query.setBinding(REPOSITORY, valueFactory.createIRI(repositoryReference));
+			query.setBinding(QUERY_NAME, valueFactory.createLiteral(queryName));
+			if (currentUser != null) {
+				query.setBinding(CURRENT_USER, valueFactory.createLiteral(currentUser.getName()));
+			}
 			try (TupleQueryResult result = query.evaluate()) {
 				if (result.hasNext()) {
 					return result.next().getValue("queryText").stringValue();
@@ -377,18 +445,24 @@ public class QueryStorage {
 		}
 	}
 
-	private void updateQueryRepository(final String update)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", update);
-		try (RepositoryConnection connection = this.queries.getConnection()) {
-			connection.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+	private void requireChangeAccess(IRI query, WorkbenchPrincipal currentUser)
+			throws RepositoryException, QueryEvaluationException, MalformedQueryException, BadRequestException {
+		if (!canChange(query, currentUser)) {
+			throw new BadRequestException("Current user may not change the given query.");
 		}
 	}
 
+	private static String requirePrincipalName(WorkbenchPrincipal currentUser) throws RepositoryException {
+		if (currentUser == null) {
+			throw new RepositoryException("Authentication is required to save or change a query.");
+		}
+		return currentUser.getName();
+	}
+
 	/**
-	 * Perform replacement on several common fields for update operations.
+	 * Bind the common fields for save and update operations. Values remain RDF terms all the way into the prepared
+	 * operation, so user-controlled text can never become SPARQL syntax.
 	 *
-	 * @param userName      the name of the current user
 	 * @param shared        whether the saved query is to be shared with other users
 	 * @param queryLanguage the language of the saved query
 	 * @param queryText     the actual text of the query to save
@@ -396,29 +470,16 @@ public class QueryStorage {
 	 * @param rowsPerPage   the rows per page to display for results
 	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
 	 */
-	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
+	private void bindUpdateFields(final Operation operation, final ValueFactory valueFactory, final boolean shared,
 			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
 			final int queryTimeout) {
-		builder.replaceQuote(USER_NAME, userName);
-		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
-		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());
-		checkQueryText(queryText);
-		builder.replace("$<queryText>", QueryStringBuilder.quote(queryText, "'''", "'''"));
-		builder.replace("$<infer>", QueryStringBuilder.xsdQuote(String.valueOf(infer), "boolean"));
-		builder.replace("$<rowsPerPage>", QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
-		builder.replace("$<queryTimeout>", QueryStringBuilder.xsdQuote(String.valueOf(queryTimeout), "integer"));
-	}
-
-	/**
-	 * Imposes the rule that the query may not contain '''-quoted string, since that is how we'll be quoting it in our
-	 * SPARQL/Update statements. Quoting the query with ''' assuming all string literals in the query are of the
-	 * STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
-	 *
-	 * @param queryText the query text
-	 */
-	private void checkQueryText(final String queryText) {
-		if (queryText.indexOf("'''") > 0) {
-			throw new IllegalArgumentException("queryText may not contain '''-quoted strings.");
-		}
+		operation.setBinding(SHARED, valueFactory.createLiteral(shared));
+		operation.setBinding(QUERY_LANGUAGE, valueFactory.createLiteral(queryLanguage.toString()));
+		operation.setBinding(QUERY_TEXT, valueFactory.createLiteral(queryText));
+		operation.setBinding(INFER, valueFactory.createLiteral(infer));
+		operation.setBinding(ROWS_PER_PAGE,
+				valueFactory.createLiteral(String.valueOf(rowsPerPage), XSD.UNSIGNED_BYTE));
+		operation.setBinding(QUERY_TIMEOUT,
+				valueFactory.createLiteral(String.valueOf(queryTimeout), XSD.INTEGER));
 	}
 }

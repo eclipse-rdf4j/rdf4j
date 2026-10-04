@@ -40,6 +40,10 @@ class QueryStorageTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
+	private static final WorkbenchPrincipal ALICE = WorkbenchPrincipal.authenticated("alice");
+
+	private static final WorkbenchPrincipal BOB = WorkbenchPrincipal.authenticated("bob");
+
 	@Test
 	void saveReadUpdateDeleteAndListQueries() throws Exception {
 		SailRepository storageRepository = new SailRepository(new MemoryStore());
@@ -51,20 +55,20 @@ class QueryStorageTest {
 		String originalQuery = "select * where { ?s ?p ?o }";
 		String updatedQuery = "select * where { ?s ?p ?o . filter(?s = ?s) }";
 
-		storage.saveQuery(repositoryReference, "team-query", "alice", false, QueryLanguage.SPARQL, originalQuery,
+		storage.saveQuery(repositoryReference, "team-query", ALICE, false, QueryLanguage.SPARQL, originalQuery,
 				true, 10, 5);
 
-		assertThat(storage.askExists(repositoryReference, "team-query", "alice")).isTrue();
-		IRI savedQuery = storage.selectSavedQuery(repositoryReference, "alice", "team-query");
-		assertThat(storage.getQueryText(repositoryReference, "alice", "team-query")).isEqualTo(originalQuery);
-		assertThat(storage.canChange(savedQuery, "alice")).isTrue();
-		assertThat(storage.canChange(savedQuery, "bob")).isFalse();
-		assertThat(storage.canRead(savedQuery, "bob")).isFalse();
+		assertThat(storage.askExists(repositoryReference, "team-query", ALICE)).isTrue();
+		IRI savedQuery = storage.selectSavedQuery(repositoryReference, "alice", "team-query", ALICE);
+		assertThat(storage.getQueryText(repositoryReference, "alice", "team-query", ALICE)).isEqualTo(originalQuery);
+		assertThat(storage.canChange(savedQuery, ALICE)).isTrue();
+		assertThat(storage.canChange(savedQuery, BOB)).isFalse();
+		assertThat(storage.canRead(savedQuery, BOB)).isFalse();
 
-		storage.updateQuery(savedQuery, "alice", true, QueryLanguage.SPARQL, updatedQuery, false, 20, 0);
+		storage.updateQuery(savedQuery, ALICE, true, QueryLanguage.SPARQL, updatedQuery, false, 20, 0);
 
-		assertThat(storage.canRead(savedQuery, "bob")).isTrue();
-		storage.selectSavedQueries(repositoryReference, "bob", builder);
+		assertThat(storage.canRead(savedQuery, BOB)).isTrue();
+		storage.selectSavedQueries(repositoryReference, BOB, builder);
 		builder.end();
 		String xml = buffer.toString(StandardCharsets.UTF_8);
 		assertThat(xml)
@@ -73,16 +77,127 @@ class QueryStorageTest {
 				.contains("SPARQL")
 				.contains("20");
 
-		storage.deleteQuery(savedQuery, "alice");
-		assertThat(storage.askExists(repositoryReference, "team-query", "alice")).isFalse();
-		assertThatThrownBy(() -> storage.selectSavedQuery(repositoryReference, "alice", "team-query"))
+		storage.deleteQuery(savedQuery, ALICE);
+		assertThat(storage.askExists(repositoryReference, "team-query", ALICE)).isFalse();
+		assertThatThrownBy(() -> storage.selectSavedQuery(repositoryReference, "alice", "team-query", ALICE))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessageContaining("Could not find query entry in storage.");
-		assertThatThrownBy(() -> storage.getQueryText(repositoryReference, "alice", "team-query"))
+		assertThatThrownBy(() -> storage.getQueryText(repositoryReference, "alice", "team-query", ALICE))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessageContaining("Could not find query entry in storage.");
 
 		storage.shutdown();
+	}
+
+	@Test
+	void enforcesAuthorizationAtEveryStorageBoundaryAndUsesExplicitSharing() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		String repositoryReference = "urn:test:authorization";
+		String privateText = "select * where { ?s ?p ?o }";
+		try {
+			storage.saveQuery(repositoryReference, "private", ALICE, false, QueryLanguage.SPARQL, privateText,
+					false, 10, 0);
+			IRI privateQuery = storage.selectSavedQuery(repositoryReference, "alice", "private", ALICE);
+
+			assertThat(storage.canRead(privateQuery, BOB)).isFalse();
+			assertThat(storage.canRead(privateQuery, null)).isFalse();
+			assertThat(storage.canChange(privateQuery, BOB)).isFalse();
+			assertThat(storage.canChange(privateQuery, null)).isFalse();
+			assertThatThrownBy(
+					() -> storage.selectSavedQuery(repositoryReference, "alice", "private", BOB))
+							.isInstanceOf(BadRequestException.class);
+			assertThatThrownBy(() -> storage.getQueryText(repositoryReference, "alice", "private", null))
+					.isInstanceOf(BadRequestException.class);
+			assertThatThrownBy(() -> storage.updateQuery(privateQuery, BOB, true, QueryLanguage.SPARQL,
+					"attacker update", false, 10, 0))
+							.isInstanceOf(BadRequestException.class);
+			assertThatThrownBy(() -> storage.deleteQuery(privateQuery, BOB))
+					.isInstanceOf(BadRequestException.class);
+			assertThat(storage.getQueryText(repositoryReference, "alice", "private", ALICE)).isEqualTo(privateText);
+
+			storage.updateQuery(privateQuery, ALICE, true, QueryLanguage.SPARQL, privateText, false, 10, 0);
+			assertThat(storage.getQueryText(repositoryReference, "alice", "private", BOB)).isEqualTo(privateText);
+			assertThat(storage.getQueryText(repositoryReference, "alice", "private", null)).isEqualTo(privateText);
+
+			WorkbenchPrincipal local = WorkbenchPrincipal.local();
+			storage.saveQuery(repositoryReference, "local-private", local, false, QueryLanguage.SPARQL, privateText,
+					false, 10, 0);
+			assertThat(storage.getQueryText(repositoryReference, "", "local-private", local)).isEqualTo(privateText);
+			assertThatThrownBy(() -> storage.getQueryText(repositoryReference, "", "local-private", null))
+					.isInstanceOf(BadRequestException.class);
+
+			storage.saveQuery(repositoryReference, "local-shared", local, true, QueryLanguage.SPARQL, privateText,
+					false, 10, 0);
+			assertThat(storage.getQueryText(repositoryReference, "", "local-shared", null)).isEqualTo(privateText);
+
+			ByteArrayOutputStream anonymousBuffer = new ByteArrayOutputStream();
+			TupleResultBuilder anonymousBuilder = new TupleResultBuilder(
+					new WorkbenchTupleResultWriter(anonymousBuffer), VF);
+			storage.selectSavedQueries(repositoryReference, null, anonymousBuilder);
+			anonymousBuilder.end();
+			assertThat(anonymousBuffer.toString(StandardCharsets.UTF_8))
+					.contains("private", "local-shared")
+					.doesNotContain("local-private");
+
+			assertThatThrownBy(() -> storage.saveQuery(repositoryReference, "anonymous", null, true,
+					QueryLanguage.SPARQL, privateText, false, 10, 0))
+							.isInstanceOf(RepositoryException.class)
+							.hasMessageContaining("Authentication is required");
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	@Test
+	void treatsAuthorizationNamesAsValuesInsteadOfSparqlSyntax() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		String repositoryReference = "urn:test:bound-authorization";
+		String queryText = "select * where { ?s ?p ?o }";
+		WorkbenchPrincipal injectedPrincipal = WorkbenchPrincipal.authenticated("x\" || true || \"x\"=\"");
+		String injectedName = "name\" || true || \"x\"=\"x";
+		try {
+			storage.saveQuery(repositoryReference, "private", ALICE, false, QueryLanguage.SPARQL, queryText, false, 10,
+					0);
+			IRI privateQuery = storage.selectSavedQuery(repositoryReference, "alice", "private", ALICE);
+
+			assertThat(storage.canRead(privateQuery, injectedPrincipal)).isFalse();
+			assertThat(storage.canChange(privateQuery, injectedPrincipal)).isFalse();
+			assertThatThrownBy(() -> storage.deleteQuery(privateQuery, injectedPrincipal))
+					.isInstanceOf(BadRequestException.class);
+			assertThatThrownBy(
+					() -> storage.selectSavedQuery(repositoryReference, injectedPrincipal.getName(), "private", ALICE))
+							.isInstanceOf(BadRequestException.class);
+			assertThat(storage.askExists(repositoryReference, injectedName, ALICE)).isFalse();
+
+			storage.saveQuery(repositoryReference, injectedName, injectedPrincipal, false, QueryLanguage.SPARQL,
+					queryText, false, 10, 0);
+			assertThat(storage.askExists(repositoryReference, injectedName, injectedPrincipal)).isTrue();
+			assertThat(storage.getQueryText(repositoryReference, injectedPrincipal.getName(), injectedName,
+					injectedPrincipal)).isEqualTo(queryText);
+		} finally {
+			storage.shutdown();
+		}
+	}
+
+	@Test
+	void storesQueryTextContainingLongQuotedSparqlStrings() throws Exception {
+		SailRepository storageRepository = new SailRepository(new MemoryStore());
+		storageRepository.init();
+		QueryStorage storage = new QueryStorage(storageRepository);
+		String repositoryReference = "urn:test:bound-query-text";
+		String queryText = "select '''long quoted value''' where {}";
+		try {
+			storage.saveQuery(repositoryReference, "long-quotes", ALICE, false, QueryLanguage.SPARQL, queryText,
+					false, 10, 0);
+			assertThat(storage.getQueryText(repositoryReference, ALICE.getName(), "long-quotes", ALICE))
+					.isEqualTo(queryText);
+		} finally {
+			storage.shutdown();
+		}
 	}
 
 	@Test
@@ -91,24 +206,19 @@ class QueryStorageTest {
 		storageRepository.init();
 		QueryStorage storage = new QueryStorage(storageRepository);
 
-		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false,
+		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", ALICE, false,
 				new QueryLanguage("SERQL"),
 				"select * where { ?s ?p ?o }", true, 10, 0))
 						.isInstanceOf(RepositoryException.class)
 						.hasMessageContaining("May only save SPARQL queries");
-		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
+		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", ALICE, false, QueryLanguage.SPARQL,
 				"select * where { ?s ?p ?o }", true, 13, 0))
 						.isInstanceOf(RepositoryException.class)
 						.hasMessageContaining("Illegal value for rows per page");
-		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
+		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", ALICE, false, QueryLanguage.SPARQL,
 				"select * where { ?s ?p ?o }", true, 10, -1))
 						.isInstanceOf(RepositoryException.class)
 						.hasMessageContaining("Illegal value for query timeout");
-		assertThatThrownBy(() -> storage.saveQuery("urn:test:repository", "bad", "alice", false, QueryLanguage.SPARQL,
-				"select '''bad''' where { ?s ?p ?o }", true, 10, 0))
-						.isInstanceOf(IllegalArgumentException.class)
-						.hasMessageContaining("queryText may not contain '''-quoted strings.");
-
 		storage.shutdown();
 	}
 
@@ -174,7 +284,7 @@ class QueryStorageTest {
 		QueryStorage storage = new QueryStorage(storageRepository);
 
 		for (int rowsPerPage : List.of(0, 20, 50, 100, 200)) {
-			storage.saveQuery("urn:test:repository:" + rowsPerPage, "query-" + rowsPerPage, "alice", false,
+			storage.saveQuery("urn:test:repository:" + rowsPerPage, "query-" + rowsPerPage, ALICE, false,
 					QueryLanguage.SPARQL, "select * where { ?s ?p ?o }", false, rowsPerPage, 0);
 		}
 

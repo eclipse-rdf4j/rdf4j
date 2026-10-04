@@ -48,9 +48,11 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPrincipal;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,6 +65,10 @@ import jakarta.servlet.http.HttpServletResponse;
 class QueryServletFlowCoverageTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
+
+	private static final WorkbenchPrincipal ALICE = WorkbenchPrincipal.authenticated("alice");
+
+	private static final WorkbenchPrincipal LOCAL_USER = WorkbenchPrincipal.local();
 
 	@Test
 	void initWrapsQueryStorageInitializationFailures(@TempDir Path tempDir) throws Exception {
@@ -160,16 +166,19 @@ class QueryServletFlowCoverageTest {
 		WorkbenchRequest missingCancelRequest = mock(WorkbenchRequest.class);
 		WorkbenchRequest nullCancelRequest = mock(WorkbenchRequest.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
+		Repository repository = mock(Repository.class);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
+		when(storage.checkAccess(repository)).thenReturn(true);
+		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(ALICE)))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
-		when(storage.canRead(any(), eq("alice"))).thenReturn(false);
+		when(storage.canRead(any(), eq(ALICE))).thenReturn(false);
 		when(missingCancelRequest.getParameter("action")).thenReturn("cancel-explain");
 		when(missingCancelRequest.isParameterPresent("explain-request-id")).thenReturn(false);
 		when(nullCancelRequest.getParameter("action")).thenReturn("cancel-explain");
 		when(nullCancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(nullCancelRequest.getParameter("explain-request-id")).thenReturn(null);
 		servlet.substituteQueryStorage(storage);
+		servlet.setRepository(repository);
 
 		assertThatThrownBy(() -> servlet.doPost(editRequest, response, "/transform"))
 				.isInstanceOf(BadRequestException.class)
@@ -197,14 +206,15 @@ class QueryServletFlowCoverageTest {
 		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		when(repository.getRepositoryURL()).thenReturn("https://example.org/repositories/http");
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.askExists("https://example.org/repositories/http", "http-query", "")).thenReturn(false);
+		when(storage.askExists("https://example.org/repositories/http", "http-query", ALICE)).thenReturn(false);
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(ALICE);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		servlet.setRepository(repository);
 		servlet.substituteQueryStorage(storage);
 
 		servlet.doPost(request, response, "/transform");
 
-		verify(storage).saveQuery("https://example.org/repositories/http", "http-query", "", true,
+		verify(storage).saveQuery("https://example.org/repositories/http", "http-query", ALICE, true,
 				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"written\":true");
 	}
@@ -223,7 +233,8 @@ class QueryServletFlowCoverageTest {
 		info.setLocation(new java.net.URL("https://example.org/rdf4j-server/repositories/test"));
 		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		when(storage.checkAccess(repository)).thenReturn(true);
-		when(storage.askExists(localRepositoryReference("test-id"), "local-query", "")).thenReturn(false);
+		when(storage.askExists(localRepositoryReference("test-id"), "local-query", LOCAL_USER)).thenReturn(false);
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(LOCAL_USER);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		servlet.setRepository(repository);
 		servlet.setRepositoryInfo(info);
@@ -231,7 +242,7 @@ class QueryServletFlowCoverageTest {
 
 		servlet.doPost(request, response, "/transform");
 
-		verify(storage).saveQuery(localRepositoryReference("test-id"), "local-query", "", true,
+		verify(storage).saveQuery(localRepositoryReference("test-id"), "local-query", LOCAL_USER, true,
 				QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"written\":true");
 	}
@@ -393,7 +404,7 @@ class QueryServletFlowCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getParameter("server-user")).thenReturn("alice");
+		when(request.getAttribute(WorkbenchServlet.AUTHENTICATED_PRINCIPAL_ATTRIBUTE)).thenReturn(ALICE);
 		return request;
 	}
 
