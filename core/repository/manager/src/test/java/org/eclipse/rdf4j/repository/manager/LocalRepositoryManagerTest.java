@@ -124,6 +124,17 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
+	void refusesToEnumerateSymbolicLinkRepositoriesRoot() throws Exception {
+		Path outside = Files.createDirectories(dataDir.toPath().resolve("outside-root"));
+		Files.createSymbolicLink(dataDir.toPath().resolve(LocalRepositoryManager.REPOSITORIES_DIR), outside);
+
+		assertThatThrownBy(subject::getAllRepositoryInfos)
+				.isInstanceOf(RepositoryConfigException.class)
+				.hasMessageContaining("Repositories directory");
+		assertThat(outside).isEmptyDirectory();
+	}
+
+	@Test
 	void refusesSymbolicLinkRepositoryDirectoryForConfigWrites() throws Exception {
 		Path outside = createRepositorySymlink();
 		RepositoryConfig config = mock(RepositoryConfig.class);

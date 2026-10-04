@@ -203,11 +203,16 @@ public class LocalRepositoryManager extends RepositoryManager {
 		return requireSafeRepositoryDirectory(repositoryID).toFile();
 	}
 
-	private Path requireSafeRepositoryDirectory(String repositoryID) {
+	private Path requireSafeRepositoriesDirectory() {
 		Path repositoriesDir = resolvePath(REPOSITORIES_DIR).toPath().toAbsolutePath().normalize();
 		if (Files.isSymbolicLink(repositoriesDir)) {
 			throw new RepositoryConfigException("Repositories directory must not be a symbolic link");
 		}
+		return repositoriesDir;
+	}
+
+	private Path requireSafeRepositoryDirectory(String repositoryID) {
+		Path repositoriesDir = requireSafeRepositoriesDirectory();
 		Path repositoryDirectory = RepositoryIdValidator.resolveRepositoryDirectory(repositoriesDir, repositoryID);
 		if (Files.isSymbolicLink(repositoryDirectory)) {
 			throw new RepositoryConfigException("Repository directory must not be a symbolic link: " + repositoryID);
@@ -344,7 +349,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	@Override
 	public synchronized List<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException {
-		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
+		File repositoriesDir = requireSafeRepositoriesDirectory().toFile();
 		String[] dirs = repositoriesDir.list((File repositories, String name) -> {
 			File dataDir = new File(repositories, name);
 			Path configFile = dataDir.toPath().resolve(CFG_FILE);

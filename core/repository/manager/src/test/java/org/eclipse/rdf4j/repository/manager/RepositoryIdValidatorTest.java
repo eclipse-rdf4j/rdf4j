@@ -28,8 +28,8 @@ class RepositoryIdValidatorTest {
 		for (String id : new String[] { "", " ", ".", "..", "a/b", "a\\b", "/absolute", "C:repo",
 				"C:\\repo", "\\\\server\\share", "nul\0id", "line\nbreak", "a%2fb", "%2e%2e",
 				"a\u2044b", "a\u29f5b", "a\u29f9b", "a\uff0fb", "a\uff3cb", "re\u0301pertoire", "NUL",
-				"con.txt", "COM\u00b9", "\uff23\uff2f\uff2e", "repo.", "repo\uff0e", "repo ", "repo:name",
-				"repo*name" }) {
+				"con.txt", "CONIN$", "conin$.txt", "CONOUT$", "conout$.log", "COM\u00b9", "\uff23\uff2f\uff2e",
+				"repo.", "repo\uff0e", "repo ", "repo:name", "repo*name" }) {
 			assertThatThrownBy(() -> RepositoryIdValidator.validate(id))
 					.as("repository ID %s", id)
 					.isInstanceOf(RepositoryConfigException.class)
