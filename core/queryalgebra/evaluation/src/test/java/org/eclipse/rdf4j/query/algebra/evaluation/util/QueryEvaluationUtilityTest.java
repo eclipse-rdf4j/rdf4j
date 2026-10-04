@@ -42,6 +42,26 @@ import org.junit.jupiter.api.Test;
  */
 public class QueryEvaluationUtilityTest {
 
+	@Test
+	void signedZeroNumericComparisonsAreEqualAcrossDatatypes() {
+		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
+				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };
+		for (CoreDatatype.XSD leftType : types) {
+			for (CoreDatatype.XSD rightType : types) {
+				for (String leftLabel : new String[] { "0", "-0", "+000" }) {
+					for (String rightLabel : new String[] { "0", "-0", "+000" }) {
+						Literal left = f.createLiteral(leftLabel, leftType);
+						Literal right = f.createLiteral(rightLabel, rightType);
+						assertEquals(QueryEvaluationUtility.Order.equal,
+								QueryEvaluationUtility.compareLiterals(left, right, true),
+								left + " compared with " + right);
+						assertEquals(0, new ValueComparator().compare(left, right));
+					}
+				}
+			}
+		}
+	}
+
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	private Literal arg1simple;

@@ -229,9 +229,13 @@ public class QueryEvaluationUtility {
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
 			boolean rightLangLit, CoreDatatype.XSD commonDatatype) {
 		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
-			return Order.from(Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));
+			double left = leftLit.doubleValue();
+			double right = rightLit.doubleValue();
+			return left == right ? Order.equal : Order.from(Double.compare(left, right));
 		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
-			return Order.from(Float.compare(leftLit.floatValue(), rightLit.floatValue()));
+			float left = leftLit.floatValue();
+			float right = rightLit.floatValue();
+			return left == right ? Order.equal : Order.from(Float.compare(left, right));
 		} else if (commonDatatype == CoreDatatype.XSD.DECIMAL) {
 			return Order.from(leftLit.decimalValue().compareTo(rightLit.decimalValue()));
 		} else if (commonDatatype.isIntegerDatatype()) {
