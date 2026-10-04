@@ -33,6 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -50,6 +51,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -82,6 +84,10 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFuncti
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * @author Bart Hanssens
@@ -175,8 +181,50 @@ public class GroupIteratorTest {
 
 			assertThat(gi.hasNext()).isTrue();
 			BindingSet next = gi.next();
-			assertEquals(1, next.size());
-			assertEquals(one, next.getBinding("max").getValue());
+			assertThat(next).isEmpty();
+			assertThat(gi.hasNext()).isFalse();
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("emptyConstantAggregates")
+	public void testConstantAggregateEmptySet(AggregateOperator aggregate, Value expected) {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("aggregate", aggregate));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.hasNext()).isTrue();
+			BindingSet result = gi.next();
+			assertThat(result.getValue("aggregate")).isEqualTo(expected);
+			assertThat(result.size()).isEqualTo(expected == null ? 0 : 1);
+			assertThat(gi.hasNext()).isFalse();
+		}
+	}
+
+	private static Stream<Arguments> emptyConstantAggregates() {
+		Literal zero = VF.createLiteral("0", XSD.INTEGER);
+		return Stream.of(false, true)
+				.flatMap(distinct -> Stream.of(
+						Arguments.of(new Count(new ValueConstant(VF.createLiteral(5)), distinct), zero),
+						Arguments.of(new Sum(new ValueConstant(VF.createLiteral(5)), distinct), zero),
+						Arguments.of(new Avg(new ValueConstant(VF.createLiteral(5)), distinct), zero),
+						Arguments.of(new Min(new ValueConstant(VF.createLiteral(5)), distinct), null),
+						Arguments.of(new Max(new ValueConstant(VF.createLiteral(5)), distinct), null),
+						Arguments.of(new Sample(new ValueConstant(VF.createLiteral(5)), distinct), null),
+						Arguments.of(new GroupConcat(new ValueConstant(VF.createLiteral("constant")), distinct),
+								VF.createLiteral(""))));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void testWildcardCountOfEmptyMappings(boolean distinct) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+		Group group = new Group(assignment);
+		group.addGroupElement(new GroupElem("count", new Count(null, distinct)));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.hasNext()).isTrue();
+			assertThat(gi.next().getValue("count")).isEqualTo(VF.createLiteral(distinct ? "1" : "2", XSD.INTEGER));
+			assertThat(gi.hasNext()).isFalse();
 		}
 	}
 
@@ -277,6 +325,19 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	public void testCustomConstantAggregateFunction_Empty() {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("customSum",
+				new AggregateFunctionCall(List.of(new ValueConstant(VF.createLiteral(5))),
+						AGGREGATE_FUNCTION_FACTORY.getIri(), false)));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.hasNext()).isTrue();
+			assertThat(gi.next().getValue("customSum")).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+			assertThat(gi.hasNext()).isFalse();
+		}
+	}
+
+	@Test
 	public void testCustomAggregateFunction_WrongIri() throws QueryEvaluationException {
 		Group group = new Group(EMPTY_ASSIGNMENT);
 		group.addGroupElement(
@@ -346,6 +407,25 @@ public class GroupIteratorTest {
 					new AggregateFunctionCall(List.of(Var.of("a"), Var.of("b")), nAryFactory.getIri(), false)));
 			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
 				assertThat(gi.next().getBinding("narySum").getValue()).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+			}
+		} finally {
+			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);
+		}
+	}
+
+	@Test
+	public void testCustomConstantNAryAggregateFunction_Empty() {
+		AggregateNAryFunctionFactory nAryFactory = new FakeAggregateNAryFunctionFactory();
+		CustomAggregateNAryFunctionRegistry.getInstance().add(nAryFactory);
+		try {
+			Group group = new Group(EMPTY_ASSIGNMENT);
+			group.addGroupElement(new GroupElem("narySum", new AggregateFunctionCall(
+					List.of(new ValueConstant(VF.createLiteral(5)), new ValueConstant(VF.createLiteral(10))),
+					nAryFactory.getIri(), false)));
+			try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+				assertThat(gi.hasNext()).isTrue();
+				assertThat(gi.next().getValue("narySum")).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+				assertThat(gi.hasNext()).isFalse();
 			}
 		} finally {
 			CustomAggregateNAryFunctionRegistry.getInstance().remove(nAryFactory);

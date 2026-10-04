@@ -68,6 +68,14 @@ public class AggregateTest extends AbstractComplianceTest {
 				makeTest("RuntimeEmptyBGPConstantSample", this::testRuntimeEmptyBGPConstantSample),
 				makeTest("EmptyGroupedConstantAggregates", this::testEmptyGroupedConstantAggregates),
 				makeTest("ConstantAggregatesWithSingletonInput", this::testConstantAggregatesWithSingletonInput),
+				makeTest("WildcardCountWithSingletonInput", this::testWildcardCountWithSingletonInput),
+				makeTest("EmptyAggregateWithHaving", this::testEmptyAggregateWithHaving),
+				makeTest("EmptyAggregateSubqueryJoin", conn -> testEmptyAggregateSubquery(conn, false)),
+				makeTest("EmptyAggregateSubqueryOptional", conn -> testEmptyAggregateSubquery(conn, true)),
+				makeTest("NestedEmptyAggregateSubquery", this::testNestedEmptyAggregateSubquery),
+				makeTest("EmptyAggregateSubqueryUnion", this::testEmptyAggregateSubqueryUnion),
+				makeTest("EmptyAggregateSubqueryMinus", this::testEmptyAggregateSubqueryMinus),
+				makeTest("EmptyAggregateSubqueryExists", this::testEmptyAggregateSubqueryExists),
 				makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
 				makeTest("MaxAggregateWithoutGroupEmptySolution", this::testMaxAggregateWithoutGroupEmptySolution),
 				makeTest("MinAggregateWithGroupEmptyResult", this::testMinAggregateWithGroupEmptyResult),
@@ -234,6 +242,103 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
+	private void testWildcardCountWithSingletonInput(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?count) (COUNT(DISTINCT *) AS ?distinctCount) WHERE {}";
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("count")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("distinctCount")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testEmptyAggregateWithHaving(RepositoryConnection conn) {
+		for (String condition : List.of("COUNT(*) = 0", "COUNT(*) > 0", "false")) {
+			String query = "SELECT (COUNT(*) AS ?count) (SUM(5) AS ?sum) WHERE { FILTER(false) } HAVING ("
+					+ condition + ")";
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				if (condition.equals("COUNT(*) = 0")) {
+					assertThat(result.hasNext()).isTrue();
+					BindingSet bindings = result.next();
+					assertThat(bindings.getValue("count")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+					assertThat(bindings.getValue("sum")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+				}
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
+	private void testEmptyAggregateSubquery(RepositoryConnection conn, boolean optional) {
+		String query = "SELECT ?outer ?count ?sum ?sample WHERE { VALUES ?outer { 1 2 } "
+				+ (optional ? "OPTIONAL " : "")
+				+ "{ SELECT (COUNT(*) AS ?count) (SUM(5) AS ?sum) (SAMPLE(5) AS ?sample) "
+				+ "WHERE { FILTER(false) } } } ORDER BY ?outer";
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			for (int outer = 1; outer <= 2; outer++) {
+				assertThat(result.hasNext()).isTrue();
+				BindingSet bindings = result.next();
+				assertThat(bindings.getValue("outer"))
+						.isEqualTo(literal(Integer.toString(outer), CoreDatatype.XSD.INTEGER));
+				assertThat(bindings.getValue("count")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+				assertThat(bindings.getValue("sum")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+				assertThat(bindings.getValue("sample")).isNull();
+			}
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testNestedEmptyAggregateSubquery(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?count) (SUM(?innerSum) AS ?sum) WHERE { "
+				+ "{ SELECT (SUM(5) AS ?innerSum) WHERE { FILTER(false) } } }";
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("count")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("sum")).isEqualTo(literal("0", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testEmptyAggregateSubqueryUnion(RepositoryConnection conn) {
+		String query = "SELECT (COUNT(*) AS ?count) (COUNT(DISTINCT *) AS ?distinctCount) WHERE { "
+				+ "{ SELECT (SAMPLE(5) AS ?sample) WHERE { FILTER(false) } } UNION {} }";
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			BindingSet bindings = result.next();
+			assertThat(bindings.getValue("count")).isEqualTo(literal("2", CoreDatatype.XSD.INTEGER));
+			assertThat(bindings.getValue("distinctCount")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testEmptyAggregateSubqueryMinus(RepositoryConnection conn) {
+		String query = "SELECT ?count WHERE { VALUES ?count { 0 1 } "
+				+ "MINUS { SELECT (COUNT(*) AS ?count) WHERE { FILTER(false) } } }";
+		try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			assertThat(result.next().getValue("count")).isEqualTo(literal("1", CoreDatatype.XSD.INTEGER));
+			assertThat(result.hasNext()).isFalse();
+		}
+	}
+
+	private void testEmptyAggregateSubqueryExists(RepositoryConnection conn) {
+		for (boolean negated : List.of(false, true)) {
+			String query = "SELECT ?outer WHERE { VALUES ?outer { 1 2 } FILTER " + (negated ? "NOT " : "")
+					+ "EXISTS { SELECT (SAMPLE(5) AS ?sample) WHERE { FILTER(false) } } } ORDER BY ?outer";
+			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+				if (!negated) {
+					for (int outer = 1; outer <= 2; outer++) {
+						assertThat(result.hasNext()).isTrue();
+						assertThat(result.next().getValue("outer"))
+								.isEqualTo(literal(Integer.toString(outer), CoreDatatype.XSD.INTEGER));
+					}
+				}
+				assertThat(result.hasNext()).isFalse();
+			}
+		}
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1978
 	 */
@@ -349,7 +454,8 @@ public class AggregateTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
 			assertThat((Iterable<?>) result).isNotNull();
 			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
+			// UNDEF still contributes a solution mapping to COUNT(*).
+			assertThat(result.next().getValue("c").stringValue()).isEqualTo("5");
 			assertThat((Iterable<?>) result).isEmpty();
 		}
 	}
