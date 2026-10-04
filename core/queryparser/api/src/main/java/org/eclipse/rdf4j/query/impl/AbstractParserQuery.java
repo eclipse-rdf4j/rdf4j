@@ -62,7 +62,7 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 */
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter, QueryExecutionDeadline deadline) {
-		return enforceResultMaxQueryTime(bindingsIter, deadline);
+		return enforceResultMaxQueryTime(enforceMaxQueryTime(bindingsIter), deadline);
 	}
 
 	/** Binds any public result shape to the deadline, including its final value preparation. */

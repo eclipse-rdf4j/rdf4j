@@ -73,6 +73,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 				}
 			}
 
+			bindingsIter1 = enforceMaxQueryTime(bindingsIter1);
+
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<BindingSet>(bindingsIter1) {
 

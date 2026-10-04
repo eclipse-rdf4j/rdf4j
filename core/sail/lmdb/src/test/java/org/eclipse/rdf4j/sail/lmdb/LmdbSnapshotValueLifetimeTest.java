@@ -393,22 +393,6 @@ class LmdbSnapshotValueLifetimeTest {
 				+ before.growthEpisodes());
 	}
 
-	private void awaitResultGrowthRequest(SailConnection connection, Object result) throws Exception {
-		Object lock = privateField(connection, "readAttemptLock");
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-		synchronized (lock) {
-			while (privateField(result, "growthToken") == null) {
-				long remaining = deadline - System.nanoTime();
-				if (remaining <= 0) {
-					break;
-				}
-				TimeUnit.NANOSECONDS.timedWait(lock, remaining);
-			}
-		}
-		assertTrue(privateField(result, "growthToken") != null,
-				"the unobserved result must receive the accepted growth token before the sibling drains");
-	}
-
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void unobservedNonEmptySnapshotQueryRestartsAfterTripleStoreMapGrowth(@TempDir File dataDir) throws Exception {

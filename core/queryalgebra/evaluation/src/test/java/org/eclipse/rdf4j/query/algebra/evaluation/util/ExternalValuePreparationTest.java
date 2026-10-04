@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -27,16 +28,53 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class ExternalValuePreparationTest {
+
+	@Test
+	void queryModelPreparationDoesNotOpenNonrepeatableBindingSources() {
+		Value assigned = SimpleValueFactory.getInstance().createIRI("urn:test:streamed");
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("assigned", assigned);
+		AtomicInteger opens = new AtomicInteger();
+		Iterable<BindingSet> rows = () -> {
+			opens.incrementAndGet();
+			return List.<BindingSet>of(row).iterator();
+		};
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("assigned"));
+		assignment.setBindingSets(rows);
+		Set<Value> initialized = Collections.newSetFromMap(new IdentityHashMap<>());
+		ExternalValuePreparation.initializeQueryModel(new QueryRoot(new Union(new EmptySet(), assignment)),
+				initialized::add);
+		assertEquals(0, opens.get(), "Preparing the model must not acquire the streaming source's iterator");
+		assertTrue(initialized.isEmpty());
+		assertSame(rows, assignment.getBindingSets(), "Preparation must preserve source identity and repeatability");
+		assertSame(row, rows.iterator().next());
+	}
+
+	@Test
+	void repeatableMarkerSourcesStillPrepareTheirValues() {
+		Value assigned = SimpleValueFactory.getInstance().createIRI("urn:test:repeatable");
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("assigned", assigned);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets((BindingSetAssignment.RepeatableBindingSetSource) List.<BindingSet>of(row)::iterator);
+		Set<Value> initialized = Collections.newSetFromMap(new IdentityHashMap<>());
+		ExternalValuePreparation.initializeQueryModel(assignment, initialized::add);
+		assertEquals(Set.of(assigned), initialized);
+	}
 
 	@Test
 	void explicitInitializerVisitsConstantsBoundVarsAndBindingAssignmentsWithoutDynamicContext() {

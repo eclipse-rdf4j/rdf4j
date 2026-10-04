@@ -91,8 +91,11 @@ public interface SailResultValueExtractor<T> {
 
 			@Override
 			public void meet(BindingSetAssignment node) {
-				for (BindingSet bindings : node.getBindingSets()) {
-					BINDING_SETS.extract(bindings, roots);
+				// Model inspection must not consume an opaque, potentially single-use row source.
+				if (node.hasRepeatableBindingSets()) {
+					for (BindingSet bindings : node.getBindingSets()) {
+						BINDING_SETS.extract(bindings, roots);
+					}
 				}
 			}
 		});

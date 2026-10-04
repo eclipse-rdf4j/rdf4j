@@ -29,10 +29,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -40,11 +44,15 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class SailQueryExecutionTimeoutTest {
 
@@ -58,6 +66,84 @@ class SailQueryExecutionTimeoutTest {
 	void setUp() {
 		sailConnection = mock(SailConnection.class);
 		repositoryConnection = new SailRepositoryConnection(mock(SailRepository.class), sailConnection);
+	}
+
+	@ParameterizedTest
+	@MethodSource("legacyHookCases")
+	void legacyCancellationHookRunsForEveryQueryShape(QueryShape shape, int maxExecutionTime) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		when(repositoryConnection.getRepository().getValueFactory()).thenReturn(values);
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("subject", values.createIRI("urn:hook:subject"));
+		row.addBinding("predicate", values.createIRI("urn:hook:predicate"));
+		row.addBinding("object", values.createLiteral("hook value"));
+		SingletonIteration<BindingSet> iteration = new SingletonIteration<>(row);
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> iteration);
+		AtomicInteger hookCalls = new AtomicInteger();
+		SailQuery query = switch (shape) {
+		case TUPLE -> new SailTupleQuery(
+				((SailTupleQuery) repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				hookCalls.incrementAndGet();
+				throw new QueryInterruptedException("Extension requested cancellation");
+			}
+		};
+		case BOOLEAN -> new SailBooleanQuery(
+				((SailBooleanQuery) repositoryConnection.prepareBooleanQuery("ASK WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				hookCalls.incrementAndGet();
+				throw new QueryInterruptedException("Extension requested cancellation");
+			}
+		};
+		case GRAPH -> new SailGraphQuery(
+				((SailGraphQuery) repositoryConnection.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				hookCalls.incrementAndGet();
+				throw new QueryInterruptedException("Extension requested cancellation");
+			}
+		};
+		};
+		query.setMaxExecutionTime(maxExecutionTime);
+		assertThatThrownBy(() -> {
+			switch (shape) {
+			case TUPLE -> {
+				try (var result = ((TupleQuery) query).evaluate()) {
+					result.hasNext();
+				}
+			}
+			case BOOLEAN -> ((BooleanQuery) query).evaluate();
+			case GRAPH -> {
+				try (var result = ((GraphQuery) query).evaluate()) {
+					result.hasNext();
+				}
+			}
+			}
+		}).isInstanceOf(QueryInterruptedException.class).hasMessage("Extension requested cancellation");
+		assertThat(hookCalls).hasValue(1);
+		assertThat(iteration.isClosed()).isTrue();
+	}
+
+	private static Stream<Arguments> legacyHookCases() {
+		return Stream.of(QueryShape.values())
+				.flatMap(shape -> Stream.of(0, 1).map(timeout -> Arguments.of(shape, timeout)));
+	}
+
+	private enum QueryShape {
+		TUPLE,
+		BOOLEAN,
+		GRAPH
 	}
 
 	@Test

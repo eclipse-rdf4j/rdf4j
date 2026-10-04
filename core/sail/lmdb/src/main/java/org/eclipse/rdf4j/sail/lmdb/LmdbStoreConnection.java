@@ -1029,16 +1029,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		return pendingGrowthKind;
 	}
 
-	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner) {
-		return beginReadExposureScope(observationOwner, QueryExecutionDeadline.current());
-	}
-
-	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
-			QueryExecutionDeadline deadline) {
-		return beginReadExposureScope(observationOwner, deadline,
-				observationOwner == null ? null : observationOwner.operationAttempt);
-	}
-
 	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
 			QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt) {
 		ReadExposureScope parent = activeReadExposureScope.get();
@@ -1082,7 +1072,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return null;
 		}
 		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-			OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel, deadline);
+			OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel);
 			try {
 				attempt.lease = lmdbStore.getBackingStore()
 						.registerReadAttempt(attempt, attempt.observer,
@@ -1527,13 +1517,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						&& isReplayIsolation(operationAttempt.isolationLevel);
 	}
 
-	private boolean isResultReplayAvailableLocked(ReplayableIteration<?> iteration) {
-		if (iteration != null && iteration.operationAttempt != null) {
-			return isOperationReplayAvailableLocked(iteration.operationAttempt);
-		}
-		return isResultReplayAvailableLocked();
-	}
-
 	private boolean isResultReplayAvailableLocked(ReplayableIteration<?> iteration,
 			LmdbSailStore.MapGrowthToken acceptedToken) {
 		if (iteration != null && iteration.operationAttempt != null) {
@@ -1801,13 +1784,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private <T> T executeTrackedRead(ReadOperation<T> operation) throws SailException {
 		return executeTrackedRead(operation, null, QueryExecutionDeadline.current());
-	}
-
-	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner)
-			throws SailException {
-		QueryExecutionDeadline current = QueryExecutionDeadline.current();
-		return executeTrackedRead(operation, observationOwner,
-				current == null && observationOwner != null ? observationOwner.deadline : current);
 	}
 
 	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner,
@@ -2190,7 +2166,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final ValueResolutionScope valueScope;
 		private final boolean ownsValueScope;
 		private final IsolationLevel isolationLevel;
-		private final QueryExecutionDeadline deadline;
 		private final LmdbSailStore.ReadAttemptLease transactionAdmission;
 		private final LmdbSailStore.MapGrowthObserver observer = this::requestReplay;
 		private LmdbSailStore.ReadAttemptLease lease;
@@ -2201,9 +2176,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile boolean sealed;
 		private volatile boolean closed;
 
-		private OperationReadAttempt(IsolationLevel isolationLevel, QueryExecutionDeadline deadline) {
+		private OperationReadAttempt(IsolationLevel isolationLevel) {
 			this.isolationLevel = isolationLevel;
-			this.deadline = deadline;
 			this.transactionAdmission = isActive() ? transactionAdmissionLease : null;
 			this.ownsValueScope = !isActive();
 			this.valueScope = ownsValueScope

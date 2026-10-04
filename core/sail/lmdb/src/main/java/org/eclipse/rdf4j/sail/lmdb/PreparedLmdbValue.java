@@ -151,10 +151,6 @@ final class PreparedLmdbValue {
 			this.decodeIdentity = payload == null ? identity : null;
 		}
 
-		LmdbValue.InternalIdentity decodeIdentity() {
-			return decodeIdentity;
-		}
-
 		void protectDecodeCapability(Prepared value) {
 			LmdbValue.InternalIdentity decoding = decodeIdentity;
 			if (decoding != null) {

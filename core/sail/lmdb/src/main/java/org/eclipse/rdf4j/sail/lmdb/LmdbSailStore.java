@@ -247,10 +247,6 @@ class LmdbSailStore implements SailStore {
 			mapGrowthCoordinator.release(this);
 		}
 
-		void ensureNativeSnapshotsValid() throws SailException {
-			mapGrowthCoordinator.ensureAttemptValid(this);
-		}
-
 		void markWriteIntent() {
 			mapGrowthCoordinator.markWriteIntent(this);
 		}
@@ -2053,20 +2049,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private void ensureAttemptValid(ReadAttemptLease attempt) throws SailException {
-			lock.lock();
-			try {
-				for (ReadViewLease lease : attempt.historicalViews.keySet()) {
-					if (lease != null && lease.invalidatedKind != null) {
-						throw new MapResizeConflictException(lease.invalidatedKind,
-								"LMDB map changed during the read attempt; retry the transaction");
-					}
-				}
-			} finally {
-				lock.unlock();
-			}
-		}
-
 		private void awaitGrowthEnd(MapGrowthToken token, QueryExecutionDeadline queryDeadline) {
 			Objects.requireNonNull(token, "token");
 			try (QueryExecutionDeadline.Registration ignored = signalOnExpiration(queryDeadline)) {
@@ -2691,7 +2673,6 @@ class LmdbSailStore implements SailStore {
 		private final Object owner;
 		private final WriterLease writerLease;
 		private final boolean ownsOwner;
-		private final List<MapGrowthAttempt> deferredGrowthAttempts = new ArrayList<>();
 		private int depth = 1;
 		private boolean changed;
 		private boolean commitRequested;
@@ -2784,18 +2765,6 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				publicationContext.remove();
-				for (MapGrowthAttempt growthAttempt : context.deferredGrowthAttempts) {
-					try {
-						growthAttempt.close();
-					} catch (RuntimeException | Error closeFailure) {
-						if (failure == null) {
-							failure = closeFailure;
-						} else if (failure != closeFailure) {
-							failure.addSuppressed(closeFailure);
-						}
-					}
-				}
-				context.deferredGrowthAttempts.clear();
 				try {
 					context.writerLease.close();
 				} catch (RuntimeException | Error closeFailure) {
@@ -3144,11 +3113,6 @@ class LmdbSailStore implements SailStore {
 				throw error;
 			}
 		};
-	}
-
-	DatasetAdmission beginDatasetAdmission(IsolationLevel level, ReadView transactionView,
-			MapGrowthObserver observer) throws SailException {
-		return beginDatasetAdmission(level, transactionView, observer, null);
 	}
 
 	DatasetAdmission beginDatasetAdmission(IsolationLevel level, ReadView transactionView,
@@ -3911,15 +3875,6 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private void deferMapGrowthAttemptClose(MapGrowthAttempt growthAttempt) {
-		PublicationContext current = publicationContext.get();
-		if (current == null) {
-			growthAttempt.close();
-		} else {
-			current.deferredGrowthAttempts.add(growthAttempt);
-		}
-	}
-
 	private void markDictionaryCheckpointPending() {
 		if (storeTxnStarted.get()) {
 			pendingDictionaryCheckpointThread = Thread.currentThread();
@@ -4034,10 +3989,6 @@ class LmdbSailStore implements SailStore {
 		} finally {
 			sinkStoreAccessLock.unlock();
 		}
-	}
-
-	private ReadView createReadView(MapGrowthObserver observer) throws SailException {
-		return createReadView(observer, null);
 	}
 
 	private ReadView createReadView(MapGrowthObserver observer, ReadAttemptLease readAttempt) throws SailException {
@@ -5207,27 +5158,17 @@ class LmdbSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		return createStatementIterator(txn, null, subj, pred, obj, explicit, contexts);
-	}
-
-	CloseableIteration<? extends Statement> createStatementIterator(
 			ReadView readView, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 			throws IOException {
-		return createStatementIterator(readView.tripleTxn(), readView.valueSnapshot(), subj, pred, obj, explicit,
-				contexts);
-	}
-
-	private CloseableIteration<? extends Statement> createStatementIterator(
-			Txn txn, ValueStore.ReadSnapshot valueSnapshot, Resource subj, IRI pred, Value obj, boolean explicit,
-			Resource... contexts) throws IOException {
+		Txn txn = readView.tripleTxn();
+		ValueStore.ReadSnapshot valueSnapshot = readView.valueSnapshot();
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = getStatementId(valueSnapshot, subj);
+			subjID = valueStore.getStatementId(valueSnapshot, subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
@@ -5235,7 +5176,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = getStatementId(valueSnapshot, pred);
+			predID = valueStore.getStatementId(valueSnapshot, pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
@@ -5243,7 +5184,7 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = getStatementId(valueSnapshot, obj);
+			objID = valueStore.getStatementId(valueSnapshot, obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
@@ -5258,7 +5199,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 				} else if (!context.isTripleTerm()) {
-					long contextID = getStatementId(valueSnapshot, context);
+					long contextID = valueStore.getStatementId(valueSnapshot, context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -5287,27 +5228,17 @@ class LmdbSailStore implements SailStore {
 	}
 
 	long countStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
-		return countStatementIterator(txn, null, subj, pred, obj, explicit, contexts);
-	}
-
-	long countStatementIterator(
 			ReadView readView, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 			throws IOException {
-		return countStatementIterator(readView.tripleTxn(), readView.valueSnapshot(), subj, pred, obj, explicit,
-				contexts);
-	}
-
-	private long countStatementIterator(
-			Txn txn, ValueStore.ReadSnapshot valueSnapshot, Resource subj, IRI pred, Value obj, boolean explicit,
-			Resource... contexts) throws IOException {
+		Txn txn = readView.tripleTxn();
+		ValueStore.ReadSnapshot valueSnapshot = readView.valueSnapshot();
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return 0;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = getStatementId(valueSnapshot, subj);
+			subjID = valueStore.getStatementId(valueSnapshot, subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -5315,7 +5246,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = getStatementId(valueSnapshot, pred);
+			predID = valueStore.getStatementId(valueSnapshot, pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return 0;
 			}
@@ -5323,7 +5254,7 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = getStatementId(valueSnapshot, obj);
+			objID = valueStore.getStatementId(valueSnapshot, obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return 0;
@@ -5338,7 +5269,7 @@ class LmdbSailStore implements SailStore {
 				if (context == null) {
 					contextIDList.add(0L);
 				} else if (!context.isTripleTerm()) {
-					long contextID = getStatementId(valueSnapshot, context);
+					long contextID = valueStore.getStatementId(valueSnapshot, context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
 						contextIDList.add(contextID);
@@ -5362,14 +5293,6 @@ class LmdbSailStore implements SailStore {
 		return count;
 	}
 
-	private long getId(ValueStore.ReadSnapshot valueSnapshot, Value value) throws IOException {
-		return valueSnapshot == null ? valueStore.getId(value) : valueStore.getId(valueSnapshot, value);
-	}
-
-	private long getStatementId(ValueStore.ReadSnapshot valueSnapshot, Value value) throws IOException {
-		return valueSnapshot == null ? valueStore.getId(value) : valueStore.getStatementId(valueSnapshot, value);
-	}
-
 	/**
 	 * Creates a triple term iterator based on the supplied pattern.
 	 *
@@ -5379,20 +5302,13 @@ class LmdbSailStore implements SailStore {
 	 * @return A triple term iterator that can be used to iterate over the triple terms that match the specified
 	 *         pattern.
 	 */
-	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj)
-			throws IOException {
-		return createTripleTermIterator(null, subj, pred, obj);
-	}
-
 	CloseableIteration<? extends TripleTerm> createTripleTermIterator(ReadView readView, Resource subj, IRI pred,
 			Value obj) throws IOException {
-		if (readView != null) {
-			readView.requireDictionaryTermSnapshot();
-		}
-		ValueStore.ReadSnapshot valueSnapshot = readView == null ? null : readView.valueSnapshot();
+		readView.requireDictionaryTermSnapshot();
+		ValueStore.ReadSnapshot valueSnapshot = readView.valueSnapshot();
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
-			subjID = getId(valueSnapshot, subj);
+			subjID = valueStore.getId(valueSnapshot, subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
@@ -5400,7 +5316,7 @@ class LmdbSailStore implements SailStore {
 
 		long predID = LmdbValue.UNKNOWN_ID;
 		if (pred != null) {
-			predID = getId(valueSnapshot, pred);
+			predID = valueStore.getId(valueSnapshot, pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
@@ -5408,14 +5324,13 @@ class LmdbSailStore implements SailStore {
 
 		long objID = LmdbValue.UNKNOWN_ID;
 		if (obj != null) {
-			objID = getId(valueSnapshot, obj);
+			objID = valueStore.getId(valueSnapshot, obj);
 			if (objID == LmdbValue.UNKNOWN_ID) {
 				return new EmptyIteration<>();
 			}
 		}
 
-		RecordIterator terms = valueSnapshot == null ? valueStore.getTripleTerms(subjID, predID, objID)
-				: valueStore.getTripleTerms(valueSnapshot, subjID, predID, objID);
+		RecordIterator terms = valueStore.getTripleTerms(valueSnapshot, subjID, predID, objID);
 		return new LmdbTripleTermIterator(terms, valueStore, valueSnapshot);
 	}
 

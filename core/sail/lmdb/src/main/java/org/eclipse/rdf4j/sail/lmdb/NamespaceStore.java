@@ -25,7 +25,6 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -33,7 +32,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.base.SailSource;
 
 /** In-memory namespace state backed by the authoritative named database in the TripleStore. */
-class NamespaceStore implements Iterable<SimpleNamespace> {
+class NamespaceStore {
 
 	private static final String FILE_NAME = "namespaces.dat";
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'n', 'n', 'f' };
@@ -53,11 +52,6 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 			namespaces = tripleStore.initializeNamespaceSnapshot(readLegacyNamespaces());
 		}
 		install(namespaces);
-	}
-
-	public String getNamespace(String prefix) {
-		SimpleNamespace namespace = namespacesMap.get(prefix);
-		return namespace == null ? null : namespace.getName();
 	}
 
 	/** Copies the current namespace state into an immutable insertion-ordered view. */
@@ -114,11 +108,6 @@ class NamespaceStore implements Iterable<SimpleNamespace> {
 		if (removed != null) {
 			encodedSnapshotSize -= namespaceEntrySize(removed.getPrefix(), removed.getName());
 		}
-	}
-
-	@Override
-	public synchronized Iterator<SimpleNamespace> iterator() {
-		return namespacesMap.values().iterator();
 	}
 
 	public synchronized void clear() {

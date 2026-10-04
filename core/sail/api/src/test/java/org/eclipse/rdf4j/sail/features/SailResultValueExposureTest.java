@@ -20,6 +20,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
@@ -45,6 +47,36 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class SailResultValueExposureTest {
+
+	@Test
+	void queryModelAndExplanationExtractionDoNotOpenNonrepeatableBindingSources() {
+		Literal constant = mock(Literal.class);
+		Literal assigned = mock(Literal.class);
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("assigned", assigned);
+		AtomicInteger opens = new AtomicInteger();
+		Iterable<BindingSet> rows = () -> {
+			opens.incrementAndGet();
+			return List.<BindingSet>of(bindings).iterator();
+		};
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("assigned"));
+		assignment.setBindingSets(rows);
+		QueryRoot expression = new QueryRoot(new Extension(assignment,
+				new ExtensionElem(new ValueConstant(constant), "constant")));
+		Explanation explanation = mock(Explanation.class);
+		when(explanation.tupleExpr()).thenReturn(expression);
+		List<Value> roots = new ArrayList<>();
+		SailResultValueExtractor.QUERY_MODELS.extract(expression, roots::add);
+		assertEquals(0, opens.get());
+		assertEquals(List.of(constant), roots);
+		roots.clear();
+		SailResultValueExtractor.EXPLANATIONS.extract(explanation, roots::add);
+		assertEquals(0, opens.get());
+		assertEquals(List.of(constant), roots);
+		assertSame(rows, assignment.getBindingSets());
+		verifyNoInteractions(constant, assigned);
+	}
 
 	@Test
 	void bindingSnapshotFreezesNamesAndReferencesWithoutResolvingValues() {

@@ -527,19 +527,6 @@ public class TripleStoreTest {
 				fieldValue(leadingField, rightStatementIndex, subj, pred, obj, context));
 	}
 
-	@SuppressWarnings("unchecked")
-	private List<TripleIndex> getIndexes(TripleStore store) throws Exception {
-		Field indexesField = TripleStore.class.getDeclaredField("indexes");
-		indexesField.setAccessible(true);
-		return (List<TripleIndex>) indexesField.get(store);
-	}
-
-	private long getWriteTxn(TripleStore store) throws Exception {
-		Field writeTxnField = TripleStore.class.getDeclaredField("writeTxn");
-		writeTxnField.setAccessible(true);
-		return (long) writeTxnField.get(store);
-	}
-
 	private long fieldValue(char field, int statementIndex, long[] subj, long[] pred, long[] obj, long[] context) {
 		switch (field) {
 		case 's':

@@ -56,8 +56,11 @@ public final class ExternalValuePreparation {
 
 			@Override
 			public void meet(BindingSetAssignment node) {
-				for (BindingSet bindings : node.getBindingSets()) {
-					initializeBindings(bindings, initializer);
+				// Opaque sources may be single-use; prepare their rows only when evaluation consumes them.
+				if (node.hasRepeatableBindingSets()) {
+					for (BindingSet bindings : node.getBindingSets()) {
+						initializeBindings(bindings, initializer);
+					}
 				}
 			}
 		});

@@ -3223,10 +3223,6 @@ class ValueStore extends AbstractValueFactory {
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
-	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
-		return id2tripleTerm(id, value, currentReadRevision(id));
-	}
-
 	private LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value, ValueStoreRevision valueRevision)
 			throws IOException {
 		return readTransaction(env, (stack, txn) -> {
@@ -5989,10 +5985,6 @@ class ValueStore extends AbstractValueFactory {
 		bb.put(labelData);
 
 		return literalData;
-	}
-
-	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
-		return data2value(id, data, value, currentReadRevision(id));
 	}
 
 	private LmdbValue data2value(long id, byte[] data, LmdbValue value, ValueStoreRevision valueRevision)

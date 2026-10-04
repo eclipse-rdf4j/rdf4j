@@ -93,7 +93,6 @@ class PersistentSetFactory<T extends Serializable> {
 	TxnManager txnManager;
 	long writeTxn;
 	PointerBuffer writeTxnPp = PointerBuffer.allocateDirect(1);
-	private final int defaultDbi;
 	private long mapSize = 1048576; // 1 MiB
 	private long pageSize;
 
@@ -116,7 +115,6 @@ class PersistentSetFactory<T extends Serializable> {
 		long createdEnv = 0;
 		TxnManager createdTxnManager = null;
 		Path createdDbDir = null;
-		int createdDefaultDbi = 0;
 		long createdPageSize = 0;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -133,13 +131,12 @@ class PersistentSetFactory<T extends Serializable> {
 			createdDbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
 			E(mdb_env_open(createdEnv, createdDbDir.toAbsolutePath().toString(), flags, 0664));
 			environmentLifecycle.afterOpen(createdEnv, createdDbDir);
-			createdDefaultDbi = openDatabase(createdEnv, null, MDB_CREATE);
+			int defaultDbi = openDatabase(createdEnv, null, MDB_CREATE);
 
 			MDBStat stat = MDBStat.malloc(stack);
 			long environmentForRead = createdEnv;
-			int defaultDbiForRead = createdDefaultDbi;
 			createdPageSize = readTransaction(environmentForRead, (stack2, txn) -> {
-				E(mdb_stat(txn, defaultDbiForRead, stat));
+				E(mdb_stat(txn, defaultDbi, stat));
 				return stat.ms_psize();
 			});
 		} catch (IOException | RuntimeException | Error failure) {
@@ -149,7 +146,6 @@ class PersistentSetFactory<T extends Serializable> {
 		env = createdEnv;
 		txnManager = createdTxnManager;
 		dbDir = createdDbDir;
-		defaultDbi = createdDefaultDbi;
 		pageSize = createdPageSize;
 	}
 
