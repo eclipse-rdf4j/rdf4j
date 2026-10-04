@@ -640,7 +640,7 @@ class SailSourceBranch implements SailSource {
 				};
 			} else {
 				derivedFrom = backingSource.dataset(level);
-				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
+				if (!autoFlush && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 					this.snapshot = new SnapshotLease(derivedFrom);
 					// don't release snapshot until this SailSource is released
 					derivedFrom = new DelegatingSailDataset(derivedFrom) {

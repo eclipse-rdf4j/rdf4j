@@ -833,6 +833,23 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
+	boolean hasDeprecatedStatementInContext(Resource context) {
+		assert !closed;
+		if (deprecated == null || deprecatedEmpty) {
+			return false;
+		}
+
+		boolean readLock = readWriteLock.readLock();
+		try {
+			if (deprecated == null || deprecatedEmpty) {
+				return false;
+			}
+			return deprecated.contains(null, null, null, context);
+		} finally {
+			readWriteLock.unlockReader(readLock);
+		}
+	}
+
 	boolean isChanged() {
 		assert !closed;
 		return approved != null || compactApproved != null || deprecated != null || approvedContexts != null
