@@ -559,9 +559,17 @@ for (const viewId of ['repositories', 'contexts']) {
         assert.ok(body, 'the table body must remain an independently owned row root');
         const markup = flatten(body.template);
         if (viewId === 'repositories') {
-            assert.ok(markup.includes(`href="/rdf4j-workbench/repositories/repository-${model.rowStart}/summary"`));
-            // Access is text (M5.3): only the access that applies is listed.
-            assert.match(markup, /<span class="workbench-badge">Read<\/span>/);
+            const rowMarker = `data-workbench-row-index=${model.rowStart}`;
+            const rowStart = markup.indexOf(rowMarker);
+            assert.notEqual(rowStart, -1, 'the later repository row must remain in the owned body');
+            const nextRow = markup.indexOf('<tr data-workbench-row-index=', rowStart + rowMarker.length);
+            const rowMarkup = markup.slice(rowStart, nextRow < 0 ? undefined : nextRow);
+            assert.ok(rowMarkup.includes(`href="/rdf4j-workbench/repositories/repository-${model.rowStart}/summary"`),
+                'the repository summary link must stay with its row');
+            // Access is shown only when it applies; the icon decorates its readable badge.
+            assert.match(rowMarkup,
+                /<span class="workbench-badge"><svg[^>]*data-workbench-icon=eye\b[\s\S]*?<\/svg>Read<\/span>/,
+                'the eye icon and Read label must stay together in the row badge');
             assert.doesNotMatch(markup, />Write</);
         } else {
             const resource = `<urn:context:${model.rowStart}>`;

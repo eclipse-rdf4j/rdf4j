@@ -211,6 +211,29 @@ public class TripleStoreTest {
 			try (Txn stats = values.getTxnManager().createReadTxn()) {
 				initialValueMapSize = mapSize(stats.get());
 			}
+			long maxValue = Long.MAX_VALUE >>> 7;
+			long growthSubjectId = ValueIds.createId(ValueIds.T_URI, maxValue);
+			long growthPredicateId = ValueIds.createId(ValueIds.T_URI, maxValue - 1);
+			long growthContextId = ValueIds.createId(ValueIds.T_URI, maxValue - 2);
+			long firstGrowthObjectValue = maxValue - 3;
+			long firstGrowthObjectId = ValueIds.createId(ValueIds.T_LITERAL, firstGrowthObjectValue);
+			int firstGrowthKeyBytes = Varint.calcListLengthUnsigned(growthSubjectId, growthPredicateId,
+					firstGrowthObjectId, growthContextId);
+			int growthBatchSize = Math.toIntExact(Math.max(initialTripleMapSize, initialValueMapSize)
+					/ firstGrowthKeyBytes + 1);
+			long lastGrowthObjectId = ValueIds.createId(ValueIds.T_LITERAL,
+					firstGrowthObjectValue - (growthBatchSize - 1L));
+			int minimumGrowthKeyBytes = Varint.calcListLengthUnsigned(growthSubjectId, growthPredicateId,
+					lastGrowthObjectId, growthContextId);
+			assertEquals("The full-width synthetic IDs must keep one key width across the batch",
+					firstGrowthKeyBytes, minimumGrowthKeyBytes);
+			long minimumQuadBytes = (long) growthBatchSize * minimumGrowthKeyBytes;
+			assertTrue("The staged tuple keys must exceed the measured triple map capacity",
+					minimumQuadBytes > initialTripleMapSize);
+			assertTrue("The staged tuple keys must exceed the measured value map capacity",
+					minimumQuadBytes > initialValueMapSize);
+			assertTrue("Each stored ASCII literal payload must be at least one tuple key",
+					"map-growth-value-0-stored-lexical-payload-longer-than-inline".length() >= minimumGrowthKeyBytes);
 			Txn borrowedRoot = smallStore.getTxnManager().createReadTxn();
 			try {
 				AtomicBoolean writerFinishedBatch = new AtomicBoolean();
@@ -229,14 +252,18 @@ public class TripleStoreTest {
 					writer = executor.submit(() -> {
 						smallStore.startTransaction();
 						try {
-							for (int i = 0; i < 10_000; i++) {
-								smallStore.storeTriple(subjectId, predicateId, 10_000_000L + i, 0, true);
+							// High, typed IDs force full-width native keys; count scans never materialize these
+							// dictionary IDs.
+							for (int i = 0; i < growthBatchSize; i++) {
+								long objectId = ValueIds.createId(ValueIds.T_LITERAL, firstGrowthObjectValue - i);
+								smallStore.storeTriple(growthSubjectId, growthPredicateId, objectId, growthContextId,
+										true);
 							}
 							smallStore.commit();
 							writerFinishedBatch.set(true);
 							values.startTransaction(true);
 							try {
-								for (int i = 0; i < 10_000; i++) {
+								for (int i = 0; i < growthBatchSize; i++) {
 									values.storeValue(values.createLiteral(
 											"map-growth-value-" + i + "-stored-lexical-payload-longer-than-inline"));
 								}
@@ -283,16 +310,19 @@ public class TripleStoreTest {
 				try (Txn stats = values.getTxnManager().createReadTxn()) {
 					grownValueMapSize = mapSize(stats.get());
 				}
-				assertTrue("The staged quad batch must grow the real native triple map",
+				assertTrue("The staged quad batch must grow the real native triple map (initial="
+						+ initialTripleMapSize + ", grown=" + grownTripleMapSize + ")",
 						grownTripleMapSize > initialTripleMapSize);
-				assertTrue("The writer's stored values must grow the real native value map",
+				assertTrue("The writer's stored values must grow the real native value map (initial="
+						+ initialValueMapSize + ", grown=" + grownValueMapSize + ")",
 						grownValueMapSize > initialValueMapSize);
 
 				try (StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
 					StatementCountSource nativeSource = new LmdbStatementCountSource(smallStore, values, borrowedRoot,
 							true, scope);
 					assertTrue(scope.freeze());
-					assertEquals("The supplied root must remain usable after growth and transaction renewal", 10_002,
+					assertEquals("The supplied root must remain usable after growth and transaction renewal",
+							growthBatchSize + 2,
 							nativeSource.count(null, null, null, new Resource[0], null, scope));
 				}
 			} finally {
