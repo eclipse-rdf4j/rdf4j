@@ -422,6 +422,21 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		}
 
 		@Override
+		public V get(Object key) {
+			return wrapped.get(key);
+		}
+
+		@Override
+		public boolean containsKey(Object key) {
+			return wrapped.containsKey(key);
+		}
+
+		@Override
+		public V remove(Object key) {
+			return wrapped.remove(key);
+		}
+
+		@Override
 		public V put(K k, V v) {
 
 			V res = wrapped.put(k, v);
