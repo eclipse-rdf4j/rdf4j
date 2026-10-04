@@ -1958,15 +1958,19 @@ test('page tables label their columns for people instead of showing raw variable
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
     const headings = (template) => {
         const markup = flattenTemplateMarkup(template);
-        return Array.from(markup.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)).map((match) => match[1].trim());
+        return Array.from(markup.matchAll(/<th scope="col"[^>]*>([\s\S]*?)<\/th>/g)).map((match) => {
+            const button = match[1].match(/<button[^>]*>([\s\S]*?)<\/button>/);
+            const label = button && button[1].match(/<span[^>]*>([\s\S]*?)<\/span>/);
+            return (label ? label[1] : match[1]).replace(/<[^>]*>/g, '').trim();
+        });
     };
     const repositories = workbench.views.pageTemplate({
         viewId: 'repositories', vars: ['readable', 'writeable', 'id', 'description', 'location'],
         rows: [[true, true, 'repo-1', 'Repository one', 'http://example.test/repositories/repo-1']],
         rowCount: 1, metadata: {}
     }, context, runtime);
-    // The repository list (M5.3) shows Id, Title and Access; Location moved to the Title cell's tooltip.
-    assert.deepEqual(headings(repositories), ['ID', 'Title', 'Access']);
+    // The repository list keeps Icon and Actions fixed while ID, Title and Access remain sortable.
+    assert.deepEqual(headings(repositories), ['Repository', 'ID', 'Title', 'Access', 'Actions']);
     const explore = workbench.views.pageTemplate({
         viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
         rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],

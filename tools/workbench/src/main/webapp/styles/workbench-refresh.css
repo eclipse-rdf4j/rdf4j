@@ -3268,6 +3268,53 @@ body.workbench-body .workbench-repository-link {
 	font-weight: 600;
 }
 
+@media (min-width: 601px) {
+	body.workbench-body #repositories-results table.data :is(th[data-repository-column="repository"], td[data-label="Repository"]) {
+		width: 1%;
+		white-space: nowrap;
+	}
+}
+
+body.workbench-body .workbench-repository-create {
+	gap: 8px;
+	min-height: 44px;
+	padding: 0 14px;
+}
+
+body.workbench-body #repositories-results .workbench-repository-sort {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 2px;
+	border: 0;
+	border-radius: var(--workbench-control-radius);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+body.workbench-body #repositories-results .workbench-repository-sort:hover {
+	background: var(--workbench-inset);
+}
+
+body.workbench-body #repositories-results .workbench-repository-sort:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+body.workbench-body #repositories-results .workbench-repository-sort__indicator {
+	color: var(--workbench-muted);
+	font-size: 12px;
+	line-height: 1;
+}
+
+body.workbench-body #repositories-results table.data th[data-repository-column][aria-sort="descending"]::after {
+	content: none;
+	margin: 0;
+}
+
 /* Pills keep one association gap whether they sit side by side or wrap below each other. */
 body.workbench-body .workbench-badges {
 	display: inline-flex;
@@ -3277,7 +3324,9 @@ body.workbench-body .workbench-badges {
 }
 
 body.workbench-body .workbench-badge {
-	display: inline-block;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	padding: 1px 8px;
 	border: 1px solid var(--workbench-soft-rule);
 	border-radius: 999px;
@@ -3285,6 +3334,12 @@ body.workbench-body .workbench-badge {
 	font-size: 12px;
 	line-height: 1.5;
 	white-space: nowrap;
+}
+
+body.workbench-body .workbench-badge .workbench-action-icon {
+	flex-basis: 13px;
+	width: 13px;
+	height: 13px;
 }
 
 body.workbench-body .workbench-access-none {
@@ -4719,5 +4774,153 @@ body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
 		background-size: 100% 2px;
 		background-position: 0 0;
 		animation: workbench-local-progress-reveal 0s linear 150ms forwards;
+	}
+}
+
+/* Export and Remove keep their four statement columns in a bounded, keyboard-accessible horizontal scroll region. */
+body.workbench-body .workbench-preview-table-scroll {
+	box-sizing: border-box;
+	max-width: 100%;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+}
+
+body.workbench-body .workbench-preview-table-scroll:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+}
+
+body.workbench-body .workbench-preview-table-scroll > table.data {
+	box-sizing: border-box;
+	width: max-content;
+	min-width: 100%;
+	table-layout: auto;
+}
+
+body.workbench-body .workbench-preview-table-scroll > table.data td {
+	white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+	body.workbench-body .workbench-preview-table-scroll > table.data {
+		display: table;
+		border: 0;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data thead {
+		position: static;
+		width: auto;
+		height: auto;
+		overflow: visible;
+		clip: auto;
+		clip-path: none;
+		white-space: normal;
+		display: table-header-group;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data thead tr {
+		display: table-row;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data tbody {
+		display: table-row-group;
+		width: auto;
+		min-width: 0;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data tr {
+		display: table-row;
+		width: auto;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data td {
+		display: table-cell;
+		width: auto;
+		min-width: 0;
+		padding: 7px 8px;
+		border: 0;
+		vertical-align: top;
+	}
+
+	body.workbench-body .workbench-preview-table-scroll > table.data td[data-label]::before {
+		display: none;
+	}
+}
+
+@media (max-width: 600px) {
+	body.workbench-body #repositories-results table.data {
+		display: block;
+		box-sizing: border-box;
+		width: 100%;
+	}
+
+	body.workbench-body #repositories-results table.data thead {
+		position: static;
+		display: block;
+		box-sizing: border-box;
+		width: 100%;
+		height: auto;
+		overflow: visible;
+		clip: auto;
+		clip-path: none;
+		white-space: normal;
+	}
+
+	body.workbench-body #repositories-results table.data thead tr {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 8px;
+		width: 100%;
+		margin: 0 0 8px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+	}
+
+	body.workbench-body #repositories-results table.data thead th {
+		display: block;
+		flex: 0 0 auto;
+		padding: 6px 4px;
+		font-size: 12px;
+		white-space: nowrap;
+	}
+
+	body.workbench-body #repositories-results table.data tbody {
+		box-sizing: border-box;
+		width: 100%;
+		min-width: 0;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr {
+		box-sizing: border-box;
+		width: 100%;
+	}
+
+	body.workbench-body #repositories-results .workbench-repository-sort {
+		gap: 2px;
+		padding: 4px 0;
+		font-size: 12px;
+	}
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) :is(a).workbench-action.workbench-repository-create {
+	height: 44px;
+	min-height: 44px;
+	gap: 8px;
+	padding: 0 14px;
+}
+
+@media (pointer: coarse), (max-width: 900px) {
+	:is(body.workbench-body, body.query-result-embedded-body) :is(a).workbench-action.workbench-repository-create {
+		height: 48px;
+		min-height: 48px;
 	}
 }

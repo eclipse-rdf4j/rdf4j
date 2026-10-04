@@ -737,25 +737,56 @@ var workbench;
         function repositoryUrl(context, id, route) {
             return (context.basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(id) + '/' + route;
         }
-        /** One repository row (M5.3, mockup 12): Id link, Title, Access badges and an actions menu. */
-        function repositoryCells(runtime, context, record, index) {
-            var h = runtime.html;
-            var id = text(record.id);
-            var access = [
+        function repositoryAccess(record) {
+            return [
                 record.readable === true || text(record.readable) === 'true' ? 'Read' : '',
                 record.writeable === true || text(record.writeable) === 'true' ? 'Write' : ''
             ].filter(function (label) { return !!label; });
+        }
+        function sortedRepositoryRows(model, rows, column, direction) {
+            var options = { sensitivity: 'base' };
+            if (column === 'id') {
+                options.numeric = true;
+            }
+            return rows.map(function (row, index) {
+                var record = recordsFromRows(model, [row])[0];
+                var key = column === 'title' ? text(record.description)
+                    : column === 'access' ? repositoryAccess(record).join(' ')
+                        : text(record.id);
+                return { row: row, index: index, key: key };
+            }).sort(function (left, right) {
+                var compared = left.key.localeCompare(right.key, undefined, options);
+                return compared ? (direction === 'descending' ? -compared : compared) : left.index - right.index;
+            }).map(function (item) { return item.row; });
+        }
+        /** One repository row: repository icon, ID link, Title, Access badges and an actions menu. */
+        function repositoryCells(runtime, context, record, index) {
+            var h = runtime.html;
+            var id = text(record.id);
+            var access = repositoryAccess(record);
             var menuId = 'repository-actions-' + index;
             var item = function (route, iconName, label) { return h(__makeTemplateObject(["<li><a href=\"", "\">", "", "</a></li>"], ["<li><a href=\"", "\">", "", "</a></li>"]), repositoryUrl(context, id, route), icon(runtime, iconName), label); };
-            return h(__makeTemplateObject(["<td data-label=\"ID\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"], ["<td data-label=\"ID\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"]), repositoryUrl(context, id, 'summary'), id, text(record.location), text(record.description), access.length
-                ? access.map(function (label, position) { return h(__makeTemplateObject(["", "<span class=\"workbench-badge\">", "</span>"], ["", "<span class=\"workbench-badge\">", "</span>"]), position ? ' ' : '', label); })
+            return h(__makeTemplateObject(["<td data-label=\"Repository\">", "</td>\n                <td data-label=\"ID\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"], ["<td data-label=\"Repository\">", "</td>\n                <td data-label=\"ID\"><a class=\"workbench-repository-link\" href=\"", "\">", "</a></td>\n                <td data-label=\"Title\" title=\"", "\">", "</td>\n                <td data-label=\"Access\"><span class=\"workbench-badges\">", "</span></td>\n                <td class=\"workbench-row-actions\" data-label=\"Actions\"><div class=\"workbench-row-menu\">\n                    <button type=\"button\" class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                        aria-label=\"", "\" title=\"Actions\" aria-expanded=\"false\" aria-controls=\"", "\"\n                        data-workbench-row-menu=\"true\">", "</button>\n                    <div id=\"", "\" class=\"workbench-popover workbench-popover--end workbench-row-menu__panel\" hidden>\n                        <ul class=\"workbench-popover__menu\">\n                            ", "", "", "\n                            <li><a class=\"workbench-popover__danger\" href=\"", "\">", "Delete\u2026</a></li>\n                        </ul>\n                    </div>\n                </div></td>"]), icon(runtime, 'repository'), repositoryUrl(context, id, 'summary'), id, text(record.location), text(record.description), access.length
+                ? access.map(function (label) { return h(__makeTemplateObject(["<span class=\"workbench-badge\">", "", "</span>"], ["<span class=\"workbench-badge\">", "", "</span>"]), icon(runtime, label === 'Read' ? 'eye' : 'edit'), label); })
                 : h(__makeTemplateObject(["<span class=\"workbench-access-none\">None</span>"], ["<span class=\"workbench-access-none\">None</span>"])), 'Actions for ' + id, menuId, icon(runtime, 'more'), menuId, item('query', 'query', 'Query'), item('explore', 'explore', 'Explore'), item('summary', 'summary', 'Summary'), urlFor(context, 'delete') + '?id=' + encodeURIComponent(id), icon(runtime, 'delete'));
         }
         function repositoriesPage(runtime, model, context) {
             var h = runtime.html;
-            var header = function (name) { return name === 'actions'
-                ? h(__makeTemplateObject(["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"], ["<th scope=\"col\"><span class=\"workbench-visually-hidden\">Actions</span></th>"])) : h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), { id: 'ID', title: 'Title', access: 'Access' }[name]); };
-            return h(__makeTemplateObject(["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action\" href=\"", "\">", "<span>Create</span></a>\n                </div>\n                ", "\n            </section>"], ["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action\" href=\"", "\">", "<span>Create</span></a>\n                </div>\n                ", "\n            </section>"]), formatCount(String(rowCount(model)), context), urlFor(context, 'create'), icon(runtime, 'create'), rowCount(model) ? table(runtime, model, context, { columns: ['id', 'title', 'access', 'actions'], header: header, cells: function (record, index) { return repositoryCells(runtime, context, record, index); } })
+            var sorting = model.repositorySort || null;
+            var labels = { id: 'ID', title: 'Title', access: 'Access' };
+            var header = function (name) {
+                if (name === 'repository' || name === 'actions') {
+                    return h(__makeTemplateObject(["<th scope=\"col\" data-repository-column=", ">", "</th>"], ["<th scope=\"col\" data-repository-column=", ">", "</th>"]), name, name === 'repository'
+                        ? h(__makeTemplateObject(["<span class=\"workbench-visually-hidden\">Repository</span>"], ["<span class=\"workbench-visually-hidden\">Repository</span>"])) : 'Actions');
+                }
+                var label = labels[name];
+                var selected = sorting && sorting.column === name;
+                var direction = selected ? sorting.direction : 'none';
+                var nextDirection = direction === 'ascending' ? 'descending' : 'ascending';
+                var indicator = direction === 'ascending' ? '↑' : direction === 'descending' ? '↓' : '↕';
+                return h(__makeTemplateObject(["<th scope=\"col\" data-repository-column=", " aria-sort=", ">\n                    <button type=\"button\" class=\"workbench-repository-sort\" data-workbench-sort=", "\n                        aria-label=", ">\n                        <span>", "</span><span class=\"workbench-repository-sort__indicator\" aria-hidden=\"true\">", "</span>\n                    </button>\n                </th>"], ["<th scope=\"col\" data-repository-column=", " aria-sort=", ">\n                    <button type=\"button\" class=\"workbench-repository-sort\" data-workbench-sort=", "\n                        aria-label=", ">\n                        <span>", "</span><span class=\"workbench-repository-sort__indicator\" aria-hidden=\"true\">", "</span>\n                    </button>\n                </th>"]), name, direction, name, 'Sort by ' + label + ', ' + nextDirection, label, indicator);
+            };
+            return h(__makeTemplateObject(["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create\"\n                        href=\"", "\">", "<span>Create repository</span></a>\n                </div>\n                ", "\n            </section>"], ["<section id=\"repositories-results\" class=\"workbench-island workbench-responsive-records workbench-browse-card\">\n                <div class=\"workbench-browse-card__header\">\n                    <h2>Repositories</h2><span class=\"workbench-browse-card__count\">", "</span>\n                    <a class=\"workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create\"\n                        href=\"", "\">", "<span>Create repository</span></a>\n                </div>\n                ", "\n            </section>"]), formatCount(String(rowCount(model)), context), urlFor(context, 'create'), icon(runtime, 'create'), rowCount(model) ? table(runtime, model, context, { columns: ['repository', 'id', 'title', 'access', 'actions'], header: header, cells: function (record, index) { return repositoryCells(runtime, context, record, index); } })
                 : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">No repositories are available.</p>"], ["<p class=\"workbench-empty\" role=\"status\">No repositories are available.</p>"])));
         }
         function createPage(runtime, model, context) {
@@ -1552,6 +1583,10 @@ var workbench;
             return formatOptions(info.graphDownloadFormats || info['graph-download-format'])
                 .map(function (format) { return ({ value: format.value, label: format.label, extension: '', graphs: null }); });
         }
+        /** A focusable horizontal scroll region for the two full-statement preview tables. */
+        function previewTableScroll(runtime, label, contents) {
+            return runtime.html(__makeTemplateObject(["<div class=\"workbench-preview-table-scroll\" role=\"region\" tabindex=\"0\"\n                aria-label=", ">", "</div>"], ["<div class=\"workbench-preview-table-scroll\" role=\"region\" tabindex=\"0\"\n                aria-label=", ">", "</div>"]), label, contents);
+        }
         /** What happens to the named graphs in the chosen format, so a single-graph format is never a surprise. */
         function exportFormatNote(format, graphCount) {
             if (format.graphs === true) {
@@ -1636,11 +1671,11 @@ var workbench;
                     help.textContent = durationLabel(event.target.value);
                 }
             }, durationLabel(timeout))), icon(runtime, 'download'), fileName, repositoryName, format.value, choice.compression, limitSelect(runtime, 'limit_export', context, previewLimit), icon(runtime, 'chevron', 'workbench-select-chevron'), !(requested && previewLimit !== '0'
-                && rowCount(model) >= Number(previewLimit)), 'Showing the first ' + previewLimit + ' statements.', rowCount(model) ? table(runtime, model, context, {
+                && rowCount(model) >= Number(previewLimit)), 'Showing the first ' + previewLimit + ' statements.', rowCount(model) ? previewTableScroll(runtime, 'Export statement preview', table(runtime, model, context, {
                 labels: { context: 'Graph' },
                 // Prefixed names and value tags, as on Explore, keep four columns readable beside the download card.
                 cells: function (record) { return (model.vars || []).map(function (name) { return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), columnLabel(name, { labels: { context: 'Graph' } }), exploreTerm(runtime, record[name], exploreNamespaces(model), true)); }); }
-            }) : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">", "</p>"], ["<p class=\"workbench-empty\" role=\"status\">", "</p>"]), requested ? 'No statements to show.'
+            })) : h(__makeTemplateObject(["<p class=\"workbench-empty\" role=\"status\">", "</p>"], ["<p class=\"workbench-empty\" role=\"status\">", "</p>"]), requested ? 'No statements to show.'
                 : 'Choose Show preview to see the first statements.'));
         }
         /** Safari (not another browser built on WebKit's user agent string), which expands downloaded archives. */
@@ -2048,11 +2083,11 @@ var workbench;
                 return h(__makeTemplateObject(["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"], ["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"]), entry[0], entry[1], entry[0] === 'obj'
                     ? h(__makeTemplateObject(["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"], ["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"]), entry[2], invalid ? 'true' : 'false', onInput, text(pageValue(model, 'obj'))) : h(__makeTemplateObject(["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"], ["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"]), entry[0], entry[0], entry[2], invalid ? 'true' : 'false', entry[0] + '-error', text(pageValue(model, entry[0])), onInput), entry[0] + '-error', !invalid, invalid ? state.message : '');
             }), function (event) { return recount(event.currentTarget.form); }, !selectedGraph, selectedGraph === 'null', graphs.map(function (record) { return h(__makeTemplateObject(["<option value=", "\n                                ?selected=", ">", "</option>"], ["<option value=", "\n                                ?selected=", ">", "</option>"]), ntriples(record.context), ntriples(record.context) === selectedGraph, termText(record.context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), previewDisabled || sending, function (event) { return loadPreview(event.currentTarget.form); }, icon(runtime, 'eye'), disabled || sending, icon(runtime, 'remove'), 'Remove ' + amount + '…', state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : '', removeMatchLabel(state, context), submissionStatus(runtime, model), preview.state === 'loading' ? 'true' : 'false', preview.state === 'hidden', preview.state === 'hidden' ? ''
-                : removePreviewLabel(preview), preview.rows.length ? h(__makeTemplateObject(["<table class=\"data\"><thead><tr>", "</tr></thead>\n                    <tbody>", "</tbody>\n                </table>"], ["<table class=\"data\"><thead><tr>", "</tr></thead>\n                    <tbody>", "</tbody>\n                </table>"]), previewLabels.map(function (label) {
+                : removePreviewLabel(preview), preview.rows.length ? previewTableScroll(runtime, 'Statements to remove preview', h(__makeTemplateObject(["<table class=\"data\"><thead><tr>", "</tr></thead>\n                    <tbody>", "</tbody>\n                </table>"], ["<table class=\"data\"><thead><tr>", "</tr></thead>\n                    <tbody>", "</tbody>\n                </table>"]), previewLabels.map(function (label) {
                 return h(__makeTemplateObject(["<th scope=\"col\">", "</th>"], ["<th scope=\"col\">", "</th>"]), label);
             }), preview.rows.map(function (row) { return h(__makeTemplateObject(["<tr>", "</tr>"], ["<tr>", "</tr>"]), previewLabels.map(function (label, index) {
                 return h(__makeTemplateObject(["<td data-label=", ">", "</td>"], ["<td data-label=", ">", "</td>"]), label, exploreTerm(runtime, row[index], namespaces, true));
-            })); })) : '');
+            })); }))) : '');
         }
         /** "N statements", or "—" when the server could not count within its budget. */
         /**
@@ -2063,10 +2098,13 @@ var workbench;
          */
         var countedPages = {
             clear: {
-                timedOut: 'Counting took longer than five seconds',
+                timedOut: 'Statement counts took longer than five seconds',
                 absorb: function (answer, rows, counts) {
                     var values = counts.values;
-                    // The answer lists every graph as it is now, which is what Clear offers (M14.2).
+                    if (text(meta(answer, 'context-discovery-complete')) !== 'true') {
+                        return;
+                    }
+                    // Replace choices only after the server has returned a complete graph snapshot (M14.2).
                     counts.listing = recordsFromRows(answer, rows);
                     rows.forEach(function (row) {
                         if (text(row[1])) {
@@ -2096,7 +2134,12 @@ var workbench;
         function pageCounts(model) {
             var holder = model;
             if (!holder.pageCounts) {
-                holder.pageCounts = { state: countedPages[model.viewId] ? 'counting' : 'none', values: {} };
+                var discoveryIncomplete = model.viewId === 'clear'
+                    && text(meta(model, 'context-discovery-complete')) === 'false';
+                holder.pageCounts = {
+                    state: discoveryIncomplete ? 'discovery-timed-out' : countedPages[model.viewId] ? 'counting' : 'none',
+                    values: {}
+                };
             }
             return holder.pageCounts;
         }
@@ -2120,7 +2163,14 @@ var workbench;
                 .then(function (answer) { return answer.rowStore.read(0, answer.rowCount).then(function (rows) {
                 answer.rowStore.dispose();
                 countedPages[model.viewId].absorb(answer, rows, counts);
-                counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+                if (model.viewId === 'clear') {
+                    counts.state = text(meta(answer, 'context-discovery-complete')) === 'true'
+                        ? text(meta(answer, 'statement-counts-timed-out')) === 'true' ? 'timed-out' : 'done'
+                        : 'discovery-timed-out';
+                }
+                else {
+                    counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+                }
             }); })
                 .then(null, function () { counts.state = 'failed'; })
                 .then(function () {
@@ -2150,22 +2200,32 @@ var workbench;
             var h = runtime.html;
             var listing = pageCounts(model).listing
                 || ((model.vars || []).indexOf('statements') >= 0 ? records(model) : []);
+            var discoveryIncomplete = text(meta(model, 'context-discovery-complete')) === 'false';
             // The counts arrive after the page (M13.2); a page model that already has them shows them at once.
             var counted = pageCounts(model).values;
             var countOf = function (key, fallback) { return key in counted ? counted[key] : fallback; };
-            var targets = [{ value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }]
+            var targets = (discoveryIncomplete ? [] : [
+                { value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }
+            ])
                 .concat(listing.filter(function (record) { return !record.context; })
                 .map(function (record) { return ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) }); }))
                 .concat(listing.filter(function (record) { return !!record.context; })
                 .map(function (record) { return ({ value: ntriples(record.context), label: termText(record.context),
                 count: countOf(ntriples(record.context), record.statements) }); }));
+            if (discoveryIncomplete && !targets.length) {
+                targets.push({ value: '__unavailable__', label: 'Graph choices unavailable', count: '', unavailable: true });
+            }
             var holder = model;
             if (typeof holder.clearTarget !== 'string') {
                 var requested_1 = locationParameter('context') || text(pageValue(model, 'context'));
-                holder.clearTarget = targets.some(function (target) { return target.value === requested_1; }) ? requested_1 : '';
+                if (discoveryIncomplete && requested_1 && !targets.some(function (target) { return target.value === requested_1; })) {
+                    targets.unshift({ value: requested_1, label: requested_1 + ' (not verified)', count: '', unavailable: true });
+                }
+                holder.clearTarget = targets.some(function (target) { return target.value === requested_1; })
+                    ? requested_1 : discoveryIncomplete ? targets[0].value : '';
             }
             var selected = targets.filter(function (target) { return target.value === holder.clearTarget; })[0] || targets[0];
-            var everything = selected.value === '';
+            var everything = !discoveryIncomplete && selected.value === '';
             var repositoryId = context.repositoryId || '';
             var sending = submissionOf(model).state === 'running';
             /** After a clear, ask for the graphs and their counts again; the tick stays (M14.2). */
@@ -2195,14 +2255,20 @@ var workbench;
                     }
                 });
             };
-            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    aria-busy=", " @submit=", "\n                    @change=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\"\n                    ?disabled=", ">", "<span>", "</span></button>\n                    ", "</div>\n            </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    aria-busy=", " @submit=", "\n                    @change=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\"\n                    ?disabled=", ">", "<span>", "</span></button>\n                    ", "</div>\n            </form>"]), sending ? 'true' : 'false', confirmAndSubmit, function (event) { return clearSubmission(event, model, context, runtime); }, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.', 'This permanently deletes statements.', 'clear-warning'), errorCallout(runtime, model), function (event) {
+            return h(__makeTemplateObject(["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    aria-busy=", " @submit=", "\n                    @change=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\"\n                    ?disabled=", ">", "<span>", "</span></button>\n                    ", "</div>\n            </form>"], ["<form id=\"clear-form\" class=\"workbench-island workbench-form-card\" method=\"post\" action=\"clear\"\n                    aria-busy=", " @submit=", "\n                    @change=", ">\n                ", "\n                ", "\n                ", "\n                <div class=\"workbench-field-stack\">\n                    <div class=\"workbench-field\"><label for=\"context\">What to clear</label>\n                        <div class=\"workbench-select-control\"><select id=\"context\" name=\"context\" @change=", ">", "</select>", "</div>\n                        ", "\n                    </div>\n                </div>\n                <div class=\"workbench-form-actions\"><button type=\"submit\" class=\"workbench-action workbench-action--danger\"\n                    ?disabled=", ">", "<span>", "</span></button>\n                    ", "</div>\n            </form>"]), sending ? 'true' : 'false', confirmAndSubmit, function (event) { return clearSubmission(event, model, context, runtime); }, systemRepositoryCallout(runtime, context), callout(runtime, 'warning', discoveryIncomplete
+                ? 'Graph choices are incomplete. Clearing is unavailable until discovery finishes.'
+                : 'Choose one graph, or the entire repository. There is no undo.', discoveryIncomplete ? 'No clear action will run against an incomplete graph list.'
+                : 'This permanently deletes statements.', 'clear-warning'), errorCallout(runtime, model), function (event) {
                 holder.clearTarget = event.currentTarget.value;
                 var outlet = event.currentTarget.closest('.workbench-outlet');
                 if (outlet) {
                     render(outlet, model, context, runtime);
                 }
-            }, targets.map(function (target) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), target.value, target === selected, target.label + ' — ' + pageCountLabel(model, target.count, context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), pageCounts(model).state === 'timed-out'
-                ? h(__makeTemplateObject(["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"], ["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"]), countedPages.clear.timedOut) : '', sending, icon(runtime, 'clear'), everything ? 'Clear entire repository…' : 'Clear graph…', submissionStatus(runtime, model));
+            }, targets.map(function (target) { return h(__makeTemplateObject(["<option value=", " ?disabled=", "\n                                ?selected=", ">", "</option>"], ["<option value=", " ?disabled=", "\n                                ?selected=", ">", "</option>"]), target.value, !!target.unavailable, target === selected, target.label + ' — ' + pageCountLabel(model, target.count, context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), pageCounts(model).state === 'discovery-timed-out'
+                ? h(__makeTemplateObject(["<p id=\"clear-context-discovery-help\" class=\"workbench-field__help\">", "</p>"], ["<p id=\"clear-context-discovery-help\" class=\"workbench-field__help\">", "</p>"]), discoveryIncomplete
+                    ? 'Graph choices could not be refreshed within 60 seconds. Clearing is disabled until discovery completes.'
+                    : 'Graph choices could not be refreshed within 60 seconds; existing choices and selection are kept.') : pageCounts(model).state === 'timed-out'
+                ? h(__makeTemplateObject(["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"], ["<p id=\"clear-counts-help\" class=\"workbench-field__help\">", "; \"\u2014\" marks a count that did not finish.</p>"]), countedPages.clear.timedOut) : '', sending || discoveryIncomplete || !!selected.unavailable, icon(runtime, 'clear'), discoveryIncomplete ? 'Clear unavailable' : everything ? 'Clear entire repository…' : 'Clear graph…', submissionStatus(runtime, model));
         }
         function updatePage(runtime, model, context) {
             var h = runtime.html;
@@ -2836,6 +2902,8 @@ var workbench;
             var groupGeneration = 0;
             var heights = hasRows
                 ? new HeightIndex(model.rowCount, model.viewId === 'saved-queries' ? 240 : 44) : null;
+            var repositorySortedRows = model.repositorySortedRows || null;
+            var repositorySortGeneration = 0;
             var executionDisposers = [];
             var elements = function (selector) {
                 if (!mount || !mount.querySelectorAll) {
@@ -2978,6 +3046,45 @@ var workbench;
                 }
             };
             var repositoryRows = model.viewId === 'repositories' ? elements('#repositories-results')[0] : null;
+            var onRepositorySortClick = function (event) {
+                var target = event.target;
+                var button = target && target.closest ? target.closest('button[data-workbench-sort]') : null;
+                if (model.viewId !== 'repositories' || !button || !mount.contains(button)) {
+                    return;
+                }
+                if (event.preventDefault) {
+                    event.preventDefault();
+                }
+                var column = button.getAttribute('data-workbench-sort');
+                if (['id', 'title', 'access'].indexOf(column) < 0) {
+                    return;
+                }
+                var current = model.repositorySort;
+                var direction = current && current.column === column && current.direction === 'ascending'
+                    ? 'descending' : 'ascending';
+                var activeSortGeneration = ++repositorySortGeneration;
+                generation++;
+                model.rowStore.read(0, model.rowCount).then(function (rows) {
+                    if (disposed || activeSortGeneration !== repositorySortGeneration) {
+                        return;
+                    }
+                    repositorySortedRows = sortedRepositoryRows(model, rows, column, direction);
+                    model.repositorySortedRows = repositorySortedRows;
+                    model.repositorySort = { column: column, direction: direction };
+                    heights = new HeightIndex(model.rowCount, rowHeight(model));
+                    return refreshRows(false).then(function () {
+                        if (disposed || activeSortGeneration !== repositorySortGeneration) {
+                            return;
+                        }
+                        renderCurrent();
+                        return refreshRows();
+                    });
+                }).then(null, function (error) {
+                    if (!disposed && activeSortGeneration === repositorySortGeneration && typeof console !== 'undefined') {
+                        console.error('Unable to sort repositories.', error);
+                    }
+                });
+            };
             var bindPickerControls = function () {
                 elements('[data-workbench-window-action]').forEach(function (button) {
                     if (button.__rdf4jWorkbenchWindowBound || !button.addEventListener) {
@@ -3042,7 +3149,10 @@ var workbench;
                 windowScrollTop = scrollTop;
                 var viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
                 var range = heights.range(scrollTop, viewportHeight, 4, 80);
-                return model.rowStore.read(range.start, range.end - range.start).then(function (rows) {
+                var rowWindow = repositorySortedRows
+                    ? Promise.resolve(repositorySortedRows.slice(range.start, range.end))
+                    : model.rowStore.read(range.start, range.end - range.start);
+                return rowWindow.then(function (rows) {
                     if (disposed || activeGeneration !== generation) {
                         return;
                     }
@@ -3153,6 +3263,9 @@ var workbench;
                 if (repositoryRows && repositoryRows.addEventListener) {
                     repositoryRows.addEventListener('click', onRepositoryRowClick);
                 }
+                if (model.viewId === 'repositories' && mount.addEventListener) {
+                    mount.addEventListener('click', onRepositorySortClick);
+                }
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
@@ -3171,6 +3284,9 @@ var workbench;
                     rowMenuDisposers = [];
                     if (repositoryRows && repositoryRows.removeEventListener) {
                         repositoryRows.removeEventListener('click', onRepositoryRowClick);
+                    }
+                    if (model.viewId === 'repositories' && mount.removeEventListener) {
+                        mount.removeEventListener('click', onRepositorySortClick);
                     }
                     var regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) {

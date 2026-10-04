@@ -30,7 +30,7 @@ function loadWorkbench() {
     const workbench = {};
     const window = { location: { href: 'http://localhost/rdf4j-workbench/repositories/a/types?filter=Thing' } };
     installDetailDisclosureTemplateRuntime(workbench);
-    const sandbox = vm.createContext({ console, URL, Promise, window, workbench, setTimeout });
+    const sandbox = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, setTimeout });
     for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), sandbox, { filename });
     }
@@ -205,5 +205,95 @@ test('Graphs fill in statements, end with the default graph and offer Explore an
     assert.match(page, /href="clear\?context=%3Curn%3Aex%3Ag1%3E"/);
     assert.match(page, /href="explore\?resource=%3Curn%3Aex%3Ag1%3E"/);
     assert.match(page, /aria-label="Clear graph urn:ex:g1…"/);
+    dispose();
+});
+
+test('Clear keeps its chosen graph when context discovery times out', async () => {
+    const { workbench, window } = loadWorkbench();
+    window.location.href = 'http://localhost/rdf4j-workbench/repositories/a/clear';
+    window.location.search = '?context=%3Curn%3Aex%3Ag1%3E';
+    let completeCounts;
+    workbench.app.loadModel = () => new Promise(resolve => { completeCounts = resolve; });
+    const model = listModel('clear', ['context', 'statements'], [
+        [iri('urn:ex:g1'), null], [null, null]
+    ]);
+    model.rows = [[iri('urn:ex:g1'), null], [null, null]];
+    model.rowCount = 0;
+
+    const { mount, dispose } = await mounted(workbench, window, model);
+    const initialPage = markup(workbench, mount);
+    assert.match(initialPage, /Clear graph…/, 'the initial graph selection comes from the current URL');
+    assert.doesNotMatch(initialPage, /Clear entire repository…/);
+
+    completeCounts(listModel('clear', ['context', 'statements'], [], {
+        'counts-timed-out': true,
+        'context-discovery-complete': false,
+        'context-discovery-timed-out': true,
+        'statement-counts-timed-out': false
+    }));
+    await settle();
+    await settle();
+
+    const page = markup(workbench, mount);
+    assert.match(page, /value=<urn:ex:g1>/, 'the graph from the initial listing remains available');
+    assert.match(page, /Clear graph…/, 'the original graph selection stays selected');
+    assert.doesNotMatch(page, /Clear entire repository…/, 'timeout must not select the whole repository');
+    assert.match(page, /graph choices could not be refreshed within 60 seconds/i,
+        'discovery timeout help describes the phase that expired');
+    dispose();
+});
+
+test('Clear does not count or enable whole-repository clearing when initial discovery is incomplete', async () => {
+    const { workbench, window } = loadWorkbench();
+    window.location.href = 'http://localhost/rdf4j-workbench/repositories/a/clear';
+    window.location.search = '';
+    let countRequests = 0;
+    workbench.app.loadModel = () => {
+        countRequests++;
+        return Promise.resolve(listModel('clear', ['context', 'statements'], [], {
+            'counts-timed-out': true,
+            'context-discovery-complete': false,
+            'context-discovery-timed-out': true,
+            'statement-counts-timed-out': false
+        }));
+    };
+    const model = listModel('clear', ['context', 'statements'], [], {
+        'context-discovery-complete': false,
+        'context-discovery-timed-out': true
+    });
+    const { mount, dispose } = await mounted(workbench, window, model);
+    await settle();
+
+    const page = markup(workbench, mount);
+    assert.equal(countRequests, 0, 'an incomplete initial list does not trigger another discovery/count request');
+    assert.match(page, /graph choices could not be refreshed within 60 seconds/i);
+    assert.match(page, /<button[^>]*disabled/, 'destructive clearing stays disabled without complete choices');
+    assert.doesNotMatch(page, /Clear entire repository…/);
+    dispose();
+});
+
+test('Clear reports statement-count timeout separately from graph-discovery timeout', async () => {
+    const { workbench, window } = loadWorkbench();
+    window.location.href = 'http://localhost/rdf4j-workbench/repositories/a/clear';
+    window.location.search = '?context=%3Curn%3Aex%3Ag1%3E';
+    workbench.app.loadModel = () => Promise.resolve(listModel('clear', ['context', 'statements'], [
+        [iri('urn:ex:g1'), null], [null, null]
+    ], {
+        'counts-timed-out': true,
+        'context-discovery-complete': true,
+        'context-discovery-timed-out': false,
+        'statement-counts-timed-out': true
+    }));
+    const model = listModel('clear', ['context', 'statements'], [[iri('urn:ex:g1'), null], [null, null]]);
+    model.rows = [[iri('urn:ex:g1'), null], [null, null]];
+    model.rowCount = 0;
+    const { mount, dispose } = await mounted(workbench, window, model);
+    await settle();
+    await settle();
+
+    const page = markup(workbench, mount);
+    assert.match(page, /statement counts took longer than five seconds/i);
+    assert.doesNotMatch(page, /graph choices could not be refreshed within 60 seconds/i);
+    assert.match(page, /Clear graph…/);
     dispose();
 });

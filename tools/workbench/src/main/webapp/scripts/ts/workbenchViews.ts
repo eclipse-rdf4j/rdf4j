@@ -964,21 +964,41 @@ module workbench {
             return (context.basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(id) + '/' + route;
         }
 
-        /** One repository row (M5.3, mockup 12): Id link, Title, Access badges and an actions menu. */
-        function repositoryCells(runtime: LitRuntime, context: ViewContext, record: any, index: number): any {
-            const h = runtime.html;
-            const id = text(record.id);
-            const access = [
+        function repositoryAccess(record: any): string[] {
+            return [
                 record.readable === true || text(record.readable) === 'true' ? 'Read' : '',
                 record.writeable === true || text(record.writeable) === 'true' ? 'Write' : ''
             ].filter((label) => !!label);
+        }
+
+        function sortedRepositoryRows(model: PageModel, rows: any[][], column: string, direction: string): any[][] {
+            const options: any = { sensitivity: 'base' };
+            if (column === 'id') { options.numeric = true; }
+            return rows.map((row: any[], index: number) => {
+                const record = recordsFromRows(model, [row])[0];
+                const key = column === 'title' ? text(record.description)
+                    : column === 'access' ? repositoryAccess(record).join(' ')
+                        : text(record.id);
+                return { row, index, key };
+            }).sort((left: any, right: any) => {
+                const compared = (left.key as any).localeCompare(right.key, undefined, options);
+                return compared ? (direction === 'descending' ? -compared : compared) : left.index - right.index;
+            }).map((item: any) => item.row);
+        }
+
+        /** One repository row: repository icon, ID link, Title, Access badges and an actions menu. */
+        function repositoryCells(runtime: LitRuntime, context: ViewContext, record: any, index: number): any {
+            const h = runtime.html;
+            const id = text(record.id);
+            const access = repositoryAccess(record);
             const menuId = 'repository-actions-' + index;
             const item = (route: string, iconName: string, label: string) => h`<li><a href="${repositoryUrl(context, id, route)}">${
                 icon(runtime, iconName)}${label}</a></li>`;
-            return h`<td data-label="ID"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
+            return h`<td data-label="Repository">${icon(runtime, 'repository')}</td>
+                <td data-label="ID"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
                 <td data-label="Title" title="${text(record.location)}">${text(record.description)}</td>
                 <td data-label="Access"><span class="workbench-badges">${access.length
-                    ? access.map((label, position) => h`${position ? ' ' : ''}<span class="workbench-badge">${label}</span>`)
+                    ? access.map((label) => h`<span class="workbench-badge">${icon(runtime, label === 'Read' ? 'eye' : 'edit')}${label}</span>`)
                     : h`<span class="workbench-access-none">None</span>`}</span></td>
                 <td class="workbench-row-actions" data-label="Actions"><div class="workbench-row-menu">
                     <button type="button" class="workbench-action workbench-action--ghost workbench-action--icon"
@@ -996,16 +1016,33 @@ module workbench {
 
         function repositoriesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const header = (name: string) => name === 'actions'
-                ? h`<th scope="col"><span class="workbench-visually-hidden">Actions</span></th>`
-                : h`<th scope="col">${({ id: 'ID', title: 'Title', access: 'Access' } as any)[name]}</th>`;
+            const sorting = (model as any).repositorySort || null;
+            const labels: any = { id: 'ID', title: 'Title', access: 'Access' };
+            const header = (name: string) => {
+                if (name === 'repository' || name === 'actions') {
+                    return h`<th scope="col" data-repository-column=${name}>${name === 'repository'
+                        ? h`<span class="workbench-visually-hidden">Repository</span>` : 'Actions'}</th>`;
+                }
+                const label = labels[name];
+                const selected = sorting && sorting.column === name;
+                const direction = selected ? sorting.direction : 'none';
+                const nextDirection = direction === 'ascending' ? 'descending' : 'ascending';
+                const indicator = direction === 'ascending' ? '↑' : direction === 'descending' ? '↓' : '↕';
+                return h`<th scope="col" data-repository-column=${name} aria-sort=${direction}>
+                    <button type="button" class="workbench-repository-sort" data-workbench-sort=${name}
+                        aria-label=${'Sort by ' + label + ', ' + nextDirection}>
+                        <span>${label}</span><span class="workbench-repository-sort__indicator" aria-hidden="true">${indicator}</span>
+                    </button>
+                </th>`;
+            };
             return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
                     <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
-                    <a class="workbench-action workbench-action--primary workbench-browse-card__action" href="${urlFor(context, 'create')}">${
-                        icon(runtime, 'create')}<span>Create</span></a>
+                    <a class="workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create"
+                        href="${urlFor(context, 'create')}">${icon(runtime, 'create')}<span>Create repository</span></a>
                 </div>
-                ${rowCount(model) ? table(runtime, model, context, { columns: ['id', 'title', 'access', 'actions'], header,
+                ${rowCount(model) ? table(runtime, model, context,
+                    { columns: ['repository', 'id', 'title', 'access', 'actions'], header,
                     cells: (record: any, index: number) => repositoryCells(runtime, context, record, index) })
                     : h`<p class="workbench-empty" role="status">No repositories are available.</p>`}
             </section>`;
@@ -2094,6 +2131,12 @@ module workbench {
                 .map((format: any) => ({ value: format.value, label: format.label, extension: '', graphs: null as boolean }));
         }
 
+        /** A focusable horizontal scroll region for the two full-statement preview tables. */
+        function previewTableScroll(runtime: LitRuntime, label: string, contents: any): any {
+            return runtime.html`<div class="workbench-preview-table-scroll" role="region" tabindex="0"
+                aria-label=${label}>${contents}</div>`;
+        }
+
         /** What happens to the named graphs in the chosen format, so a single-graph format is never a surprise. */
         function exportFormatNote(format: any, graphCount: number): { text: string; warning: boolean } {
             if (format.graphs === true) {
@@ -2228,12 +2271,12 @@ module workbench {
                 </form>
                 <p id="result-limited" class="workbench-field__help" ?hidden=${!(requested && previewLimit !== '0'
                     && rowCount(model) >= Number(previewLimit))}>${'Showing the first ' + previewLimit + ' statements.'}</p>
-                ${rowCount(model) ? table(runtime, model, context, {
+                ${rowCount(model) ? previewTableScroll(runtime, 'Export statement preview', table(runtime, model, context, {
                     labels: { context: 'Graph' },
                     // Prefixed names and value tags, as on Explore, keep four columns readable beside the download card.
                     cells: (record: any) => (model.vars || []).map((name: string) => h`<td data-label=${columnLabel(name,
                         { labels: { context: 'Graph' } })}>${exploreTerm(runtime, record[name], exploreNamespaces(model), true)}</td>`)
-                }) : h`<p class="workbench-empty" role="status">${requested ? 'No statements to show.'
+                })) : h`<p class="workbench-empty" role="status">${requested ? 'No statements to show.'
                         : 'Choose Show preview to see the first statements.'}</p>`}
             </section>`;
         }
@@ -2765,11 +2808,11 @@ module workbench {
                 <h2 id="remove-preview-heading">Statements to remove</h2>
                 <p id="remove-preview-status" class="workbench-page-meta" role="status">${preview.state === 'hidden' ? ''
                     : removePreviewLabel(preview)}</p>
-                ${preview.rows.length ? h`<table class="data"><thead><tr>${previewLabels.map((label: string) =>
+                ${preview.rows.length ? previewTableScroll(runtime, 'Statements to remove preview', h`<table class="data"><thead><tr>${previewLabels.map((label: string) =>
                         h`<th scope="col">${label}</th>`)}</tr></thead>
                     <tbody>${preview.rows.map((row: any[]) => h`<tr>${previewLabels.map((label: string, index: number) =>
                         h`<td data-label=${label}>${exploreTerm(runtime, row[index], namespaces, true)}</td>`)}</tr>`)}</tbody>
-                </table>` : ''}
+                </table>`) : ''}
             </section>`;
         }
 
@@ -2783,10 +2826,11 @@ module workbench {
         const countedPages: { [viewId: string]: { timedOut: string; absorb(answer: PageModel, rows: any[][],
                                                                             counts: PageCounts): void } } = {
             clear: {
-                timedOut: 'Counting took longer than five seconds',
+                timedOut: 'Statement counts took longer than five seconds',
                 absorb(answer: PageModel, rows: any[][], counts: PageCounts): void {
                     const values = counts.values;
-                    // The answer lists every graph as it is now, which is what Clear offers (M14.2).
+                    if (text(meta(answer, 'context-discovery-complete')) !== 'true') { return; }
+                    // Replace choices only after the server has returned a complete graph snapshot (M14.2).
                     counts.listing = recordsFromRows(answer, rows);
                     rows.forEach((row: any[]) => {
                         if (text(row[1])) { values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
@@ -2816,7 +2860,12 @@ module workbench {
         function pageCounts(model: PageModel): PageCounts {
             const holder: any = model;
             if (!holder.pageCounts) {
-                holder.pageCounts = { state: countedPages[model.viewId] ? 'counting' : 'none', values: {} };
+                const discoveryIncomplete = model.viewId === 'clear'
+                    && text(meta(model, 'context-discovery-complete')) === 'false';
+                holder.pageCounts = {
+                    state: discoveryIncomplete ? 'discovery-timed-out' : countedPages[model.viewId] ? 'counting' : 'none',
+                    values: {}
+                };
             }
             return holder.pageCounts;
         }
@@ -2843,7 +2892,13 @@ module workbench {
                 .then((answer: PageModel) => answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                     answer.rowStore.dispose();
                     countedPages[model.viewId].absorb(answer, rows, counts);
-                    counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+                    if (model.viewId === 'clear') {
+                        counts.state = text(meta(answer, 'context-discovery-complete')) === 'true'
+                            ? text(meta(answer, 'statement-counts-timed-out')) === 'true' ? 'timed-out' : 'done'
+                            : 'discovery-timed-out';
+                    } else {
+                        counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
+                    }
                 }))
                 .then(null, () => { counts.state = 'failed'; })
                 .then(() => {
@@ -2874,22 +2929,32 @@ module workbench {
             const h = runtime.html;
             const listing = pageCounts(model).listing
                 || ((model.vars || []).indexOf('statements') >= 0 ? records(model) : []);
+            const discoveryIncomplete = text(meta(model, 'context-discovery-complete')) === 'false';
             // The counts arrive after the page (M13.2); a page model that already has them shows them at once.
             const counted = pageCounts(model).values;
             const countOf = (key: string, fallback: any) => key in counted ? counted[key] : fallback;
-            const targets: any[] = [{ value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }]
+            const targets: any[] = (discoveryIncomplete ? [] : [
+                { value: '', label: 'Entire repository', count: countOf('*', meta(model, 'repository-size')) }
+            ])
                 .concat(listing.filter((record: any) => !record.context)
                     .map((record: any) => ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) })))
                 .concat(listing.filter((record: any) => !!record.context)
                     .map((record: any) => ({ value: ntriples(record.context), label: termText(record.context),
                         count: countOf(ntriples(record.context), record.statements) })));
+            if (discoveryIncomplete && !targets.length) {
+                targets.push({ value: '__unavailable__', label: 'Graph choices unavailable', count: '', unavailable: true });
+            }
             const holder: any = model;
             if (typeof holder.clearTarget !== 'string') {
                 const requested = locationParameter('context') || text(pageValue(model, 'context'));
-                holder.clearTarget = targets.some((target: any) => target.value === requested) ? requested : '';
+                if (discoveryIncomplete && requested && !targets.some((target: any) => target.value === requested)) {
+                    targets.unshift({ value: requested, label: requested + ' (not verified)', count: '', unavailable: true });
+                }
+                holder.clearTarget = targets.some((target: any) => target.value === requested)
+                    ? requested : discoveryIncomplete ? targets[0].value : '';
             }
             const selected = targets.filter((target: any) => target.value === holder.clearTarget)[0] || targets[0];
-            const everything = selected.value === '';
+            const everything = !discoveryIncomplete && selected.value === '';
             const repositoryId = context.repositoryId || '';
             const sending = submissionOf(model).state === 'running';
             /** After a clear, ask for the graphs and their counts again; the tick stays (M14.2). */
@@ -2922,8 +2987,11 @@ module workbench {
                     aria-busy=${sending ? 'true' : 'false'} @submit=${confirmAndSubmit}
                     @change=${(event: any) => clearSubmission(event, model, context, runtime)}>
                 ${systemRepositoryCallout(runtime, context)}
-                ${callout(runtime, 'warning', 'Choose one graph, or the entire repository. There is no undo.',
-                    'This permanently deletes statements.', 'clear-warning')}
+                ${callout(runtime, 'warning', discoveryIncomplete
+                    ? 'Graph choices are incomplete. Clearing is unavailable until discovery finishes.'
+                    : 'Choose one graph, or the entire repository. There is no undo.',
+                    discoveryIncomplete ? 'No clear action will run against an incomplete graph list.'
+                        : 'This permanently deletes statements.', 'clear-warning')}
                 ${errorCallout(runtime, model)}
                 <div class="workbench-field-stack">
                     <div class="workbench-field"><label for="context">What to clear</label>
@@ -2931,16 +2999,23 @@ module workbench {
                             holder.clearTarget = event.currentTarget.value;
                             const outlet = event.currentTarget.closest('.workbench-outlet');
                             if (outlet) { render(outlet, model, context, runtime); }
-                        }}>${targets.map((target: any) => h`<option value=${target.value} ?selected=${target === selected}>${
+                        }}>${targets.map((target: any) => h`<option value=${target.value} ?disabled=${!!target.unavailable}
+                                ?selected=${target === selected}>${
                             target.label + ' — ' + pageCountLabel(model, target.count, context)}</option>`)}</select>${
                             icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
-                        ${pageCounts(model).state === 'timed-out'
-                            ? h`<p id="clear-counts-help" class="workbench-field__help">${countedPages.clear.timedOut}; "—" marks a count that did not finish.</p>`
-                            : ''}
+                        ${pageCounts(model).state === 'discovery-timed-out'
+                            ? h`<p id="clear-context-discovery-help" class="workbench-field__help">${
+                                discoveryIncomplete
+                                    ? 'Graph choices could not be refreshed within 60 seconds. Clearing is disabled until discovery completes.'
+                                    : 'Graph choices could not be refreshed within 60 seconds; existing choices and selection are kept.'}</p>`
+                            : pageCounts(model).state === 'timed-out'
+                                ? h`<p id="clear-counts-help" class="workbench-field__help">${countedPages.clear.timedOut}; "—" marks a count that did not finish.</p>`
+                                : ''}
                     </div>
                 </div>
                 <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger"
-                    ?disabled=${sending}>${icon(runtime, 'clear')}<span>${everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button>
+                    ?disabled=${sending || discoveryIncomplete || !!selected.unavailable}>${icon(runtime, 'clear')}<span>${
+                        discoveryIncomplete ? 'Clear unavailable' : everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button>
                     ${submissionStatus(runtime, model)}</div>
             </form>`;
         }
@@ -3927,6 +4002,8 @@ module workbench {
             let groupGeneration = 0;
             let heights: any = hasRows
                 ? new HeightIndex(model.rowCount, model.viewId === 'saved-queries' ? 240 : 44) : null;
+            let repositorySortedRows: any[][] = (model as any).repositorySortedRows || null;
+            let repositorySortGeneration = 0;
             let executionDisposers: Array<() => void> = [];
 
             const elements = (selector: string): any[] => {
@@ -4046,6 +4123,36 @@ module workbench {
             };
             const repositoryRows = model.viewId === 'repositories' ? elements('#repositories-results')[0] : null;
 
+            const onRepositorySortClick = (event: any) => {
+                const target = event.target;
+                const button = target && target.closest ? target.closest('button[data-workbench-sort]') : null;
+                if (model.viewId !== 'repositories' || !button || !mount.contains(button)) { return; }
+                if (event.preventDefault) { event.preventDefault(); }
+                const column = button.getAttribute('data-workbench-sort');
+                if (['id', 'title', 'access'].indexOf(column) < 0) { return; }
+                const current = (model as any).repositorySort;
+                const direction = current && current.column === column && current.direction === 'ascending'
+                    ? 'descending' : 'ascending';
+                const activeSortGeneration = ++repositorySortGeneration;
+                generation++;
+                model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
+                    if (disposed || activeSortGeneration !== repositorySortGeneration) { return; }
+                    repositorySortedRows = sortedRepositoryRows(model, rows, column, direction);
+                    (model as any).repositorySortedRows = repositorySortedRows;
+                    (model as any).repositorySort = { column, direction };
+                    heights = new HeightIndex(model.rowCount, rowHeight(model));
+                    return refreshRows(false).then(() => {
+                        if (disposed || activeSortGeneration !== repositorySortGeneration) { return; }
+                        renderCurrent();
+                        return refreshRows();
+                    });
+                }).then(null, (error: any) => {
+                    if (!disposed && activeSortGeneration === repositorySortGeneration && typeof console !== 'undefined') {
+                        console.error('Unable to sort repositories.', error);
+                    }
+                });
+            };
+
             const bindPickerControls = () => {
                 elements('[data-workbench-window-action]').forEach((button: any) => {
                     if (button.__rdf4jWorkbenchWindowBound || !button.addEventListener) { return; }
@@ -4100,7 +4207,10 @@ module workbench {
                 windowScrollTop = scrollTop;
                 const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
                 const range = heights.range(scrollTop, viewportHeight, 4, 80);
-                return model.rowStore.read(range.start, range.end - range.start).then((rows: any[][]) => {
+                const rowWindow = repositorySortedRows
+                    ? Promise.resolve(repositorySortedRows.slice(range.start, range.end))
+                    : model.rowStore.read(range.start, range.end - range.start);
+                return rowWindow.then((rows: any[][]) => {
                     if (disposed || activeGeneration !== generation) { return; }
                     model.rows = rows;
                     model.rowStart = range.start;
@@ -4196,6 +4306,9 @@ module workbench {
                 if (repositoryRows && repositoryRows.addEventListener) {
                     repositoryRows.addEventListener('click', onRepositoryRowClick);
                 }
+                if (model.viewId === 'repositories' && mount.addEventListener) {
+                    mount.addEventListener('click', onRepositorySortClick);
+                }
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
@@ -4214,6 +4327,9 @@ module workbench {
                     rowMenuDisposers = [];
                     if (repositoryRows && repositoryRows.removeEventListener) {
                         repositoryRows.removeEventListener('click', onRepositoryRowClick);
+                    }
+                    if (model.viewId === 'repositories' && mount.removeEventListener) {
+                        mount.removeEventListener('click', onRepositorySortClick);
                     }
                     const regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) { rowRegionsByMount.delete(regionKey); }
