@@ -1406,7 +1406,7 @@ class LmdbSailStore implements SailStore {
 			} finally {
 				lock.unlock();
 			}
-			signalAsyncProgress();
+			signalAsyncWaiters();
 			publicationGate.lock();
 			try {
 				publicationCompleted.signalAll();
@@ -2499,7 +2499,26 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread storeTransactionThread;
 	private volatile Thread tripleStoreOwnerThread;
 	private final Object asyncProgress = new Object();
+	private final AsyncSignal asyncCallerProgress = new AsyncSignal();
+	private final AsyncSignal asyncOperationAvailable = new AsyncSignal();
+	private volatile int asyncMonitorWaiters;
 	private NativeGrowthRequest pendingNativeGrowth;
+
+	/** Cold growth/cleanup waits retain their monitor; register before their final condition check. */
+	private final class AsyncMonitorWaiter implements AutoCloseable {
+		private AsyncMonitorWaiter() {
+			synchronized (asyncProgress) {
+				asyncMonitorWaiters++;
+			}
+		}
+
+		@Override
+		public void close() {
+			synchronized (asyncProgress) {
+				asyncMonitorWaiters--;
+			}
+		}
+	}
 
 	/** A native operation stays on its owner; only the caller releases its explicitly registered Java locks. */
 	private final class NativeGrowthRequest {
@@ -3274,13 +3293,14 @@ class LmdbSailStore implements SailStore {
 
 	private MapGrowthAttempt awaitNativeGrowthGrant(MapResizeKind kind) throws IOException {
 		NativeGrowthRequest request = new NativeGrowthRequest(kind);
-		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(request.deadline)) {
+		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(request.deadline);
+				AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
 			synchronized (asyncProgress) {
 				if (pendingNativeGrowth != null) {
 					throw new IOException("A native writer already has a suspended growth request");
 				}
 				pendingNativeGrowth = request;
-				asyncProgress.notifyAll();
+				signalAsyncWaiters();
 				try {
 					while (request.attempt == null && request.failure == null) {
 						awaitAsyncSignal(request.deadline, true);
@@ -3288,12 +3308,12 @@ class LmdbSailStore implements SailStore {
 				} catch (RuntimeException | IOException failure) {
 					request.failure = failure;
 					request.finished = true;
-					asyncProgress.notifyAll();
+					signalAsyncWaiters();
 					throw failure;
 				}
 				if (request.failure != null) {
 					request.finished = true;
-					asyncProgress.notifyAll();
+					signalAsyncWaiters();
 					if (request.failure instanceof IOException io) {
 						throw io;
 					}
@@ -3316,8 +3336,42 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void signalAsyncProgress() {
-		synchronized (asyncProgress) {
-			asyncProgress.notifyAll();
+		asyncCallerProgress.signal();
+		notifyAsyncMonitorWaiters();
+	}
+
+	private void signalAsyncWaiters() {
+		asyncOperationAvailable.signal();
+		signalAsyncProgress();
+	}
+
+	private void notifyAsyncMonitorWaiters() {
+		// A cold waiter registers before checking its condition. If it registers after this read, it observes
+		// the already-published operation/completion state instead of waiting for a notification that was skipped.
+		if (asyncMonitorWaiters != 0) {
+			synchronized (asyncProgress) {
+				asyncProgress.notifyAll();
+			}
+		}
+	}
+
+	private void awaitAsyncSignal(QueryExecutionDeadline deadline, long observed) throws IOException {
+		if (mapGrowthCoordinator.shuttingDown && !(storeTxnStarted.get()
+				&& Thread.currentThread() == storeTransactionThread && currentWriterOwner() == storeTransactionOwner)) {
+			throw new IOException("LMDB store is shutting down");
+		}
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		long remaining = deadline == null ? Long.MAX_VALUE : deadline.remainingNanos();
+		if (remaining <= 0L) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		try {
+			asyncCallerProgress.await(observed, remaining);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for the native LMDB writer", interrupted);
 		}
 	}
 
@@ -3358,7 +3412,7 @@ class LmdbSailStore implements SailStore {
 		}
 		SailWriteContinuation.Suspension suspension = null;
 		boolean interrupted = false;
-		try {
+		try (AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
 			request.deadline = earlierDeadline(request.deadline, QueryExecutionDeadline.current());
 			if (request.deadline != null && request.deadline.isExpired()) {
 				throw new QueryInterruptedException("Query evaluation took too long");
@@ -3376,7 +3430,7 @@ class LmdbSailStore implements SailStore {
 			grant.completion = () -> {
 				synchronized (asyncProgress) {
 					request.finished = true;
-					asyncProgress.notifyAll();
+					signalAsyncWaiters();
 				}
 			};
 			synchronized (asyncProgress) {
@@ -3385,7 +3439,7 @@ class LmdbSailStore implements SailStore {
 					return;
 				}
 				request.attempt = grant;
-				asyncProgress.notifyAll();
+				signalAsyncWaiters();
 				while (!request.finished) {
 					try {
 						asyncProgress.wait();
@@ -3400,7 +3454,7 @@ class LmdbSailStore implements SailStore {
 			synchronized (asyncProgress) {
 				request.failure = failure;
 				request.finished = true;
-				asyncProgress.notifyAll();
+				signalAsyncWaiters();
 			}
 			throw failure;
 		} finally {
@@ -3433,18 +3487,16 @@ class LmdbSailStore implements SailStore {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		try (QueryExecutionDeadline.Registration expiration = signalAsyncOnExpiration(deadline)) {
 			while (true) {
+				long observed = asyncCallerProgress.sequence();
 				serviceNativeGrowth();
-				synchronized (asyncProgress) {
-					if (tripleStoreException != null) {
-						throw wrapTripleStoreException();
-					}
-					if (finished.getAsBoolean()) {
-						return;
-					}
-					if (pendingNativeGrowth == null) {
-						awaitAsyncSignal(deadline, true);
-					}
+				if (tripleStoreException != null) {
+					throw wrapTripleStoreException();
 				}
+				if (finished.getAsBoolean()) {
+					return;
+				}
+				// A growth request arriving after service changes the sequence and forces another service pass.
+				awaitAsyncSignal(deadline, observed);
 			}
 		}
 	}
@@ -3460,17 +3512,20 @@ class LmdbSailStore implements SailStore {
 		while (!opQueue.add(operation)) {
 			awaitAsyncProgress(() -> !opQueue.isFull());
 		}
-		signalAsyncProgress();
+		asyncOperationAvailable.signal();
 	}
 
 	private Operation awaitAsyncOperation() throws InterruptedException {
-		synchronized (asyncProgress) {
-			while (opQueue.isEmpty() && running.get()) {
-				asyncProgress.wait();
+		// This native owner is the only consumer until it publishes asyncTransactionFinished. Rollback then
+		// drains the abandoned suffix while retaining sinkStoreAccessLock, before a new generation can start.
+		while (true) {
+			long observed = asyncOperationAvailable.sequence();
+			if (!opQueue.isEmpty() || !running.get()) {
+				Operation operation = opQueue.remove();
+				signalAsyncProgress();
+				return operation;
 			}
-			Operation operation = opQueue.remove();
-			asyncProgress.notifyAll();
-			return operation;
+			asyncOperationAvailable.await(observed, Long.MAX_VALUE);
 		}
 	}
 
@@ -4310,17 +4365,17 @@ class LmdbSailStore implements SailStore {
 	/** Cleanup cannot abandon a native owner merely because the query deadline or caller interrupt has expired. */
 	private void rollbackAsyncTransaction() {
 		boolean interrupted = Thread.interrupted();
-		try {
+		try (AsyncMonitorWaiter waiter = new AsyncMonitorWaiter()) {
 			synchronized (asyncProgress) {
 				NativeGrowthRequest request = pendingNativeGrowth;
 				if (request != null && !request.finished && request.attempt == null) {
 					request.failure = new IOException("The owning LMDB transaction is being rolled back");
 					request.finished = true;
-					asyncProgress.notifyAll();
+					signalAsyncWaiters();
 				}
 				while (!asyncTransactionFinished) {
 					if (tripleStoreException == null && opQueue.add(ROLLBACK_TRANSACTION)) {
-						asyncProgress.notifyAll();
+						signalAsyncWaiters();
 						break;
 					}
 					try {
@@ -4343,7 +4398,7 @@ class LmdbSailStore implements SailStore {
 				if (pendingNativeGrowth != null && pendingNativeGrowth.finished) {
 					pendingNativeGrowth = null;
 				}
-				asyncProgress.notifyAll();
+				signalAsyncWaiters();
 			}
 		} finally {
 			if (interrupted) {
@@ -4813,7 +4868,7 @@ class LmdbSailStore implements SailStore {
 			failure = attemptClose(failure, filterSelectivityStats::persistIfDirty);
 		}
 		running.set(false);
-		signalAsyncProgress();
+		signalAsyncWaiters();
 		failure = attemptClose(failure, tripleStoreExecutor::shutdown);
 		failure = attemptClose(failure, () -> {
 			boolean interrupted = false;
