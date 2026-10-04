@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import jakarta.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
@@ -50,6 +48,8 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 public class RemoveServlet extends TransformationServlet {
 

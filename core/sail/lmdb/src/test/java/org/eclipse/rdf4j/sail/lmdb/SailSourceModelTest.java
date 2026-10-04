@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;

@@ -97,10 +97,8 @@ public class Values {
 		case ValueIds.T_DOUBLE -> doubleLabel(Decimals.decodeDouble(value));
 		case ValueIds.T_DECIMAL -> Decimals.decodeDecimal(value).toPlainString();
 		case ValueIds.T_FLOAT -> floatLabel(Decimals.decodeFloat(value));
-		case ValueIds.T_INTEGER, ValueIds.T_LONG, ValueIds.T_POSITIVE_INTEGER, ValueIds.T_NEGATIVE_INTEGER,
-				ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER ->
-			Long
-					.toString(decoded);
+		case ValueIds.T_INTEGER, ValueIds.T_LONG, ValueIds.T_POSITIVE_INTEGER, ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER -> Long
+				.toString(decoded);
 		case ValueIds.T_INT -> Integer.toString((int) decoded);
 		case ValueIds.T_SHORT -> Short.toString((short) decoded);
 		case ValueIds.T_BYTE -> Byte.toString((byte) ValueIds.getValue(value));
@@ -191,9 +189,8 @@ public class Values {
 			case DECIMAL -> Decimals.packDecimal(new BigDecimal(label));
 			case DOUBLE -> Decimals.packDouble(parseDouble(label));
 			case FLOAT -> Decimals.packFloat((float) parseDouble(label));
-			case INTEGER, POSITIVE_INTEGER, NEGATIVE_INTEGER, NON_NEGATIVE_INTEGER, NON_POSITIVE_INTEGER ->
-				packIntegerLabel(
-						label, datatype);
+			case INTEGER, POSITIVE_INTEGER, NEGATIVE_INTEGER, NON_NEGATIVE_INTEGER, NON_POSITIVE_INTEGER -> packIntegerLabel(
+					label, datatype);
 			case LONG -> packLongLabel(Long.parseLong(label), ValueIds.T_LONG);
 			case INT -> ValueIds.createId(ValueIds.T_INT, Integers.encodeZigZag(Integer.parseInt(label)));
 			case SHORT -> ValueIds.createId(ValueIds.T_SHORT, Integers.encodeZigZag(Short.parseShort(label)));

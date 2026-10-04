@@ -293,8 +293,8 @@ public class LmdbSailStoreTest {
 					MockedConstruction<LmdbRecordIterator> recordIterators = mockConstruction(LmdbRecordIterator.class,
 							(mock, context) -> doThrow(
 									new AssertionError("Statement counting must not iterate raw records"))
-									.when(mock)
-									.next());
+											.when(mock)
+											.next());
 					MockedConstruction<LmdbStatementIterator> statementIterators = mockConstruction(
 							LmdbStatementIterator.class)) {
 				assertEquals(3, dataset.getStatementCount(null, null, null));
@@ -963,8 +963,8 @@ public class LmdbSailStoreTest {
 							LmdbStatementIterator.class,
 							(mock, context) -> doThrow(
 									new AssertionError("Serializable count must not scan statements"))
-									.when(mock)
-									.next());
+											.when(mock)
+											.next());
 					CountProbeConnection connection = new CountProbeConnection(target)) {
 				connection.begin(IsolationLevels.SERIALIZABLE);
 				assertEquals(0, connection.countStatementsForTest(subject, predicate, foreignLiteral));
@@ -1009,8 +1009,8 @@ public class LmdbSailStoreTest {
 							LmdbStatementIterator.class,
 							(mock, context) -> doThrow(
 									new AssertionError("Serializable count must not scan statements"))
-									.when(mock)
-									.next())) {
+											.when(mock)
+											.next())) {
 				assertEquals(0, reader.countStatementsForTest(subject, predicate, object, (Resource) null));
 				assertTrue(recordIterators.constructed().isEmpty());
 				assertTrue(statementIterators.constructed().isEmpty());
@@ -1046,8 +1046,8 @@ public class LmdbSailStoreTest {
 							LmdbStatementIterator.class,
 							(mock, context) -> doThrow(
 									new AssertionError("Serializable count must not scan statements"))
-									.when(mock)
-									.next())) {
+											.when(mock)
+											.next())) {
 				assertEquals(1, reader.countStatementsForTest(subject, predicate, object, (Resource) null));
 				assertTrue(recordIterators.constructed().isEmpty());
 				assertTrue(statementIterators.constructed().isEmpty());
@@ -1211,14 +1211,14 @@ public class LmdbSailStoreTest {
 								LmdbRecordIterator.class,
 								(mock, context) -> doThrow(
 										new AssertionError("Frozen native count must not scan raw records"))
-										.when(mock)
-										.next());
+												.when(mock)
+												.next());
 						MockedConstruction<LmdbStatementIterator> statementIterators = mockConstruction(
 								LmdbStatementIterator.class,
 								(mock, context) -> doThrow(
 										new AssertionError("Frozen native count must not scan statements"))
-										.when(mock)
-										.next())) {
+												.when(mock)
+												.next())) {
 					StatementCountSource nativeSource = rootDataset.prepareStatementCount(scope);
 					StatementCountSource heldSource = StatementCountSources.fromStatements(
 							new Statement[] { first, second, added }, scope);
@@ -1430,14 +1430,14 @@ public class LmdbSailStoreTest {
 						LmdbRecordIterator.class,
 						(mock, context) -> doThrow(
 								new AssertionError("Native nested counts must not iterate raw records"))
-								.when(mock)
-								.next());
+										.when(mock)
+										.next());
 						MockedConstruction<LmdbStatementIterator> statementIterators = mockConstruction(
 								LmdbStatementIterator.class,
 								(mock, context) -> doThrow(
 										new AssertionError("Native nested counts must not iterate statements"))
-										.when(mock)
-										.next());
+												.when(mock)
+												.next());
 						SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
 					assertEquals("inline literals: " + inlineLiterals, statements.size(),
 							dataset.getStatementCount(null, null, null));
