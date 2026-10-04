@@ -14,10 +14,11 @@ import java.lang.ref.Cleaner;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class CleanerIteration<E> implements CloseableIteration<E> {
+final class CleanerIteration<E> implements CloseableIteration<E>, IndexReportingIterator {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
 
@@ -50,6 +51,38 @@ final class CleanerIteration<E> implements CloseableIteration<E> {
 	@Override
 	public void remove() {
 		delegate.remove();
+	}
+
+	@Override
+	public String getIndexName() {
+		IndexReportingIterator reporter = indexReporter();
+		if (reporter == null) {
+			return null;
+		}
+		String indexName = reporter.getIndexName();
+		return indexName == null || indexName.isEmpty() ? null : indexName;
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsScannedActual();
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsMatchedActual();
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+	}
+
+	private IndexReportingIterator indexReporter() {
+		return delegate instanceof IndexReportingIterator reporter ? reporter : null;
 	}
 
 	private final static class CleanableState<E> implements Runnable {

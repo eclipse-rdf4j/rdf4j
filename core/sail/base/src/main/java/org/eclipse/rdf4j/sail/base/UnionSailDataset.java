@@ -12,12 +12,17 @@
 
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.function.ToLongFunction;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
@@ -130,7 +135,9 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getStatements(subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(subj, pred, obj, contexts);
-			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
+			CloseableIteration<? extends Statement> union = DualUnionIteration.getWildcardInstance(iteration1,
+					iteration2);
+			return preserveReporting(union, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -161,7 +168,9 @@ class UnionSailDataset implements SailDataset {
 		try {
 			iteration1 = dataset1.getTriples(subj, pred, obj);
 			iteration2 = dataset2.getTriples(subj, pred, obj);
-			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
+			CloseableIteration<? extends TripleTerm> union = DualUnionIteration.getWildcardInstance(iteration1,
+					iteration2);
+			return preserveReporting(union, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -187,7 +196,9 @@ class UnionSailDataset implements SailDataset {
 			iteration1 = dataset1.getStatements(statementOrder, subj, pred, obj, contexts);
 			iteration2 = dataset2.getStatements(statementOrder, subj, pred, obj, contexts);
 			Comparator<Statement> cmp = statementOrder.getComparator(dataset1.getComparator());
-			return DualUnionIteration.getWildcardInstance(cmp, iteration1, iteration2);
+			CloseableIteration<? extends Statement> union = DualUnionIteration.getWildcardInstance(cmp, iteration1,
+					iteration2);
+			return preserveReporting(union, iteration1, iteration2);
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {
@@ -233,5 +244,78 @@ class UnionSailDataset implements SailDataset {
 		assert (comparator1 == null && comparator2 == null) || (comparator1 != null && comparator2 != null);
 
 		return comparator1;
+	}
+
+	private static <T> CloseableIteration<? extends T> preserveReporting(CloseableIteration<? extends T> union,
+			CloseableIteration<?> first, CloseableIteration<?> second) {
+		List<IndexReportingIterator> reporters = new ArrayList<>();
+		addReporters(first, reporters);
+		addReporters(second, reporters);
+		if (reporters.isEmpty()) {
+			return union;
+		}
+		return new UnionReportingIteration<>(union, reporters);
+	}
+
+	private static void addReporters(CloseableIteration<?> iteration, List<IndexReportingIterator> reporters) {
+		if (iteration instanceof UnionReportingIteration<?> union) {
+			reporters.addAll(union.reporters);
+		} else if (iteration instanceof IndexReportingIterator reporter) {
+			reporters.add(reporter);
+		}
+	}
+
+	private static final class UnionReportingIteration<T> extends SailClosingIteration<T> {
+		private final List<IndexReportingIterator> reporters;
+
+		private UnionReportingIteration(CloseableIteration<? extends T> union, List<IndexReportingIterator> reporters) {
+			super(union);
+			this.reporters = List.copyOf(reporters);
+		}
+
+		@Override
+		protected void handleSailException(SailException e) {
+			throw e;
+		}
+
+		@Override
+		public String getIndexName() {
+			Set<String> indexNames = new LinkedHashSet<>();
+			for (IndexReportingIterator reporter : reporters) {
+				String indexName = reporter.getIndexName();
+				if (indexName != null && !indexName.isEmpty()) {
+					indexNames.add(indexName);
+				}
+			}
+			return String.join(", ", indexNames);
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return aggregate(IndexReportingIterator::getSourceRowsScannedActual);
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return aggregate(IndexReportingIterator::getSourceRowsMatchedActual);
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return aggregate(IndexReportingIterator::getSourceRowsFilteredActual);
+		}
+
+		private long aggregate(ToLongFunction<IndexReportingIterator> metric) {
+			long total = 0L;
+			boolean found = false;
+			for (IndexReportingIterator reporter : reporters) {
+				long value = metric.applyAsLong(reporter);
+				if (value >= 0L) {
+					total += value;
+					found = true;
+				}
+			}
+			return found ? total : -1L;
+		}
 	}
 }

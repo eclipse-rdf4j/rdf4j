@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.evaluation;
 import java.util.Comparator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -77,7 +78,8 @@ public class RepositoryTripleSource implements TripleSource {
 		return null;
 	}
 
-	static class QueryEvaluationCloseableIteration<E> implements CloseableIteration<E> {
+	static class QueryEvaluationCloseableIteration<E>
+			implements CloseableIteration<E>, IndexReportingIterator {
 
 		private final CloseableIteration<? extends E> iter;
 
@@ -119,6 +121,38 @@ public class RepositoryTripleSource implements TripleSource {
 			} catch (Exception e) {
 				throw convert(e);
 			}
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator reporter = indexReporter();
+			if (reporter == null) {
+				return null;
+			}
+			String indexName = reporter.getIndexName();
+			return indexName == null || indexName.isEmpty() ? null : indexName;
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator reporter = indexReporter();
+			return reporter == null ? -1 : reporter.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator reporter = indexReporter();
+			return reporter == null ? -1 : reporter.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator reporter = indexReporter();
+			return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iter instanceof IndexReportingIterator reporter ? reporter : null;
 		}
 
 		protected QueryEvaluationException convert(Exception e) {

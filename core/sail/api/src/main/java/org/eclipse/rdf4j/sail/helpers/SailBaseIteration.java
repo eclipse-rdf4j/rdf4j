@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
@@ -19,7 +20,7 @@ import org.eclipse.rdf4j.common.iteration.IterationWrapper;
  *
  * @author Jeen Broekstra
  */
-class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> {
+class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> implements IndexReportingIterator {
 
 	private final AbstractSailConnection connection;
 
@@ -61,5 +62,37 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> {
 	@Deprecated
 	protected void forceClose() throws E {
 		close();
+	}
+
+	@Override
+	public String getIndexName() {
+		IndexReportingIterator reporter = indexReporter();
+		if (reporter == null) {
+			return null;
+		}
+		String indexName = reporter.getIndexName();
+		return indexName == null || indexName.isEmpty() ? null : indexName;
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsScannedActual();
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsMatchedActual();
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+	}
+
+	private IndexReportingIterator indexReporter() {
+		return wrappedIter instanceof IndexReportingIterator reporter ? reporter : null;
 	}
 }
