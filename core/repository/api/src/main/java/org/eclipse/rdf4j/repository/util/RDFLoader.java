@@ -20,10 +20,14 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.ProtocolException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.PrivilegedAction;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -31,6 +35,13 @@ import java.util.zip.ZipInputStream;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.ZipUtil;
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
+import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
+import org.eclipse.rdf4j.http.client.spi.HttpRequest;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -54,14 +65,26 @@ public class RDFLoader {
 	private final ParserConfig config;
 
 	private final ValueFactory vf;
+	private final RemoteResourceAccessPolicy remoteResourceAccessPolicy;
 
 	/**
 	 * @param config
 	 * @param vf
 	 */
 	public RDFLoader(ParserConfig config, ValueFactory vf) {
+		this(config, vf, new PublicNetworkAccessPolicy());
+	}
+
+	/**
+	 * @param config                     parser configuration
+	 * @param vf                         value factory
+	 * @param remoteResourceAccessPolicy policy checked immediately before remote connections and redirects
+	 */
+	public RDFLoader(ParserConfig config, ValueFactory vf, RemoteResourceAccessPolicy remoteResourceAccessPolicy) {
 		this.config = config;
 		this.vf = vf;
+		this.remoteResourceAccessPolicy = Objects.requireNonNull(remoteResourceAccessPolicy,
+				"remoteResourceAccessPolicy must not be null");
 	}
 
 	/**
@@ -120,6 +143,10 @@ public class RDFLoader {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
+		if (remoteResourceAccessPolicy.requiresAddressBinding() && isHttpResource(url)) {
+			loadPolicyBoundHttp(url, baseURI, dataFormat, rdfHandler);
+			return;
+		}
 
 		boolean followRedirects = HttpURLConnection.getFollowRedirects();
 		int maxRedirects = java.security.AccessController.doPrivileged(
@@ -129,9 +156,22 @@ public class RDFLoader {
 		boolean redirected;
 
 		URL requestURL = url;
+		URI previousRequestUri = null;
 		do {
 			redirected = false;
 
+			URI requestUri = toUri(requestURL);
+			if (previousRequestUri == null) {
+				// RDFLoader is also used for caller-supplied local resources. Authority-free file URLs and
+				// runtime-image URLs cannot open a remote connection; every other protocol remains subject
+				// to the configured policy, including network resources wrapped in jar URLs.
+				if (!isLocalResource(requestUri)) {
+					remoteResourceAccessPolicy.checkInitial(requestUri);
+				}
+			} else {
+				// Always validate redirects, including redirects from HTTP(S) to a non-network scheme.
+				remoteResourceAccessPolicy.checkRedirect(previousRequestUri, requestUri);
+			}
 			URLConnection con = requestURL.openConnection();
 
 			// Set appropriate Accept headers
@@ -166,6 +206,7 @@ public class RDFLoader {
 						throw new IOException("Could not find redirection location for URL: " + url);
 					}
 
+					previousRequestUri = requestUri;
 					requestURL = new URL(requestURL, redirectionLocation);
 
 					redirected = true;
@@ -194,14 +235,102 @@ public class RDFLoader {
 		} while (redirected);
 	}
 
+	private void loadPolicyBoundHttp(URL url, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+			throws IOException, RDFParseException, RDFHandlerException {
+		boolean followRedirects = HttpURLConnection.getFollowRedirects();
+		int maxRedirects = java.security.AccessController.doPrivileged(
+				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
+		RDF4JHttpClientConfig clientConfig = RDF4JHttpClientConfig.newBuilder()
+				.followRedirects(followRedirects)
+				.maxRedirects(maxRedirects)
+				.remoteResourceAccessPolicy(remoteResourceAccessPolicy)
+				.build();
+		HttpRequest.Builder request = HttpRequest.newBuilder("GET", toUri(url));
+		if (dataFormat != null) {
+			for (String mimeType : dataFormat.getMIMETypes()) {
+				request.header("Accept", mimeType);
+			}
+		} else {
+			for (String acceptParam : RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true,
+					null)) {
+				request.header("Accept", acceptParam);
+			}
+		}
+
+		try (RDF4JHttpClient client = RDF4JHttpClients.newDefaultClient(clientConfig);
+				HttpResponse response = client.execute(request.build())) {
+			if (response.getStatusCode() >= 400) {
+				throw new IOException("Server returned HTTP response code: " + response.getStatusCode() + " for URL: "
+						+ url);
+			}
+			RDFFormat effectiveFormat = dataFormat;
+			if (effectiveFormat == null) {
+				String contentType = response.getHeader("Content-Type").orElse(null);
+				if (contentType != null) {
+					int separator = contentType.indexOf(';');
+					String mimeType = separator < 0 ? contentType : contentType.substring(0, separator);
+					effectiveFormat = Rio.getParserFormatForMIMEType(mimeType.trim()).orElse(null);
+				}
+				if (effectiveFormat == null) {
+					effectiveFormat = Rio.getParserFormatForFileName(url.getPath())
+							.orElseThrow(() -> new UnsupportedRDFormatException(
+									"Could not find RDF format for URL: " + url.getPath()));
+				}
+			}
+			load(response.getBodyAsStream(), baseURI, effectiveFormat, rdfHandler);
+		}
+	}
+
+	private static boolean isHttpResource(URL url) {
+		return "http".equalsIgnoreCase(url.getProtocol()) || "https".equalsIgnoreCase(url.getProtocol());
+	}
+
+	private URI toUri(URL url) throws IOException {
+		try {
+			return url.toURI();
+		} catch (URISyntaxException e) {
+			throw new IOException("Remote resource access denied: target URI is invalid", e);
+		}
+	}
+
+	private boolean isLocalResource(URI uri) throws IOException {
+		URI resource = uri;
+		String scheme = resource.getScheme();
+		while (scheme != null && "jar".equals(scheme.toLowerCase(Locale.ROOT))) {
+			String schemeSpecificPart = resource.getRawSchemeSpecificPart();
+			int entrySeparator = schemeSpecificPart == null ? -1 : schemeSpecificPart.indexOf("!/");
+			if (entrySeparator <= 0) {
+				return false;
+			}
+			try {
+				resource = new URI(schemeSpecificPart.substring(0, entrySeparator));
+			} catch (URISyntaxException e) {
+				throw new IOException("Remote resource access denied: nested JAR URI is invalid", e);
+			}
+			scheme = resource.getScheme();
+		}
+
+		if (scheme == null) {
+			return false;
+		}
+		String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+		return "jrt".equals(normalizedScheme)
+				|| ("file".equals(normalizedScheme)
+						&& (resource.getRawAuthority() == null || resource.getRawAuthority().isEmpty()));
+	}
+
 	/**
-	 * Returns whether a given HTTP status code represents a redirection (i.e. 3xx)
+	 * Returns whether a given HTTP status code instructs the client to redirect.
 	 *
 	 * @param statusCode
 	 * @return
 	 */
 	private boolean isRedirection(int statusCode) {
-		return statusCode / 100 == 3;
+		return statusCode == HttpURLConnection.HTTP_MOVED_PERM
+				|| statusCode == HttpURLConnection.HTTP_MOVED_TEMP
+				|| statusCode == HttpURLConnection.HTTP_SEE_OTHER
+				|| statusCode == 307
+				|| statusCode == 308;
 	}
 
 	/**
