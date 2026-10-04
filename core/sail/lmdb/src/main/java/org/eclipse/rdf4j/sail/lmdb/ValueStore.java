@@ -19,10 +19,12 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
@@ -33,6 +35,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -46,6 +49,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
@@ -53,6 +57,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -60,6 +65,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -84,7 +90,6 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -240,6 +245,29 @@ class ValueStore extends AbstractValueFactory {
 	private final long valueEvictionInterval;
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
+	private final LmdbStoreFormat format;
+	private final LmdbStoreConfig storeConfig;
+	private boolean deferNextIdPersistence = true;
+	private boolean refCountIntegrityEstablished;
+	private boolean skipRefCountRecovery;
+	private boolean trustedAllocationCounter;
+	private boolean dictionaryHighWaterRecovered;
+	private long persistedAllocationCounter;
+	private boolean storeInitializationComplete;
+	private RetiredValueIdRecovery retiredValueIdRecovery;
+	private static final byte NEXT_ID_KEY = 8;
+	private static final int REFCOUNT_REBUILD_BATCH_SIZE = 4096;
+
+	@FunctionalInterface
+	interface ValueIdLivenessChecker {
+		void filterUsedIds(Set<Long> candidates) throws IOException;
+	}
+
+	private ValueIdLivenessChecker valueIdLivenessChecker = candidates -> {
+	};
+
+	private record RefCountScanBatch(Map<Long, Long> counts, byte[] lastKey, boolean exhausted) {
+	}
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
@@ -248,6 +276,28 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+		this(dir, properties, config, LmdbStoreFormat.fromProperties(properties, config));
+	}
+
+	enum Initialization {
+		STANDALONE_DICTIONARY,
+		STATEMENT_STORE_OWNER
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, LmdbStoreFormat format)
+			throws IOException {
+		this(dir, properties, config, format, false, Initialization.STANDALONE_DICTIONARY);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, LmdbStoreFormat format,
+			boolean newNativeGenerationAllowed) throws IOException {
+		this(dir, properties, config, format, newNativeGenerationAllowed, Initialization.STATEMENT_STORE_OWNER);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, LmdbStoreFormat format,
+			boolean newNativeGenerationAllowed, Initialization initialization) throws IOException {
+		this.format = format;
+		this.storeConfig = config;
 		this.dir = dir;
 		this.properties = properties;
 		this.forceSync = config.getForceSync();
@@ -256,67 +306,824 @@ class ValueStore extends AbstractValueFactory {
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
-		this.inlineLiterals = config.getInlineLiterals();
-		open();
+		this.inlineLiterals = format.inlinesLiterals();
+		try {
+			open(newNativeGenerationAllowed);
 
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
-		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
-		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-		setNewRevision();
+			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
+			valueCache = new LmdbValue[cacheSize];
+			valueCacheId = new long[cacheSize];
+			valueCacheMask = cacheSize - 1;
+			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
+			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+			setNewRevision();
 
-		startTransaction(true);
-		initTermIndexes(config);
-		commit();
-
-		// read maximum id from store
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			MDBVal keyData = MDBVal.calloc(stack);
-			MDBVal valueData = MDBVal.calloc(stack);
-			for (int lookupDbi : new int[] { dbi, freeDbi }) {
-				try {
-					E(mdb_cursor_open(txn, lookupDbi, pp));
-					cursor = pp.get(0);
-
-					// set cursor after max ID
-					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc != MDB_SUCCESS) {
-						// directly go to last value
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-					} else {
-						// go to previous value of selected key
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-					}
-					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
-					}
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
-					}
-				}
+			recoverNextId(false);
+			startTransaction(true);
+			initTermIndexes(config);
+			commit();
+			recoverNextId(true);
+			deferNextIdPersistence = false;
+			if (!format.isLegacy()) {
+				startTransaction(false);
+				commit();
 			}
+			// An old writer changes the native transaction ID and invalidates the compatible clean-count proof.
+			if (!skipRefCountRecovery) {
+				rebuildRefCounts();
+			}
+			refCountIntegrityEstablished = true;
+			if (initialization == Initialization.STANDALONE_DICTIONARY) {
+				completeStoreInitialization(candidates -> {
+				}, new HashSet<>(), new HashSet<>());
+			}
+		} catch (IOException | RuntimeException | Error failure) {
 			try {
-				cursor = 0;
-				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+				close();
+			} catch (IOException closing) {
+				failure.addSuppressed(closing);
+			}
+			throw failure;
+		}
+	}
+
+	private RefCountScanBatch scanMainRefCountBatch(long expectedSnapshotId, byte[] resumeKey) throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			checkRebuildReadTransaction(txn, expectedSnapshotId);
+			Map<Long, Long> counts = new HashMap<>();
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			long cursor = 0;
+			byte[] lastKey = resumeKey;
+			int processed = 0;
+			int rc;
+			try {
+				E(mdb_cursor_open(txn, dbi, pp));
 				cursor = pp.get(0);
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
-					nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
+				key.mv_data(stack.bytes(resumeKey == null ? new byte[] { ID_KEY } : resumeKey));
+				rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				if (resumeKey != null && rc == MDB_SUCCESS && sameKey(key.mv_data(), resumeKey)) {
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 				}
+				while (rc == MDB_SUCCESS && isIdKey(key.mv_data())) {
+					stack.push();
+					try {
+						long id = data2id(key.mv_data().duplicate());
+						byte[] data = copyValue(value);
+						verifyOwnerRecordType(id, data);
+						if (isLiveReverseOwner(stack, txn, id, data)) {
+							countForwardDependency(txn, id, data, counts);
+						}
+					} finally {
+						stack.pop();
+					}
+					lastKey = copyValue(key);
+					processed++;
+					if (processed >= REFCOUNT_REBUILD_BATCH_SIZE) {
+						break;
+					}
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				boolean exhausted = processed < REFCOUNT_REBUILD_BATCH_SIZE
+						&& (rc == MDB_NOTFOUND || rc == MDB_SUCCESS && !isIdKey(key.mv_data()));
+				return new RefCountScanBatch(counts, lastKey, exhausted);
 			} finally {
 				if (cursor != 0) {
 					mdb_cursor_close(cursor);
 				}
 			}
+		});
+	}
+
+	private RefCountScanBatch scanSpocRefCountBatch(long expectedSnapshotId, byte[] resumeKey) throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			checkRebuildReadTransaction(txn, expectedSnapshotId);
+			Map<Long, Long> counts = new HashMap<>();
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			long cursor = 0;
+			byte[] lastKey = resumeKey;
+			int processed = 0;
+			int rc;
+			try {
+				E(mdb_cursor_open(txn, tripleTermSpocIndex.getDB(true), pp));
+				cursor = pp.get(0);
+				if (resumeKey == null) {
+					rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				} else {
+					key.mv_data(stack.bytes(resumeKey));
+					rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+					if (rc == MDB_SUCCESS && sameKey(key.mv_data(), resumeKey)) {
+						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+				}
+				long[] quad = new long[4];
+				while (rc == MDB_SUCCESS) {
+					stack.push();
+					try {
+						try {
+							tripleTermSpocIndex.keyToQuad(key.mv_data().duplicate(), quad);
+						} catch (RuntimeException malformed) {
+							throw new IOException(
+									"Cannot rebuild ValueStore ref_counts: malformed live SPOC term index key",
+									malformed);
+						}
+						for (int component = 0; component < 3; component++) {
+							long componentId = quad[component];
+							verifyTermDependency(txn, componentId, quad, component);
+							addRefCount(counts, componentId, "live SPOC term component");
+						}
+					} finally {
+						stack.pop();
+					}
+					lastKey = copyValue(key);
+					processed++;
+					if (processed >= REFCOUNT_REBUILD_BATCH_SIZE) {
+						break;
+					}
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				boolean exhausted = processed < REFCOUNT_REBUILD_BATCH_SIZE && rc == MDB_NOTFOUND;
+				return new RefCountScanBatch(counts, lastKey, exhausted);
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+		});
+	}
+
+	private static boolean isIdKey(ByteBuffer key) {
+		return key != null && key.hasRemaining() && key.get(key.position()) == ID_KEY;
+	}
+
+	private static boolean sameKey(ByteBuffer key, byte[] expected) {
+		if (key == null || key.remaining() != expected.length) {
+			return false;
+		}
+		for (int i = 0; i < expected.length; i++) {
+			if (key.get(key.position() + i) != expected[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static void checkRebuildReadTransaction(long txn, long expectedSnapshotId) throws IOException {
+		long actual = mdb_txn_id(txn);
+		if (actual != expectedSnapshotId) {
+			throw new IOException(
+					"ValueStore ref_counts reconstruction observed an intervening LMDB transaction: expected "
+							+ expectedSnapshotId + " but found " + actual);
+		}
+	}
+
+	private static byte[] copyValue(MDBVal value) {
+		ByteBuffer bytes = value.mv_data().duplicate();
+		byte[] result = new byte[bytes.remaining()];
+		bytes.get(result);
+		return result;
+	}
+
+	private static void verifyOwnerRecordType(long id, byte[] data) throws IOException {
+		if (data.length == 0) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: empty value record for owner " + id);
+		}
+		byte expectedType = switch (ValueIds.getIdType(id)) {
+		case ValueIds.T_PTR -> NAMESPACE_VALUE;
+		case ValueIds.T_URI -> URI_VALUE;
+		case ValueIds.T_LITERAL, ValueIds.T_CORE_LITERAL -> LITERAL_VALUE;
+		case ValueIds.T_BNODE -> BNODE_VALUE;
+		default -> throw new IOException(
+				"Cannot rebuild ValueStore ref_counts: unexpected main-record ID type for owner "
+						+ id);
+		};
+		if (data[0] != expectedType) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + id + " has record type " + data[0]
+					+ " but expected " + expectedType);
+		}
+	}
+
+	private boolean isLiveReverseOwner(MemoryStack stack, long txn, long id, byte[] data) throws IOException {
+		stack.push();
+		try {
+			MDBVal reverseKey = MDBVal.calloc(stack);
+			MDBVal reverseValue = MDBVal.calloc(stack);
+			if (data.length <= MAX_KEY_SIZE) {
+				reverseKey.mv_data(stack.bytes(data));
+				int rc = mdb_get(txn, dbi, reverseKey, reverseValue);
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				return rc == MDB_SUCCESS && idKeyMatches(reverseValue.mv_data(), id);
+			}
+
+			long dataHash = hash(data);
+			ByteBuffer hashBuffer = stack.malloc(2 + 2 * Long.BYTES + 2);
+			hashBuffer.put(HASH_KEY);
+			Varint.writeUnsigned(hashBuffer, dataHash);
+			hashBuffer.flip();
+			reverseKey.mv_data(hashBuffer);
+			int rc = mdb_get(txn, dbi, reverseKey, reverseValue);
+			if (rc == MDB_SUCCESS && idKeyMatches(reverseValue.mv_data(), id)) {
+				return true;
+			}
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+
+			hashBuffer.clear();
+			hashBuffer.put(HASHID_KEY);
+			Varint.writeUnsigned(hashBuffer, dataHash);
+			hashBuffer.put(stack.bytes(encodedId(id)));
+			reverseKey.mv_data(hashBuffer.flip());
+			rc = mdb_get(txn, dbi, reverseKey, reverseValue);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			return rc == MDB_SUCCESS;
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private static boolean idKeyMatches(ByteBuffer encodedId, long expectedId) {
+		try {
+			ByteBuffer copy = encodedId.duplicate();
+			if (!copy.hasRemaining() || copy.get() != ID_KEY) {
+				return false;
+			}
+			return Varint.readUnsigned(copy) == expectedId && !copy.hasRemaining();
+		} catch (RuntimeException malformed) {
+			return false;
+		}
+	}
+
+	private void countForwardDependency(long txn, long ownerId, byte[] data, Map<Long, Long> counts)
+			throws IOException {
+		if (data.length == 0) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: empty value record for owner " + ownerId);
+		}
+		byte type = data[0];
+		if (type != URI_VALUE && type != LITERAL_VALUE) {
+			return;
+		}
+		long dependencyId;
+		try {
+			dependencyId = Varint.readUnsigned(ByteBuffer.wrap(data, 1, data.length - 1));
+		} catch (RuntimeException malformed) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: malformed dependency for owner " + ownerId,
+					malformed);
+		}
+		if (dependencyId == 0L) {
+			return;
+		}
+		byte expectedType = type == URI_VALUE ? NAMESPACE_VALUE : URI_VALUE;
+		verifyForwardDependency(txn, ownerId, dependencyId, expectedType);
+		addRefCount(counts, dependencyId, "dictionary owner " + ownerId);
+	}
+
+	private void verifyForwardDependency(long txn, long ownerId, long dependencyId, byte expectedType)
+			throws IOException {
+		if (ValueIds.isInlined(dependencyId)) {
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal lookupKey = MDBVal.calloc(stack);
+			lookupKey.mv_data(stack.bytes(encodedId(dependencyId)));
+			MDBVal lookupValue = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, lookupKey, lookupValue);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + ownerId
+						+ " references missing dependency " + dependencyId);
+			}
+			ByteBuffer dependency = lookupValue.mv_data();
+			if (!dependency.hasRemaining() || dependency.get(dependency.position()) != expectedType) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + ownerId
+						+ " dependency " + dependencyId + " has unexpected record type");
+			}
+			byte[] dependencyData = copyValue(lookupValue);
+			if (!isLiveReverseOwner(stack, txn, dependencyId, dependencyData)) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + ownerId
+						+ " dependency " + dependencyId + " has no live value-to-ID mapping");
+			}
+		}
+	}
+
+	private void verifyTermDependency(long txn, long componentId, long[] quad, int component) throws IOException {
+		if (ValueIds.isInlined(componentId)) {
+			return;
+		}
+		if (ValueIds.getIdType(componentId) == ValueIds.T_TRIPLE) {
+			if (!hasTripleTermMapping(txn, componentId)) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: live SPOC term "
+						+ Arrays.toString(quad) + " has missing triple-term component " + componentId
+						+ " at position " + component);
+			}
+			return;
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.calloc(stack);
+			key.mv_data(stack.bytes(encodedId(componentId)));
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, key, value);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			if (rc != MDB_SUCCESS) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: live SPOC term "
+						+ Arrays.toString(quad) + " has missing component " + componentId + " at position "
+						+ component);
+			}
+			byte[] componentData = copyValue(value);
+			byte expectedType = switch (ValueIds.getIdType(componentId)) {
+			case ValueIds.T_PTR -> NAMESPACE_VALUE;
+			case ValueIds.T_URI -> URI_VALUE;
+			case ValueIds.T_LITERAL, ValueIds.T_CORE_LITERAL -> LITERAL_VALUE;
+			case ValueIds.T_BNODE -> BNODE_VALUE;
+			default -> throw new IOException("Cannot rebuild ValueStore ref_counts: unexpected SPOC component type "
+					+ ValueIds.getIdType(componentId));
+			};
+			if (!value.mv_data().hasRemaining() || value.mv_data().get(value.mv_data().position()) != expectedType) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: live SPOC term " + Arrays.toString(quad)
+						+ " has wrong record type for component " + componentId);
+			}
+			if (!isLiveReverseOwner(stack, txn, componentId, componentData)) {
+				throw new IOException("Cannot rebuild ValueStore ref_counts: live SPOC term " + Arrays.toString(quad)
+						+ " has component " + componentId + " without a live value-to-ID mapping");
+			}
+		}
+	}
+
+	private boolean hasTripleTermMapping(long txn, long id) throws IOException {
+		if (tripleTermCspoIndex == null || tripleTermSpocIndex == null) {
+			return false;
+		}
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+			long cursor = pp.get(0);
+			try {
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				// CSPO puts the term ID (the context field) first, allowing an exact lower-bound lookup. SPOC cannot
+				// seek by its final context field without scanning unrelated subject/predicate/object prefixes.
+				tripleTermCspoIndex.getMinKey(keyBuffer, -1, -1, -1, id);
+				key.mv_data(keyBuffer.flip());
+				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				if (rc != MDB_SUCCESS) {
+					return false;
+				}
+				long[] quad = new long[4];
+				tripleTermCspoIndex.keyToQuad(key.mv_data(), quad);
+				if (quad[TripleIndex.CONTEXT_IDX] != id) {
+					return false;
+				}
+
+				ByteBuffer spocKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				tripleTermSpocIndex.toKey(spocKeyBuffer, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+						quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
+				MDBVal spocKey = MDBVal.calloc(stack);
+				spocKey.mv_data(spocKeyBuffer.flip());
+				MDBVal spocValue = MDBVal.calloc(stack);
+				int spocRc = mdb_get(txn, tripleTermSpocIndex.getDB(true), spocKey, spocValue);
+				if (spocRc != MDB_SUCCESS && spocRc != MDB_NOTFOUND) {
+					E(spocRc);
+				}
+				return spocRc == MDB_SUCCESS;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private static void addRefCount(Map<Long, Long> counts, long id, String ownerDescription) throws IOException {
+		try {
+			counts.merge(id, 1L, Math::addExact);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: count overflow for " + ownerDescription,
+					overflow);
+		}
+	}
+
+	private boolean hasDictionaryRecord(MemoryStack stack, long txn, long id) throws IOException {
+		if (id <= 0L || ValueIds.isInlined(id)) {
+			return false;
+		}
+		stack.push();
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+				long cursor = 0L;
+				try {
+					PointerBuffer handle = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), handle));
+					cursor = handle.get(0);
+					ByteBuffer bytes = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+					tripleTermCspoIndex.getMinKey(bytes, -1, -1, -1, id);
+					key.mv_data(bytes.flip());
+					int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+					if (rc == MDB_NOTFOUND) {
+						return false;
+					}
+					E(rc);
+					return tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(key.mv_data());
+				} finally {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			key.mv_data(stack.bytes(encodedId(id)));
+			int rc = mdb_get(txn, dbi, key, data);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			verifyOwnerRecordType(id, copyValue(data));
+			return true;
+		} finally {
+			stack.pop();
+		}
+	}
+
+	LmdbStoreFormat getFormat() {
+		return format;
+	}
+
+	private static byte[] encodedId(long id) {
+		ByteBuffer encoded = ByteBuffer.allocate(1 + Varint.calcLengthUnsigned(id));
+		encoded.put(ID_KEY);
+		Varint.writeUnsigned(encoded, id);
+		return encoded.array();
+	}
+
+	/** Legacy ordinals are globally ordered; only unproved v6 counters require a dictionary scan. */
+	private void recoverNextId(boolean includeTerms) throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			if (!dictionaryHighWaterRecovered) {
+				if (!format.isLegacy()) {
+					MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
+					MDBVal data = MDBVal.calloc(stack);
+					int rc = mdb_get(txn, dbi, key, data);
+					if (rc == MDB_SUCCESS) {
+						ByteBuffer encoded = data.mv_data().duplicate();
+						if (encoded.hasRemaining()
+								&& encoded.remaining() == Varint.firstToLength(encoded.get(encoded.position()))) {
+							long counter = Varint.readUnsigned(encoded);
+							if (counter > 0 && counter <= (1L << 56)) {
+								persistedAllocationCounter = counter;
+							}
+						}
+					} else if (rc != MDB_NOTFOUND) {
+						E(rc);
+					}
+				}
+				long endpoint = Math.max(lastDictionaryReferenceOrdinal(stack, txn, dbi),
+						lastDictionaryReferenceOrdinal(stack, txn, freeDbi)) + 1;
+				nextId = Math.max(nextId, endpoint);
+				if (!format.isLegacy()) {
+					trustedAllocationCounter &= persistedAllocationCounter >= endpoint;
+					nextId = Math.max(nextId, persistedAllocationCounter);
+					if (!trustedAllocationCounter) {
+						scanDictionaryHighWater(stack, txn);
+					}
+				}
+				dictionaryHighWaterRecovered = true;
+			}
+			if (includeTerms) {
+				// All CSPO contexts are ordinary triple-term references, ordered by their plain ordinal in both
+				// formats.
+				PointerBuffer handle = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), handle));
+				long cursor = handle.get(0);
+				try {
+					MDBVal key = MDBVal.calloc(stack);
+					MDBVal value = MDBVal.calloc(stack);
+					int rc = mdb_cursor_get(cursor, key, value, MDB_LAST);
+					if (rc == MDB_SUCCESS) {
+						long[] quad = new long[4];
+						tripleTermCspoIndex.keyToQuad(key.mv_data().duplicate(), quad);
+						nextId = Math.max(nextId, ValueIds.referenceOrdinal(quad[TripleIndex.CONTEXT_IDX]) + 1);
+					} else if (rc != MDB_NOTFOUND) {
+						E(rc);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+				if (!format.isLegacy() && trustedAllocationCounter && nextId > persistedAllocationCounter) {
+					trustedAllocationCounter = false;
+					scanDictionaryHighWater(stack, txn);
+				}
+			}
 			return null;
 		});
+	}
+
+	private long lastDictionaryReferenceOrdinal(MemoryStack stack, long txn, int database) throws IOException {
+		PointerBuffer handle = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, database, handle));
+		long cursor = handle.get(0);
+		try {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { ID_KEY + 1 }));
+			MDBVal data = MDBVal.calloc(stack);
+			int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+			if (rc == MDB_SUCCESS) {
+				rc = mdb_cursor_get(cursor, key, data, MDB_PREV);
+			} else if (rc == MDB_NOTFOUND) {
+				rc = mdb_cursor_get(cursor, key, data, MDB_LAST);
+			} else {
+				E(rc);
+			}
+			if (rc == MDB_SUCCESS) {
+				return isIdKey(key.mv_data()) ? ValueIds.referenceOrdinal(data2id(key.mv_data().duplicate())) : 0;
+			}
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+			return 0;
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+	}
+
+	private void scanDictionaryHighWater(MemoryStack stack, long txn) throws IOException {
+		PointerBuffer handle = stack.mallocPointer(1);
+		MDBVal key = MDBVal.calloc(stack);
+		MDBVal data = MDBVal.calloc(stack);
+		for (int database : new int[] { dbi, freeDbi }) {
+			E(mdb_cursor_open(txn, database, handle));
+			long cursor = handle.get(0);
+			try {
+				key.mv_data(stack.bytes(new byte[] { ID_KEY }));
+				int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && isIdKey(key.mv_data())) {
+					nextId = Math.max(nextId, ValueIds.referenceOrdinal(data2id(key.mv_data().duplicate())) + 1);
+					rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	private void persistNextId(MemoryStack stack, long txn) throws IOException {
+		if (format.isLegacy() || deferNextIdPersistence) {
+			return;
+		}
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { NEXT_ID_KEY }));
+		ByteBuffer bytes = stack.malloc(Long.BYTES + 1);
+		Varint.writeUnsigned(bytes, nextId);
+		MDBVal value = MDBVal.calloc(stack).mv_data(bytes.flip());
+		E(mdb_put(txn, dbi, key, value, 0));
+	}
+
+	private boolean hasPositiveRefCount(MemoryStack stack, long txn, long id) throws IOException {
+		Long cached = refCountsTxCache.get(id);
+		if (cached != null) {
+			return cached > 0;
+		}
+		stack.push();
+		try {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(encodedId(id)));
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, refCountsDbi, key, value);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return Varint.readUnsigned(value.mv_data()) > 0;
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private boolean hasLiveDictionaryOwner(MemoryStack stack, long txn, long id) throws IOException {
+		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+			return hasTripleTermMapping(txn, id);
+		}
+		stack.push();
+		try {
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(encodedId(id)));
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, key, value);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return isLiveReverseOwner(stack, txn, id, copyValue(value));
+		} finally {
+			stack.pop();
+		}
+	}
+
+	void completeStoreInitialization(ValueIdLivenessChecker checker, Set<Long> candidates, Set<Long> nextCandidates)
+			throws IOException {
+		valueIdLivenessChecker = checker;
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("ValueStore reference counts are not established");
+		}
+		recoverRetiredValueIds(candidates, nextCandidates);
+		readTransaction(env, (stack, txn) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, unusedDbi, stat));
+			resizeMap(txn, stat.ms_entries() * (2L + Long.BYTES));
+			return null;
+		});
+		startTransaction(false);
+		try (MemoryStack stack = stackPush()) {
+			freeUnusedIdsAndValues(stack, writeTxn, null);
+			commit();
+			storeInitializationComplete = true;
+		} finally {
+			if (writeTxn != 0) {
+				endTransaction(false, false);
+			}
+		}
+	}
+
+	private void recoverRetiredValueIds(Set<Long> candidates, Set<Long> nextCandidates) throws IOException {
+		if (retiredValueIdRecovery == null || !enableGC()) {
+			return;
+		}
+		try {
+			while (true) {
+				RetiredValueIdRecovery.Batch batch = readTransaction(env,
+						(stack, txn) -> retiredValueIdRecovery.poll(stack, txn, REFCOUNT_REBUILD_BATCH_SIZE));
+				if (batch.entries().isEmpty()) {
+					return;
+				}
+				candidates.addAll(batch.candidates());
+				startTransaction(true);
+				try {
+					while (!candidates.isEmpty()) {
+						valueIdLivenessChecker.filterUsedIds(candidates);
+						gcIdsAlreadyFiltered(candidates, nextCandidates);
+						candidates.clear();
+						Set<Long> swap = candidates;
+						candidates = nextCandidates;
+						nextCandidates = swap;
+					}
+					try (MemoryStack stack = stackPush()) {
+						retiredValueIdRecovery.remove(stack, writeTxn, batch);
+					}
+					commit();
+				} finally {
+					rollback();
+				}
+			}
+		} finally {
+			candidates.clear();
+			nextCandidates.clear();
+		}
+	}
+
+	private long lastTransactionId() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			return info.me_last_txnid();
+		}
+	}
+
+	/** Reconstruct in bounded batches; crash/interruption leaves no clean proof and the next opener restarts. */
+	private void rebuildRefCounts() throws IOException {
+		if (tripleTermSpocIndex == null) {
+			throw new IOException("Missing live SPOC term index during ref-count recovery");
+		}
+		long committed = runRecoveryMutation(lastTransactionId(), 0,
+				(stack, txn) -> mdb_drop(txn, refCountsDbi, false));
+		for (boolean terms : new boolean[] { false, true }) {
+			byte[] resume = null;
+			boolean exhausted = false;
+			while (!exhausted) {
+				RefCountScanBatch batch = terms ? scanSpocRefCountBatch(committed, resume)
+						: scanMainRefCountBatch(committed, resume);
+				if (!batch.counts().isEmpty()) {
+					committed = appendRecoveryCounts(batch.counts(), committed);
+				}
+				resume = batch.lastKey();
+				exhausted = batch.exhausted();
+			}
+		}
+		if (lastTransactionId() != committed) {
+			throw new IOException("Intervening writer during reference-count recovery");
+		}
+	}
+
+	private long appendRecoveryCounts(Map<Long, Long> counts, long previous) throws IOException {
+		return runRecoveryMutation(previous, counts.size(), (stack, txn) -> {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			ByteBuffer keyBytes = idBuffer(stack);
+			ByteBuffer bytes = stack.malloc(Long.BYTES + 1);
+			for (Map.Entry<Long, Long> entry : counts.entrySet()) {
+				if (entry.getKey() == 0 || ValueIds.isInlined(entry.getKey())) {
+					continue;
+				}
+				key.mv_data(id2data(keyBytes.clear(), entry.getKey()).flip());
+				long existing = 0;
+				int rc = mdb_get(txn, refCountsDbi, key, data);
+				if (rc == MDB_SUCCESS) {
+					existing = Varint.readUnsigned(data.mv_data());
+				} else if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				bytes.clear();
+				Varint.writeUnsigned(bytes, Math.addExact(existing, entry.getValue()));
+				data.mv_data(bytes.flip());
+				rc = mdb_put(txn, refCountsDbi, key, data, 0);
+				if (rc == MDB_MAP_FULL) {
+					return rc;
+				}
+				E(rc);
+			}
+			return MDB_SUCCESS;
+		});
+	}
+
+	private long runRecoveryMutation(long previous, int entries, Transaction<Integer> mutation) throws IOException {
+		long reservation = Math.max(8L * pageSize, 64L * entries);
+		for (;;) {
+			final long reserve = reservation;
+			readTransaction(env, (stack, txn) -> {
+				resizeMap(txn, reserve);
+				return null;
+			});
+			long txn = 0;
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer handle = stack.mallocPointer(1);
+				E(mdb_txn_begin(env, NULL, 0, handle));
+				txn = handle.get(0);
+				if (mdb_txn_id(txn) != Math.addExact(previous, 1L)) {
+					throw new IOException("Intervening writer during reference-count recovery");
+				}
+				int rc = mutation.exec(stack, txn);
+				if (rc != MDB_MAP_FULL) {
+					E(rc);
+					rc = mdb_txn_commit(txn);
+					txn = 0;
+					if (rc != MDB_MAP_FULL) {
+						E(rc);
+						long committed = lastTransactionId();
+						if (committed != previous && committed != Math.addExact(previous, 1L)) {
+							throw new IOException("Intervening writer after reference-count recovery commit");
+						}
+						resetRecoveryReaders();
+						return committed;
+					}
+				}
+			} finally {
+				if (txn != 0) {
+					mdb_txn_abort(txn);
+				}
+			}
+			if (!autoGrow) {
+				throw new IOException("Cannot rebuild ref_counts: LMDB map full and auto-grow disabled");
+			}
+			resetRecoveryReaders();
+			try {
+				reservation = Math.multiplyExact(reservation, 2L);
+			} catch (ArithmeticException overflow) {
+				throw new IOException("Ref-count recovery map capacity overflow", overflow);
+			}
+		}
+	}
+
+	private void resetRecoveryReaders() throws IOException {
+		var locks = txnManager.lockManager();
+		long stamp = 0;
+		try {
+			stamp = locks.writeLock();
+			txnManager.reset();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException(interrupted);
+		} finally {
+			if (stamp != 0) {
+				locks.unlockWrite(stamp);
+			}
+		}
 	}
 
 	private void openHashFileQuietly() {
@@ -372,10 +1179,13 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	private void open() throws IOException {
-		// create directory if it not exists
+	private void open(boolean newNativeGenerationAllowed) throws IOException {
+		boolean newNativeGeneration = !new File(dir, "data.mdb").exists();
+		if (!format.isLegacy() && newNativeGeneration && !newNativeGenerationAllowed) {
+			throw new IOException("Missing native generation for existing LmdbStore format 6");
+		}
+		// Only legacy creation, an owned transient store or explicit clear can create this generation.
 		dir.mkdirs();
-		openHashFileQuietly();
 
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -383,8 +1193,8 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		// 6 basic dbs and max. 12 triple term indexes
-		E(mdb_env_set_maxdbs(env, 6 + 12));
+		// Existing v6 stores also contain the retirement databases.
+		E(mdb_env_set_maxdbs(env, 9 + 12));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -397,6 +1207,23 @@ class ValueStore extends AbstractValueFactory {
 		}
 		E(mdb_env_open(env, dir.getAbsolutePath(), flags, 0664));
 
+		LmdbUtil.readTransaction(env, (stack, txn) -> {
+			LmdbNativeMetadata.validate(txn, format, newNativeGeneration);
+			boolean clean = LmdbNativeMetadata.hasCleanRefCountProof(txn);
+			skipRefCountRecovery = newNativeGeneration || clean;
+			trustedAllocationCounter = clean;
+			return null;
+		});
+		if (newNativeGeneration && !format.isLegacy()) {
+			LmdbUtil.writeTransaction(env, (stack, txn) -> {
+				LmdbNativeMetadata.authorFence(txn);
+				return null;
+			});
+		}
+
+		retiredValueIdRecovery = LmdbUtil.writeTransaction(env, (stack, txn) -> RetiredValueIdRecovery.open(txn));
+
+		openHashFileQuietly();
 		// open main database
 		dbi = openDatabase(env, null, MDB_CREATE);
 
@@ -445,16 +1272,6 @@ class ValueStore extends AbstractValueFactory {
 			E(mdb_stat(txn, freeDbi, stat));
 			freeIdsAvailable = stat.ms_entries() > 0;
 
-			E(mdb_stat(txn, unusedDbi, stat));
-			if (stat.ms_entries() > 0) {
-				// free unused IDs
-				resizeMap(txn, stat.ms_entries() * (2L + Long.BYTES));
-
-				writeTransaction((stack2, txn2) -> {
-					freeUnusedIdsAndValues(stack2, txn2, null);
-					return null;
-				});
-			}
 			return null;
 		});
 	}
@@ -462,48 +1279,43 @@ class ValueStore extends AbstractValueFactory {
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
 		String indexesStr = properties.getTripleTermIndexes();
 		if (indexesStr == null || indexesStr.trim().isEmpty()) {
-			throw new SailException(StoreProperties.INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
+			throw new SailException(
+					StoreProperties.TRIPLE_TERM_INDEXES_KEY + " missing in " + StoreProperties.FILE_NAME + " file");
 		}
 
 		Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexesStr);
 		if (indexSpecs.isEmpty()) {
 			throw new SailException(
-					"Invalid " + StoreProperties.INDEXES_KEY + " found in " + StoreProperties.FILE_NAME + " file");
+					"Invalid " + StoreProperties.TRIPLE_TERM_INDEXES_KEY + " found in " + StoreProperties.FILE_NAME
+							+ " file");
 		}
 		return indexSpecs;
 	}
 
 	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
-		try {
-			String indexSpecStr = config.getTripleIndexes();
-			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
-			if (!properties.isLoaded()) {
-				// newly created lmdb store
-				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				initTripleTermIndexes(termIndexSpecs);
-			} else {
-				// Initialize existing indexes
-				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
-				initTripleTermIndexes(termIndexSpecs);
-
-				// Compare the existing triple term indexes with the requested indexes
-				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				if (reqTermIndexSpecs.isEmpty()) {
-					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleTermIndexes();
-				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
-					// Set of indexes needs to be changed
-					reindex(termIndexSpecs, reqTermIndexSpecs);
+		String requested = config.getTripleTermIndexes();
+		Set<String> realized;
+		String persisted;
+		if (!properties.isLoaded()) {
+			realized = TripleIndex.parseIndexSpecList(requested);
+			realized.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+			initTripleTermIndexes(realized);
+			persisted = String.join(",", TripleIndex.orderIndexSpecs(realized));
+		} else {
+			realized = getTripleTermIndexSpecs();
+			initTripleTermIndexes(realized);
+			persisted = properties.getTripleTermIndexes();
+			Set<String> requestedIndexes = TripleIndex.parseIndexSpecList(requested);
+			if (!requestedIndexes.isEmpty()) {
+				requestedIndexes.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+				if (!requestedIndexes.equals(realized)) {
+					reindex(realized, requestedIndexes);
+					persisted = String.join(",", TripleIndex.orderIndexSpecs(requestedIndexes));
 				}
 			}
-
-			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
-		} catch (IOException | SailException e) {
-			throw e;
 		}
+		// Persist the indexes actually opened, including mandatory SPOC/CSPO. TripleStore owns statement indexes.
+		properties.setTripleTermIndexes(persisted);
 	}
 
 	private void initTripleTermIndexes(Set<String> indexSpecs) throws IOException {
@@ -600,14 +1412,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long nextId(byte valueType) throws IOException {
-		int idType = switch (valueType) {
-		case URI_VALUE -> ValueIds.T_URI;
-		case BNODE_VALUE -> ValueIds.T_BNODE;
-		case LITERAL_VALUE -> ValueIds.T_LITERAL;
-		case NAMESPACE_VALUE -> ValueIds.T_PTR;
-		case TRIPLE_VALUE -> ValueIds.T_TRIPLE;
-		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
-		};
+		return nextId(valueType, CoreDatatype.NONE);
+	}
+
+	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
+		int idType = valueIdType(valueType);
 		if (freeIdsAvailable) {
 			// next id from store
 			Long reusedId = writeTransaction((stack, txn) -> {
@@ -620,17 +1429,27 @@ class ValueStore extends AbstractValueFactory {
 					MDBVal keyData = MDBVal.calloc(stack);
 					MDBVal valueData = MDBVal.calloc(stack);
 
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST) == MDB_SUCCESS) {
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+					freeIdsAvailable = rc == MDB_SUCCESS;
+					while (rc == MDB_SUCCESS) {
 						long freedId = data2id(keyData.mv_data());
-						clearStoredHash(freedId);
-
-						// unpack value from compound id
-						long value = ValueIds.getValue(freedId);
-						// delete entry
-						E(mdb_cursor_del(cursor, 0));
-						return value;
+						long value = ValueIds.referenceOrdinal(freedId);
+						int freedType = referenceFamily(ValueIds.getIdType(freedId));
+						if (format.isLegacy() || freedType == idType) {
+							// Format 2 ordinals are global. Format 6 fresh writers allocate by reference family,
+							// so their free records can only be recycled within that same family.
+							boolean owned = referenceOrdinalOwned(stack, txn, value, idType);
+							E(mdb_cursor_del(cursor, 0));
+							if (!owned) {
+								clearStoredHash(freedId);
+								return value;
+							}
+						}
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
 					}
-					freeIdsAvailable = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT) == MDB_SUCCESS;
+					if (rc != MDB_NOTFOUND) {
+						E(rc);
+					}
 					return null;
 				} finally {
 					if (cursor != 0) {
@@ -639,12 +1458,76 @@ class ValueStore extends AbstractValueFactory {
 				}
 			});
 			if (reusedId != null) {
-				return ValueIds.createId(idType, reusedId);
+				return format.referenceId(idType, reusedId, coreDatatype);
 			}
+		}
+		if (nextId <= 0 || nextId >= (1L << 56)) {
+			throw new IOException("ValueStore reference ordinal space is exhausted");
 		}
 		long result = nextId;
 		nextId++;
-		return ValueIds.createId(idType, result);
+		return format.referenceId(idType, result, coreDatatype);
+	}
+
+	private static int referenceFamily(int type) {
+		return type == ValueIds.T_CORE_LITERAL ? ValueIds.T_LITERAL : type;
+	}
+
+	private boolean referenceOrdinalOwned(MemoryStack stack, long txn, long ordinal, int requestedType)
+			throws IOException {
+		int first = format.isLegacy() ? ValueIds.T_PTR : requestedType;
+		int last = format.isLegacy() ? ValueIds.T_TRIPLE : requestedType;
+		for (int type = first; type <= last; type++) {
+			if (hasDictionaryRecord(stack, txn, ValueIds.createId(type, ordinal))) {
+				return true;
+			}
+			if (type == ValueIds.T_LITERAL && ordinal <= ValueIds.MAX_CORE_LITERAL_REFERENCE_ORDINAL) {
+				stack.push();
+				long cursor = 0L;
+				try {
+					PointerBuffer handle = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, dbi, handle));
+					cursor = handle.get(0);
+					long lowerBound = ValueIds.createId(ValueIds.T_CORE_LITERAL,
+							ordinal << ValueIds.CORE_LITERAL_DATATYPE_BITS);
+					MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(encodedId(lowerBound)));
+					MDBVal data = MDBVal.calloc(stack);
+					int rc = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE);
+					while (rc == MDB_SUCCESS && isIdKey(key.mv_data())) {
+						long id = data2id(key.mv_data().duplicate());
+						if (ValueIds.getValue(id) > ((ordinal << ValueIds.CORE_LITERAL_DATATYPE_BITS)
+								| ((1L << ValueIds.CORE_LITERAL_DATATYPE_BITS) - 1))) {
+							break;
+						}
+						if (ValueIds.getIdType(id) == ValueIds.T_CORE_LITERAL
+								&& ValueIds.referenceOrdinal(id) == ordinal) {
+							return true;
+						}
+						rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+					}
+					if (rc != MDB_NOTFOUND && rc != MDB_SUCCESS) {
+						E(rc);
+					}
+				} finally {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+					stack.pop();
+				}
+			}
+		}
+		return false;
+	}
+
+	private static int valueIdType(byte valueType) {
+		return switch (valueType) {
+		case URI_VALUE -> ValueIds.T_URI;
+		case BNODE_VALUE -> ValueIds.T_BNODE;
+		case LITERAL_VALUE -> ValueIds.T_LITERAL;
+		case NAMESPACE_VALUE -> ValueIds.T_PTR;
+		case TRIPLE_VALUE -> ValueIds.T_TRIPLE;
+		default -> throw new IllegalArgumentException("Unexpected value type: " + valueType);
+		};
 	}
 
 	protected ByteBuffer idBuffer(MemoryStack stack) {
@@ -808,6 +1691,7 @@ class ValueStore extends AbstractValueFactory {
 					break;
 				case ValueIds.T_DOUBLE:
 				case ValueIds.T_LITERAL:
+				case ValueIds.T_CORE_LITERAL:
 					resultValue = new LmdbLiteral(lazyRevision, id);
 					break;
 				case ValueIds.T_BNODE:
@@ -847,7 +1731,7 @@ class ValueStore extends AbstractValueFactory {
 			if (resultValue == null) {
 				// unpack inlined values if possible
 				if (ValueIds.isInlined(id)) {
-					Literal unpacked = Values.unpackLiteral(id, this);
+					Literal unpacked = format.unpackLiteral(id, this);
 					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
 				}
 
@@ -881,7 +1765,7 @@ class ValueStore extends AbstractValueFactory {
 	public boolean resolveValue(long id, LmdbValue value) {
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
-			Literal unpacked = Values.unpackLiteral(id, this);
+			Literal unpacked = format.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
 			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
 			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
@@ -914,6 +1798,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
+		if (!format.isLegacy()) {
+			requiredSize = Math.addExact(requiredSize, 4L * pageSize);
+		}
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
@@ -974,7 +1861,7 @@ class ValueStore extends AbstractValueFactory {
 						stack.push();
 						MDBVal idVal = MDBVal.calloc(stack);
 						MDBVal dataVal = MDBVal.calloc(stack);
-						idVal.mv_data(idBuffer(stack).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
+						idVal.mv_data(idBuffer(stack).put(ID_KEY).put(data, 1, Varint.calcLengthUnsigned(id)).flip());
 						long newCount = 1;
 						if (mdb_get(writeTxn, refCountsDbi, idVal, dataVal) == MDB_SUCCESS) {
 							// update count
@@ -992,13 +1879,16 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, long id) {
+		if (id == 0 || ValueIds.isInlined(id)) {
+			return;
+		}
 		refCountsTxCache.compute(id, (k, v) -> {
 			if (v == null) {
 				try {
 					stack.push();
 					MDBVal idVal = MDBVal.calloc(stack);
 					MDBVal dataVal = MDBVal.calloc(stack);
-					var bb = idBuffer(stack);
+					var bb = idBuffer(stack).put(ID_KEY);
 					Varint.writeUnsigned(bb, id);
 					idVal.mv_data(bb.flip());
 					long newCount = 1;
@@ -1017,6 +1907,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private boolean decrementRefCount(MemoryStack stack, long writeTxn, long id) {
+		if (id == 0 || ValueIds.isInlined(id)) {
+			return false;
+		}
 		return refCountsTxCache.compute(id, (k, v) -> {
 			if (v == null) {
 				try {
@@ -1072,6 +1965,10 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(byte[] data, boolean create) throws IOException {
+		return findId(data, create, CoreDatatype.NONE);
+	}
+
+	private long findId(byte[] data, boolean create, CoreDatatype datatype) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
 			if (data.length <= MAX_KEY_SIZE) {
 				MDBVal dataVal = MDBVal.calloc(stack);
@@ -1086,7 +1983,7 @@ class ValueStore extends AbstractValueFactory {
 				// id was not found, create a new one
 				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-				long newId = nextId(data[0]);
+				long newId = nextId(data[0], datatype);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 
@@ -1128,7 +2025,7 @@ class ValueStore extends AbstractValueFactory {
 
 					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
-					long newId = nextId(data[0]);
+					long newId = nextId(data[0], datatype);
 					writeTransaction((stack2, writeTxn) -> {
 						dataVal.mv_size(data.length);
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
@@ -1186,7 +2083,7 @@ class ValueStore extends AbstractValueFactory {
 				// id was not found, create a new one
 				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
 
-				long newId = nextId(data[0]);
+				long newId = nextId(data[0], datatype);
 				writeTransaction((stack2, writeTxn) -> {
 					// encode ID
 					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
@@ -1202,11 +2099,11 @@ class ValueStore extends AbstractValueFactory {
 
 					// store mapping of hash+ID -> []
 					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+					E(mdb_put(writeTxn, dbi, hashVal, dataVal, 0));
 
 					dataVal.mv_size(data.length);
 					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+					E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
 
 					// update ref count if necessary
@@ -1360,8 +2257,18 @@ class ValueStore extends AbstractValueFactory {
 			}
 		} else {
 			try {
-				return LmdbUtil.writeTransaction(env, transaction);
+				// Bind the implicit native writer so allocator callbacks share it and cannot open a nested writer.
+				startTransaction(false);
+				T result;
+				try (MemoryStack stack = stackPush()) {
+					result = transaction.exec(stack, writeTxn);
+				}
+				// The same physical-commit boundary flushes owner counts and the allocation counter.
+				endTransaction(true, false);
+				return result;
 			} finally {
+				// A pre-commit failure still has an abortable handle. A consumed commit handle was already cleared.
+				endTransaction(false, false);
 				var lockManager = txnManager.lockManager();
 				boolean readLocked = hasReadLock.get() != null;
 				if (readLocked) {
@@ -1447,18 +2354,7 @@ class ValueStore extends AbstractValueFactory {
 
 			long id = LmdbValue.UNKNOWN_ID;
 			if (inlineLiterals && value instanceof Literal) {
-				// inline value into id if possible
-				try {
-					long packedId = Values.packLiteral((Literal) value);
-					if (packedId != 0L) {
-						Literal unpacked = Values.unpackLiteral(packedId, this);
-						if (unpacked.equals(value)) {
-							id = packedId;
-						}
-					}
-				} catch (IllegalArgumentException e) {
-					// ignore, invalid literal
-				}
+				id = format.tryInline((Literal) value);
 			}
 
 			if (id == LmdbValue.UNKNOWN_ID) {
@@ -1477,7 +2373,8 @@ class ValueStore extends AbstractValueFactory {
 					// not inlined or ID not cached, search in index
 					byte[] data = value2data(value, create);
 					if (data != null) {
-						id = findId(data, create);
+						id = findId(data, create,
+								value instanceof Literal ? ((Literal) value).getCoreDatatype() : CoreDatatype.NONE);
 					}
 				}
 			}
@@ -1510,7 +2407,32 @@ class ValueStore extends AbstractValueFactory {
 		return LmdbValue.UNKNOWN_ID;
 	}
 
+	/** Recheck arbitrary callers in bounded batches without materializing a spillable input collection. */
 	public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("ValueStore reference counts are not established");
+		}
+		if (!enableGC() || ids.isEmpty()) {
+			return;
+		}
+		Set<Long> candidates = new HashSet<>(REFCOUNT_REBUILD_BATCH_SIZE);
+		for (long id : ids) {
+			candidates.add(id);
+			if (candidates.size() == REFCOUNT_REBUILD_BATCH_SIZE) {
+				valueIdLivenessChecker.filterUsedIds(candidates);
+				gcIdsAlreadyFiltered(candidates, nextIds);
+				candidates.clear();
+			}
+		}
+		valueIdLivenessChecker.filterUsedIds(candidates);
+		gcIdsAlreadyFiltered(candidates, nextIds);
+	}
+
+	/** The owning statement store has already removed statement-live IDs from this collection. */
+	void gcIdsAlreadyFiltered(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("ValueStore reference counts are not established");
+		}
 		if (!enableGC()) {
 			return;
 		}
@@ -1582,10 +2504,16 @@ class ValueStore extends AbstractValueFactory {
 		long valuesCursor = 0;
 		try {
 			for (Long id : ids) {
+				if (hasPositiveRefCount(stack, writeTxn, id)) {
+					continue;
+				}
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
 				// special handling of triple terms
 				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					if (!hasTripleTermMapping(writeTxn, id)) {
+						continue;
+					}
 					if (termsCursor == 0) {
 						E(mdb_cursor_open(writeTxn, tripleTermCspoIndex.getDB(true), pp));
 						termsCursor = pp.get(0);
@@ -1632,6 +2560,9 @@ class ValueStore extends AbstractValueFactory {
 				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
 						mdb_get(writeTxn, dbi, idVal, dataVal) == 0) {
 					ByteBuffer dataBuffer = dataVal.mv_data();
+					if (!isLiveReverseOwner(stack, writeTxn, id, copyValue(dataVal))) {
+						continue;
+					}
 
 					// update ref count if literal or URI namespace is removed
 					if (dataBuffer.get(0) == LITERAL_VALUE || dataBuffer.get(0) == URI_VALUE) {
@@ -1713,6 +2644,40 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	/** Read-only lookahead; the existing reclamation loop retains every deletion and ownership guard. */
+	private Set<Long> unusedLivenessBatch(long txn, byte[] currentKey, long revisionId) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			Set<Long> ids = new HashSet<>(REFCOUNT_REBUILD_BATCH_SIZE);
+			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(currentKey));
+			MDBVal value = MDBVal.calloc(stack);
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, unusedDbi, handle));
+			long cursor = handle.get(0);
+			try {
+				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+				int scanned = 0;
+				while (rc == MDB_SUCCESS && scanned++ < REFCOUNT_REBUILD_BATCH_SIZE) {
+					ByteBuffer encoded = key.mv_data();
+					long markerRevision = Varint.readUnsigned(encoded);
+					if (revisionId != 0 && markerRevision != revisionId) {
+						break;
+					}
+					if (!encoded.hasRemaining() || encoded.get() != ID_KEY) {
+						throw new IOException("Malformed ValueStore unused-ID marker");
+					}
+					ids.add(Varint.readUnsigned(encoded));
+					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+				}
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return ids;
+		}
+	}
+
 	protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds) throws IOException {
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
@@ -1724,6 +2689,8 @@ class ValueStore extends AbstractValueFactory {
 		ByteBuffer revIdBb = stack.malloc(1 + Long.BYTES + 2 + Long.BYTES);
 
 		boolean freeIds = false;
+		Set<Long> livenessBatch = Collections.emptySet();
+		Set<Long> unusedCandidates = Collections.emptySet();
 		long unusedIdsCursor = 0;
 		long termsCursor = 0;
 		try {
@@ -1746,11 +2713,25 @@ class ValueStore extends AbstractValueFactory {
 						long revisionOfId = Varint.readUnsigned(keyBb);
 						if (revisionId == 0L || revisionOfId == revisionId) {
 							idVal.mv_data(keyBb);
+							long id = Varint.readUnsigned(keyBb, keyBb.position() + 1);
+							if (!livenessBatch.contains(id)) {
+								livenessBatch = unusedLivenessBatch(txn, copyValue(revIdVal), revisionId);
+								unusedCandidates = new HashSet<>(livenessBatch);
+								valueIdLivenessChecker.filterUsedIds(unusedCandidates);
+							}
+							if (!unusedCandidates.contains(id) || hasPositiveRefCount(stack, txn, id)
+									|| hasLiveDictionaryOwner(stack, txn, id) || !hasDictionaryRecord(stack, txn, id)) {
+								// A stale retirement marker must not destroy a dependency that reconstruction found
+								// live. Remove
+								// only the obsolete hint. Missing records provide no proof that the ordinal is free:
+								// an old writer may already have reused it under a different reference type.
+								E(mdb_cursor_del(unusedIdsCursor, 0));
+								continue;
+							}
 
 							// add id to free list
 							E(mdb_put(txn, freeDbi, idVal, emptyVal, 0));
 
-							long id = Varint.readUnsigned(keyBb, keyBb.position() + 1);
 							if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
 								if (termsCursor == 0) {
 									E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
@@ -1804,10 +2785,12 @@ class ValueStore extends AbstractValueFactory {
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
 			writeTxnOwner = Thread.currentThread();
+			LmdbNativeMetadata.invalidateRefCountMarker(stack, writeTxn, refCountsDbi);
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
-			if (nextValueEvictionTime >= 0 && System.currentTimeMillis() >= nextValueEvictionTime) {
+			if (refCountIntegrityEstablished && storeInitializationComplete && nextValueEvictionTime >= 0
+					&& System.currentTimeMillis() >= nextValueEvictionTime) {
 				synchronized (unusedRevisionIds) {
 					if (!unusedRevisionIds.isEmpty()) {
 						MDBStat stat = MDBStat.malloc(stack);
@@ -1833,19 +2816,22 @@ class ValueStore extends AbstractValueFactory {
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
 		if (writeTxn != 0) {
 			if (commit) {
-				if (!autoGrow) {
-					try (MemoryStack stack = stackPush()) {
-						updateRefCounts(stack, writeTxn);
-					}
-					refCountsTxCache.clear();
+				try (MemoryStack stack = stackPush()) {
+					persistNextId(stack, writeTxn);
 				}
+				try (MemoryStack stack = stackPush()) {
+					updateRefCounts(stack, writeTxn);
+				}
+				refCountsTxCache.clear();
 				if (invalidateRevisionOnCommit) {
 					long stamp = revisionLock.writeLock();
 					try {
-						E(mdb_txn_commit(writeTxn));
-						flushPendingHashUpdates();
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
+						commitNativeWriteTransaction();
+						ValueStoreRevision.Lazy retired = lazyRevision;
+						long revisionId = retired.getRevisionId();
+						setNewRevision();
+						clearCaches();
+						cleaner.register(retired, () -> {
 							synchronized (unusedRevisionIds) {
 								unusedRevisionIds.add(revisionId);
 							}
@@ -1853,23 +2839,41 @@ class ValueStore extends AbstractValueFactory {
 								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
 							}
 						});
-						setNewRevision();
-						clearCaches();
+						flushPendingHashUpdates();
 					} finally {
 						revisionLock.unlockWrite(stamp);
 					}
 				} else {
-					E(mdb_txn_commit(writeTxn));
+					commitNativeWriteTransaction();
 					flushPendingHashUpdates();
 				}
 			} else {
 				refCountsTxCache.clear();
 				mdb_txn_abort(writeTxn);
 				clearPendingHashUpdates();
+				clearCaches();
+				setNewRevision();
 			}
 			writeTxn = 0;
 			writeTxnOwner = null;
 			invalidateRevisionOnCommit = false;
+		}
+	}
+
+	/** LMDB consumes a commit handle on both success and failure, before any ancillary hash publication. */
+	private void commitNativeWriteTransaction() throws IOException {
+		long consumed = writeTxn;
+		writeTxn = 0;
+		writeTxnOwner = null;
+		invalidateRevisionOnCommit = false;
+		try {
+			E(mdb_txn_commit(consumed));
+		} catch (IOException | RuntimeException | Error failure) {
+			refCountsTxCache.clear();
+			clearPendingHashUpdates();
+			clearCaches();
+			setNewRevision();
+			throw failure;
 		}
 	}
 
@@ -1923,15 +2927,32 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
+		boolean initialized = storeInitializationComplete;
 		close();
-
-		new File(dir, "data.mdb").delete();
-		new File(dir, "lock.mdb").delete();
+		Files.deleteIfExists(new File(dir, "data.mdb").toPath());
+		Files.deleteIfExists(new File(dir, "lock.mdb").toPath());
 		ValueStoreHashFile.deleteIfPresent(dir);
-
 		clearCaches();
-		open();
+		tripleTermIndexes.clear();
+		tripleTermCspoIndex = null;
+		tripleTermSpocIndex = null;
+		unusedRevisionIds.clear();
+		refCountsTxCache.clear();
+		nextId = 1;
+		freeIdsAvailable = false;
+		refCountIntegrityEstablished = false;
+		storeInitializationComplete = false;
+		deferNextIdPersistence = true;
+		dictionaryHighWaterRecovered = false;
+		persistedAllocationCounter = 0;
+		open(true);
 		setNewRevision();
+		startTransaction(true);
+		initTermIndexes(storeConfig);
+		deferNextIdPersistence = false;
+		commit();
+		refCountIntegrityEstablished = true;
+		storeInitializationComplete = initialized;
 	}
 
 	protected void clearCaches() {
@@ -1944,6 +2965,24 @@ class ValueStore extends AbstractValueFactory {
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
 
+	private void writeCleanRefCountMarker() {
+		if (!storeInitializationComplete || !refCountIntegrityEstablished || !refCountsTxCache.isEmpty()
+				|| writeTxn != 0) {
+			return;
+		}
+		try {
+			LmdbUtil.writeTransaction(env, (stack, txn) -> {
+				LmdbNativeMetadata.authorCleanRefCountProof(stack, txn, refCountsDbi);
+				return null;
+			});
+		} catch (IOException | RuntimeException markerFailure) {
+			// This optional proof is conservative. Its absence triggers recovery without preventing native cleanup.
+			refCountIntegrityEstablished = false;
+			logger.warn("Could not persist clean ValueStore ref-count proof; recovery will run on next open",
+					markerFailure);
+		}
+	}
+
 	/**
 	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
 	 *
@@ -1953,8 +2992,11 @@ class ValueStore extends AbstractValueFactory {
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();
+				writeCleanRefCountMarker();
 			}
-			txnManager.close();
+			if (txnManager != null) {
+				txnManager.close();
+			}
 			endTransaction(false, false);
 			mdb_env_close(env);
 			env = 0;
@@ -2119,7 +3161,8 @@ class ValueStore extends AbstractValueFactory {
 		byte[] langData = null;
 		int langDataLength = 0;
 		if (lang.isPresent()) {
-			langData = lang.get().getBytes(StandardCharsets.UTF_8);
+			langData = (format.usesCanonicalLanguageTags() ? lang.get().toLowerCase(Locale.ROOT) : lang.get())
+					.getBytes(StandardCharsets.UTF_8);
 			langDataLength = langData.length;
 		}
 

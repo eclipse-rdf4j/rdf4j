@@ -1,0 +1,55 @@
+RDF4J LMDB compatibility fixtures: current generation provenance
+
+Current v6 fixtures were generated on 2026-10-03 from the actual pinned optimize-lmdb producer using its real LmdbStore in a separate JVM. All v6 archives use DEFLATE (ZIP method 8), contain only the six listed store/data members, and omit lock files and runtime caches. Current schema-4 fixtures supersede the previous schema-3b v6 archives.
+
+Pinned producer commit: 45837053f453357777e7567f86929e7506db72a0
+Producer helper source: /Users/havardottestad/.codex/worktrees/lmdb-v6-compat-6-1-1/rdf4j/core/sail/lmdb/src/test/resources/lmdb-compat/LmdbV6FixtureProducer.java
+Producer helper source SHA-256: 1953deb8943084826b0da18638b17e85c342c1f5e77ecb35c085c943a80342eb
+Compiled producer helper class SHA-256: 874b3c69f48f703ad10cc376d64e0ad59383a3d1a06148eeb22829020917f471
+Producer LMDB jar: /tmp/rdf4j-v6-producer-45837053.nuBzP3/core/sail/lmdb/target/rdf4j-sail-lmdb-6.2.0-SNAPSHOT.jar
+Producer LMDB jar SHA-256: 3d4d052a1f5b26209ff2a6bb5783102cf4971336d0f715c3b0524bcfd0a641f9
+Loaded pinned LmdbStore.class SHA-256 (recorded by each producer process): 9506e14f8f121d5a11c91950f53f978c093fd99a7d0132f77f7078ff4ab24f3b
+Pinned producer classpath file SHA-256: b04a316bc04367ad0d202d0b5c894a5d74b4d342406ba72380d8acffcbed9995
+Pinned producer ValueIds.java SHA-256: 35d524d749b68c6226628cf685d2c38cf6db78370d33892c06cfa15e7281c9b0
+Maintenance worktree ValueIds.java SHA-256: 504044145ac57871b9b4fcae39ab19682e927da3fb2b28d7a8c48c997c896c49
+Both ValueIds.referenceOrdinal implementations remove the core-literal datatype tag before comparing original ValueStore ordinals.
+
+Producer config disables native evaluation, direct adjacency, value overlay, and sketch estimation for ordinary creation. The fresh alias fixture starts its first write at IsolationLevels.NONE so the actual producer allocates fresh references without snapshot reuse. The retired fixture intentionally halts after force-synced commits while a reader snapshot pins the retired values.
+
+Exact compile command (run from the maintenance worktree):
+producer_root=/tmp/rdf4j-v6-producer-45837053.nuBzP3
+producer_jar="$producer_root/core/sail/lmdb/target/rdf4j-sail-lmdb-6.2.0-SNAPSHOT.jar"
+producer_cp=$(cat "$producer_root/producer-classpath.txt")
+helper4=/tmp/rdf4j-v6-producer-helper-schema4-20261003
+javac -cp "$producer_jar:$producer_cp" -d "$helper4" core/sail/lmdb/src/test/resources/lmdb-compat/LmdbV6FixtureProducer.java
+
+Exact producer commands (each used a newly created directory below $fixture_root):
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create "$fixture_root/v6-inline-ordered" true true
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create "$fixture_root/v6-inline-legacy-numeric" true false
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create "$fixture_root/v6-dictionary-ordered" false true
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create "$fixture_root/v6-dictionary-legacy-numeric" false false
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create-retired "$fixture_root/v6-retired" true true
+java -cp "$helper4:$producer_jar:$producer_cp" org.eclipse.rdf4j.sail.lmdb.LmdbV6FixtureProducer create-fresh "$fixture_root/v6-fresh-aliases" true true
+All six producer processes exited 0. The retired fixture recorded retired.sequence.count=3 before its intentional Runtime.halt(0).
+
+Actual family-reference overlap recorded from v6-fresh-aliases/producer.properties and evaluated with the pinned producer's ValueIds class:
+- bnode id=134, type=3, reference ordinal=1
+- literal id=10378, type=5 (core-literal), reference ordinal=1
+- triple id=136, type=4, reference ordinal=1
+The fixture therefore contains a real cross-family ordinal alias; no identifier was synthesized. Probe source SHA-256: 3466c2dc6c8c58f17812e9ba22ac56b155ffa88eae090e0db8fed0d53b2c5729; compiled class SHA-256: beba7a568f02d19cde3b4e879d9162bb820c1e9b7545dc9fa4a0e8b60d36a470.
+Probe command:
+producer_root=/tmp/rdf4j-v6-producer-45837053.nuBzP3
+producer_jar="$producer_root/core/sail/lmdb/target/rdf4j-sail-lmdb-6.2.0-SNAPSHOT.jar"
+producer_cp=$(cat "$producer_root/producer-classpath.txt")
+javac -cp "$producer_jar:$producer_cp" -d /tmp /tmp/Rdf4jPinnedReferenceOrdinalProbe.java
+java -cp "/tmp:$producer_jar:$producer_cp" Rdf4jPinnedReferenceOrdinalProbe bnode 134 literal 10378 triple 136
+
+Exact archive command:
+python3 /tmp/rdf4j-v6-producer-45837053.nuBzP3/archive-fixtures-schema4.py
+Archive script SHA-256: 5a52ddfbebfc2a360c2c75a9b76242d6b75fa77580f75987e9ca5612a6a44963
+Archive source root: /private/tmp/rdf4j-v6-fixtures-schema4.UWMSDx
+Archive members, in order: store.properties, lmdbrdf.ver, producer.properties, namespaces.dat, triples/data.mdb, values/data.mdb. Every member's SHA-256 and byte size, and every archive SHA-256, are recorded in fixtures.sha256.
+
+The authentic unpatched 6.1.1 v2 writer fixture is preserved unchanged as v2-unpatched-legacy.zip (SHA-256 b2c6cc07d1abc03294c84115680159177ff9f59438d8c9468b94059a6d8183b0). It was produced by the separately frozen unpatched 6.1.1 runtime; its actual store had no store.properties, lmdbrdf.ver, or producer.properties. Oracle provenance and exact writer commands from the earlier report remain preserved in the task's retained oracle directory: /tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI. Oracle LMDB jar SHA-256: 4817d2b0a3b36333ceac99e0b1911359511a232b1d34d7ab09767b40e62b1dc5. Frozen runtime classpath SHA-256: 35cb834f8d4bbbaf63919ed5ac71df6b036668da58d0364886c5f1f7fd7fe47d. Runtime jar hash manifest SHA-256: 7f443585b8449c99f84473c352334d0420f502bc5afd4a3c53000d1bf4311905.
+
+The original initial-red v6 archive remains preserved separately at /private/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v6-first-red-200_vx4v/fixture.zip (SHA-256 812a12f9536a66bd34a84672f227004601b55f7a179497c8f8f8b2a3aa26fb52).

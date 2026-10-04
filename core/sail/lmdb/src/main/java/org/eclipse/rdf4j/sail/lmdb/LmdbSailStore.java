@@ -289,6 +289,8 @@ class LmdbSailStore implements SailStore {
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
 	 */
 	private final AtomicBoolean storeTxnStarted = new AtomicBoolean(false);
+	private final File dataDir;
+	private final LmdbStoreFormat format;
 	private final AtomicBoolean estimatorTouchedSinceStoreTxnStart = new AtomicBoolean(false);
 
 	/**
@@ -302,6 +304,18 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+				LmdbStoreFormat.fromProperties(properties, config), false);
+	}
+
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, boolean transientGeneration)
+			throws IOException, SailException {
+		this.dataDir = dataDir;
+		this.format = format;
+		if (!transientGeneration) {
+			LmdbNativeMetadata.validateDirectory(dataDir, format);
+		}
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
@@ -319,9 +333,15 @@ class LmdbSailStore implements SailStore {
 		boolean initialized = false;
 		try {
 			namespaceStore = new NamespaceStore(dataDir);
-			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config);
+			var valueStore = new ValueStore(new File(dataDir, "values"), properties, config, format,
+					transientGeneration);
 			this.valueStore = valueStore;
+			if (!format.isLegacy() && properties.getTripleIndexes() != null && config.getTripleIndexes() != null
+					&& !properties.getTripleIndexes().equals(config.getTripleIndexes())) {
+				LmdbMaintenanceLearnerState.preserveBeforeMutation(dataDir.toPath(), sketchBasedJoinEstimator != null);
+			}
 			tripleStore = new TripleStore(new File(dataDir, "triples"), properties, config, valueStore);
+			valueStore.completeStoreInitialization(tripleStore::filterUsedIds, unusedIds, nextUnusedIds);
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			initialized = true;
@@ -986,7 +1006,7 @@ class LmdbSailStore implements SailStore {
 		protected void handleRemovedIdsInValueStore() throws IOException {
 			if (!unusedIds.isEmpty()) {
 				do {
-					valueStore.gcIds(unusedIds, nextUnusedIds);
+					valueStore.gcIdsAlreadyFiltered(unusedIds, nextUnusedIds);
 					unusedIds.clear();
 					if (!nextUnusedIds.isEmpty()) {
 						// swap sets
@@ -1327,6 +1347,10 @@ class LmdbSailStore implements SailStore {
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;
 					try {
+						if (!format.isLegacy()) {
+							LmdbMaintenanceLearnerState.preserveBeforeMutation(dataDir.toPath(),
+									sketchBasedJoinEstimator != null);
+						}
 						if (multiThreadingActive) {
 							if (running.compareAndSet(false, true)) {
 								tripleStoreException = null;
