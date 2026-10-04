@@ -1322,8 +1322,8 @@ public class QueryEvaluationUtility {
 			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
 			boolean rightLangLit, CoreDatatype.XSD commonDatatype) {
 		if (commonDatatype == CoreDatatype.XSD.DOUBLE) {
-			double left = leftLit.doubleValue();
-			double right = rightLit.doubleValue();
+			double left = leftCoreDatatype == CoreDatatype.XSD.FLOAT ? leftLit.floatValue() : leftLit.doubleValue();
+			double right = rightCoreDatatype == CoreDatatype.XSD.FLOAT ? rightLit.floatValue() : rightLit.doubleValue();
 			return left == right ? Order.equal : Order.from(Double.compare(left, right));
 		} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {
 			float left = leftLit.floatValue();
