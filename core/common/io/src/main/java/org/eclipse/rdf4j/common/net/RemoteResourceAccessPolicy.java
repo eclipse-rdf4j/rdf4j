@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.common.net;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
 
 /**
@@ -55,4 +56,32 @@ public interface RemoteResourceAccessPolicy {
 	 * @throws IOException if access is denied or the target cannot be validated
 	 */
 	void checkRedirect(URI source, URI target) throws IOException;
+
+	/**
+	 * Returns whether transports must connect through addresses returned by {@link #resolveForConnection(String)}.
+	 * Policies that make address-based access decisions must return {@code true}; transports without a resolver hook
+	 * must fail closed rather than re-resolve the hostname.
+	 *
+	 * @return {@code true} when the policy-approved DNS answer must be bound to the socket connection
+	 */
+	default boolean requiresAddressBinding() {
+		return false;
+	}
+
+	/**
+	 * Resolves and validates the addresses that a supporting transport must use for a connection. The original hostname
+	 * remains the HTTP authority and TLS peer name; only the socket destination is replaced by one of the returned
+	 * addresses.
+	 *
+	 * <p>
+	 * This method is consulted for every new connection, including redirect hops and retries. It is only called when
+	 * {@link #requiresAddressBinding()} returns {@code true}.
+	 *
+	 * @param hostname original request hostname
+	 * @return validated addresses to which the transport may connect
+	 * @throws IOException if the hostname cannot be resolved or any resolved address is denied
+	 */
+	default InetAddress[] resolveForConnection(String hostname) throws IOException {
+		return InetAddress.getAllByName(hostname);
+	}
 }

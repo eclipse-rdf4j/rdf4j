@@ -37,6 +37,11 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 import org.eclipse.rdf4j.common.io.ZipUtil;
 import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
 import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
+import org.eclipse.rdf4j.http.client.spi.HttpRequest;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -138,6 +143,10 @@ public class RDFLoader {
 		if (baseURI == null) {
 			baseURI = url.toExternalForm();
 		}
+		if (remoteResourceAccessPolicy.requiresAddressBinding() && isHttpResource(url)) {
+			loadPolicyBoundHttp(url, baseURI, dataFormat, rdfHandler);
+			return;
+		}
 
 		boolean followRedirects = HttpURLConnection.getFollowRedirects();
 		int maxRedirects = java.security.AccessController.doPrivileged(
@@ -226,6 +235,56 @@ public class RDFLoader {
 		} while (redirected);
 	}
 
+	private void loadPolicyBoundHttp(URL url, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+			throws IOException, RDFParseException, RDFHandlerException {
+		boolean followRedirects = HttpURLConnection.getFollowRedirects();
+		int maxRedirects = java.security.AccessController.doPrivileged(
+				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
+		RDF4JHttpClientConfig clientConfig = RDF4JHttpClientConfig.newBuilder()
+				.followRedirects(followRedirects)
+				.maxRedirects(maxRedirects)
+				.remoteResourceAccessPolicy(remoteResourceAccessPolicy)
+				.build();
+		HttpRequest.Builder request = HttpRequest.newBuilder("GET", toUri(url));
+		if (dataFormat != null) {
+			for (String mimeType : dataFormat.getMIMETypes()) {
+				request.header("Accept", mimeType);
+			}
+		} else {
+			for (String acceptParam : RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true,
+					null)) {
+				request.header("Accept", acceptParam);
+			}
+		}
+
+		try (RDF4JHttpClient client = RDF4JHttpClients.newDefaultClient(clientConfig);
+				HttpResponse response = client.execute(request.build())) {
+			if (response.getStatusCode() >= 400) {
+				throw new IOException("Server returned HTTP response code: " + response.getStatusCode() + " for URL: "
+						+ url);
+			}
+			RDFFormat effectiveFormat = dataFormat;
+			if (effectiveFormat == null) {
+				String contentType = response.getHeader("Content-Type").orElse(null);
+				if (contentType != null) {
+					int separator = contentType.indexOf(';');
+					String mimeType = separator < 0 ? contentType : contentType.substring(0, separator);
+					effectiveFormat = Rio.getParserFormatForMIMEType(mimeType.trim()).orElse(null);
+				}
+				if (effectiveFormat == null) {
+					effectiveFormat = Rio.getParserFormatForFileName(url.getPath())
+							.orElseThrow(() -> new UnsupportedRDFormatException(
+									"Could not find RDF format for URL: " + url.getPath()));
+				}
+			}
+			load(response.getBodyAsStream(), baseURI, effectiveFormat, rdfHandler);
+		}
+	}
+
+	private static boolean isHttpResource(URL url) {
+		return "http".equalsIgnoreCase(url.getProtocol()) || "https".equalsIgnoreCase(url.getProtocol());
+	}
+
 	private URI toUri(URL url) throws IOException {
 		try {
 			return url.toURI();
@@ -261,13 +320,17 @@ public class RDFLoader {
 	}
 
 	/**
-	 * Returns whether a given HTTP status code represents a redirection (i.e. 3xx)
+	 * Returns whether a given HTTP status code instructs the client to redirect.
 	 *
 	 * @param statusCode
 	 * @return
 	 */
 	private boolean isRedirection(int statusCode) {
-		return statusCode / 100 == 3;
+		return statusCode == HttpURLConnection.HTTP_MOVED_PERM
+				|| statusCode == HttpURLConnection.HTTP_MOVED_TEMP
+				|| statusCode == HttpURLConnection.HTTP_SEE_OTHER
+				|| statusCode == 307
+				|| statusCode == 308;
 	}
 
 	/**

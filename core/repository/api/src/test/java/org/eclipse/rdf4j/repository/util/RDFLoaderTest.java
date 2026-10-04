@@ -24,6 +24,9 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.ProtocolException;
 import java.net.URI;
 import java.net.URL;
@@ -37,6 +40,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -49,6 +53,7 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
 import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -210,6 +215,71 @@ public class RDFLoaderTest {
 		assertThatThrownBy(() -> rdfLoader.load(privateUrl, null, null, rdfHandler))
 				.isInstanceOf(java.io.IOException.class)
 				.hasMessageContaining("Remote resource access denied");
+	}
+
+	@Test
+	public void bindsValidatedDnsAnswersToRemoteHttpConnections(MockServerClient client) throws Exception {
+		client.when(request().withMethod("GET").withPath("/dns-rebind.ttl"))
+				.respond(response().withContentType(MediaType.parse(RDFFormat.TURTLE.getDefaultMIMEType()))
+						.withBody("<urn:s> <urn:p> <urn:o> ."));
+		AtomicInteger resolutions = new AtomicInteger();
+		PublicNetworkAccessPolicy policy = new PublicNetworkAccessPolicy(host -> resolutions.getAndIncrement() == 0
+				? new InetAddress[] { InetAddress.getByName("8.8.8.8") }
+				: new InetAddress[] { InetAddress.getByName("127.0.0.1") });
+		RDFLoader loader = new RDFLoader(new ParserConfig(), getValueFactory(), policy);
+		URL target = new URL("http://localhost:" + client.getPort() + "/dns-rebind.ttl");
+
+		assertThatThrownBy(() -> loader.load(target, null, RDFFormat.TURTLE, mock(RDFHandler.class)))
+				.isInstanceOf(IOException.class)
+				.hasMessageContaining("127.0.0.1")
+				.hasMessageContaining("not globally routable");
+		assertThat(resolutions.get()).isEqualTo(2);
+		client.verify(request().withMethod("GET").withPath("/dns-rebind.ttl"),
+				org.mockserver.verify.VerificationTimes.exactly(0));
+	}
+
+	@Test
+	public void doesNotTreatNotModifiedAsRedirect() throws Exception {
+		URL url = new URL(null, "http://example.org/data.ttl", new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL target) {
+				return new HttpURLConnection(target) {
+					@Override
+					public int getResponseCode() {
+						return HTTP_NOT_MODIFIED;
+					}
+
+					@Override
+					public InputStream getInputStream() {
+						return new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> ."
+								.getBytes(StandardCharsets.UTF_8));
+					}
+
+					@Override
+					public String getContentType() {
+						return RDFFormat.TURTLE.getDefaultMIMEType();
+					}
+
+					@Override
+					public void disconnect() {
+					}
+
+					@Override
+					public boolean usingProxy() {
+						return false;
+					}
+
+					@Override
+					public void connect() {
+					}
+				};
+			}
+		});
+		RDFHandler handler = mock(RDFHandler.class);
+
+		localNetworkLoader().load(url, null, RDFFormat.TURTLE, handler);
+
+		verify(handler).handleStatement(statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null));
 	}
 
 	@Test

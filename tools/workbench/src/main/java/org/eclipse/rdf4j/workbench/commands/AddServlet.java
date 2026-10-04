@@ -35,6 +35,11 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
+import org.eclipse.rdf4j.http.client.spi.HttpRequest;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -123,6 +128,9 @@ public class AddServlet extends TransformationServlet {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
+		if (!"autodetect".equals(contentType) && Rio.getParserFormatForMIMEType(contentType).isEmpty()) {
+			throw new BadRequestException("Unknown Content-Type: " + contentType);
+		}
 
 		RDFFormat format;
 		if ("autodetect".equals(contentType)) {
@@ -152,16 +160,18 @@ public class AddServlet extends TransformationServlet {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
+		if (!"autodetect".equals(contentType) && Rio.getParserFormatForMIMEType(contentType).isEmpty()) {
+			throw new BadRequestException("Unknown Content-Type: " + contentType);
+		}
 
 		try {
 			try (OpenedRemoteResource resource = openRemoteResource(url, contentType)) {
-				URLConnection connection = resource.connection();
 				InputStream stream = resource.stream();
 				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
 				String sourceName = resource.url().getPath();
 				String effectiveContentType = contentType;
 				if ("autodetect".equals(contentType)) {
-					String responseContentType = connection.getContentType();
+					String responseContentType = resource.contentType();
 					if (responseContentType != null) {
 						int separator = responseContentType.indexOf(';');
 						String responseMimeType = separator < 0 ? responseContentType
@@ -179,6 +189,9 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	private OpenedRemoteResource openRemoteResource(URL initialUrl, String contentType) throws IOException {
+		if (remoteResourceAccessPolicy.requiresAddressBinding() && isHttpResource(initialUrl)) {
+			return openPolicyBoundRemoteResource(initialUrl, contentType);
+		}
 		boolean followRedirects = HttpURLConnection.getFollowRedirects();
 		int maxRedirects = AccessController.doPrivileged(
 				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
@@ -206,7 +219,8 @@ public class AddServlet extends TransformationServlet {
 			InputStream stream = connection.getInputStream();
 			if (httpConnection == null || !isRedirection(httpConnection.getResponseCode())) {
 				URL connectedUrl = connection.getURL();
-				return new OpenedRemoteResource(connectedUrl == null ? requestUrl : connectedUrl, connection, stream);
+				return OpenedRemoteResource.forUrlConnection(
+						connectedUrl == null ? requestUrl : connectedUrl, connection, stream);
 			}
 
 			try {
@@ -226,6 +240,43 @@ public class AddServlet extends TransformationServlet {
 		}
 	}
 
+	private OpenedRemoteResource openPolicyBoundRemoteResource(URL url, String contentType) throws IOException {
+		boolean followRedirects = HttpURLConnection.getFollowRedirects();
+		int maxRedirects = AccessController.doPrivileged(
+				(PrivilegedAction<Integer>) () -> Integer.valueOf(System.getProperty("http.maxRedirects", "20")));
+		RDF4JHttpClientConfig clientConfig = RDF4JHttpClientConfig.newBuilder()
+				.followRedirects(followRedirects)
+				.maxRedirects(maxRedirects)
+				.remoteResourceAccessPolicy(remoteResourceAccessPolicy)
+				.build();
+		HttpRequest.Builder request = HttpRequest.newBuilder("GET", toUri(url));
+		for (String acceptHeader : acceptHeaders(contentType, url.getPath())) {
+			request.header("Accept", acceptHeader);
+		}
+
+		RDF4JHttpClient client = RDF4JHttpClients.newDefaultClient(clientConfig);
+		HttpResponse response = null;
+		try {
+			response = client.execute(request.build());
+			int statusCode = response.getStatusCode();
+			if (statusCode >= 400) {
+				throw new IOException("Server returned HTTP response code: " + statusCode + " for URL: " + url);
+			}
+			return OpenedRemoteResource.forHttpClient(url, response.getHeader("Content-Type").orElse(null),
+					response.getBodyAsStream(), response, client);
+		} catch (IOException | RuntimeException e) {
+			if (response != null) {
+				response.close();
+			}
+			client.close();
+			throw e;
+		}
+	}
+
+	private static boolean isHttpResource(URL url) {
+		return "http".equalsIgnoreCase(url.getProtocol()) || "https".equalsIgnoreCase(url.getProtocol());
+	}
+
 	private static URI toUri(URL url) throws IOException {
 		try {
 			return url.toURI();
@@ -235,11 +286,53 @@ public class AddServlet extends TransformationServlet {
 	}
 
 	private static boolean isRedirection(int statusCode) {
-		return statusCode / 100 == 3;
+		return statusCode == HttpURLConnection.HTTP_MOVED_PERM
+				|| statusCode == HttpURLConnection.HTTP_MOVED_TEMP
+				|| statusCode == HttpURLConnection.HTTP_SEE_OTHER
+				|| statusCode == 307
+				|| statusCode == 308;
 	}
 
-	private record OpenedRemoteResource(URL url, URLConnection connection, InputStream stream)
-			implements AutoCloseable {
+	private static final class OpenedRemoteResource implements AutoCloseable {
+
+		private final URL url;
+		private final String contentType;
+		private final InputStream stream;
+		private final URLConnection connection;
+		private final HttpResponse response;
+		private final RDF4JHttpClient client;
+
+		private OpenedRemoteResource(URL url, String contentType, InputStream stream, URLConnection connection,
+				HttpResponse response, RDF4JHttpClient client) {
+			this.url = url;
+			this.contentType = contentType;
+			this.stream = stream;
+			this.connection = connection;
+			this.response = response;
+			this.client = client;
+		}
+
+		private static OpenedRemoteResource forUrlConnection(URL url, URLConnection connection, InputStream stream) {
+			return new OpenedRemoteResource(url, connection.getContentType(), stream, connection, null, null);
+		}
+
+		private static OpenedRemoteResource forHttpClient(URL url, String contentType, InputStream stream,
+				HttpResponse response, RDF4JHttpClient client) {
+			return new OpenedRemoteResource(url, contentType, stream, null, response, client);
+		}
+
+		private URL url() {
+			return url;
+		}
+
+		private String contentType() {
+			return contentType;
+		}
+
+		private InputStream stream() {
+			return stream;
+		}
+
 		@Override
 		public void close() throws IOException {
 			try {
@@ -248,31 +341,31 @@ public class AddServlet extends TransformationServlet {
 				if (connection instanceof HttpURLConnection) {
 					((HttpURLConnection) connection).disconnect();
 				}
+				if (response != null) {
+					response.close();
+				}
+				if (client != null) {
+					client.close();
+				}
 			}
 		}
 	}
 
 	private void setAcceptHeaders(URLConnection connection, String contentType, String sourceName) {
-		if ("autodetect".equals(contentType)) {
-			RDFFormat inferredFormat = Rio.getParserFormatForFileName(sourceName).orElse(null);
-			if (inferredFormat != null) {
-				for (String mimeType : inferredFormat.getMIMETypes()) {
-					connection.addRequestProperty("Accept", mimeType);
-				}
-			} else {
-				for (String acceptParam : RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true,
-						null)) {
-					connection.addRequestProperty("Accept", acceptParam);
-				}
-			}
-		} else {
-			RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElse(null);
-			if (format != null) {
-				for (String mimeType : format.getMIMETypes()) {
-					connection.addRequestProperty("Accept", mimeType);
-				}
-			}
+		for (String acceptHeader : acceptHeaders(contentType, sourceName)) {
+			connection.addRequestProperty("Accept", acceptHeader);
 		}
+	}
+
+	private static List<String> acceptHeaders(String contentType, String sourceName) {
+		if (!"autodetect".equals(contentType)) {
+			return Rio.getParserFormatForMIMEType(contentType).map(RDFFormat::getMIMETypes).orElse(List.of());
+		}
+		RDFFormat inferredFormat = Rio.getParserFormatForFileName(sourceName).orElse(null);
+		if (inferredFormat != null) {
+			return inferredFormat.getMIMETypes();
+		}
+		return RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true, null);
 	}
 
 	@Override

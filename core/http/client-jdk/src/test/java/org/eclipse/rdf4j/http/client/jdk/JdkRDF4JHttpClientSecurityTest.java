@@ -30,6 +30,7 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
 import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 import org.eclipse.rdf4j.http.client.spi.HttpRequest;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
@@ -37,6 +38,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class JdkRDF4JHttpClientSecurityTest {
+
+	@Test
+	void rejectsPoliciesThatRequireAddressBinding() {
+		assertThatThrownBy(() -> new JdkRDF4JHttpClient(mock(HttpClient.class),
+				RDF4JHttpClientConfig.newBuilder()
+						.remoteResourceAccessPolicy(new PublicNetworkAccessPolicy())
+						.build()))
+								.isInstanceOf(IllegalArgumentException.class)
+								.hasMessageContaining("address binding");
+	}
 
 	@Test
 	void rejectsInitialTargetBeforeTransportSend() throws Exception {

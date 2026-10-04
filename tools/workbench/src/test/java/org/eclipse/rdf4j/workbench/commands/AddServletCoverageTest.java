@@ -395,6 +395,89 @@ class AddServletCoverageTest {
 	}
 
 	@Test
+	void rejectsUnknownExplicitMimeTypeBeforeOpeningUrl() throws Exception {
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		TestAddServlet servlet = new TestAddServlet(builder, List.of());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		AtomicBoolean opened = new AtomicBoolean();
+		URL url = new URL(null, "https://example.org/data.ttl", new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL target) {
+				opened.set(true);
+				return mock(URLConnection.class);
+			}
+		});
+
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("text/not-real");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+
+		servlet.doPost(request, response, "/transform");
+
+		assertThat(opened).isFalse();
+		verify(builder).result("Unknown Content-Type: text/not-real", "https://example.org/base", null,
+				"text/not-real", null, null, null);
+	}
+
+	@Test
+	void treatsNotModifiedAsTerminalResponseRatherThanRedirect() throws Exception {
+		AddServlet servlet = unrestrictedServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		URL url = new URL(null, "http://example.org/data.ttl", new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL target) {
+				return new HttpURLConnection(target) {
+					@Override
+					public int getResponseCode() {
+						return HTTP_NOT_MODIFIED;
+					}
+
+					@Override
+					public InputStream getInputStream() {
+						return new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> ."
+								.getBytes(StandardCharsets.UTF_8));
+					}
+
+					@Override
+					public void disconnect() {
+					}
+
+					@Override
+					public boolean usingProxy() {
+						return false;
+					}
+
+					@Override
+					public void connect() {
+					}
+				};
+			}
+		});
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				any(Resource[].class));
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
 	void doPostAddsUrlContentWithoutContextWhenIsolationIsAbsent() throws Exception {
 		AddServlet servlet = unrestrictedServlet();
 		Repository repository = mock(Repository.class);

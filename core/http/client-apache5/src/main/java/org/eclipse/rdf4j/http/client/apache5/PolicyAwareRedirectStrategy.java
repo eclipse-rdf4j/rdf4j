@@ -17,7 +17,10 @@ import java.net.URISyntaxException;
 import java.util.Objects;
 
 import org.apache.hc.client5.http.impl.DefaultRedirectStrategy;
+import org.apache.hc.client5.http.impl.DefaultSchemePortResolver;
+import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpException;
+import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
 import org.apache.hc.core5.http.ProtocolException;
@@ -25,12 +28,54 @@ import org.apache.hc.core5.http.protocol.HttpContext;
 import org.eclipse.rdf4j.common.net.RemoteResourceAccessPolicy;
 
 final class PolicyAwareRedirectStrategy extends DefaultRedirectStrategy {
+	private static final String SUPPRESS_CREDENTIALS = PolicyAwareRedirectStrategy.class.getName()
+			+ ".suppressCredentials";
 
 	private final RemoteResourceAccessPolicy remoteResourceAccessPolicy;
 
 	PolicyAwareRedirectStrategy(RemoteResourceAccessPolicy remoteResourceAccessPolicy) {
 		this.remoteResourceAccessPolicy = Objects.requireNonNull(remoteResourceAccessPolicy,
 				"remoteResourceAccessPolicy must not be null");
+	}
+
+	@Override
+	public boolean isRedirectAllowed(HttpHost currentTarget, HttpHost newTarget, HttpRequest redirect,
+			HttpContext context) {
+		if (hasSameOrigin(currentTarget, newTarget)) {
+			return true;
+		}
+		if (context != null) {
+			context.setAttribute(SUPPRESS_CREDENTIALS, Boolean.TRUE);
+		}
+		stripCredentialHeaders(redirect);
+		return true;
+	}
+
+	static void stripRedirectedCredentials(HttpRequest request, HttpContext context) {
+		if (context != null && Boolean.TRUE.equals(context.getAttribute(SUPPRESS_CREDENTIALS))) {
+			stripCredentialHeaders(request);
+		}
+	}
+
+	private static void stripCredentialHeaders(HttpRequest request) {
+		for (Header header : request.getHeaders()) {
+			if (header.isSensitive() || isCredentialHeader(header.getName())) {
+				request.removeHeader(header);
+			}
+		}
+	}
+
+	private static boolean hasSameOrigin(HttpHost left, HttpHost right) {
+		return left != null && right != null
+				&& left.getSchemeName().equalsIgnoreCase(right.getSchemeName())
+				&& left.getHostName().equalsIgnoreCase(right.getHostName())
+				&& DefaultSchemePortResolver.INSTANCE.resolve(left) == DefaultSchemePortResolver.INSTANCE
+						.resolve(right);
+	}
+
+	private static boolean isCredentialHeader(String name) {
+		return "Authorization".equalsIgnoreCase(name) || "Proxy-Authorization".equalsIgnoreCase(name)
+				|| "Cookie".equalsIgnoreCase(name) || "Cookie2".equalsIgnoreCase(name);
 	}
 
 	@Override

@@ -38,6 +38,10 @@ public class JdkRDF4JHttpClient implements RDF4JHttpClient {
 	private final RDF4JHttpClientConfig config;
 
 	public JdkRDF4JHttpClient(HttpClient httpClient, RDF4JHttpClientConfig config) {
+		if (config.getRemoteResourceAccessPolicy().requiresAddressBinding()) {
+			throw new IllegalArgumentException("The JDK HTTP transport cannot enforce remote-resource address binding; "
+					+ "use the Apache HttpComponents 5 transport for this policy");
+		}
 		this.httpClient = httpClient;
 		this.config = config;
 	}

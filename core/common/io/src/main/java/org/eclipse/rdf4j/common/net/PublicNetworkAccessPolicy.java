@@ -112,7 +112,19 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 		if ("https".equals(sourceScheme) && "http".equals(validatedTarget.scheme)) {
 			throw denied("HTTPS redirects must not downgrade to HTTP");
 		}
-		checkAddresses(validatedTarget);
+		checkAddresses(validatedTarget.hostname, validatedTarget.addresses);
+	}
+
+	@Override
+	public boolean requiresAddressBinding() {
+		return true;
+	}
+
+	@Override
+	public InetAddress[] resolveForConnection(String hostname) throws IOException {
+		ValidatedHost validatedHost = validateHost(hostname);
+		checkAddresses(validatedHost.hostname, validatedHost.addresses);
+		return validatedHost.addresses.clone();
 	}
 
 	private String validateSourceScheme(URI source) throws IOException {
@@ -127,7 +139,8 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 	}
 
 	private void checkTarget(URI target) throws IOException {
-		checkAddresses(validateUri(target));
+		ValidatedUri validatedTarget = validateUri(target);
+		checkAddresses(validatedTarget.hostname, validatedTarget.addresses);
 	}
 
 	private ValidatedUri validateUri(URI target) throws IOException {
@@ -144,7 +157,11 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 		if (target.getPort() < -1 || target.getPort() == 0 || target.getPort() > 65535) {
 			throw denied("target port is invalid");
 		}
-		String rawHost = target.getHost();
+		ValidatedHost validatedHost = validateHost(target.getHost());
+		return new ValidatedUri(scheme, validatedHost.hostname, validatedHost.addresses);
+	}
+
+	private ValidatedHost validateHost(String rawHost) throws IOException {
 		if (rawHost == null || rawHost.isBlank()) {
 			throw denied("target hostname is missing or invalid");
 		}
@@ -154,7 +171,7 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 		}
 		Optional<InetAddress> literal = parseIpLiteral(host);
 		if (literal.isPresent()) {
-			return new ValidatedUri(scheme, host, null, new InetAddress[] { literal.get() });
+			return new ValidatedHost(null, new InetAddress[] { literal.get() });
 		}
 
 		String hostname;
@@ -169,7 +186,7 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 		if (hostname.isBlank() || hostname.length() > 253) {
 			throw denied("target hostname is invalid");
 		}
-		return new ValidatedUri(scheme, host, hostname, resolve(hostname));
+		return new ValidatedHost(hostname, resolve(hostname));
 	}
 
 	private InetAddress[] resolve(String hostname) throws IOException {
@@ -185,9 +202,9 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 		return addresses.clone();
 	}
 
-	private void checkAddresses(ValidatedUri target) throws IOException {
-		boolean hostnameAllowed = target.hostname != null && allowedHostnames.contains(target.hostname);
-		for (InetAddress address : target.addresses) {
+	private void checkAddresses(String hostname, InetAddress[] addresses) throws IOException {
+		boolean hostnameAllowed = hostname != null && allowedHostnames.contains(hostname);
+		for (InetAddress address : addresses) {
 			InetAddress normalized = normalizeMappedAddress(address);
 			if (!hostnameAllowed && !isAllowedAddress(normalized) && !isGloballyReachable(normalized)) {
 				throw denied("target address " + normalized.getHostAddress() + " is not globally routable");
@@ -366,7 +383,10 @@ public final class PublicNetworkAccessPolicy implements RemoteResourceAccessPoli
 				+ ": " + value, cause);
 	}
 
-	private record ValidatedUri(String scheme, String displayHost, String hostname, InetAddress[] addresses) {
+	private record ValidatedUri(String scheme, String hostname, InetAddress[] addresses) {
+	}
+
+	private record ValidatedHost(String hostname, InetAddress[] addresses) {
 	}
 
 	private record ByteAddress(byte[] bytes) {

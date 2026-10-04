@@ -13,21 +13,26 @@ package org.eclipse.rdf4j.http.client.apache5;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URISyntaxException;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import javax.net.ssl.SSLContext;
 
+import org.apache.hc.client5.http.DnsResolver;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.cookie.StandardCookieSpec;
+import org.apache.hc.client5.http.impl.DefaultSchemePortResolver;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.impl.routing.DefaultRoutePlanner;
 import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
 import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
 import org.apache.hc.core5.http.ConnectionClosedException;
@@ -80,6 +85,7 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 	 */
 	@Override
 	public RDF4JHttpClient create(RDF4JHttpClientConfig config) {
+		RemoteResourceAccessPolicy remoteResourceAccessPolicy = config.getRemoteResourceAccessPolicy();
 		// Build connection manager
 		PoolingHttpClientConnectionManagerBuilder cmBuilder = PoolingHttpClientConnectionManagerBuilder.create()
 				.useSystemProperties()
@@ -93,6 +99,9 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 				.setDefaultConnectionConfig(ConnectionConfig.custom()
 						.setConnectTimeout(Timeout.ofMilliseconds(config.getConnectTimeoutMs()))
 						.build());
+		if (remoteResourceAccessPolicy.requiresAddressBinding()) {
+			cmBuilder.setDnsResolver(new PolicyDnsResolver(remoteResourceAccessPolicy));
+		}
 
 		if (config.getSslContext().isPresent() || config.isDisableHostnameVerification()) {
 			SSLContext sslContext = config.getSslContext().orElseGet(() -> {
@@ -123,14 +132,23 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 				.setConnectionManager(connectionManager)
 				.setDefaultRequestConfig(requestConfig)
 				.useSystemProperties()
+				.addRequestInterceptorLast(
+						(request, entity, context) -> PolicyAwareRedirectStrategy.stripRedirectedCredentials(request,
+								context))
 				.setRetryStrategy(new RDF4JRetryStrategy(config.getMaxConnectionsPerRoute(),
-						config.getRemoteResourceAccessPolicy()));
+						remoteResourceAccessPolicy));
+
+		if (remoteResourceAccessPolicy.requiresAddressBinding()) {
+			// A proxy would resolve the original hostname independently and could therefore bypass the vetted answer.
+			// Connect directly so that PolicyDnsResolver controls the actual socket destination.
+			builder.setRoutePlanner(new DefaultRoutePlanner(DefaultSchemePortResolver.INSTANCE));
+		}
 
 		if (config.getIdleConnectionTimeoutMs() > 0) {
 			builder.evictIdleConnections(TimeValue.ofMilliseconds(config.getIdleConnectionTimeoutMs()));
 		}
 
-		builder.setRedirectStrategy(new PolicyAwareRedirectStrategy(config.getRemoteResourceAccessPolicy()));
+		builder.setRedirectStrategy(new PolicyAwareRedirectStrategy(remoteResourceAccessPolicy));
 
 		if (!config.getDefaultHeaders().isEmpty()) {
 			List<BasicHeader> defaultHeaders = config.getDefaultHeaders()
@@ -142,7 +160,35 @@ public class ApacheHC5RDF4JHttpClientFactory implements RDF4JHttpClientFactory {
 
 		CloseableHttpClient httpClient = buildHttpClient(builder, config);
 		return new ApacheHC5RDF4JHttpClient(httpClient, config.getMaxConnectionsPerRoute(), requestConfig,
-				config.getRemoteResourceAccessPolicy());
+				remoteResourceAccessPolicy);
+	}
+
+	private static final class PolicyDnsResolver implements DnsResolver {
+
+		private final RemoteResourceAccessPolicy remoteResourceAccessPolicy;
+
+		private PolicyDnsResolver(RemoteResourceAccessPolicy remoteResourceAccessPolicy) {
+			this.remoteResourceAccessPolicy = remoteResourceAccessPolicy;
+		}
+
+		@Override
+		public InetAddress[] resolve(String host) throws UnknownHostException {
+			try {
+				return remoteResourceAccessPolicy.resolveForConnection(host);
+			} catch (UnknownHostException e) {
+				throw e;
+			} catch (IOException e) {
+				UnknownHostException failure = new UnknownHostException(e.getMessage());
+				failure.initCause(e);
+				throw failure;
+			}
+		}
+
+		@Override
+		public String resolveCanonicalHostname(String host) {
+			// Canonical-name lookup would be a second, unvalidated DNS resolution.
+			return host;
+		}
 	}
 
 	/**
