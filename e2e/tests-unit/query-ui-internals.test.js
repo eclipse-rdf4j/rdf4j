@@ -175,14 +175,16 @@ test('query ui helpers cover editors, cookies, buttons, wait states, and dot ren
     assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), false);
 
     testing.showCompareExplainSpinner();
-    assert.equal(harness.getAttribute('explain-compare-trigger', 'aria-busy'), 'true');
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), true,
+        'a compare explanation shows the Cancel beside Config');
     testing.hideCompareExplainSpinner();
-    assert.equal(harness.getAttribute('explain-compare-trigger', 'aria-busy'), 'false');
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), false);
     testing.showCompareExplainCancelButton();
-    assert.equal(harness.hasClass('explain-compare-cancel', 'query-explain-cancel--visible'), true);
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), true);
     testing.hideCompareExplainCancelButton();
+    assert.equal(harness.getAttribute('explanation-cancel', 'aria-hidden'), 'true');
     testing.setCompareExplainButtonsDisabled(true);
-    assert.equal(harness.getProperty('explain-compare-trigger', 'disabled'), true);
+    assert.equal(harness.getProperty('explain-trigger', 'disabled'), true);
 
     const explainButton = harness.document.getElementById('explain-trigger');
     explainButton.getBoundingClientRect = () => ({ top: 10 });

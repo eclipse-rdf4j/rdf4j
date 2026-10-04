@@ -536,6 +536,9 @@ test('a bound execution form requests the default million-row batch into its dec
     assert.equal(target.getAttribute('aria-busy'), 'false');
     assert.equal(target.querySelector('.query-result-status').textContent, '1 row · complete',
         target.querySelector('.ERROR').textContent);
+    const statusLine = target.querySelector('.query-result-status-line');
+    assert.match(statusLine.parentNode.className, /\bquery-result-toolbar__header\b/,
+        'the status starts the result toolbar row, left of Full screen, Download and Display');
     const layout = target.querySelectorAll('select').find(select => select.name === 'result-layout');
     layout.value = 'table';
     layout.trigger('change');

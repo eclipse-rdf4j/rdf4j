@@ -48,6 +48,9 @@ public class RemoveServlet extends TransformationServlet {
 	/** Counting stops one statement above this, so the page can say "more than 1,000,000". */
 	static final long COUNT_LIMIT = 1_000_000;
 
+	/** The most statements a preview lists; it says when more match. */
+	static final int PREVIEW_LIMIT = 100;
+
 	private final BrowseList browseList = new BrowseList();
 
 	@Override
@@ -97,46 +100,39 @@ public class RemoveServlet extends TransformationServlet {
 		}
 	}
 
+	/** The statements Remove would remove: the explicit ones that match these terms, in these graphs. */
+	private record Pattern(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	}
+
 	/**
 	 * With {@code count=true} answers one row {@code count}: the explicit statements that Remove would remove for
 	 * {@code subj}, {@code pred}, {@code obj} and {@code context}, counted up to {@link #COUNT_LIMIT} + 1 and within
-	 * two seconds (an empty count and metadata {@code count-timed-out} otherwise). A value that does not parse answers
-	 * 400 with the field's parameter name as the error code.
+	 * two seconds (an empty count and metadata {@code count-timed-out} otherwise). With {@code preview=true} answers
+	 * the first {@link #PREVIEW_LIMIT} of those statements as rows {@code subject}, {@code predicate}, {@code object}
+	 * and {@code context}, with metadata {@code preview-truncated} when more match and {@code preview-timed-out} when
+	 * two seconds were not enough. A value that does not parse answers 400 with the field's parameter name as the error
+	 * code.
 	 */
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
-		if (!"true".equals(req.getParameter("count"))) {
+		boolean preview = "true".equals(req.getParameter("preview"));
+		if (!preview && !"true".equals(req.getParameter("count"))) {
 			super.service(req, resp);
 			return;
 		}
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		Resource subj;
-		IRI pred;
-		Value obj;
-		Resource[] contexts;
-		String field = "subj";
-		try {
-			subj = req.getResource(field);
-			field = "pred";
-			pred = req.getURI(field);
-			field = "obj";
-			obj = req.getValue(field);
-			field = CONTEXT;
-			contexts = req.isParameterPresent(CONTEXT) ? new Resource[] { req.getResource(CONTEXT) } : new Resource[0];
-		} catch (BadRequestException | ClassCastException exc) {
-			Object writer = req.getAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE);
-			if (!(writer instanceof WorkbenchPageResultWriter pageWriter)) {
-				throw exc;
-			}
-			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			pageWriter.error(HttpServletResponse.SC_BAD_REQUEST, field, "Not a valid " + FIELD_NAMES.get(field) + ": "
-					+ req.getParameter(field));
+		Pattern pattern = pattern(req, resp);
+		if (pattern == null) {
+			return;
+		}
+		if (preview) {
+			preview(builder, pattern);
 			return;
 		}
 		Optional<Long> count = browseList.withinBudget(() -> {
 			long matches = 0;
 			try (RepositoryConnection con = repository.getConnection();
-					RepositoryResult<Statement> statements = con.getStatements(subj, pred, obj, false, contexts)) {
+					RepositoryResult<Statement> statements = matching(con, pattern)) {
 				while (matches <= COUNT_LIMIT && statements.hasNext()) {
 					if (Thread.currentThread().isInterrupted()) {
 						throw new InterruptedException("Counting was abandoned");
@@ -159,6 +155,68 @@ public class RemoveServlet extends TransformationServlet {
 
 	private static final Map<String, String> FIELD_NAMES = Map.of("subj", "subject", "pred",
 			"predicate", "obj", "object", CONTEXT, "graph");
+
+	/**
+	 * Parses the fields as Remove does. A field that does not parse is answered with 400 naming it, and gives null.
+	 */
+	private Pattern pattern(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
+		String field = "subj";
+		try {
+			Resource subj = req.getResource(field);
+			field = "pred";
+			IRI pred = req.getURI(field);
+			field = "obj";
+			Value obj = req.getValue(field);
+			field = CONTEXT;
+			Resource[] contexts = req.isParameterPresent(CONTEXT) ? new Resource[] { req.getResource(CONTEXT) }
+					: new Resource[0];
+			return new Pattern(subj, pred, obj, contexts);
+		} catch (BadRequestException | ClassCastException exc) {
+			Object writer = req.getAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE);
+			if (!(writer instanceof WorkbenchPageResultWriter pageWriter)) {
+				throw exc;
+			}
+			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			pageWriter.error(HttpServletResponse.SC_BAD_REQUEST, field, "Not a valid " + FIELD_NAMES.get(field) + ": "
+					+ req.getParameter(field));
+			return null;
+		}
+	}
+
+	private static RepositoryResult<Statement> matching(RepositoryConnection con, Pattern pattern) {
+		return con.getStatements(pattern.subj(), pattern.pred(), pattern.obj(), false, pattern.contexts());
+	}
+
+	/** Lists the first {@link #PREVIEW_LIMIT} statements Remove would remove, reading at most one more. */
+	private void preview(TupleResultBuilder builder, Pattern pattern) throws Exception {
+		Optional<List<Statement>> found = browseList.withinBudget(() -> {
+			List<Statement> statements = new ArrayList<>();
+			try (RepositoryConnection con = repository.getConnection();
+					RepositoryResult<Statement> matches = matching(con, pattern)) {
+				while (statements.size() <= PREVIEW_LIMIT && matches.hasNext()) {
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedException("The preview was abandoned");
+					}
+					statements.add(matches.next());
+				}
+			}
+			return statements;
+		});
+		List<Statement> statements = found.orElse(List.of());
+		builder.start("subject", "predicate", "object", CONTEXT);
+		builder.link(List.of(INFO));
+		if (found.isEmpty()) {
+			builder.metadata("preview-timed-out", true);
+		}
+		if (statements.size() > PREVIEW_LIMIT) {
+			builder.metadata("preview-truncated", true);
+		}
+		for (Statement statement : statements.subList(0, Math.min(statements.size(), PREVIEW_LIMIT))) {
+			builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+					statement.getContext());
+		}
+		builder.end();
+	}
 
 	/** Lists the graphs in name order, which the page offers as the graph to remove from. */
 	@Override

@@ -526,7 +526,7 @@ test('hotspot mode does not mix metrics while comparison responses are staggered
     });
 
     harness.setValue('explain-level', 'Timed');
-    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
     harness.pendingExplainRequests[2].resolve({
         content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 5 }),
         format: 'json',
@@ -681,7 +681,7 @@ test('query compare flow covers auto-explain, compare refresh, diff modal, and c
     assert.equal(harness.context.workbench.query.getQueryValue().length > 0, true);
 
     harness.setValue('query-compare', 'SELECT * WHERE {?o ?p ?s}');
-    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
     assert.equal(harness.pendingExplainRequests.length, 3);
     harness.pendingExplainRequests[1].resolve({
         content: 'Primary refreshed',
@@ -701,7 +701,7 @@ test('query compare flow covers auto-explain, compare refresh, diff modal, and c
     harness.document.trigger('keydown', { key: 'Escape' });
     assert.equal(harness.hasClass('query-diff-modal', 'query-diff-modal--open'), false);
 
-    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.context.workbench.query.runCompareExplain('explain-trigger');
     harness.context.workbench.query.cancelCompareExplain();
     assert.equal(harness.requestsByAction('cancel-explain').length >= 2, true);
 });
@@ -783,13 +783,12 @@ test('editor shortcuts click Execute, Explain and Save and never use the YASQE e
     assert.deepEqual(JSON.parse(JSON.stringify(editor.options.sparql)), { endpoint: '', showQueryButton: false });
     const keys = editor.options.extraKeys;
     const clicks = [];
-    for (const id of ['exec', 'explain-trigger', 'explain-compare-trigger']) {
+    for (const id of ['exec', 'explain-trigger']) {
         harness.document.getElementById(id).addEventListener('click', () => clicks.push(id));
     }
     const idle = () => {
         harness.document.getElementById('exec').disabled = false;
         harness.document.getElementById('explain-trigger').disabled = false;
-        harness.document.getElementById('explain-compare-trigger').disabled = false;
         const runningCancel = harness.document.getElementById('query-cancel');
         if (runningCancel) {
             runningCancel.disabled = true;
@@ -832,7 +831,7 @@ test('editor shortcuts click Execute, Explain and Save and never use the YASQE e
     assert.equal(opened, 1, 'an open Save disclosure stays open');
     assert.equal(focused, 2);
 
-    // The compare editor refreshes both explanations instead.
+    // The compare editor explains both queries instead: Explain does that in compare mode.
     harness.context.workbench.query.toggleCompareMode();
     const compare = harness.yasqeState.instances['query-compare'];
     if (compare) {
@@ -840,7 +839,7 @@ test('editor shortcuts click Execute, Explain and Save and never use the YASQE e
         compare.options.extraKeys['Ctrl-Enter']();
         idle();
         compare.options.extraKeys['Shift-Cmd-Enter']();
-        assert.deepEqual(clicks.slice(4), ['explain-compare-trigger', 'explain-compare-trigger']);
+        assert.deepEqual(clicks.slice(4), ['explain-trigger', 'explain-trigger']);
     }
 });
 
@@ -1026,4 +1025,58 @@ test('a suspended Query page has no window or document listeners, and gets them 
     assert.equal(harness.document.body.classList.contains('query-compare-mode'), true);
     assert.notEqual(harness.yasqeState.instances.query.closed, true, 'the editor stays open');
     cleanup();
+});
+
+test('compare mode shows Swap and Diff under the editors, and that Diff follows the Explanation toolbar Diff', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1', 'request-2', 'request-3'] });
+    const plan = { content: 'Plan', format: 'text', error: '' };
+    const diffStates = () => [harness.getProperty('query-diff-trigger', 'disabled'),
+        harness.getProperty('query-actions-diff', 'disabled')];
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.click('explain-trigger');
+    harness.pendingExplainRequests[0].resolve(plan);
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), true);
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), false, 'compare mode shows them');
+    assert.equal(harness.getProperty('query-compare-toolbar', 'hidden'), false);
+    assert.deepEqual(diffStates(), [true, true], 'Diff waits while the compare plan loads');
+    harness.pendingExplainRequests[1].resolve(plan);
+    harness.advanceTimers(1000);
+    assert.deepEqual(diffStates(), [false, false], 'both Diff buttons are ready once both plans are');
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.getProperty('query-actions-compare', 'hidden'), true, 'leaving compare mode hides them');
+    assert.equal(harness.getProperty('query-compare-toolbar', 'hidden'), true);
+});
+
+test('an explanation uses the Config timeout, or the query timeout while Config leaves it empty', () => {
+    const harness = createQueryBrowserHarness({ queryTimeout: '60', serverRequestIds: ['request-1', 'request-2', 'request-3'] });
+    const plan = { content: 'Plan', format: 'text', error: '' };
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    assert.equal(harness.getAttribute('explanation-timeout', 'placeholder'), '60');
+    assert.equal(harness.getText('explanation-timeout-help'), 'Empty uses the query timeout: 60 seconds. 0 means no limit.');
+
+    harness.click('explain-trigger');
+    assert.equal(harness.requestsByAction('explain')[0].params.get('query-timeout'), '60');
+    harness.pendingExplainRequests[0].resolve(plan);
+
+    harness.setValue('explanation-timeout', '5');
+    harness.click('rerun-explanation');
+    const explains = harness.requestsByAction('explain');
+    assert.deepEqual(explains[1].params.getAll('query-timeout'), ['5'], 'the Config timeout replaces the query timeout');
+    harness.pendingExplainRequests[1].resolve(plan);
+
+    harness.setValue('explanation-timeout', '');
+    harness.setValue('query-timeout', '0');
+    assert.equal(harness.getAttribute('explanation-timeout', 'placeholder'), '0');
+    assert.equal(harness.getText('explanation-timeout-help'), 'Empty uses the query timeout: no limit.',
+        'the help follows the query timeout as it changes');
+    harness.setValue('explain-format', 'json');
+    assert.notEqual(harness.document.getElementById('explanation-settings').style.display, 'none',
+        'Config stays available for every format because the timeout applies to all of them');
+    assert.equal(harness.document.getElementById('explanation-highlighting-section').style.display, 'none',
+        'highlighting only applies to the Text format');
 });

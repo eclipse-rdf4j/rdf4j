@@ -107,12 +107,13 @@ test('compare actions are labelled together and activate from their icon hit are
 	await page.locator('#compare-toggle').click();
 	await expect.poll(() => page.locator('.CodeMirror').count()).toBe(2);
 	await page.locator('.CodeMirror').nth(1).evaluate(element => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	const toolbar = page.locator('#query-compare-toolbar');
 	await expect(toolbar).toContainText(/swap/i);
-	await expect(toolbar).toContainText(/refresh|compare/i);
 	await expect(toolbar).toContainText(/diff/i);
+	// Explain and Explain again explain both queries in compare mode, so there is no "Refresh explanations".
+	await expect(page.locator('#query-explanation-panel')).not.toContainText(/refresh explanations/i);
 	// Each plan column's header holds its own labelled Copy icon button since plan task M3.3.
 	for (const copy of ['#query-compare-copy', '#copy-explanation-compare']) {
 		await expect(page.locator(copy)).toBeVisible();
@@ -177,11 +178,11 @@ test('mobile compare controls use full native hit areas and a touch-sized naviga
 	await page.locator('#compare-toggle').click();
 	await expect.poll(() => page.locator('.CodeMirror').count()).toBe(2);
 	await page.locator('.CodeMirror').nth(1).evaluate(element => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	// In compare mode each plan column has its own Copy icon button and the toolbar's #copy-explanation is hidden
 	// (plan task M3.3), so the compare column's copy button takes its place.
-	const controlIds = ['#query-compare-copy', '#query-compare-swap', '#explain-compare-trigger', '#copy-explanation-compare',
+	const controlIds = ['#query-compare-copy', '#query-compare-swap', '#query-diff-trigger', '#copy-explanation-compare',
 		'#explanation-settings-toggle', '#explain-trigger'];
 	const controls = await page.locator(controlIds.join(', ')).evaluateAll(elements => elements.map(element => {
 		const style = getComputedStyle(element);
@@ -195,7 +196,7 @@ test('mobile compare controls use full native hit areas and a touch-sized naviga
 			visible: style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0
 		};
 	}));
-	// "Refresh explanations" is a text button now; every action icon the compare controls draw (not the small
+	// Diff draws its arrow as text; every action icon the compare controls draw (not the small
 	// disclosure chevron) must fill its 24px view box.
 	const icons = await page.locator(controlIds.map(id => `${id} svg:not(.workbench-disclosure-chevron)`).join(', '))
 		.evaluateAll(elements =>
@@ -434,7 +435,7 @@ test('Diff stays compact around its rendered content and compare actions stay fl
 	await page.locator('#compare-toggle').click();
 	await expect.poll(() => page.locator('.CodeMirror').count()).toBe(2);
 	await page.locator('.CodeMirror').nth(1).evaluate(element => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	await page.locator('#query-diff-trigger').click();
 	const metrics = await page.evaluate(() => {
@@ -511,7 +512,7 @@ test('Diff modal locks background focus and restores its trigger on Escape', asy
 	await page.locator('#compare-toggle').click();
 	await expect.poll(() => page.locator('.CodeMirror').count()).toBe(2);
 	await page.locator('.CodeMirror').nth(1).evaluate(element => element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	await page.locator('#query-diff-trigger').click();
 

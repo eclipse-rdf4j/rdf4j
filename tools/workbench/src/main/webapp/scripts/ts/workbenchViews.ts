@@ -35,7 +35,8 @@ module workbench {
         edit: 'm4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Zm10-13 3 3',
         chevron: 'm6 9 6 6 6-6',
         cancel: 'M19 12H5m6-6-6 6 6 6',
-        stop: 'M8 6.5h8A1.5 1.5 0 0 1 17.5 8v8a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 16V8A1.5 1.5 0 0 1 8 6.5Z',
+        // A circled stop square, filled by the strokes of a square, a smaller square and a dot that overlap.
+        stop: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM10 10h4v4h-4ZM11 11h2v2h-2ZM12 12h.01',
         close: 'm6 6 12 12M18 6 6 18',
         previous: 'm14 5-7 7 7 7',
         next: 'm10 5 7 7-7 7',
@@ -974,7 +975,7 @@ module workbench {
             const menuId = 'repository-actions-' + index;
             const item = (route: string, iconName: string, label: string) => h`<li><a href="${repositoryUrl(context, id, route)}">${
                 icon(runtime, iconName)}${label}</a></li>`;
-            return h`<td data-label="Id"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
+            return h`<td data-label="ID"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
                 <td data-label="Title" title="${text(record.location)}">${text(record.description)}</td>
                 <td data-label="Access"><span class="workbench-badges">${access.length
                     ? access.map((label, position) => h`${position ? ' ' : ''}<span class="workbench-badge">${label}</span>`)
@@ -997,7 +998,7 @@ module workbench {
             const h = runtime.html;
             const header = (name: string) => name === 'actions'
                 ? h`<th scope="col"><span class="workbench-visually-hidden">Actions</span></th>`
-                : h`<th scope="col">${({ id: 'Id', title: 'Title', access: 'Access' } as any)[name]}</th>`;
+                : h`<th scope="col">${({ id: 'ID', title: 'Title', access: 'Access' } as any)[name]}</th>`;
             return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
                     <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
@@ -2429,6 +2430,7 @@ module workbench {
             });
         }
 
+        /** Add RDF: the source, its format and target graph, then Upload with Advanced settings to its right. */
         function addPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const rows = records(model);
@@ -2483,10 +2485,14 @@ module workbench {
                             <p id="context-help" class="workbench-field__help">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI puts every statement in that graph.</p>
                         </div>
                     </div>
+                    <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
+                        <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload"
+                            ?disabled=${submissionOf(model).state === 'running'} /></span></label>
+                    </span>
                     ${workbench.detailDisclosure.render(h, {
                         id: 'add-import-settings', toggleId: 'add-import-settings-toggle',
                         panelId: 'add-import-settings-panel', label: 'Advanced settings',
-                        ownerClass: 'workbench-options workbench-form-subgroup'
+                        ownerClass: 'workbench-options'
                     }, h`<div class="workbench-form-grid">
                             <div class="workbench-field workbench-disclosure__field"><label for="baseURI">Base URI</label>
                                 <input id="baseURI" name="baseURI" type="text" size="48" aria-describedby="baseURI-help"
@@ -2503,11 +2509,7 @@ module workbench {
                                 </select>
                                 <div class="hint">Choose the transaction isolation level used for this import.</div>
                             </div>
-                        </div>`)}
-                    <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
-                        <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload"
-                            ?disabled=${submissionOf(model).state === 'running'} /></span></label>
-                    </span>${submissionStatus(runtime, model)}</div>
+                        </div>`)}${submissionStatus(runtime, model)}</div>
                 </form>`;
         }
 
@@ -2521,9 +2523,24 @@ module workbench {
             controller: any;
         }
 
-        /** Cancel what a page still has pending when its route is disposed: Remove's scheduled or running count. */
+        interface RemovePreview {
+            /** 'hidden' (not asked for, or the values changed since), 'loading', 'shown' or 'failed'. */
+            state: string;
+            rows: any[][];
+            truncated: boolean;
+            timedOut: boolean;
+            message: string;
+            controller: any;
+        }
+
+        /** Cancel what a page still has pending when its route is disposed: Remove's count or preview. */
         export function releasePage(model: PageModel): void {
             const state: RemoveCount = (model as any).removeCount;
+            const preview: RemovePreview = (model as any).removePreview;
+            if (preview && preview.controller) {
+                preview.controller.abort();
+                preview.controller = null;
+            }
             if (!state) {
                 return;
             }
@@ -2533,6 +2550,17 @@ module workbench {
             }
             state.timer = null;
             state.controller = null;
+        }
+
+        /** What the Remove preview shows above its statements. */
+        function removePreviewLabel(preview: RemovePreview): string {
+            if (preview.state === 'loading') { return 'Loading the statements…'; }
+            if (preview.state === 'failed') { return preview.message || 'The statements could not be loaded.'; }
+            if (preview.timedOut) { return 'Listing the statements took longer than 2 seconds.'; }
+            if (!preview.rows.length) { return 'No statements match.'; }
+            if (preview.truncated) { return 'The first ' + preview.rows.length + ' statements that would be removed; more match.'; }
+            return preview.rows.length === 1 ? 'This statement would be removed.'
+                : 'These ' + preview.rows.length + ' statements would be removed.';
         }
 
         const removeFields: string[][] = [['subj', 'Subject', 'Any subject'], ['pred', 'Predicate', 'Any predicate'],
@@ -2552,6 +2580,7 @@ module workbench {
          * Remove (M6.5, mockup 09): the page counts the explicit statements that match as values are typed (400 ms
          * after the last change, cancelling the previous request), names that number on the button and confirms it in a
          * dialog before the existing POST. The button is disabled while nothing is chosen and when nothing matches.
+         * Preview statements lists the first statements that would be removed below the form, until the values change.
          */
         function removePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
@@ -2560,6 +2589,8 @@ module workbench {
             const holder: any = model;
             const state: RemoveCount = holder.removeCount
                 || (holder.removeCount = { state: 'empty', count: 0, field: '', message: '', timer: null, controller: null });
+            const preview: RemovePreview = holder.removePreview || (holder.removePreview = { state: 'hidden', rows: [],
+                truncated: false, timedOut: false, message: '', controller: null });
             const refresh = (form: any) => {
                 const outlet = form.closest('.workbench-outlet');
                 if (outlet) { render(outlet, model, context, runtime); }
@@ -2572,9 +2603,47 @@ module workbench {
                 });
                 return fields;
             };
+            const loadPreview = (form: any) => {
+                if (preview.controller) { preview.controller.abort(); }
+                const app: any = (workbench as any).app;
+                const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                const fields = values(form);
+                Object.assign(preview, { state: 'loading', rows: [], truncated: false, timedOut: false, message: '',
+                    controller });
+                refresh(form);
+                const query = new URLSearchParams({ preview: 'true' });
+                Object.keys(fields).forEach((name) => { if (fields[name]) { query.set(name, fields[name]); } });
+                const fetcher = (url: string, options: any) => window.fetch(url, controller
+                    ? Object.assign({}, options, { signal: controller.signal }) : options);
+                app.loadModel(fetcher, new URL('remove?' + query.toString(), window.location.href).toString())
+                    .then((answer: any) => {
+                        if (preview.controller !== controller) { return answer.rowStore.dispose(); }
+                        if (answer.error) {
+                            answer.rowStore.dispose();
+                            Object.assign(preview, { state: 'failed', message: answer.error.message, controller: null });
+                            return refresh(form);
+                        }
+                        const metadata = answer.metadata || {};
+                        return answer.rowStore.read(0, answer.rowCount || 0).then((rows: any[][]) => {
+                            answer.rowStore.dispose();
+                            Object.assign(preview, { state: 'shown', rows, controller: null,
+                                truncated: !!metadata['preview-truncated'], timedOut: !!metadata['preview-timed-out'] });
+                            refresh(form);
+                        });
+                    }, (error: any) => {
+                        if (preview.controller !== controller || (error && error.name === 'AbortError')) { return; }
+                        Object.assign(preview, { state: 'failed', message: '', controller: null });
+                        refresh(form);
+                    });
+            };
             const recount = (form: any) => {
                 clearTimeout(state.timer);
                 if (state.controller) { state.controller.abort(); }
+                // A preview no longer shows what Remove would remove once the values change.
+                if (preview.state !== 'hidden') {
+                    if (preview.controller) { preview.controller.abort(); }
+                    Object.assign(preview, { state: 'hidden', rows: [], controller: null });
+                }
                 const fields = values(form);
                 if (!fields.subj && !fields.pred && !fields.obj && !fields.context) {
                     state.state = 'empty';
@@ -2640,6 +2709,10 @@ module workbench {
                 });
             };
             const selectedGraph = text(pageValue(model, 'context'));
+            const previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
+                || preview.state === 'loading';
+            const namespaces = exploreNamespaces(model);
+            const previewLabels = ['Subject', 'Predicate', 'Object', 'Graph'];
             return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove"
                     aria-busy=${sending ? 'true' : 'false'} @submit=${confirmAndSubmit}
                     @input=${(event: any) => clearSubmission(event, model, context, runtime)}
@@ -2676,13 +2749,28 @@ module workbench {
                     </div>
                 </div>
                 <div class="workbench-form-actions remove-actions">
+                    <button id="remove-preview-button" type="button" class="workbench-action workbench-action--secondary"
+                        aria-controls="remove-preview" ?disabled=${previewDisabled || sending}
+                        @click=${(event: any) => loadPreview(event.currentTarget.form)}>${icon(runtime, 'eye')}<span>Preview statements</span></button>
                     <button type="submit" class="workbench-action workbench-action--danger-outline" ?disabled=${disabled || sending}>${
                         icon(runtime, 'remove')}<span>${'Remove ' + amount + '…'}</span></button>
                     <span id="remove-count" class="remove-actions__count" role="status"
                         title=${state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : ''}>${removeMatchLabel(state, context)}</span>
                     ${submissionStatus(runtime, model)}
                 </div>
-            </form>`;
+            </form>
+            <section id="remove-preview" class="workbench-island workbench-responsive-records remove-preview"
+                    aria-labelledby="remove-preview-heading" aria-busy=${preview.state === 'loading' ? 'true' : 'false'}
+                    ?hidden=${preview.state === 'hidden'}>
+                <h2 id="remove-preview-heading">Statements to remove</h2>
+                <p id="remove-preview-status" class="workbench-page-meta" role="status">${preview.state === 'hidden' ? ''
+                    : removePreviewLabel(preview)}</p>
+                ${preview.rows.length ? h`<table class="data"><thead><tr>${previewLabels.map((label: string) =>
+                        h`<th scope="col">${label}</th>`)}</tr></thead>
+                    <tbody>${preview.rows.map((row: any[]) => h`<tr>${previewLabels.map((label: string, index: number) =>
+                        h`<td data-label=${label}>${exploreTerm(runtime, row[index], namespaces, true)}</td>`)}</tr>`)}</tbody>
+                </table>` : ''}
+            </section>`;
         }
 
         /** "N statements", or "—" when the server could not count within its budget. */
@@ -2978,8 +3066,15 @@ module workbench {
                 'explain-format-text', 'explain-format-dot', 'explain-format-json',
                 'explain-level-unoptimized', 'explain-level-optimized', 'explain-level-executed',
                 'explain-level-telemetry', 'explain-level-timed', 'explain-highlight-syntax',
-                'explain-highlight-hotspot', 'explain-property-selection'
+                'explain-highlight-hotspot', 'explain-property-selection', 'query-timeout'
             ]);
+        }
+
+        /** The help under the explanation timeout: what an empty field falls back to (query.ts keeps it current). */
+        function explanationTimeoutHelp(queryTimeout: string): string {
+            const seconds = Number(queryTimeout);
+            return 'Empty uses the query timeout: '
+                + (seconds > 0 ? seconds + (seconds === 1 ? ' second' : ' seconds') + '. 0 means no limit.' : 'no limit.');
         }
 
         /** Menu toggle shown at the start of the primary editor while compare mode hides the navigation. */
@@ -3026,7 +3121,7 @@ module workbench {
             </section>`;
         }
 
-        /** One explanation column: its status line and the text, DOT and JSON views. */
+        /** One explanation column: its status line and the text, DOT and JSON views; its time sits above the toolbar. */
         function explanationColumn(runtime: LitRuntime, compare: boolean, explanation: string, selectedFormat: string,
                                    context: ViewContext): any {
             const h = runtime.html;
@@ -3047,7 +3142,6 @@ module workbench {
                             class="workbench-visually-hidden">Copy query explanation</span></button>`}
                 </div>
                 <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
-                <div id=${'query-explanation-timing' + suffix} class="query-explanation-timing" role="timer"></div>
                 <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
                     class="query-explanation-overlay" aria-hidden="true"></div>
                     ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
@@ -3066,7 +3160,10 @@ module workbench {
             </div>`;
         }
 
-        /** Explanation tab panel: one toolbar for the plan settings and actions, then one or two plan columns. */
+        /**
+         * Explanation tab panel: the running or final time of each plan, one toolbar for the plan settings and actions,
+         * then one or two plan columns. In compare mode the toolbar's Swap and Diff follow Compare.
+         */
         function explanationPanel(runtime: LitRuntime, options: any, context: ViewContext): any {
             const h = runtime.html;
             const explanation = text(options.explanation);
@@ -3093,6 +3190,7 @@ module workbench {
             const allHighlightingDisabled = !anyQueryFeatureEnabled(context,
                 ['explain-highlight-syntax', 'explain-highlight-hotspot']);
             const propertySelectionEnabled = queryFeatureEnabled(context, 'explain-property-selection');
+            const queryTimeout = text(options.queryTimeout) || '0';
             const formatOption = (format: any): any => {
                 const enabled = queryFeatureEnabled(context, format.feature);
                 const selected = format.value === selectedFormat;
@@ -3145,7 +3243,17 @@ module workbench {
                 panelClass: 'query-explanation-settings__panel',
                 panelRole: 'group'
             }, h`
-                    <div class="query-explanation-settings__section" ?hidden=${allHighlightingDisabled}>
+                    <div id="explanation-timeout-section" class="query-explanation-settings__section"
+                        ?hidden=${!queryFeatureEnabled(context, 'query-timeout')}>
+                        <div class="query-explanation-settings__header"><label for="explanation-timeout"><strong>Timeout</strong></label></div>
+                        <div class="query-explanation-timeout">
+                            <input id="explanation-timeout" type="number" min="0" step="1" inputmode="numeric"
+                                placeholder=${queryTimeout} aria-describedby="explanation-timeout-help" /><span
+                                class="query-explanation-timeout__unit">seconds</span>
+                        </div>
+                        <p id="explanation-timeout-help" class="query-explanation-property-config__hint">${explanationTimeoutHelp(queryTimeout)}</p>
+                    </div>
+                    <div id="explanation-highlighting-section" class="query-explanation-settings__section" ?hidden=${allHighlightingDisabled}>
                         <div class="query-explanation-settings__header"><strong>Highlighting</strong></div>
                         <div class="query-explanation-settings__highlighting">
                             <span id="explanation-highlight-mode" class="query-explanation-highlight-mode" role="radiogroup"
@@ -3183,6 +3291,12 @@ module workbench {
                 `);
             return h`<div id="query-explanation-panel" class="query-output__panel query-explanation-panel workbench-local-progress" role="tabpanel"
                     aria-labelledby="query-output-tab-explanation" tabindex="0" ?hidden=${!explanation}>
+                <div id="query-explanation-timings" class="query-explanation-timings">
+                    <span class="query-explanation-timings__entry"><span class="query-explanation-timings__label">Query</span><span
+                        id="query-explanation-timing" class="query-explanation-timing" role="timer"></span></span>
+                    <span class="query-explanation-timings__entry"><span class="query-explanation-timings__label">Compare query</span><span
+                        id="query-explanation-timing-compare" class="query-explanation-timing" role="timer"></span></span>
+                </div>
                 <div class="query-explanation-toolbar workbench-action-toolbar">
                     <div class="query-explanation-toolbar__settings">
                         <select id="explain-level" aria-label="Plan level" ?hidden=${allExplainLevelsDisabled}>
@@ -3192,6 +3306,9 @@ module workbench {
                             ${explainFormats.map(formatOption)}
                         </select>
                         ${explanationSettings}
+                        <button id="explanation-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
+                            aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
+                            @click=${() => invoke('workbench.query.cancelExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                     </div>
                     <div id="query-explanation-controls-row" class="query-explanation-controls-row-class query-explanation-toolbar__actions"
                         ?hidden=${!queryFeatureEnabled(context, 'query-explain')}
@@ -3208,6 +3325,14 @@ module workbench {
                                     class="workbench-visually-hidden">Download explanation</span></button>
                                 <button id="compare-toggle" class="workbench-action workbench-action--secondary" type="button" ?hidden=${!queryFeatureEnabled(context, 'query-compare')}
                                     @click=${() => invoke('workbench.query.toggleCompareMode')}>${icon(runtime, 'compare')}<span>Compare</span></button>
+                                <span id="query-compare-toolbar" class="query-compare-toolbar" hidden>
+                                    <button id="query-compare-swap" class="workbench-action workbench-action--secondary" type="button"
+                                        ?hidden=${!queryFeatureEnabled(context, 'query-swap')}>${icon(runtime, 'swap')}<span>Swap</span></button>
+                                    <button id="query-diff-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button" disabled
+                                        ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
+                                        @click=${() => invoke('workbench.query.openDiffModal')}>
+                                        <span id="query-diff-trigger-icon" class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
+                                </span>
                             </span>
                             <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
                                 <button id="rerun-explanation" class="workbench-action workbench-action--secondary" type="button"
@@ -3219,23 +3344,6 @@ module workbench {
                                     @click=${() => invoke('workbench.query.cancelExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                             </span>
                         </span>
-                    </div>
-                    <div id="query-compare-toolbar" class="query-compare-toolbar" hidden>
-                        <button id="query-compare-swap" class="workbench-action workbench-action--secondary" type="button"
-                            ?hidden=${!queryFeatureEnabled(context, 'query-swap')}>${icon(runtime, 'swap')}<span>Swap</span></button>
-                        <div id="query-compare-controls" class="query-compare-toolbar__actions">
-                            <button id="query-diff-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button" disabled
-                                ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
-                                @click=${() => invoke('workbench.query.openDiffModal')}>
-                                <span id="query-diff-trigger-icon" class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
-                            <button id="explain-compare-trigger" class="query-compare-action workbench-action workbench-action--secondary" type="button"
-                                data-query-refresh-enabled=${queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false'}
-                                ?hidden=${!queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context)}
-                                @click=${() => invoke('workbench.query.runCompareExplain')}>Refresh explanations</button>
-                            <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--warning" type="button"
-                                aria-label="Cancel explanations" title="Cancel explanations" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                @click=${() => invoke('workbench.query.cancelCompareExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
-                        </div>
                     </div>
                 </div>
                 <div class="query-explanation-columns">
@@ -3349,6 +3457,15 @@ module workbench {
                             <button id="explain-trigger-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
                                 aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
                                 @click=${() => invoke('workbench.query.cancelExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
+                            <span id="query-actions-compare" class="query-actions-compare" hidden>
+                                <button id="query-actions-swap" class="query-action workbench-action workbench-action--secondary" type="button"
+                                    ?hidden=${!queryFeatureEnabled(context, 'query-swap')}
+                                    @click=${() => invoke('workbench.query.swapCompareQueries')}>${icon(runtime, 'swap')}<span>Swap</span></button>
+                                <button id="query-actions-diff" class="query-action query-compare-action workbench-action workbench-action--secondary" type="button" disabled
+                                    ?hidden=${!queryFeatureEnabled(context, 'query-diff')}
+                                    @click=${() => invoke('workbench.query.openDiffModal', 'query-actions-diff')}>
+                                    <span class="query-compare-action__icon" aria-hidden="true">⇄</span>Diff</button>
+                            </span>
                         </div>
                         <div class="workbench-action-toolbar__actions">
                             <div class="workbench-action-toolbar__group">${saveDisclosure}${optionsDisclosure}</div>
@@ -3388,7 +3505,7 @@ module workbench {
                         </section>
                         <p class="query-output__empty query-results-panel__empty">Choose Execute to see the results here.</p>
                     </div>
-                    ${explanationPanel(runtime, { explanation, explanationFormat, explanationLevel }, context)}
+                    ${explanationPanel(runtime, { explanation, explanationFormat, explanationLevel, queryTimeout: defaultTimeout }, context)}
                 </section>
                 <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
                     <div class="query-diff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="query-diff-modal-title">

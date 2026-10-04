@@ -76,7 +76,7 @@ html[data-theme="dark"] .query-output {
 
 .query-explanation-column {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     min-width: 0;
 }
@@ -110,31 +110,50 @@ body:not(.query-compare-mode) .query-explanation-column__header {
     grid-column: 1;
 }
 
-/* The running time, then the final time, share the status line's row at its end. */
-.query-explanation-column > .query-explanation-timing {
-    grid-row: 2;
-    grid-column: 2;
-}
-
 .query-explanation-column > .query-explanation-surface {
     grid-row: 3;
     grid-column: 1 / -1;
     min-width: 0;
 }
 
-.query-explanation-timing {
-    align-self: center;
-    margin: 0 0 0.55em var(--workbench-control-gap, 8px);
+/*
+ * The running time, then the final time, of each plan sit at the end of one line above the toolbar; in compare mode
+ * each carries its query's name. The line keeps its height while a plan is shown, so the toolbar does not move when a
+ * stale plan drops its time (changing the toolbar's level or format makes the plan stale). It sits 14px up in the
+ * panel's top padding, so the times add little height above the toolbar.
+ */
+.query-explanation-timings {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 2px var(--workbench-space-subgroup, 16px);
+    min-height: 1.35em;
+    margin: -14px 0 var(--workbench-control-gap, 8px);
     color: var(--workbench-muted);
     font-family: var(--workbench-font);
     font-size: var(--workbench-control-font-size);
     font-variant-numeric: tabular-nums;
     line-height: 1.35;
+}
+
+.query-explanation-panel:has(> .query-explanation-panel__empty:not([hidden])) > .query-explanation-timings {
+    display: none;
+}
+
+.query-explanation-timings__entry {
+    display: inline-flex;
+    gap: 0.4em;
     white-space: nowrap;
 }
 
-.query-explanation-timing:empty {
+.query-explanation-timings__entry:has(> .query-explanation-timing:empty),
+body:not(.query-compare-mode) .query-explanation-timings__label {
     display: none;
+}
+
+.query-explanation-timings__label {
+    color: var(--workbench-ink);
+    font-weight: 600;
 }
 
 body.query-compare-mode .query-explanation-columns {
@@ -269,6 +288,21 @@ body.query-compare-mode #copy-explanation {
     flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--workbench-control-gap, 8px);
+}
+
+/* The actions (Compare with Swap and Diff, then Explain again) stay at the right end of every line they wrap onto. */
+.query-explanation-toolbar__actions {
+    margin-left: auto;
+}
+
+.query-explanation-toolbar #primary-explain-settings,
+.query-explanation-toolbar #primary-explain-settings > .query-form__field--controls-group {
+    justify-content: flex-end;
+}
+
+/* In compare mode Swap and Diff are items of Compare's group, so they wrap, and fill phone rows, like Compare. */
+.query-explanation-toolbar .query-compare-toolbar:not([hidden]) {
+    display: contents;
 }
 
 /* On phones the settings and actions fill each row they wrap onto; icon-only actions keep their square. */
@@ -418,6 +452,17 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
 
 .query-explanation-settings__header {
     margin-bottom: var(--workbench-form-gap, 12px);
+}
+
+/* The explanation timeout: a short number field and its unit; empty falls back to the query timeout. */
+.query-explanation-timeout {
+    display: flex;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-timeout input {
+    width: 7rem;
 }
 
 .query-explanation-settings__highlighting {

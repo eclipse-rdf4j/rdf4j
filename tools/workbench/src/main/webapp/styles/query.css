@@ -406,6 +406,11 @@ body.workbench-body:has(#query-page) #workbench-page-surface {
 	margin-top: var(--workbench-field-gap, 4px);
 }
 
+/* In compare mode Swap and Diff follow Execute and Explain as items of the same row. */
+.query-actions-compare:not([hidden]) {
+	display: contents;
+}
+
 .query-page .query-option {
     white-space: nowrap;
 }
@@ -681,18 +686,14 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
  * controls at their own widths on one row, with Full screen as an icon named by its aria-label. */
 @media (max-width: 600px) {
 	:where(body.workbench-body) .query-actions-toolbar :is(.workbench-action-toolbar__primary, .workbench-action-toolbar__group,
-			.workbench-action-toolbar__primary > .workbench-action, .workbench-action-toolbar__group .workbench-disclosure__toggle) {
+			.workbench-action-toolbar__primary > .workbench-action, .query-actions-compare > .workbench-action,
+			.workbench-action-toolbar__group .workbench-disclosure__toggle) {
 		flex: 1 1 auto;
 	}
 
 	/* Save query and Query settings take a row each when they cannot share one. */
 	:where(body.workbench-body) .query-actions-toolbar .workbench-action-toolbar__group {
 		flex-wrap: wrap;
-	}
-
-	/* In the output card the result heading is only for assistive technology, so it takes no place in the row. */
-	.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header {
-		position: absolute;
 	}
 
 	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen {
@@ -902,12 +903,18 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
     border-top: 1px solid var(--query-rule);
 }
 
-/* The status line and, while the query runs (or after it stopped early), its running time. */
+/* The status line and, while the query runs (or after it stopped early), its running time. It starts the result
+ * toolbar row, centred on the buttons at its end. */
+.query-result-toolbar__header {
+    align-items: center;
+}
+
 .query-result-status-line {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     column-gap: var(--workbench-control-gap, 8px);
+    min-width: 0;
 }
 
 .query-result-timer {
@@ -1234,8 +1241,9 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
 }
 
 /* In the output card the Results tab names the result; its heading stays for assistive technology and
- * returns in full screen (M3.5, mockup 02). */
-.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2 {
+ * returns in full screen (M3.5, mockup 02). Out of the flow it leaves the status at the very start of the row. */
+.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2,
+body.workbench-body #content .query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2 {
     position: absolute;
     width: 1px;
     height: 1px;

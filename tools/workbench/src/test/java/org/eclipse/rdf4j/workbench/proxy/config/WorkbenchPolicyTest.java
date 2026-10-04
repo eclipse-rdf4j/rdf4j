@@ -55,7 +55,6 @@ class WorkbenchPolicyTest {
 			"query-compare",
 			"query-diff",
 			"query-swap",
-			"query-refresh",
 			"result-layout",
 			"result-wrap",
 			"result-totals",
@@ -171,7 +170,7 @@ class WorkbenchPolicyTest {
 	void builtInQueryFeatureIdsAreStableImmutableAndEagerlyValidated() {
 		Set<String> expected = BUILT_IN_QUERY_FEATURE_IDS;
 		WorkbenchPolicy defaults = WorkbenchPolicy.fromProperties(new Properties(), Set.of());
-		assertThat(expected).hasSize(48);
+		assertThat(expected).hasSize(47);
 		assertThat(defaults.getQueryFeatureIds()).containsExactlyInAnyOrderElementsOf(expected);
 
 		Properties properties = new Properties();

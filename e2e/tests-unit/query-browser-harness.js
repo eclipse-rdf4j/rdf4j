@@ -363,9 +363,8 @@ function createQueryBrowserHarness(options = {}) {
         disabled: true,
         attributes: { 'aria-hidden': 'true' }
     });
-    const explainCompareTrigger = registerElement('button', { id: 'explain-compare-trigger' });
-    const explainCompareCancel = registerElement('button', {
-        id: 'explain-compare-cancel',
+    const explanationCancel = registerElement('button', {
+        id: 'explanation-cancel',
         className: 'query-explain-cancel',
         disabled: true,
         attributes: { 'aria-hidden': 'true' }
@@ -454,17 +453,27 @@ function createQueryBrowserHarness(options = {}) {
     explanationPropertyPanel.appendChild(explanationPropertyOptions);
     explanationPropertyConfig.appendChild(explanationPropertySummary);
     explanationPropertyConfig.appendChild(explanationPropertyPanel);
+    const explanationTimeoutSection = registerElement('div', { id: 'explanation-timeout-section' });
+    const explanationTimeout = registerElement('input', { id: 'explanation-timeout', type: 'number', value: '' });
+    const explanationTimeoutHelp = registerElement('p', { id: 'explanation-timeout-help' });
+    explanationTimeoutSection.appendChild(explanationTimeout);
+    explanationTimeoutSection.appendChild(explanationTimeoutHelp);
+    const explanationHighlightingSection = registerElement('div', { id: 'explanation-highlighting-section' });
     explanationSettingsContent.appendChild(explanationHighlightMode);
     explanationSettingsContent.appendChild(explanationHotspotLegend);
     explanationSettingsContent.appendChild(explanationPropertyConfig);
+    explanationSettingsContent.appendChild(explanationTimeoutSection);
+    explanationSettingsContent.appendChild(explanationHighlightingSection);
     explanationSettings.appendChild(explanationSettingsToggle);
     explanationSettings.appendChild(explanationSettingsPanel);
     primaryExplainSettings.appendChild(explanationSettings);
     const primaryExplainRepeatControls = registerElement('div', { id: 'primary-explain-repeat-controls' });
     const compareToggle = registerElement('button', { id: 'compare-toggle' });
     const queryDiffTrigger = registerElement('button', { id: 'query-diff-trigger' });
+    const queryCompareToolbar = registerElement('span', { id: 'query-compare-toolbar', attributes: { hidden: '' } });
+    const queryActionsCompare = registerElement('span', { id: 'query-actions-compare', attributes: { hidden: '' } });
+    const queryActionsDiff = registerElement('button', { id: 'query-actions-diff', disabled: true });
     const queryCompareLayout = registerElement('div', { id: 'query-compare-layout' });
-    const queryCompareControls = registerElement('div', { id: 'query-compare-controls' });
     const queryExplanationRowCompare = registerElement('div', { id: 'query-explanation-row-compare' });
     const queryExplanationStatusCompare = registerElement('div', { id: 'query-explanation-status-compare' });
     const queryExplanationTimingCompare = registerElement('div', { id: 'query-explanation-timing-compare',
@@ -520,8 +529,7 @@ function createQueryBrowserHarness(options = {}) {
         explainTriggerCancel,
         rerunExplanation,
         rerunExplanationCancel,
-        explainCompareTrigger,
-        explainCompareCancel,
+        explanationCancel,
         queryExplanationRow,
         queryExplanationControlsRow,
         queryExplanationStatus,
@@ -538,8 +546,10 @@ function createQueryBrowserHarness(options = {}) {
         primaryExplainRepeatControls,
         compareToggle,
         queryDiffTrigger,
+        queryCompareToolbar,
+        queryActionsCompare,
+        queryActionsDiff,
         queryCompareLayout,
-        queryCompareControls,
         queryExplanationRowCompare,
         queryExplanationStatusCompare,
         queryExplanationTimingCompare,
@@ -575,8 +585,7 @@ function createQueryBrowserHarness(options = {}) {
     explainTriggerCancel.onclick = () => context.workbench.query.cancelExplain();
     rerunExplanation.onclick = () => context.workbench.query.runExplain(null, 'rerun-explanation');
     rerunExplanationCancel.onclick = () => context.workbench.query.cancelExplain();
-    explainCompareTrigger.onclick = () => context.workbench.query.runCompareExplain('explain-compare-trigger');
-    explainCompareCancel.onclick = () => context.workbench.query.cancelCompareExplain();
+    explanationCancel.onclick = () => context.workbench.query.cancelExplain();
     explainLevel.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
     explainFormat.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
     queryCancel.onclick = () => context.workbench.query.cancelQuery();

@@ -8,12 +8,12 @@ const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-d
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
 
-function loadViews() {
+function loadViews(window = { location: { search: '' } }) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
         URLSearchParams,
-        window: { location: { search: '' } },
+        window,
         workbench
     });
     const source = fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8');
@@ -44,8 +44,8 @@ function visitTemplates(value, templates = [], bindings = []) {
     return { templates, bindings };
 }
 
-function queryTemplate({ metadata = {}, defaults = {}, queryFeatures = {}, queryFormats = [] } = {}) {
-    const views = loadViews();
+function queryTemplate({ metadata = {}, defaults = {}, queryFeatures = {}, queryFormats = [], window } = {}) {
+    const views = loadViews(window);
     const context = {
         basePath: '/workbench',
         repositoryId: 'repo-1',
@@ -303,13 +303,21 @@ test('running queries and explanations are cancelled with warning actions and sh
     const page = queryTemplate({ metadata: { explanation: 'Existing explanation' } });
     const staticMarkup = page.templates.map(template => template.strings.join('')).join('');
 
-    for (const id of ['query-cancel', 'explain-trigger-cancel', 'rerun-explanation-cancel', 'explain-compare-cancel']) {
+    for (const id of ['query-cancel', 'explain-trigger-cancel', 'rerun-explanation-cancel', 'explanation-cancel']) {
         assert.match(staticMarkup, new RegExp(`<button id="${id}" class="[^"]*\\bworkbench-action--warning\\b`),
             `${id} is a warning button`);
     }
     const stopIcons = page.bindings.filter(binding => binding.before.endsWith('data-workbench-icon=')
         && binding.value === 'stop');
     assert.equal(stopIcons.length, 4, 'each Cancel button carries the stop icon');
+    for (const stopIcon of stopIcons) {
+        const iconPath = page.bindings[page.bindings.indexOf(stopIcon) + 1];
+        assert.ok(iconPath.before.endsWith(' d='), 'the stop icon draws one path');
+        assert.match(iconPath.value, /^M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z/,
+            'the stop icon is circled, like the other status icons, so it does not read as an empty checkbox');
+        assert.match(iconPath.value, /M10 10h4v4h-4ZM11 11h2v2h-2ZM12 12h\.01$/,
+            'the circle holds a stop square whose overlapping strokes fill it without gaps');
+    }
     assert.doesNotMatch(staticMarkup, /query-explain-spinner|explain-trigger-cancel-action/,
         'the explanation shows its progress as the panel loading bar, not as a spinner beside the button');
 });
@@ -319,7 +327,7 @@ test('individual query feature policies hide their matching controls and explana
     [
         'query-save', 'query-options', 'query-explain', 'query-private-save', 'query-timeout',
         'query-inferred-statements', 'query-cancel', 'query-compare',
-        'query-diff', 'query-swap', 'query-rerun', 'query-refresh', 'result-page-size', 'result-fullscreen',
+        'query-diff', 'query-swap', 'query-rerun', 'result-page-size', 'result-fullscreen',
         'editor-sidebar', 'editor-fullscreen', 'editor-namespaces', 'explain-format-text', 'explain-format-dot',
         'explain-format-json', 'explain-level-unoptimized', 'explain-level-optimized', 'explain-level-executed',
         'explain-level-telemetry', 'explain-level-timed', 'explain-view-text', 'explain-view-dot',
@@ -353,8 +361,9 @@ test('individual query feature policies hide their matching controls and explana
         ['id="query-explanation-dot-view"', 'explain-view-dot'],
         ['id="query-explanation-json-view"', 'explain-view-json'],
         ['id="rerun-explanation-cancel"', 'explain-cancel'],
-        ['id="explain-compare-trigger"', 'query-refresh'],
-        ['id="explain-compare-cancel"', 'explain-cancel']
+        ['id="explanation-cancel"', 'explain-cancel'],
+        ['id="query-actions-swap"', 'query-swap'],
+        ['id="query-actions-diff"', 'query-diff']
     ];
     const missingPolicies = controls.filter(([selector]) => {
         return dynamicAttributeValue(page, selector, '\\?hidden') !== true;
@@ -419,6 +428,106 @@ test('query text stays a Lit text binding instead of becoming executable markup'
     assert.equal(queryBinding.value, dangerousQuery);
     assert.ok(!queryBinding.before.includes(dangerousQuery));
     assert.ok(!queryBinding.after.includes(dangerousQuery));
+});
+
+/** The page's markup in document order, with nested templates written where they render. */
+function renderedMarkup(value) {
+    if (Array.isArray(value)) {
+        return value.map(renderedMarkup).join('');
+    }
+    if (value && Array.isArray(value.strings) && Array.isArray(value.values)) {
+        return value.strings.map((string, index) => string
+            + (index < value.values.length ? renderedMarkup(value.values[index]) : '')).join('');
+    }
+    return ['string', 'number', 'boolean'].includes(typeof value) ? String(value) : '';
+}
+
+/** Finds each needle after the one before it, so the indexes come back in rendering order. */
+function orderedIndexes(markup, needles) {
+    let from = 0;
+    let previous = 'the start of the page';
+    return needles.map(needle => {
+        const index = markup.indexOf(needle, from);
+        assert.notEqual(index, -1, `the query page renders ${needle} after ${previous}`);
+        from = index + needle.length;
+        previous = needle;
+        return index;
+    });
+}
+
+test('the Explanation toolbar has its time above it, a Cancel beside Config and Swap and Diff beside Compare', () => {
+    const page = queryTemplate({ metadata: { explanation: 'Existing explanation' } });
+    const markup = renderedMarkup(page.templates[0]);
+
+    for (const removed of ['id="explain-compare-trigger"', 'id="explain-compare-cancel"', 'id="query-compare-controls"',
+        'Refresh explanations']) {
+        assert.equal(markup.includes(removed), false, `${removed} is gone: Explain and Explain again explain both queries`);
+    }
+
+    // Both times sit in one row above the toolbar; the compare time carries its label.
+    const [, , , , , toolbar, columns] = orderedIndexes(markup, [
+        'id="query-explanation-panel"', 'id="query-explanation-timings"', 'id="query-explanation-timing"',
+        '>Compare query<', 'id="query-explanation-timing-compare"', 'class="query-explanation-toolbar ',
+        'class="query-explanation-columns"']);
+    assert.ok(toolbar < columns);
+    assert.equal(markup.indexOf('query-explanation-timing', columns), -1, 'the plan columns no longer hold the times');
+
+    // The Explanation Cancel comes right after the Config dropdown, in the settings group.
+    const [, , explanationCancel, actions] = orderedIndexes(markup, [
+        'class="query-explanation-toolbar__settings"', 'Plan structure always remains visible.',
+        'id="explanation-cancel"', 'id="query-explanation-controls-row"']);
+    const cancelTag = markup.slice(explanationCancel, markup.indexOf('>', explanationCancel));
+    assert.match(cancelTag, /aria-hidden="true" disabled/, 'it starts hidden like the other Cancel buttons');
+
+    // Swap and Diff follow Compare in the actions group, so they stay on the right with it when the toolbar wraps.
+    const [compareToggle] = orderedIndexes(markup, ['id="compare-toggle"', 'id="query-compare-toolbar"',
+        'id="query-compare-swap"', 'id="query-diff-trigger"', 'id="primary-explain-repeat-controls"']);
+    assert.ok(actions < compareToggle);
+});
+
+test('compare mode shows Swap and Diff beside Execute and Explain under the editors', () => {
+    const calls = [];
+    const page = queryTemplate({
+        window: {
+            location: { search: '' },
+            workbench: {
+                query: {
+                    swapCompareQueries: () => calls.push('swap'),
+                    openDiffModal: () => calls.push('diff')
+                }
+            }
+        }
+    });
+    const markup = renderedMarkup(page.templates[0]);
+    const [, group, , diff] = orderedIndexes(markup, ['id="explain-trigger-cancel"', 'id="query-actions-compare"',
+        'id="query-actions-swap"', 'id="query-actions-diff"', 'class="workbench-action-toolbar__actions"']);
+    assert.match(markup.slice(group, markup.indexOf('>', group)), /\shidden[\s>]?/,
+        'the group shows only in compare mode');
+    assert.match(markup.slice(diff, markup.indexOf('>', diff)), /\sdisabled[\s>]?/,
+        'Diff waits for both plans, like the Explanation toolbar Diff');
+
+    dynamicAttributeValue(page, 'id="query-actions-swap"', '@click')();
+    dynamicAttributeValue(page, 'id="query-actions-diff"', '@click')();
+    assert.deepEqual(calls, ['swap', 'diff'], 'they do what the Explanation toolbar Swap and Diff do');
+});
+
+test('the Explanation Config shows the explanation timeout, which defaults to the query timeout', () => {
+    const page = queryTemplate({ metadata: { explanation: 'Existing explanation' },
+        defaults: { 'default-query-timeout': '23' } });
+    const markup = renderedMarkup(page.templates[0]);
+    const [, section, input, help] = orderedIndexes(markup, ['id="explanation-settings-panel"',
+        'id="explanation-timeout-section"', 'id="explanation-timeout"', 'id="explanation-timeout-help"', 'Highlighting']);
+    assert.match(markup.slice(section, input), /<label for="explanation-timeout">/, 'the field is labelled');
+    const inputTag = markup.slice(input, markup.indexOf('>', input));
+    assert.match(inputTag, /type="number"/);
+    assert.match(inputTag, /min="0"/);
+    assert.match(inputTag, /placeholder="?23"?[\s/>]/, 'an empty field shows the query timeout it falls back to');
+    assert.match(markup.slice(help, markup.indexOf('</p>', help)), /Empty uses the query timeout: 23 seconds\. 0 means no limit\./);
+
+    const disabled = queryTemplate({ metadata: { explanation: 'Existing explanation' },
+        queryFeatures: { 'query-timeout': false } });
+    assert.equal(dynamicAttributeValue(disabled, 'id="explanation-timeout-section"', '\\?hidden'), true,
+        'without the query timeout feature the server takes no timeout, so Config does not offer one');
 });
 
 function templateText(page) {

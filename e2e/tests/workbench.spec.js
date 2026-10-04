@@ -299,9 +299,12 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#rerun-explanation')).toBeVisible();
     await expect(page.locator('#compare-explain-format')).toHaveCount(0);
     await expect(page.locator('#compare-explain-level')).toHaveCount(0);
-    // Both buttons are named by their visible text ("Refresh explanations", "Diff") since plan task M3.3.
-    await expect(page.locator('#explain-compare-trigger')).toHaveAccessibleName(/Refresh/i);
+    // Explain and Explain again explain both queries in compare mode, so there is no "Refresh explanations" button.
+    // Swap and Diff are named by their visible text and also follow Explain under the editors.
+    await expect(page.locator('#explain-compare-trigger')).toHaveCount(0);
     await expect(page.locator('#query-diff-trigger')).toHaveAccessibleName(/Diff/i);
+    await expect(page.locator('#query-actions-swap')).toHaveAccessibleName(/Swap/i);
+    await expect(page.locator('#query-actions-diff')).toHaveAccessibleName(/Diff/i);
     await expect.poll(async () => page.evaluate(() => {
         const compareCode = document.querySelectorAll('.CodeMirror-code')[1];
         return compareCode ? compareCode.textContent.replace(/\s+/g, ' ').trim() : '';
@@ -322,7 +325,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
         editors[1].CodeMirror.setValue('ASK { ?s ?p ?o }');
     });
 
-    await page.locator('#explain-compare-trigger').click();
+    await page.locator('#explain-trigger').click();
     await waitForStableExplanations(page, ['#query-explanation', '#query-explanation-compare']);
 
     await page.locator('#query-diff-trigger').click();
@@ -353,6 +356,9 @@ test('Explain wait state shows the panel loading bar and cancel for primary and 
     await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
     await expect(page.locator('#explain-trigger-cancel')).toHaveAccessibleName('Cancel explanation');
+    // The Explanation toolbar repeats Cancel right after its Config dropdown.
+    await expect(page.locator('#explanation-cancel')).toBeVisible();
+    await expect(page.locator('#explanation-cancel')).toHaveAccessibleName('Cancel explanation');
     await expect.poll(() => explanationPanel.evaluate(panel => getComputedStyle(panel, '::before').opacity))
         .toBe('1');
     await waitForStableExplanation(page);
@@ -369,15 +375,13 @@ test('Explain wait state shows the panel loading bar and cancel for primary and 
     await page.locator('#explain-trigger').click();
     await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#explanation-cancel')).toBeVisible();
     await waitForStableExplanation(page, '#query-explanation-compare');
 
     await page.locator('#rerun-explanation').click();
     await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#explanation-cancel')).toBeVisible();
     await waitForStableExplanation(page, '#query-explanation-compare');
 });
 
@@ -437,29 +441,29 @@ test('Compare-mode left cancel buttons abort explanation refresh', async ({page}
     const traffic = await trackExplainTraffic(page);
     await page.locator('#explain-trigger').click();
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
+    await expect(page.locator('#explanation-cancel')).toBeVisible();
     await expect.poll(() => getTrackedRequestIds(traffic.explainRequests).length).toBe(2);
     await page.locator('#explain-trigger-cancel').click();
     await expect.poll(() => getTrackedRequestIds(traffic.cancelRequests).length).toBe(2);
     await expect(getTrackedRequestIds(traffic.cancelRequests)).toEqual(getTrackedRequestIds(traffic.explainRequests));
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
-    await expect(page.locator('#explain-compare-cancel')).toBeHidden();
+    await expect(page.locator('#explanation-cancel')).toBeHidden();
     await page.waitForTimeout(2500);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation-compare').textContent.trim();
     })).toBe(initialCompareExplanation);
 
-    await page.locator('#explain-compare-trigger').click();
+    await page.locator('#explain-trigger').click();
     const refreshedCompareExplanation = await waitForChangedStableExplanation(
         page, '#query-explanation-compare', initialCompareExplanation
     );
 
     await page.locator('#rerun-explanation').click();
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-cancel')).toBeVisible();
-    await page.locator('#rerun-explanation-cancel').click();
+    await expect(page.locator('#explanation-cancel')).toBeVisible();
+    await page.locator('#explanation-cancel').click();
     await expect(page.locator('#rerun-explanation-cancel')).toBeHidden();
-    await expect(page.locator('#explain-compare-cancel')).toBeHidden();
+    await expect(page.locator('#explanation-cancel')).toBeHidden();
     await page.waitForTimeout(2500);
     await expect.poll(async () => page.evaluate(() => {
         return document.getElementById('query-explanation-compare').textContent.trim();

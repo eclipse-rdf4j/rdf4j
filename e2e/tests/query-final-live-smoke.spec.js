@@ -75,7 +75,7 @@ test('covers the current embedded query workflow against a live repository', asy
     await expect(page.locator('.CodeMirror')).toHaveCount(2);
     await page.locator('.CodeMirror').nth(1).evaluate((element, query) => element.CodeMirror.setValue(query),
         'ASK { VALUES ?s { "one" } }');
-    await page.locator('#explain-compare-trigger').click();
+    await page.locator('#explain-trigger').click();
     await expect.poll(() => page.locator('#query-explanation-compare').textContent())
         .not.toContain('Loading explanation...');
     log(`COMPARE panes=${await page.locator('.CodeMirror').count()} text-length=${(await page.locator('#query-explanation-compare').textContent()).trim().length}`);

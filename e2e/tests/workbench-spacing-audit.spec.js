@@ -425,7 +425,7 @@ for (const width of [1440, 768, 320]) for (const theme of ['light', 'dark']) {
 		for (const action of ['copy', 'swap']) {
 			await page.locator(`#query-compare-${action}`).click(); await capture(page, info, 'query', `compare-${action}`);
 		}
-		await page.locator('#explain-compare-trigger').click();
+		await page.locator('#explain-trigger').click();
 		await expect(page.locator('#query-diff-trigger')).toBeEnabled();
 		await capture(page, info, 'query', 'compare-explanations');
 		await page.locator('#query-diff-trigger').click();

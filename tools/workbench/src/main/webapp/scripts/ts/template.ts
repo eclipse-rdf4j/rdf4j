@@ -557,6 +557,7 @@ module workbench {
         inert: boolean;
         ariaHidden: string;
         expanded: boolean;
+        focusInPanelOnPress?: boolean;
     }
 
     interface DisclosureAnchor {
@@ -1132,10 +1133,15 @@ module workbench {
         });
     }
 
-    /** A press outside an open pane and its toggle closes the pane (M14.3). */
+    /**
+     * A press outside an open pane and its toggle closes the pane (M14.3). Safari does not focus a button that is
+     * clicked: a press on the toggle moves focus from the pane to an element around the toggle (the page, the outlet)
+     * before the click closes the pane, so the press remembers that focus was in the pane.
+     */
     function dismissDisclosuresOutside(event: Event): void {
         var target = <Node>event.target;
         expandedDisclosures().forEach(function(state) {
+            state.focusInPanelOnPress = state.button.contains(target) && state.panel.contains(document.activeElement);
             if (!state.panel.contains(target) && !state.button.contains(target)) {
                 setDisclosureExpanded(state.button, state.panel, state.owner, false, true);
             }
@@ -1306,7 +1312,10 @@ module workbench {
         if (owner) {
             owner.classList.toggle('is-open', expanded);
         }
-        if (!expanded && panel.contains && panel.contains(document.activeElement)) {
+        var focusLeftPanelOnPress = !!state.focusInPanelOnPress
+            && (!document.activeElement || document.activeElement.contains(button));
+        state.focusInPanelOnPress = false;
+        if (!expanded && panel.contains && (panel.contains(document.activeElement) || focusLeftPanelOnPress)) {
             button.focus();
         }
         panel.hidden = false;

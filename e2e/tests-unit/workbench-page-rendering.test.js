@@ -1966,7 +1966,7 @@ test('page tables label their columns for people instead of showing raw variable
         rowCount: 1, metadata: {}
     }, context, runtime);
     // The repository list (M5.3) shows Id, Title and Access; Location moved to the Title cell's tooltip.
-    assert.deepEqual(headings(repositories), ['Id', 'Title', 'Access']);
+    assert.deepEqual(headings(repositories), ['ID', 'Title', 'Access']);
     const explore = workbench.views.pageTemplate({
         viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
         rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
@@ -2193,4 +2193,34 @@ test('Clear, Remove and Update read their rows so a server error reaches the pag
             { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
         assert.match(markup, /workbench-callout--error[\s\S]*No values/, viewId);
     }
+});
+
+test('Add RDF puts Advanced settings in the Upload row, right of Upload', () => {
+    const workbench = loadWorkbench();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({ viewId: 'add', metadata: {}, vars: [], rows: [] },
+        { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    const actions = markup.indexOf('id="add-upload-actions"');
+    const upload = markup.indexOf('value="Upload"', actions);
+    const advanced = markup.indexOf('id="add-import-settings"', upload);
+    assert.ok(actions >= 0 && upload > actions && advanced > upload,
+        'the actions row holds Upload, then the Advanced settings dropdown');
+    const ownerTag = markup.slice(markup.lastIndexOf('<', advanced), markup.indexOf('>', advanced));
+    assert.doesNotMatch(ownerTag, /workbench-form-subgroup/, 'in the row it adds no subgroup space above itself');
+});
+
+test('Remove offers a preview of the statements it would remove, beside the Remove button', () => {
+    const workbench = loadWorkbench();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({ viewId: 'remove', vars: [], rows: [], rowCount: 0,
+        metadata: {} }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    const actions = markup.indexOf('class="workbench-form-actions remove-actions"');
+    const preview = markup.indexOf('id="remove-preview-button"', actions);
+    const remove = markup.indexOf('type="submit"', actions);
+    assert.ok(actions >= 0 && preview > actions && remove > preview, 'Preview statements comes first, then Remove');
+    const previewTag = markup.slice(markup.lastIndexOf('<button', preview), markup.indexOf('>', preview));
+    assert.match(previewTag, /type="button"/, 'previewing never submits the removal');
+    assert.match(markup.slice(preview, markup.indexOf('</button>', preview)), /Preview statements/);
+    const section = markup.indexOf('id="remove-preview"');
+    assert.ok(section > remove, 'the statements are listed below the form');
+    assert.match(markup.slice(section, markup.indexOf('>', section)), /\?hidden=true|\shidden[\s>=]/,
+        'nothing is listed before Preview is chosen');
 });

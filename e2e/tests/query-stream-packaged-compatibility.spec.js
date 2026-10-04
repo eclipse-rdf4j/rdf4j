@@ -479,7 +479,7 @@ test('loads the complete Explain, Compare, and Diff query route dependencies', a
 	await page.locator('#compare-toggle').click();
 	await expect(page.locator('#query-compare-pane')).toBeVisible();
 	await setEditor(page, 1, 'ASK { ?s ?p ?o }');
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await waitForStableExplanation(page, '#query-explanation', monitor);
 	await waitForStableExplanation(page, '#query-explanation-compare', monitor);
 	const diff = page.locator('#query-diff-trigger');

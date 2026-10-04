@@ -170,6 +170,34 @@ test('Namespaces start with empty fields, edit in the row and delete only after 
 	expect(await namespaceOf(request, 'tst')).toBe('');
 });
 
+test('Remove previews the statements it would remove without removing them', async ({ page, request }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'remove'), { waitUntil: 'domcontentloaded' });
+	const form = page.locator('#remove-form');
+	const previewButton = form.locator('#remove-preview-button');
+	const preview = page.locator('#remove-preview');
+	await expect(previewButton).toBeDisabled();
+	await expect(preview).toBeHidden();
+
+	const product = '<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/instances/dataFromProducer1/Product1>';
+	await form.locator('#subj').fill(product);
+	await expect(form.locator('#remove-count')).toHaveText(/^\d+ statements match$/);
+	const matches = Number((await form.locator('#remove-count').innerText()).match(/^(\d+)/)[1]);
+	const before = await sizeOf(request);
+	await previewButton.click();
+	await expect(preview).toBeVisible();
+	await expect(preview.locator('#remove-preview-status')).toHaveText(
+		matches > 100 ? /more match/ : `These ${matches} statements would be removed.`);
+	await expect(preview.locator('tbody tr')).toHaveCount(Math.min(matches, 100));
+	await expect(preview.locator('thead th')).toHaveText(['Subject', 'Predicate', 'Object', 'Graph']);
+	await expect(preview.locator('tbody tr').first().locator('td').first()).toContainText('Product1');
+	expect(await sizeOf(request), 'a preview removes nothing').toBe(before);
+
+	// The list no longer shows what Remove would remove once the values change.
+	await form.locator('#pred').fill('<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>');
+	await expect(preview).toBeHidden();
+});
+
 test('Remove counts the matching statements as you type and confirms before removing them', async ({ page, request }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'remove'), { waitUntil: 'domcontentloaded' });

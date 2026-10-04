@@ -112,7 +112,7 @@ test('captures actual query explanation, comparison, result disclosure, and form
 	await setCompareQueries(page,
 		'SELECT ?s WHERE { ?s <urn:visual:name> ?name }',
 		'SELECT ?s WHERE { ?s <urn:visual:type> <urn:visual:Person> }');
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await waitForComparison(page);
 	await captureState(page, 'query-compare-explanations-1440-light.png');
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled();

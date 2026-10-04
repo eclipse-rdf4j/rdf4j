@@ -334,7 +334,7 @@ test('Closing comparison cancels stale work and preserves the primary result', a
     });
 
     try {
-        await page.locator('#explain-compare-trigger').click();
+        await page.locator('#explain-trigger').click();
         await compareRequestStarted;
         await page.locator('#query-compare-close').click();
 
@@ -363,7 +363,7 @@ test('Closing comparison cancels stale work and preserves the primary result', a
             document.querySelectorAll('.CodeMirror')[1].CodeMirror.getValue())).toBe(primaryQuery);
         await expect(page.locator('#query-explanation-compare')).toBeEmpty();
 
-        await page.locator('#explain-compare-trigger').click();
+        await page.locator('#explain-trigger').click();
         await page.waitForFunction(() => {
             const primary = document.getElementById('query-explanation');
             const comparison = document.getElementById('query-explanation-compare');

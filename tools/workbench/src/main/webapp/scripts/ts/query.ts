@@ -58,6 +58,8 @@ module workbench {
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
+        // Diff sits in the Explanation toolbar and, in compare mode, beside Execute and Explain under the editors.
+        var diffTriggerSelector = '#query-diff-trigger, #query-actions-diff';
         var diffModalBackgroundLocked = false;
         var diffModalPreviousBodyOverflow = '';
         var diffModalBackgroundState: { element: HTMLElement; inert: boolean; ariaHidden: string }[] = [];
@@ -285,6 +287,22 @@ module workbench {
                 .attr('aria-hidden', 'true');
         }
 
+        /** Shows a running explanation's Cancel button: the one beside Config, which cancels any explanation. */
+        function showExplanationCancelButton() {
+            $('#explanation-cancel')
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false')
+                .prop('disabled', false);
+        }
+
+        function hideExplanationCancelButton() {
+            $('#explanation-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true')
+                .prop('disabled', true);
+        }
+
+        /** Shows the Cancel button beside the button that started the explanation, and the one beside Config. */
         function showPrimaryExplainCancelButton(buttonId?: string): boolean {
             var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
             hidePrimaryExplainCancelButtons();
@@ -298,6 +316,7 @@ module workbench {
             $('#' + controlIds.cancelId).closest('.workbench-action.query-explain-cancel')
                 .addClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'false');
+            showExplanationCancelButton();
             return true;
         }
 
@@ -323,38 +342,29 @@ module workbench {
             $('#rerun-explanation').prop('disabled', disabled);
         }
 
+        /** A compare explanation's wait state is the Cancel beside Config, whichever button started it. */
         function normalizeCompareExplainButtonId(): string {
-            return 'explain-compare-trigger';
+            return 'explanation-cancel';
         }
 
         function hideCompareExplainCancelButtonInternal() {
-            $('#explain-compare-cancel')
-                .removeClass('query-explain-cancel--visible')
-                .attr('aria-hidden', 'true')
-                .prop('disabled', true);
+            hideExplanationCancelButton();
         }
 
         function showCompareExplainCancelButtonInternal(): boolean {
-            $('#explain-compare-cancel')
-                .addClass('query-explain-cancel--visible')
-                .attr('aria-hidden', 'false')
-                .prop('disabled', false);
+            showExplanationCancelButton();
             return true;
         }
 
         function hideCompareExplainSpinnerInternal() {
-            $('#explain-compare-trigger').attr('aria-busy', 'false');
             hideCompareExplainCancelButtonInternal();
         }
 
         function showCompareExplainSpinnerInternal(): boolean {
-            $('#explain-compare-trigger').attr('aria-busy', 'true');
-            showCompareExplainCancelButtonInternal();
-            return true;
+            return showCompareExplainCancelButtonInternal();
         }
 
         function setCompareExplainButtonsDisabledInternal(disabled: boolean) {
-            $('#explain-compare-trigger').prop('disabled', disabled);
             $('#explain-trigger').prop('disabled', disabled);
             $('#rerun-explanation').prop('disabled', disabled);
         }
@@ -1300,7 +1310,7 @@ module workbench {
             if (paneState.kind === 'ready' && paneState.explanation.timedOut) {
                 return 'The query timed out while it was explained, so this plan is incomplete: '
                     + 'it shows only the work done before the timeout. '
-                    + 'Increase the timeout in Query settings to see more.';
+                    + 'Increase the explanation timeout in Config to see more.';
             }
             if (paneState.kind === 'error') {
                 return paneState.message;
@@ -1469,6 +1479,7 @@ module workbench {
             $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
             syncExplanationHighlightControls();
+            syncExplanationTimeoutControls();
         }
 
         function updateCompareSidebarNavigationPosition() {
@@ -2294,7 +2305,7 @@ module workbench {
         function syncExplanationPropertyControls(): void {
             var properties = getAvailableExplanationProperties();
             var config = $('#explanation-property-config');
-            var visible = properties.length > 0;
+            var visible = properties.length > 0 && !!queryPageState && queryPageState.inputs.explainFormat === 'text';
             config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
             if (!visible) {
                 $('#explanation-property-count').text('');
@@ -2369,16 +2380,19 @@ module workbench {
             setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
         }
 
+        /** Config offers the explanation timeout for every format, and highlighting and properties for Text. */
         function syncExplanationHighlightControls() {
-            var controlsVisible = !!queryPageState
-                && queryPageState.inputs.explainFormat === 'text'
+            var planShown = !!queryPageState
                 && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            var controlsVisible = planShown && queryPageState.inputs.explainFormat === 'text';
+            var settingsVisible = controlsVisible || (planShown && isExplanationTimeoutAvailable());
             $('#explanation-settings')
-                .toggle(controlsVisible)
-                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
-            if (!controlsVisible) {
+                .toggle(settingsVisible)
+                .attr('aria-hidden', settingsVisible ? 'false' : 'true');
+            if (!settingsVisible) {
                 setExplanationSettingsOpen(false);
             }
+            $('#explanation-highlighting-section').css('display', controlsVisible ? '' : 'none');
             $('#explanation-highlight-mode')
                 .toggle(controlsVisible)
                 .attr('aria-hidden', controlsVisible ? 'false' : 'true');
@@ -2724,7 +2738,6 @@ module workbench {
                 }
             }
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
-            $('#query-compare-controls').toggle(compareModeEnabled);
             var diffModalOpen = queryPageState.diffModal.kind === 'open';
             var diffModal = <HTMLElement>document.getElementById('query-diff-modal');
             var diffStateChanged = diffModalOpen !== lastPresentedDiffOpen;
@@ -3048,6 +3061,34 @@ module workbench {
             return hydratePlanJsonValue(tokenized, parsed, 'node');
         }
 
+        /** Config's explanation timeout is offered only where the server takes a query timeout at all. */
+        function isExplanationTimeoutAvailable(): boolean {
+            var section = <HTMLElement>document.getElementById('explanation-timeout-section');
+            return !!section && !section.hidden;
+        }
+
+        /** The explanation timeout in whole seconds, or '' to use the query timeout from Query settings. */
+        function getExplanationTimeout(): string {
+            if (!isExplanationTimeoutAvailable()) {
+                return '';
+            }
+            var value = $.trim(String($('#explanation-timeout').val() || ''));
+            return /^\d+$/.test(value) ? String(Number(value)) : '';
+        }
+
+        function getExplanationTimeoutHelp(queryTimeout: string): string {
+            var seconds = Number(queryTimeout);
+            return 'Empty uses the query timeout: '
+                + (seconds > 0 ? seconds + (seconds === 1 ? ' second' : ' seconds') + '. 0 means no limit.' : 'no limit.');
+        }
+
+        /** While it is empty the explanation timeout shows the query timeout it falls back to. */
+        function syncExplanationTimeoutControls() {
+            var queryTimeout = $.trim(String($('#query-timeout').val() || '')) || '0';
+            $('#explanation-timeout').attr('placeholder', queryTimeout);
+            $('#explanation-timeout-help').text(getExplanationTimeoutHelp(queryTimeout));
+        }
+
         function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
@@ -3094,6 +3135,13 @@ module workbench {
             }
             if (!seenExplainRequestId) {
                 serializedForm.push({ name: 'explain-request-id', value: serverRequestId });
+            }
+            var explanationTimeout = getExplanationTimeout();
+            if (explanationTimeout) {
+                serializedForm = serializedForm.filter(function(entry: any) {
+                    return entry.name !== 'query-timeout';
+                });
+                serializedForm.push({ name: 'query-timeout', value: explanationTimeout });
             }
             return $.param(serializedForm);
         }
@@ -3214,11 +3262,6 @@ module workbench {
         function isQueryRerunEnabled(): boolean {
             var button = <HTMLInputElement>document.getElementById('rerun-explanation');
             return !!button && button.getAttribute('data-query-rerun-enabled') !== 'false';
-        }
-
-        function isQueryRefreshEnabled(): boolean {
-            var button = <HTMLButtonElement>document.getElementById('explain-compare-trigger');
-            return !!button && button.getAttribute('data-query-refresh-enabled') !== 'false';
         }
 
         function isPrefixInsertionEnabled(): boolean {
@@ -3422,7 +3465,7 @@ module workbench {
         }
 
         function showCompareExplainSpinner() {
-            showExplainRequestSpinner('compare', 'explain-compare-trigger');
+            showExplainRequestSpinner('compare');
         }
 
         function hideCompareExplainCancelButton() {
@@ -3430,7 +3473,7 @@ module workbench {
         }
 
         function showCompareExplainCancelButton() {
-            showExplainRequestCancelButton('compare', 'explain-compare-trigger');
+            showExplainRequestCancelButton('compare');
         }
 
         function clearCompareExplainSpinnerDelayTimeout() {
@@ -3449,7 +3492,7 @@ module workbench {
             var bothQueriesAvailable = compareModeEnabled
                 && getPaneQueryValue('primary').length > 0
                 && getPaneQueryValue('compare').length > 0;
-            $('#query-diff-trigger').prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
+            $(diffTriggerSelector).prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
         }
 
         function refreshVisibleQueryEditors() {
@@ -3486,7 +3529,7 @@ module workbench {
 
         function syncCompareModeVisibility() {
             $('#explain-trigger').show();
-            $('#query-compare-toolbar').prop('hidden', !compareModeEnabled);
+            $('#query-compare-toolbar, #query-actions-compare').prop('hidden', !compareModeEnabled);
             if (!compareModeEnabled) {
                 hideCompareExplainSpinner();
             }
@@ -3686,11 +3729,11 @@ module workbench {
                 });
             }
             beginComparePrimaryExplainWaitState(triggerButtonId);
-            $('#query-diff-trigger').prop('disabled', true);
+            $(diffTriggerSelector).prop('disabled', true);
             beginExplainRequestUiWaitState(
                 'compare',
                 activeCompareRequestId,
-                triggerButtonId || 'explain-compare-trigger',
+                normalizeCompareExplainButtonId(),
                 function(requestCounter: number): boolean {
                     return requestCounter === activeCompareRequestId
                         && activeComparePendingRequests > 0
@@ -4021,10 +4064,8 @@ module workbench {
             activeExplainRequestId += 1;
         }
 
+        /** Explains both queries; Explain and Explain again do this in compare mode. */
         export function runCompareExplain(buttonId?: string) {
-            if ((!buttonId || buttonId === 'explain-compare-trigger') && !isQueryRefreshEnabled()) {
-                return;
-            }
             if (!compareModeEnabled) {
                 return;
             }
@@ -4033,7 +4074,7 @@ module workbench {
             }
             savePaneQuery('primary');
             savePaneQuery('compare');
-            var triggerButtonId = buttonId || 'explain-compare-trigger';
+            var triggerButtonId = buttonId || 'explain-trigger';
             showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', triggerButtonId);
             captureExplainButtonViewportTop('compare', triggerButtonId);
@@ -4056,7 +4097,7 @@ module workbench {
             $('#explain-level').val(getNormalizedExplainLevel(level));
             var nextGroupId = activeCompareRequestId + 1;
             var compareSignature = createRequestSignature('compare', 'compare-auto', nextGroupId, nextGroupId);
-            beginCompareExplainRequest([compareSignature], 'explain-compare-trigger');
+            beginCompareExplainRequest([compareSignature]);
             enqueueCompareExplanationRequest(compareSignature);
         }
 
@@ -4232,14 +4273,15 @@ module workbench {
          * click handlers still set the form's action fields and copy the editor text before submitting.
          */
         function queryEditorKeys(paneKey: string): any {
+            // In the compare editor both shortcuts explain both queries, which Explain does in compare mode.
             var run = function() {
                 if (!isQueryExecutionRunning()) {
-                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'exec');
+                    clickControl(paneKey === 'compare' ? 'explain-trigger' : 'exec');
                 }
             };
             var explain = function() {
                 if (!isQueryExecutionRunning()) {
-                    clickControl(paneKey === 'compare' ? 'explain-compare-trigger' : 'explain-trigger');
+                    clickControl('explain-trigger');
                 }
             };
             var save = function() {
@@ -4398,11 +4440,12 @@ module workbench {
             dispatchQueryPageEvent({ type: 'TOGGLE_SIDEBAR' });
         }
 
-        export function openDiffModal() {
+        /** Opens the diff of both queries and plans; closing it returns focus to the Diff button that opened it. */
+        export function openDiffModal(triggerButtonId?: string) {
             if (!compareModeEnabled) {
                 return;
             }
-            lastDiffTriggerElement = <HTMLElement>document.getElementById('query-diff-trigger');
+            lastDiffTriggerElement = <HTMLElement>document.getElementById(triggerButtonId || 'query-diff-trigger');
             dispatchQueryPageEvent({ type: 'OPEN_DIFF' });
             (<HTMLElement>document.getElementById('query-diff-close')).focus();
         }
@@ -4653,6 +4696,7 @@ module workbench {
             on('#explain-format', 'change', function() {
                 notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
             });
+            on('#query-timeout', 'input change', syncExplanationTimeoutControls);
             on('#query-diff-modal', 'click', function(event) {
                 if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {
                     closeDiffModal();

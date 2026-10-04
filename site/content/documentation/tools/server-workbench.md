@@ -216,7 +216,6 @@ Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 4
 | `query-compare` | Open the comparison editor pane. |
 | `query-diff` | Show the explanation difference. |
 | `query-swap` | Swap the primary and comparison queries. |
-| `query-refresh` | Refresh the comparison explanation. |
 | `result-layout` | Tuple/graph result layout selection. |
 | `result-wrap` | Wrap long result values. |
 | `result-totals` | Display result totals. |
@@ -239,7 +238,7 @@ Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 4
 
 Plan copying is controlled by `explain-copy`; `query-copy` and `editor-reset` are not built-in IDs because no matching actions are exposed. The built-in `result-download-limit` capability controls the query-results download-limit selector. Embedded applications declare additional stable feature IDs in `query.consumer-feature-ids`; unknown feature keys are rejected. `query.download.default-limit` is the fixed fallback value and defaults to `0`, meaning all results. The deployment theme default accepts `system`, `light`, or `dark`.
 
-Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` and `query-refresh` hide and disable those Explain entry points while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
+Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` hides and disables the Explain again entry point while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
 
 ### OpenTelemetry Tracing
 

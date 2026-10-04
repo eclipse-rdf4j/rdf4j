@@ -78,7 +78,7 @@ public final class WorkbenchPolicy {
 			"explain-level-timed", "explain-format-text", "explain-format-dot", "explain-format-json",
 			"explain-highlight-syntax", "explain-highlight-hotspot", "explain-property-selection",
 			"explain-view-text", "explain-view-dot", "explain-view-json", "explain-download", "explain-copy",
-			"explain-cancel", "query-compare", "query-diff", "query-swap", "query-refresh",
+			"explain-cancel", "query-compare", "query-diff", "query-swap",
 			"result-layout", "result-wrap", "result-totals", "result-paging", "result-page-size",
 			"result-page-previous", "result-page-next", "result-download", "result-download-format",
 			"result-download-format-tuple", "result-download-format-graph", "result-download-limit",

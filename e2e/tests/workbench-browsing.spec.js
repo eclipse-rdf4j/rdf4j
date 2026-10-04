@@ -164,7 +164,7 @@ test('Repository rows open their summary, list access as text and offer actions'
 	const card = page.locator('#repositories-results');
 	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Repositories');
 	await expect(card.getByRole('link', { name: 'Create' })).toHaveAttribute('href', /\/repositories\/NONE\/create$/);
-	await expect(card.locator('thead th')).toHaveText(['Id', 'Title', 'Access', 'Actions']);
+	await expect(card.locator('thead th')).toHaveText(['ID', 'Title', 'Access', 'Actions']);
 	const row = await repositoryRow(page, REPOSITORY_ID);
 	await expect(row.locator('td').nth(1)).toHaveText('Workbench seeded fixture');
 	await expect(row.locator('td').nth(2)).toHaveText('Read Write');
@@ -231,7 +231,7 @@ test('Repository records on phones use the labels Id, Title and Access', async (
 	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
 	const row = await repositoryRow(page, REPOSITORY_ID);
 	const labels = await row.locator('td[data-label]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-label')));
-	expect(labels).toEqual(['Id', 'Title', 'Access', 'Actions']);
+	expect(labels).toEqual(['ID', 'Title', 'Access', 'Actions']);
 });
 
 /** The number of statements in the test repository, read through the server's REST API. */

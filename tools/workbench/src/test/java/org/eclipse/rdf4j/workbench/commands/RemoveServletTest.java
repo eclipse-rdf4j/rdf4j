@@ -98,6 +98,52 @@ public class RemoveServletTest {
 	}
 
 	@Test
+	public void previewListsTheStatementsThatRemoveWouldRemove() throws Exception {
+		List<JsonNode> records = preview(store(), new MockHttpServletResponse(), "subj", "<urn:test:s>", "pred",
+				"<urn:test:p>");
+
+		assertThat(vars(records)).containsExactly("subject", "predicate", "object", "context");
+		assertThat(rows(records)).extracting(row -> row.get(2).path("value").asText())
+				.containsExactlyInAnyOrder("one", "two");
+		assertThat(metadata(records).has("preview-truncated")).isFalse();
+	}
+
+	@Test
+	public void previewLimitsItselfToTheChosenGraph() throws Exception {
+		List<JsonNode> records = preview(store(), new MockHttpServletResponse(), "context", "<urn:test:g>");
+
+		assertThat(rows(records)).singleElement()
+				.satisfies(row -> assertThat(row.get(3).path("value").asText()).isEqualTo("urn:test:g"));
+	}
+
+	@Test
+	public void previewShowsAtMostItsLimitAndSaysThereAreMore() throws Exception {
+		Repository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		ValueFactory vf = repository.getValueFactory();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			for (int index = 0; index <= RemoveServlet.PREVIEW_LIMIT; index++) {
+				connection.add(vf.createIRI("urn:test:s"), vf.createIRI("urn:test:p"), vf.createLiteral(index));
+			}
+		}
+
+		List<JsonNode> records = preview(repository, new MockHttpServletResponse(), "subj", "<urn:test:s>");
+
+		assertThat(rows(records)).hasSize(RemoveServlet.PREVIEW_LIMIT);
+		assertThat(metadata(records).path("preview-truncated").asBoolean()).isTrue();
+	}
+
+	@Test
+	public void previewWithAnInvalidTermAnswersBadRequestNamingTheField() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		List<JsonNode> records = preview(store(), response, "obj", "\"unterminated");
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(records.getLast().path("code").asText()).isEqualTo("obj");
+		assertThat(records.getLast().path("message").asText()).contains("object");
+	}
+
+	@Test
 	public void pageDataListsTheGraphsToChooseFrom() throws Exception {
 		List<JsonNode> records = request(store(), new MockHttpServletResponse());
 
@@ -136,6 +182,34 @@ public class RemoveServletTest {
 		withCount[1] = "true";
 		System.arraycopy(parameters, 0, withCount, 2, parameters.length);
 		return request(repository, response, withCount);
+	}
+
+	private static List<JsonNode> preview(Repository repository, MockHttpServletResponse response,
+			String... parameters) throws Exception {
+		String[] withPreview = new String[parameters.length + 2];
+		withPreview[0] = "preview";
+		withPreview[1] = "true";
+		System.arraycopy(parameters, 0, withPreview, 2, parameters.length);
+		return request(repository, response, withPreview);
+	}
+
+	private static List<String> vars(List<JsonNode> records) {
+		List<String> names = new ArrayList<>();
+		records.stream()
+				.filter(record -> "vars".equals(record.path("type").asText()))
+				.findFirst()
+				.orElseThrow()
+				.path("values")
+				.forEach(name -> names.add(name.asText()));
+		return names;
+	}
+
+	private static JsonNode metadata(List<JsonNode> records) {
+		return records.stream()
+				.filter(record -> "metadata".equals(record.path("type").asText()))
+				.findFirst()
+				.map(record -> record.path("values"))
+				.orElse(new ObjectMapper().createObjectNode());
 	}
 
 	private static List<JsonNode> request(Repository repository, MockHttpServletResponse response,

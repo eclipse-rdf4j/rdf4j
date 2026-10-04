@@ -2025,6 +2025,7 @@ var workbench;
                     };
                     this.listenWindow(view, 'keydown', onFullscreenEscape, false);
                 }
+                // The status starts the toolbar row, at its left; Full screen, Download and Display end it.
                 var statusLine = createElement(this.document, 'div', 'query-result-status-line');
                 this.status = createElement(this.document, 'div', 'query-result-status');
                 this.status.setAttribute('role', 'status');
@@ -2034,7 +2035,7 @@ var workbench;
                 this.timer.setAttribute('role', 'timer');
                 this.timer.hidden = true;
                 statusLine.appendChild(this.timer);
-                this.root.appendChild(statusLine);
+                header.appendChild(statusLine);
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
                 controls.appendChild(this.countLabel);

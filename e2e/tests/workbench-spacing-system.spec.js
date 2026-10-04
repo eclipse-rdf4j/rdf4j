@@ -349,8 +349,6 @@ test('S4 form subgroups and actions have one spacing owner', async ({ page }, in
 	for (const variant of VARIANTS) {
 		for (const [route, content, owner, trigger, actions] of [
 			['NONE/server', '#server-form > .workbench-form-grid', '#server-auth', '#server-auth-toggle', '#server-change-actions'],
-			// Add RDF ends its fields with the Data format and Target graph row (plan task M5.5).
-			['add', '.add-target-fields', '#add-import-settings', '#add-import-settings-toggle', '#add-upload-actions'],
 			['export', '#export-form > .workbench-form-grid', '#export-advanced', '#export-advanced-toggle', '#export-form > .workbench-form-actions']
 		]) {
 			await open(page, route, variant);
@@ -361,6 +359,23 @@ test('S4 form subgroups and actions have one spacing owner', async ({ page }, in
 				await evidence(page, info, `S4-${route.replace(/\W/g, '-')}-${expanded}-${variant.width}-${variant.theme}`, measurement);
 				closeTo(measurement.trigger.top - measurement.content.bottom, ROLES.subgroup, 'Fields → optional subgroup');
 				closeTo(measurement.actions.top - measurement.owner.bottom, ROLES.field, 'Affected content → actions');
+			}
+		}
+		// Add RDF ends its fields with the Data format and Target graph row (plan task M5.5); its Advanced settings
+		// dropdown follows Upload in the actions row.
+		await open(page, 'add', variant);
+		for (const expanded of [false, true]) {
+			if (expanded) { await page.locator('#add-import-settings-toggle').click(); await settled(page); }
+			const measurement = { content: await bounds(page.locator('.add-target-fields')),
+				actions: await bounds(page.locator('#add-upload-actions')),
+				upload: await bounds(page.locator('#add-upload-actions .workbench-action--primary')),
+				trigger: await bounds(page.locator('#add-import-settings-toggle')) };
+			await evidence(page, info, `S4-add-${expanded}-${variant.width}-${variant.theme}`, measurement);
+			closeTo(measurement.actions.top - measurement.content.bottom, ROLES.field, 'Fields → actions');
+			if (measurement.trigger.top < measurement.upload.bottom) {
+				closeTo(measurement.trigger.left - measurement.upload.right, ROLES.related, 'Upload → Advanced settings');
+			} else {
+				closeTo(measurement.trigger.top - measurement.upload.bottom, ROLES.related, 'Upload → wrapped Advanced settings');
 			}
 		}
 		await open(page, 'NONE/create?type=memory', variant);

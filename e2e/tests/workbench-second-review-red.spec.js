@@ -141,7 +141,7 @@ test('creation actions use compact semantic wrappers and stay inset when Advance
 	}
 });
 
-test('Add keeps compact source choices, selected input, Format, then Advanced', async ({ page }) => {
+test('Add keeps compact source choices, selected input, Format, then Upload with Advanced', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${REPOSITORY_BASE_URL}/add`, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#add-source-tabs')).toBeVisible();
@@ -159,12 +159,18 @@ test('Add keeps compact source choices, selected input, Format, then Advanced', 
 			format: rect('.add-source-format').top,
 			advanced: rect('#add-import-settings').top,
 			upload: rect('#add-upload-actions').top,
+			uploadButton: rect('#add-upload-actions .workbench-action--primary'),
+			advancedToggle: rect('#add-import-settings-toggle'),
 			bodyScrollWidth: document.body.scrollWidth
 		};
 	});
 	expect(order.file).toBeLessThan(order.format);
-	expect(order.format).toBeLessThan(order.advanced);
-	expect(order.advanced).toBeLessThan(order.upload);
+	expect(order.format).toBeLessThan(order.upload);
+	// Advanced settings follows Upload in the actions row.
+	expect(order.upload).toBeLessThanOrEqual(order.advanced);
+	expect(order.advancedToggle.top < order.uploadButton.bottom
+		? order.advancedToggle.left >= order.uploadButton.right
+		: order.advancedToggle.top >= order.uploadButton.bottom).toBe(true);
 	expect(order.bodyScrollWidth).toBeLessThanOrEqual(390);
 });
 
@@ -298,7 +304,7 @@ test('Explain Compare Diff is a compact scrollable surface with secondary close'
 	await expect.poll(async () => page.locator('.CodeMirror').count()).toBe(2);
 	await page.locator('.CodeMirror').nth(1).evaluate(element =>
 		element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	await page.locator('#query-diff-trigger').click();
 	await expect(page.locator('#query-diff-modal')).toHaveClass(/query-diff-modal--open/);
@@ -422,7 +428,7 @@ test('Explain comparison controls expose labelled Copy, Swap, and Close actions'
 	expect(controlLabels.join(' ')).toMatch(/swap/i);
 	await page.locator('.CodeMirror').nth(1).evaluate(element =>
 		element.CodeMirror.setValue('ASK { ?s ?p ?o }'));
-	await page.locator('#explain-compare-trigger').click();
+	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-diff-trigger')).toBeEnabled({ timeout: 10000 });
 	await page.locator('#query-diff-trigger').click();
 	await expect(page.locator('#query-diff-modal')).toHaveClass(/query-diff-modal--open/);

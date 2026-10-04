@@ -203,13 +203,6 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     margin: 0 0 var(--workbench-form-gap, 12px);
 }
 
-.query-compare-toolbar__actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--workbench-control-gap, 8px);
-}
-
 .query-compare-toolbar[hidden] {
     display: none;
 }
@@ -323,21 +316,6 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
-.query-compare-action.query-explain-cancel {
-    display: none;
-}
-
-.query-compare-toolbar__actions .workbench-action:has(.query-explain-cancel[aria-hidden='true']) {
-    display: none;
-}
-
-.query-compare-toolbar__actions .workbench-action:has(.query-explain-cancel[aria-hidden='false']) {
-    display: inline-flex;
-}
-
-.query-compare-action.query-explain-cancel.query-explain-cancel--visible {
-    display: inline-flex;
-}
 
 .query-compare-action:hover {
 	background: var(--workbench-inset);

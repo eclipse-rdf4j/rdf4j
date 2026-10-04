@@ -123,7 +123,7 @@ async function waitForExplanation(page, selector) {
 }
 
 async function refreshAndWaitForExplanations(page) {
-    await page.locator('#explain-compare-trigger').click();
+    await page.locator('#explain-trigger').click();
     await page.waitForFunction(() => {
         const panes = [
             { explanationId: 'query-explanation', rowId: 'query-explanation-row', overlayId: 'query-explanation-overlay' },
