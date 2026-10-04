@@ -43,6 +43,10 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final String CHANGE_SERVER = "change-server-path";
 
 	private static final String SERVER_COOKIE = "workbench-server";
+	private static final String TLS_CIPHER_SUITE_ATTRIBUTE = "jakarta.servlet.request.cipher_suite";
+	private static final String TLS_KEY_SIZE_ATTRIBUTE = "jakarta.servlet.request.key_size";
+	private static final String TLS_SESSION_ID_ATTRIBUTE = "jakarta.servlet.request.ssl_session_id";
+	private static final String TLS_CERTIFICATE_ATTRIBUTE = "jakarta.servlet.request.X509Certificate";
 
 	protected static final String TRANSFORMATIONS = "transformations";
 
@@ -321,10 +325,7 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	private String getRequestRoot(final HttpServletRequest req) {
-		String scheme = req.getScheme();
-		if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-			throw new IllegalArgumentException("Cannot resolve a relative server without an HTTP(S) request scheme");
-		}
+		String scheme = isTlsConnector(req) ? "https" : "http";
 		String localAddress = req.getLocalAddr();
 		if (localAddress == null || localAddress.isBlank()) {
 			throw new IllegalArgumentException("Cannot resolve a relative server without a local connector address");
@@ -337,6 +338,13 @@ public class WorkbenchGateway extends AbstractServlet {
 		} catch (URISyntaxException e) {
 			throw new IllegalArgumentException("Cannot resolve a relative server against the local connector", e);
 		}
+	}
+
+	private boolean isTlsConnector(HttpServletRequest request) {
+		return request.getAttribute(TLS_CIPHER_SUITE_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_KEY_SIZE_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_SESSION_ID_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_CERTIFICATE_ATTRIBUTE) != null;
 	}
 
 	private String getSameOriginPath(final HttpServletRequest req, final String server) {

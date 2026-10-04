@@ -201,6 +201,48 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
+	void relativeDefaultUsesCleartextLocalConnectorDespiteForwardedHttpsScheme() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setScheme("https");
+		request.removeAttribute("jakarta.servlet.request.cipher_suite");
+		request.setLocalAddr("192.0.2.10");
+		request.setLocalPort(8080);
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"http://192.0.2.10:8080/rdf4j-server");
+	}
+
+	@Test
+	void relativeDefaultUsesTlsConnectorEvidenceDespiteRewrittenHttpScheme() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				new ServerValidator(TestServletConfig.withParams("validator",
+						"accepted-server-prefixes", "/rdf4j-server")));
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setScheme("http");
+		request.setLocalAddr("192.0.2.10");
+		request.setLocalPort(8443);
+		request.setAttribute("jakarta.servlet.request.cipher_suite", "TLS_AES_128_GCM_SHA256");
+
+		gateway.service(request, new CapturedResponse());
+
+		assertThat(gateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
+				"https://192.0.2.10:8443/rdf4j-server");
+	}
+
+	@Test
 	void relativeDefaultServerSupportsLocalIpv6Connectors() throws Exception {
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
 				new ServerValidator(TestServletConfig.withParams("validator",
@@ -665,6 +707,8 @@ class WorkbenchGatewayTest {
 		when(sparseRequest.getContextPath()).thenReturn("/workbench");
 		when(sparseRequest.getServletPath()).thenReturn(null);
 		when(sparseRequest.getScheme()).thenReturn("https");
+		when(sparseRequest.getAttribute("jakarta.servlet.request.cipher_suite"))
+				.thenReturn("TLS_AES_128_GCM_SHA256");
 		when(sparseRequest.getLocalAddr()).thenReturn("example.org");
 		when(sparseRequest.getLocalPort()).thenReturn(443);
 		sparseGateway.service(sparseRequest, new CapturedResponse());
@@ -679,6 +723,8 @@ class WorkbenchGatewayTest {
 		when(servletOnlyRequest.getContextPath()).thenReturn(null);
 		when(servletOnlyRequest.getServletPath()).thenReturn("/workbench");
 		when(servletOnlyRequest.getScheme()).thenReturn("https");
+		when(servletOnlyRequest.getAttribute("jakarta.servlet.request.cipher_suite"))
+				.thenReturn("TLS_AES_128_GCM_SHA256");
 		when(servletOnlyRequest.getLocalAddr()).thenReturn("example.org");
 		when(servletOnlyRequest.getLocalPort()).thenReturn(443);
 		sparseGateway.service(servletOnlyRequest, new CapturedResponse());
@@ -777,6 +823,7 @@ class WorkbenchGatewayTest {
 	private static MockHttpServletRequest request(String method, String requestUri, String pathInfo) {
 		MockHttpServletRequest request = new MockHttpServletRequest(method, requestUri);
 		request.setScheme("https");
+		request.setAttribute("jakarta.servlet.request.cipher_suite", "TLS_AES_128_GCM_SHA256");
 		request.setServerName("example.org");
 		request.setServerPort(443);
 		request.setLocalAddr("example.org");
