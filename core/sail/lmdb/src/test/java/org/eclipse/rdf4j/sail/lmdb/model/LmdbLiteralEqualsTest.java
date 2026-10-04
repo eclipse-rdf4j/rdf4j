@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Literal.BaseDirection;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -163,20 +164,43 @@ class LmdbLiteralEqualsTest {
 	}
 
 	@Test
-	void sameRevisionKnownIdsCompareWithoutResolving() {
-		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
-		LmdbLiteral left = new LmdbLiteral(revision, ID);
-		LmdbLiteral equal = new LmdbLiteral(new ValueStoreRevision.Lazy(revision), ID);
-		LmdbLiteral unequal = new LmdbLiteral(revision, OTHER_ID);
+	void sameCanonicalRevisionKnownIdsCompareWithoutResolving(@TempDir Path directory) throws Exception {
+		LmdbStore sail = new LmdbStore(directory.toFile(), new LmdbStoreConfig());
+		sail.init();
+		try {
+			ValueStoreRevision revision = new ValueStoreRevision.Default((ValueStore) sail.getValueFactory());
+			assertTrue(revision.hasCanonicalIds());
+			LmdbLiteral left = new LmdbLiteral(revision, ID);
+			LmdbLiteral equal = new LmdbLiteral(new ValueStoreRevision.Lazy(revision), ID);
+			LmdbLiteral unequal = new LmdbLiteral(revision, OTHER_ID);
 
-		assertTrue(left.equals(equal));
-		assertTrue(equal.equals(left));
-		assertFalse(left.equals(unequal));
-		assertFalse(unequal.equals(left));
-		assertTrue(left.equals(left));
-		assertFalse(left.isInitialized());
-		assertFalse(equal.isInitialized());
-		assertFalse(unequal.isInitialized());
+			assertTrue(left.equals(equal));
+			assertTrue(equal.equals(left));
+			assertFalse(left.equals(unequal));
+			assertFalse(unequal.equals(left));
+			assertTrue(left.equals(left));
+			assertFalse(left.isInitialized());
+			assertFalse(equal.isInitialized());
+			assertFalse(unequal.isInitialized());
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("equalTerms")
+	void noncanonicalKnownAliasesUseRdfEqualityWithoutRewritingIds(Literal leftTerm, Literal rightTerm) {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		assertFalse(revision.hasCanonicalIds());
+		LmdbLiteral left = literal(revision, leftTerm, ID);
+		LmdbLiteral right = literal(revision, rightTerm, OTHER_ID);
+		assertTrue(left.equals(right));
+		assertTrue(right.equals(left));
+		assertEquals(leftTerm, left);
+		assertEquals(rightTerm, right);
+		assertEquals(ID, left.getInternalID());
+		assertEquals(OTHER_ID, right.getInternalID());
+		assertEquals(left.hashCode(), right.hashCode());
 	}
 
 	@Test

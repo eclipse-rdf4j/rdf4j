@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -499,7 +500,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -514,7 +515,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -746,16 +747,36 @@ class LmdbOptimizerPipelineTest {
 		command.add(LowHeapSketchGateProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
+		Path outputFile = Files.createTempFile("rdf4j-lmdb-low-heap-optimizer-", ".log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile.toFile())
 				.start();
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
-		if (!finished) {
-			process.destroyForcibly();
-			fail("Low-heap sketch gate probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		try {
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+				fail("Low-heap sketch gate probe timed out (" + outputFile + "):\n"
+						+ Files.readString(outputFile, StandardCharsets.UTF_8));
+			}
+			return new ProcessResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+		} finally {
+			boolean interrupted = false;
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				while (process.isAlive()) {
+					try {
+						process.waitFor();
+					} catch (InterruptedException failure) {
+						interrupted = true;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
 	}
 
 	private static void addSingleStatement(LmdbStore store, String prefix) {

@@ -116,7 +116,11 @@ public class TripleIndex {
 
 	@InternalUseOnly
 	public String getName(boolean explicit) {
-		return name + (explicit ? name : name + "-inf");
+		return nativeDatabaseName(name, explicit);
+	}
+
+	static String nativeDatabaseName(String baseName, boolean explicit) {
+		return baseName + baseName + (explicit ? "" : "-inf");
 	}
 
 	int getDB(boolean explicit) {

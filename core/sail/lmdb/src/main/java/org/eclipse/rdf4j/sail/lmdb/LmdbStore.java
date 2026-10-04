@@ -379,10 +379,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
+			LegacyStoreDiscovery.discover(dataDir, properties);
 			format = LmdbStoreFormat.resolve(dataDir, properties, config);
-			if (!properties.isLoaded()) {
+			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);
 				writeCoreLiteralReferenceMarker(dataDir.toPath());
+			} else if (properties.getVersion() == null) {
+				properties.setVersion(Integer.toString(format.getVersion()));
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();

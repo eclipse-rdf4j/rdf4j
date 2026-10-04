@@ -1598,8 +1598,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (order == null) {
 			return null;
 		}
-		PatternPlan ordered = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-				pattern.namedContextScope, order, pattern.indexName, pattern.staticEstimate);
+		String indexName = row.source.indexName(order, pattern.s.lookup(row.slots), pattern.p.lookup(row.slots),
+				pattern.o.lookup(row.slots), pattern.c.lookup(row.slots));
+		PatternPlan ordered = pattern.withOrder(order, indexName);
 		AggContext context = new AggContext(source, strictCompare, true);
 		ArrayList<BindingSet> results = new ArrayList<>();
 		long currentKey = UNKNOWN;

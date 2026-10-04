@@ -273,12 +273,12 @@ class LmdbCoreDatatypeReferenceIdTest {
 	}
 
 	private static StoreProperties coreV1Properties(File directory) throws Exception {
-		Files.createDirectories(directory.toPath());
+		LmdbStore store = new LmdbStore(directory, nonInliningConfig());
+		store.init();
+		store.shutDown();
 		StoreProperties properties = new StoreProperties(directory);
-		LmdbStoreFormat.forNewStore(nonInliningConfig()).initializeProperties(properties);
-		properties.setTripleIndexes("spoc,posc");
-		properties.setTripleTermIndexes("spoc");
-		properties.save();
+		assertThat(properties.load()).isTrue();
+		assertThat(properties.usesCoreDatatypeLiteralReferences()).isTrue();
 		return properties;
 	}
 

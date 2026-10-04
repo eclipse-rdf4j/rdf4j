@@ -15,11 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Random;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,6 +32,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -299,16 +297,8 @@ public class LmdbDatatypeHistogramTest {
 	}
 
 	private Map<String, Long> openOrdinaryReferencedRepository(int literalCount, boolean legacy) throws Exception {
-		Files.createDirectories(dataDir.toPath());
 		if (legacy) {
-			Properties properties = new Properties();
-			properties.setProperty("version", "2");
-			properties.setProperty("triple-indexes", "spoc,posc,ospc");
-			properties.setProperty("triple-term-indexes", "spoc");
-			properties.setProperty("inline-literals", "false");
-			try (OutputStream output = Files.newOutputStream(dataDir.toPath().resolve("store.properties"))) {
-				properties.store(output, "format 2 protocol fixture");
-			}
+			LmdbCompatibilityFixtures.extract("v2-empty-inline-false.zip", dataDir.toPath());
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				// Incremental assignment keeps alternating datatypes mixed within ordinary reference ID-ordered pages.

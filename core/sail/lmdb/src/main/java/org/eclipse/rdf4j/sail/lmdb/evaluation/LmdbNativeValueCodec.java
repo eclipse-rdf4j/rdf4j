@@ -233,6 +233,12 @@ final class LmdbNativeValueCodec {
 		return packInline(value, valueStore.getFormat());
 	}
 
+	/** Whether the backing representation can supply inline IDs for successful computed literal results. */
+	boolean inlinesLiterals() {
+		// Standalone codecs handle self-described inline IDs without a persisted representation restriction.
+		return valueStore == null || valueStore.inlinesLiterals();
+	}
+
 	static long packInline(DecodedValue value, LmdbStoreFormat format) {
 		if (value.error() || !value.literal() || value.language().isPresent() || value.label() == null) {
 			return NativeLmdbQuerySource.UNKNOWN_ID;
@@ -297,8 +303,7 @@ final class LmdbNativeValueCodec {
 		case ValueIds.T_INT -> integerLiteral(decodeZigZag(ValueIds.getValue(id)), CoreDatatype.XSD.INT);
 		case ValueIds.T_SHORT -> integerLiteral(decodeZigZag(ValueIds.getValue(id)), CoreDatatype.XSD.SHORT);
 		case ValueIds.T_BYTE -> integerLiteral((byte) ValueIds.getValue(id), CoreDatatype.XSD.BYTE);
-		case ValueIds.T_UNSIGNEDLONG -> integerLiteral(decodeZigZag(ValueIds.getValue(id)),
-				CoreDatatype.XSD.UNSIGNED_LONG);
+		case ValueIds.T_UNSIGNEDLONG -> unsignedLongLiteral(id);
 		case ValueIds.T_UNSIGNEDINT -> integerLiteral(decodeZigZag(ValueIds.getValue(id)),
 				CoreDatatype.XSD.UNSIGNED_INT);
 		case ValueIds.T_UNSIGNEDSHORT -> integerLiteral(decodeZigZag(ValueIds.getValue(id)),
@@ -343,6 +348,11 @@ final class LmdbNativeValueCodec {
 
 	private static DecodedValue integerLiteral(long value, CoreDatatype datatype) {
 		return DecodedValue.decimal(Long.toString(value), BigDecimal.valueOf(value), datatype);
+	}
+
+	private static DecodedValue unsignedLongLiteral(long id) {
+		String label = Long.toUnsignedString(decodeZigZag(ValueIds.getValue(id)));
+		return DecodedValue.decimal(label, new BigDecimal(new BigInteger(label)), CoreDatatype.XSD.UNSIGNED_LONG);
 	}
 
 	private DecodedValue dateLiteral(long id, CoreDatatype datatype) {

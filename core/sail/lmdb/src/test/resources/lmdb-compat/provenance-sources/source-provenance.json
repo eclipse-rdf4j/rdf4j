@@ -1,0 +1,26 @@
+{
+  "note": "Exact generation/interop source bytes preserved before scoped Java formatting. Historical fixture ZIP and generation provenance hashes are unchanged.",
+  "sources": [
+    {
+      "filename": "LmdbV2CompleteLegacyFixtureProducer.java",
+      "original_sha256": "f09e0b4e41e2356639dcdb6088dd63398056b2dfcaaa6c5dce51f1e14da13264",
+      "formatted_source": "core/sail/lmdb/src/test/resources/lmdb-compat/LmdbV2CompleteLegacyFixtureProducer.java",
+      "formatted_sha256": "e6f63f952ae73155b89fd751d269294340012dc0ffcc9e8436399767f4e949b4",
+      "planned_immutable_resource": "core/sail/lmdb/src/test/resources/lmdb-compat/provenance-sources/LmdbV2CompleteLegacyFixtureProducer.java.txt"
+    },
+    {
+      "filename": "LmdbV6FixtureProducer.java",
+      "original_sha256": "1953deb8943084826b0da18638b17e85c342c1f5e77ecb35c085c943a80342eb",
+      "formatted_source": "core/sail/lmdb/src/test/resources/lmdb-compat/LmdbV6FixtureProducer.java",
+      "formatted_sha256": "fb0c8890234289d59771d2f6547652436a212fa2f95e11dec04d02dd1402470e",
+      "planned_immutable_resource": "core/sail/lmdb/src/test/resources/lmdb-compat/provenance-sources/LmdbV6FixtureProducer.java.txt"
+    },
+    {
+      "filename": "LmdbMaintenanceInteropProcess.java",
+      "original_sha256": "d40d0d3b3672542f3e3415d6884ef07b334326a3197496c186a5b89d74a82660",
+      "formatted_source": "core/sail/lmdb/src/test/resources/lmdb-compat/LmdbMaintenanceInteropProcess.java",
+      "formatted_sha256": "12aff7474dca234e35eb8b1940bb0ee94350c6459505960af70dfdb61f751d9e",
+      "planned_immutable_resource": "core/sail/lmdb/src/test/resources/lmdb-compat/provenance-sources/LmdbMaintenanceInteropProcess.java.txt"
+    }
+  ]
+}

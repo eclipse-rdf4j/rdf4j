@@ -17,10 +17,12 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -53,6 +55,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
@@ -392,22 +395,48 @@ class LmdbValueGcOwnershipTest {
 				retained);
 		long growthBeforeClose;
 		long retainedId;
+		IRI fillerPredicate = vf.createIRI("urn:ownership:capacity-filler");
+		String fillerPayload = "x".repeat(16_384);
+		int fillerCount = 0;
 		try {
 			try (NotifyingSailConnection connection = store.getConnection()) {
-				connection.begin();
+				connection.begin(IsolationLevels.NONE);
 				for (int index = 0; index < 512; index++) {
 					TripleTerm term = vf.createTripleTerm(vf.createIRI("urn:ownership:inner:" + index), predicate,
 							vf.createLiteral("dictionary component " + index));
 					connection.addStatement(vf.createIRI("urn:ownership:row:" + index), predicate, term);
 				}
 				connection.commit();
-				connection.begin();
+				connection.begin(IsolationLevels.NONE);
 				connection.clear();
 				connection.addStatement(vf.createIRI("urn:ownership:retained-row"), predicate, retainedTerm);
 				connection.commit();
 			}
 			retainedId = values.getId(retainedTerm, false);
 			assertThat(retainedId).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(unusedIdCount(values))
+					.as("immediate-unused reclamation must have committed native work before close")
+					.isPositive();
+			long initialCapacity = nativeMapSize(values);
+			// Each unique ASCII literal stores at least this many payload bytes. One map's capacity therefore
+			// bounds the public committed writes needed to reach the existing reclamation reservation predicate.
+			long fillerBound = Math.ceilDiv(initialCapacity, fillerPayload.length()) + 1L;
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				while (values.persistedUnusedReclamationResizeTarget() == 0L && fillerCount < fillerBound) {
+					connection.begin(IsolationLevels.NONE);
+					connection.addStatement(vf.createIRI("urn:ownership:capacity-row:" + fillerCount), fillerPredicate,
+							vf.createLiteral(fillerPayload + fillerCount));
+					connection.commit();
+					fillerCount++;
+				}
+			}
+			long resizeTarget = values.persistedUnusedReclamationResizeTarget();
+			System.out.printf("Close reclamation capacity=%d, unused=%d, filler=%d/%d, resizeTarget=%d%n",
+					initialCapacity, unusedIdCount(values), fillerCount, fillerBound, resizeTarget);
+			assertThat(resizeTarget).as("committed input must reach the real unused-reclamation reservation")
+					.isPositive();
+			assertThat(nativeMapSize(values)).as("the reservation must require growth of the original live map")
+					.isEqualTo(initialCapacity);
 			growthBeforeClose = values.getBulkMapGrowthCount();
 		} finally {
 			store.shutDown();
@@ -422,9 +451,36 @@ class LmdbValueGcOwnershipTest {
 			assertThat(statements.hasNext()).isTrue();
 			assertThat(statements.next().getObject()).isEqualTo(retainedTerm);
 			assertThat(((ValueStore) reopened.getValueFactory()).getId(retainedTerm, false)).isEqualTo(retainedId);
+			assertThat(connection.size()).isEqualTo(1L + fillerCount);
+			for (int index = 0; index < fillerCount; index++) {
+				try (var filler = connection.getStatements(vf.createIRI("urn:ownership:capacity-row:" + index),
+						fillerPredicate, vf.createLiteral(fillerPayload + index), false)) {
+					assertThat(filler.hasNext()).as("committed capacity row %d survives reclamation and reopen", index)
+							.isTrue();
+					assertThat(filler.next().getObject()).isEqualTo(vf.createLiteral(fillerPayload + index));
+					assertThat(filler.hasNext()).isFalse();
+				}
+			}
 		} finally {
 			reopened.shutDown();
 		}
+	}
+
+	private static long nativeMapSize(ValueStore values) throws IOException {
+		return values.getTxnManager().doWith((stack, transaction) -> {
+			MDBEnvInfo information = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(mdb_txn_env(transaction), information));
+			return information.me_mapsize();
+		});
+	}
+
+	private static long unusedIdCount(ValueStore values) throws IOException {
+		return values.getTxnManager().doWith((stack, transaction) -> {
+			int unused = LmdbUtil.openDatabaseWithTxn(transaction, "unused_ids", 0);
+			MDBStat statistics = MDBStat.malloc(stack);
+			E(mdb_stat(transaction, unused, statistics));
+			return statistics.ms_entries();
+		});
 	}
 
 	@Test

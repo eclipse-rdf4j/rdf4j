@@ -290,6 +290,7 @@ public class ThemeQueryBenchmark {
 			storeConfig = ConfigUtil.createConfig();
 			storeConfig.setSketchEstimatorEnabled(waitForSketchesEnabled());
 			store = new LmdbStore(storeDirectory, storeConfig);
+			store.setExperimentalQueryOptimizations(waitForSketchesEnabled());
 			repository = new SailRepository(store);
 			ensureDataLoadedAndValidated();
 			System.out.println("ensureDataLoadedAndValidated: " + stopWatch);
@@ -542,6 +543,7 @@ public class ThemeQueryBenchmark {
 		boolean buildSketches = waitForSketchesEnabled();
 		storeConfig.setSketchEstimatorEnabled(buildSketches);
 		store = new LmdbStore(storeDirectory, storeConfig);
+		store.setExperimentalQueryOptimizations(waitForSketchesEnabled());
 		repository = new SailRepository(store);
 		if (buildSketches) {
 			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
@@ -559,6 +561,7 @@ public class ThemeQueryBenchmark {
 		System.gc();
 
 		store = new LmdbStore(storeDirectory, storeConfig);
+		store.setExperimentalQueryOptimizations(waitForSketchesEnabled());
 		repository = new SailRepository(store);
 		return datasetSignature;
 	}

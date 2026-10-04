@@ -15,6 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -44,6 +48,27 @@ public class ValueStoreNativeValueCodecTest {
 	@AfterEach
 	public void after() throws Exception {
 		valueStore.close();
+	}
+
+	@Test
+	public void unsignedLongBoundariesAgreeAcrossInlineAndDictionaryRecords() throws Exception {
+		Map<Literal, Long> ids = new LinkedHashMap<>();
+		valueStore.startTransaction(true);
+		for (String label : List.of("0", "1", "+00001", "36028797018963967", "36028797018963968",
+				"9223372036854775807", "9223372036854775808", "18410715276690587647",
+				"18410715276690587648", "18446744073709551614", "18446744073709551615")) {
+			Literal literal = Values.literal(label, XSD.UNSIGNED_LONG);
+			ids.put(literal, valueStore.storeValue(literal));
+		}
+		valueStore.commit();
+		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(valueStore);
+		for (Map.Entry<Literal, Long> entry : ids.entrySet()) {
+			Literal literal = entry.getKey();
+			LmdbNativeValueCodec.DecodedValue decoded = codec.decode(entry.getValue());
+			assertThat(LmdbNativeValueCodec.toValue(decoded)).isEqualTo(literal);
+			assertThat(decoded.decimalValue()).isEqualByComparingTo(new BigDecimal(new BigInteger(literal.getLabel())));
+		}
+		assertThat(ids.values()).anyMatch(ValueIds::isInlined).anyMatch(id -> !ValueIds.isInlined(id));
 	}
 
 	@Test

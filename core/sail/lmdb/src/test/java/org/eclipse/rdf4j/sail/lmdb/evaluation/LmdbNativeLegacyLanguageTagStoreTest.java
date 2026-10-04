@@ -22,28 +22,27 @@ import java.util.List;
 import java.util.Properties;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Differential coverage for stores written without canonical language tags (any store created before the
- * {@code canonical-language-tags} store property existed). Such stores can hold two distinct value ids for one RDF term
- * — {@code "x"@en} and {@code "x"@EN} are equal literals under RDF 1.1 but encode to different dictionary records.
- * Store-level value equality is id-based for same-revision values ({@code LmdbLiteral#equals}), so BOTH engines treat
- * the two spellings as distinct terms in joins, DISTINCT and GROUP BY — the contract under test is only that the native
- * engine returns the same rows as the generic engine, never diverging on its raw-id keying.
+ * Genuine cold-process aliases must match an independently populated MemoryStore under both dispatcher settings. Legacy
+ * IDs and bytes remain intact while RDF language equality governs joins, DISTINCT, and grouping.
  */
 public class LmdbNativeLegacyLanguageTagStoreTest {
 
-	private static final String EX = "http://example.com/";
+	private static final String EX = "urn:legacy:";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
 	@TempDir
@@ -53,31 +52,22 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 
 	@BeforeEach
 	public void setUp() throws IOException {
+		LmdbCompatibilityFixtures.extract("v2-610-language-aliases.zip", dataDir.toPath());
 		writeLegacyProtocolProperties();
-
-		// the two spellings must be written in separate store sessions: with a warm value-id cache the second
-		// spelling hits the first one's Value-keyed cache entry and reuses its id, hiding the split
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
 						.setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
-			conn.add(vf.createIRI(EX, "s1"), vf.createIRI(EX, "label"), vf.createLiteral("x", "en"));
-		}
-		repository.shutDown();
-
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-						.setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			conn.add(vf.createIRI(EX, "s2"), vf.createIRI(EX, "label"), vf.createLiteral("x", "EN"));
-			conn.add(vf.createIRI(EX, "s3"), vf.createIRI(EX, "name"), vf.createLiteral("x", "EN"));
+			for (String owner : List.of("subject", "quoted", "nested")) {
+				conn.remove(vf.createIRI(EX, owner), vf.createIRI(EX, "label"), null);
+			}
+			conn.add(vf.createIRI(EX, "s3"), vf.createIRI(EX, "name"), vf.createLiteral("language value", "EN"));
 		}
 	}
 
 	private void writeLegacyProtocolProperties() throws IOException {
-		// A labeled protocol fixture preserves legacy language bytes without relabeling a native format-6 catalog.
+		// Known frozen catalog descriptors isolate equality from admission tests; no native format is relabeled.
 		Properties properties = new Properties();
 		properties.setProperty("version", "2");
 		properties.setProperty("triple-indexes", "spoc,posc,ospc");
@@ -109,18 +99,27 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 	}
 
 	private void assertSameRowCount(String query) {
-		int generic = rows(query, false).size();
-		assertThat(rows(query, true).size()).as("native row count must match generic for:\n%s", query)
-				.isEqualTo(generic);
+		SailRepository memory = new SailRepository(new MemoryStore());
+		try (var connection = memory.getConnection()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			connection.add(values.createIRI(EX, "lower"), values.createIRI(EX, "label"),
+					values.createLiteral("language value", "en"));
+			connection.add(values.createIRI(EX, "upper"), values.createIRI(EX, "label"),
+					values.createLiteral("language value", "EN"));
+			connection.add(values.createIRI(EX, "s3"), values.createIRI(EX, "name"),
+					values.createLiteral("language value", "EN"));
+			List<BindingSet> expected = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			assertThat(rows(query, false)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rows(query, true)).containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			memory.shutDown();
+		}
 	}
 
 	@Test
 	public void groupByLanguageTaggedLiteralMatchesGeneric() {
-		// the two spellings hold distinct ids; id-based store equality means the generic engine also groups them
-		// separately (2 groups) — the native raw-id group keys must produce exactly the same split
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?label (COUNT(?s) AS ?c) WHERE { ?s ex:label ?label } GROUP BY ?label";
-		assertThat(rows(query, false)).hasSize(2);
 		assertSameRowCount(query);
 	}
 
@@ -128,33 +127,27 @@ public class LmdbNativeLegacyLanguageTagStoreTest {
 	public void distinctLanguageTaggedLiteralMatchesGeneric() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT DISTINCT ?label WHERE { ?s ex:label ?label }";
-		assertThat(rows(query, false)).hasSize(2);
 		assertSameRowCount(query);
 	}
 
 	@Test
 	public void joinOnLanguageTaggedLiteralMatchesGeneric() {
-		// the join variable binds "x"@en on one side and "x"@EN on the other: distinct ids, so both engines
-		// join only the exact-spelling pair
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?a ?b WHERE { ?a ex:label ?l . ?b ex:name ?l }";
-		assertThat(rows(query, false)).hasSize(1);
 		assertSameRowCount(query);
 	}
 
 	@Test
 	public void sameTermAgainstParserConstantMatchesGeneric() {
-		// a parser-created constant is not a same-revision LmdbLiteral, so generic equality falls back to
-		// RDF 1.1 case-insensitive language comparison while a raw-id comparison would match one spelling only
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s WHERE { ?s ex:label ?label . FILTER(sameTerm(?label, \"x\"@en)) }";
+				+ "SELECT ?s WHERE { ?s ex:label ?label . FILTER(sameTerm(?label, \"language value\"@en)) }";
 		assertSameRowCount(query);
 	}
 
 	@Test
 	public void equalityAgainstParserConstantMatchesGeneric() {
 		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s WHERE { ?s ex:label ?label . FILTER(?label = \"x\"@en) }";
+				+ "SELECT ?s WHERE { ?s ex:label ?label . FILTER(?label = \"language value\"@en) }";
 		assertSameRowCount(query);
 	}
 }

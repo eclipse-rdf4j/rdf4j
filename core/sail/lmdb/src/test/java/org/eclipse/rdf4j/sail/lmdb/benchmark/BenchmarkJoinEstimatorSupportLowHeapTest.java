@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,16 +51,36 @@ class BenchmarkJoinEstimatorSupportLowHeapTest {
 		command.add(LowHeapBenchmarkWaitProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
+		Path outputFile = Files.createTempFile("rdf4j-lmdb-low-heap-benchmark-", ".log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile.toFile())
 				.start();
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
-		if (!finished) {
-			process.destroyForcibly();
-			fail("Low-heap benchmark wait probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		try {
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+				fail("Low-heap benchmark wait probe timed out (" + outputFile + "):\n"
+						+ Files.readString(outputFile, StandardCharsets.UTF_8));
+			}
+			return new ProcessResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+		} finally {
+			boolean interrupted = false;
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				while (process.isAlive()) {
+					try {
+						process.waitFor();
+					} catch (InterruptedException failure) {
+						interrupted = true;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
 	}
 
 	public static final class LowHeapBenchmarkWaitProbe {

@@ -122,6 +122,7 @@ final class PatternCursor implements AutoCloseable {
 	long[] syntheticRow;
 	boolean syntheticPending;
 	boolean closed;
+	int residualPollTick;
 
 	PatternCursor() {
 		this(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null);
@@ -149,6 +150,14 @@ final class PatternCursor implements AutoCloseable {
 		prepareReset();
 		configure(null, null, UNKNOWN, UNKNOWN, UNKNOWN, null, null, null, false);
 		current = iterator;
+		return this;
+	}
+
+	/** Filters every raw consumer, including sweeps that cache counts without binding a row. */
+	PatternCursor withResidualRange(LmdbKeyRange residualRange) {
+		if (this != EMPTY) {
+			this.range = residualRange;
+		}
 		return this;
 	}
 
@@ -198,6 +207,7 @@ final class PatternCursor implements AutoCloseable {
 		this.encounterOrderRequired = encounterOrderRequired;
 		this.contextIndex = 0;
 		this.closed = false;
+		this.residualPollTick = 0;
 	}
 
 	static PatternCursor empty() {
@@ -258,6 +268,10 @@ final class PatternCursor implements AutoCloseable {
 		}
 		if (syntheticPending) {
 			syntheticPending = false;
+			if (range != null && !range.includes(syntheticRow, 0)) {
+				close();
+				return null;
+			}
 			return syntheticRow;
 		}
 		while (true) {
@@ -270,6 +284,12 @@ final class PatternCursor implements AutoCloseable {
 			}
 			long[] row = current.next();
 			if (row != null) {
+				if (range != null) {
+					LmdbNativeProbeDeadline.poll(++residualPollTick);
+					if (!range.includes(row, 0)) {
+						continue;
+					}
+				}
 				return row;
 			}
 			current.close();
@@ -286,6 +306,10 @@ final class PatternCursor implements AutoCloseable {
 			return 0;
 		}
 		if (syntheticPending) {
+			if (range != null && !range.includes(syntheticRow, 0)) {
+				close();
+				return 0;
+			}
 			System.arraycopy(syntheticRow, 0, buffer, 0, 4);
 			syntheticPending = false;
 			return 1;
@@ -303,6 +327,22 @@ final class PatternCursor implements AutoCloseable {
 				if (rows < maxRows) {
 					current.close();
 					current = null;
+				}
+				if (range != null) {
+					int retained = 0;
+					for (int i = 0; i < rows; i++) {
+						LmdbNativeProbeDeadline.poll(++residualPollTick);
+						if (range.includes(buffer, i * 4)) {
+							if (retained != i) {
+								System.arraycopy(buffer, i * 4, buffer, retained * 4, 4);
+							}
+							retained++;
+						}
+					}
+					if (retained == 0) {
+						continue;
+					}
+					return retained;
 				}
 				return rows;
 			}

@@ -818,8 +818,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 	}
 
 	static boolean bind(PatternPlan pattern, long[] quad, int offset, long[] slots) {
-		if (pattern.namedContextScope && !pattern.contexts.isFixed()
-				&& quad[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+		if (!pattern.matchesRangeAndContext(quad, offset)) {
 			return false;
 		}
 		return bindTerm(pattern.s, quad[offset + TripleIndex.SUBJ_IDX], slots)

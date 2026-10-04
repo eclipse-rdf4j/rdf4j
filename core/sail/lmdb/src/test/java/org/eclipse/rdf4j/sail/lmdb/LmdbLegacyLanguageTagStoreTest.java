@@ -23,26 +23,24 @@ import java.util.Properties;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A store written before language-tag canonicalization keeps its byte-preserving encoding, so {@code "x"@en} and
- * {@code "x"@EN} — one RDF term under RDF 1.1's case-insensitive language-tag equality — can occupy two distinct value
- * ids. On such stores the whole LMDB stack treats the two spellings as distinct terms: {@code LmdbLiteral} equality is
- * id-based within a revision, so the generic evaluator splits them exactly like the native engine's raw-id joins,
- * DISTINCT and GROUP BY do. These tests pin that both engines agree on every such shape (the invariant that matters);
- * they deliberately do not assert spec-conformant merging, which legacy stores never provided.
+ * Genuine frozen language aliases retain their original bytes while both dispatch paths follow RDF equality. Expected
+ * rows are independently seeded into MemoryStore; agreement between two LMDB paths is insufficient.
  */
 public class LmdbLegacyLanguageTagStoreTest {
 
-	private static final String EX = "http://example.com/";
+	private static final String EX = "urn:legacy:";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 
 	@TempDir
@@ -58,7 +56,8 @@ public class LmdbLegacyLanguageTagStoreTest {
 	}
 
 	private void openLegacyStore() throws IOException {
-		// Explicit protocol fixture for format 2, whose absent language capability preserves the writer's bytes.
+		LmdbCompatibilityFixtures.extract("v2-610-language-aliases.zip", dataDir.toPath());
+		// Independently known native catalog descriptors isolate semantic equality from admission behavior.
 		File propertiesFile = new File(dataDir, "store.properties");
 		Properties properties = new Properties();
 		properties.setProperty("version", "2");
@@ -73,19 +72,9 @@ public class LmdbLegacyLanguageTagStoreTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI label = vf.createIRI(EX, "label");
-			conn.add(vf.createIRI(EX, "s1"), label, vf.createLiteral("x", "en"));
-		}
-		// restart between the two adds: the in-memory value-id cache is keyed on Literal.equals (language tags
-		// compare case-insensitively), so a warm cache would accidentally reuse the "x"@en id for "x"@EN — a cold
-		// byte-hash lookup mints the second record, as happens for real legacy stores written across processes
-		repository.shutDown();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setTripleTermIndexes("spoc,cspo")
-						.setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			IRI label = vf.createIRI(EX, "label");
-			conn.add(vf.createIRI(EX, "s2"), label, vf.createLiteral("x", "EN"));
+			for (String owner : List.of("subject", "quoted", "nested")) {
+				conn.remove(vf.createIRI(EX, owner), label, null);
+			}
 		}
 	}
 
@@ -104,9 +93,20 @@ public class LmdbLegacyLanguageTagStoreTest {
 	}
 
 	private void assertSameRowCount(String query, int expectedGenericCount) {
-		assertThat(rows(query, false)).hasSize(expectedGenericCount);
-		assertThat(rows(query, true).size()).as("native row count must match generic for:\n%s", query)
-				.isEqualTo(expectedGenericCount);
+		SailRepository memory = new SailRepository(new MemoryStore());
+		try (var connection = memory.getConnection()) {
+			ValueFactory values = SimpleValueFactory.getInstance();
+			connection.add(values.createIRI(EX, "lower"), values.createIRI(EX, "label"),
+					values.createLiteral("language value", "en"));
+			connection.add(values.createIRI(EX, "upper"), values.createIRI(EX, "label"),
+					values.createLiteral("language value", "EN"));
+			List<BindingSet> expected = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			assertThat(expected).hasSize(expectedGenericCount);
+			assertThat(rows(query, false)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rows(query, true)).containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			memory.shutDown();
+		}
 	}
 
 	@Test
@@ -128,29 +128,28 @@ public class LmdbLegacyLanguageTagStoreTest {
 	@Test
 	public void distinctTreatsCaseVariantLanguageTagsConsistently() throws IOException {
 		openLegacyStore();
-		// two ids, id-based value identity in both engines: two DISTINCT rows on a legacy store
 		assertSameRowCount("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT DISTINCT ?label WHERE { ?s ex:label ?label }", 2);
+				+ "SELECT DISTINCT ?label WHERE { ?s ex:label ?label }", 1);
 	}
 
 	@Test
 	public void groupByTreatsCaseVariantLanguageTagsConsistently() throws IOException {
 		openLegacyStore();
 		assertSameRowCount("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?label (COUNT(?s) AS ?c) WHERE { ?s ex:label ?label } GROUP BY ?label", 2);
+				+ "SELECT ?label (COUNT(?s) AS ?c) WHERE { ?s ex:label ?label } GROUP BY ?label", 1);
 	}
 
 	@Test
 	public void joinTreatsCaseVariantLanguageTagsConsistently() throws IOException {
 		openLegacyStore();
 		assertSameRowCount("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?a ?b WHERE { ?a ex:label ?label . ?b ex:label ?label }", 2);
+				+ "SELECT ?a ?b WHERE { ?a ex:label ?label . ?b ex:label ?label }", 4);
 	}
 
 	@Test
 	public void sameTermTreatsCaseVariantLanguageTagsConsistently() throws IOException {
 		openLegacyStore();
 		assertSameRowCount("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?a ?b WHERE { ?a ex:label ?la . ?b ex:label ?lb . FILTER(sameTerm(?la, ?lb)) }", 2);
+				+ "SELECT ?a ?b WHERE { ?a ex:label ?la . ?b ex:label ?lb . FILTER(sameTerm(?la, ?lb)) }", 4);
 	}
 }

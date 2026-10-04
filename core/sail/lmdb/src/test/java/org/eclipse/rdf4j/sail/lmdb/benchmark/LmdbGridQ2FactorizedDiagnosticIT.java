@@ -149,7 +149,9 @@ class LmdbGridQ2FactorizedDiagnosticIT {
 	}
 
 	private static void prepareEstimatorSnapshot(Path storeDirectory) throws Exception {
-		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(),
+				ConfigUtil.createConfig().setSketchEstimatorEnabled(true));
+		store.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(store);
 		try {
 			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);

@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.File;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
@@ -35,13 +36,45 @@ import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbNativeScalarPlanTest {
+
+	@Test
+	void calendarWorkerDeclinesInlineIdsAndBindsAComputedValueWithoutInlining(@TempDir File directory)
+			throws Exception {
+		ValueStore store = new ValueStore(directory, new LmdbStoreConfig().setInlineLiterals(false));
+		try {
+			store.startTransaction(true);
+			long date = store.storeValue(SimpleValueFactory.getInstance()
+					.createLiteral("2024-03-05T10:20:30Z", CoreDatatype.XSD.DATETIME));
+			store.commit();
+			LmdbNativeValueCodec codec = new LmdbNativeValueCodec(store);
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+			when(source.nativeValueCodec()).thenReturn(codec);
+			FunctionCall expression = new FunctionCall(new Year().getURI(), new Var("date"));
+			NativeScalarPlan inline = NativeScalarPlan.create(expression, name -> 0,
+					NativeScalarPlan.ResultKind.INLINE_ID, false, 0L, false, false);
+			NativeScalarPlan computed = NativeScalarPlan.create(expression, name -> 0,
+					NativeScalarPlan.ResultKind.VALUE, false, 0L, true, true);
+			NativeScalarPlan.WorkerContext context = new NativeScalarPlan.WorkerContext(source, codec, null);
+			assertThat(inline.bindInlineId(context)).isNull();
+			LmdbNativeCompiledValue value = computed.bindValue(context);
+			assertThat(value).isNotNull();
+			assertThat(LmdbNativeValueCodec.toValue(value.evaluator.eval(reader(date))))
+					.isEqualTo(SimpleValueFactory.getInstance().createLiteral("2024", CoreDatatype.XSD.INTEGER));
+		} finally {
+			store.close();
+		}
+	}
 
 	@Test
 	void workerBindingUsesTheWorkerCodecAndFrozenSlotResolver() {
@@ -156,7 +189,7 @@ class LmdbNativeScalarPlanTest {
 				.isEqualTo(EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED);
 		assertThat(
 				planOf(new FunctionCall("urn:rdf4j:test:unknown-function", new Str(new Var("value")))).workerBindable())
-						.isFalse();
+				.isFalse();
 		assertThat(planOf(new FunctionCall(org.eclipse.rdf4j.model.vocabulary.FN.LOWER_CASE.stringValue(),
 				new FunctionCall(new Rand().getURI()))).effect()).isEqualTo(EffectClass.VOLATILE);
 	}

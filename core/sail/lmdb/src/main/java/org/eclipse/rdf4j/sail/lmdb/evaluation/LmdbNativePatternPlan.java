@@ -84,6 +84,15 @@ final class PatternPlan implements SlotPlan {
 		this.staticEstimate = staticEstimate;
 	}
 
+	/**
+	 * Changes physical ordering while retaining the pattern's complete semantics. A range's raw bounds remain tied to
+	 * its original index; {@link #bind(long[], RowState)} keeps their residual predicate authoritative when the newly
+	 * selected scan order cannot apply those bounds physically.
+	 */
+	PatternPlan withOrder(StatementOrder order, String selectedIndex) {
+		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate);
+	}
+
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		PatternCursor cursor = openRaw(row);
@@ -117,7 +126,7 @@ final class PatternPlan implements SlotPlan {
 	/** Reopens the pattern into a caller-owned cursor, eliminating two wrapper allocations per join probe. */
 	PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, PatternCursor reusable)
 			throws IOException {
-		return openRaw(row, probe, false, reusable);
+		return openRaw(row, probe, false, reusable).withResidualRange(range);
 	}
 
 	/**
@@ -126,7 +135,7 @@ final class PatternPlan implements SlotPlan {
 	 * that multiplicity.
 	 */
 	PatternCursor openRawForExistence(RowState row) throws IOException {
-		return openRaw(row, null, true, null);
+		return openRaw(row, null, true, null).withResidualRange(range);
 	}
 
 	private PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly,
@@ -202,6 +211,11 @@ final class PatternPlan implements SlotPlan {
 	 */
 	PatternCursor openRawUnbinding(RowState row, long unboundMask, NativeLmdbQuerySource.NativeProbe probe)
 			throws IOException {
+		return openRawUnbindingInternal(row, unboundMask, probe).withResidualRange(range);
+	}
+
+	private PatternCursor openRawUnbindingInternal(RowState row, long unboundMask,
+			NativeLmdbQuerySource.NativeProbe probe) throws IOException {
 		if (contexts.isEmpty()) {
 			return PatternCursor.empty();
 		}
@@ -561,18 +575,23 @@ final class PatternPlan implements SlotPlan {
 
 	/** Binds the quad found at {@code offset} in a batch buffer of four-long records. */
 	boolean bind(long[] quad, int offset, RowState row) {
-		// A range absorbed its semantic FILTER, but a native source may decline the physical range hint after
-		// correlation changes the index prefix. Keep the predicate authoritative at the shared row/batch boundary.
-		if (range != null && !range.includes(quad, offset)) {
-			return false;
-		}
-		if (namedContextScope && !contexts.isFixed() && quad[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+		if (!matchesRangeAndContext(quad, offset)) {
 			return false;
 		}
 		return bindTerm(s, quad[offset + TripleIndex.SUBJ_IDX], row)
 				&& bindTerm(p, quad[offset + TripleIndex.PRED_IDX], row)
 				&& bindTerm(o, quad[offset + TripleIndex.OBJ_IDX], row)
 				&& bindTerm(c, quad[offset + TripleIndex.CONTEXT_IDX], row);
+	}
+
+	/** Shared residual checks for row, batch, hash and chunk binding paths. */
+	boolean matchesRangeAndContext(long[] quad, int offset) {
+		// A range absorbed its semantic FILTER, but a native source may decline the physical range hint after
+		// correlation changes the index prefix. Keep the predicate authoritative at the shared row/batch boundary.
+		if (range != null && !range.includes(quad, offset)) {
+			return false;
+		}
+		return !namedContextScope || contexts.isFixed() || quad[offset + TripleIndex.CONTEXT_IDX] != NULL_CONTEXT_ID;
 	}
 
 	boolean bindTerm(Term term, long id, RowState row) {

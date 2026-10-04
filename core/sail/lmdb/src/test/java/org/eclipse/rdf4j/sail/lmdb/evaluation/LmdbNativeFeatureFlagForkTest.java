@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,20 +83,26 @@ class LmdbNativeFeatureFlagForkTest {
 		command.add(System.getProperty("java.class.path"));
 		command.add(FeatureFlagProbe.class.getName());
 		command.add(scenario.name());
-		command.add(dataDir.toAbsolutePath().toString());
+		command.add(dataDir.resolve("store").toAbsolutePath().toString());
 
+		Path outputFile = dataDir.resolve("probe-output.log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile.toFile())
 				.start();
-		boolean finished = process.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-		if (!finished) {
-			process.destroyForcibly();
-			process.waitFor(10, TimeUnit.SECONDS);
-			byte[] output = process.getInputStream().readAllBytes();
-			fail("Feature-flag probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		try {
+			boolean finished = process.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor(10, TimeUnit.SECONDS);
+				fail("Feature-flag probe timed out:\n" + Files.readString(outputFile, StandardCharsets.UTF_8));
+			}
+			return new ProcessResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+			}
 		}
-		byte[] output = process.getInputStream().readAllBytes();
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
 	}
 
 	private enum Scenario {

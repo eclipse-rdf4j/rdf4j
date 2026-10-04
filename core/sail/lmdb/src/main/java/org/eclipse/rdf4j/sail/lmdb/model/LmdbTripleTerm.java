@@ -155,7 +155,12 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 					&& revision.equals(otherTerm.revision)) {
 				// LmdbTripleTerm's from the same revision of the same lmdb store,
 				// with both ID's set
-				return internalID == otherTerm.internalID;
+				if (internalID == otherTerm.internalID) {
+					return true;
+				}
+				if (revision.hasCanonicalIds()) {
+					return false;
+				}
 			}
 		}
 

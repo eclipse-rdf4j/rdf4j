@@ -87,6 +87,7 @@ public final class LmdbNativeExpressionCompiler {
 	private final LmdbNativeScalarExpressionCompiler scalar;
 	private final boolean strictCompare;
 	private final long assuredMask;
+	private final boolean inlineResultsAvailable;
 
 	private LmdbNativeExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots, boolean strictCompare, long assuredMask) {
@@ -102,6 +103,7 @@ public final class LmdbNativeExpressionCompiler {
 				scopedEvaluation, compileContext);
 		this.strictCompare = strictCompare;
 		this.assuredMask = assuredMask;
+		this.inlineResultsAvailable = codec.inlinesLiterals();
 	}
 
 	static LmdbNativeCompiledBoolean compileBoolean(ValueExpr expr, NativeLmdbQuerySource source,
@@ -124,7 +126,7 @@ public final class LmdbNativeExpressionCompiler {
 		}
 		LmdbNativeCompiledTruth compiled = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
 				assuredMask)
-						.compileTruth(ownedExpression);
+				.compileTruth(ownedExpression);
 		if (compiled == null) {
 			return null;
 		}
@@ -339,7 +341,7 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	private boolean guaranteedInline(ValueExpr expr) {
-		if (!(expr instanceof FunctionCall)) {
+		if (!inlineResultsAvailable || !(expr instanceof FunctionCall)) {
 			return false;
 		}
 		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(((FunctionCall) expr).getURI());
@@ -741,7 +743,14 @@ public final class LmdbNativeExpressionCompiler {
 
 	private boolean numericType(int type) {
 		return switch (type) {
-		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER, ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER, ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG, ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER, ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE, ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_POSITIVE_INTEGER -> true;
+		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER,
+				ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER,
+				ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG,
+				ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER,
+				ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE,
+				ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER,
+				ValueIds.T_ORD_NON_POSITIVE_INTEGER ->
+			true;
 		default -> false;
 		};
 	}

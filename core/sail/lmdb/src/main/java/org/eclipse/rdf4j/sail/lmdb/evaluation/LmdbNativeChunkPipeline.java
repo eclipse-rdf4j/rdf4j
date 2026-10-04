@@ -274,8 +274,7 @@ final class LmdbNativeChunkPipeline {
 		targetTemplate[TripleIndex.PRED_IDX] = sweepPred == UNKNOWN ? 0L : sweepPred;
 		targetTemplate[TripleIndex.OBJ_IDX] = sweepObj == UNKNOWN ? 0L : sweepObj;
 		targetTemplate[TripleIndex.CONTEXT_IDX] = sweepCtx == UNKNOWN ? 0L : sweepCtx;
-		PatternPlan sweepPlan = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-				pattern.namedContextScope, order, sweepIndex, pattern.staticEstimate);
+		PatternPlan sweepPlan = pattern.withOrder(order, sweepIndex);
 		return new MergePlan(sweepPlan, keySeqSlots, keyQuadPos, keyMask, targetTemplate);
 	}
 
@@ -1946,8 +1945,7 @@ final class LmdbNativeChunkPipeline {
 	}
 
 	static boolean bindQuad(PatternPlan pattern, long[] quads, int offset, NativeBatch out, int row) {
-		if (pattern.namedContextScope && !pattern.contexts.isFixed()
-				&& quads[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+		if (!pattern.matchesRangeAndContext(quads, offset)) {
 			return false;
 		}
 		return bindTerm(pattern.s, quads[offset + TripleIndex.SUBJ_IDX], out, row)

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -161,6 +163,7 @@ class ValueStoreAsyncOverlayWarmupTest {
 		var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
 		try {
 			assertFalse(store.isValueOverlayWarmupInProgress());
+			assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("zero budget"));
 			boolean anyWarmupThread = Thread.getAllStackTraces()
 					.keySet()
 					.stream()
@@ -207,9 +210,104 @@ class ValueStoreAsyncOverlayWarmupTest {
 				assertTrue(budget.stats().refusals() > refusalsBeforeWarmup,
 						"automatic warming must attempt allocations under the shared retained-memory limit");
 				assertNull(store.compressedValueOverlayStats());
+				assertTrue(store.compressedValueOverlayMaintenanceStats().refusals() > 0);
+				assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("refused"));
 			} finally {
 				store.close();
 			}
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void invalidWarmupOptionsRemainObservableWithoutPreventingStoreOpen(@TempDir File dataDir) throws Exception {
+		File dir = new File(dataDir, "values");
+		seed(dir);
+		String property = "rdf4j.lmdb.valueOverlay.reverseSlots";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "invalid");
+		try {
+			var store = new ValueStore(dir, new LmdbStoreConfig().setValueOverlayEnabled(true));
+			try {
+				assertFalse(store.awaitValueOverlayReady(10, TimeUnit.SECONDS));
+				assertNotNull(store.compressedValueOverlayMaintenanceStats().lastFailure());
+				assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("invalid"));
+			} finally {
+				store.close();
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void failedWarmupIsObservableAndReleasesItsReservations(@TempDir File dataDir) throws Exception {
+		File dir = new File(dataDir, "values");
+		seed(dir);
+		OverlayMemoryBudget budget = OverlayMemoryBudget.configuredShared();
+		long usedBefore = budget.stats().used();
+		var store = new ValueStore(dir, new StoreProperties(dir),
+				new LmdbStoreConfig().setValueOverlayEnabled(true), false,
+				() -> {
+					throw new IllegalStateException("controlled warm-up failure");
+				});
+		try {
+			assertFalse(store.awaitValueOverlayReady(10, TimeUnit.SECONDS));
+			assertNotNull(store.compressedValueOverlayMaintenanceStats().lastFailure());
+			assertTrue(store.compressedValueOverlayMaintenanceStats()
+					.lastFailure()
+					.contains("controlled warm-up failure"));
+			assertEquals(usedBefore, budget.stats().used());
+			Value expected = SimpleValueFactory.getInstance().createIRI("https://example.org/items/0");
+			assertEquals(expected, store.getValue(store.getId(expected)));
+		} finally {
+			store.close();
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void mutationCancelsTheCapturedWarmupAndExplicitRebuildUsesTheNewView(@TempDir File dataDir) throws Exception {
+		File dir = new File(dataDir, "values");
+		seed(dir);
+		CountDownLatch scanStarted = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		var store = new ValueStore(dir, new StoreProperties(dir),
+				new LmdbStoreConfig().setValueOverlayEnabled(true), false, () -> {
+					scanStarted.countDown();
+					try {
+						assertTrue(releaseScan.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(e);
+					}
+				});
+		try {
+			assertTrue(scanStarted.await(10, TimeUnit.SECONDS));
+			store.startTransaction(false);
+			releaseScan.countDown();
+			assertFalse(store.awaitValueOverlayReady(10, TimeUnit.SECONDS));
+			assertNull(store.compressedValueOverlayStats());
+			assertTrue(store.compressedValueOverlayMaintenanceStats().discarded() > 0);
+			assertTrue(store.compressedValueOverlayMaintenanceStats().lastFailure().contains("cancelled"));
+			Value added = SimpleValueFactory.getInstance().createIRI("https://example.org/items/new");
+			long id = store.storeValue(added);
+			store.commit();
+			store.warmCompressedValueOverlay(new CompressedValueOverlay.Options(
+					32L << 20, 8192, 16, 64 << 10, 1 << 20, true, true));
+			assertEquals(added, store.getValue(id));
+			Boolean overlayHit = store.withData(id, (address, length) -> {
+				throw new AssertionError("rebuilt overlay must include the committed record");
+			}, record -> Boolean.TRUE);
+			assertEquals(Boolean.TRUE, overlayHit);
+		} finally {
+			releaseScan.countDown();
+			store.close();
 		}
 	}
 }

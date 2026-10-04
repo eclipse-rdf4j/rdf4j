@@ -333,8 +333,7 @@ final class LmdbNativeMergeJoin {
 		template[TripleIndex.PRED_IDX] = pred == UNKNOWN ? 0L : pred;
 		template[TripleIndex.OBJ_IDX] = obj == UNKNOWN ? 0L : obj;
 		template[TripleIndex.CONTEXT_IDX] = ctx == UNKNOWN ? 0L : ctx;
-		PatternPlan ordered = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-				pattern.namedContextScope, order, indexName, pattern.staticEstimate);
+		PatternPlan ordered = pattern.withOrder(order, indexName);
 		int[] keyQuadPos = new int[keySeqSlots.length];
 		for (int i = 0; i < keySeqSlots.length; i++) {
 			keyQuadPos[i] = pattern.quadPositionOfSlot(keySeqSlots[i]);

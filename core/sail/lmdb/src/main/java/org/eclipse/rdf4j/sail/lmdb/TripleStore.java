@@ -67,12 +67,14 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -95,12 +97,16 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.LongConsumer;
+import java.util.function.Supplier;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
@@ -190,6 +196,179 @@ class TripleStore implements Closeable {
 	private final boolean[] rangeSearchByBoundMask = new boolean[16];
 	private TripleIndex spoContextWildcardIndex;
 	private final ValueStore valueStore;
+	private LegacyWriterRecords legacyWriterRecords;
+	private final Supplier<? extends CollectionFactory> legacyCollections;
+	private LongConsumer legacyPendingScanObserver;
+
+	void setLegacyPendingScanObserver(LongConsumer observer) {
+		legacyPendingScanObserver = observer;
+		if (recordCache != null) {
+			recordCache.setWriteScanObserver(observer);
+		}
+	}
+
+	boolean hasPendingRecordCache() {
+		return recordCache != null;
+	}
+
+	private record LegacyQuadKey(long subject, long predicate, long context, boolean explicit, Value object)
+			implements Serializable {
+	}
+
+	private record LegacyQuadAlias(long subject, long predicate, long object, long context, boolean explicit)
+			implements Serializable {
+		long[] quad() {
+			return new long[] { subject, predicate, object, context };
+		}
+	}
+
+	/** Owned solely by this store's writer, independently of the dictionary writer thread. */
+	private final class LegacyWriterRecords implements AutoCloseable {
+		private final LegacySemanticIndex<LegacyQuadKey, LegacyQuadAlias> aliases = legacyCollections == null
+				? new LegacySemanticIndex<>()
+				: new LegacySemanticIndex<>(legacyCollections);
+		private final Map<Long, Value> objects;
+		private boolean seeded;
+
+		private LegacyWriterRecords() {
+			try {
+				objects = aliases.createMap();
+			} catch (RuntimeException | Error failure) {
+				try {
+					aliases.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+
+		void capture(long id, Value value) {
+			objects.put(id, LegacySemanticScope.detached(value));
+		}
+
+		void add(long[] quad, boolean explicit) throws IOException {
+			Value value = objects.get(quad[2]);
+			if (value == null) {
+				value = valueStore.getValue(quad[2]);
+				if (!LegacySemanticScope.containsLanguage(value)) {
+					return;
+				}
+				value = LegacySemanticScope.detached(value);
+				objects.put(quad[2], value);
+			}
+			aliases.add(new LegacyQuadKey(quad[0], quad[1], quad[3], explicit, value),
+					new LegacyQuadAlias(quad[0], quad[1], quad[2], quad[3], explicit));
+		}
+
+		void remove(long[] quad, boolean explicit) {
+			aliases.remove(new LegacyQuadAlias(quad[0], quad[1], quad[2], quad[3], explicit));
+		}
+
+		void seed() throws IOException {
+			if (!seeded) {
+				for (boolean explicit : new boolean[] { true, false }) {
+					try (RecordIterator records = getTriplesForWrite(-1, -1, -1, -1, explicit)) {
+						long[] quad;
+						while ((quad = records.next()) != null) {
+							add(quad, explicit);
+						}
+					}
+				}
+				seeded = true;
+			}
+		}
+
+		@Override
+		public void close() {
+			aliases.close();
+		}
+	}
+
+	/** Capture pending language objects at the existing operation boundary, without an early dictionary commit. */
+	void captureLegacyWriterObject(long id, Value value) {
+		if (valueStore.getFormat().isLegacy() && LegacySemanticScope.containsLanguage(value)) {
+			try {
+				if (legacyWriterRecords == null) {
+					legacyWriterRecords = new LegacyWriterRecords();
+				}
+				legacyWriterRecords.capture(id, value);
+			} catch (RuntimeException | Error failure) {
+				closeLegacyWriterRecords(failure);
+				throw failure;
+			}
+		}
+	}
+
+	RecordIterator getLegacySemanticTriplesForWrite(long subject, long predicate, long object, long context,
+			boolean explicit, Value expected) throws IOException {
+		captureLegacyWriterObject(object, expected);
+		try {
+			legacyWriterRecords.seed();
+			Iterator<LegacyQuadAlias> candidates = legacyWriterRecords.aliases.aliases(
+					new LegacyQuadKey(subject, predicate, context, explicit, LegacySemanticScope.detached(expected)));
+			return new RecordIterator() {
+				private boolean closed;
+
+				@Override
+				public long[] next() {
+					return !closed && candidates.hasNext() ? candidates.next().quad() : null;
+				}
+
+				@Override
+				public void close() {
+					closed = true;
+				}
+			};
+		} catch (IOException | RuntimeException | Error failure) {
+			closeLegacyWriterRecords(failure);
+			throw failure;
+		}
+	}
+
+	private void legacyRecordAdded(long[] quad, boolean explicit) throws IOException {
+		if (legacyWriterRecords != null) {
+			try {
+				if (explicit) {
+					legacyWriterRecords.remove(quad, false);
+				}
+				legacyWriterRecords.add(quad, explicit);
+			} catch (IOException | RuntimeException | Error failure) {
+				closeLegacyWriterRecords(failure);
+				throw failure;
+			}
+		}
+	}
+
+	private void legacyRecordRemoved(long[] quad, boolean explicit) {
+		if (legacyWriterRecords != null) {
+			try {
+				legacyWriterRecords.remove(quad, explicit);
+			} catch (RuntimeException | Error failure) {
+				closeLegacyWriterRecords(failure);
+				throw failure;
+			}
+		}
+	}
+
+	private void closeLegacyWriterRecords(Throwable primary) {
+		LegacyWriterRecords records = legacyWriterRecords;
+		legacyWriterRecords = null;
+		if (records != null) {
+			try {
+				records.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (primary == null) {
+					throw cleanup;
+				}
+				if (primary != cleanup) {
+					primary.addSuppressed(cleanup);
+				}
+			}
+		}
+	}
 
 	long env;
 	long writeTxn;
@@ -267,6 +446,12 @@ class TripleStore implements Closeable {
 
 	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore)
 			throws IOException, SailException {
+		this(dir, properties, config, valueStore, null);
+	}
+
+	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
+			Supplier<? extends CollectionFactory> legacyCollections) throws IOException, SailException {
+		this.legacyCollections = legacyCollections;
 		this.dir = dir;
 		this.dataMdbFile = new File(dir, "data.mdb");
 		this.properties = properties;
@@ -318,7 +503,7 @@ class TripleStore implements Closeable {
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
-			if (!properties.isLoaded()) {
+			if (!properties.hasNativeGeneration() && !properties.isLoaded()) {
 				// newly created lmdb store
 				Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
 				if (indexSpecs.isEmpty()) {
@@ -1756,26 +1941,26 @@ class TripleStore implements Closeable {
 				try (MemoryStack stack = stackPush()) {
 					MDBVal keyValue = MDBVal.calloc(stack);
 					ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-					keyValue.mv_data(keyBuf);
 					MDBVal dataValue = MDBVal.calloc(stack);
 					for (String fieldSeq : addedIndexSpecs) {
 						logger.debug("Initializing new index '{}'...", fieldSeq);
 
 						TripleIndex addedIndex = new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env,
 								writeTxn);
-						RecordIterator[] sourceIter = { null };
-						try {
-							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-									explicit, txnManager.createTxn(writeTxn));
-
-							RecordIterator it = sourceIter[0];
-							long[] quad;
-							while ((quad = it.next()) != null) {
+						// Only copied Java rows and this exact source key may survive a writer checkpoint.
+						// The original source index is unchanged until all added indexes are complete.
+						long[][] batch = new long[1024][4];
+						ByteBuffer continuation = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+						continuation.limit(0);
+						int count;
+						while ((count = copyReindexBatch(sourceIndex, explicit, batch, continuation)) != 0) {
+							for (int row = 0; row < count; row++) {
+								long[] quad = batch[row];
 								keyBuf.clear();
 								addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-										quad[TripleIndex.OBJ_IDX],
-										quad[TripleIndex.CONTEXT_IDX]);
+										quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
 								keyBuf.flip();
+								LmdbUtil.setMDBValData(keyValue, keyBuf);
 
 								if (requiresResize()) {
 									endTransaction(true);
@@ -1809,10 +1994,6 @@ class TripleStore implements Closeable {
 									throw new ReplayMapFullException();
 								}
 								E(rc);
-							}
-						} finally {
-							if (sourceIter[0] != null) {
-								sourceIter[0].close();
 							}
 						}
 
@@ -1853,20 +2034,73 @@ class TripleStore implements Closeable {
 		resetAlignedWriteCursorState();
 	}
 
+	/** Copy a bounded source group, closing its native cursor before the caller writes or resizes. */
+	private int copyReindexBatch(TripleIndex source, boolean explicit, long[][] batch, ByteBuffer continuation)
+			throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal data = MDBVal.calloc(stack);
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, source.getDB(explicit), cursorHandle));
+			long cursor = cursorHandle.get(0);
+			try {
+				int rc;
+				if (continuation.hasRemaining()) {
+					key.mv_data(continuation);
+					// The immutable original source still contains the exact last copied composite key.
+					E(mdb_cursor_get(cursor, key, data, MDB_SET_RANGE));
+					rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+				} else {
+					rc = mdb_cursor_get(cursor, key, data, MDB_FIRST);
+				}
+				int count = 0;
+				while (count < batch.length && rc != MDB_NOTFOUND) {
+					E(rc);
+					ByteBuffer sourceKey = key.mv_data();
+					continuation.clear();
+					continuation.put(sourceKey.duplicate()).flip();
+					source.keyToQuad(sourceKey, batch[count++]);
+					if (count < batch.length) {
+						rc = mdb_cursor_get(cursor, key, data, MDB_NEXT);
+					}
+				}
+				return count;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
 	@Override
 	public void close() throws IOException {
 		if (env != 0) {
-			endTransaction(false);
-			closeSpoExistenceCursors();
-			cursorPool.close();
-			txnManager.close();
-			List<Throwable> caughtExceptions = new ArrayList<>();
+			Throwable failure = null;
+			try {
+				endTransaction(false);
+			} catch (Throwable cleanup) {
+				failure = cleanup;
+			}
+			try {
+				closeSpoExistenceCursors();
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
+			try {
+				cursorPool.close();
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
+			try {
+				txnManager.close();
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
 			if (pageEstimator != null) {
 				try {
 					pageEstimator.close();
 				} catch (Throwable e) {
 					logger.warn("Failed to close page estimator", e);
-					caughtExceptions.add(e);
+					failure = retainCleanupFailure(failure, e);
 				}
 			}
 			for (TripleIndex index : indexes) {
@@ -1874,16 +2108,42 @@ class TripleStore implements Closeable {
 					index.close();
 				} catch (Throwable e) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
-					caughtExceptions.add(e);
+					failure = retainCleanupFailure(failure, e);
 				}
 			}
-			mdb_env_close(env);
-			env = 0;
-
-			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.getFirst());
+			try {
+				mdb_env_close(env);
+				env = 0;
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
+			if (failure instanceof IOException exception) {
+				throw exception;
+			}
+			if (failure instanceof RuntimeException exception) {
+				throw exception;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			if (failure != null) {
+				throw new IOException(failure);
 			}
 		}
+	}
+
+	private static Throwable retainCleanupFailure(Throwable primary, Throwable cleanup) {
+		if (primary == null) {
+			return cleanup;
+		}
+		if (primary != cleanup) {
+			primary.addSuppressed(cleanup);
+		}
+		return primary;
+	}
+
+	boolean isNativeEnvironmentOpen() {
+		return env != 0;
 	}
 
 	/**
@@ -2567,6 +2827,74 @@ class TripleStore implements Closeable {
 		} finally {
 			txnRef.lockManager().unlockRead(readStamp);
 		}
+	}
+
+	/** The writer's physical view includes pending cache additions and excludes pending removals. */
+	RecordIterator getTriplesForWrite(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		RecordIterator base = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+		if (recordCache == null) {
+			return base;
+		}
+		return new RecordIterator() {
+			private Iterator<Record> pending = Collections.emptyIterator();
+			private byte[] resumeKey;
+			private boolean baseExhausted;
+			private boolean pendingExhausted;
+			private boolean closed;
+
+			@Override
+			public long[] next() {
+				if (closed) {
+					return null;
+				}
+				try {
+					if (!baseExhausted) {
+						long[] quad;
+						while ((quad = base.next()) != null) {
+							if (recordCache.getRecordState(quad, explicit) != TxnRecordCache.RecordState.REMOVE) {
+								return quad;
+							}
+						}
+						base.close();
+						baseExhausted = true;
+					}
+					while (true) {
+						while (pending.hasNext()) {
+							Record record = pending.next();
+							if (record.add && matchesPattern(record.quad, subj, pred, obj, context)
+									&& !tripleExistsInMainIndex(record.quad, explicit)) {
+								return record.quad;
+							}
+						}
+						if (pendingExhausted) {
+							close();
+							return null;
+						}
+						// Existing bounded batches close the cache cursor before callbacks can resize or mutate it.
+						WriteRecordBatch batch = recordCache.getWriteRecords(explicit, resumeKey);
+						pending = batch.records().iterator();
+						resumeKey = batch.resumeKey();
+						pendingExhausted = batch.records().isEmpty() || resumeKey == null;
+					}
+				} catch (IOException e) {
+					close();
+					throw new SailException(e);
+				} catch (RuntimeException | Error e) {
+					close();
+					throw e;
+				}
+			}
+
+			@Override
+			public void close() {
+				if (!closed) {
+					closed = true;
+					pending = Collections.emptyIterator();
+					base.close();
+				}
+			}
+		};
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {
@@ -3694,6 +4022,7 @@ class TripleStore implements Closeable {
 		}
 
 		TxnRecordCache cache = new TxnRecordCache(dir);
+		cache.setWriteScanObserver(legacyPendingScanObserver);
 		boolean installed = false;
 		try {
 			Txn currentTxn = txnManager.createTxn(writeTxn);
@@ -3756,12 +4085,16 @@ class TripleStore implements Closeable {
 		return explicit ? explicitFanOutStats : inferredFanOutStats;
 	}
 
-	private void recordFanOutAdded(long subject, long predicate, long object, long context, boolean explicit) {
+	private void recordFanOutAdded(long subject, long predicate, long object, long context, boolean explicit)
+			throws IOException {
 		fanOutStats(explicit).recordAdded(subject, predicate, object);
 		fanOutStatsDirty = true;
 		if (directAdjacencyCommitDelta != null) {
 			// fails fast if an event arrives after seal: the touched-row table would be incomplete (invariant I16)
 			directAdjacencyCommitDelta.recordAdd(subject, predicate, object, context, explicit);
+		}
+		if (legacyWriterRecords != null) {
+			legacyRecordAdded(new long[] { subject, predicate, object, context }, explicit);
 		}
 	}
 
@@ -3770,6 +4103,9 @@ class TripleStore implements Closeable {
 		fanOutStatsDirty = true;
 		if (directAdjacencyCommitDelta != null) {
 			directAdjacencyCommitDelta.recordRemove(subject, predicate, object, context, explicit);
+		}
+		if (legacyWriterRecords != null) {
+			legacyRecordRemoved(new long[] { subject, predicate, object, context }, explicit);
 		}
 	}
 
@@ -4796,6 +5132,18 @@ class TripleStore implements Closeable {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit) throws IOException {
+		Throwable primary = null;
+		try {
+			endTransactionInternal(commit);
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			closeLegacyWriterRecords(primary);
+		}
+	}
+
+	private void endTransactionInternal(boolean commit) throws IOException {
 		if (writeTxn != 0) {
 			try {
 				closeAlignedWriteCursors();

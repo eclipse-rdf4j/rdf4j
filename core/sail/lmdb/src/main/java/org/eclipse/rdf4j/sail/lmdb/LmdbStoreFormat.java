@@ -66,6 +66,10 @@ public final class LmdbStoreFormat {
 
 	static LmdbStoreFormat resolve(File directory, StoreProperties properties, LmdbStoreConfig config) {
 		if (!properties.isLoaded()) {
+			if (properties.hasNativeGeneration()) {
+				// Strict preflight proved a legacy generation and recovered its physical descriptors in memory.
+				return new LmdbStoreFormat(LEGACY_VERSION, config.getInlineLiterals(), false, false, false, false);
+			}
 			requireEmptyDirectory(directory);
 			return forNewStore(config);
 		}

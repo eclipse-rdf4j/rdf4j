@@ -773,8 +773,7 @@ final class LmdbNativeOrderPlanner {
 		if (index.isEmpty()) {
 			return new NativeOrderedPlan(pattern, NativeSlotOrder.NONE);
 		}
-		PatternPlan ordered = new PatternPlan(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
-				pattern.namedContextScope, statementOrder, index, pattern.staticEstimate);
+		PatternPlan ordered = pattern.withOrder(statementOrder, index);
 		if (statementOrder == null && pattern.contexts.isFixed() && pattern.contexts.ids.length > 1) {
 			// PatternCursor concatenates default-order scans for fixed contexts. Only an explicit ordered request uses
 			// OrderedRecordIterator to restore one global index order across those scans.

@@ -51,6 +51,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.LongConsumer;
 
 import org.apache.commons.io.FileUtils;
 import org.lwjgl.PointerBuffer;
@@ -77,6 +78,11 @@ final class TxnRecordCache {
 	private long writeTxn;
 	private long mapSize = 1048576; // 1 MiB
 	private long pageSize;
+	private LongConsumer writeScanObserver;
+
+	void setWriteScanObserver(LongConsumer observer) {
+		writeScanObserver = observer;
+	}
 
 	public TxnRecordCache(File cacheDir) throws IOException {
 		try (MemoryStack stack = stackPush()) {
@@ -341,6 +347,9 @@ final class TxnRecordCache {
 			} finally {
 				mdb_cursor_close(cursor);
 			}
+		}
+		if (writeScanObserver != null) {
+			writeScanObserver.accept(records.size());
 		}
 		return new WriteRecordBatch(records, resumeKey);
 	}

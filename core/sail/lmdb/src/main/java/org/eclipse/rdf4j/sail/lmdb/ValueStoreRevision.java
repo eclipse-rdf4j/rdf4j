@@ -130,6 +130,12 @@ public interface ValueStoreRevision {
 
 	boolean resolveValue(long id, LmdbValue value);
 
+	/** Unequal physical IDs imply unequal RDF terms only for a canonical dictionary generation. */
+	default boolean hasCanonicalIds() {
+		ValueStore store = getValueStore();
+		return store != null && store.getFormat().usesCanonicalLanguageTags();
+	}
+
 	/** Resolves a same-revision batch in the caller-supplied order. */
 	@Experimental
 	default void resolveValues(LmdbValue[] values, int[] order, int count) {
