@@ -62,7 +62,7 @@ class LmdbV6LifecycleCompatibilityTest {
 			manager.addRepositoryConfig(new RepositoryConfig("legacy", new SailRepositoryConfig(legacyConfig)));
 			Path store = manager.getRepositoryDir("legacy").toPath();
 			assertTrue(Files.isRegularFile(store.resolve("config.ttl")));
-			extract("v2-unpatched-legacy.zip", store);
+			extract("v2-unpatched-legacy-consistent-indexes.zip", store);
 			assertFalse(Files.exists(store.resolve("store.properties")), "Actual old default writer left no metadata");
 			var repository = manager.getRepository("legacy");
 			try (var connection = repository.getConnection()) {
@@ -352,8 +352,8 @@ class LmdbV6LifecycleCompatibilityTest {
 		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"-cp", classpath, "org.eclipse.rdf4j.sail.lmdb." + main, phase, directory.toString(),
 				Boolean.toString(inline), Boolean.toString(ordered)).redirectErrorStream(true)
-						.redirectOutput(log.toFile())
-						.start();
+				.redirectOutput(log.toFile())
+				.start();
 		assertEquals(0, process.waitFor(), () -> "Separate binary failed; see " + log);
 	}
 }

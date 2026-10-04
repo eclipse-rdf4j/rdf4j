@@ -106,6 +106,12 @@ public interface ValueStoreRevision {
 
 	boolean resolveValue(long id, LmdbValue value);
 
+	/** Unequal physical IDs imply unequal RDF terms only for a canonical dictionary generation. */
+	default boolean hasCanonicalIds() {
+		ValueStore store = getValueStore();
+		return store != null && store.getFormat().usesCanonicalLanguageTags();
+	}
+
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
 		if (valueStore == null || !valueStore.valueHashCacheEnabled

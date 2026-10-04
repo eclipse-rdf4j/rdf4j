@@ -13,10 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -97,6 +100,9 @@ class StoreProperties {
 	protected String dateTimeIdEncoding;
 
 	protected boolean loaded;
+
+	/** True only when both native environments were present during the locked startup preflight. */
+	private boolean nativeGenerationPresent;
 
 	protected boolean dirty;
 
@@ -179,10 +185,33 @@ class StoreProperties {
 			if (parent != null) {
 				parent.mkdirs();
 			}
-			try (OutputStream out = new FileOutputStream(file)) {
-				properties.store(out, "LmdbStore meta-data");
+			Path target = file.toPath();
+			Path temporary = null;
+			try {
+				if (parent != null) {
+					Files.createDirectories(parent.toPath());
+				}
+				temporary = Files.createTempFile(target.getParent(), "." + file.getName() + ".", ".tmp");
+				try (OutputStream out = Files.newOutputStream(temporary)) {
+					properties.store(out, "LmdbStore meta-data");
+				}
+				try {
+					Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+				} catch (AtomicMoveNotSupportedException e) {
+					throw new IOException("Atomic store properties replacement is not supported", e);
+				}
+				loadedProperties.clear();
+				loadedProperties.putAll(properties);
+				loaded = true;
 				dirty = false;
 			} catch (IOException e) {
+				if (temporary != null) {
+					try {
+						Files.deleteIfExists(temporary);
+					} catch (IOException cleanupFailure) {
+						e.addSuppressed(cleanupFailure);
+					}
+				}
 				throw new IllegalStateException("Unable to store properties to " + file, e);
 			}
 		});
@@ -190,6 +219,14 @@ class StoreProperties {
 
 	boolean isLoaded() {
 		return loaded;
+	}
+
+	boolean hasNativeGeneration() {
+		return nativeGenerationPresent;
+	}
+
+	void setNativeGenerationPresent(boolean nativeGenerationPresent) {
+		this.nativeGenerationPresent = nativeGenerationPresent;
 	}
 
 	String getRawProperty(String key) {

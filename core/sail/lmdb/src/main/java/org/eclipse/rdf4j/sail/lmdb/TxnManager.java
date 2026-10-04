@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -155,6 +156,42 @@ final class TxnManager {
 	 */
 	Txn createReadTxnUntracked() throws IOException {
 		return createReadTxnInternal(false);
+	}
+
+	/** Register the historical reader and its matching data revision while excluding commit and map resize. */
+	Txn createReadTxnPinned(LongSupplier dataRevision) throws IOException {
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		Txn txn = null;
+		try {
+			txn = createReadTxnUntracked();
+			txn.snapshotRevision = dataRevision.getAsLong();
+			return txn;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (txn != null) {
+				txn.close();
+			}
+			throw failure;
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	/** Oldest leased snapshot; pooled readers no longer protect removed dictionary owners. */
+	long minPinnedSnapshotRevision() {
+		long minimum = Long.MAX_VALUE;
+		for (Txn txn : open) {
+			long revision = txn.snapshotRevision;
+			if (!txn.idle && !txn.closed && revision >= 0 && revision < minimum) {
+				minimum = revision;
+			}
+		}
+		return minimum;
 	}
 
 	/**
@@ -521,6 +558,8 @@ final class TxnManager {
 		private final Pool valuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
 
 		private volatile long version;
+		private volatile long snapshotRevision = -1;
+		private volatile boolean snapshotInvalidated;
 		private volatile boolean active = true;
 		/** Permanently finished: aborted or handed back to LMDB. */
 		private volatile boolean closed;
@@ -538,6 +577,13 @@ final class TxnManager {
 
 		long get() {
 			return txn;
+		}
+
+		void ensureSnapshotValid() {
+			if (snapshotInvalidated) {
+				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction");
+			}
 		}
 
 		long version() {
@@ -564,6 +610,7 @@ final class TxnManager {
 					return;
 				}
 				permit = readerPermit;
+				snapshotRevision = -1;
 				releasePermit = release();
 			}
 			if (releasePermit) {
@@ -595,6 +642,9 @@ final class TxnManager {
 			if (closed) {
 				return;
 			}
+			if (snapshotRevision >= 0) {
+				snapshotInvalidated = true;
+			}
 			if (active) {
 				if (!idle) {
 					// idle readers stay reset; they are renewed lazily in reuse()
@@ -616,6 +666,8 @@ final class TxnManager {
 			}
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.snapshotRevision = -1;
+			this.snapshotInvalidated = false;
 			this.idle = false;
 			this.closed = false;
 			activate();
@@ -691,6 +743,7 @@ final class TxnManager {
 				mdb_txn_abort(txn);
 			}
 			active = false;
+			snapshotRevision = -1;
 			idle = false;
 			closed = true;
 		}

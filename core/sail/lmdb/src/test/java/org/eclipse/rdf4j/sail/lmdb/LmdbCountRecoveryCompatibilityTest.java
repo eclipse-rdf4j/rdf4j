@@ -87,7 +87,7 @@ class LmdbCountRecoveryCompatibilityTest {
 
 	@Test
 	void genuineOldWriterUndercountIsReconciledBeforeDeletingSharedOwners() throws Exception {
-		extract("v2-unpatched-legacy.zip", directory);
+		extract("v2-unpatched-legacy-consistent-indexes.zip", directory);
 		long datatypeId = LmdbCompatibilityFixtures.findReferenceId(directory, ValueIds.T_URI,
 				"shared-custom-datatype".getBytes(StandardCharsets.UTF_8));
 		byte[] encoded = nativeGet(directory, "ref_counts", LmdbCompatibilityFixtures.idKey(datatypeId));

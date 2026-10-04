@@ -30,6 +30,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
@@ -47,6 +48,7 @@ import java.util.zip.ZipInputStream;
 
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /** Authentic assets are independent oracles; native edits are used only for recovery/negative inputs. */
@@ -182,6 +184,28 @@ final class LmdbCompatibilityFixtures {
 			E(mdb_env_set_maxdbs(env, 21));
 			E(mdb_env_open(env, directory.resolve("values").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
 			return LmdbUtil.readTransaction(env, (inner, txn) -> mdb_txn_id(txn));
+		} finally {
+			if (env != NULL) {
+				mdb_env_close(env);
+			}
+		}
+	}
+
+	static long nativeTripleEntryCount(Path directory, String database) throws IOException {
+		long env = NULL;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			env = handle.get(0);
+			E(mdb_env_set_maxdbs(env, 49));
+			E(mdb_env_open(env, directory.resolve("triples").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
+			return LmdbUtil.readTransaction(env, (inner, txn) -> {
+				var databaseHandle = inner.mallocInt(1);
+				E(mdb_dbi_open(txn, database, 0, databaseHandle));
+				MDBStat stat = MDBStat.calloc(inner);
+				E(mdb_stat(txn, databaseHandle.get(0), stat));
+				return stat.ms_entries();
+			});
 		} finally {
 			if (env != NULL) {
 				mdb_env_close(env);

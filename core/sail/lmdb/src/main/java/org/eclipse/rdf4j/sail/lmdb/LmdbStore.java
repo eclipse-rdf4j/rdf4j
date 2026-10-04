@@ -282,12 +282,13 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			StoreProperties properties = new StoreProperties(dataDir);
-			properties.load();
-			LmdbStoreFormat format = LmdbStoreFormat.resolve(dataDir, properties, config);
 			if (new File(dataDir, ".lmdb-bulk-load.incomplete").exists()) {
 				throw new SailException("LmdbStore contains an incomplete bulk load");
 			}
+			StoreProperties properties = new StoreProperties(dataDir);
+			properties.load();
+			LegacyStoreDiscovery.discover(dataDir, properties);
+			LmdbStoreFormat format = LmdbStoreFormat.resolve(dataDir, properties, config);
 			LmdbNativeMetadata.validateDirectory(dataDir, format);
 			if (properties.getVersion() == null) {
 				properties.setVersion(Integer.toString(format.getVersion()));

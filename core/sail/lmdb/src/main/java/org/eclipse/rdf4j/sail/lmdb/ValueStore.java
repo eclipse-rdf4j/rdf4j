@@ -64,6 +64,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,8 +72,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.LongConsumer;
+import java.util.function.Supplier;
 import java.util.zip.CRC32;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -200,6 +204,10 @@ class ValueStore extends AbstractValueFactory {
 	private int refCountsDbi;
 	private long writeTxn;
 	private Thread writeTxnOwner;
+	private LegacySemanticIndex<Value, Long> legacyValueIndex;
+	private final Supplier<? extends CollectionFactory> legacyCollections;
+	private boolean legacyLiteralOwnersSeeded;
+	private boolean legacyTermOwnersSeeded;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
@@ -255,6 +263,8 @@ class ValueStore extends AbstractValueFactory {
 	private long persistedAllocationCounter;
 	private boolean storeInitializationComplete;
 	private RetiredValueIdRecovery retiredValueIdRecovery;
+	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
+	private boolean retiredIdStoreInitialized;
 	private static final byte NEXT_ID_KEY = 8;
 	private static final int REFCOUNT_REBUILD_BATCH_SIZE = 4096;
 
@@ -270,6 +280,27 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
+	private LongConsumer legacySemanticScanObserver;
+	private LongConsumer legacySemanticLookupObserver;
+	private LongConsumer tripleTermCursorObserver;
+
+	void setLegacySemanticLookupObserver(LongConsumer observer) {
+		legacySemanticLookupObserver = observer;
+	}
+
+	void setTripleTermCursorObserver(LongConsumer observer) {
+		tripleTermCursorObserver = observer;
+	}
+
+	void setLegacySemanticScanObserver(LongConsumer observer) {
+		legacySemanticScanObserver = observer;
+	}
+
+	private void observeLegacySemanticScan(long records) {
+		if (legacySemanticScanObserver != null) {
+			legacySemanticScanObserver.accept(records);
+		}
+	}
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this(dir, new StoreProperties(dir), config);
@@ -296,6 +327,13 @@ class ValueStore extends AbstractValueFactory {
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, LmdbStoreFormat format,
 			boolean newNativeGenerationAllowed, Initialization initialization) throws IOException {
+		this(dir, properties, config, format, newNativeGenerationAllowed, initialization, null);
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, LmdbStoreFormat format,
+			boolean newNativeGenerationAllowed, Initialization initialization,
+			Supplier<? extends CollectionFactory> legacyCollections) throws IOException {
+		this.legacyCollections = legacyCollections;
 		this.format = format;
 		this.storeConfig = config;
 		this.dir = dir;
@@ -322,7 +360,15 @@ class ValueStore extends AbstractValueFactory {
 			recoverNextId(false);
 			startTransaction(true);
 			initTermIndexes(config);
+			// Use the owned startup writer; legacy dictionaries receive no native-format capability fence.
+			readTransaction(env, (stack, txn) -> {
+				resizeMap(writeTxn, 8L * pageSize);
+				return null;
+			});
+			retiredIdStore.openWithTransaction(env, writeTxn, false);
+			retiredIdStoreInitialized = true;
 			commit();
+			retiredIdStore.syncAfterTransaction(env);
 			recoverNextId(true);
 			deferNextIdPersistence = false;
 			if (!format.isLegacy()) {
@@ -1296,7 +1342,7 @@ class ValueStore extends AbstractValueFactory {
 		String requested = config.getTripleTermIndexes();
 		Set<String> realized;
 		String persisted;
-		if (!properties.isLoaded()) {
+		if (!properties.hasNativeGeneration() && !properties.isLoaded()) {
 			realized = TripleIndex.parseIndexSpecList(requested);
 			realized.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
 			initTripleTermIndexes(realized);
@@ -1344,7 +1390,10 @@ class ValueStore extends AbstractValueFactory {
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
-			TripleIndex sourceIndex = tripleTermIndexes.getFirst();
+			TripleIndex sourceIndex = tripleTermSpocIndex;
+			if (sourceIndex == null) {
+				throw new IOException("Cannot rebuild triple-term indexes without the mandatory SPOC source index");
+			}
 			try (MemoryStack stack = stackPush()) {
 				MDBVal keyValue = MDBVal.calloc(stack);
 				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
@@ -1367,6 +1416,7 @@ class ValueStore extends AbstractValueFactory {
 									quad[TripleIndex.OBJ_IDX],
 									quad[TripleIndex.CONTEXT_IDX]);
 							keyBuf.flip();
+							keyValue.mv_data(keyBuf);
 
 							resizeMap(writeTxn, 0L);
 							E(mdb_put(writeTxn, addedIndex.getDB(true), keyValue, dataValue, 0));
@@ -1836,6 +1886,9 @@ class ValueStore extends AbstractValueFactory {
 					}
 
 					txnManager.activate();
+				} catch (IOException | RuntimeException | Error failure) {
+					closeLegacyValueIndex(failure);
+					throw failure;
 				} finally {
 					lockManager.unlockWrite(stamp);
 					if (readLocked) {
@@ -2123,29 +2176,39 @@ class ValueStore extends AbstractValueFactory {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, index.getDB(true), pp));
 			long cursor = pp.get(0);
+			try {
+				if (tripleTermCursorObserver != null) {
+					tripleTermCursorObserver.accept(1);
+				}
 
-			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(keyBuf, -1, -1, -1, id);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
+				MDBVal keyVal = MDBVal.malloc(stack);
+				// use calloc to get an empty data value
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(keyBuf, -1, -1, -1, id);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
 
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-				long[] quad = new long[4];
-				index.keyToQuad(keyVal.mv_data(), quad);
-				if (value != null) {
-					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
-					return value;
-				} else {
-					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+					long[] quad = new long[4];
+					index.keyToQuad(keyVal.mv_data(), quad);
+					if (value != null) {
+						value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
+								(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
+						return value;
+					} else {
+						return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
+								(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+					}
+				}
+				return null;
+			} finally {
+				mdb_cursor_close(cursor);
+				if (tripleTermCursorObserver != null) {
+					tripleTermCursorObserver.accept(-1);
 				}
 			}
-			return null;
 		});
 	}
 
@@ -2156,6 +2219,9 @@ class ValueStore extends AbstractValueFactory {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, mainIndex.getDB(true), pp));
 			long cursor = pp.get(0);
+			if (tripleTermCursorObserver != null) {
+				tripleTermCursorObserver.accept(1);
+			}
 
 			MDBVal keyVal = MDBVal.malloc(stack);
 			// use calloc to get an empty data value
@@ -2165,11 +2231,18 @@ class ValueStore extends AbstractValueFactory {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
-				var bb = keyVal.mv_data();
-				return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
-						Varint.calcLengthUnsigned(obj));
+			try {
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
+					var bb = keyVal.mv_data();
+					return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
+							Varint.calcLengthUnsigned(obj));
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+				if (tripleTermCursorObserver != null) {
+					tripleTermCursorObserver.accept(-1);
+				}
 			}
 
 			if (!create) {
@@ -2199,24 +2272,36 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
-		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
-		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
 		Txn txn = txnManager.createReadTxn();
 		try {
-			return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
-				@Override
-				public void close() {
-					try {
-						super.close();
-					} finally {
-						txn.close();
-					}
-				}
-			};
+			return getTripleTermRecords(txn, subj, pred, obj, true);
 		} catch (Throwable e) {
 			txn.close();
 			throw e;
 		}
+	}
+
+	/** A dataset-owned dictionary snapshot must enumerate its historical term indexes. */
+	RecordIterator getTripleTerms(Txn txn, long subj, long pred, long obj) throws IOException {
+		return getTripleTermRecords(txn, subj, pred, obj, false);
+	}
+
+	private RecordIterator getTripleTermRecords(Txn txn, long subj, long pred, long obj, boolean ownsTxn)
+			throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
+		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
+			@Override
+			public void close() {
+				try {
+					super.close();
+				} finally {
+					if (ownsTxn) {
+						txn.close();
+					}
+				}
+			}
+		};
 	}
 
 	TxnManager getTxnManager() {
@@ -2352,8 +2437,10 @@ class ValueStore extends AbstractValueFactory {
 				return id;
 			}
 
-			long id = LmdbValue.UNKNOWN_ID;
-			if (inlineLiterals && value instanceof Literal) {
+			long id = format.isLegacy() && LegacySemanticScope.containsLanguage(value)
+					? findLegacySemanticId(value)
+					: LmdbValue.UNKNOWN_ID;
+			if (id == LmdbValue.UNKNOWN_ID && inlineLiterals && value instanceof Literal) {
 				id = format.tryInline((Literal) value);
 			}
 
@@ -2380,6 +2467,15 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			if (id != LmdbValue.UNKNOWN_ID) {
+				if (legacyValueIndex != null && writeTxn != 0 && writeTxnOwner == Thread.currentThread()
+						&& LegacySemanticScope.containsLanguage(value)) {
+					try {
+						legacyValueIndex.add(LegacySemanticScope.detached(value), id);
+					} catch (RuntimeException | Error failure) {
+						closeLegacyValueIndex(failure);
+						throw failure;
+					}
+				}
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
@@ -2405,6 +2501,191 @@ class ValueStore extends AbstractValueFactory {
 			revisionLock.unlockRead(stamp);
 		}
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	/** Find a live RDF-equal owner without changing the byte-preserving legacy dictionary. */
+	private long findLegacySemanticId(Value value) throws IOException {
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
+			return findLegacyWriterSemanticId(value);
+		}
+		if (value instanceof TripleTerm term) {
+			long subject = getId(term.getSubject());
+			long predicate = getId(term.getPredicate());
+			if (subject == LmdbValue.UNKNOWN_ID || predicate == LmdbValue.UNKNOWN_ID) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			long object = LegacySemanticScope.containsLanguage(term.getObject()) ? LmdbValue.UNKNOWN_ID
+					: getId(term.getObject());
+			if (object == LmdbValue.UNKNOWN_ID && !LegacySemanticScope.containsLanguage(term.getObject())) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			return readTransaction(env, (stack, txn) -> {
+				TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subject, predicate, object, -1);
+				long visited = 0;
+				try (RecordIterator records = new LmdbRecordIterator(index,
+						index.getPatternScore(subject, predicate, object, -1) > 0,
+						subject, predicate, object, -1, true, txnManager.createTxn(txn))) {
+					long[] quad;
+					while ((quad = records.next()) != null) {
+						visited++;
+						if (value.equals(getValue(quad[3]))) {
+							return quad[3];
+						}
+					}
+				} finally {
+					observeLegacySemanticScan(visited);
+				}
+				return LmdbValue.UNKNOWN_ID;
+			});
+		}
+		return readTransaction(env, (stack, txn) -> {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pointer));
+			long cursor = pointer.get(0);
+			long visited = 0;
+			try {
+				MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { ID_KEY }));
+				MDBVal data = MDBVal.calloc(stack);
+				for (int result = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE); result == MDB_SUCCESS
+						&& isIdKey(key.mv_data()); result = mdb_cursor_get(cursor, key, data, MDB_NEXT)) {
+					visited++;
+					long id = data2id(key.mv_data().duplicate());
+					if (ValueIds.getIdType(id) != ValueIds.T_LITERAL) {
+						continue;
+					}
+					byte[] bytes = copyValue(data);
+					// Retired payloads remain readable by snapshots but must never become new lookup owners.
+					if (isLiveReverseOwner(stack, txn, id, bytes) && value.equals(data2value(id, bytes, null))) {
+						return id;
+					}
+				}
+				return LmdbValue.UNKNOWN_ID;
+			} finally {
+				mdb_cursor_close(cursor);
+				observeLegacySemanticScan(visited);
+			}
+		});
+	}
+
+	/** Each dictionary source is seeded once per logical writer, including native resize continuations. */
+	private long findLegacyWriterSemanticId(Value value) throws IOException {
+		try {
+			if (legacyValueIndex == null) {
+				legacyValueIndex = legacyCollections == null ? new LegacySemanticIndex<>()
+						: new LegacySemanticIndex<>(legacyCollections);
+			}
+			if (value instanceof TripleTerm && !legacyTermOwnersSeeded) {
+				seedLegacyTermOwners();
+				legacyTermOwnersSeeded = true;
+			} else if (value instanceof Literal && !legacyLiteralOwnersSeeded) {
+				seedLegacyLiteralOwners();
+				legacyLiteralOwnersSeeded = true;
+			}
+			Value key = LegacySemanticScope.detached(value);
+			Iterator<Long> owners = legacyValueIndex.aliases(key);
+			while (owners.hasNext()) {
+				long id = owners.next();
+				if (isLiveLegacySemanticOwner(id, key)) {
+					return id;
+				} else {
+					legacyValueIndex.remove(id);
+				}
+			}
+			return LmdbValue.UNKNOWN_ID;
+		} catch (IOException | RuntimeException | Error failure) {
+			closeLegacyValueIndex(failure);
+			throw failure;
+		}
+	}
+
+	private void seedLegacyLiteralOwners() throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pointer));
+			long cursor = pointer.get(0);
+			long visited = 0;
+			try {
+				MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { ID_KEY }));
+				MDBVal data = MDBVal.calloc(stack);
+				for (int result = mdb_cursor_get(cursor, key, data, MDB_SET_RANGE); result == MDB_SUCCESS
+						&& isIdKey(key.mv_data()); result = mdb_cursor_get(cursor, key, data, MDB_NEXT)) {
+					visited++;
+					long id = data2id(key.mv_data().duplicate());
+					if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
+						byte[] bytes = copyValue(data);
+						if (isLiveReverseOwner(stack, txn, id, bytes)) {
+							Value decoded = data2value(id, bytes, null);
+							if (LegacySemanticScope.containsLanguage(decoded)) {
+								legacyValueIndex.add(LegacySemanticScope.detached(decoded), id);
+							}
+						}
+					}
+				}
+				return null;
+			} finally {
+				mdb_cursor_close(cursor);
+				observeLegacySemanticScan(visited);
+			}
+		});
+	}
+
+	private void seedLegacyTermOwners() throws IOException {
+		readTransaction(env, (stack, txn) -> {
+			long visited = 0;
+			try (RecordIterator records = new LmdbRecordIterator(tripleTermSpocIndex, false,
+					-1, -1, -1, -1, true, txnManager.createTxn(txn))) {
+				long[] quad;
+				while ((quad = records.next()) != null) {
+					visited++;
+					Value decoded = getValue(quad[3]);
+					if (LegacySemanticScope.containsLanguage(decoded)) {
+						legacyValueIndex.add(LegacySemanticScope.detached(decoded), quad[3]);
+					}
+				}
+			} finally {
+				observeLegacySemanticScan(visited);
+			}
+			return null;
+		});
+	}
+
+	private boolean isLiveLegacySemanticOwner(long id, Value expected) throws IOException {
+		if (legacySemanticLookupObserver != null) {
+			legacySemanticLookupObserver.accept(id);
+		}
+		return readTransaction(env, (stack, txn) -> {
+			if (expected instanceof TripleTerm) {
+				return hasTripleTermMapping(txn, id) && expected.equals(id2tripleTerm(id, null));
+			}
+			MDBVal key = MDBVal.calloc(stack).mv_data(id2data(idBuffer(stack), id).flip());
+			MDBVal data = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, key, data);
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			byte[] bytes = copyValue(data);
+			return isLiveReverseOwner(stack, txn, id, bytes) && expected.equals(data2value(id, bytes, null));
+		});
+	}
+
+	private void closeLegacyValueIndex(Throwable primary) {
+		LegacySemanticIndex<Value, Long> index = legacyValueIndex;
+		legacyValueIndex = null;
+		legacyLiteralOwnersSeeded = false;
+		legacyTermOwnersSeeded = false;
+		if (index != null) {
+			try {
+				index.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (primary == null) {
+					throw cleanup;
+				}
+				if (primary != cleanup) {
+					primary.addSuppressed(cleanup);
+				}
+			}
+		}
 	}
 
 	/** Recheck arbitrary callers in bounded batches without materializing a spillable input collection. */
@@ -2485,6 +2766,62 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	/** Keep both dictionary directions intact until every snapshot predating the removing commit has closed. */
+	void recordRetiredIds(Collection<Long> ids, long tripleDataRevision) throws IOException {
+		if (!enableGC() || ids.isEmpty()) {
+			return;
+		}
+		if (!refCountIntegrityEstablished) {
+			throw new IOException("ValueStore reference counts are not established");
+		}
+		readTransaction(env, (stack, txn) -> {
+			// Match the existing recovery reservation: two bounded varint records for each retired ID.
+			resizeMap(writeTxn, Math.max(8L * pageSize, Math.multiplyExact(128L, ids.size())));
+			return null;
+		});
+		writeTransaction((stack, txn) -> {
+			retiredIdStore.recordRetirements(stack, txn, ids, tripleDataRevision);
+			return null;
+		});
+	}
+
+	RetiredValueIdStore.DrainBatch pollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
+		if (!retiredIdStore.hasPending()) {
+			return null;
+		}
+		return readTransaction(env,
+				(stack, txn) -> retiredIdStore.pollDrainable(stack, txn, maxRevisionInclusive, maxIds));
+	}
+
+	void removeRetiredIds(RetiredValueIdStore.DrainBatch batch) throws IOException {
+		if (batch == null || batch.isEmpty()) {
+			return;
+		}
+		readTransaction(env, (stack, txn) -> {
+			long records = Math.addExact(batch.ids.size(),
+					Math.addExact(batch.matchedSeqKeys.size(), batch.staleSeqKeys.size()));
+			resizeMap(writeTxn, Math.max(8L * pageSize, Math.multiplyExact(64L, records)));
+			return null;
+		});
+		writeTransaction((stack, txn) -> {
+			retiredIdStore.removeDrained(stack, txn, batch);
+			return null;
+		});
+	}
+
+	boolean hasRetiredIds() {
+		return retiredIdStore.hasPending();
+	}
+
+	private void refreshRetiredIds() throws IOException {
+		if (retiredIdStoreInitialized) {
+			LmdbUtil.readTransaction(env, (stack, txn) -> {
+				retiredIdStore.refreshPendingCount(stack, txn);
+				return null;
+			});
+		}
+	}
+
 	protected void deleteValueToIdMappings(MemoryStack stack, long writeTxn, Collection<Long> ids,
 			Collection<Long> newGcIds)
 			throws IOException {
@@ -2506,6 +2843,14 @@ class ValueStore extends AbstractValueFactory {
 			for (Long id : ids) {
 				if (hasPositiveRefCount(stack, writeTxn, id)) {
 					continue;
+				}
+				if (legacyValueIndex != null) {
+					try {
+						legacyValueIndex.remove(id);
+					} catch (RuntimeException | Error failure) {
+						closeLegacyValueIndex(failure);
+						throw failure;
+					}
 				}
 				// resizeMap(writeTxn, 10L * ids.size() * (1L + Long.BYTES + 2L + Long.BYTES));
 
@@ -2814,49 +3159,61 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
-		if (writeTxn != 0) {
-			if (commit) {
-				try (MemoryStack stack = stackPush()) {
-					persistNextId(stack, writeTxn);
-				}
-				try (MemoryStack stack = stackPush()) {
-					updateRefCounts(stack, writeTxn);
-				}
-				refCountsTxCache.clear();
-				if (invalidateRevisionOnCommit) {
-					long stamp = revisionLock.writeLock();
-					try {
+		Throwable primary = null;
+		boolean continued = false;
+		try {
+			if (writeTxn != 0) {
+				if (commit) {
+					try (MemoryStack stack = stackPush()) {
+						persistNextId(stack, writeTxn);
+					}
+					try (MemoryStack stack = stackPush()) {
+						updateRefCounts(stack, writeTxn);
+					}
+					refCountsTxCache.clear();
+					if (invalidateRevisionOnCommit) {
+						long stamp = revisionLock.writeLock();
+						try {
+							commitNativeWriteTransaction();
+							ValueStoreRevision.Lazy retired = lazyRevision;
+							long revisionId = retired.getRevisionId();
+							setNewRevision();
+							clearCaches();
+							cleaner.register(retired, () -> {
+								synchronized (unusedRevisionIds) {
+									unusedRevisionIds.add(revisionId);
+								}
+								if (nextValueEvictionTime < 0) {
+									nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+								}
+							});
+							flushPendingHashUpdates();
+						} finally {
+							revisionLock.unlockWrite(stamp);
+						}
+					} else {
 						commitNativeWriteTransaction();
-						ValueStoreRevision.Lazy retired = lazyRevision;
-						long revisionId = retired.getRevisionId();
-						setNewRevision();
-						clearCaches();
-						cleaner.register(retired, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
 						flushPendingHashUpdates();
-					} finally {
-						revisionLock.unlockWrite(stamp);
 					}
 				} else {
-					commitNativeWriteTransaction();
-					flushPendingHashUpdates();
+					refCountsTxCache.clear();
+					mdb_txn_abort(writeTxn);
+					clearPendingHashUpdates();
+					clearCaches();
+					setNewRevision();
 				}
-			} else {
-				refCountsTxCache.clear();
-				mdb_txn_abort(writeTxn);
-				clearPendingHashUpdates();
-				clearCaches();
-				setNewRevision();
+				writeTxn = 0;
+				writeTxnOwner = null;
+				invalidateRevisionOnCommit = false;
 			}
-			writeTxn = 0;
-			writeTxnOwner = null;
-			invalidateRevisionOnCommit = false;
+			continued = commit && autoGrow;
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!continued) {
+				closeLegacyValueIndex(primary);
+			}
 		}
 	}
 
@@ -2878,7 +3235,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void commit() throws IOException {
-		endTransaction(true, false);
+		try {
+			endTransaction(true, false);
+		} finally {
+			refreshRetiredIds();
+		}
 		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
@@ -2894,7 +3255,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void rollback() throws IOException {
-		endTransaction(false, false);
+		try {
+			endTransaction(false, false);
+		} finally {
+			refreshRetiredIds();
+		}
 	}
 
 	/**
@@ -2929,6 +3294,7 @@ class ValueStore extends AbstractValueFactory {
 	public void clear() throws IOException {
 		boolean initialized = storeInitializationComplete;
 		close();
+		retiredIdStoreInitialized = false;
 		Files.deleteIfExists(new File(dir, "data.mdb").toPath());
 		Files.deleteIfExists(new File(dir, "lock.mdb").toPath());
 		ValueStoreHashFile.deleteIfPresent(dir);
@@ -2949,8 +3315,15 @@ class ValueStore extends AbstractValueFactory {
 		setNewRevision();
 		startTransaction(true);
 		initTermIndexes(storeConfig);
+		readTransaction(env, (stack, txn) -> {
+			resizeMap(writeTxn, 8L * pageSize);
+			return null;
+		});
+		retiredIdStore.openWithTransaction(env, writeTxn, false);
+		retiredIdStoreInitialized = true;
 		deferNextIdPersistence = false;
 		commit();
+		retiredIdStore.syncAfterTransaction(env);
 		refCountIntegrityEstablished = true;
 		storeInitializationComplete = initialized;
 	}
@@ -2989,26 +3362,75 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
+		Throwable failure = null;
 		if (env != 0) {
-			if (writeTxn == 0) {
-				flushPendingHashUpdates();
-				writeCleanRefCountMarker();
+			try {
+				if (writeTxn == 0) {
+					flushPendingHashUpdates();
+					writeCleanRefCountMarker();
+				}
+			} catch (Throwable cleanup) {
+				failure = cleanup;
 			}
-			if (txnManager != null) {
-				txnManager.close();
+			try {
+				if (txnManager != null) {
+					txnManager.close();
+				}
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
 			}
-			endTransaction(false, false);
-			mdb_env_close(env);
-			env = 0;
+			try {
+				endTransaction(false, false);
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
+			try {
+				mdb_env_close(env);
+				env = 0;
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			}
 		}
 		if (hashFile != null) {
 			try {
 				hashFile.close();
 			} catch (IOException e) {
 				logger.warn("Could not close LMDB hash cache", e);
+				if (failure != null) {
+					failure = retainCleanupFailure(failure, e);
+				}
+			} catch (Throwable cleanup) {
+				failure = retainCleanupFailure(failure, cleanup);
+			} finally {
+				hashFile = null;
 			}
-			hashFile = null;
 		}
+		if (failure instanceof IOException exception) {
+			throw exception;
+		}
+		if (failure instanceof RuntimeException exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IOException(failure);
+		}
+	}
+
+	private static Throwable retainCleanupFailure(Throwable primary, Throwable cleanup) {
+		if (primary == null) {
+			return cleanup;
+		}
+		if (primary != cleanup) {
+			primary.addSuppressed(cleanup);
+		}
+		return primary;
+	}
+
+	boolean isNativeEnvironmentOpen() {
+		return env != 0;
 	}
 
 	private void storeHashIfAbsent(long id, Value value) {
