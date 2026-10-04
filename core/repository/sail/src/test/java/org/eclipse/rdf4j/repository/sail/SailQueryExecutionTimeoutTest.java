@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Callable;
@@ -33,7 +34,9 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -53,6 +56,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SailQueryExecutionTimeoutTest {
 
@@ -138,6 +142,106 @@ class SailQueryExecutionTimeoutTest {
 	private static Stream<Arguments> legacyHookCases() {
 		return Stream.of(QueryShape.values())
 				.flatMap(shape -> Stream.of(0, 1).map(timeout -> Arguments.of(shape, timeout)));
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1 })
+	void legacyGraphHookReceivesOnlyValidStatementBindings(int maxExecutionTime) {
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		when(repositoryConnection.getRepository().getValueFactory()).thenReturn(values);
+		MapBindingSet invalid = new MapBindingSet();
+		invalid.addBinding("subject", values.createLiteral("invalid subject"));
+		invalid.addBinding("predicate", values.createIRI("urn:hook:predicate"));
+		invalid.addBinding("object", values.createLiteral("hook value"));
+		MapBindingSet valid = new MapBindingSet();
+		valid.addBinding("subject", values.createIRI("urn:hook:subject"));
+		valid.addBinding("predicate", values.createIRI("urn:hook:predicate"));
+		valid.addBinding("object", values.createLiteral("hook value"));
+		CloseableIteratorIteration<BindingSet> iteration = new CloseableIteratorIteration<>(
+				List.<BindingSet>of(invalid, valid).iterator());
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> iteration);
+		List<BindingSet> hookBindings = new ArrayList<>();
+		SailGraphQuery query = new SailGraphQuery(
+				((SailGraphQuery) repositoryConnection.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				return new IterationWrapper<BindingSet>(bindings) {
+					@Override
+					public BindingSet next() {
+						BindingSet binding = super.next();
+						hookBindings.add(binding);
+						return binding;
+					}
+				};
+			}
+		};
+		query.setMaxExecutionTime(maxExecutionTime);
+		try (iteration; var result = query.evaluate()) {
+			assertThat(result.hasNext()).isTrue();
+			assertThat(result.next().getSubject()).isEqualTo(valid.getValue("subject"));
+			assertThat(result.hasNext()).isFalse();
+		}
+		assertThat(hookBindings).containsExactly(valid);
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void closingBorrowedLegacyWrapperKeepsPublicDeadlineActive() throws Exception {
+		CountDownLatch deadlineExpired = new CountDownLatch(1);
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", SimpleValueFactory.getInstance().createLiteral(1));
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+			QueryExecutionDeadline.current().onExpiration(deadlineExpired::countDown);
+			return new SingletonIteration<>(row);
+		});
+		SailTupleQuery query = new SailTupleQuery(
+				((SailTupleQuery) repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				try (var timed = super.enforceMaxQueryTime(bindings)) {
+					return new SingletonIteration<>(timed.next());
+				}
+			}
+		};
+		query.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
+		try (var result = query.evaluate()) {
+			assertThat(deadlineExpired.await(3, TimeUnit.SECONDS)).isTrue();
+			assertThatThrownBy(result::hasNext).isInstanceOf(QueryInterruptedException.class);
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void directLegacyHookKeepsItsOwnLimitUnderUnrelatedDeadline() throws Exception {
+		when(sailConnection.evaluate(any(), any(), any(), anyBoolean()))
+				.thenAnswer(invocation -> new EmptyIteration<>());
+		var query = new SailTupleQuery(
+				((SailTupleQuery) repositoryConnection.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }"))
+						.getParsedQuery(),
+				repositoryConnection) {
+			@Override
+			protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+					CloseableIteration<? extends BindingSet> bindings) {
+				return super.enforceMaxQueryTime(bindings);
+			}
+		};
+		query.setMaxExecutionTime(MAX_EXECUTION_TIME_SECONDS);
+		try (var result = query.evaluate()) {
+			assertThat(result.hasNext()).isFalse();
+		}
+		BlockingIteration iteration = new BlockingIteration();
+		try (QueryExecutionDeadline unrelated = QueryExecutionDeadline.start(60_000);
+				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(unrelated);
+				var timed = query.enforceMaxQueryTime(iteration)) {
+			assertThat(iteration.closedLatch.await(3, TimeUnit.SECONDS)).isTrue();
+			assertThat(unrelated.isExpired()).isFalse();
+		}
 	}
 
 	private enum QueryShape {

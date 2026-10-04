@@ -73,8 +73,6 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 				}
 			}
 
-			bindingsIter1 = enforceMaxQueryTime(bindingsIter1);
-
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<BindingSet>(bindingsIter1) {
 
@@ -93,6 +91,7 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 				}
 			};
+			bindingsIter2 = enforceMaxQueryTime(bindingsIter2, deadline);
 
 			// Convert the BindingSet objects to actual RDF statements
 			final ValueFactory vf = getConnection().getRepository().getValueFactory();

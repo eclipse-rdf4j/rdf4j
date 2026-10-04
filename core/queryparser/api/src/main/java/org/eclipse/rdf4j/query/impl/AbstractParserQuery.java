@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 public abstract class AbstractParserQuery extends AbstractQuery {
 
 	private final ParsedQuery parsedQuery;
+	// Scope only modern hook dispatch; direct legacy callers retain their independent timeout.
+	private final ThreadLocal<QueryExecutionDeadline> legacyHookDeadline = new ThreadLocal<>();
 
 	protected static final int DEFAULT_EXPLANATION_EXECUTION_TIMEOUT = 60;
 
@@ -41,7 +43,10 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter) {
 		if (getMaxExecutionTime() > 0) {
-			bindingsIter = new QueryInterruptIteration<>(bindingsIter, 1000L * getMaxExecutionTime());
+			QueryExecutionDeadline deadline = legacyHookDeadline.get();
+			bindingsIter = deadline == null
+					? new QueryInterruptIteration<>(bindingsIter, 1000L * getMaxExecutionTime())
+					: new QueryInterruptIteration<>(bindingsIter, deadline, false);
 		}
 
 		return bindingsIter;
@@ -62,14 +67,28 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 */
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter, QueryExecutionDeadline deadline) {
-		return enforceResultMaxQueryTime(enforceMaxQueryTime(bindingsIter), deadline);
+		QueryExecutionDeadline previous = legacyHookDeadline.get();
+		if (deadline == null) {
+			legacyHookDeadline.remove();
+		} else {
+			legacyHookDeadline.set(deadline);
+		}
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			return enforceResultMaxQueryTime(enforceMaxQueryTime(bindingsIter), deadline);
+		} finally {
+			if (previous == null) {
+				legacyHookDeadline.remove();
+			} else {
+				legacyHookDeadline.set(previous);
+			}
+		}
 	}
 
 	/** Binds any public result shape to the deadline, including its final value preparation. */
 	protected <T> CloseableIteration<? extends T> enforceResultMaxQueryTime(
 			CloseableIteration<? extends T> iteration, QueryExecutionDeadline deadline) {
 		if (deadline != null) {
-			return new QueryInterruptIteration<>(iteration, deadline);
+			return new QueryInterruptIteration<>(iteration, deadline, true);
 		}
 		return iteration;
 	}
@@ -97,18 +116,18 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 
 	private static class QueryInterruptIteration<T> extends TimeLimitIteration<T> {
 
-		private final QueryExecutionDeadline deadline;
+		private final QueryExecutionDeadline ownedDeadline;
 
 		public QueryInterruptIteration(CloseableIteration<? extends T> iter,
 				long timeLimit) {
 			super(iter, timeLimit);
-			deadline = null;
+			ownedDeadline = null;
 		}
 
 		private QueryInterruptIteration(CloseableIteration<? extends T> iter,
-				QueryExecutionDeadline deadline) {
+				QueryExecutionDeadline deadline, boolean ownsDeadline) {
 			super(iter, deadline);
-			this.deadline = deadline;
+			ownedDeadline = ownsDeadline ? deadline : null;
 			registerDeadline();
 		}
 
@@ -117,8 +136,8 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 			try {
 				super.handleClose();
 			} finally {
-				if (deadline != null) {
-					deadline.close();
+				if (ownedDeadline != null) {
+					ownedDeadline.close();
 				}
 			}
 		}
