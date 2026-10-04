@@ -60,6 +60,39 @@ class LmdbNativeCompatibilityRegressionTest {
 	@TempDir
 	File directory;
 
+	@ParameterizedTest
+	@CsvSource({ "true,true", "true,false", "false,true", "false,false" })
+	void groupedNamedGraphsFallBackWithoutAdjacency(boolean inline, boolean ordered) {
+		SailRepository repository = repository(inline, ordered, false);
+		try {
+			IRI number = VF.createIRI(NS, "number");
+			IRI graph = VF.createIRI(NS, "graph");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				for (int i = 0; i < 3000; i++) {
+					IRI subject = VF.createIRI(NS, "s" + i);
+					connection.add(subject, number, VF.createLiteral(i % 100), graph);
+					connection.add(subject, number, VF.createLiteral(i % 7));
+				}
+				connection.commit();
+			}
+			for (String body : List.of("GRAPH c:graph { ?s c:number ?n }",
+					"GRAPH ?g { ?s c:number ?n }", "?s c:number ?n",
+					"GRAPH c:graph { ?s c:number ?n FILTER(?n < 10) }")) {
+				String query = PREFIX + "SELECT ?n (COUNT(?s) AS ?count) WHERE { " + body
+						+ " } GROUP BY ?n ORDER BY ?n";
+				List<BindingSet> expected = rows(repository, query, false);
+				assertThat(expected).isNotEmpty();
+				assertThat(rows(repository, query, true)).as(query).containsExactlyElementsOf(expected);
+				String nested = PREFIX + "SELECT ?n ?count WHERE { { " + query.substring(PREFIX.length())
+						+ " } } ORDER BY ?n";
+				assertThat(rows(repository, nested, true)).as(nested).containsExactlyElementsOf(expected);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	@Test
 	void reorderedRawRowsFilterBeforeTheyCanEnterAReplayCache() throws Exception {
 		NativeLmdbQuerySource source = rawScanSource();

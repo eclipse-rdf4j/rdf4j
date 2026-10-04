@@ -651,8 +651,8 @@ final class LmdbAdjacencyAggregatePlan {
 	}
 
 	private LmdbPrefixRunPlan contextual(LmdbPrefixRunPlan plan) {
-		if (plan == null) {
-			return plan;
+		if (plan == null || !plan.usesAdjacency()) {
+			return null;
 		}
 		if (acceptedContexts != null || namedContextsOnly) {
 			plan = plan.withContextFilter(acceptedContexts, namedContextsOnly);
