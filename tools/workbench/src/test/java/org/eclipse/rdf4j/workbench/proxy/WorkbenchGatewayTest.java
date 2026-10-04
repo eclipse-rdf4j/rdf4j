@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
@@ -699,14 +702,22 @@ class WorkbenchGatewayTest {
 				}
 			});
 			assertThat(gateway.blockFirstServletInit.await(5, TimeUnit.SECONDS)).isTrue();
+			WorkbenchSessionState state = (WorkbenchSessionState) session
+					.getAttribute(WorkbenchGateway.SESSION_STATE_ATTRIBUTE);
+			AtomicReference<Thread> secondThread = new AtomicReference<>();
+			CountDownLatch secondTaskStarted = new CountDownLatch(1);
 
 			Future<?> second = executor.submit(() -> {
+				secondThread.set(Thread.currentThread());
+				secondTaskStarted.countDown();
 				try {
 					gateway.service(secondRequest, new CapturedResponse());
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
 			});
+			assertThat(secondTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(waitForThreadBlockedOn(secondThread.get(), state, 5, TimeUnit.SECONDS)).isTrue();
 			gateway.allowFirstServletInit.countDown();
 			first.get(5, TimeUnit.SECONDS);
 			second.get(5, TimeUnit.SECONDS);
@@ -714,8 +725,25 @@ class WorkbenchGatewayTest {
 			assertThat(gateway.createdServlets).hasSize(1);
 			assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(2);
 		} finally {
+			gateway.allowFirstServletInit.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	private static boolean waitForThreadBlockedOn(Thread thread, Object lock, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		int lockIdentity = System.identityHashCode(lock);
+		while (System.nanoTime() < deadline) {
+			ThreadInfo info = ManagementFactory.getThreadMXBean()
+					.getThreadInfo(new long[] { thread.threadId() }, true, true)[0];
+			if (info != null && info.getThreadState() == Thread.State.BLOCKED && info.getLockInfo() != null
+					&& info.getLockInfo().getIdentityHashCode() == lockIdentity) {
+				return true;
+			}
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		return false;
 	}
 
 	@Test

@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.workbench.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet;
 import org.junit.jupiter.api.Test;
@@ -122,20 +125,43 @@ class WorkbenchSessionStateSecurityTest {
 				}
 			});
 			assertThat(factoryEntered.await(5, TimeUnit.SECONDS)).isTrue();
+			AtomicReference<Thread> secondThread = new AtomicReference<>();
+			CountDownLatch secondTaskStarted = new CountDownLatch(1);
 			Future<WorkbenchServlet> second = executor.submit(() -> {
+				secondThread.set(Thread.currentThread());
+				secondTaskStarted.countDown();
 				try (WorkbenchSessionState.Lease lease = state.acquire(
 						"https://example.org/server", "alice", RecordingServlet::new)) {
 					return lease.servlet();
 				}
 			});
 
+			assertThat(secondTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(waitForThreadBlockedOn(secondThread.get(), state, 5, TimeUnit.SECONDS)).isTrue();
 			releaseFactory.countDown();
 
 			assertThat(first.get(5, TimeUnit.SECONDS)).isSameAs(created);
 			assertThat(second.get(5, TimeUnit.SECONDS)).isSameAs(created);
 		} finally {
+			releaseFactory.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	private static boolean waitForThreadBlockedOn(Thread thread, Object lock, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		int lockIdentity = System.identityHashCode(lock);
+		while (System.nanoTime() < deadline) {
+			ThreadInfo info = ManagementFactory.getThreadMXBean()
+					.getThreadInfo(new long[] { thread.threadId() }, true, true)[0];
+			if (info != null && info.getThreadState() == Thread.State.BLOCKED && info.getLockInfo() != null
+					&& info.getLockInfo().getIdentityHashCode() == lockIdentity) {
+				return true;
+			}
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		return false;
 	}
 
 	private static final class RecordingServlet extends WorkbenchServlet {
