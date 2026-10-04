@@ -148,8 +148,34 @@ class UnionSailDataset implements SailDataset {
 
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		return dataset1.getStatementCount(subj, pred, obj, contexts)
-				+ dataset2.getStatementCount(subj, pred, obj, contexts);
+		return StatementCountSources.count(this, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public StatementCountSource prepareStatementCount(StatementCountScope scope) {
+		StatementCountSource first = dataset1.prepareStatementCount(scope);
+		StatementCountSource second = dataset2.prepareStatementCount(scope);
+		return new StatementCountSource() {
+			@Override
+			public long count(Resource subj, IRI pred, Value obj, Resource[] contexts, StatementKeyFilter filter,
+					StatementCountScope countScope) {
+				return first.count(subj, pred, obj, contexts, filter, countScope)
+						+ second.count(subj, pred, obj, contexts, filter, countScope);
+			}
+
+			@Override
+			public PreparedStatementTest prepareContains(StatementKey key, StatementCountScope countScope) {
+				PreparedStatementTest a = first.prepareContains(key, countScope);
+				PreparedStatementTest b = second.prepareContains(key, countScope);
+				return () -> a.test() || b.test();
+			}
+		};
+	}
+
+	@Override
+	public void prepareStatementCountValues(StatementCountScope scope) {
+		dataset1.prepareStatementCountValues(scope);
+		dataset2.prepareStatementCountValues(scope);
 	}
 
 	@Override

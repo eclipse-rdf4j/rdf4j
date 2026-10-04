@@ -82,6 +82,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.StatementCountScope;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -594,6 +595,56 @@ class TripleStore implements Closeable {
 		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
+	}
+
+	CountingIterator getTriplesForCounting(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbStatementKey key) throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		return new LmdbCountingIterator(index, index.getPatternScore(subj, pred, obj, context) > 0, subj, pred,
+				obj, context, explicit, txn, key);
+	}
+
+	CountingIterator getTriplesForCounting(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbStatementKey key, StatementCountScope scope) throws IOException {
+		scope.requireFrozen();
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		return new LmdbCountingIterator(index, index.getPatternScore(subj, pred, obj, context) > 0, subj, pred,
+				obj, context, explicit, txn, key, true);
+	}
+
+	/** Determines whether requested contexts select disjoint leading-prefix ranges. */
+	boolean hasCountContextPrefix(long subj, long pred, long obj) {
+		TripleIndex withoutContext = TripleIndex.getBestIndex(indexes, subj, pred, obj, -1);
+		TripleIndex withContext = TripleIndex.getBestIndex(indexes, subj, pred, obj, 0);
+		return withContext.getPatternScore(subj, pred, obj, 0) > withoutContext.getPatternScore(subj, pred, obj, -1);
+	}
+
+	/** Uses the provided dataset snapshot, never a newly opened transaction. */
+	long countAll(Txn txn, boolean explicit) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			int db = indexes.getFirst().getDB(explicit);
+			if (db < 0) {
+				return 0;
+			}
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn.get(), db, stat));
+			return stat.ms_entries();
+		}
+	}
+
+	/** A reused exact key probe for prepared membership predicates. */
+	LmdbStatementKey.QuadTest prepareCountContains(Txn txn, boolean explicit,
+			StatementCountScope scope) {
+		return new LmdbCountExactProbe(indexes.getFirst(), txn, explicit, scope);
+	}
+
+	LmdbStatementKey.ObjectScanTest prepareCountObjectScan(Txn txn, boolean explicit, StatementCountScope scope) {
+		try {
+			TripleIndex index = TripleIndex.getBestIndex(indexes, 1, 1, -1, 0);
+			return new LmdbCountObjectProbe(index, txn, explicit, scope);
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	boolean hasTriples(boolean explicit) throws IOException {

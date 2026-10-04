@@ -14,11 +14,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.lang.reflect.Field;
@@ -30,18 +37,36 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.base.StatementCountScope;
+import org.eclipse.rdf4j.sail.base.StatementCountSource;
+import org.eclipse.rdf4j.sail.base.StatementCountSources;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.mockito.MockedStatic;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -62,6 +87,236 @@ public class TripleStoreTest {
 			count++;
 		}
 		return count;
+	}
+
+	@Test
+	public void testCountContainsReleasesPartialPoolAllocationWhenValueAcquisitionFails() {
+		Pool pool = mock(Pool.class);
+		Txn txn = mock(Txn.class);
+		ByteBuffer keyBuffer = MemoryUtil.memAlloc(TripleIndex.MAX_KEY_LENGTH);
+		MDBVal key = MDBVal.malloc();
+		when(txn.getValuePool()).thenReturn(pool);
+		when(pool.getKeyBuffer()).thenReturn(keyBuffer);
+		when(pool.getVal()).thenReturn(key)
+				.thenThrow(new IllegalStateException("Injected second value allocation failure"));
+
+		try {
+			try (StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
+				assertTrue(scope.freeze());
+				assertThrows(IllegalStateException.class,
+						() -> tripleStore.prepareCountContains(txn, true, scope));
+			}
+			verify(pool).free(key);
+			verify(pool).free(keyBuffer);
+		} finally {
+			key.close();
+			MemoryUtil.memFree(keyBuffer);
+		}
+	}
+
+	@Test
+	public void testCountDictionaryFrameReleasesCompletedNativeValuesWhenAllocationFails() {
+		MDBVal firstValue = mock(MDBVal.class);
+		try (MockedStatic<MDBVal> mdbValues = mockStatic(MDBVal.class)) {
+			mdbValues.when(MDBVal::calloc)
+					.thenReturn(firstValue)
+					.thenThrow(new IllegalStateException("Injected second frame allocation failure"));
+			LmdbCountDictionary dictionary = new LmdbCountDictionary(null, 0);
+			try {
+				Assertions.assertThrows(IllegalStateException.class,
+						() -> dictionary.valueHash(ValueIds.createId(ValueIds.T_URI, 1)));
+			} finally {
+				dictionary.close();
+			}
+			verify(firstValue).free();
+		}
+	}
+
+	@Test
+	public void testCountDictionaryFrameReleasesNativeValuesAndBuffersWhenBufferAllocationFails() {
+		MDBVal[] values = { mock(MDBVal.class), mock(MDBVal.class), mock(MDBVal.class), mock(MDBVal.class),
+				mock(MDBVal.class) };
+		ByteBuffer firstBuffer = MemoryUtil.memAlloc(64);
+		try (MockedStatic<MDBVal> mdbValues = mockStatic(MDBVal.class);
+				MockedStatic<MemoryUtil> memory = mockStatic(MemoryUtil.class)) {
+			mdbValues.when(MDBVal::calloc).thenReturn(values[0], values[1], values[2], values[3], values[4]);
+			memory.when(() -> MemoryUtil.memAlloc(64))
+					.thenReturn(firstBuffer)
+					.thenThrow(new IllegalStateException("Injected second frame buffer allocation failure"));
+			LmdbCountDictionary dictionary = new LmdbCountDictionary(null, 0);
+			try {
+				Assertions.assertThrows(IllegalStateException.class,
+						() -> dictionary.valueHash(ValueIds.createId(ValueIds.T_URI, 1)));
+			} finally {
+				dictionary.close();
+			}
+			for (MDBVal value : values) {
+				verify(value).free();
+			}
+			memory.verify(() -> MemoryUtil.memFree(firstBuffer));
+		} finally {
+			MemoryUtil.memFree(firstBuffer);
+		}
+	}
+
+	@Test
+	public void testFrozenNativeCountKeepsBorrowedRootUsableAcrossQuadAndValueMapGrowth(@TempDir File root)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(4096L * 10)
+				.setValueDBSize(1024L * 1024);
+		ValueStore values = new ValueStore(new File(root, "values"), config);
+		CountDownLatch writerCommitAttempted = new CountDownLatch(1);
+		AtomicBoolean observeWriterCommit = new AtomicBoolean();
+		class CommitObservedTripleStore extends TripleStore {
+			CommitObservedTripleStore() throws Exception {
+				super(new File(root, "triples"), config, values);
+			}
+
+			@Override
+			public void commit() throws java.io.IOException {
+				if (observeWriterCommit.get()) {
+					writerCommitAttempted.countDown();
+				}
+				super.commit();
+			}
+		}
+		CommitObservedTripleStore smallStore = new CommitObservedTripleStore();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> writer = null;
+		try {
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Resource subject = valueFactory.createIRI("urn:map-growth:subject");
+			IRI predicate = valueFactory.createIRI("urn:map-growth:predicate");
+			Value firstObject = valueFactory.createLiteral("initial-object-one-with-stored-value");
+			Value secondObject = valueFactory.createLiteral("initial-object-two-with-stored-value");
+			Statement first = valueFactory.createStatement(subject, predicate, firstObject);
+			Statement second = valueFactory.createStatement(subject, predicate, secondObject);
+			Value notInBatch = valueFactory.createLiteral("not-in-the-batch");
+			long subjectId = values.storeValue(subject);
+			long predicateId = values.storeValue(predicate);
+			long firstObjectId = values.storeValue(firstObject);
+			long secondObjectId = values.storeValue(secondObject);
+			smallStore.startTransaction();
+			smallStore.storeTriple(subjectId, predicateId, firstObjectId, 0, true);
+			smallStore.storeTriple(subjectId, predicateId, secondObjectId, 0, true);
+			smallStore.commit();
+			values.commit();
+
+			long initialTripleMapSize;
+			try (Txn stats = smallStore.getTxnManager().createReadTxn()) {
+				initialTripleMapSize = mapSize(stats.get());
+			}
+			long initialValueMapSize;
+			try (Txn stats = values.getTxnManager().createReadTxn()) {
+				initialValueMapSize = mapSize(stats.get());
+			}
+			Txn borrowedRoot = smallStore.getTxnManager().createReadTxn();
+			try {
+				AtomicBoolean writerFinishedBatch = new AtomicBoolean();
+				observeWriterCommit.set(true);
+
+				try (StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
+					StatementCountSource nativeSource = new LmdbStatementCountSource(smallStore, values, borrowedRoot,
+							true, scope);
+					StatementCountSource heldSource = StatementCountSources.fromStatements(
+							new Statement[] { first, second }, scope);
+					ValueStore.CountReadResource dictionary = values.prepareCountRead(scope);
+					scope.prepareValue(notInBatch);
+					assertTrue(
+							"The native count scope must freeze before the writer attempts to publish its growth batch",
+							scope.freeze());
+					writer = executor.submit(() -> {
+						smallStore.startTransaction();
+						try {
+							for (int i = 0; i < 10_000; i++) {
+								smallStore.storeTriple(subjectId, predicateId, 10_000_000L + i, 0, true);
+							}
+							smallStore.commit();
+							writerFinishedBatch.set(true);
+							values.startTransaction(true);
+							try {
+								for (int i = 0; i < 10_000; i++) {
+									values.storeValue(values.createLiteral(
+											"map-growth-value-" + i + "-stored-lexical-payload-longer-than-inline"));
+								}
+								values.commit();
+							} catch (Exception e) {
+								values.rollback();
+								throw e;
+							}
+						} catch (Exception e) {
+							smallStore.rollback();
+							throw e;
+						}
+						return null;
+					});
+					assertTrue("The writer must reach the blocked commit with its growth batch staged",
+							writerCommitAttempted.await(10, TimeUnit.SECONDS));
+					assertEquals("The captured count root must keep the original rows", 2,
+							nativeSource.count(null, null, null, new Resource[0], null, scope));
+					assertEquals("The held-key correction must use the same borrowed root", 2,
+							nativeSource.count(null, null, null, new Resource[0],
+									StatementCountSources.contains(heldSource), scope));
+					assertEquals("The original object remains in the frozen root", 1,
+							nativeSource.count(subject, predicate, secondObject, new Resource[0],
+									StatementCountSources.contains(heldSource), scope));
+					assertEquals("The writer batch stays invisible before publication", 0,
+							nativeSource.count(subject, predicate, notInBatch,
+									new Resource[0], StatementCountSources.contains(heldSource), scope));
+					assertEquals("Quad map size cannot change while the count scope holds its guard",
+							initialTripleMapSize,
+							mapSize(borrowedRoot.get()));
+					assertEquals("Value map size cannot change while the count scope holds its guard",
+							initialValueMapSize,
+							mapSize(dictionary.txn()));
+				}
+
+				writer.get(30, TimeUnit.SECONDS);
+				assertTrue("The writer must finish after the frozen count releases its guards",
+						writerFinishedBatch.get());
+				long grownTripleMapSize;
+				try (Txn stats = smallStore.getTxnManager().createReadTxn()) {
+					grownTripleMapSize = mapSize(stats.get());
+				}
+				long grownValueMapSize;
+				try (Txn stats = values.getTxnManager().createReadTxn()) {
+					grownValueMapSize = mapSize(stats.get());
+				}
+				assertTrue("The staged quad batch must grow the real native triple map",
+						grownTripleMapSize > initialTripleMapSize);
+				assertTrue("The writer's stored values must grow the real native value map",
+						grownValueMapSize > initialValueMapSize);
+
+				try (StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
+					StatementCountSource nativeSource = new LmdbStatementCountSource(smallStore, values, borrowedRoot,
+							true, scope);
+					assertTrue(scope.freeze());
+					assertEquals("The supplied root must remain usable after growth and transaction renewal", 10_002,
+							nativeSource.count(null, null, null, new Resource[0], null, scope));
+				}
+			} finally {
+				borrowedRoot.close();
+			}
+		} finally {
+			if (writer != null && !writer.isDone()) {
+				writer.cancel(true);
+			}
+			executor.shutdownNow();
+			try {
+				smallStore.close();
+			} finally {
+				values.close();
+			}
+		}
+	}
+
+	private static long mapSize(long txn) {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			assertEquals(MDB_SUCCESS, mdb_env_info(mdb_txn_env(txn), info));
+			return info.me_mapsize();
+		}
 	}
 
 	@Test

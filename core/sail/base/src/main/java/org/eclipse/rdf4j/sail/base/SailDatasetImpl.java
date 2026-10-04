@@ -84,6 +84,104 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
+	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return StatementCountSources.count(this, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public StatementCountSource prepareStatementCount(StatementCountScope scope) {
+		Changeset.CountSnapshot snapshot = changes.snapshotForCounting(scope);
+		StatementCountSource additions = snapshot.additions;
+		if (snapshot.allCleared) {
+			if (additions != StatementCountSources.EMPTY) {
+				derivedFrom.prepareStatementCountValues(scope);
+			}
+			return additions;
+		}
+		if (additions != StatementCountSources.EMPTY || snapshot.removals != StatementCountSources.EMPTY
+				|| snapshot.clearedContexts.length != 0) {
+			scope.requireStatementKeys();
+		}
+		StatementCountSource base = derivedFrom.prepareStatementCount(scope);
+		StatementCountSource removals = snapshot.removals;
+		StatementKeyFilter cleared = snapshot.clearedContexts.length == 0 ? null
+				: StatementCountSources.contextMatch(snapshot.clearedContexts);
+		StatementKeyFilter notCleared = cleared == null ? null : StatementCountSources.not(cleared);
+		StatementKeyFilter baseContains = StatementCountSources.contains(base);
+		StatementKeyFilter removalContains = StatementCountSources.contains(removals);
+		return new StatementCountSource() {
+			@Override
+			public long count(Resource subj, IRI pred, Value obj, Resource[] contexts, StatementKeyFilter filter,
+					StatementCountScope countScope) {
+				countScope.requireFrozen();
+				long added = additions.count(subj, pred, obj, contexts, filter, countScope);
+				long result = base.count(subj, pred, obj, contexts, filter, countScope);
+				if (result == 0) {
+					return added;
+				}
+				Resource[] selectedClears = intersectContexts(contexts, snapshot.clearedContexts, countScope);
+				if (selectedClears.length > 0) {
+					result -= base.count(subj, pred, obj, selectedClears, filter, countScope);
+				}
+				StatementKeyFilter retainedBase = StatementCountSources.and(baseContains, notCleared);
+				if (removals.count(subj, pred, obj, contexts, null, countScope) != 0) {
+					StatementKeyFilter removedBase = StatementCountSources.and(notCleared, removalContains);
+					result -= base.count(subj, pred, obj, contexts,
+							StatementCountSources.and(filter, removedBase), countScope);
+				}
+				if (added == 0 || result == 0) {
+					return result + added;
+				}
+				StatementKeyFilter visibleBase = StatementCountSources.and(retainedBase,
+						StatementCountSources.not(removalContains));
+				long overlap = additions.count(subj, pred, obj, contexts,
+						StatementCountSources.and(filter, visibleBase), countScope);
+				return result + added - overlap;
+			}
+
+			@Override
+			public PreparedStatementTest prepareContains(StatementKey key, StatementCountScope countScope) {
+				PreparedStatementTest a = additions.prepareContains(key, countScope);
+				PreparedStatementTest b = base.prepareContains(key, countScope);
+				PreparedStatementTest d = removals.prepareContains(key, countScope);
+				PreparedStatementTest c = cleared == null ? null : cleared.bind(key, countScope);
+				return () -> a.test() || (c == null || !c.test()) && !d.test() && b.test();
+			}
+		};
+	}
+
+	@Override
+	public void prepareStatementCountValues(StatementCountScope scope) {
+		derivedFrom.prepareStatementCountValues(scope);
+	}
+
+	private static Resource[] intersectContexts(Resource[] requested, Resource[] cleared,
+			StatementCountScope scope) {
+		if (requested.length == 0) {
+			return cleared;
+		}
+		List<Resource> intersection = new ArrayList<>();
+		for (Resource context : requested) {
+			for (Resource removed : cleared) {
+				if (scope.valueEquals(context, removed)) {
+					boolean duplicate = false;
+					for (Resource selected : intersection) {
+						if (scope.valueEquals(context, selected)) {
+							duplicate = true;
+							break;
+						}
+					}
+					if (!duplicate) {
+						intersection.add(context);
+					}
+					break;
+				}
+			}
+		}
+		return intersection.toArray(Resource[]::new);
+	}
+
+	@Override
 	public String getNamespace(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();
 		if (addedNamespaces != null && addedNamespaces.containsKey(prefix)) {

@@ -379,7 +379,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		return false;
 	}
 
-	private Model getDelegate() {
+	protected final Model getDelegate() {
 		var memory = this.memory;
 		if (memory != null) {
 			return memory;

@@ -16,17 +16,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -119,6 +124,345 @@ public class SnapshotSailStoreTest {
 		@Override
 		public void deprecate(Statement statement) throws SailException {
 
+		}
+	}
+
+	private static SailDataset countOnlyDataset(long count) {
+		return new SailDataset() {
+			@Override
+			public void close() {
+			}
+
+			@Override
+			public CloseableIteration<? extends Namespace> getNamespaces() {
+				return new EmptyIteration<>();
+			}
+
+			@Override
+			public String getNamespace(String prefix) {
+				return null;
+			}
+
+			@Override
+			public CloseableIteration<? extends Resource> getContextIDs() {
+				return new EmptyIteration<>();
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
+				throw new AssertionError("Statement count must use the dataset count implementation");
+			}
+
+			@Override
+			public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				return count;
+			}
+		};
+	}
+
+	@Test
+	public void testDelegatingSailDatasetForwardsStatementCount() {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Value object = valueFactory.createLiteral("object");
+		Resource context = valueFactory.createIRI("urn:context");
+
+		try (SailDataset dataset = new DelegatingSailDataset(countOnlyDataset(7)) {
+		}) {
+			assertEquals(7, dataset.getStatementCount(subject, predicate, object, context));
+		}
+	}
+
+	@Test
+	public void testObservingSailDatasetObservesAndForwardsStatementCount() {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Value object = valueFactory.createLiteral("object");
+		Resource context = valueFactory.createIRI("urn:context");
+		AtomicInteger observations = new AtomicInteger();
+		TestSailSink observer = new TestSailSink() {
+			@Override
+			public void observe(Resource observedSubject, IRI observedPredicate, Value observedObject,
+					Resource... observedContexts) {
+				observations.incrementAndGet();
+				assertEquals(subject, observedSubject);
+				assertEquals(predicate, observedPredicate);
+				assertEquals(object, observedObject);
+				assertEquals(1, observedContexts.length);
+				assertEquals(context, observedContexts[0]);
+			}
+		};
+
+		try (ObservingSailDataset dataset = new ObservingSailDataset(countOnlyDataset(7), observer)) {
+			assertEquals(7, dataset.getStatementCount(subject, predicate, object, context));
+		}
+		assertEquals(1, observations.get());
+	}
+
+	@Test
+	public void testAllClearedStatementCountSkipsDerivedSourcePreflight() {
+		AtomicInteger preflightCalls = new AtomicInteger();
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.clear();
+		SailDataset derived = new CountPreflightTripwireDataset(preflightCalls);
+
+		try (SailDataset dataset = new SailDatasetImpl(derived, changes)) {
+			assertEquals(0, dataset.getStatementCount(null, null, null));
+		}
+
+		assertEquals(0, preflightCalls.get(), "A whole-store clear makes the derived count source unnecessary");
+	}
+
+	@Test
+	public void testAllClearedReaddedCountSkipsStatementKeyPreparation() {
+		AtomicInteger keyPreparationCalls = new AtomicInteger();
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement addedStatement = valueFactory.createStatement(valueFactory.createIRI("urn:all-cleared:subject"),
+				valueFactory.createIRI("urn:all-cleared:predicate"), valueFactory.createLiteral("object"));
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new KeyPreparationTripwireModel(keyPreparationCalls);
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.clear();
+		changes.approve(addedStatement);
+
+		try (SailDataset dataset = new SailDatasetImpl(countOnlyDataset(10), changes)) {
+			assertEquals(1, dataset.getStatementCount(null, null, null),
+					"After a whole-store clear, the result consists only of the re-added statements");
+		}
+
+		assertEquals(0, keyPreparationCalls.get(),
+				"An all-cleared count must not prepare statement keys when no membership comparison is needed");
+	}
+
+	@Test
+	public void testStatementCountUsesOneLegacySnapshotForNativeDeltaCorrections() {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:legacy-count:predicate");
+		Resource clearedContext = valueFactory.createIRI("urn:legacy-count:cleared-context");
+		Resource retainedContext = valueFactory.createIRI("urn:legacy-count:retained-context");
+		Statement clearedStatement = valueFactory.createStatement(valueFactory.createIRI("urn:legacy-count:cleared"),
+				predicate, valueFactory.createLiteral("cleared"), clearedContext);
+		Statement retainedStatement = valueFactory.createStatement(valueFactory.createIRI("urn:legacy-count:retained"),
+				predicate, valueFactory.createLiteral("retained"), retainedContext);
+		Statement addedStatement = valueFactory.createStatement(valueFactory.createIRI("urn:legacy-count:added"),
+				predicate, valueFactory.createLiteral("added"), retainedContext);
+		ChangingLegacyCountDataset derived = new ChangingLegacyCountDataset(
+				List.of(clearedStatement, retainedStatement),
+				clearedContext, clearedStatement);
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new NativeCountModel();
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.clear(clearedContext);
+		changes.approve(addedStatement);
+
+		try (SailDataset dataset = new SailDatasetImpl(derived, changes)) {
+			assertEquals(2, dataset.getStatementCount(null, null, null),
+					"The count must use one coherent base snapshot across the clear correction and native delta");
+		}
+
+		assertEquals(1, derived.statementEnumerations.get(),
+				"The legacy base must be enumerated once during count preflight");
+		assertEquals(0, derived.clearedContextCountCalls.get(),
+				"A clear-context correction must use the captured keys instead of rereading the changing leaf");
+	}
+
+	@Test
+	public void testContextClearUsesOneLegacySnapshotWithoutStatementDeltas() {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI predicate = valueFactory.createIRI("urn:legacy-clear-count:predicate");
+		Resource clearedContext = valueFactory.createIRI("urn:legacy-clear-count:cleared-context");
+		Resource retainedContext = valueFactory.createIRI("urn:legacy-clear-count:retained-context");
+		Statement clearedStatement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:legacy-clear-count:cleared"),
+				predicate, valueFactory.createLiteral("cleared"), clearedContext);
+		Statement retainedStatement = valueFactory.createStatement(
+				valueFactory.createIRI("urn:legacy-clear-count:retained"),
+				predicate, valueFactory.createLiteral("retained"), retainedContext);
+		ChangingLegacyCountDataset derived = new ChangingLegacyCountDataset(
+				List.of(clearedStatement, retainedStatement),
+				clearedContext, clearedStatement);
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new NativeCountModel();
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.clear(clearedContext);
+
+		try (SailDataset dataset = new SailDatasetImpl(derived, changes)) {
+			assertEquals(1, dataset.getStatementCount(null, null, null),
+					"The clear correction must use the same base snapshot as the initial count");
+		}
+
+		assertEquals(1, derived.statementEnumerations.get(),
+				"A clear-context-only count must capture the legacy base once during preflight");
+		assertEquals(0, derived.clearedContextCountCalls.get(),
+				"The clear correction must not reread a changing legacy count override");
+	}
+
+	private static final class NativeCountModel extends LinkedHashModel implements StatementCountSourceProvider {
+		@Override
+		public StatementCountSource snapshotForCounting(StatementCountScope scope) {
+			return StatementCountSources.fromStatements(toArray(Statement[]::new), scope);
+		}
+	}
+
+	private static final class KeyPreparationTripwireModel extends LinkedHashModel
+			implements StatementCountSourceProvider {
+		private final AtomicInteger keyPreparationCalls;
+
+		private KeyPreparationTripwireModel(AtomicInteger keyPreparationCalls) {
+			this.keyPreparationCalls = keyPreparationCalls;
+		}
+
+		@Override
+		public StatementCountSource snapshotForCounting(StatementCountScope scope) {
+			scope.onPrepareStatementKeys(keyPreparationCalls::incrementAndGet);
+			return StatementCountSources.fromStatements(toArray(Statement[]::new), scope);
+		}
+	}
+
+	private static final class ChangingLegacyCountDataset implements SailDataset {
+		private final List<Statement> liveStatements;
+		private final Resource contextToChange;
+		private final Statement statementToChange;
+		private final AtomicInteger statementEnumerations = new AtomicInteger();
+		private final AtomicInteger countCalls = new AtomicInteger();
+		private final AtomicInteger clearedContextCountCalls = new AtomicInteger();
+
+		private ChangingLegacyCountDataset(List<Statement> statements, Resource contextToChange,
+				Statement statementToChange) {
+			this.liveStatements = new ArrayList<>(statements);
+			this.contextToChange = contextToChange;
+			this.statementToChange = statementToChange;
+		}
+
+		@Override
+		public void close() {
+		}
+
+		@Override
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public String getNamespace(String prefix) {
+			return null;
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			statementEnumerations.incrementAndGet();
+			return new CloseableIteratorIteration<>(List.copyOf(liveStatements)
+					.stream()
+					.filter(statement -> matches(statement, subj, pred, obj, contexts))
+					.iterator());
+		}
+
+		@Override
+		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			int call = countCalls.getAndIncrement();
+			if (contexts.length == 1 && Objects.equals(contexts[0], contextToChange)) {
+				clearedContextCountCalls.incrementAndGet();
+			}
+			long count = liveStatements.stream()
+					.filter(statement -> matches(statement, subj, pred, obj, contexts))
+					.count();
+			if (call == 0) {
+				liveStatements.remove(statementToChange);
+			}
+			return count;
+		}
+
+		private static boolean matches(Statement statement, Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			if (subj != null && !subj.equals(statement.getSubject())
+					|| pred != null && !pred.equals(statement.getPredicate())
+					|| obj != null && !obj.equals(statement.getObject())) {
+				return false;
+			}
+			return contexts.length == 0
+					|| Arrays.stream(contexts).anyMatch(context -> Objects.equals(context, statement.getContext()));
+		}
+	}
+
+	private static final class CountPreflightTripwireDataset implements SailDataset, StatementCountSourceProvider {
+		private final AtomicInteger preflightCalls;
+
+		private CountPreflightTripwireDataset(AtomicInteger preflightCalls) {
+			this.preflightCalls = preflightCalls;
+		}
+
+		@Override
+		public void close() {
+		}
+
+		@Override
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public String getNamespace(String prefix) {
+			return null;
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) {
+			throw new AssertionError("A statement count must not enumerate the derived dataset");
+		}
+
+		@Override
+		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			throw new AssertionError("Statement count must use the prepared derived count source");
+		}
+
+		@Override
+		public StatementCountSource snapshotForCounting(StatementCountScope scope) {
+			preflightCalls.incrementAndGet();
+			throw new AssertionError("A whole-store clear must skip derived count-source preflight");
 		}
 	}
 

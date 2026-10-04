@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -224,7 +225,7 @@ class LmdbOptimizerPipelineTest {
 					if (extension.getElements()
 							.stream()
 							.allMatch(element -> element.getExpr() instanceof AggregateOperator)
-							&& extension.getArg()instanceof Filter filter && filter.getArg() instanceof Group) {
+							&& extension.getArg() instanceof Filter filter && filter.getArg() instanceof Group) {
 						placeholder[0] = extension;
 					}
 					super.meet(extension);
@@ -398,7 +399,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -470,16 +471,37 @@ class LmdbOptimizerPipelineTest {
 		command.add(LowHeapSketchGateProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
-		Process process = new ProcessBuilder(command)
-				.redirectErrorStream(true)
-				.start();
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
-		if (!finished) {
-			process.destroyForcibly();
-			fail("Low-heap sketch gate probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		Path outputFile = Files.createTempFile("rdf4j-low-heap-sketch-probe-", ".log");
+		Process process = null;
+		try {
+			process = new ProcessBuilder(command)
+					.redirectErrorStream(true)
+					.redirectOutput(outputFile.toFile())
+					.start();
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+			}
+			byte[] output = Files.readAllBytes(outputFile);
+			if (!finished) {
+				fail("Low-heap sketch gate probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+			}
+			return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
+		} catch (InterruptedException e) {
+			if (process != null && process.isAlive()) {
+				process.destroyForcibly();
+				try {
+					process.waitFor();
+				} catch (InterruptedException cleanupFailure) {
+					e.addSuppressed(cleanupFailure);
+				}
+			}
+			Thread.currentThread().interrupt();
+			throw e;
+		} finally {
+			Files.deleteIfExists(outputFile);
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
 	}
 
 	private static void addSingleStatement(LmdbStore store, String prefix) {

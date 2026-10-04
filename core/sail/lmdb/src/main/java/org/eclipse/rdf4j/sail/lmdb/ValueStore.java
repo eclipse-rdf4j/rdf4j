@@ -59,12 +59,16 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
@@ -75,12 +79,14 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.StatementCountScope;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -104,6 +110,9 @@ import org.slf4j.LoggerFactory;
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
 class ValueStore extends AbstractValueFactory {
+
+	private static final AtomicLong COUNT_RESOURCE_ORDER = new AtomicLong();
+	private final long countResourceOrder = COUNT_RESOURCE_ORDER.incrementAndGet();
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 
@@ -1325,6 +1334,213 @@ class ValueStore extends AbstractValueFactory {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	/** Registers the dictionary before any native count guard is held. */
+	CountReadResource prepareCountRead(StatementCountScope scope) {
+		Object prepared = scope.get(this);
+		if (prepared instanceof CountReadResource resource) {
+			return resource;
+		}
+		CountReadResource resource = new CountReadResource(scope);
+		scope.put(this, resource);
+		scope.register(this, resource);
+		LmdbCountValue.install(scope);
+		return resource;
+	}
+
+	int countValuesDatabase() {
+		return dbi;
+	}
+
+	TripleIndex countTripleTermSpocIndex() {
+		return tripleTermSpocIndex;
+	}
+
+	TripleIndex countTripleTermCspoIndex() {
+		return tripleTermCspoIndex;
+	}
+
+	final class CountReadResource implements StatementCountScope.CountResource {
+		private final StatementCountScope scope;
+		private final TxnManager manager = txnManager;
+		private final ValueStoreRevision capturedRevision = revision;
+		private final long borrowedWrite = writeTxnOwner == Thread.currentThread() ? writeTxn : 0;
+		private Txn lease;
+		private long nativeTxn;
+		private long nativeVersion;
+		private long revisionStamp;
+		private long environmentStamp;
+		private LmdbCountDictionary reader;
+		private final LmdbCountAliasIndex aliasIndex = new LmdbCountAliasIndex();
+		private boolean aliasTarget;
+		private final IdentityHashMap<LmdbCountValue, long[]> heldIds = new IdentityHashMap<>();
+		private final IdentityHashMap<Statement[], LmdbStatementKey.Membership> memoryMembership = new IdentityHashMap<>();
+
+		CountReadResource(StatementCountScope scope) {
+			this.scope = scope;
+			try {
+				scope.onRelease(manager.pinLifetimeForCounting());
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+			scope.onRelease(aliasIndex);
+			scope.register(aliasIndex, aliasIndex);
+		}
+
+		ValueStore store() {
+			return ValueStore.this;
+		}
+
+		/** Origin-only dictionaries compare identities but never require a scratch alias target. */
+		void prepareAliases() {
+			if (aliasTarget) {
+				return;
+			}
+			aliasTarget = true;
+			scope.onPrepareStatementKeys(aliasIndex::open);
+			scope.observeHeldValues(value -> {
+				if (LmdbCountValue.prepared(value, scope).mayHaveLanguageAliases()) {
+					aliasIndex.open();
+				}
+			});
+		}
+
+		void prepareHeldValue(Value value) {
+			scope.prepareValue(value);
+			LmdbCountValue.prepare(value, scope);
+		}
+
+		void prepareStatement(Statement statement) {
+			prepareHeldValue(statement.getSubject());
+			prepareHeldValue(statement.getPredicate());
+			prepareHeldValue(statement.getObject());
+			prepareHeldValue(statement.getContext());
+		}
+
+		long[] findIds(Value heldValue) {
+			LmdbCountValue value = LmdbCountValue.prepared(heldValue, scope);
+			long[] ids = heldIds.get(value);
+			if (ids == null) {
+				ids = reader().findIds(value);
+				heldIds.put(value, ids);
+			}
+			return ids;
+		}
+
+		boolean requiresObjectScan(Value heldValue) {
+			LmdbCountValue value = LmdbCountValue.prepared(heldValue, scope);
+			return value != null && value.requiresObjectScan();
+		}
+
+		LmdbStatementKey.Membership prepareMembership(Statement[] heldStatements) {
+			LmdbStatementKey.Membership prepared = memoryMembership.get(heldStatements);
+			if (prepared == null) {
+				prepared = new LmdbStatementKey.Membership(heldStatements, scope);
+				memoryMembership.put(heldStatements, prepared);
+			}
+			return prepared;
+		}
+
+		LmdbCountDictionary reader() {
+			scope.requireFrozen();
+			if (reader == null) {
+				reader = new LmdbCountDictionary(ValueStore.this, nativeTxn, aliasIndex);
+				scope.onClose(reader);
+			}
+			return reader;
+		}
+
+		long txn() {
+			scope.requireFrozen();
+			return nativeTxn;
+		}
+
+		@Override
+		public long order() {
+			return countResourceOrder;
+		}
+
+		@Override
+		public boolean tryAcquireLease() {
+			try {
+				lease = borrowedWrite != 0 ? manager.createTxn(borrowedWrite)
+						: manager.tryCreateReadTxnForCount(true);
+				if (lease == null) {
+					return false;
+				}
+				nativeTxn = lease.get();
+				nativeVersion = lease.version();
+				return true;
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+		}
+
+		@Override
+		public void awaitLease(long remainingNanos) throws InterruptedException {
+			try {
+				manager.awaitReadTxnForCount(true, remainingNanos);
+			} catch (IOException e) {
+				if (Thread.currentThread().isInterrupted()) {
+					throw new InterruptedException();
+				}
+				throw new SailException(e);
+			}
+		}
+
+		@Override
+		public void releaseLease() {
+			if (lease != null) {
+				try {
+					lease.close();
+				} finally {
+					lease = null;
+					nativeTxn = 0;
+				}
+			}
+		}
+
+		@Override
+		public boolean tryLock() {
+			revisionStamp = revisionLock.tryReadLock();
+			if (revisionStamp == 0) {
+				return false;
+			}
+			environmentStamp = manager.lockManager().tryReadLock();
+			if (environmentStamp == 0) {
+				revisionLock.unlockRead(revisionStamp);
+				revisionStamp = 0;
+				return false;
+			}
+			return true;
+		}
+
+		@Override
+		public void awaitUnlocked(long remainingNanos) throws InterruptedException {
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
+			LockSupport.parkNanos(Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(1)));
+			if (Thread.interrupted()) {
+				throw new InterruptedException();
+			}
+		}
+
+		@Override
+		public void unlock() {
+			manager.lockManager().unlockRead(environmentStamp);
+			environmentStamp = 0;
+			revisionLock.unlockRead(revisionStamp);
+			revisionStamp = 0;
+		}
+
+		@Override
+		public boolean isValid() {
+			return manager == txnManager && capturedRevision == revision && env != 0
+					&& lease != null && lease.isAvailableForCounting() && nativeVersion == lease.version()
+					&& (borrowedWrite == 0 || borrowedWrite == writeTxn && writeTxnOwner == Thread.currentThread());
+		}
 	}
 
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {

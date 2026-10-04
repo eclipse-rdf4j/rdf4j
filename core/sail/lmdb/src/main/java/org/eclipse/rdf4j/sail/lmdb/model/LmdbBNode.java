@@ -32,7 +32,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	private long internalID;
 
-	private boolean initialized = false;
+	private volatile boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
@@ -80,6 +80,11 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 	@Override
 	public long getInternalID() {
 		return internalID;
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
 	}
 
 	@Override

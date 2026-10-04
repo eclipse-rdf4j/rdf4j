@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -105,6 +106,17 @@ public interface SailDataset extends SailClosable {
 			}
 		}
 		return count;
+	}
+
+	/** Prepares an internal count view while preserving store-specific count overrides by default. */
+	@InternalUseOnly
+	default StatementCountSource prepareStatementCount(StatementCountScope scope) {
+		return StatementCountSources.fromDataset(this, scope);
+	}
+
+	/** Prepares held-value equality without admitting an invisible statement view. */
+	@InternalUseOnly
+	default void prepareStatementCountValues(StatementCountScope scope) {
 	}
 
 	/**
