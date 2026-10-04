@@ -40,9 +40,7 @@ public final class WorkbenchCredentialSession {
 			Object stored = session.getAttribute(SESSION_ATTRIBUTE);
 			if (stored instanceof Entry) {
 				Entry entry = (Entry) stored;
-				if (server.equals(entry.server())) {
-					return entry.credentials();
-				}
+				return server.equals(entry.server()) ? entry.credentials() : null;
 			}
 		}
 

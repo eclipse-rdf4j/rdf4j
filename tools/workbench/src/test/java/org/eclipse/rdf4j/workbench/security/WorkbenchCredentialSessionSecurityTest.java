@@ -91,6 +91,23 @@ class WorkbenchCredentialSessionSecurityTest {
 	}
 
 	@Test
+	void staleLegacyCookieCannotRebindExistingSessionCredentialsToAnotherServer() {
+		WorkbenchCredentialSession credentials = new WorkbenchCredentialSession();
+		MockHttpServletRequest request = secureRequest();
+		credentials.replace(request, new MockHttpServletResponse(), "https://one.example/server", "alice", "current");
+		request.setCookies(new Cookie(WorkbenchCredentialSession.LEGACY_CREDENTIAL_COOKIE,
+				Base64.getEncoder().encodeToString("mallory:stale".getBytes(StandardCharsets.UTF_8))));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		assertThat(credentials.read(request, response, "https://two.example/server")).isNull();
+		assertThat(cookie(response, WorkbenchCredentialSession.LEGACY_CREDENTIAL_COOKIE).getMaxAge()).isZero();
+
+		request.setCookies();
+		assertThat(credentials.read(request, new MockHttpServletResponse(), "https://one.example/server"))
+				.isEqualTo(new WorkbenchCredentialSession.Credentials("alice", "current"));
+	}
+
+	@Test
 	void replacementRotatesTheSessionAndSessionExpiryDropsCredentials() {
 		WorkbenchCredentialSession credentials = new WorkbenchCredentialSession();
 		MockHttpServletRequest request = secureRequest();

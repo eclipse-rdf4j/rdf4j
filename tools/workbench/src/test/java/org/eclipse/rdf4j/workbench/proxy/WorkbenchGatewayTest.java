@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -183,6 +184,79 @@ class WorkbenchGatewayTest {
 
 		gateway.destroy();
 		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+	}
+
+	@Test
+	void isolatesCredentialBearingServletTreesBetweenHttpSessions() throws Exception {
+		String server = "https://remote.example/rdf4j-server";
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer(server)).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"), validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", server,
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+
+		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
+		alice.setSession(new MockHttpSession());
+		new WorkbenchCredentialSession().replace(alice, new CapturedResponse(), server, "alice", "alice-secret");
+		gateway.service(alice, new CapturedResponse());
+
+		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
+		bob.setSession(new MockHttpSession());
+		new WorkbenchCredentialSession().replace(bob, new CapturedResponse(), server, "bob", "bob-secret");
+		gateway.service(bob, new CapturedResponse());
+
+		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(1).serviceCount).isEqualTo(1);
+
+		alice.getSession().invalidate();
+		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(1).destroyCount).isZero();
+
+		gateway.destroy();
+		assertThat(gateway.createdServlets.get(1).destroyCount).isEqualTo(1);
+	}
+
+	@Test
+	void credentialChangeReplacesOnlyTheCurrentSessionsServletTree() throws Exception {
+		String server = "https://remote.example/rdf4j-server";
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer(server)).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"), validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", server,
+				"change-server-path", "/change",
+				WorkbenchGateway.TRANSFORMATIONS, "/transform"));
+
+		MockHttpSession aliceSession = new MockHttpSession();
+		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
+		alice.setSession(aliceSession);
+		new WorkbenchCredentialSession().replace(alice, new CapturedResponse(), server, "alice", "first");
+		gateway.service(alice, new CapturedResponse());
+
+		MockHttpSession bobSession = new MockHttpSession();
+		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
+		bob.setSession(bobSession);
+		new WorkbenchCredentialSession().replace(bob, new CapturedResponse(), server, "bob", "secret");
+		gateway.service(bob, new CapturedResponse());
+
+		MockHttpServletRequest change = request("POST", "/workbench/change", "/change");
+		change.setSession(aliceSession);
+		change.addParameter("workbench-server", server);
+		change.addParameter("server-user", "alice");
+		change.addParameter("server-password", "second");
+		gateway.service(change, new CapturedResponse());
+
+		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(1).destroyCount).isZero();
+
+		MockHttpServletRequest aliceAgain = request("GET", "/workbench/repositories", "/repositories");
+		aliceAgain.setSession(aliceSession);
+		gateway.service(aliceAgain, new CapturedResponse());
+
+		assertThat(gateway.createdServlets).hasSize(3);
+		assertThat(gateway.createdServlets.get(2).serviceCount).isEqualTo(1);
 	}
 
 	@Test
