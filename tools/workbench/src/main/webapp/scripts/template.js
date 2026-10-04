@@ -159,6 +159,16 @@ var workbench;
             return new Intl.NumberFormat(locale).format(number);
         }
         format.count = count;
+        /** A running time such as '1.5 s', or '2 min 05 s' from a minute on. */
+        function elapsed(milliseconds) {
+            var time = Math.max(0, milliseconds);
+            if (time < 60000) {
+                return (Math.floor(time / 100) / 10).toFixed(1) + ' s';
+            }
+            var seconds = Math.floor(time / 1000);
+            return Math.floor(seconds / 60) + ' min ' + ('0' + (seconds % 60)).slice(-2) + ' s';
+        }
+        format.elapsed = elapsed;
     })(format = workbench.format || (workbench.format = {}));
     /**
      * Anchored popover panels opened by a button (the context bar switchers). Only one popover is

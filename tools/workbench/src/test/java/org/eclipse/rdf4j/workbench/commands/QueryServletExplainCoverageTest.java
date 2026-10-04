@@ -32,6 +32,9 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -91,6 +94,54 @@ class QueryServletExplainCoverageTest {
 
 		verify(response).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 		assertThat(body.toString()).contains("\"error\":\"Query explanation took too long\"");
+	}
+
+	@Test
+	void syncExplainReportsWhetherTheExplanationTimedOut() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		WorkbenchRequest request = mockExplainRequest(false, "sync-partial");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+
+		// DOT has no place for the timed-out marker, so the response carries it next to the content.
+		when(request.getParameter("explain-format")).thenReturn("dot");
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized))
+				.thenReturn(new ExplanationImpl(new GenericPlanNode("Projection"), true, null));
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+
+		servlet.service(request, response);
+
+		verify(response).setStatus(HttpServletResponse.SC_OK);
+		assertThat(body.toString()).contains("\"format\":\"dot\"").contains("\"timedOut\":true");
+	}
+
+	@Test
+	void syncExplainReportsCompleteExplanationsAsNotTimedOut() throws Exception {
+		QueryServlet servlet = new QueryServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		WorkbenchRequest request = mockExplainRequest(false, "sync-complete");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized))
+				.thenReturn(new ExplanationImpl(new GenericPlanNode("Projection"), false, null));
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		servlet.setRepository(repository);
+
+		servlet.service(request, response);
+
+		verify(response).setStatus(HttpServletResponse.SC_OK);
+		assertThat(body.toString()).contains("\"timedOut\":false");
 	}
 
 	@Test

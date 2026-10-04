@@ -76,7 +76,7 @@ html[data-theme="dark"] .query-output {
 
 .query-explanation-column {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     align-content: start;
     min-width: 0;
 }
@@ -87,6 +87,7 @@ html[data-theme="dark"] .query-output {
 
 .query-explanation-column__header {
     grid-row: 1;
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -106,11 +107,34 @@ body:not(.query-compare-mode) .query-explanation-column__header {
 
 .query-explanation-column > .query-explanation-status {
     grid-row: 2;
+    grid-column: 1;
+}
+
+/* The running time, then the final time, share the status line's row at its end. */
+.query-explanation-column > .query-explanation-timing {
+    grid-row: 2;
+    grid-column: 2;
 }
 
 .query-explanation-column > .query-explanation-surface {
     grid-row: 3;
+    grid-column: 1 / -1;
     min-width: 0;
+}
+
+.query-explanation-timing {
+    align-self: center;
+    margin: 0 0 0.55em var(--workbench-control-gap, 8px);
+    color: var(--workbench-muted);
+    font-family: var(--workbench-font);
+    font-size: var(--workbench-control-font-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.query-explanation-timing:empty {
+    display: none;
 }
 
 body.query-compare-mode .query-explanation-columns {
@@ -180,9 +204,42 @@ body.query-compare-mode #copy-explanation {
 }
 
 .query-explanation-status--stale {
+    padding: 0;
     background: var(--workbench-inset);
     border-color: var(--workbench-soft-rule);
     color: var(--workbench-muted);
+}
+
+/* The whole stale line is the refresh button, so the banner's padding moves onto it. */
+.query-explanation-status__refresh {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.45em 0.7em;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.query-explanation-status__refresh:hover {
+    background: var(--workbench-selected);
+    color: var(--workbench-ink);
+}
+
+.query-explanation-status__refresh:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
+.query-explanation-status--warning {
+    background: var(--workbench-warning-surface);
+    border-color: var(--workbench-warning-rule);
+    color: var(--workbench-warning);
 }
 
 .query-explanation-status--error {
@@ -268,37 +325,22 @@ body.query-compare-mode #copy-explanation {
 
 .query-explanation-overlay {
     display: none;
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    padding: 0.75em;
-    box-sizing: border-box;
-    background: color-mix(in srgb, var(--workbench-surface) 82%, transparent);
-    color: var(--query-code-node);
-    font-weight: bold;
-    align-items: flex-start;
-    justify-content: flex-end;
-    pointer-events: none;
 }
 
+/* A refresh keeps the previous plan in view while the panel's loading bar (.workbench-local-progress) runs, like a
+ * page that is being navigated away from; "Refreshing explanation..." only tells screen readers. */
 .query-explanation-overlay--visible {
-    display: flex;
-}
-
-.query-explain-spinner {
-    display: none;
-    width: 0.95em;
-    height: 0.95em;
-    box-sizing: border-box;
-    border: 2px solid var(--workbench-rule);
-    border-top-color: var(--workbench-primary);
-    border-radius: 50%;
-    vertical-align: middle;
-}
-
-.query-explain-spinner--visible {
-    display: inline-block;
-    animation: query-explain-spinner-spin var(--workbench-motion-spin) linear infinite;
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .query-explain-cancel {
@@ -324,16 +366,6 @@ body.workbench-body .workbench-action.query-explain-cancel {
 body.workbench-body .workbench-action.query-explain-cancel.query-explain-cancel--visible,
 body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] {
     display: inline-flex;
-}
-
-@keyframes query-explain-spinner-spin {
-    from {
-        transform: rotate(0deg);
-    }
-
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 #query-explanation,
@@ -642,9 +674,6 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     }
 
     .query-explanation-settings__panel {
-        animation: none;
-    }
-    .query-explain-spinner--visible {
         animation: none;
     }
 }

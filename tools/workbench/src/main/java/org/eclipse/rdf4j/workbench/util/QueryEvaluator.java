@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -98,11 +99,13 @@ public final class QueryEvaluator {
 		private final String content;
 		private final String format;
 		private final String level;
+		private final boolean timedOut;
 
-		private ExplainQueryResult(String content, String format, String level) {
+		private ExplainQueryResult(String content, String format, String level, boolean timedOut) {
 			this.content = content;
 			this.format = format;
 			this.level = level;
+			this.timedOut = timedOut;
 		}
 
 		public String getContent() {
@@ -115,6 +118,13 @@ public final class QueryEvaluator {
 
 		public String getLevel() {
 			return level;
+		}
+
+		/**
+		 * @return whether the query ran out of time while it was explained, so the plan is incomplete
+		 */
+		public boolean isTimedOut() {
+			return timedOut;
 		}
 	}
 
@@ -555,8 +565,10 @@ public final class QueryEvaluator {
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
+		GenericPlanNode plan = explanation.toGenericPlanNode();
 		return new ExplainQueryResult(formatExplanation(explanation, req.getExplainFormat()),
-				req.getExplainFormatValue(), req.getExplainLevelName());
+				req.getExplainFormatValue(), req.getExplainLevelName(),
+				plan != null && Boolean.TRUE.equals(plan.getTimedOut()));
 	}
 
 	private void explainQuery(final TupleResultBuilder builder,

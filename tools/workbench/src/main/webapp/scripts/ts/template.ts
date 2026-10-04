@@ -206,6 +206,16 @@ module workbench {
             }
             return new Intl.NumberFormat(locale).format(number);
         }
+
+        /** A running time such as '1.5 s', or '2 min 05 s' from a minute on. */
+        export function elapsed(milliseconds: number): string {
+            var time = Math.max(0, milliseconds);
+            if (time < 60000) {
+                return (Math.floor(time / 100) / 10).toFixed(1) + ' s';
+            }
+            var seconds = Math.floor(time / 1000);
+            return Math.floor(seconds / 60) + ' min ' + ('0' + (seconds % 60)).slice(-2) + ' s';
+        }
     }
 
     export interface PopoverOptions {

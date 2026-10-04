@@ -140,6 +140,82 @@ test('terminal records cannot contradict the loaded window or previously reporte
     assert.throws(() => regressedElapsed.accept(completed(12, 2500)), /progress|completion/i);
 });
 
+test('renderer shows the running time while busy and leaves the final time to the status', async () => {
+    const { api, document, window } = loadApi();
+    const ticks = [];
+    window.setTimeout = callback => ticks.push(callback);
+    window.clearTimeout = () => {};
+    let now = 10000;
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new api.QueryResultRenderer(target, {
+        batched: true,
+        requestedOffset: 0,
+        requestedLimit: 2,
+        maxDomRows: 8,
+        onLoadMore() {},
+        rowStore: memoryStore(),
+        now: () => now
+    });
+
+    renderer.beginBatch(0);
+    renderer.setBusy(true);
+    assert.equal(renderer.timer.hidden, false);
+    assert.equal(renderer.timer.getAttribute('role'), 'timer');
+    assert.equal(renderer.timer.textContent, '0.0 s');
+    now += 1500;
+    ticks.shift()();
+    assert.equal(renderer.timer.textContent, '1.5 s', 'the running time ticks while the query runs');
+
+    await renderer.accept({ type: 'head', version: 1 });
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['value'] });
+    await renderer.accept({ type: 'rows', values: [
+        [{ kind: 'literal', value: 'first' }],
+        [{ kind: 'literal', value: 'second' }]
+    ] });
+    await renderer.accept(progress(10, 3000));
+    assert.equal(renderer.timer.textContent, '3.0 s', 'the elapsed time reported by the server sets the running time');
+    assert.doesNotMatch(renderer.status.textContent, /elapsed/, 'the timer, not the status line, shows the time');
+
+    await renderer.accept(completed(12, 4500));
+    renderer.setBusy(false);
+    await settle();
+    assert.match(renderer.status.textContent, /· complete in 4,500 ms$/);
+    assert.equal(renderer.timer.hidden, true, 'the status line reports the final time');
+
+    renderer.beginBatch(2);
+    renderer.setBusy(true);
+    now += 2000;
+    renderer.fail('Query cancelled.', 'cancelled');
+    renderer.setBusy(false);
+    assert.equal(renderer.timer.hidden, false);
+    assert.equal(renderer.timer.textContent, 'after 2.0 s', 'a query that did not complete reports how long it ran');
+    renderer.dispose();
+});
+
+test('renderer cancels a running query with the warning action', () => {
+    const { api, document } = loadApi();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new api.QueryResultRenderer(target, {
+        batched: true,
+        requestedOffset: 0,
+        requestedLimit: 2,
+        maxDomRows: 8,
+        onLoadMore() {},
+        rowStore: memoryStore()
+    });
+
+    renderer.setBusy(true);
+
+    assert.equal(renderer.cancelButton.hidden, false);
+    assert.equal(renderer.cancelButton.textContent, 'Cancel query');
+    assert.match(renderer.cancelButton.className, /\bworkbench-action--warning\b/);
+    assert.doesNotMatch(renderer.cancelButton.className, /\bworkbench-action--secondary\b/);
+    assert.equal(target.getAttribute('aria-busy'), 'true', 'the busy results show the local progress bar');
+});
+
 test('renderer separates loaded rows from processed progress and commits exact totals only at end', async () => {
     const { api, document } = loadApi();
     const target = document.createElement('section');

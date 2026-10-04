@@ -1840,8 +1840,9 @@ test('query result download and options controls use the shared icon adapter', (
 		assert.equal(chevron.getAttribute('aria-hidden'), 'true');
 	}
 	assert.deepEqual(actionCalls, [
-		{ text: 'Download', name: 'download', accessibleName: 'Download' }
-	], 'the Download action should keep its download icon');
+		{ text: 'Download', name: 'download', accessibleName: 'Download' },
+		{ text: 'Cancel query', name: 'stop', accessibleName: 'Cancel query' }
+	], 'the Download action keeps its download icon and Cancel query carries the stop icon');
     renderer.dispose();
 });
 

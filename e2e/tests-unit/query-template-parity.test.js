@@ -299,6 +299,21 @@ test('query rerun policy hides only Explain again while keeping Execute availabl
         'disabling explanation reruns must not hide the independent Execute action');
 });
 
+test('running queries and explanations are cancelled with warning actions and show no spinners', () => {
+    const page = queryTemplate({ metadata: { explanation: 'Existing explanation' } });
+    const staticMarkup = page.templates.map(template => template.strings.join('')).join('');
+
+    for (const id of ['query-cancel', 'explain-trigger-cancel', 'rerun-explanation-cancel', 'explain-compare-cancel']) {
+        assert.match(staticMarkup, new RegExp(`<button id="${id}" class="[^"]*\\bworkbench-action--warning\\b`),
+            `${id} is a warning button`);
+    }
+    const stopIcons = page.bindings.filter(binding => binding.before.endsWith('data-workbench-icon=')
+        && binding.value === 'stop');
+    assert.equal(stopIcons.length, 4, 'each Cancel button carries the stop icon');
+    assert.doesNotMatch(staticMarkup, /query-explain-spinner|explain-trigger-cancel-action/,
+        'the explanation shows its progress as the panel loading bar, not as a spinner beside the button');
+});
+
 test('individual query feature policies hide their matching controls and explanation views', () => {
     const queryFeatures = {};
     [

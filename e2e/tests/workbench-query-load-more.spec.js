@@ -186,7 +186,10 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 		await expect.poll(() => page.evaluate(() => window.__queryProgressFixture.requestCount)).toBe(1);
 		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'true');
 		await expect(result.locator('.query-result-status'))
-			.toHaveText('Receiving… 2 rows · 1,000,000 processed · 3,000 ms elapsed');
+			.toHaveText('Receiving… 2 rows · 1,000,000 processed');
+		// The running time follows the server's elapsed time (3,000 ms) and keeps ticking.
+		await expect(result.locator('.query-result-timer')).toHaveText(/^\d+\.\d s$/);
+		await expect(result.locator('.query-result-timer')).toHaveAttribute('role', 'timer');
 		await expect(result.locator('tbody tr[data-query-row-index]')).toHaveCount(2);
 		await expect(result.locator('tbody')).toContainText('loaded-zero');
 		await expect(result.locator('tbody')).toContainText('loaded-one');
@@ -205,6 +208,7 @@ test('query progress keeps loaded rows browsable and Load more waits for termina
 		await page.evaluate(() => window.__queryProgressFixture.complete());
 		await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false');
 		await expect(result.locator('.query-result-status')).toHaveText('1,200,000 rows · complete in 4,200 ms');
+		await expect(result.locator('.query-result-timer')).toBeHidden();
 		await expect(result.locator('.query-result-navigation__label')).toHaveText('2 of 1,200,000 loaded');
 		await expect(result.locator('.query-result-load-more')).toBeVisible();
 		expect(await page.evaluate(() => window.__queryProgressFixture.requestCount)).toBe(1);
@@ -1678,7 +1682,8 @@ async function expectCompletedRows(status, loadedRows, totalRows) {
 	const count = value => Number(value).toLocaleString('en-US');
 	await expect(status).toHaveText(new RegExp(
 		`^${count(totalRows)} rows? · complete in [\\d,]+ ms$`));
-	const label = status.locator('xpath=..').locator('.query-result-navigation__label');
+	const label = status.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " query-result-layout ")][1]')
+		.locator('.query-result-navigation__label');
 	if (loadedRows < totalRows) {
 		await expect(label).toHaveText(`${count(loadedRows)} of ${count(totalRows)} loaded`);
 	} else {

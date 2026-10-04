@@ -382,18 +382,6 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     fill: currentColor;
 }
 
-.query-compare-action__icon--spinning {
-    animation: query-explain-spinner-spin var(--workbench-motion-spin) linear infinite;
-    transform-origin: center;
-    transform-box: fill-box;
-}
-
-.query-compare-action--spinning .query-compare-action__svg--refresh {
-    animation: query-explain-spinner-spin var(--workbench-motion-spin) linear infinite;
-    transform-origin: center;
-    transform-box: fill-box;
-}
-
 .query-compare-action__svg--refresh {
     width: 1.35rem;
     height: 1.35rem;
@@ -626,9 +614,7 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     body.query-compare-mode #content,
     body.query-compare-mode #title_heading,
     body.query-compare-mode #noscript-message,
-    body.query-compare-mode .query-form,
-    .query-compare-action__icon--spinning,
-    .query-compare-action--spinning .query-compare-action__svg--refresh {
+    body.query-compare-mode .query-form {
         transition: none;
         animation: none;
     }

@@ -122,9 +122,23 @@
     display: none !important;
 }
 
-.query-results__loading,
 .query-results__status {
     margin: 0.5rem 0;
+}
+
+/* The results panel shows a running query as its loading bar (.workbench-local-progress); the loading line only
+ * tells screen readers. */
+.query-results__loading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .query-results__loading[hidden] {
@@ -604,7 +618,6 @@ body.query-results-fullscreen-active {
     border-radius: 0;
 }
 
-.query-results__loading,
 .query-results__status {
     box-sizing: border-box;
     margin: 0.5rem 0;
@@ -887,6 +900,38 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
     margin: var(--workbench-space-subgroup, 16px) 0 0;
     padding-top: var(--workbench-form-gap, 12px);
     border-top: 1px solid var(--query-rule);
+}
+
+/* The status line and, while the query runs (or after it stopped early), its running time. */
+.query-result-status-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--workbench-control-gap, 8px);
+}
+
+.query-result-timer {
+    color: var(--query-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.query-result-timer::before {
+    content: '·';
+    margin-right: var(--workbench-control-gap, 8px);
+}
+
+.query-result-status:empty + .query-result-timer::before {
+    content: none;
+}
+
+.query-result-timer[hidden] {
+    display: none;
+}
+
+/* While the query runs, its Cancel stands alone above the rows that keep arriving; keep it clear of the table. */
+.query-result-navigation:has(> .workbench-action--warning:not([hidden])) {
+    margin-bottom: var(--workbench-space-subgroup, 16px);
 }
 
 .query-result-navigation__label {

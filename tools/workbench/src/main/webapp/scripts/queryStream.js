@@ -1865,6 +1865,9 @@ var workbench;
                 this.committedComplete = false;
                 this.appendFailure = false;
                 this.busy = false;
+                this.timerStartedAt = 0;
+                this.timerRunning = false;
+                this.timerTick = null;
                 this.renderFramePending = false;
                 this.continuationBlocked = false;
                 this.legacyHeader = null;
@@ -2022,10 +2025,16 @@ var workbench;
                     };
                     this.listenWindow(view, 'keydown', onFullscreenEscape, false);
                 }
+                var statusLine = createElement(this.document, 'div', 'query-result-status-line');
                 this.status = createElement(this.document, 'div', 'query-result-status');
                 this.status.setAttribute('role', 'status');
                 this.status.setAttribute('aria-live', 'polite');
-                this.root.appendChild(this.status);
+                statusLine.appendChild(this.status);
+                this.timer = createElement(this.document, 'span', 'query-result-timer');
+                this.timer.setAttribute('role', 'timer');
+                this.timer.hidden = true;
+                statusLine.appendChild(this.timer);
+                this.root.appendChild(statusLine);
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
                 controls.appendChild(this.countLabel);
@@ -2034,7 +2043,8 @@ var workbench;
                         _this.options.onCancel();
                     }
                 });
-                this.cancelButton.className = 'workbench-action workbench-action--secondary';
+                this.cancelButton.className = 'workbench-action workbench-action--warning';
+                decorateWithWorkbenchIcon(this.cancelButton, 'stop', 'Cancel query');
                 this.cancelButton.hidden = true;
                 controls.appendChild(this.cancelButton);
                 this.root.appendChild(controls);
@@ -2256,6 +2266,7 @@ var workbench;
                     }
                     else if (record.type === 'progress') {
                         this.state.progress = batch.progress;
+                        this.syncTimer(batch.progress['query-elapsed-ms']);
                     }
                     else if (record.type === 'end') {
                         var metadata = batch.terminalMetadata;
@@ -2378,6 +2389,12 @@ var workbench;
             };
             QueryResultRenderer.prototype.setBusy = function (busy) {
                 this.busy = busy;
+                if (busy) {
+                    this.startTimer();
+                }
+                else {
+                    this.stopTimer();
+                }
                 this.target.setAttribute('aria-busy', busy ? 'true' : 'false');
                 this.cancelButton.hidden = !busy;
                 this.loadMoreButton.disabled = busy;
@@ -2648,10 +2665,70 @@ var workbench;
                     this.target.removeChild(this.root);
                 }
             };
+            QueryResultRenderer.prototype.now = function () {
+                return this.options.now ? this.options.now() : Date.now();
+            };
+            QueryResultRenderer.prototype.startTimer = function () {
+                this.timerStartedAt = this.now();
+                this.timerRunning = true;
+                this.timer.hidden = false;
+                this.renderTimer();
+                this.scheduleTimerTick();
+            };
+            /** The server's elapsed time, from a progress record, is the more accurate running time. */
+            QueryResultRenderer.prototype.syncTimer = function (serverElapsed) {
+                if (this.timerRunning && typeof serverElapsed === 'number' && serverElapsed >= 0) {
+                    this.timerStartedAt = this.now() - serverElapsed;
+                    this.renderTimer();
+                }
+            };
+            /**
+             * A query that completed reports its time in the status line; one that failed or was cancelled keeps the
+             * time it ran for beside the status.
+             */
+            QueryResultRenderer.prototype.stopTimer = function () {
+                if (!this.timerRunning) {
+                    return;
+                }
+                this.timerRunning = false;
+                this.clearTimerTick();
+                var completedTime = this.state.complete && !this.state.error
+                    && typeof (this.state.terminalMetadata || {})['query-elapsed-ms'] === 'number';
+                this.timer.hidden = completedTime;
+                this.renderTimer();
+            };
+            QueryResultRenderer.prototype.renderTimer = function () {
+                var elapsed = workbench.format.elapsed(this.now() - this.timerStartedAt);
+                this.timer.textContent = this.timerRunning ? elapsed : 'after ' + elapsed;
+            };
+            QueryResultRenderer.prototype.scheduleTimerTick = function () {
+                var _this = this;
+                this.clearTimerTick();
+                var view = this.document.defaultView;
+                if (!this.timerRunning || this.disposed || !view || typeof view.setTimeout !== 'function') {
+                    return;
+                }
+                this.timerTick = view.setTimeout(function () {
+                    _this.timerTick = null;
+                    if (_this.timerRunning && !_this.disposed) {
+                        _this.renderTimer();
+                        _this.scheduleTimerTick();
+                    }
+                }, 100);
+            };
+            QueryResultRenderer.prototype.clearTimerTick = function () {
+                var view = this.document.defaultView;
+                if (this.timerTick !== null && view && typeof view.clearTimeout === 'function') {
+                    view.clearTimeout(this.timerTick);
+                }
+                this.timerTick = null;
+            };
             QueryResultRenderer.prototype.dispose = function () {
                 if (this.disposed) {
                     return;
                 }
+                this.timerRunning = false;
+                this.clearTimerTick();
                 this.disposed = true;
                 this.rowRenderGeneration++;
                 this.recordRenderGeneration++;
@@ -3075,8 +3152,7 @@ var workbench;
                 }
                 else if (!state.complete && typeof state.progress['query-elapsed-ms'] === 'number') {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount) + ' · '
-                        + formatCount(state.progress['result-evaluated-count']) + ' processed · '
-                        + formatCount(state.progress['query-elapsed-ms']) + ' ms elapsed';
+                        + formatCount(state.progress['result-evaluated-count']) + ' processed';
                 }
                 else if (!state.complete) {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);

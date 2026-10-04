@@ -348,11 +348,6 @@ function createQueryBrowserHarness(options = {}) {
     const saveFeedback = registerElement('div', { id: 'save-feedback' });
 
     const explainTrigger = registerElement('input', { id: 'explain-trigger', type: 'button' });
-    const explainTriggerSpinner = registerElement('span', {
-        id: 'explain-trigger-spinner',
-        className: 'query-explain-spinner',
-        attributes: { 'aria-hidden': 'true' }
-    });
     const explainTriggerCancel = registerElement('input', {
         id: 'explain-trigger-cancel',
         type: 'button',
@@ -361,11 +356,6 @@ function createQueryBrowserHarness(options = {}) {
         attributes: { 'aria-hidden': 'true' }
     });
     const rerunExplanation = registerElement('input', { id: 'rerun-explanation', type: 'button' });
-    const rerunExplanationSpinner = registerElement('span', {
-        id: 'rerun-explanation-spinner',
-        className: 'query-explain-spinner',
-        attributes: { 'aria-hidden': 'true' }
-    });
     const rerunExplanationCancel = registerElement('input', {
         id: 'rerun-explanation-cancel',
         type: 'button',
@@ -384,6 +374,7 @@ function createQueryBrowserHarness(options = {}) {
     const queryExplanationRow = registerElement('div', { id: 'query-explanation-row' });
     const queryExplanationControlsRow = registerElement('div', { id: 'query-explanation-controls-row' });
     const queryExplanationStatus = registerElement('div', { id: 'query-explanation-status' });
+    const queryExplanationTiming = registerElement('div', { id: 'query-explanation-timing', attributes: { role: 'timer' } });
     const queryExplanationOverlay = registerElement('div', { id: 'query-explanation-overlay' });
     const copyExplanation = registerElement('button', { id: 'copy-explanation', type: 'button' });
     const queryExplanation = registerElement('pre', {
@@ -476,6 +467,8 @@ function createQueryBrowserHarness(options = {}) {
     const queryCompareControls = registerElement('div', { id: 'query-compare-controls' });
     const queryExplanationRowCompare = registerElement('div', { id: 'query-explanation-row-compare' });
     const queryExplanationStatusCompare = registerElement('div', { id: 'query-explanation-status-compare' });
+    const queryExplanationTimingCompare = registerElement('div', { id: 'query-explanation-timing-compare',
+        attributes: { role: 'timer' } });
     const queryExplanationOverlayCompare = registerElement('div', { id: 'query-explanation-overlay-compare' });
     const copyExplanationCompare = registerElement('button', { id: 'copy-explanation-compare', type: 'button' });
     const queryExplanationCompare = registerElement('pre', { id: 'query-explanation-compare' });
@@ -524,16 +517,15 @@ function createQueryBrowserHarness(options = {}) {
         save,
         saveFeedback,
         explainTrigger,
-        explainTriggerSpinner,
         explainTriggerCancel,
         rerunExplanation,
-        rerunExplanationSpinner,
         rerunExplanationCancel,
         explainCompareTrigger,
         explainCompareCancel,
         queryExplanationRow,
         queryExplanationControlsRow,
         queryExplanationStatus,
+        queryExplanationTiming,
         queryExplanationOverlay,
         copyExplanation,
         queryExplanation,
@@ -550,6 +542,7 @@ function createQueryBrowserHarness(options = {}) {
         queryCompareControls,
         queryExplanationRowCompare,
         queryExplanationStatusCompare,
+        queryExplanationTimingCompare,
         queryExplanationOverlayCompare,
         copyExplanationCompare,
         queryExplanationCompare,

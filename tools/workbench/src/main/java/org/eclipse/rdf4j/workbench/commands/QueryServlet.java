@@ -778,6 +778,7 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
 		jsonObject.put("lineSeparator", System.lineSeparator());
+		jsonObject.put("timedOut", explainQueryResult.isTimedOut());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
 	}
 

@@ -35,6 +35,7 @@ module workbench {
         edit: 'm4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Zm10-13 3 3',
         chevron: 'm6 9 6 6 6-6',
         cancel: 'M19 12H5m6-6-6 6 6 6',
+        stop: 'M8 6.5h8A1.5 1.5 0 0 1 17.5 8v8a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 16V8A1.5 1.5 0 0 1 8 6.5Z',
         close: 'm6 6 12 12M18 6 6 18',
         previous: 'm14 5-7 7 7 7',
         next: 'm10 5 7 7-7 7',
@@ -3046,6 +3047,7 @@ module workbench {
                             class="workbench-visually-hidden">Copy query explanation</span></button>`}
                 </div>
                 <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
+                <div id=${'query-explanation-timing' + suffix} class="query-explanation-timing" role="timer"></div>
                 <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
                     class="query-explanation-overlay" aria-hidden="true"></div>
                     ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
@@ -3179,7 +3181,7 @@ module workbench {
                         <p class="query-explanation-property-config__hint">Plan structure always remains visible.</p>
                     </div>
                 `);
-            return h`<div id="query-explanation-panel" class="query-output__panel query-explanation-panel" role="tabpanel"
+            return h`<div id="query-explanation-panel" class="query-output__panel query-explanation-panel workbench-local-progress" role="tabpanel"
                     aria-labelledby="query-output-tab-explanation" tabindex="0" ?hidden=${!explanation}>
                 <div class="query-explanation-toolbar workbench-action-toolbar">
                     <div class="query-explanation-toolbar__settings">
@@ -3212,10 +3214,9 @@ module workbench {
                                     ?hidden=${!queryFeatureEnabled(context, 'query-rerun')}
                                     data-query-rerun-enabled=${queryFeatureEnabled(context, 'query-rerun') ? 'true' : 'false'}
                                     @click=${() => invoke('workbench.query.runExplain', null, 'rerun-explanation')}>Explain again</button>
-                                <span id="rerun-explanation-spinner" class="query-explain-spinner" aria-hidden="true"></span>
-                                <button id="rerun-explanation-cancel" class="query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                    @click=${() => invoke('workbench.query.cancelExplain')}>Cancel</button>
+                                <button id="rerun-explanation-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
+                                    aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
+                                    @click=${() => invoke('workbench.query.cancelExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                             </span>
                         </span>
                     </div>
@@ -3231,9 +3232,9 @@ module workbench {
                                 data-query-refresh-enabled=${queryFeatureEnabled(context, 'query-refresh') ? 'true' : 'false'}
                                 ?hidden=${!queryFeatureEnabled(context, 'query-refresh') || !queryExplainEnabled(context)}
                                 @click=${() => invoke('workbench.query.runCompareExplain')}>Refresh explanations</button>
-                            <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--secondary" type="button" disabled
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}>
-                                <span id="explain-compare-cancel-icon" class="query-compare-action__svg--cancel" aria-hidden="true">×</span>Cancel</button>
+                            <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel workbench-action workbench-action--warning" type="button"
+                                aria-label="Cancel explanations" title="Cancel explanations" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
+                                @click=${() => invoke('workbench.query.cancelCompareExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                         </div>
                     </div>
                 </div>
@@ -3338,19 +3339,16 @@ module workbench {
                                 ?hidden=${!queryFeatureEnabled(context, 'query-execution')}
                                 title=${'Execute (' + (isMacPlatform() ? 'Cmd' : 'Ctrl') + '+Enter)'}>${icon(runtime, 'execute')}<span>Execute</span><kbd
                                 class="workbench-shortcut-hint" aria-hidden="true">${isMacPlatform() ? '⌘↵' : 'Ctrl+↵'}</kbd></button>
-                            <input id="query-cancel" class="query-cancel workbench-action workbench-action--secondary" type="button" value="Cancel" aria-hidden="true" disabled
+                            <button id="query-cancel" class="query-cancel workbench-action workbench-action--warning" type="button"
+                                aria-label="Cancel query" title="Cancel query" aria-hidden="true" disabled
                                 ?hidden=${!queryFeatureEnabled(context, 'query-cancel')}
-                                @click=${() => invoke('workbench.query.cancelQuery')} />
+                                @click=${() => invoke('workbench.query.cancelQuery')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                             <button id="explain-trigger" class="query-action workbench-action workbench-action--secondary" type="button"
                                 ?hidden=${!queryExplainEnabled(context)}
                                 @click=${() => invoke('workbench.query.runExplain', null, 'explain-trigger')}>${icon(runtime, 'explain')}<span>Explain</span></button>
-                            <span id="explain-trigger-spinner" class="query-explain-spinner" aria-hidden="true"></span>
-                            <span id="explain-trigger-cancel-action" class="workbench-action workbench-action--danger-outline query-explain-cancel"
-                                ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                data-workbench-action="cancel">${icon(runtime, 'cancel')}<span class="workbench-action-label"><input
-                                    id="explain-trigger-cancel" type="button" value="Cancel" aria-hidden="true" disabled
-                                    ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
-                                    @click=${() => invoke('workbench.query.cancelExplain')} /></span></span>
+                            <button id="explain-trigger-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
+                                aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
+                                @click=${() => invoke('workbench.query.cancelExplain')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                         </div>
                         <div class="workbench-action-toolbar__actions">
                             <div class="workbench-action-toolbar__group">${saveDisclosure}${optionsDisclosure}</div>
@@ -3369,7 +3367,7 @@ module workbench {
                             tabindex=${explanation ? '0' : '-1'}
                             ?hidden=${!queryExplainEnabled(context)}>Explanation</button>
                     </div>
-                    <div id="query-results-panel" class="query-output__panel query-results-panel" role="tabpanel"
+                    <div id="query-results-panel" class="query-output__panel query-results-panel workbench-local-progress" role="tabpanel"
                         aria-labelledby="query-output-tab-results" ?hidden=${!!explanation}>
                         <section id="query-results" class="query-results" aria-busy="false" hidden aria-labelledby="query-results-heading">
                             <div class="query-results__header workbench-action-toolbar">

@@ -63,6 +63,7 @@ var workbench;
             explanationControlsRowId: 'query-explanation-controls-row',
             copyButtonId: 'copy-explanation',
             statusId: 'query-explanation-status',
+            timingId: 'query-explanation-timing',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
             dotViewId: 'query-explanation-dot-view',
@@ -80,6 +81,7 @@ var workbench;
             explanationRowId: 'query-explanation-row-compare',
             copyButtonId: 'copy-explanation-compare',
             statusId: 'query-explanation-status-compare',
+            timingId: 'query-explanation-timing-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
             dotViewId: 'query-explanation-dot-view-compare',
@@ -131,20 +133,18 @@ var workbench;
                 .attr('aria-hidden', 'false');
             return true;
         }
+        /*
+         * A slow request's wait state is its Cancel button; the Explanation panel shows the request's progress as
+         * its loading bar (syncExplanationPanelBusy).
+         */
         function hidePrimaryExplainSpinner() {
-            $('.query-explain-spinner')
-                .removeClass('query-explain-spinner--visible')
-                .attr('aria-hidden', 'true');
             hidePrimaryExplainCancelButtons();
         }
         function showPrimaryExplainSpinner(buttonId) {
             var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
-            if (!controlIds.spinnerId) {
+            if (!controlIds.buttonId) {
                 return false;
             }
-            $('#' + controlIds.spinnerId)
-                .addClass('query-explain-spinner--visible')
-                .attr('aria-hidden', 'false');
             showPrimaryExplainCancelButton(controlIds.buttonId);
             return true;
         }
@@ -169,15 +169,11 @@ var workbench;
             return true;
         }
         function hideCompareExplainSpinnerInternal() {
-            $('#explain-compare-trigger')
-                .attr('aria-busy', 'false')
-                .removeClass('query-compare-action--spinning');
+            $('#explain-compare-trigger').attr('aria-busy', 'false');
             hideCompareExplainCancelButtonInternal();
         }
         function showCompareExplainSpinnerInternal() {
-            $('#explain-compare-trigger')
-                .attr('aria-busy', 'true')
-                .addClass('query-compare-action--spinning');
+            $('#explain-compare-trigger').attr('aria-busy', 'true');
             showCompareExplainCancelButtonInternal();
             return true;
         }
@@ -374,7 +370,8 @@ var workbench;
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
-                groupId: groupId
+                groupId: groupId,
+                startedAt: Date.now()
             };
         }
         function generateRequestId() {
@@ -418,7 +415,9 @@ var workbench;
                 rawContent: explanation.rawContent,
                 displayContent: explanation.displayContent,
                 lineSeparator: explanation.lineSeparator,
-                plan: explanation.plan
+                plan: explanation.plan,
+                timedOut: explanation.timedOut,
+                elapsedMs: explanation.elapsedMs
             };
         }
         function getExplanationDisplayContent(explanation) {
@@ -442,7 +441,8 @@ var workbench;
                 explanation.view,
                 explanation.rawContent,
                 explanation.lineSeparator,
-                getExplanationDisplayContent(explanation)
+                getExplanationDisplayContent(explanation),
+                String(!!explanation.timedOut)
             ].join('||');
         }
         function getStableExplanationContentKey(explanation) {
@@ -975,7 +975,12 @@ var workbench;
                 return 'Loading explanation...';
             }
             if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
-                return 'Explanation is stale. Re-run to refresh.';
+                return 'Explanation is stale. Click here to refresh.';
+            }
+            if (paneState.kind === 'ready' && paneState.explanation.timedOut) {
+                return 'The query timed out while it was explained, so this plan is incomplete: '
+                    + 'it shows only the work done before the timeout. '
+                    + 'Increase the timeout in Query settings to see more.';
             }
             if (paneState.kind === 'error') {
                 return paneState.message;
@@ -992,10 +997,56 @@ var workbench;
             if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
                 return 'query-explanation-status--stale';
             }
+            if (paneState.kind === 'ready' && paneState.explanation.timedOut) {
+                return 'query-explanation-status--warning';
+            }
             if (paneState.kind === 'error') {
                 return 'query-explanation-status--error';
             }
             return '';
+        }
+        /** A stale explanation's status line is a button that explains the current query again. */
+        function isPaneStatusRefreshable(paneState) {
+            return !!paneState && paneState.kind === 'ready' && paneState.freshness === 'stale';
+        }
+        var PANE_STATUS_CLASS_NAMES = 'query-explanation-status--visible query-explanation-status--loading '
+            + 'query-explanation-status--stale query-explanation-status--warning query-explanation-status--error';
+        function renderPaneStatus(paneKey, message, className, refreshable) {
+            var status = document.getElementById(getPaneState(paneKey).statusId);
+            if (!status) {
+                return;
+            }
+            // Keep a focused refresh button in place while the pane re-renders around it.
+            var refreshButton = refreshable && message
+                ? status.querySelector('.query-explanation-status__refresh') : null;
+            $(status).removeClass(PANE_STATUS_CLASS_NAMES);
+            if (!refreshButton) {
+                $(status).text('');
+            }
+            if (!message) {
+                return;
+            }
+            $(status).addClass('query-explanation-status--visible').addClass(className);
+            if (!refreshable) {
+                $(status).text(message);
+                return;
+            }
+            if (!refreshButton) {
+                refreshButton = document.createElement('button');
+                refreshButton.type = 'button';
+                refreshButton.className = 'query-explanation-status__refresh';
+                refreshButton.addEventListener('click', refreshStaleExplanation);
+                status.appendChild(refreshButton);
+            }
+            refreshButton.textContent = message;
+        }
+        function refreshStaleExplanation() {
+            // The status button goes away once the refresh starts; keep keyboard focus in the explanation panel.
+            var panel = document.getElementById('query-explanation-panel');
+            if (panel && typeof panel.focus === 'function') {
+                panel.focus({ preventScroll: true });
+            }
+            runExplain(undefined, 'explain-trigger');
         }
         function getPaneOverlayMessage(paneState) {
             if (paneState && paneState.kind === 'loading' && paneState.mode === 'refresh') {
@@ -1988,7 +2039,6 @@ var workbench;
         function renderPanePresentation(paneKey) {
             var paneMachineState = getPaneMachineState(paneKey);
             var paneState = getPaneState(paneKey);
-            var paneStatus = $('#' + paneState.statusId);
             var paneOverlay = $('#' + paneState.overlayId);
             var paneDisplayExplanation = getPaneDisplayExplanation(paneMachineState);
             var paneStatusMessage = getPaneStatusMessage(paneMachineState);
@@ -2002,9 +2052,7 @@ var workbench;
                 + '||' + JSON.stringify(explanationHiddenProperties);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
-                paneStatus
-                    .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
-                    .text('');
+                renderPaneStatus(paneKey, '', '', false);
                 paneOverlay
                     .removeClass('query-explanation-overlay--visible')
                     .attr('aria-hidden', 'true')
@@ -2015,15 +2063,7 @@ var workbench;
                 clearExplanationDimensionLock(paneKey);
                 return;
             }
-            paneStatus
-                .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
-                .text('');
-            if (paneStatusMessage) {
-                paneStatus
-                    .addClass('query-explanation-status--visible')
-                    .addClass(paneStatusClassName)
-                    .text(paneStatusMessage);
-            }
+            renderPaneStatus(paneKey, paneStatusMessage, paneStatusClassName, isPaneStatusRefreshable(paneMachineState));
             paneOverlay
                 .toggleClass('query-explanation-overlay--visible', !!paneOverlayMessage)
                 .attr('aria-hidden', paneOverlayMessage ? 'false' : 'true')
@@ -2060,6 +2100,41 @@ var workbench;
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
                 renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
+            }
+        }
+        /** While a plan loads, the Explanation panel draws the page's loading bar along its top edge. */
+        function syncExplanationPanelBusy() {
+            var busy = queryPageState.primaryPane.kind === 'loading' || queryPageState.comparePane.kind === 'loading';
+            $('#query-explanation-panel').attr('aria-busy', busy ? 'true' : 'false');
+        }
+        /** 'Explaining… 1.5 s' while the plan loads, then 'Explained in 1,520 ms' beside the current plan. */
+        function getPaneTimingText(paneState) {
+            if (paneState.kind === 'loading' && typeof paneState.request.startedAt === 'number') {
+                return 'Explaining… ' + workbench.format.elapsed(Date.now() - paneState.request.startedAt);
+            }
+            if (paneState.kind === 'ready' && paneState.freshness === 'current'
+                && typeof paneState.explanation.elapsedMs === 'number') {
+                return 'Explained in ' + workbench.format.count(Math.round(paneState.explanation.elapsedMs)) + ' ms';
+            }
+            return '';
+        }
+        var explainTimingTick = null;
+        function renderExplanationTiming() {
+            var loading = false;
+            ['primary', 'compare'].forEach(function (paneKey) {
+                var paneState = getPaneMachineState(paneKey);
+                loading = loading || paneState.kind === 'loading';
+                $('#' + getPaneState(paneKey).timingId).text(getPaneTimingText(paneState));
+            });
+            if (loading && explainTimingTick === null) {
+                explainTimingTick = window.setTimeout(function () {
+                    explainTimingTick = null;
+                    renderExplanationTiming();
+                }, 100);
+            }
+            else if (!loading && explainTimingTick !== null) {
+                window.clearTimeout(explainTimingTick);
+                explainTimingTick = null;
             }
         }
         function restoreFocusFromClosingExplanation(paneKey) {
@@ -2224,6 +2299,8 @@ var workbench;
             }
             renderPanePresentation('primary');
             renderPanePresentation('compare');
+            syncExplanationPanelBusy();
+            renderExplanationTiming();
             updateDownloadButtonState();
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
@@ -2751,7 +2828,9 @@ var workbench;
                 rawContent: explanationText,
                 displayContent: displayContent,
                 lineSeparator: lineSeparator,
-                plan: parsedPlan
+                plan: parsedPlan,
+                timedOut: response.timedOut === true || (!!parsedPlan && parsedPlan.timedOut === true),
+                elapsedMs: typeof signature.startedAt === 'number' ? Date.now() - signature.startedAt : undefined
             };
         }
         function applyExplainResponseToPane(paneKey, signature, response, fallbackFormat) {
@@ -4022,6 +4101,10 @@ var workbench;
                 clearTimeout(uiState.spinnerDelayTimeoutId);
                 clearTimeout(uiState.spinnerHideTimeoutId);
             });
+            if (explainTimingTick !== null) {
+                clearTimeout(explainTimingTick);
+                explainTimingTick = null;
+            }
             [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function (request) {
                 if (request && typeof request.abort === 'function') {
                     request.abort();

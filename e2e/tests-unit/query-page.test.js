@@ -127,6 +127,95 @@ test('query explain flow covers success, error, download, and legacy change noti
     );
 });
 
+test('stale explanation status refreshes the explanation when clicked', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'Projection' }),
+        format: 'json',
+        error: '',
+        timedOut: false
+    });
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?changed}');
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+
+    assert.equal(harness.getText('query-explanation-status'), 'Explanation is stale. Click here to refresh.');
+    const refresh = harness.document.getElementById('query-explanation-status').querySelector('button');
+    assert.ok(refresh, 'the stale status is a button');
+    refresh.click();
+
+    assert.equal(harness.pendingExplainRequests.length, 2);
+    assert.equal(harness.pendingExplainRequests[1].params.get('query'), 'SELECT * WHERE {?s ?p ?changed}');
+    assert.equal(harness.getText('query-explanation-status'), '');
+});
+
+test('timed-out explanation keeps the partial plan and warns that it is incomplete', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Executed', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({
+            type: 'Join',
+            timedOut: true,
+            resultSizeActual: 7710,
+            plans: [{ type: 'StatementPattern', resultSizeActual: 3 }, { type: 'StatementPattern' }]
+        }),
+        format: 'json',
+        error: '',
+        timedOut: true
+    });
+
+    assert.match(harness.getText('query-explanation'), /Join/);
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--visible'), true);
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--warning'), true);
+    assert.match(harness.getText('query-explanation-status'), /timed out/i);
+    assert.match(harness.getText('query-explanation-status'), /incomplete/i);
+
+    // A DOT plan has no room for the timed-out marker; the warning comes from the response flag.
+    harness.setValue('explain-format', 'dot');
+    harness.context.workbench.query.runExplain('Executed', 'explain-trigger');
+    harness.pendingExplainRequests[1].resolve({
+        content: 'digraph Explanation {}',
+        format: 'dot',
+        error: '',
+        timedOut: true
+    });
+
+    assert.equal(harness.hasClass('query-explanation-status', 'query-explanation-status--warning'), true);
+    assert.match(harness.getText('query-explanation-status'), /incomplete/i);
+});
+
+test('explanation shows its running time and then the final time', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2']
+    });
+
+    harness.runPageLoad();
+    assert.equal(harness.getText('query-explanation-timing'), '');
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    assert.equal(harness.getText('query-explanation-timing'), 'Explaining… 0.0 s');
+    harness.advanceTimers(1500);
+    assert.equal(harness.getText('query-explanation-timing'), 'Explaining… 1.5 s');
+    assert.equal(harness.getAttribute('query-explanation-timing', 'role'), 'timer');
+
+    harness.advanceTimers(750);
+    harness.pendingExplainRequests[0].resolve({ content: JSON.stringify({ type: 'Projection' }), format: 'json', error: '' });
+    assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms');
+    harness.advanceTimers(5000);
+    assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms', 'the final time stays put');
+
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?changed}');
+    harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+    assert.equal(harness.getText('query-explanation-timing'), '', 'a stale plan does not report its time');
+});
+
 test('query explanation copy writes the current pane explanation to the clipboard', async () => {
     const clipboardWrites = [];
     const harness = createQueryBrowserHarness({

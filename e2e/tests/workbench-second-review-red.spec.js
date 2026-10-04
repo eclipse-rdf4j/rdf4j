@@ -370,7 +370,7 @@ test('embedded result actions keep outline icons in the result document', async 
 	}
 });
 
-test('query starts without an empty result island and Explain cancel has a labelled action root', async ({ page }) => {
+test('query starts without an empty result island and Explain cancel is a labelled action', async ({ page }) => {
 	await page.addInitScript(() => {
 		window.addEventListener('pageshow', () => {
 			window.__workbenchPageshowSeen = true;
@@ -381,18 +381,16 @@ test('query starts without an empty result island and Explain cancel has a label
 	await expect(page.locator('#query-results')).toHaveCount(1);
 	await expect(page.locator('#query-results')).toBeHidden();
 	const cancel = page.locator('#explain-trigger-cancel');
-	const cancelRoot = cancel.locator(
-		'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " workbench-action ")]'
-	);
-	await expect(cancelRoot).toHaveCount(1);
-	await expect(cancelRoot.locator('.workbench-action-icon')).toHaveCount(1);
-	await expect(cancelRoot.locator('.workbench-action-label')).toContainText(/cancel/i);
+	await expect(cancel).toHaveClass(/\bworkbench-action\b/);
+	await expect(cancel.locator('.workbench-action-icon')).toHaveCount(1);
+	await expect(cancel).toHaveText('Cancel');
+	await expect(cancel).toHaveAttribute('aria-label', 'Cancel explanation');
 });
 
 test('Explain cancel action root is hidden before and after a completed explanation', async ({ page }) => {
 	await page.goto(`${REPOSITORY_BASE_URL}/query`, { waitUntil: 'domcontentloaded' });
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
-	const cancelRoot = page.locator('#explain-trigger-cancel-action');
+	const cancelRoot = page.locator('#explain-trigger-cancel');
 	await expect(cancelRoot).toBeHidden();
 	await page.locator('.CodeMirror').first().evaluate(element =>
 		element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "ghost-cancel" } }'));

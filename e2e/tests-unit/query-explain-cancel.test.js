@@ -29,6 +29,36 @@ test('does not start a manual compare refresh when that UI feature is disabled',
     assert.equal(harness.requestsByAction('explain').length, automaticExplainCount);
 });
 
+test('the Explanation panel is busy while a plan loads so it shows the local progress bar', () => {
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['request-1', 'request-2', 'request-3', 'request-4']
+    });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    assert.notEqual(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
+
+    harness.click('explain-trigger');
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
+    harness.pendingExplainRequests[0].resolve({ content: '{"type":"Projection"}', format: 'json', error: '' });
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
+
+    harness.click('rerun-explanation');
+    harness.advanceTimers(1000);
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
+    harness.click('rerun-explanation-cancel');
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.advanceTimers(1000);
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
+    assert.equal(harness.hasClass('explain-compare-trigger', 'query-compare-action--spinning'), false);
+    harness.pendingExplainRequests.slice(2).forEach(request => request.resolve({
+        content: '{"type":"Projection"}', format: 'json', error: ''
+    }));
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
+});
+
 test('Explain transport does not impose a fixed client timeout', () => {
     const harness = createQueryBrowserHarness();
 
@@ -67,8 +97,7 @@ test('cancels the active slow explain request after level change and explicit ca
 
     harness.advanceTimers(1000);
 
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), true);
-    assert.equal(harness.getAttribute('explain-trigger-spinner', 'aria-hidden'), 'false');
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
     assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), true);
     assert.equal(harness.getAttribute('explain-trigger-cancel', 'aria-hidden'), 'false');
     assert.equal(harness.getProperty('explain-trigger-cancel', 'disabled'), false);
@@ -81,8 +110,7 @@ test('cancels the active slow explain request after level change and explicit ca
 
     harness.advanceTimers(1000);
 
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), false);
-    assert.equal(harness.getAttribute('explain-trigger-spinner', 'aria-hidden'), 'true');
+    assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
     assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), false);
     assert.equal(harness.getAttribute('explain-trigger-cancel', 'aria-hidden'), 'true');
     assert.equal(harness.getProperty('explain-trigger-cancel', 'disabled'), true);

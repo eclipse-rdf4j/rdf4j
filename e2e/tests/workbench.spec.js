@@ -269,7 +269,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await createRepo(page);
     await page.goto(repositoryPageUrl(repositoryId, 'query'));
     await page.waitForSelector('.CodeMirror');
-    await expect(page.locator('#explain-trigger-spinner')).toBeHidden();
+    await expect(page.locator('#query-explanation-panel')).not.toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#explain-trigger-cancel')).toBeHidden();
     await expect(page.locator('#compare-toggle')).toBeHidden();
     await expect(page.locator('#query-sidebar-toggle')).toBeHidden();
@@ -334,7 +334,7 @@ test('Query compare mode diffs query and explanation', async ({page}) => {
     await expect(page.locator('#query-diff-modal')).not.toHaveClass(/query-diff-modal--open/);
 });
 
-test('Explain wait state shows spinner and cancel for primary and compare actions', async ({page}) => {
+test('Explain wait state shows the panel loading bar and cancel for primary and compare actions', async ({page}) => {
     await page.goto(WORKBENCH_URL);
     page.on('dialog', dialog => {
         console.log(dialog.message());
@@ -348,13 +348,18 @@ test('Explain wait state shows spinner and cancel for primary and compare action
 
     await typeIntoCodeMirror(page, 0, 'SELECT * WHERE { ?s ?p ?o } LIMIT 10');
 
+    const explanationPanel = page.locator('#query-explanation-panel');
     await page.locator('#explain-trigger').click();
-    await expect(page.locator('#explain-trigger-spinner')).toBeVisible();
+    await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
+    await expect(page.locator('#explain-trigger-cancel')).toHaveAccessibleName('Cancel explanation');
+    await expect.poll(() => explanationPanel.evaluate(panel => getComputedStyle(panel, '::before').opacity))
+        .toBe('1');
     await waitForStableExplanation(page);
+    await expect(explanationPanel).toHaveAttribute('aria-busy', 'false');
 
     await page.locator('#rerun-explanation').click();
-    await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
+    await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
     await waitForStableExplanation(page);
 
@@ -362,17 +367,17 @@ test('Explain wait state shows spinner and cancel for primary and compare action
     await page.waitForFunction(() => document.querySelectorAll('.CodeMirror').length === 2);
     await typeIntoCodeMirror(page, 1, 'ASK { ?s ?p ?o }');
     await page.locator('#explain-trigger').click();
-    await expect(page.locator('#explain-trigger-spinner')).toBeVisible();
+    await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#explain-trigger-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
+    await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-busy', 'true');
     await waitForStableExplanation(page, '#query-explanation-compare');
 
     await page.locator('#rerun-explanation').click();
-    await expect(page.locator('#rerun-explanation-spinner')).toBeVisible();
+    await expect(explanationPanel).toHaveAttribute('aria-busy', 'true');
     await expect(page.locator('#rerun-explanation-cancel')).toBeVisible();
     await expect(page.locator('#explain-compare-cancel')).toBeVisible();
-    await expect(page.locator('#explain-compare-trigger')).toHaveClass(/query-compare-action--spinning/);
+    await expect(page.locator('#explain-compare-trigger')).toHaveAttribute('aria-busy', 'true');
     await waitForStableExplanation(page, '#query-explanation-compare');
 });
 
