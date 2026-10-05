@@ -34,11 +34,11 @@
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>org.sonatype.plugins</groupId>
-						<artifactId>nexus-staging-maven-plugin</artifactId>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
 						<configuration>
-							<!-- we do not want to deploy the compliance modules to Sonatype -->
-							<skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
+							<!-- we do not want to deploy the compliance modules to Central -->
+							<skipPublishing>true</skipPublishing>
 						</configuration>
 					</plugin>
 				</plugins>

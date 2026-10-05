@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test:compression": "playwright test --reporter=line --project=chromium tests/http-compression.spec.js",
     "test:unit": "node --test tests-unit/*.test.js",
@@ -12,7 +15,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
-    "@types/node": "^22.10.1"
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.5"
   }
 }

@@ -7,8 +7,9 @@ The tests are written using Microsoft Playwright and interact with the server an
 ## Running the tests
 
 Requirements:
- - java
- - maven
+ - Node.js 22 or newer
+ - JDK 25 or newer
+ - Maven 3.9.16 or newer
  - npm
  - npx
  - docker (for `docker-tomcat`)

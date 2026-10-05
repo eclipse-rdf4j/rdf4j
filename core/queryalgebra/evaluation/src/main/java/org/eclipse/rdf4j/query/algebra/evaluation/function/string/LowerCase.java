@@ -38,7 +38,7 @@ public class LowerCase implements Function {
 			throw new ValueExprEvaluationException("LCASE requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0]instanceof Literal literal) {
+		if (args[0] instanceof Literal literal) {
 
 			// LowerCase function accepts only string literals.
 			if (QueryEvaluationUtility.isStringLiteral(literal)) {

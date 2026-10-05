@@ -204,7 +204,7 @@ final class ParetoJoinMemoPlanner<T> {
 		}
 	}
 
-	record Result<T> (T best, Stats stats, List<ParetoFrontier.Entry<T>> finalEntries) {
+	record Result<T>(T best, Stats stats, List<ParetoFrontier.Entry<T>> finalEntries) {
 	}
 
 	record Stats(int candidates, int accepted, int rejectedAlternatives, int dominated, int trimmed,

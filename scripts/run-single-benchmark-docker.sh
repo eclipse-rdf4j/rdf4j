@@ -14,7 +14,7 @@ Trailing benchmark parameter values are parsed flexibly. Examples:
   $0 org.example.Benchmark.test MEDICAL_RECORDS 0
 
 Environment:
-  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.14-sapmachine-26)
+  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.16-sapmachine-26)
   RDF4J_JMH_DOCKER_PLATFORM Optional docker platform override (for example linux/amd64)
   RDF4J_JMH_DOCKER_M2_REPO  Maven local repo inside the container (default: /workspace/.m2_repo_linux_j26)
   RDF4J_JMH_DOCKER_CONTAINER_NAME Optional reusable container name override
@@ -23,7 +23,7 @@ USAGE
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.14-sapmachine-26}"
+DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.16-sapmachine-26}"
 DOCKER_PLATFORM="${RDF4J_JMH_DOCKER_PLATFORM:-}"
 DOCKER_WORKDIR="/workspace"
 INNER_HOME="/tmp/home"
