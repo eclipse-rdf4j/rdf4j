@@ -20,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -103,10 +105,26 @@ public class SPARQLTSVCustomTest {
 
 		assertEquals("?test\n" +
 				"\"שלום\"@he--rtl\n", result);
-		Literal parsedLiteral = parseSingleLiteral(result);
+		Literal parsedLiteral = (Literal) parseSingleValue(result);
 		assertEquals("he", parsedLiteral.getLanguage().orElse(null));
 		assertEquals(Literal.BaseDirection.RTL, parsedLiteral.getBaseDirection());
 		assertEquals(RDF.DIRLANGSTRING, parsedLiteral.getDatatype());
+	}
+
+	@Test
+	public void directedLanguageLiteralInTripleTermRoundTrips() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		TripleTerm triple = vf.createTripleTerm(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+				vf.createLiteral("مرحبا", "ar", Literal.BaseDirection.RTL));
+		List<String> bindingNames = List.of("test");
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				List.of(new ListBindingSet(bindingNames, triple)));
+
+		String result = writeTupleResult(tqr);
+
+		assertEquals("?test\n" +
+				"<<( <urn:s> <urn:p> \"مرحبا\"@ar--rtl )>>\n", result);
+		assertEquals(triple, parseSingleValue(result));
 	}
 
 	@Test
@@ -138,13 +156,13 @@ public class SPARQLTSVCustomTest {
 		return result;
 	}
 
-	private Literal parseSingleLiteral(String result) throws Exception {
+	private Value parseSingleValue(String result) throws Exception {
 		QueryResultCollector collector = new QueryResultCollector();
 		QueryResultIO.parseTuple(new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8)),
 				TupleQueryResultFormat.TSV,
 				collector, SimpleValueFactory.getInstance());
 		BindingSet parsed = collector.getBindingSets().get(0);
-		return (Literal) parsed.getValue("test");
+		return parsed.getValue("test");
 	}
 
 }
