@@ -40,8 +40,11 @@ module workbench {
             var limit_id = workbench.paging.LIM_ID + suffix;
             var limit_param_found = false;
             for (var i = 0; elements.length - i; i++) {
-                var pair = elements[i].split('=');
-                var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
+                // A '+' in the query string is a space; an encoded one (%2B, as in <…/C++>) stays a '+'.
+                var separator = elements[i].indexOf('=');
+                var pair = separator < 0 ? [elements[i], ''] : [elements[i].substring(0, separator),
+                    elements[i].substring(separator + 1)];
+                var value = decodeURIComponent(pair[1].replace(/\+/g, ' '));
                 if ('resource' == pair[0]) {
                     resource.val(value);
                 }

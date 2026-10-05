@@ -8,7 +8,7 @@ const {
 	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers');
-const fs = require('fs');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers');
 const path = require('path');
 
 // Changed with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md; decisions in
@@ -29,8 +29,8 @@ const path = require('path');
 
 const SERVER_BASE_URL = serverBaseUrl();
 const WORKBENCH_BASE_URL = workbenchBaseUrl();
-const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
-	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
+// Screenshots go to WORKBENCH_VISUAL_REFINEMENT_DIRECTORY when it is set, otherwise to each test's output directory.
+const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY || '';
 const REPOSITORY_ID = uniqueRepositoryId('workbench-visual-contract');
 const EMPTY_REPOSITORY_ID = `${REPOSITORY_ID}-empty`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
@@ -565,7 +565,9 @@ async function openPage(page, route) {
 }
 
 async function captureState(page, fileName) {
-	const screenshotDirectory = path.join(ARTIFACT_DIRECTORY, 'final', 'states');
-	fs.mkdirSync(screenshotDirectory, { recursive: true });
-	await page.screenshot({ path: path.join(screenshotDirectory, fileName), fullPage: true, animations: 'disabled' });
+	if (!evidenceScreenshots()) {
+		return;
+	}
+	const screenshotDirectory = ARTIFACT_DIRECTORY ? path.join(ARTIFACT_DIRECTORY, 'final', 'states') : '';
+	await page.screenshot({ path: evidencePath(screenshotDirectory, fileName), fullPage: true, animations: 'disabled' });
 }

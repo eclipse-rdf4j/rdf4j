@@ -172,6 +172,8 @@
 			<param-name>/update</param-name>
 			<param-value>org.eclipse.rdf4j.workbench.commands.UpdateServlet</param-value>
 		</init-param>
+		<!-- Load at startup, so that an invalid workbench.properties policy is reported when the application starts. -->
+		<load-on-startup>1</load-on-startup>
 	</servlet>
 	<servlet-mapping>
 		<servlet-name>workbench</servlet-name>

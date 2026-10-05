@@ -1,14 +1,13 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const fs = require('node:fs');
-const path = require('node:path');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers.js');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL
 	|| 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
-const SCREENSHOT_DIRECTORY = path.resolve(__dirname, '../../output/playwright');
+// Evidence goes to WORKBENCH_PAGE_SHELL_GRID_EVIDENCE when it is set, otherwise to the test's output directory.
+const SCREENSHOT_DIRECTORY = process.env.WORKBENCH_PAGE_SHELL_GRID_EVIDENCE || '';
 
 test('repository landing shell owns full-width layout and loads server navigation', async ({ page }) => {
-	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	const observations = {};
 	for (const [name, width] of [['desktop', 1280], ['mobile', 390]]) {
 		await page.setViewportSize({ width, height: 720 });
@@ -36,7 +35,10 @@ test('repository landing shell owns full-width layout and loads server navigatio
 				server: server?.textContent?.trim() || null
 			};
 		});
-		await page.screenshot({ path: path.join(SCREENSHOT_DIRECTORY, `workbench-page-shell-grid-${name}.png`), fullPage: true });
+		if (evidenceScreenshots()) {
+			await page.screenshot({ path: evidencePath(SCREENSHOT_DIRECTORY, `workbench-page-shell-grid-${name}.png`),
+				fullPage: true });
+		}
 	}
 	console.log(`Workbench landing shell geometry: ${JSON.stringify(observations)}`);
 

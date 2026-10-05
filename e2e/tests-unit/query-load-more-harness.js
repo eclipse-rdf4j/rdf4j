@@ -94,12 +94,12 @@ function loadApi() {
     };
     document.defaultView = window;
     const context = vm.createContext({
-        workbench: {}, document, window, URLSearchParams, AbortController,
+        workbench: {}, document, window, URL, URLSearchParams, AbortController,
         TextDecoder, Event: class { constructor(type) { this.type = type; } },
         setTimeout, clearTimeout
     });
     vm.runInContext(compiledSource, context, { filename: outputPath });
-    return { api: context.workbench.queryStream, document, window };
+    return { api: context.workbench.queryStream, workbench: context.workbench, document, window };
 }
 
 function response(records) {
@@ -160,6 +160,7 @@ function execution(options = {}) {
     const responses = [...(options.responses || [batch([0, 1], 0, true)])];
     const controller = api.bindMainQueryForm(form, target, {
         maxDomRows: options.maxDomRows || 8,
+        features: options.features,
         rowStoreOptions: { workerFactory() { const worker = new MemoryWorker(); workers.push(worker); return worker; } },
         async fetcher(url, init) {
             requests.push({ url, init });

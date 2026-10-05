@@ -255,8 +255,11 @@ module workbench {
             // Populate parameters
             var elements = workbench.getQueryStringElements();
             for (var i = 0; elements.length - i; i++) {
-                var pair = elements[i].split('=');
-                var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
+                // A '+' in the query string is a space; an encoded one (%2B) stays a '+'.
+                var separator = elements[i].indexOf('=');
+                var pair = separator < 0 ? [elements[i], ''] : [elements[i].substring(0, separator),
+                    elements[i].substring(separator + 1)];
+                var value = decodeURIComponent(pair[1].replace(/\+/g, ' '));
                 if (pair[0] == 'id') {
                     id.val(value);
                 }

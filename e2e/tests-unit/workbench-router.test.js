@@ -141,11 +141,13 @@ function loadRouter(options) {
     /** FormData over the fake forms of these tests: their fields, then the submitter's name and value. */
     class FakeFormData {
         constructor(form, submitter) {
-            this.entries = (form.fields || []).slice();
+            this.entries = (form && form.fields || []).slice();
             if (submitter && submitter.getAttribute('name')) {
                 this.entries.push([submitter.getAttribute('name'), submitter.getAttribute('value') || '']);
             }
         }
+        append(name, value) { this.entries.push([name, value]); }
+        forEach(callback) { this.entries.forEach(([name, value]) => callback(value, name, this)); }
         [Symbol.iterator]() { return this.entries[Symbol.iterator](); }
     }
     const consoleErrors = [];
@@ -734,6 +736,17 @@ function fakeForm(harness, attributes, fields) {
     return form;
 }
 
+/** Remove's key for a count of these values (subject only), as workbenchViews.ts writes it. */
+function removeKey(subj) {
+    return [subj, '', '', ''].join('\u0000');
+}
+
+/** A form whose Remove fields hold the values removeKey('<urn:s>') counted; other forms ignore them. */
+function removableForm(form) {
+    form.querySelector = (selector) => ({ value: selector === '[name="subj"]' ? '<urn:s>' : '' });
+    return form;
+}
+
 function submitEvent(form, submitter, options) {
     return Object.assign({
         type: 'submit', target: form, submitter: submitter || null, defaultPrevented: false,
@@ -962,7 +975,7 @@ function loadSendRouter() {
     return harness;
 }
 
-test('a form sent in place stays on its page when the server accepts it with a redirect', async () => {
+test('a form sent in place stays on its page when the write servlet acknowledges it', async () => {
     const harness = loadSendRouter();
     const form = fakeForm(harness, { action: 'update', method: 'post' }, [['update', 'INSERT DATA {}']]);
     const entries = harness.window.history.entries.length;
@@ -971,17 +984,18 @@ test('a form sent in place stays on its page when the server accepts it with a r
     const post = harness.posts[0];
     assert.equal(post.url, base + 'update');
     assert.equal(post.options.method, 'POST');
-    assert.equal(post.options.redirect, 'manual', 'the redirect that accepts it is not followed');
+    assert.equal(post.options.redirect, 'manual', 'a redirect is not followed (and is not taken as success, A8)');
     assert.equal(post.options.headers.Accept, 'application/vnd.rdf4j.workbench+ndjson');
     assert.equal(String(post.options.body), 'update=INSERT+DATA+%7B%7D');
     assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the page shows its own progress');
-    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+    harness.respond(writeDoneResponse('update'));
 
     assert.equal(await sent, 'done');
     assert.equal(harness.window.location.href, base + 'update');
     assert.equal(harness.window.history.entries.length, entries, 'no history entry');
     assert.equal(harness.router.current().viewId, 'update');
-    assert.deepEqual(harness.log.filter((entry) => !entry.startsWith('scripts')), [], 'nothing is loaded or rendered');
+    assert.deepEqual(harness.log.filter((entry) => !entry.startsWith('scripts') && !entry.startsWith('model from')), [],
+        'nothing is rendered or mounted');
     assert.equal(form.submitted, 0);
 });
 
@@ -1010,15 +1024,16 @@ test('a form sent in place whose request fails stays on its page and says so', a
     assert.match(harness.consoleErrors[0][0], /could not send .*\/update/);
 });
 
-test('a form sent in place whose answer page cannot be shown loads it instead', async () => {
+test('a form sent in place whose answer page cannot be shown stays on its page instead of loading it with GET', async () => {
     const harness = loadSendRouter();
     harness.workbench.app.completeModel = () => Promise.reject(new Error('no info'));
 
     const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
     harness.respond({ type: 'basic', url: base + 'update', redirected: false, viewId: 'update' });
 
-    assert.equal(await sent, 'fallback');
-    assert.deepEqual(harness.window.assigned, [base + 'update']);
+    // Review fix A9: loading the form's URL again would lose its input and never show the answer.
+    assert.equal(await sent, 'failed');
+    assert.deepEqual(harness.window.assigned, []);
 });
 
 test('a form sent in place is abandoned when another page is opened', async () => {
@@ -1038,7 +1053,7 @@ test('an upload sent in place guards the page until the server accepts it', asyn
 
     const sent = harness.router.send(fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }));
     assert.equal(harness.window.listenerCount('beforeunload'), 1);
-    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+    harness.respond(writeDoneResponse('add'));
 
     assert.equal(await sent, 'done');
     assert.equal(harness.window.listenerCount('beforeunload'), 0);
@@ -1317,7 +1332,7 @@ for (const action of [undefined, '', 'update', './update', base + 'update']) {
             assert.equal(harness.posts[0].options.body.constructor.name,
                 multipart ? 'FakeFormData' : 'URLSearchParams');
             assert.equal(harness.loadModelCalls[0].signal.aborted, true);
-            harness.respond({ type: 'opaqueredirect' });
+            harness.respond(writeDoneResponse('update'));
             assert.equal(await sent, 'done');
             assert.equal(harness.window.location.href, harness.router.current().url);
             assert.equal(harness.window.location.href, base + 'update');
@@ -1355,10 +1370,10 @@ test('stale pending history model cannot replace a page after its in-place submi
     harness.window.goTo(base + 'types');
     harness.window.dispatch('popstate', {});
     const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
-    harness.respond({ type: 'opaqueredirect' });
+    harness.respond(writeDoneResponse('update'));
     assert.equal(await sent, 'done');
     await harness.answer('types', harness.model('types'));
-    assert.deepEqual(harness.disposed, ['types']);
+    assert.deepEqual(harness.disposed, ['update', 'types'], 'the acknowledgement and the stale model are released');
     assert.equal(harness.router.current().url, base + 'update');
     assert.equal(harness.window.location.href, base + 'update');
     assert.equal(harness.outlet.getAttribute('aria-busy'), null);
@@ -1389,7 +1404,7 @@ test('pending history preserves explicit submitter route, method and encoding ov
     assert.equal(harness.posts[0].url, base + 'add');
     assert.equal(harness.posts[0].options.body.constructor.name, 'FakeFormData');
     assert.deepEqual(Array.from(harness.posts[0].options.body), [['q', 'text'], ['action', 'upload']]);
-    harness.respond({ type: 'opaqueredirect' });
+    harness.respond(writeDoneResponse('add'));
     assert.equal(await sent, 'done');
     assert.equal(harness.router.current().url, base + 'update');
     assert.equal(harness.window.location.href, base + 'update');
@@ -1404,7 +1419,7 @@ for (const multipart of [false, true]) {
         harness.window.dispatch('popstate', {});
         assert.equal(harness.posts[0].options.signal.aborted, false);
         assert.equal(harness.window.listenerCount('beforeunload'), multipart ? 1 : 0);
-        harness.respond({ type: 'opaqueredirect' });
+        harness.respond(writeDoneResponse('update'));
         assert.equal(await sent, 'done');
     });
 }
@@ -1453,7 +1468,7 @@ for (const viewId of ['clear', 'remove']) {
         const runtime = { nothing: '', html(strings, ...values) { return { strings, values }; },
             render(value) { template = value; } };
         const loaded = harness.model(viewId, { metadata: {}, namespaceMap: {} });
-        if (viewId === 'remove') { loaded.removeCount = { state: 'counted', count: 1 }; }
+        if (viewId === 'remove') { loaded.removeCount = { state: 'counted', count: 1, key: removeKey('<urn:s>') }; }
         harness.workbench.views.render({}, loaded, { basePath: '/workbench', repositoryId: 'repo-1',
             workbench: { menu: [] } }, runtime);
         function submitHandler(value) {
@@ -1472,11 +1487,13 @@ for (const viewId of ['clear', 'remove']) {
         assert.equal(typeof submit, 'function', 'the rendered production form owns the confirmation');
         Object.assign(harness.workbench.views, originalViews);
         const confirmation = deferred();
-        harness.workbench.confirmDialog.open = () => confirmation.promise;
-        const form = fakeForm(harness, { action: viewId, method: 'post' });
+        let opened = 0;
+        harness.workbench.confirmDialog.open = () => { opened++; return confirmation.promise; };
+        const form = removableForm(fakeForm(harness, { action: viewId, method: 'post' }));
         form.isConnected = true;
         form.closest = () => null;
         submit({ preventDefault() {}, currentTarget: form });
+        assert.equal(opened, 1, 'the counted form asks for confirmation');
         const navigation = harness.router.navigate(base + 'contexts', { history: 'push' });
         await harness.answer('contexts', harness.model('contexts', { finalUrl: base.replace('repo-1', 'repo-B') + 'contexts' }));
         assert.equal(await navigation, 'committed');
@@ -1551,7 +1568,7 @@ function confirmationPage(viewId) {
     const renderOutlet = harness.workbench.views.renderOutlet;
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: { menu: [] } };
     const loaded = harness.model(viewId, { metadata: {}, namespaceMap: {} });
-    if (viewId === 'remove') { loaded.removeCount = { state: 'counted', count: 1 }; }
+    if (viewId === 'remove') { loaded.removeCount = { state: 'counted', count: 1, key: removeKey('<urn:s>') }; }
     if (viewId === 'namespaces') {
         loaded.vars = ['prefix', 'namespace'];
         loaded.rows = [['ex', 'https://example.test/ns#']];
@@ -1585,11 +1602,13 @@ for (const viewId of ['clear', 'remove']) {
         test(`${viewId} confirmation rejects a reused form after ${replacement}`, async () => {
             const harness = confirmationPage(viewId);
             const confirmation = deferred();
-            harness.workbench.confirmDialog.open = () => confirmation.promise;
-            const form = fakeForm(harness, { action: viewId, method: 'post' });
+            let opened = 0;
+            harness.workbench.confirmDialog.open = () => { opened++; return confirmation.promise; };
+            const form = removableForm(fakeForm(harness, { action: viewId, method: 'post' }));
             form.isConnected = true;
             form.closest = () => harness.outlet;
             harness.callback({ preventDefault() {}, currentTarget: form });
+            assert.equal(opened, 1, 'the counted form asks for confirmation');
             harness.replaceShownModel();
             if (replacement.startsWith('a new')) { harness.replaceShownModel('repo-1'); }
             confirmation.resolve(true);
@@ -1733,28 +1752,6 @@ for (const stage of ['lookup', 'replacement confirmation', 'unusual id confirmat
     });
 }
 
-test('legacy saved Delete captures the actual form before confirming across repository changes', async () => {
-    const route = loadSendRouter();
-    const browser = require('./form-browser-harness.js').createFormBrowserHarness();
-    const oldForm = browser.registerElement('form', { name: 'urn:query', attributes: { action: 'saved-queries', method: 'post' } });
-    browser.document.body.appendChild(oldForm);
-    browser.loadScripts(['saved-queries.js']);
-    browser.workbench.router = route.router;
-    const confirmation = deferred();
-    browser.workbench.confirmDialog.open = () => confirmation.promise;
-    browser.workbench.savedQueries.deleteQuery('', 'Original', 'urn:query');
-    browser.document.body.removeChild(oldForm);
-    const replacement = browser.registerElement('form', { name: 'urn:query', attributes: { action: 'saved-queries', method: 'post' } });
-    browser.document.body.appendChild(replacement);
-    await visit(route, 'contexts');
-    confirmation.resolve(true);
-    await settle();
-    assert.equal(route.posts.length, 0);
-    assert.equal(oldForm.submitCount, 0);
-    assert.equal(replacement.submitCount, 0, 'same URN cannot transfer a confirmation to a new form');
-});
-
-
 test('saved Query overwrite retries the original payload after current form edits', async () => {
     const browser = require('./query-browser-harness.js').createQueryBrowserHarness({ queryName: 'Original' });
     const confirmation = deferred();
@@ -1768,4 +1765,323 @@ test('saved Query overwrite retries the original payload after current form edit
     await settle();
     assert.equal(browser.ajaxRequests.length, 2);
     assert.equal(browser.ajaxRequests[1].data, original.data, 'confirmation owns the captured query and name');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Review fixes (TS-A): router failures, busy state of kept pages, namespaces of kept pages.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A non page-protocol error answer, as a container or a servlet writes it. */
+function errorResponse(status, statusText, contentType, body) {
+    return { ok: false, status, statusText, url: base + 'clear', type: 'basic',
+        headers: { get: (name) => (String(name).toLowerCase() === 'content-type' ? contentType : null) },
+        text: () => Promise.resolve(body) };
+}
+
+/** Record what the router renders into the shown outlet when it reports a failure there. */
+function recordOutletRenders(harness) {
+    const rendered = [];
+    harness.workbench.views.renderOutlet = (element, model) => { rendered.push(model); return element; };
+    return rendered;
+}
+
+test('A9: a POST answered by a non-page error keeps its form and shows the status and the server text', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const rendered = recordOutletRenders(harness);
+    harness.router.submit(fakeForm(harness, { action: 'clear', method: 'post' }, [['context', '<urn:g>']]));
+    harness.respond(errorResponse(500, 'Internal Server Error', 'text/html;charset=utf-8',
+        '<html><head><title>Error</title><style>p{}</style></head><body><h1>HTTP Status 500</h1>'
+        + '<p>Repository is read-only</p></body></html>'));
+    await settle();
+    await settle();
+    assert.deepEqual(harness.window.assigned, [], 'the form is not loaded again with GET, so its input stays');
+    assert.equal(harness.router.current().viewId, 'summary');
+    assert.equal(rendered.length, 1, 'the shown page is rendered again with the failure');
+    const failure = rendered[0].sendFailure;
+    assert.equal(failure.status, 500);
+    assert.match(failure.message, /500/);
+    assert.match(failure.message, /Repository is read-only/);
+    assert.doesNotMatch(failure.message, /<|p\{\}/, 'markup is reduced to its text');
+    assert.equal(harness.outlet.getAttribute('aria-busy'), null);
+});
+
+test('A9: a POST answered by an error-only page model keeps its form and shows the message', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const rendered = recordOutletRenders(harness);
+    harness.workbench.app.loadModelFromResponse = (response) => Promise.resolve(harness.model('delete', {
+        vars: ['error-message'], finalUrl: response.url,
+        rowStore: { read: () => Promise.resolve([[{ kind: 'literal', value: 'Repository prod is in use' }]]),
+            dispose: () => harness.disposed.push('delete') }
+    }));
+    harness.router.submit(fakeForm(harness, { action: 'clear', method: 'post' }));
+    harness.respond({ url: base + 'clear', status: 500, viewId: 'delete' });
+    await settle();
+    await settle();
+    assert.deepEqual(harness.window.assigned, []);
+    assert.equal(harness.log.some((line) => line.startsWith('render')), false, 'the error does not replace the form');
+    assert.equal(rendered.length, 1);
+    assert.match(rendered[0].sendFailure.message, /Repository prod is in use/);
+    assert.deepEqual(harness.disposed, ['delete'], 'the error model is released');
+});
+
+test('A9: a POST whose request fails keeps its form instead of loading it again', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const rendered = recordOutletRenders(harness);
+    harness.router.submit(fakeForm(harness, { action: 'clear', method: 'post' }));
+    harness.refuse(new TypeError('Failed to fetch'));
+    await settle();
+    assert.deepEqual(harness.window.assigned, []);
+    assert.equal(rendered.length, 1);
+    assert.equal(rendered[0].sendFailure.status, 0);
+    assert.ok(rendered[0].sendFailure.message.length > 0);
+});
+
+test('A42: a form sent in place that the server rejects without a page reports the status and its text', async () => {
+    const harness = loadSendRouter();
+    const failures = [];
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }), null,
+        (failure) => failures.push(failure));
+    harness.respond(Object.assign(errorResponse(409, 'Conflict', 'text/plain',
+        'Failed SHACL validation\n[] sh:conforms false .'), { url: base + 'update' }));
+    assert.equal(await sent, 'failed');
+    assert.deepEqual(harness.window.assigned, []);
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].status, 409);
+    assert.match(failures[0].message, /409 Conflict/);
+    assert.match(failures[0].message, /Failed SHACL validation/);
+});
+
+test('A42: a form sent in place answered by a page-protocol error stays on its page and reports it', async () => {
+    const harness = loadSendRouter();
+    const failures = [];
+    harness.workbench.app.loadModelFromResponse = (response) => Promise.resolve(harness.model('update', {
+        finalUrl: response.url, error: { status: 409, code: 'shacl-validation',
+            message: 'Failed SHACL validation\n<urn:shape> sh:conforms false .' } }));
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }), null,
+        (failure) => failures.push(failure));
+    harness.respond({ url: base + 'update', status: 409, viewId: 'update' });
+    assert.equal(await sent, 'failed');
+    assert.equal(harness.log.some((line) => line.startsWith('render')), false, 'the form is not replaced');
+    assert.deepEqual(failures.map((failure) => failure.status), [409]);
+    assert.match(failures[0].message, /409: Failed SHACL validation <urn:shape> sh:conforms false/, 'the report keeps its IRIs');
+    assert.deepEqual(harness.disposed, ['update']);
+});
+
+test('A4: the parked Query outlet does not stay busy, and is not busy when it is shown again', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    const queryOutlet = harness.currentOutlet();
+    const navigation = harness.router.navigate(base + 'types', { history: 'push' });
+    assert.equal(queryOutlet.getAttribute('aria-busy'), 'true', 'the page being left is busy while the next loads');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await harness.answer('types', harness.model('types'));
+    assert.equal(await navigation, 'committed');
+    await settle();
+    assert.equal(queryOutlet.getAttribute('aria-busy'), null, 'the parked page is not busy');
+    assert.equal(queryOutlet.getAttribute('data-workbench-route-loading'), null, 'nor showing a progress bar');
+    assert.equal(await harness.router.navigate(base + 'query', { history: 'push' }), 'committed');
+    await frames();
+    assert.equal(harness.currentOutlet(), queryOutlet);
+    assert.equal(queryOutlet.getAttribute('aria-busy'), null);
+    assert.equal(queryOutlet.getAttribute('data-workbench-route-loading'), null);
+});
+
+test('A4: restoring the kept Query page while another page loads leaves no busy state behind', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    const queryOutlet = harness.currentOutlet();
+    await visit(harness, 'types');
+    const typesOutlet = harness.currentOutlet();
+    harness.router.navigate(base + 'contexts', { history: 'push' });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(typesOutlet.getAttribute('data-workbench-route-loading'), 'true');
+    assert.equal(await harness.router.navigate(base + 'query', { history: 'push' }), 'committed');
+    assert.equal(harness.currentOutlet(), queryOutlet);
+    assert.equal(queryOutlet.getAttribute('aria-busy'), null);
+    assert.equal(typesOutlet.getAttribute('aria-busy'), null, 'the page that was left is not busy either');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(queryOutlet.getAttribute('data-workbench-route-loading'), null, 'no late progress bar');
+});
+
+test('A20: a multipart form is sent with its content part last, where the Workbench reads it', async () => {
+    const harness = loadSendRouter();
+    harness.register('add');
+    const form = fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' }, [
+        ['source', 'contents'], ['content', '<urn:s> <urn:p> "ø" .'], ['Content-Type', 'text/turtle'],
+        ['context', 'urn:g'], ['baseURI', 'urn:base'], ['transaction-setting__x', 'SNAPSHOT']]);
+    harness.router.send(form);
+    const body = harness.posts[0].options.body;
+    assert.deepEqual(body.entries.map((entry) => entry[0]),
+        ['source', 'Content-Type', 'context', 'baseURI', 'transaction-setting__x', 'content'],
+        'every other field precedes content, so none is decoded by the container instead');
+    assert.equal(body.entries[5][1], '<urn:s> <urn:p> "ø" .');
+});
+
+for (const stage of ['mount', 'ready']) {
+    test(`A5: a route whose ${stage} fails is reported and loaded by the browser instead of staying busy`, async () => {
+        const harness = loadRouter();
+        harness.workbench.routes.register({
+            viewId: 'types', routerReady: true, scripts: () => [], baseScripts: () => [],
+            mount() {
+                const failure = new Error('route script failed');
+                return stage === 'mount' ? Promise.reject(failure)
+                    : { ready: Promise.reject(failure), dispose() {} };
+            }
+        });
+        harness.start();
+        const rejections = [];
+        const onRejection = (reason) => rejections.push(reason);
+        process.on('unhandledRejection', onRejection);
+        try {
+            const navigation = harness.router.navigate(base + 'types', { history: 'push' });
+            await harness.answer('types', harness.model('types'));
+            assert.equal(await navigation, 'committed');
+            await settle();
+            await settle();
+        } finally {
+            process.removeListener('unhandledRejection', onRejection);
+        }
+        assert.deepEqual(rejections, [], 'nothing is left unhandled');
+        assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the page is not left busy');
+        assert.equal(harness.consoleErrors.length, 1, 'the console says why');
+        assert.deepEqual(harness.window.assigned, [base + 'types'], 'the browser loads the page instead');
+    });
+}
+
+test('A7: the kept Query page shown again gets the repository namespaces as they are now', async () => {
+    const harness = loadKeepAliveRouter();
+    const configured = [];
+    harness.workbench.app.configureNamespaces = (model) => configured.push(Object.assign({},
+        model.linked && model.linked.namespaces ? model.linked.namespaces.namespaceMap : model.namespaceMap));
+    const requested = [];
+    harness.workbench.app.linkedModels = (fetcher, url, model, paths) => {
+        requested.push({ url, paths: Array.from(paths || []) });
+        model.linked = Object.assign({}, model.linked, { namespaces: { namespaceMap: { 'ex:': 'urn:ex#', 'new:': 'urn:new#' } } });
+        return Promise.resolve();
+    };
+    harness.start();
+    await visit(harness, 'query', harness.model('query', { namespaceMap: { 'ex:': 'urn:ex#' } }));
+    await visit(harness, 'namespaces');
+    configured.length = 0;
+    assert.equal(await harness.router.navigate(base + 'query', { history: 'push' }), 'committed');
+    await settle();
+    assert.deepEqual(requested.map((entry) => entry.paths), [['_internal/namespaces']], 'the namespaces are asked for again');
+    assert.deepEqual(configured[configured.length - 1], { 'ex:': 'urn:ex#', 'new:': 'urn:new#' },
+        'a namespace added meanwhile is offered by Insert prefixes and the explanation');
+});
+
+test('A17: a hover prefetch whose scripts fail to load leaves no unhandled rejection', async () => {
+    const harness = loadRouter();
+    harness.register('explore', { baseScripts: ['paging.js', 'explore.js'] });
+    harness.start();
+    harness.workbench.app.loadScripts = () => Promise.reject(new Error('Unable to load Workbench script explore.js'));
+    const rejections = [];
+    const onRejection = (reason) => rejections.push(reason);
+    process.on('unhandledRejection', onRejection);
+    try {
+        harness.document.dispatch('pointerover', click(link(base + 'explore')));
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        await settle();
+    } finally {
+        process.removeListener('unhandledRejection', onRejection);
+    }
+    assert.deepEqual(rejections, []);
+});
+
+test('A18: following a link to the page already shown loads it again without a second history entry', async () => {
+    const harness = loadRouter({ href: base + 'types' });
+    harness.session.url = base + 'types';
+    harness.start();
+    const event = click(link(base + 'types'));
+    harness.document.dispatch('click', event);
+    assert.equal(event.defaultPrevented, true);
+    await harness.answer('types', harness.model('types'));
+    const pushes = harness.window.history.entries.filter((entry) => entry[0] === 'push');
+    assert.deepEqual(pushes, [], 'Back still leaves the page in one step');
+    assert.equal(harness.window.location.href, base + 'types');
+});
+
+test('A-opt2: Back restores the position with the same growing-page helper bootstrap uses', async () => {
+    const harness = loadRouter();
+    const restored = [];
+    harness.workbench.app.restoreScroll = (targetWindow, y) => restored.push(y);
+    harness.start();
+    harness.window.scrollY = 640;
+    await visit(harness, 'types');
+    harness.window.history.state = harness.window.history.entries[0][1];
+    harness.window.goTo(base + 'summary', harness.window.history.entries[0][1]);
+    harness.window.dispatch('popstate', {});
+    await harness.answer('summary', harness.model('summary'));
+    await frames();
+    await frames();
+    assert.deepEqual(restored, [640]);
+});
+
+/** The answer a write servlet gives a write sent in place once it is done (X-Workbench-Write: done, J43). */
+function writeDoneResponse(view, headerValue = 'done') {
+    return { type: 'basic', ok: true, status: 200, url: base + view, viewId: view, redirected: false,
+        headers: { get: (name) => {
+            const key = String(name).toLowerCase();
+            if (key === 'x-workbench-write') { return headerValue; }
+            return key === 'content-type' ? 'application/vnd.rdf4j.workbench+ndjson; charset=UTF-8' : null;
+        } } };
+}
+
+test('A8: an in-place write is done when the write servlet acknowledges it; its answer is not shown', async () => {
+    const harness = loadSendRouter();
+    const failures = [];
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }), null,
+        (failure) => failures.push(failure));
+    harness.respond(writeDoneResponse('update'));
+    assert.equal(await sent, 'done');
+    assert.deepEqual(failures, []);
+    assert.equal(harness.log.some((line) => line.startsWith('render') || line.startsWith('mount')), false,
+        'the acknowledgement is not a page to show');
+    assert.deepEqual(harness.disposed, ['update'], 'its model is released');
+    assert.equal(harness.router.current().url, base + 'update');
+});
+
+test('A8: the acknowledgement in the end record alone also confirms the write', async () => {
+    const harness = loadSendRouter();
+    harness.workbench.app.loadModelFromResponse = (response) => Promise.resolve(harness.model('update', {
+        finalUrl: response.url, metadata: { 'workbench-write': 'done', 'workbench-write-location': 'summary' } }));
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }));
+    harness.respond(writeDoneResponse('update', null));
+    assert.equal(await sent, 'done');
+    assert.deepEqual(harness.disposed, ['update']);
+});
+
+test('A8: a redirect is not taken as a done write: the page says the outcome is unknown', async () => {
+    const harness = loadSendRouter();
+    const failures = [];
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }), null,
+        (failure) => failures.push(failure));
+    harness.respond({ type: 'opaqueredirect', url: '', status: 0 });
+    assert.equal(await sent, 'failed', 'a gateway or sign-in redirect does not show a success tick');
+    assert.equal(failures.length, 1);
+    assert.match(failures[0].message, /redirect/i, 'it says what came back');
+    assert.match(failures[0].message, /check the repository/i, 'and that the write may or may not have happened');
+    assert.deepEqual(harness.window.assigned, []);
+    assert.equal(harness.router.current().url, base + 'update');
+});
+
+test('A8: a write sent through the router as a navigation and acknowledged opens the page it leads to', async () => {
+    const harness = loadFormRouter();
+    harness.register('update');
+    harness.start();
+    harness.workbench.app.loadModelFromResponse = (response) => Promise.resolve(harness.model(response.viewId, {
+        finalUrl: response.url, metadata: { 'workbench-write': 'done', 'workbench-write-location': 'summary' } }));
+    harness.router.submit(fakeForm(harness, { action: 'update', method: 'post' }, [['update', 'CLEAR ALL']]));
+    harness.respond(writeDoneResponse('update'));
+    await settle();
+    await settle();
+    assert.deepEqual(harness.disposed, ['update'], 'the acknowledgement is released, not shown');
+    assert.ok(harness.loadModelCalls.some((call) => call.url === base + 'summary'), 'the page the write leads to loads');
+    await harness.answer('summary', harness.model('summary'));
+    assert.equal(harness.router.current().url, base + 'summary');
 });

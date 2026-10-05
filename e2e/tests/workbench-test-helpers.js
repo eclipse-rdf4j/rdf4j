@@ -159,10 +159,24 @@ function evidenceScreenshots() {
     return requested ? requested === 'true' : !process.env.CI;
 }
 
+/**
+ * A path for an evidence file (a screenshot, measurements) of the running test: under `directory` when the spec's
+ * environment variable names one, otherwise in Playwright's per-test output directory (e2e/test-results, which git
+ * ignores), so runs neither write into the repository nor share a fixed temporary directory. Its directory exists.
+ * Call it inside a test; check evidenceScreenshots() first for evidence that is optional.
+ */
+function evidencePath(directory, ...segments) {
+    const { test } = require('@playwright/test');
+    const file = directory ? path.join(directory, ...segments) : test.info().outputPath(...segments);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    return file;
+}
+
 module.exports = {
     SEED_GRAPHS,
     createSeededRepository,
     deleteRepository,
+    evidencePath,
     evidenceScreenshots,
     memoryRepositoryConfiguration,
     openQueryPage,

@@ -665,19 +665,24 @@ module workbench {
                     script.setAttribute('data-workbench-loaded', 'true');
                     resolve();
                 };
-                script.onerror = () => reject(new Error('Unable to load Workbench script ' + url));
+                script.onerror = () => {
+                    // A failed load is not reused: the element goes and the next request for the script tries again.
+                    delete promises[url];
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                    reject(new Error('Unable to load Workbench script ' + url));
+                };
                 (document.head || document.body).appendChild(script);
             });
             return promises[url];
         }
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
-            let sequence: Promise<void> = Promise.resolve();
-            ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'workbench-theme.js']
-                .forEach((name) => {
-                sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
-            });
-            return sequence.then(() => {
+            // Requested together: scripts inserted with async=false still run in the order they were inserted.
+            const loads = ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
+                'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            return Promise.all(loads).then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');
                 }
@@ -691,7 +696,11 @@ module workbench {
         /** Read the rows a view renders directly (form fields, summary rows, Info rows) into model.rows. */
         export function prepareInitialRows(model: PageModel): Promise<void> {
             let count = 0;
-            if (model.viewId === 'create' || model.viewId === 'add') {
+            const vars = model.vars || [];
+            if (vars.length === 1 && vars[0] === 'error-message') {
+                // An answer that is only an error (an unauthorized request) is shown as that error on any page.
+                count = Math.min(1, model.rowCount);
+            } else if (model.viewId === 'create' || model.viewId === 'add') {
                 // These rows describe form fields and select choices, not a data result table.
                 count = model.rowCount;
             } else if (model.viewId === 'namespaces') {
@@ -774,7 +783,11 @@ module workbench {
                 ? scrollPositionStoragePrefix + 'url:' + encodeURIComponent(String(location.href)) : null;
         }
 
-        function isHistoryTraversal(targetWindow: any): boolean {
+        /**
+         * True when the page returns to a history entry it was left at: Back/Forward, or a reload (the router sets
+         * history.scrollRestoration to 'manual', so the browser restores neither).
+         */
+        function isReturnToEntry(targetWindow: any): boolean {
             const performanceObject = targetWindow && targetWindow.performance;
             if (!performanceObject) {
                 return false;
@@ -783,17 +796,19 @@ module workbench {
                 try {
                     const entries = performanceObject.getEntriesByType('navigation');
                     if (entries && entries.length > 0 && entries[0] && typeof entries[0].type === 'string') {
-                        return entries[0].type === 'back_forward';
+                        return entries[0].type === 'back_forward' || entries[0].type === 'reload';
                     }
                 } catch (error) {
                     // Use the legacy navigation timing entry when the modern API is unavailable.
                 }
             }
-            return !!(performanceObject.navigation && performanceObject.navigation.type === 2);
+            // Legacy PerformanceNavigation: 1 is TYPE_RELOAD, 2 is TYPE_BACK_FORWARD.
+            return !!(performanceObject.navigation
+                && (performanceObject.navigation.type === 1 || performanceObject.navigation.type === 2));
         }
 
         function savedScrollPosition(targetWindow: any): { key: string; y: number } | null {
-            if (!isHistoryTraversal(targetWindow)) {
+            if (!isReturnToEntry(targetWindow)) {
                 return null;
             }
             const storage = scrollPositionStorage(targetWindow);
@@ -834,6 +849,36 @@ module workbench {
             }
         }
 
+        /**
+         * Scroll to y. The page can still grow for a few frames after its rows are bound, which clamps the scroll short
+         * of a position near its end: apply it again on the next frames until it is reached, for at most about half a
+         * second, and stop as soon as the user scrolls. (The scroll position itself cannot tell: scroll anchoring moves
+         * it while the page grows.) Bootstrap and the router's Back/Forward both restore positions with it.
+         */
+        export function restoreScroll(targetWindow: any, y: number): void {
+            if (!targetWindow || typeof targetWindow.scrollTo !== 'function') {
+                return;
+            }
+            targetWindow.scrollTo(0, y);
+            if (targetWindow.scrollY < y && typeof targetWindow.requestAnimationFrame === 'function'
+                    && typeof targetWindow.addEventListener === 'function') {
+                const userInput = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+                let interrupted = false;
+                let frames = 0;
+                const interrupt = () => { interrupted = true; };
+                userInput.forEach((type) => targetWindow.addEventListener(type, interrupt, true));
+                const reapply = () => {
+                    if (interrupted || targetWindow.scrollY >= y || ++frames > 30) {
+                        userInput.forEach((type) => targetWindow.removeEventListener(type, interrupt, true));
+                        return;
+                    }
+                    targetWindow.scrollTo(0, y);
+                    targetWindow.requestAnimationFrame(reapply);
+                };
+                targetWindow.requestAnimationFrame(reapply);
+            }
+        }
+
         function restoreScrollPosition(targetWindow: any, saved: { key: string; y: number } | null): void {
             if (!saved) {
                 return;
@@ -842,28 +887,7 @@ module workbench {
             if (typeof targetWindow.scrollTo !== 'function') {
                 return;
             }
-            targetWindow.scrollTo(0, saved.y);
-            // The page can still grow for a few frames after its rows are bound, which clamps the scroll short of a
-            // position near its end: apply it again on the next frames until it is reached, for at most about half a
-            // second, and stop as soon as the user scrolls. (The scroll position itself cannot tell: scroll anchoring
-            // moves it while the page grows.)
-            if (targetWindow.scrollY < saved.y && typeof targetWindow.requestAnimationFrame === 'function'
-                    && typeof targetWindow.addEventListener === 'function') {
-                const userInput = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
-                let interrupted = false;
-                let frames = 0;
-                const interrupt = () => { interrupted = true; };
-                userInput.forEach((type) => targetWindow.addEventListener(type, interrupt, true));
-                const reapply = () => {
-                    if (interrupted || targetWindow.scrollY >= saved.y || ++frames > 30) {
-                        userInput.forEach((type) => targetWindow.removeEventListener(type, interrupt, true));
-                        return;
-                    }
-                    targetWindow.scrollTo(0, saved.y);
-                    targetWindow.requestAnimationFrame(reapply);
-                };
-                targetWindow.requestAnimationFrame(reapply);
-            }
+            restoreScroll(targetWindow, saved.y);
             if (storage && typeof storage.removeItem === 'function') {
                 try {
                     storage.removeItem(saved.key);
@@ -1113,9 +1137,6 @@ module workbench {
                 const contextBar = workbench.views.bindContextBar
                     ? workbench.views.bindContextBar(mount, context) : undefined;
                 configureTheme(mount, context.workbench);
-                if (document && document.getElementById && document.getElementById('noscript-message')) {
-                    document.getElementById('noscript-message').style.display = 'none';
-                }
                 const outlet = workbench.views.outletOf ? workbench.views.outletOf(mount) || mount : mount;
                 const definition = routes.get(viewId);
                 const routeContext: routes.RouteMountContext = {
@@ -1166,7 +1187,14 @@ module workbench {
             const basePath = basePathFor(mount);
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
-                .then(() => queryStream().recoverPendingRowStores())
+                // Recovering results saved by an earlier page is best-effort: without it (no IndexedDB, a broken
+                // store) the Workbench still starts.
+                .then(() => Promise.resolve().then(() => queryStream().recoverPendingRowStores()).then(null,
+                    (error: any) => {
+                        if (typeof console !== 'undefined' && console.warn) {
+                            console.warn('Saved Workbench query results could not be recovered.', error);
+                        }
+                    }))
                 .then(() => {
                     queryStream().watchPendingRowStores();
                     return bootstrapAfterRecovery(mount, dependencies, basePath);

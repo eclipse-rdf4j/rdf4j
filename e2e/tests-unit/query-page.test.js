@@ -9,8 +9,7 @@ test('query page load initializes editors, fetches saved query text, and hydrate
         query: '',
         getJSONResponses: [{ queryText: ' ASK {} ' }],
         initialExplanation: 'Initial plan',
-        initialExplanationFormat: 'text',
-        noAuthenticatedUser: true
+        initialExplanationFormat: 'text'
     });
 
     harness.runPageLoad();
@@ -18,8 +17,7 @@ test('query page load initializes editors, fetches saved query text, and hydrate
     assert.equal(harness.getJSONRequests.length, 1);
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
     assert.ok(harness.yasqeState.instances.query);
-    assert.equal(harness.getProperty('save-private', 'disabled'), true);
-    assert.equal(harness.getProperty('save-private', 'checked'), false);
+    // The view renders 'Private' disabled for anonymous users; the page script no longer guesses it (review fix B10).
     assert.equal(harness.getText('query-explanation'), 'Initial plan');
     assert.equal(harness.getProperty('download-explanation', 'disabled'), false);
 });

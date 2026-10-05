@@ -161,6 +161,36 @@ var workbench;
         queryStream.COMPACT_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
         var rowStoreRecoveryKeyPrefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
         var currentDocumentRowStoreIds = [];
+        /**
+         * Stores of pages that ended without a destructive pagehide (a crash, a discarded tab, an evicted back/forward
+         * cache entry) are swept by age: a page touches its open stores every half hour, and a new store deletes the
+         * ones nobody touched for three days, at most once an hour per page.
+         */
+        var rowStoreMaxAge = 3 * 24 * 60 * 60 * 1000;
+        var rowStoreTouchInterval = 30 * 60 * 1000;
+        var rowStoreSweepInterval = 60 * 60 * 1000;
+        var lastRowStoreSweep = null;
+        var liveRowStoreTouches = {};
+        var rowStoreHeartbeat = null;
+        function startRowStoreHeartbeat() {
+            var view = typeof window !== 'undefined' ? window : null;
+            if (rowStoreHeartbeat !== null || !view || typeof view.setInterval !== 'function') {
+                return;
+            }
+            rowStoreHeartbeat = view.setInterval(function () {
+                var ids = Object.keys(liveRowStoreTouches);
+                if (!ids.length) {
+                    view.clearInterval(rowStoreHeartbeat);
+                    rowStoreHeartbeat = null;
+                    return;
+                }
+                ids.forEach(function (id) {
+                    liveRowStoreTouches[id]().then(null, function () {
+                        // A store that cannot be touched is still disposed by its page.
+                    });
+                });
+            }, rowStoreTouchInterval);
+        }
         function rowStoreRecoveryStorage() {
             try {
                 return typeof window !== 'undefined' ? window.localStorage : null;
@@ -595,30 +625,24 @@ var workbench;
         var NdjsonResultParser = /** @class */ (function () {
             function NdjsonResultParser(onRecord) {
                 this.onRecord = onRecord;
-                this.buffer = '';
+                this.lines = new NdjsonLineSplitter();
                 this.state = { headSeen: false, terminal: null };
                 if (typeof onRecord !== 'function') {
                     throw new Error('A query stream record callback is required.');
                 }
             }
             NdjsonResultParser.prototype.push = function (chunk) {
+                var _this = this;
                 if (typeof chunk !== 'string') {
                     throw protocolError('reader chunks must be decoded text.');
                 }
-                this.buffer += chunk;
-                var lineEnd = this.buffer.indexOf('\n');
-                while (lineEnd !== -1) {
-                    var line = this.buffer.substring(0, lineEnd);
-                    this.buffer = this.buffer.substring(lineEnd + 1);
-                    this.acceptLine(line);
-                    lineEnd = this.buffer.indexOf('\n');
-                }
+                this.lines.push(chunk).forEach(function (line) { return _this.acceptLine(line); });
             };
             NdjsonResultParser.prototype.finish = function () {
-                if (this.buffer.trim()) {
-                    this.acceptLine(this.buffer);
+                var tail = this.lines.rest();
+                if (tail.trim()) {
+                    this.acceptLine(tail);
                 }
-                this.buffer = '';
                 if (!this.state.terminal) {
                     throw protocolError('the response ended before an end or error record.');
                 }
@@ -643,6 +667,39 @@ var workbench;
             return NdjsonResultParser;
         }());
         queryStream.NdjsonResultParser = NdjsonResultParser;
+        /**
+         * Splits arriving text into lines and scans each chunk once: a record far larger than a chunk is kept as its
+         * parts until its newline arrives, instead of being joined and searched again for every chunk.
+         */
+        var NdjsonLineSplitter = /** @class */ (function () {
+            function NdjsonLineSplitter() {
+                this.parts = [];
+            }
+            /** The lines this chunk completes. */
+            NdjsonLineSplitter.prototype.push = function (chunk) {
+                var lines = [];
+                var start = 0;
+                var lineEnd = chunk.indexOf('\n');
+                while (lineEnd !== -1) {
+                    this.parts.push(chunk.substring(start, lineEnd));
+                    lines.push(this.parts.join(''));
+                    this.parts = [];
+                    start = lineEnd + 1;
+                    lineEnd = chunk.indexOf('\n', start);
+                }
+                if (start < chunk.length) {
+                    this.parts.push(chunk.substring(start));
+                }
+                return lines;
+            };
+            /** The text after the last newline, which is taken. */
+            NdjsonLineSplitter.prototype.rest = function () {
+                var tail = this.parts.join('');
+                this.parts = [];
+                return tail;
+            };
+            return NdjsonLineSplitter;
+        }());
         function cancelReader(reader) {
             if (!reader || typeof reader.cancel !== 'function') {
                 return Promise.resolve();
@@ -666,7 +723,7 @@ var workbench;
             }
             var reader = response.body.getReader();
             var decoder = new TextDecoder('utf-8');
-            var buffer = '';
+            var splitter = new NdjsonLineSplitter();
             var state = { headSeen: false, terminal: null };
             var stale = false;
             function isStale() {
@@ -706,23 +763,18 @@ var workbench;
                 }
             }
             function processText(text) {
-                buffer += text;
-                var lineEnd = buffer.indexOf('\n');
+                var lines = splitter.push(text);
+                var index = 0;
                 function processLines() {
-                    if (stale || lineEnd === -1) {
+                    if (stale || index >= lines.length) {
                         return Promise.resolve();
                     }
-                    var line = buffer.substring(0, lineEnd);
-                    buffer = buffer.substring(lineEnd + 1);
-                    lineEnd = buffer.indexOf('\n');
-                    return deliverLine(line).then(processLines);
+                    return deliverLine(lines[index++]).then(processLines);
                 }
                 return processLines();
             }
             function finish() {
-                var tail = buffer;
-                buffer = '';
-                return deliverLine(tail).then(function () {
+                return deliverLine(splitter.rest()).then(function () {
                     if (stale || isStale()) {
                         stale = true;
                         return cancelReader(reader).then(function () { return ({ type: 'stale' }); });
@@ -783,10 +835,50 @@ var workbench;
                 init.signal = callbacks.signal;
             }
             return fetcher(url, init).then(function (response) {
+                var contentType = responseContentType(response);
+                if (contentType && !/ndjson/i.test(contentType)) {
+                    return unexpectedResponse(response, contentType);
+                }
                 return consumeNdjsonResponse(response, callbacks);
             });
         }
         queryStream.executeQueryStream = executeQueryStream;
+        function responseContentType(response) {
+            var headers = response && response.headers;
+            return headers && typeof headers.get === 'function' ? String(headers.get('Content-Type') || '') : '';
+        }
+        /** The readable text of an answer that is not a query stream: an HTML page loses its markup. */
+        function responseSummary(text, contentType) {
+            var summary = String(text || '');
+            if (/html/i.test(contentType)) {
+                summary = summary.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
+                    .replace(/&#(\d+);/g, function (entity, code) { return String.fromCharCode(Number(code)); })
+                    .replace(/&(lt|gt|quot|apos|nbsp|ndash|mdash|amp);/g, function (entity, name) {
+                    return ({ lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', ndash: '–', mdash: '—', amp: '&' }[name]);
+                });
+            }
+            summary = summary.replace(/\s+/g, ' ').trim();
+            return summary.length > 300 ? summary.substring(0, 300) + '…' : summary;
+        }
+        /**
+         * A query answered with something other than a query stream (an error page of the server or of a proxy, a
+         * sign-in page): report its HTTP status and text instead of failing on its first line as invalid JSON.
+         */
+        function unexpectedResponse(response, contentType) {
+            var text = typeof response.text === 'function'
+                ? Promise.resolve().then(function () { return response.text(); }).then(null, function () { return ''; }) : Promise.resolve('');
+            return text.then(function (body) {
+                var status = typeof response.status === 'number' ? response.status : 0;
+                var label = 'HTTP ' + status + (response.statusText ? ' ' + response.statusText : '');
+                var summary = responseSummary(body, contentType);
+                var error = new Error((response.ok === false
+                    ? 'The server refused the query (' + label + ')'
+                    : 'The server did not answer with query results (' + label + ', ' + contentType + ')')
+                    + (summary ? ': ' + summary : '.'));
+                error.status = status;
+                throw error;
+            });
+        }
         function defaultWorkerUrl() {
             var documentObject = typeof document !== 'undefined' ? document : null;
             var scripts = documentObject && documentObject.getElementsByTagName
@@ -832,7 +924,8 @@ var workbench;
                 worker = createRowStoreWorker(options || {});
             }
             catch (error) {
-                return Promise.reject(error);
+                // Without Web Workers there are no IndexedDB stores to reclaim; the markers wait for a later boot.
+                return Promise.resolve();
             }
             return new Promise(function (resolve, reject) {
                 var requestId = 0;
@@ -873,6 +966,12 @@ var workbench;
                         return;
                     }
                     delete pending[key];
+                    if (!response.ok && response.unavailable) {
+                        // IndexedDB cannot be opened here (blocked site data, disabled storage): nothing to reclaim
+                        // now, and the markers wait for a later boot that has storage.
+                        finish();
+                        return;
+                    }
                     if (!response.ok) {
                         finish(new Error(response.error || 'Workbench query result recovery failed.'));
                         return;
@@ -948,11 +1047,72 @@ var workbench;
         }
         queryStream.watchPendingRowStores = watchPendingRowStores;
         /**
-         * Opens a dedicated worker and an IndexedDB-backed row store. Only the
-         * requested `read` window is cloned back to the main thread.
+         * Opens a row store: a dedicated worker with an IndexedDB-backed store, so only the requested `read` window
+         * is cloned back to the main thread. Where Web Workers or IndexedDB are unavailable (blocked site data,
+         * storage turned off, some web views, a full quota) the rows are kept in memory instead.
          */
         function createRowStore(options) {
-            var config = options || {};
+            return createWorkerRowStore(options || {}).then(null, function () {
+                return createMemoryRowStore();
+            });
+        }
+        queryStream.createRowStore = createRowStore;
+        var memoryRowStoreCount = 0;
+        /** A row store in this document's memory, with the worker store's interface and checks. */
+        function createMemoryRowStore() {
+            var rows = [];
+            var disposed = false;
+            function whileOpen(operation) {
+                if (disposed) {
+                    return Promise.reject(new Error('The query row store has been disposed.'));
+                }
+                try {
+                    return Promise.resolve(operation());
+                }
+                catch (error) {
+                    return Promise.reject(error);
+                }
+            }
+            return {
+                id: 'memory-' + (++memoryRowStoreCount),
+                append: function (batch) {
+                    if (!Array.isArray(batch)) {
+                        return Promise.reject(new Error('Query rows must be provided as a batch.'));
+                    }
+                    return whileOpen(function () {
+                        for (var index = 0; index < batch.length; index++) {
+                            rows.push(batch[index]);
+                        }
+                        return rows.length;
+                    });
+                },
+                read: function (start, count) {
+                    if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
+                        return Promise.reject(new Error('A non-negative row window is required.'));
+                    }
+                    return whileOpen(function () { return rows.slice(Math.floor(start), Math.floor(start) + Math.floor(count)); });
+                },
+                count: function () { return whileOpen(function () { return rows.length; }); },
+                truncate: function (count) {
+                    if (!Number.isSafeInteger(count) || count < 0) {
+                        return Promise.reject(new Error('A non-negative safe truncate count is required.'));
+                    }
+                    return whileOpen(function () {
+                        if (count > rows.length) {
+                            throw new Error('The truncate count cannot exceed the stored row count.');
+                        }
+                        rows.length = count;
+                        return count;
+                    });
+                },
+                dispose: function () {
+                    disposed = true;
+                    rows = [];
+                    return Promise.resolve();
+                }
+            };
+        }
+        function createWorkerRowStore(config) {
             var worker;
             try {
                 worker = createRowStoreWorker(config);
@@ -1048,6 +1208,15 @@ var workbench;
                     currentDocumentRowStoreIds.push(storeId);
                 }
                 listenForRowStorePagehide();
+                liveRowStoreTouches[storeId] = function () { return send('touch'); };
+                startRowStoreHeartbeat();
+                var now = Date.now();
+                if (lastRowStoreSweep === null || now - lastRowStoreSweep >= rowStoreSweepInterval) {
+                    lastRowStoreSweep = now;
+                    send('sweep', { maxAge: rowStoreMaxAge, keep: currentDocumentRowStoreIds.slice() }).then(null, function () {
+                        // A failed sweep leaves the stale stores for the next one.
+                    });
+                }
                 var rowStore = {
                     id: storeId,
                     append: function (rows) {
@@ -1084,6 +1253,7 @@ var workbench;
                         disposed = true;
                         function cleanup() {
                             forgetCurrentDocumentRowStore(storeId);
+                            delete liveRowStoreTouches[storeId];
                             closeWorker();
                         }
                         disposePromise = send('dispose').then(function () {
@@ -1101,7 +1271,6 @@ var workbench;
                 throw error;
             });
         }
-        queryStream.createRowStore = createRowStore;
         /** Maps a logical result height into the browser's measured scroll capacity. */
         var ResultScrollCoordinates = /** @class */ (function () {
             function ResultScrollCoordinates(capacity) {
@@ -1352,14 +1521,14 @@ var workbench;
                 var start = Math.max(0, firstVisible - Math.floor(overscanRows));
                 var end = Math.min(count, afterVisible + Math.floor(overscanRows));
                 if (end - start > max) {
-                    var visibleCount = Math.max(1, afterVisible - firstVisible);
-                    var before = Math.max(0, Math.floor((max - visibleCount) / 2));
-                    start = Math.max(0, firstVisible - before);
-                    end = Math.min(count, start + max);
-                    if (end < afterVisible) {
-                        end = afterVisible;
-                        start = Math.max(0, end - max);
-                    }
+                    // Only the overscan is cut to the cap: every visible row is rendered, even when more rows fit
+                    // in the viewport than the cap allows (a very tall window).
+                    var spare = Math.max(0, max - (afterVisible - firstVisible));
+                    var before = Math.min(firstVisible - start, Math.floor(spare / 2));
+                    var after = Math.min(end - afterVisible, spare - before);
+                    before = Math.min(firstVisible - start, spare - after);
+                    start = firstVisible - before;
+                    end = afterVisible + after;
                 }
                 return {
                     start: start,
@@ -1680,8 +1849,9 @@ var workbench;
                 return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
             }
             if (term.kind === 'triple') {
-                return '<< ' + ntriplesTerm(term.subject) + ' ' + ntriplesTerm(term.predicate) + ' '
-                    + ntriplesTerm(term.object) + ' >>';
+                // RDF 1.2 triple-term syntax: '<< s p o >>' is a reified triple there, not the triple term.
+                return '<<( ' + ntriplesTerm(term.subject) + ' ' + ntriplesTerm(term.predicate) + ' '
+                    + ntriplesTerm(term.object) + ' )>>';
             }
             return ntriplesString(term.value || '') + (term.language
                 ? '@' + term.language + (term.direction ? '--' + term.direction : '')
@@ -1700,8 +1870,8 @@ var workbench;
                 return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
             }
             if (term.kind === 'triple') {
-                return '<< ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
-                    + ' ' + exploreResource(term.object) + ' >>';
+                return '<<( ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
+                    + ' ' + exploreResource(term.object) + ' )>>';
             }
             return JSON.stringify(term.value || '') + (term.language ? '@' + term.language
                 + (term.direction ? '--' + term.direction : '')
@@ -1768,9 +1938,9 @@ var workbench;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }
             else if (term.kind === 'triple') {
-                display.label = '<< ' + inlineTermLabel(term.subject, config) + ' '
+                display.label = '<<( ' + inlineTermLabel(term.subject, config) + ' '
                     + inlineTermLabel(term.predicate, config) + ' '
-                    + inlineTermLabel(term.object, config) + ' >>';
+                    + inlineTermLabel(term.object, config) + ' )>>';
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }
@@ -1812,6 +1982,11 @@ var workbench;
                 this.state = new QueryResultState();
                 this.reportedErrorLocation = '';
                 this.downloadFrame = null;
+                this.announcer = null;
+                this.announced = '';
+                /** Taken out of its results area (detach) until it is moved into another one (moveTo). */
+                this.detached = false;
+                this.downloadError = null;
                 this.layout = 'auto';
                 this.wrap = true;
                 this.normalWrapBeforeFullscreen = null;
@@ -1844,6 +2019,9 @@ var workbench;
                 this.recordRenderGeneration = 0;
                 this.renderGeneration = 0;
                 this.headerSignature = '';
+                /** The readable header widths of the automatic layout, and what they were measured for. */
+                this.readableWidthsKey = null;
+                this.readableWidths = [];
                 this.columnWidthRows = null;
                 this.columnWidthReadCount = -1;
                 this.columnWidthReadPromise = null;
@@ -1994,6 +2172,10 @@ var workbench;
                 decorateWithWorkbenchIcon(downloadButton, 'download', 'Download');
                 downloadAction.appendChild(downloadButton);
                 downloadFields.appendChild(downloadAction);
+                // A download the server refuses loads its error page into the hidden download frame: say so here.
+                this.downloadError = createElement(this.document, 'p', 'query-result-download-error error');
+                this.downloadError.hidden = true;
+                downloadFields.appendChild(this.downloadError);
                 downloadDisclosure.content.appendChild(downloadFields);
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
                     { value: 'auto', label: 'Auto' }, { value: 'table', label: 'Table' },
@@ -2027,14 +2209,18 @@ var workbench;
                 }
                 // The status starts the toolbar row, at its left; Full screen, Download and Display end it.
                 var statusLine = createElement(this.document, 'div', 'query-result-status-line');
+                // The status line changes with every streamed frame, so it is no live region: the announcer below
+                // says only when results start, when they are complete and when they fail.
                 this.status = createElement(this.document, 'div', 'query-result-status');
-                this.status.setAttribute('role', 'status');
-                this.status.setAttribute('aria-live', 'polite');
                 statusLine.appendChild(this.status);
                 this.timer = createElement(this.document, 'span', 'query-result-timer');
                 this.timer.setAttribute('role', 'timer');
                 this.timer.hidden = true;
                 statusLine.appendChild(this.timer);
+                this.announcer = createElement(this.document, 'div', 'query-result-announcement workbench-visually-hidden');
+                this.announcer.setAttribute('role', 'status');
+                this.announcer.setAttribute('aria-live', 'polite');
+                statusLine.appendChild(this.announcer);
                 header.appendChild(statusLine);
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
@@ -2327,6 +2513,10 @@ var workbench;
                 }
                 this.suspended = true;
                 this.windowListeners.forEach(function (entry) { return entry[0].removeEventListener(entry[1], entry[2], entry[3]); });
+                // Full screen locks the document's scrolling: a hidden result gives the viewport back.
+                if (this.target.getAttribute('data-fullscreen') === 'true') {
+                    workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
+                }
             };
             QueryResultRenderer.prototype.resume = function () {
                 if (!this.suspended) {
@@ -2396,17 +2586,32 @@ var workbench;
                 else {
                     this.stopTimer();
                 }
-                this.target.setAttribute('aria-busy', busy ? 'true' : 'false');
+                this.syncTargetBusy();
                 this.cancelButton.hidden = !busy;
                 this.loadMoreButton.disabled = busy;
                 this.loadMoreButton.setAttribute('aria-busy', busy ? 'true' : 'false');
                 this.loadMoreButton.textContent = busy && this.batchStart > 0 ? 'Loading more…' : 'Load more';
-                var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
-                if (loading) {
-                    loading.hidden = !busy;
-                }
                 if (busy) {
                     this.status.textContent = this.batchStart > 0 ? 'Loading more results…' : 'Receiving query results…';
+                    this.announce(this.status.textContent);
+                }
+            };
+            /** Say a milestone (start, completion, failure) once to assistive technology. */
+            QueryResultRenderer.prototype.announce = function (text) {
+                if (text && text !== this.announced) {
+                    this.announced = text;
+                    this.announcer.textContent = text;
+                }
+            };
+            /** The results area says whether this result is loading; a detached result leaves it to its new page. */
+            QueryResultRenderer.prototype.syncTargetBusy = function () {
+                if (this.detached) {
+                    return;
+                }
+                this.target.setAttribute('aria-busy', this.busy ? 'true' : 'false');
+                var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
+                if (loading) {
+                    loading.hidden = !this.busy;
                 }
             };
             QueryResultRenderer.prototype.fail = function (message, code, status) {
@@ -2419,6 +2624,7 @@ var workbench;
                 this.renderError();
                 this.errorResult.hidden = false;
                 this.status.textContent = this.errorStatusText();
+                this.announce(this.status.textContent);
                 this.countLabel.hidden = true;
                 this.countLabel.textContent = '';
                 this.loadMoreButton.hidden = !this.canLoadMore();
@@ -2537,6 +2743,10 @@ var workbench;
                 if (error.code === 'timeout' || error.code === 'cancelled' || error.code === 'circuit-breaker') {
                     return error.message;
                 }
+                if (error.code === 'client') {
+                    return 'The browser could not keep the results: ' + error.message
+                        + (this.state.rowCount > 0 ? ' The visible results are incomplete.' : '');
+                }
                 if (error.code === 'incomplete' || this.state.rowCount > 0
                     || /(?:EOFException|QueryEvaluationException)/i.test(error.message)) {
                     return 'The result stream ended before the query completed. The visible results are incomplete. '
@@ -2564,6 +2774,12 @@ var workbench;
                         ? 'Partial results: ' + rows + (rows === 1 ? ' row' : ' rows')
                             + ' retained before the server stopped the query.'
                         : 'The server stopped the query because of memory pressure.';
+                }
+                if (error && error.code === 'client') {
+                    return rows > 0
+                        ? 'Partial results: ' + rows + (rows === 1 ? ' row' : ' rows')
+                            + ' kept before the browser failed.'
+                        : 'The browser could not keep the results.';
                 }
                 return rows > 0
                     ? 'Incomplete results: ' + rows + (rows === 1 ? ' row' : ' rows')
@@ -2611,6 +2827,7 @@ var workbench;
                 }
                 this.leaveTarget();
                 this.target = target;
+                this.detached = false;
                 this.previousLabelledBy = target.getAttribute('aria-labelledby');
                 target.setAttribute('aria-labelledby', this.resultHeadingId);
                 this.legacyHeader = target.querySelector ? target.querySelector('.query-results__header') : null;
@@ -2620,6 +2837,7 @@ var workbench;
                 }
                 target.appendChild(this.root);
                 this.followPresentation();
+                this.syncTargetBusy();
                 if (executionForm) {
                     this.options.executionForm = executionForm;
                 }
@@ -2638,6 +2856,7 @@ var workbench;
             QueryResultRenderer.prototype.detach = function () {
                 if (!this.disposed) {
                     this.leaveTarget();
+                    this.detached = true;
                 }
             };
             QueryResultRenderer.prototype.followPresentation = function () {
@@ -2810,7 +3029,7 @@ var workbench;
                     error: !!state.error
                 };
                 var key = JSON.stringify(detail);
-                if (key === this.publishedSummary) {
+                if (key === this.publishedSummary || this.detached) {
                     return;
                 }
                 this.publishedSummary = key;
@@ -2956,8 +3175,12 @@ var workbench;
                     this.downloadFrame.setAttribute('id', this.elementId('query-result-download-frame'));
                     this.downloadFrame.setAttribute('name', this.elementId('query-result-download-frame'));
                     this.downloadFrame.hidden = true;
+                    var frame = this.downloadFrame;
+                    // A file download leaves the frame empty; a page loaded into it is the server's refusal.
+                    frame.addEventListener('load', function () { return _this.showDownloadError(frame); });
                     (this.document.body || this.target).appendChild(this.downloadFrame);
                 }
+                this.setDownloadError('');
                 downloadForm.target = this.downloadFrame.name || this.elementId('query-result-download-frame');
                 var excluded = ['Accept', 'download_limit', 'query-request-id', 'action', 'submit', 'batch-size', 'batch-offset'];
                 if (snapshot) {
@@ -2980,13 +3203,42 @@ var workbench;
                 }
                 this.appendNativeDownloadInput(downloadForm, 'action', 'exec');
                 this.appendNativeDownloadInput(downloadForm, 'Accept', String(this.downloadFormatControl.value || ''));
-                this.appendNativeDownloadInput(downloadForm, 'download_limit', String(this.downloadLimitControl.value || '0'));
+                // A limit the policy hides is not sent: the server refuses a request that sets it.
+                if (!this.downloadLimitControl.hidden) {
+                    this.appendNativeDownloadInput(downloadForm, 'download_limit', String(this.downloadLimitControl.value || '0'));
+                }
                 (this.document.body || this.target).appendChild(downloadForm);
                 if (typeof downloadForm.submit === 'function') {
                     downloadForm.submit();
                 }
                 if (downloadForm.parentNode) {
                     downloadForm.parentNode.removeChild(downloadForm);
+                }
+            };
+            QueryResultRenderer.prototype.showDownloadError = function (frame) {
+                var text = '';
+                try {
+                    var body = frame.contentDocument && frame.contentDocument.body;
+                    text = body ? String(body.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                }
+                catch (error) {
+                    // A frame from another origin cannot be read; there is nothing to show.
+                }
+                if (text) {
+                    this.setDownloadError('Download failed: ' + (text.length > 300 ? text.substring(0, 300) + '…' : text));
+                }
+            };
+            QueryResultRenderer.prototype.setDownloadError = function (message) {
+                if (this.downloadError) {
+                    this.downloadError.textContent = message;
+                    this.downloadError.hidden = !message;
+                    // An alert only while it holds an error, so it is announced when it appears.
+                    if (message) {
+                        this.downloadError.setAttribute('role', 'alert');
+                    }
+                    else {
+                        this.downloadError.removeAttribute('role');
+                    }
                 }
             };
             QueryResultRenderer.prototype.appendNativeDownloadInput = function (form, name, value) {
@@ -3157,6 +3409,9 @@ var workbench;
                 }
                 else if (!state.complete) {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);
+                }
+                if (state.error || state.complete) {
+                    this.announce(this.status.textContent);
                 }
                 this.countLabel.textContent = !partiallyLoaded ? ''
                     : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
@@ -3733,14 +3988,6 @@ var workbench;
                     this.requestedRow = geometry.anchor;
                 }
             };
-            QueryResultRenderer.prototype.visibleRow = function () {
-                var records = this.root.getAttribute('data-effective-layout') === 'records';
-                var heights = records ? this.recordHeights : this.rowHeights;
-                var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
-                var scrollport = records ? this.records : this.tableWrap;
-                var position = records ? this.recordPosition : this.tablePosition;
-                return heights.range(this.logicalPosition(scrollport, coordinates, position), 0, 0, 1).start;
-            };
             QueryResultRenderer.prototype.prepareWindow = function (scrollport, heights, coordinates, viewportHeight) {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
                 var oldLogical = this.logicalPosition(scrollport, coordinates, position);
@@ -4037,6 +4284,11 @@ var workbench;
                 }
                 return width;
             };
+            /**
+             * The narrowest readable width of each column: its header text, and at least a budget of characters.
+             * They only change with the headers, the table font and the viewport (media queries), so a render frame
+             * (scrolling, streamed rows) reuses them instead of measuring every header again.
+             */
             QueryResultRenderer.prototype.measureReadableColumnWidths = function () {
                 var header = this.table && this.table.querySelector ? this.table.querySelector('thead tr') : null;
                 if (!header || !header.children.length) {
@@ -4044,6 +4296,18 @@ var workbench;
                 }
                 var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
                 var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
+                var texts = [];
+                for (var textIndex = 0; textIndex < header.children.length; textIndex++) {
+                    texts.push(header.children[textIndex].textContent || '');
+                }
+                var documentElement = this.document.documentElement;
+                var key = [this.headerSignature, tableStyle ? tableStyle.font : '', view ? view.innerWidth : '',
+                    this.root.getAttribute('data-wrap'), this.target.getAttribute('data-fullscreen'),
+                    documentElement && documentElement.getAttribute ? documentElement.getAttribute('data-theme') : '',
+                    texts.join('\u0000')].join('\u0001');
+                if (key === this.readableWidthsKey) {
+                    return this.readableWidths.slice();
+                }
                 var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
                 var characterWidth = isFinite(fontSize) && fontSize > 0 ? fontSize * 0.55 : 8;
                 var rootStyle = view && view.getComputedStyle ? view.getComputedStyle(this.root) : null;
@@ -4058,69 +4322,90 @@ var workbench;
                     context.font = tableStyle.font;
                     characterWidth = context.measureText('0').width || characterWidth;
                 }
-                var widths = [];
+                var styles = [];
                 for (var index = 0; index < header.children.length; index++) {
-                    var cell = header.children[index];
-                    var style = view && view.getComputedStyle ? view.getComputedStyle(cell) : null;
+                    styles.push(view && view.getComputedStyle ? view.getComputedStyle(header.children[index]) : null);
+                }
+                var textWidths = context ? this.measureRenderedHeaderTexts(texts, styles, context, tableStyle) : [];
+                var widths = texts.map(function (headerText, columnIndex) {
+                    var style = styles[columnIndex];
                     var padding = style
                         ? (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) : 0;
                     var minimumContentWidth = characterWidth * characterBudget;
-                    var headerText = cell.textContent || '';
                     if (context && headerText) {
-                        context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
-                        var headerTextWidth = this.measureRenderedHeaderText(headerText, style, context);
-                        minimumContentWidth = Math.max(minimumContentWidth, headerTextWidth);
+                        minimumContentWidth = Math.max(minimumContentWidth, textWidths[columnIndex]);
                     }
-                    widths.push(minimumContentWidth + padding + 2);
-                }
-                return widths;
+                    return minimumContentWidth + padding + 2;
+                });
+                this.readableWidthsKey = key;
+                this.readableWidths = widths;
+                return widths.slice();
             };
-            QueryResultRenderer.prototype.measureRenderedHeaderText = function (text, style, context) {
+            /** Rendered widths of the header texts, measured together: one layout for all of them. */
+            QueryResultRenderer.prototype.measureRenderedHeaderTexts = function (texts, styles, context, tableStyle) {
+                var _this = this;
+                var widths = texts.map(function () { return NaN; });
                 var container = this.root;
                 if (container && this.document.createElement && container.appendChild
                     && container.removeChild) {
-                    var probe = this.document.createElement('span');
-                    var probeStyle = probe.style;
-                    var computedStyle = style;
-                    var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
-                        'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
-                        'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
-                        'textRendering', 'direction'];
-                    textProperties.forEach(function (property) {
-                        if (computedStyle && computedStyle[property]) {
-                            probeStyle[property] = computedStyle[property];
+                    var holder = this.document.createElement('span');
+                    var holderStyle = holder.style;
+                    holderStyle.position = 'fixed';
+                    holderStyle.left = '-10000px';
+                    holderStyle.top = '-10000px';
+                    holderStyle.visibility = 'hidden';
+                    var probes = texts.map(function (text, index) {
+                        if (!text) {
+                            return null;
                         }
+                        var probe = _this.document.createElement('span');
+                        var probeStyle = probe.style;
+                        var computedStyle = styles[index];
+                        var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
+                            'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
+                            'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
+                            'textRendering', 'direction'];
+                        textProperties.forEach(function (property) {
+                            if (computedStyle && computedStyle[property]) {
+                                probeStyle[property] = computedStyle[property];
+                            }
+                        });
+                        probeStyle.display = 'block';
+                        probeStyle.whiteSpace = 'pre';
+                        probeStyle.width = 'max-content';
+                        probeStyle.minWidth = '0';
+                        probeStyle.maxWidth = 'none';
+                        probe.textContent = text;
+                        holder.appendChild(probe);
+                        return probe;
                     });
-                    probeStyle.position = 'fixed';
-                    probeStyle.left = '-10000px';
-                    probeStyle.top = '-10000px';
-                    probeStyle.visibility = 'hidden';
-                    probeStyle.display = 'inline-block';
-                    probeStyle.whiteSpace = 'pre';
-                    probeStyle.width = 'max-content';
-                    probeStyle.minWidth = '0';
-                    probeStyle.maxWidth = 'none';
-                    probe.textContent = text;
-                    container.appendChild(probe);
+                    container.appendChild(holder);
                     try {
-                        var renderedWidth = probe.getBoundingClientRect().width;
-                        if (isFinite(renderedWidth) && renderedWidth > 0) {
-                            return renderedWidth;
-                        }
+                        probes.forEach(function (probe, index) {
+                            var renderedWidth = probe ? probe.getBoundingClientRect().width : NaN;
+                            if (isFinite(renderedWidth) && renderedWidth > 0) {
+                                widths[index] = renderedWidth;
+                            }
+                        });
                     }
                     finally {
-                        container.removeChild(probe);
+                        container.removeChild(holder);
                     }
                 }
-                if (context) {
+                return widths.map(function (width, index) {
+                    if (isFinite(width)) {
+                        return width;
+                    }
+                    var style = styles[index];
+                    var text = texts[index];
+                    context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
                     var fallbackWidth = context.measureText(text).width;
                     var letterSpacing = style ? parseFloat(style.letterSpacing) : NaN;
                     if (isFinite(letterSpacing) && text.length > 1) {
                         fallbackWidth += letterSpacing * (text.length - 1);
                     }
                     return fallbackWidth;
-                }
-                return 0;
+                });
             };
             QueryResultRenderer.prototype.installAutoLayoutObserver = function () {
                 var _this = this;
@@ -4271,32 +4556,33 @@ var workbench;
             });
             return parameters;
         }
-        function setTotalResultCountCookie(document, count) {
-            var namespace = typeof workbench !== 'undefined' ? workbench : {};
-            if (namespace.query && typeof namespace.query.setWorkbenchCookie === 'function') {
-                namespace.query.setWorkbenchCookie('total_result_count', String(count));
-                return;
+        /** A URL made absolute against the document it was read in: it keeps its meaning on later pages. */
+        function absoluteUrl(url, documentObject) {
+            var base = documentObject && (documentObject.baseURI
+                || documentObject.location && documentObject.location.href);
+            var urlConstructor = typeof URL === 'function' ? URL : null;
+            if (!base || !urlConstructor) {
+                return url;
             }
-            if (!document || typeof document.cookie !== 'string') {
-                return;
+            try {
+                return new urlConstructor(url, base).href;
             }
-            var pathname = document.location && document.location.pathname || '/';
-            var pathSegments = pathname.split('/');
-            var cookiePath = pathSegments.length > 1 && pathSegments[1] ? '/' + pathSegments[1] : '/';
-            document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath
-                + '; SameSite=Lax';
+            catch (error) {
+                return url;
+            }
         }
         /**
-         * Ask the server to cancel a query. In the page the Query page's retrying request is used; a page that is
-         * being left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
+         * Ask the server to cancel a query, at url: the endpoint of the repository it runs in (the page shown now
+         * may belong to another one). In the page the Query page's retrying request is used; a page that is being
+         * left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
          */
-        function cancelServerRequest(id, leaving) {
+        function cancelServerRequest(id, leaving, url) {
             if (!id) {
                 return;
             }
             var namespace = typeof workbench !== 'undefined' ? workbench : {};
             if (!leaving && namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
-                namespace.query.cancelServerQuery(id);
+                namespace.query.cancelServerQuery(id, url);
                 return;
             }
             var fetcher = typeof window !== 'undefined' ? window.fetch : null;
@@ -4305,7 +4591,7 @@ var workbench;
             }
             var body = 'action=cancel-query&query-request-id=' + encodeURIComponent(id);
             try {
-                fetcher.call(window, executionUrl({ getAttribute: function () { return 'query'; } }), {
+                fetcher.call(window, url || executionUrl({ getAttribute: function () { return 'query'; } }), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
                     body: body,
@@ -4368,8 +4654,16 @@ var workbench;
             var recovering = false;
             var frozenBody = null;
             var frozenUrl = '';
+            // The execution endpoint made absolute when the query starts: cancellations go there from any page.
+            var frozenCancelUrl = '';
             var batchSize = 1000000;
             var revealPending = false;
+            // The exact total the first batch reported: continuations send it, so the server can stop after the
+            // batch (and one look-ahead row) instead of counting the whole result again.
+            var knownTotal = null;
+            // Shelved (M13.4): the form and results area belong to whatever page is shown now, maybe the very same
+            // elements, so a request ending out of sight must not touch them.
+            var shelvedOut = false;
             /** Tell the page that a request started or ended (the menu shows queries running elsewhere, M13.5). */
             function notifyActivity() {
                 if (typeof config.onActivity === 'function') {
@@ -4378,15 +4672,21 @@ var workbench;
             }
             /** Reveal the results once per execution, after its first rendered rows, answer or error. */
             function revealOnce() {
-                if (revealPending && !disposed) {
+                if (revealPending && !disposed && !shelvedOut) {
                     revealPending = false;
                     revealResults(target);
                 }
             }
             function setQueryRequestId(value) {
+                if (shelvedOut) {
+                    return;
+                }
                 setControlValue(form, 'query-request-id', value);
             }
             function setQueryCancelVisible(visible) {
+                if (shelvedOut) {
+                    return;
+                }
                 var document = target && target.ownerDocument;
                 var button = document && document.getElementById('query-cancel');
                 if (!button) {
@@ -4436,7 +4736,7 @@ var workbench;
                 if (abortController && typeof abortController.abort === 'function') {
                     abortController.abort();
                 }
-                cancelServerRequest(oldId, leaving);
+                cancelServerRequest(oldId, leaving, frozenCancelUrl);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 notifyActivity();
@@ -4465,6 +4765,9 @@ var workbench;
                 body.set('query-request-id', id);
                 body.set('batch-size', String(batchSize));
                 body.set('batch-offset', String(offset));
+                if (offset > 0 && knownTotal !== null) {
+                    body.set('batch-known-total', String(knownTotal));
+                }
                 abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
                 renderer.setBusy(true);
                 var stream = executeQueryStream(frozenUrl, body, {
@@ -4478,17 +4781,30 @@ var workbench;
                                 frozenBody.set('query', metadata['query-text']);
                                 frozenBody.set('ref', 'text');
                             }
-                            if (typeof metadata['query-language'] === 'string') {
+                            // Continuations repeat the resolved options only where the original request carried
+                            // them: an option whose control the policy disabled must not be sent (it is refused).
+                            if (typeof metadata['query-language'] === 'string' && frozenBody.has('queryLn')) {
                                 frozenBody.set('queryLn', metadata['query-language']);
                             }
-                            if (typeof metadata.infer === 'boolean') {
+                            if (typeof metadata.infer === 'boolean' && frozenBody.has('infer')) {
                                 frozenBody.set('infer', String(metadata.infer));
                             }
-                            if (typeof metadata['query-timeout'] !== 'undefined') {
+                            if (typeof metadata['query-timeout'] !== 'undefined' && frozenBody.has('query-timeout')) {
                                 frozenBody.set('query-timeout', String(metadata['query-timeout']));
                             }
                         }
-                        return currentRenderer.accept(record).then(function () {
+                        return currentRenderer.accept(record).then(null, function (error) {
+                            // Not the server's error record: the browser failed to keep a record (a full row
+                            // store, a record the result cannot take). Say so, and stop the server's query.
+                            if (record.type !== 'error' && error && typeof error === 'object' && !error.code) {
+                                error.code = 'client';
+                            }
+                            throw error;
+                        }).then(function () {
+                            if (offset === 0 && record.type === 'end' && record.metadata
+                                && Number.isSafeInteger(record.metadata['total-result-count'])) {
+                                knownTotal = record.metadata['total-result-count'];
+                            }
                             if (offset === 0 && (record.type === 'rows' || record.type === 'boolean'
                                 || record.type === 'end' || record.type === 'error')) {
                                 revealOnce();
@@ -4509,6 +4825,13 @@ var workbench;
                     if (generation !== requestGeneration || disposed) {
                         return;
                     }
+                    if (error && error.code === 'client' && activeId === id) {
+                        // The server still runs the query and sends rows nobody reads any more.
+                        if (abortController && typeof abortController.abort === 'function') {
+                            abortController.abort();
+                        }
+                        cancelServerRequest(id, false, frozenCancelUrl);
+                    }
                     return recover(requestGeneration, currentRenderer, error && error.message || 'Unable to load query results.', error && error.code, error && error.status);
                 });
                 return false;
@@ -4519,6 +4842,7 @@ var workbench;
                 }
                 cancel(false);
                 recovering = false;
+                knownTotal = null;
                 if (renderer) {
                     renderer.dispose();
                 }
@@ -4527,9 +4851,14 @@ var workbench;
                 originalBody.forEach(function (value, name) { return frozenBody.append(name, String(value)); });
                 ['offset', 'limit_query', 'know_total', 'query-request-id'].forEach(function (name) { return frozenBody.delete(name); });
                 frozenUrl = executionUrl(form);
+                frozenCancelUrl = absoluteUrl(frozenUrl, form.ownerDocument || (typeof document !== 'undefined'
+                    ? document : null));
+                // An unchecked checkbox is not submitted, so an enabled one is sent as an explicit false; a disabled
+                // one (the option is turned off by policy) is left out like the browser leaves it out.
                 var inferControls = allControls(form, 'infer');
-                if (inferControls.length && inferControls[inferControls.length - 1].type === 'checkbox') {
-                    frozenBody.set('infer', inferControls[inferControls.length - 1].checked ? 'true' : 'false');
+                var inferControl = inferControls.length ? inferControls[inferControls.length - 1] : null;
+                if (inferControl && inferControl.type === 'checkbox' && !inferControl.disabled) {
+                    frozenBody.set('infer', inferControl.checked ? 'true' : 'false');
                 }
                 batchSize = frozenBody.has('batch-size') ? Number(frozenBody.get('batch-size')) : 1000000;
                 var rendererConstructor = workbench.queryStream.QueryResultRenderer;
@@ -4577,6 +4906,7 @@ var workbench;
                 executedRequest: function () { return frozenBody ? new URLSearchParams(frozenBody.toString()) : null; },
                 // Kept for its repository while no Query page shows it (M13.4): hidden like a kept-alive page.
                 shelve: function () {
+                    shelvedOut = true;
                     if (renderer) {
                         renderer.suspend();
                         renderer.detach();
@@ -4586,6 +4916,7 @@ var workbench;
                 adopt: function (nextForm, nextTarget) {
                     form = nextForm;
                     target = nextTarget;
+                    shelvedOut = false;
                     if (renderer) {
                         renderer.moveTo(nextTarget, nextForm);
                         nextTarget.hidden = false;
@@ -4615,16 +4946,15 @@ var workbench;
                         renderer.dispose();
                     }
                 },
-                hasActiveRequest: function () { return !!activeId; },
-                changePageOffset: function () { return false; },
-                nextPage: function () { return false; },
-                previousPage: function () { return false; }
+                hasActiveRequest: function () { return !!activeId; }
             };
         }
         /**
          * Binds only HTML forms explicitly marked as query executions. Save,
          * explain, cancellation, and Accept/download forms remain browser-owned.
          */
+        /** Saved-query results kept for cards outside the list's row window, the oldest dropped first. */
+        var maxParkedSavedQueryResults = 8;
         function bindExecutionForms(root, options) {
             if (!root || typeof root.querySelectorAll !== 'function') {
                 return function () { };
@@ -4633,8 +4963,13 @@ var workbench;
             var forms = root.querySelectorAll('form[data-workbench-query-execution="true"]');
             var rootState = root.__rdf4jQueryExecutionBindings;
             if (!rootState) {
-                rootState = { entries: [] };
+                // parked: results of forms that left the list's row window, until their saved query is shown again.
+                rootState = { entries: [], parked: [] };
                 root.__rdf4jQueryExecutionBindings = rootState;
+            }
+            /** The saved query a form executes: a card rendered again for it gets a new form with the same key. */
+            function formKey(form) {
+                return [controlValue(form, 'owner'), controlValue(form, 'query'), controlValue(form, 'ref')].join('\n');
             }
             function bindForm(form) {
                 if (!isExecutionDescriptor(form) || form.id === 'query-form') {
@@ -4643,7 +4978,7 @@ var workbench;
                 if (form.__rdf4jQueryExecutionBinding) {
                     if (!rootState.entries.some(function (entry) { return entry.form === form; })) {
                         rootState.entries.push({ form: form, controller: form.__rdf4jQueryExecutionBinding,
-                            handler: form.__rdf4jQueryExecutionSubmitHandler });
+                            handler: form.__rdf4jQueryExecutionSubmitHandler, key: formKey(form) });
                     }
                     return;
                 }
@@ -4653,7 +4988,17 @@ var workbench;
                 if (!target) {
                     return;
                 }
-                var controller = createExecutionController(form, target, options);
+                var key = formKey(form);
+                var parked = rootState.parked.filter(function (entry) { return entry.key === key; })[0];
+                var controller;
+                if (parked) {
+                    rootState.parked.splice(rootState.parked.indexOf(parked), 1);
+                    controller = parked.controller;
+                    controller.adopt(form, target);
+                }
+                else {
+                    controller = createExecutionController(form, target, options);
+                }
                 var submitHandler = function (event) {
                     if (event && typeof event.preventDefault === 'function') {
                         event.preventDefault();
@@ -4663,15 +5008,34 @@ var workbench;
                 form.addEventListener('submit', submitHandler, false);
                 form.__rdf4jQueryExecutionBinding = controller;
                 form.__rdf4jQueryExecutionSubmitHandler = submitHandler;
-                rootState.entries.push({ form: form, controller: controller, handler: submitHandler });
+                rootState.entries.push({ form: form, controller: controller, handler: submitHandler, key: key });
             }
-            function unbind(entry) {
+            function release(entry) {
                 if (entry.handler) {
                     entry.form.removeEventListener('submit', entry.handler, false);
                 }
-                entry.controller.dispose();
                 delete entry.form.__rdf4jQueryExecutionBinding;
                 delete entry.form.__rdf4jQueryExecutionSubmitHandler;
+            }
+            function unbind(entry) {
+                release(entry);
+                entry.controller.dispose();
+            }
+            /**
+             * A form that left the list's row window (the list is virtualized): its result, or the query still
+             * running for it, waits for the card to come back instead of being cancelled and discarded.
+             */
+            function park(entry) {
+                release(entry);
+                if (!entry.controller.hasResult || !entry.controller.hasResult()) {
+                    entry.controller.dispose();
+                    return;
+                }
+                entry.controller.shelve();
+                rootState.parked.push({ key: entry.key, controller: entry.controller });
+                if (rootState.parked.length > maxParkedSavedQueryResults) {
+                    rootState.parked.shift().controller.dispose();
+                }
             }
             for (var formIndex = 0; formIndex < forms.length; formIndex++) {
                 bindForm(forms[formIndex]);
@@ -4683,7 +5047,7 @@ var workbench;
             for (var entryIndex = rootState.entries.length - 1; entryIndex >= 0; entryIndex--) {
                 var entry = rootState.entries[entryIndex];
                 if (currentForms.indexOf(entry.form) < 0) {
-                    unbind(entry);
+                    park(entry);
                     rootState.entries.splice(entryIndex, 1);
                 }
             }
@@ -4691,16 +5055,15 @@ var workbench;
                 while (rootState.entries.length) {
                     unbind(rootState.entries.pop());
                 }
+                while (rootState.parked.length) {
+                    rootState.parked.pop().controller.dispose();
+                }
                 if (root.__rdf4jQueryExecutionBindings === rootState) {
                     delete root.__rdf4jQueryExecutionBindings;
                 }
             };
         }
         queryStream.bindExecutionForms = bindExecutionForms;
-        function hasQueryExecutionDescriptor(form) {
-            return isExecutionDescriptor(form);
-        }
-        queryStream.hasQueryExecutionDescriptor = hasQueryExecutionDescriptor;
         function bindMainQueryForm(form, target, options) {
             return createExecutionController(form, target, options);
         }
@@ -4782,7 +5145,13 @@ var workbench;
                     shelfPageHide = function (event) {
                         if (!event || event.persisted !== true) {
                             markCurrentRowStoresForRecovery(event);
-                            shelved.splice(0).forEach(function (entry) { return entry.controller.dispose(); });
+                            shelved.splice(0).forEach(function (entry) {
+                                // The keepalive cancellation is the only request that outlives the page.
+                                if (entry.controller.cancelOnLeave) {
+                                    entry.controller.cancelOnLeave();
+                                }
+                                entry.controller.dispose();
+                            });
                         }
                     };
                     window.addEventListener('pagehide', shelfPageHide, false);
@@ -4958,18 +5327,6 @@ var workbench;
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
             queryPage.hasActiveRequest = hasActiveRequest;
-            function nextPage() {
-                return mountedController ? mountedController.nextPage() : false;
-            }
-            queryPage.nextPage = nextPage;
-            function previousPage() {
-                return mountedController ? mountedController.previousPage() : false;
-            }
-            queryPage.previousPage = previousPage;
-            function changePageParameter(name, value) {
-                return false;
-            }
-            queryPage.changePageParameter = changePageParameter;
             function loadMore() {
                 return mountedController ? mountedController.loadMore() : false;
             }
@@ -5020,18 +5377,6 @@ var workbench;
             return queryStream.queryPage.hasActiveRequest();
         }
         queryPage.hasActiveRequest = hasActiveRequest;
-        function nextPage() {
-            return queryStream.queryPage.nextPage();
-        }
-        queryPage.nextPage = nextPage;
-        function previousPage() {
-            return queryStream.queryPage.previousPage();
-        }
-        queryPage.previousPage = previousPage;
-        function changePageParameter(name, value) {
-            return queryStream.queryPage.changePageParameter(name, value);
-        }
-        queryPage.changePageParameter = changePageParameter;
     })(queryPage = workbench.queryPage || (workbench.queryPage = {}));
 })(workbench || (workbench = {}));
 //# sourceMappingURL=queryStream.js.map

@@ -12,6 +12,10 @@
 
 const { test, expect } = require('@playwright/test');
 const { createServer } = require('./workbench-preview-scroll-fixture.cjs');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers.js');
+
+// Evidence goes to WORKBENCH_REPOSITORY_LIST_EVIDENCE when set, otherwise to the test's output directory.
+const EVIDENCE_DIRECTORY = process.env.WORKBENCH_REPOSITORY_LIST_EVIDENCE || '';
 
 let fixture;
 let baseUrl;
@@ -107,7 +111,9 @@ test('repository list sorts complete rows and keeps icon and action columns fixe
     expect.soft(initialRows.map(row => row.action)).toEqual([
         'Actions for repo-1', 'Actions for repo-2', 'Actions for repo-3', 'Actions for repo-10'
     ]);
-    await page.screenshot({ path: '../.agent/evidence/workbench-repository-list-features/repository-list-desktop.png', fullPage: true });
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'repository-list-desktop.png'), fullPage: true });
+    }
 
     if (await sortButtons.count() === 3) {
         const idHeader = table.locator('thead th[data-repository-column="id"]');
@@ -297,5 +303,7 @@ test('repository list phone records lead with the repository and sort from one r
             expect.soft(record.title.below, `${record.id}: the title sits below the ID`).toBeGreaterThanOrEqual(0);
         }
     }
-    await page.screenshot({ path: '../.agent/evidence/workbench-repository-list-features/repository-list-phone.png', fullPage: true });
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'repository-list-phone.png'), fullPage: true });
+    }
 });

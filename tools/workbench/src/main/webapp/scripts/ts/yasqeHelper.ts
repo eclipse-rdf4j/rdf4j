@@ -93,14 +93,23 @@ module workbench {
 
             var startY = 0;
             var startHeight = 0;
+            // The fixed height before the drag ('' for the automatic height), restored when the drag is cancelled.
+            var startFixed: string = null;
+            // Only a drag past this distance resizes: a click on the handle keeps the automatic height.
+            var dragThreshold = 3;
+            var moved = false;
             var onPointerMove = function(event: PointerEvent) {
+                if (!moved && Math.abs(event.clientY - startY) < dragThreshold) {
+                    return;
+                }
+                moved = true;
                 apply(startHeight + (event.clientY - startY), false);
             };
-            var onPointerUp = function(event: PointerEvent) {
+            var endDrag = function(event: PointerEvent) {
                 handle.removeAttribute('data-dragging');
                 handle.removeEventListener('pointermove', onPointerMove);
                 handle.removeEventListener('pointerup', onPointerUp);
-                handle.removeEventListener('pointercancel', onPointerUp);
+                handle.removeEventListener('pointercancel', onPointerCancel);
                 if (handle.releasePointerCapture && event.pointerId !== undefined) {
                     try {
                         handle.releasePointerCapture(event.pointerId);
@@ -108,7 +117,18 @@ module workbench {
                         // The capture was already released by the browser.
                     }
                 }
-                apply(currentHeight(), true);
+            };
+            var onPointerUp = function(event: PointerEvent) {
+                endDrag(event);
+                if (moved) {
+                    apply(currentHeight(), true);
+                }
+            };
+            var onPointerCancel = function(event: PointerEvent) {
+                endDrag(event);
+                if (moved) {
+                    apply(startFixed ? Number(startFixed) : 0, false);
+                }
             };
             var onPointerDown = function(event: PointerEvent) {
                 if (event.button !== 0) {
@@ -117,13 +137,15 @@ module workbench {
                 event.preventDefault();
                 startY = event.clientY;
                 startHeight = currentHeight();
+                startFixed = wrapper.getAttribute('data-workbench-editor-height') || '';
+                moved = false;
                 handle.setAttribute('data-dragging', 'true');
                 if (handle.setPointerCapture && event.pointerId !== undefined) {
                     handle.setPointerCapture(event.pointerId);
                 }
                 handle.addEventListener('pointermove', onPointerMove);
                 handle.addEventListener('pointerup', onPointerUp);
-                handle.addEventListener('pointercancel', onPointerUp);
+                handle.addEventListener('pointercancel', onPointerCancel);
             };
             var onKeyDown = function(event: KeyboardEvent) {
                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -146,7 +168,7 @@ module workbench {
                 handle.removeEventListener('dblclick', onDoubleClick);
                 handle.removeEventListener('pointermove', onPointerMove);
                 handle.removeEventListener('pointerup', onPointerUp);
-                handle.removeEventListener('pointercancel', onPointerUp);
+                handle.removeEventListener('pointercancel', onPointerCancel);
             };
         }
     }

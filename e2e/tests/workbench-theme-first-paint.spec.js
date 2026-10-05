@@ -14,14 +14,15 @@
 // @ts-check
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers.js');
 
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL ||
     'http://localhost:8080/rdf4j-workbench').replace(/\/+$/, '');
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL ||
     WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server')).replace(/\/+$/, '');
 const THEME_KEY = 'rdf4j-workbench-theme';
-const EVIDENCE_DIR = process.env.WORKBENCH_THEME_FIRST_PAINT_EVIDENCE_DIR ||
-    '/tmp/rdf4j7-workbench-dark-flash-20260930/first-paint';
+// Evidence goes to WORKBENCH_THEME_FIRST_PAINT_EVIDENCE_DIR when it is set, otherwise to the test's output directory.
+const EVIDENCE_DIR = process.env.WORKBENCH_THEME_FIRST_PAINT_EVIDENCE_DIR || '';
 const FIRST_PAINT_CASES = [
     {
         name: 'stored dark preference with light system setting on query route',
@@ -145,7 +146,6 @@ for (const scenario of FIRST_PAINT_CASES) {
         const gateRequestSeen = new Promise((resolve) => { gateSeen = resolve; });
         const evidenceName = scenario.gate === 'stylesheet' ? 'dark-css-pending'
             : scenario.preference + (scenario.repository ? '-query' : '-repositories');
-        fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
         let released = false;
         const release = () => {
             if (!released) {
@@ -212,14 +212,16 @@ for (const scenario of FIRST_PAINT_CASES) {
                     viewport: { width: innerWidth, height: innerHeight }
                 }));
             }
-            fs.writeFileSync(`${EVIDENCE_DIR}/${evidenceName}.json`, JSON.stringify({
-                scenario,
-                gateRequest,
-                firstFrame
-            }, null, 2) + '\n');
-            if (scenario.screenshot) {
+            if (evidenceScreenshots()) {
+                fs.writeFileSync(evidencePath(EVIDENCE_DIR, `${evidenceName}.json`), JSON.stringify({
+                    scenario,
+                    gateRequest,
+                    firstFrame
+                }, null, 2) + '\n');
+            }
+            if (scenario.screenshot && evidenceScreenshots()) {
                 await page.screenshot({
-                    path: `${EVIDENCE_DIR}/${evidenceName}.png`,
+                    path: evidencePath(EVIDENCE_DIR, `${evidenceName}.png`),
                     fullPage: scenario.gate !== 'stylesheet',
                     timeout: 5000
                 });

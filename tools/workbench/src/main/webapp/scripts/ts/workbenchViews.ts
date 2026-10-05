@@ -133,19 +133,6 @@ module workbench {
             button.setAttribute('data-workbench-icon', knownName);
             button.setAttribute('aria-label', accessibleName);
         }
-
-        export function decorateDisclosureButton(button: any, accessibleName: string): void {
-            if (!button || !button.ownerDocument || typeof button.appendChild !== 'function') {
-                return;
-            }
-            decorateButton(button, 'chevron', accessibleName);
-            const svg = button.querySelector ? button.querySelector('svg[data-workbench-icon]') : null;
-            if (!svg) {
-                return;
-            }
-            svg.setAttribute('class', 'workbench-action-icon workbench-action-icon--chevron workbench-disclosure-chevron');
-            button.appendChild(svg);
-        }
     }
 
     export module views {
@@ -320,8 +307,10 @@ module workbench {
                 <p>The server${server ? h` at <code>${hostAndPort(server)}</code>` : ''} has no repository with id
                     <code>${id}</code>. It may have been deleted or renamed.</p>
                 <div class="workbench-form-actions workbench-not-found__actions">
-                    <a class="workbench-action workbench-action--primary" href=${urlFor(context, 'repositories')}>Go to repositories</a>
-                    <a class="workbench-action workbench-action--secondary" href=${urlFor(context, 'server')}>Change server</a>
+                    ${pageEnabled(context, 'repositories') ? h`<a class="workbench-action workbench-action--primary"
+                        href=${urlFor(context, 'repositories')}>Go to repositories</a>` : ''}
+                    ${pageEnabled(context, 'server') ? h`<a class="workbench-action workbench-action--secondary"
+                        href=${urlFor(context, 'server')}>Change server</a>` : ''}
                 </div>
             </section>`;
         }
@@ -350,10 +339,6 @@ module workbench {
                     data-workbench-icon=${name} viewBox="0 0 24 24" width="16" height="16" focusable="false" aria-hidden="true">
                 <path d=${iconPath(name)}></path>
             </svg>`;
-        }
-
-        function disclosureChevron(runtime: LitRuntime): any {
-            return icon(runtime, 'chevron', 'workbench-disclosure-chevron');
         }
 
         function statusIcon(runtime: LitRuntime, status: string, label: string): any {
@@ -474,6 +459,27 @@ module workbench {
         /** Reduce the linked, fixed-size server Info model to shared shell metadata. */
         export function linkedInfoMetadata(infoModel: PageModel): any {
             return normalizeWorkbench({ metadata: infoModel.metadata }, infoModel);
+        }
+
+        /**
+         * False when the Workbench policy hides a page: the policy-filtered menu of the Info model is known and has no
+         * item for it. Without menu information nothing is known to be hidden.
+         */
+        function pageEnabled(context: ViewContext, pageId: string): boolean {
+            const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
+            const known = ['menu', 'menuGroups', 'menuItems'].some((key: string) =>
+                Object.prototype.hasOwnProperty.call(info, key));
+            return !known || menuEntries(context).some((group: any) => (group.items || []).some((item: any) =>
+                text(item.id || item['menu-item-id']) === pageId));
+        }
+
+        /** The pages a repository can open with, in the order the server picks its landing page. */
+        const repositoryLandingPages = ['summary', 'query', 'explore', 'namespaces', 'contexts', 'types', 'saved-queries',
+            'export', 'update', 'add', 'remove', 'clear'];
+
+        /** The first page of a repository the policy shows (Summary unless it is hidden). */
+        function repositoryLanding(context: ViewContext): string {
+            return repositoryLandingPages.filter((pageId: string) => pageEnabled(context, pageId))[0] || 'summary';
         }
 
         function menuEntries(context: ViewContext): any[] {
@@ -669,9 +675,9 @@ module workbench {
                             <div class="workbench-kv__row"><dt>Server</dt><dd class="workbench-kv__code">${server || 'None'}</dd></div>
                             <div class="workbench-kv__row"><dt>User</dt><dd>${state.user || 'Not signed in'}</dd></div>
                         </dl>
-                        <div class="workbench-popover__footer">
+                        ${pageEnabled(context, 'server') ? h`<div class="workbench-popover__footer">
                             <a href=${urlFor(context, 'server')}>${icon(runtime, 'settings')}Change server or user…</a>
-                        </div>
+                        </div>` : ''}
                     </div>
                 </div>
                 <span class="workbench-contextbar__divider" aria-hidden="true"></span>
@@ -688,6 +694,7 @@ module workbench {
                     <div id="workbench-repository-popover" class="workbench-popover workbench-popover--repositories"
                             role="dialog" aria-label="Choose repository" hidden
                             data-workbench-active-view=${active} data-workbench-repositories-url=${urlFor(context, 'repositories')}
+                            data-workbench-switch-fallback=${repositoryLanding(context)}
                             data-workbench-base-path=${(context.basePath || '').replace(/\/+$/, '')}>
                         <div class="workbench-popover__search">${icon(runtime, 'search')}
                             <input id="workbench-repository-filter" type="search" placeholder="Find repository"
@@ -696,8 +703,10 @@ module workbench {
                         <ul id="workbench-repository-options" class="workbench-popover__list" aria-label="Repositories"></ul>
                         <p class="workbench-popover__status" role="status" aria-live="polite"></p>
                         <div class="workbench-popover__footer">
-                            <a href=${urlFor(context, 'repositories')}>${icon(runtime, 'repository')}All repositories</a>
-                            <a href=${urlFor(context, 'create')}>${icon(runtime, 'create')}Create repository</a>
+                            ${pageEnabled(context, 'repositories') ? h`<a href=${urlFor(context, 'repositories')}>${
+                                icon(runtime, 'repository')}All repositories</a>` : ''}
+                            ${pageEnabled(context, 'create') ? h`<a href=${urlFor(context, 'create')}>${
+                                icon(runtime, 'create')}Create repository</a>` : ''}
                         </div>
                     </div>
                 </div>
@@ -744,9 +753,8 @@ module workbench {
             const groups = menuEntries(context);
             return h`${contextBar(context, state.viewId, runtime)}
             <nav id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" aria-label="Workbench menu">
-                <div id="navigation" class="workbench-nav"><ul class="maingroup">
-                    ${navigation(context, state.viewId, runtime, 'workbench-nav', groups)}
-                </ul></div>
+                <div id="navigation" class="workbench-nav"><ul class="maingroup">${
+                    navigation(context, state.viewId, runtime, 'workbench-nav', groups)}</ul></div>
             </nav>
             ${menuSheet(context, state.viewId, runtime, groups)}
             <main id="content" class="workbench-main">${outlet}</main>
@@ -755,11 +763,16 @@ module workbench {
             <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
         }
 
-        /** The page area that changes from route to route: title, noscript notice and page surface. */
+        /**
+         * The page area that changes from route to route: title, why the server did not take a form the router sent
+         * from this page (the router sets model.sendFailure) and page surface.
+         */
         function outletContentTemplate(model: PageModel, runtime: LitRuntime, body: any): any {
             const h = runtime.html;
+            const failure: any = (model as any).sendFailure;
             return h`<h1 id="title_heading" tabindex="-1">${routeTitle(model)}</h1>
-                <p id="noscript-message" class="ERROR">Scripting is not enabled. The RDF4J Workbench application requires scripting to be enabled.</p>
+                ${failure ? callout(runtime, 'error', text(failure.message), failure.status
+                    ? 'The server did not accept this.' : 'The request failed.', 'workbench-send-failure') : ''}
                 <div id="workbench-page-surface" class="workbench-page-surface">${body}</div>`;
         }
 
@@ -809,7 +822,9 @@ module workbench {
             const columns = options && options.columns || model.vars || [];
             const rowHeightValue = rowHeight(model);
             if (!total && !allRows.length) {
-                return h`<tr class="workbench-empty-row"><td class="workbench-empty-table-message" role="status" colspan=${Math.max(1, columns.length)}>${emptyText}</td></tr>`;
+                // A trailing row (Graphs' default graph) is there with or without other rows.
+                return h`<tr class="workbench-empty-row"><td class="workbench-empty-table-message" role="status" colspan=${Math.max(1, columns.length)}>${emptyText}</td></tr>${
+                    options && options.trailing ? options.trailing() : ''}`;
             }
             if (!allRows.length) {
                 return h`<tr class="workbench-pending-row"><td class="workbench-empty-table-message" role="status" colspan=${Math.max(1, columns.length)}>Loading rows...</td></tr>`;
@@ -992,26 +1007,30 @@ module workbench {
             const id = text(record.id);
             const access = repositoryAccess(record);
             const menuId = 'repository-actions-' + index;
-            const item = (route: string, iconName: string, label: string) => h`<li><a href="${repositoryUrl(context, id, route)}">${
-                icon(runtime, iconName)}${label}</a></li>`;
+            // Pages the policy hides are not offered (the server would refuse them).
+            const items = [['query', 'query', 'Query'], ['explore', 'explore', 'Explore'], ['summary', 'summary', 'Summary']]
+                .filter((entry: string[]) => pageEnabled(context, entry[0]))
+                .map((entry: string[]) => h`<li><a href="${repositoryUrl(context, id, entry[0])}">${
+                    icon(runtime, entry[1])}${entry[2]}</a></li>`);
+            const deletable = pageEnabled(context, 'delete');
             return h`<td data-label="Repository">${icon(runtime, 'repository')}</td>
-                <td data-label="ID"><a class="workbench-repository-link" href="${repositoryUrl(context, id, 'summary')}">${id}</a></td>
+                <td data-label="ID"><a class="workbench-repository-link" href="${repositoryUrl(context, id, repositoryLanding(context))}">${id}</a></td>
                 <td data-label="Title" title="${text(record.location)}">${text(record.description)}</td>
                 <td data-label="Access"><span class="workbench-badges">${access.length
                     ? access.map((label) => h`<span class="workbench-badge">${icon(runtime, label === 'Read' ? 'eye' : 'edit')}${label}</span>`)
                     : h`<span class="workbench-access-none">None</span>`}</span></td>
-                <td class="workbench-row-actions" data-label="Actions"><div class="workbench-row-menu">
+                <td class="workbench-row-actions" data-label="Actions">${items.length || deletable ? h`<div class="workbench-row-menu">
                     <button type="button" class="workbench-action workbench-action--ghost workbench-action--icon"
                         aria-label="${'Actions for ' + id}" title="Actions" aria-expanded="false" aria-controls="${menuId}"
                         data-workbench-row-menu="true">${icon(runtime, 'more')}</button>
                     <div id="${menuId}" class="workbench-popover workbench-popover--end workbench-row-menu__panel" hidden>
                         <ul class="workbench-popover__menu">
-                            ${item('query', 'query', 'Query')}${item('explore', 'explore', 'Explore')}${item('summary', 'summary', 'Summary')}
-                            <li><a class="workbench-popover__danger" href="${urlFor(context, 'delete') + '?id=' + encodeURIComponent(id)}">${
-                                icon(runtime, 'delete')}Delete…</a></li>
+                            ${items}
+                            ${deletable ? h`<li><a class="workbench-popover__danger" href="${urlFor(context, 'delete') + '?id=' + encodeURIComponent(id)}">${
+                                icon(runtime, 'delete')}Delete…</a></li>` : ''}
                         </ul>
                     </div>
-                </div></td>`;
+                </div>` : ''}</td>`;
         }
 
         function repositoriesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -1038,8 +1057,8 @@ module workbench {
             return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
                     <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
-                    <a class="workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create"
-                        href="${urlFor(context, 'create')}">${icon(runtime, 'create')}<span>Create repository</span></a>
+                    ${pageEnabled(context, 'create') ? h`<a class="workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create"
+                        href="${urlFor(context, 'create')}">${icon(runtime, 'create')}<span>Create repository</span></a>` : ''}
                 </div>
                 ${rowCount(model) ? table(runtime, model, context,
                     { columns: ['repository', 'id', 'title', 'access', 'actions'], header,
@@ -1168,18 +1187,41 @@ module workbench {
                 data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing} /></td></tr>`;
         }
 
+        /**
+         * A write form whose check lives in a page script (delete.js, server.js): the page can be shown before that
+         * script has loaded, and the browser's own submit would then skip the check. The form never submits natively:
+         * the check runs at once, or once its script has loaded while the page is still shown, or not at all.
+         */
+        function submitThroughPageScript(event: any, script: string, helper: string, owns: () => boolean,
+                                         run: (check: any) => void): void {
+            event.preventDefault();
+            const globalWindow: any = typeof window !== 'undefined' ? window : null;
+            const available = () => !!globalWindow && typeof globalWindow[helper] === 'function';
+            if (available()) {
+                run(globalWindow[helper]);
+                return;
+            }
+            const app: any = (workbench as any).app;
+            if (!app || typeof app.loadScripts !== 'function') {
+                return;
+            }
+            app.loadScripts([script]).then(() => {
+                if (available() && owns()) { run(globalWindow[helper]); }
+            }, (error: any) => {
+                if (typeof console !== 'undefined' && console.error) { console.error(error); }
+            });
+        }
+
         function createActions(runtime: LitRuntime, confirmOverwrite: boolean, context: ViewContext): any {
             const h = runtime.html;
             const cancel = urlFor(context, 'repositories');
             const createType = confirmOverwrite ? 'button' : 'submit';
+            // Without create.js (still loading) nothing checks whether the id replaces a repository: nothing is sent.
             const createHandler = confirmOverwrite ? (event: Event) => {
                 event.preventDefault();
                 const globalWindow: any = typeof window !== 'undefined' ? window : null;
                 if (globalWindow && typeof globalWindow.checkOverwrite === 'function') {
                     globalWindow.checkOverwrite();
-                } else {
-                    const form = (event.currentTarget as HTMLElement).closest('form') as HTMLFormElement;
-                    if (form) { form.requestSubmit(); }
                 }
             } : undefined;
             return h`<div class="workbench-form-actions">
@@ -1230,10 +1272,9 @@ module workbench {
             const selectedVisible = options.some((row: any) => text(row.id) === selectedId);
             return h`<form id="delete-form" class="workbench-island workbench-form-card" action="delete" method="post"
                     @submit=${(event: Event) => {
-                        const globalWindow: any = typeof window !== 'undefined' ? window : null;
-                        if (globalWindow && typeof globalWindow.checkIsSafeToDelete === 'function') {
-                            globalWindow.checkIsSafeToDelete(event, modelOwner(event.currentTarget, model));
-                        }
+                        const owns = modelOwner(event.currentTarget, model);
+                        submitThroughPageScript(event, 'delete.js', 'checkIsSafeToDelete', owns,
+                            (check: any) => check(event, owns));
                     }}>
                 <div class="workbench-field"><label for="id">Repository</label>
                     <select id="id" name="id" data-workbench-window-picker="repositories" @change=${(event: any) => {
@@ -1263,6 +1304,14 @@ module workbench {
             editing: string;
             adding: boolean;
             filter: string;
+            /** Why the values in the editor were not sent, or ''. */
+            error?: string;
+        }
+
+        /** False when the repository is known to be read-only (its Info model says writeable=false). */
+        function repositoryWriteable(context: ViewContext): boolean {
+            const info = workbenchData(context);
+            return info.writeable !== false && String(info.writeable) !== 'false';
         }
 
         function namespaceEditor(model: PageModel): NamespaceEditor {
@@ -1322,15 +1371,25 @@ module workbench {
                 }
             };
             const label = (prefix: string) => prefix || '(default)';
+            // A read-only repository offers no changes (the menu leaves its write pages out the same way).
+            const writeable = repositoryWriteable(context);
             const save = (event: any, row: any) => {
                 const inputs = event.currentTarget.closest('tr').querySelectorAll('input');
                 const fields: any = { action: 'save', prefix: inputs[0].value.trim(), namespace: inputs[1].value.trim() };
                 if (row) { fields.previousPrefix = row.prefix; }
+                // Renaming onto a prefix that is bound already would replace that binding: the server refuses it too.
+                if (row && fields.prefix !== row.prefix && rows.some((other: any) => other.prefix === fields.prefix)) {
+                    state.error = 'Prefix \'' + fields.prefix + '\' is already defined';
+                    rerender(event);
+                    return;
+                }
+                state.error = '';
                 postNamespaces(event.currentTarget.ownerDocument, fields);
             };
             const cancel = (event: any) => {
                 state.editing = null;
                 state.adding = false;
+                state.error = '';
                 rerender(event);
             };
             const editKeys = (event: any, row: any) => {
@@ -1352,15 +1411,17 @@ module workbench {
                         @click=${(event: any) => save(event, row)}>${icon(runtime, 'check')}</button><button type="button"
                         class="workbench-action workbench-action--secondary workbench-action--icon" aria-label="Cancel" title="Cancel"
                         @click=${cancel}>${icon(runtime, 'close')}</button></td>
-            </tr>`;
+            </tr>${state.error ? h`<tr class="workbench-namespace-edit-error"><td colspan="3"><p class="workbench-field__error"
+                role="alert">${state.error}</p></td></tr>` : ''}`;
             const viewRow = (row: any) => h`<tr>
                 <td data-label="Prefix"><code>${row.prefix}</code></td>
                 <td data-label="Namespace"><code>${breakableIri(runtime, row.namespace)}</code></td>
-                <td class="workbench-row-actions" data-label="Actions"><button type="button"
+                <td class="workbench-row-actions" data-label="Actions">${writeable ? h`<button type="button"
                         class="workbench-action workbench-action--ghost workbench-action--icon" aria-label=${'Edit ' + label(row.prefix)}
                         title="Edit" @click=${(event: any) => {
                             state.editing = row.prefix;
                             state.adding = false;
+                            state.error = '';
                             rerender(event, true);
                         }}>${icon(runtime, 'edit')}</button><button type="button"
                         class="workbench-action workbench-action--ghost workbench-action--icon workbench-namespace-delete"
@@ -1372,7 +1433,7 @@ module workbench {
                                 confirmLabel: 'Delete prefix', danger: true }).then((confirmed: boolean) => {
                                 if (confirmed && owns()) { postNamespaces(document, { action: 'delete', prefix: row.prefix }); }
                             });
-                        }}>${icon(runtime, 'delete')}</button></td>
+                        }}>${icon(runtime, 'delete')}</button>` : ''}</td>
             </tr>`;
             return h`${errorCallout(runtime, model)}<section id="namespaces-results"
                     class="workbench-island workbench-responsive-records workbench-browse-card">
@@ -1388,12 +1449,13 @@ module workbench {
                                 rerender(event);
                             }} /></div>
                     </form>
-                    <button type="button" class="workbench-action workbench-action--primary workbench-browse-card__action"
+                    ${writeable ? h`<button type="button" class="workbench-action workbench-action--primary workbench-browse-card__action"
                         @click=${(event: any) => {
                             state.adding = true;
                             state.editing = null;
+                            state.error = '';
                             rerender(event, true);
-                        }}>${icon(runtime, 'add')}<span>Add namespace</span></button>
+                        }}>${icon(runtime, 'add')}<span>Add namespace</span></button>` : ''}
                     </div>
                 </div>
                 <table class="data workbench-namespaces-table">
@@ -1431,7 +1493,10 @@ module workbench {
         function browseCounts(model: PageModel): BrowseCounts {
             const holder: any = model;
             if (!holder.browseCounts) {
-                holder.browseCounts = { state: model.rowCount > 0 ? 'pending' : 'none', listed: model.rowCount, values: {} };
+                // Graphs without a filter always lists the default graph, whose count is asked for as well.
+                const defaultGraphListed = model.viewId === 'contexts' && !text(pageValue(model, 'filter'));
+                holder.browseCounts = { state: model.rowCount > 0 || defaultGraphListed ? 'pending' : 'none',
+                    listed: model.rowCount, values: {} };
             }
             return holder.browseCounts;
         }
@@ -1466,17 +1531,20 @@ module workbench {
             return h`<td class="workbench-count-cell" data-label=${list.countLabel}><span title=${reason}>—</span></td>`;
         }
 
-        function browseActionsCell(runtime: LitRuntime, term: any): any {
+        /** A graph's actions: Explore it, and Clear it when the Clear page is available (not hidden by the policy). */
+        function browseActionsCell(runtime: LitRuntime, term: any, context: ViewContext): any {
             const h = runtime.html;
             if (!term || typeof term !== 'object' || !term.kind) {
                 return h`<td class="workbench-row-actions" data-label="Actions"></td>`;
             }
             const key = encodeURIComponent(ntriples(term));
             const name = termText(term);
-            return h`<td class="workbench-row-actions" data-label="Actions"><a class="workbench-action workbench-action--ghost workbench-action--icon"
-                    href="${'explore?resource=' + key}" aria-label="${'Explore ' + name}" title="Explore">${icon(runtime, 'explore')}</a><a
+            return h`<td class="workbench-row-actions" data-label="Actions">${pageEnabled(context, 'explore')
+                ? h`<a class="workbench-action workbench-action--ghost workbench-action--icon"
+                    href="${'explore?resource=' + key}" aria-label="${'Explore ' + name}" title="Explore">${icon(runtime, 'explore')}</a>` : ''}${
+                pageEnabled(context, 'clear') && repositoryWriteable(context) ? h`<a
                     class="workbench-action workbench-action--ghost workbench-action--icon" href="${'clear?context=' + key}"
-                    aria-label="${'Clear graph ' + name + '…'}" title="Clear graph…">${icon(runtime, 'clear')}</a></td>`;
+                    aria-label="${'Clear graph ' + name + '…'}" title="Clear graph…">${icon(runtime, 'clear')}</a>` : ''}</td>`;
         }
 
         function browseListPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -1503,13 +1571,18 @@ module workbench {
                 const term = record[nameColumn];
                 const value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
                 return h`${browseNameCell(runtime, model, list, term)}${browseCountCell(runtime, list, counts, value, context)}${
-                    list.actions ? browseActionsCell(runtime, term) : ''}`;
+                    list.actions ? browseActionsCell(runtime, term, context) : ''}`;
             };
             // The default graph has no name, so it is listed only without a filter (the server omits it too).
             const trailing = list.actions && !filter ? () => h`<tr class="workbench-browse-default-row">${
                 browseNameCell(runtime, model, list, null)}${browseCountCell(runtime, list, counts, counts.values[''], context)}${
-                browseActionsCell(runtime, null)}</tr>` : null;
+                browseActionsCell(runtime, null, context)}</tr>` : null;
             const inputId = route + '-filter';
+            // The field shows this page's filter: a property binding (an attribute does not change a field that was
+            // typed into) whose value is one object per page model, so another page (Back, the menu) sets it again
+            // while this page rendering again (its counts arriving) leaves what is typed alone.
+            const holder: any = model;
+            const filterValue = holder.filterFieldValue || (holder.filterFieldValue = new String(filter));
             return h`${errorCallout(runtime, model)}<section id=${route + '-results'}
                     class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
@@ -1517,7 +1590,7 @@ module workbench {
                     <form class="workbench-browse-card__filter" action=${route} method="get" role="search">
                         <label class="workbench-visually-hidden" for="${inputId}">${'Filter ' + list.noun}</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input
-                            type="text" id="${inputId}" name="filter" value=${filter} placeholder=${'Filter ' + list.noun}
+                            type="text" id="${inputId}" name="filter" .value=${filterValue} placeholder=${'Filter ' + list.noun}
                             autocomplete="off" spellcheck="false" /></div>
                     </form>
                 </div>
@@ -1622,7 +1695,8 @@ module workbench {
         }
 
         /** The explored resource: label, IRI with Copy, types as chips, comment and "Query this resource". */
-        function exploreResourceCard(runtime: LitRuntime, model: PageModel, summary: any, resource: string): any {
+        function exploreResourceCard(runtime: LitRuntime, model: PageModel, summary: any, resource: string,
+                                     context: ViewContext): any {
             const h = runtime.html;
             const namespaces = exploreNamespaces(model);
             const key = exploreResourceKey(model) || resource;
@@ -1655,7 +1729,7 @@ module workbench {
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
-                ${isIri ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
+                ${isIri && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
                     href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
             </section>`;
         }
@@ -1910,15 +1984,24 @@ module workbench {
                 </div>` : ''}`;
         }
 
+        /** The Explore limit in use, as the server picks it: the URL's limit_explore, its cookie, or 100. */
+        function activeExploreLimit(): number {
+            const limit = Number(locationParameter('limit_explore') || currentCookieValue('limit_explore') || '100');
+            return isFinite(limit) && limit >= 0 ? limit : 100;
+        }
+
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const resource = text(pageValue(model, 'resource'));
-            const total = rowCount(model);
+            // A rejected Explore answers with an error-message row: an error, not a result.
+            const rejected = isErrorOnlyModel(model);
+            const total = rejected ? 0 : rowCount(model);
             const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
             const info = workbenchData(context);
             const defaults = info.defaults || info;
-            const resultLimit = text(pageValue(model, 'default-limit') || defaults['default-limit']) || '100';
-            const resultLimited = !!resource && resultLimit !== '0' && total === Number(resultLimit);
+            const resultLimit = activeExploreLimit();
+            // A page as long as the limit in use may have been cut short.
+            const resultLimited = !rejected && !!exploreResourceKey(model) && resultLimit > 0 && total === resultLimit;
             const groupPages = summary.groups || {};
             const classGroups = [exploreGroups[0], exploreGroups[1]]
                 .map((definition: any) => exploreGroupList(runtime, model, context, definition, groupPages[definition.key]));
@@ -1972,13 +2055,13 @@ module workbench {
                 ${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
                 ${errorCallout(runtime, model)}
                 ${resource || exploreResourceKey(model)
-                    ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model)) : ''}
+                    ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model), context) : ''}
                 <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
                     <span id="explore-resource-value" hidden></span><span id="explore-result-count"></span>
                 </p>
-                <section id="explore-results" class="workbench-island workbench-responsive-records">
+                ${rejected ? '' : h`<section id="explore-results" class="workbench-island workbench-responsive-records">
                     ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, roles)
-                        : table(runtime, model, context, { linkTerms: true })}`
+                        : table(runtime, model, context, exploreTableOptions(runtime, model))}`
                         : h`<p class="workbench-empty" role="status">No results to display.</p>`}
                     <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
                         <button id="previousX" class="workbench-action workbench-action--secondary" type="button" value=${'Previous ' + total}
@@ -1986,7 +2069,22 @@ module workbench {
                         <button id="nextX" class="workbench-action workbench-action--secondary" type="button" value=${'Next ' + total}
                             @click=${() => invoke('workbench.paging.nextOffset', 'explore')}>Next ${total}</button>
                     </div>
-                </section>`;
+                </section>`}`;
+        }
+
+        /**
+         * The single Explore table of a page too long to group: its cells are formatted as in the groups (prefixed
+         * IRIs, quoted literals with language and datatype tags, "Default graph"), each linking to its own Explore page.
+         */
+        function exploreTableOptions(runtime: LitRuntime, model: PageModel): any {
+            const h = runtime.html;
+            const namespaces = exploreNamespaces(model);
+            const label = (name: string) => name === 'context' ? 'Graph' : columnLabel(name);
+            return {
+                labels: { context: 'Graph' },
+                cells: (record: any) => (model.vars || []).map((name: string) => h`<td data-label=${label(name)}>${
+                    name === 'context' && !record[name] ? 'Default graph' : exploreTerm(runtime, record[name], namespaces, true)}</td>`)
+            };
         }
 
         function limitSelect(runtime: LitRuntime, id: string, _context: ViewContext, selected: string): any {
@@ -2113,7 +2211,7 @@ module workbench {
                                     data-query-urn=${urn}>Delete…</button>
                             </form>
                         </div>
-                        <div id=${'saved-query-results-' + index} class="query-results" aria-live="polite"></div>
+                        <div id=${'saved-query-results-' + index} class="query-results"></div>
                         <div class="saved-query-metadata" id=${urn + '-metadata'} style="display: none">${keyValueList(runtime,
                             savedQueryDetails(row))}</div>
                         <textarea id=${urn + '-text'} style="display: none">${query}</textarea>
@@ -2321,7 +2419,12 @@ module workbench {
         function currentCookieValue(name: string): string {
             const namespace: any = workbench as any;
             if (namespace && typeof namespace.getCookie === 'function') {
-                return text(namespace.getCookie(name));
+                // template.ts reads document.cookie; without a document (workers, tests) there are no cookies.
+                try {
+                    return text(namespace.getCookie(name));
+                } catch (error) {
+                    return '';
+                }
             }
             if (typeof document === 'undefined' || typeof document.cookie !== 'string') {
                 return '';
@@ -2448,8 +2551,11 @@ module workbench {
                              running: string, done: string, after?: () => void): void {
             if (!modelOwner(form, model)()) { return; }
             const router: any = (workbench as any).router;
+            // What the server said when it did not accept the write ('' when nothing came back).
+            let refusal = '';
             // The form is read before its button is disabled.
-            const sent: Promise<string> = router && typeof router.send === 'function' ? router.send(form, submitter)
+            const sent: Promise<string> = router && typeof router.send === 'function'
+                ? router.send(form, submitter, (failure: any) => { refusal = failure && failure.message || ''; })
                 : Promise.resolve('fallback').then((outcome: string) => {
                     (workbench as any).submitForm(form);
                     return outcome;
@@ -2464,8 +2570,9 @@ module workbench {
                     return;
                 }
                 submission.state = outcome === 'done' ? 'done' : outcome === 'failed' ? 'failed' : 'idle';
+                // A refusal names its reason; without an answer nobody knows whether the write happened.
                 submission.message = outcome === 'done' ? done : outcome === 'failed'
-                    ? 'The server did not confirm this; check the repository before trying again.' : '';
+                    ? refusal || 'The server did not confirm this; check the repository before trying again.' : '';
                 renderAgain(form, model, context, runtime);
                 if (outcome === 'done' && after) {
                     after();
@@ -2525,7 +2632,7 @@ module workbench {
                         <div class="workbench-field add-target-graph"><label for="context">Target graph</label>
                             <input id="context" name="context" type="text" size="48" placeholder="Default graph"
                                 aria-describedby="context-help" value=${text(pageValue(model, 'context'))} />
-                            <p id="context-help" class="workbench-field__help">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI puts every statement in that graph.</p>
+                            <p id="context-help" class="workbench-field__help">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI, written as http://example.org/graph or &lt;http://example.org/graph&gt;, puts every statement in that graph.</p>
                         </div>
                     </div>
                     <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
@@ -2557,13 +2664,20 @@ module workbench {
         }
 
         interface RemoveCount {
-            /** 'empty' (no values), 'counting', 'counted', 'timed-out', 'invalid' or 'failed'. */
+            /**
+             * 'empty' (no values), 'counting' (from the first change until the count of the values now in the form
+             * arrives), 'counted', 'timed-out', 'invalid' or 'failed'.
+             */
             state: string;
             count: number;
             field: string;
             message: string;
             timer: any;
             controller: any;
+            /** The values this state belongs to, as removeKey writes them. */
+            key?: string;
+            /** Raised by every change of the values; an answer for an older generation is dropped. */
+            generation?: number;
         }
 
         interface RemovePreview {
@@ -2574,6 +2688,8 @@ module workbench {
             timedOut: boolean;
             message: string;
             controller: any;
+            /** Raised by every request and every change of the values; an older answer is dropped. */
+            generation?: number;
         }
 
         /** Cancel what a page still has pending when its route is disposed: Remove's count or preview. */
@@ -2608,6 +2724,32 @@ module workbench {
 
         const removeFields: string[][] = [['subj', 'Subject', 'Any subject'], ['pred', 'Predicate', 'Any predicate'],
             ['obj', 'Object', 'Any object']];
+
+        /** Remove's values as one string, to tell whether a count belongs to the values now in the form. */
+        function removeKey(fields: any): string {
+            return ['subj', 'pred', 'obj', 'context'].map((name: string) => fields[name] || '').join('\u0000');
+        }
+
+        /** Where a Remove with this graph value removes from, for its confirmation. */
+        function removeGraphPhrase(graph: string): string {
+            if (!graph) { return 'in every graph'; }
+            if (graph === 'null') { return 'in the default graph'; }
+            const iri = /^<(.*)>$/.exec(graph);
+            return 'in graph ' + (iri ? iri[1] : graph);
+        }
+
+        /** Remove cannot run without values, while they are counted, when they are invalid or when nothing matches. */
+        function removeBlocked(state: RemoveCount): boolean {
+            return state.state === 'empty' || state.state === 'invalid' || state.state === 'counting'
+                || state.state === 'counted' && state.count === 0;
+        }
+
+        /** "N statements" for a counted Remove, "statements" otherwise. */
+        function removeAmount(state: RemoveCount, context: ViewContext): string {
+            if (state.state !== 'counted') { return 'statements'; }
+            return state.count > 1000000 ? 'more than 1,000,000 statements'
+                : state.count === 1 ? '1 statement' : formatCount(String(state.count), context) + ' statements';
+        }
 
         /** "N statements match" for a live Remove count; above the server's limit it says "more than". */
         function removeMatchLabel(state: RemoveCount, context: ViewContext): string {
@@ -2650,6 +2792,8 @@ module workbench {
                 if (preview.controller) { preview.controller.abort(); }
                 const app: any = (workbench as any).app;
                 const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                const generation = preview.generation = (preview.generation || 0) + 1;
+                const current = () => preview.generation === generation;
                 const fields = values(form);
                 Object.assign(preview, { state: 'loading', rows: [], truncated: false, timedOut: false, message: '',
                     controller });
@@ -2660,7 +2804,7 @@ module workbench {
                     ? Object.assign({}, options, { signal: controller.signal }) : options);
                 app.loadModel(fetcher, new URL('remove?' + query.toString(), window.location.href).toString())
                     .then((answer: any) => {
-                        if (preview.controller !== controller) { return answer.rowStore.dispose(); }
+                        if (!current()) { return answer.rowStore.dispose(); }
                         if (answer.error) {
                             answer.rowStore.dispose();
                             Object.assign(preview, { state: 'failed', message: answer.error.message, controller: null });
@@ -2669,89 +2813,123 @@ module workbench {
                         const metadata = answer.metadata || {};
                         return answer.rowStore.read(0, answer.rowCount || 0).then((rows: any[][]) => {
                             answer.rowStore.dispose();
+                            // The values may have changed while the rows were read.
+                            if (!current()) { return; }
                             Object.assign(preview, { state: 'shown', rows, controller: null,
                                 truncated: !!metadata['preview-truncated'], timedOut: !!metadata['preview-timed-out'] });
                             refresh(form);
                         });
                     }, (error: any) => {
-                        if (preview.controller !== controller || (error && error.name === 'AbortError')) { return; }
+                        if (!current() || (error && error.name === 'AbortError')) { return; }
                         Object.assign(preview, { state: 'failed', message: '', controller: null });
                         refresh(form);
                     });
             };
+            /**
+             * Any change of the values ends the count of the old ones at once: Remove waits (disabled, "Counting…")
+             * until the values now in the form are counted, 400 ms after the last change.
+             */
             const recount = (form: any) => {
                 clearTimeout(state.timer);
+                state.timer = null;
                 if (state.controller) { state.controller.abort(); }
+                state.controller = null;
+                const generation = state.generation = (state.generation || 0) + 1;
+                const current = () => state.generation === generation;
                 // A preview no longer shows what Remove would remove once the values change.
+                preview.generation = (preview.generation || 0) + 1;
                 if (preview.state !== 'hidden') {
                     if (preview.controller) { preview.controller.abort(); }
                     Object.assign(preview, { state: 'hidden', rows: [], controller: null });
                 }
                 const fields = values(form);
-                if (!fields.subj && !fields.pred && !fields.obj && !fields.context) {
-                    state.state = 'empty';
-                    state.field = '';
-                    refresh(form);
+                state.key = removeKey(fields);
+                state.field = '';
+                state.state = !fields.subj && !fields.pred && !fields.obj && !fields.context ? 'empty' : 'counting';
+                refresh(form);
+                if (state.state === 'empty') {
                     return;
                 }
                 state.timer = setTimeout(() => {
+                    state.timer = null;
+                    if (!current()) { return; }
                     const app: any = (workbench as any).app;
                     const controller = typeof AbortController === 'function' ? new AbortController() : null;
                     state.controller = controller;
-                    state.state = 'counting';
-                    state.field = '';
-                    refresh(form);
                     const query = new URLSearchParams({ count: 'true' });
                     Object.keys(fields).forEach((name) => { if (fields[name]) { query.set(name, fields[name]); } });
                     const fetcher = (url: string, options: any) => window.fetch(url, controller
                         ? Object.assign({}, options, { signal: controller.signal }) : options);
                     app.loadModel(fetcher, new URL('remove?' + query.toString(), window.location.href).toString())
                         .then((answer: any) => {
-                            if (state.controller !== controller) { return answer.rowStore.dispose(); }
+                            if (!current()) { return answer.rowStore.dispose(); }
                             if (answer.error) {
                                 state.state = 'invalid';
                                 state.field = answer.error.code;
                                 state.message = answer.error.message;
+                                state.controller = null;
                                 answer.rowStore.dispose();
                                 return refresh(form);
                             }
                             return answer.rowStore.read(0, 1).then((rows: any[][]) => {
                                 answer.rowStore.dispose();
+                                // The values may have changed while the count was read.
+                                if (!current()) { return; }
                                 const count = rows.length && rows[0][0] ? Number(text(rows[0][0])) : NaN;
                                 state.state = isFinite(count) ? 'counted' : 'timed-out';
                                 state.count = isFinite(count) ? count : 0;
+                                state.controller = null;
                                 refresh(form);
                             });
                         }, (error: any) => {
-                            if (state.controller !== controller || (error && error.name === 'AbortError')) { return; }
+                            if (!current() || (error && error.name === 'AbortError')) { return; }
                             state.state = 'failed';
+                            state.controller = null;
                             refresh(form);
                         });
                 }, 400);
             };
             const counted = state.state === 'counted';
-            const disabled = state.state === 'empty' || state.state === 'invalid' || state.state === 'counting'
-                || counted && state.count === 0;
-            const amount = counted ? (state.count > 1000000 ? 'more than 1,000,000 statements'
-                : state.count === 1 ? '1 statement' : formatCount(String(state.count), context) + ' statements') : 'statements';
+            const disabled = removeBlocked(state);
+            const amount = removeAmount(state, context);
             const sending = submissionOf(model).state === 'running';
+            /**
+             * The dialog names the count and the graph of the values in the form when Remove is chosen; values the page
+             * has not counted (yet) are counted first, and nothing is sent unless the form still holds what was confirmed.
+             */
             const confirmAndSubmit = (event: any) => {
                 event.preventDefault();
                 const form = event.currentTarget;
-                if (disabled || sending) { return; }
+                if (submissionOf(model).state === 'running') { return; }
+                const fields = values(form);
+                const key = removeKey(fields);
+                if (state.key !== key) {
+                    recount(form);
+                    return;
+                }
+                if (removeBlocked(state)) { return; }
+                const liveCounted = state.state === 'counted';
+                const liveAmount = removeAmount(state, context);
+                const generation = state.generation;
                 (workbench as any).confirmDialog.open({
-                    title: counted ? 'Remove ' + amount + '?' : 'Remove the matching statements?',
-                    body: 'This permanently removes ' + (counted ? amount : 'every explicit statement') + ' that match these values.',
+                    title: liveCounted ? 'Remove ' + liveAmount + '?' : 'Remove the matching statements?',
+                    body: 'This permanently removes ' + (liveCounted ? liveAmount : 'every explicit statement')
+                        + ' that match these values ' + removeGraphPhrase(fields.context) + '.',
                     confirmLabel: 'Remove statements', danger: true
                 }).then((confirmed: boolean) => {
-                    // The matches are gone once the server removed them, so the page counts again.
-                    if (confirmed) {
-                        sendInPlace(form, null, model, context, runtime, 'Removing statements…',
-                            counted ? 'Removed ' + amount : 'Statements removed', () => recount(form));
+                    if (!confirmed || state.generation !== generation || removeKey(values(form)) !== key) {
+                        return;
                     }
+                    // The matches are gone once the server removed them, so the page counts again.
+                    sendInPlace(form, null, model, context, runtime, 'Removing statements…',
+                        liveCounted ? 'Removed ' + liveAmount : 'Statements removed', () => recount(form));
                 });
             };
-            const selectedGraph = text(pageValue(model, 'context'));
+            // A rejected Remove names the graph it was sent with; otherwise only ?context= chooses a graph.
+            const rejected = (model.vars || []).indexOf('error-message') >= 0;
+            const selectedGraph = rejected ? text(pageValue(model, 'context')) : locationParameter('context');
+            const listedGraph = selectedGraph === '' || selectedGraph === 'null'
+                || graphs.some((record: any) => ntriples(record.context) === selectedGraph);
             const previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
                 || preview.state === 'loading';
             const namespaces = exploreNamespaces(model);
@@ -2786,6 +2964,8 @@ module workbench {
                                 @change=${(event: any) => recount(event.currentTarget.form)}>
                             <option value="" ?selected=${!selectedGraph}>Any graph</option>
                             <option value="null" ?selected=${selectedGraph === 'null'}>Default graph</option>
+                            ${listedGraph ? '' : h`<option value=${selectedGraph} ?selected=${true}>${
+                                removeGraphPhrase(selectedGraph).replace(/^in graph /, '')}</option>`}
                             ${graphs.map((record: any) => h`<option value=${ntriples(record.context)}
                                 ?selected=${ntriples(record.context) === selectedGraph}>${termText(record.context)}</option>`)}
                         </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
@@ -2946,7 +3126,10 @@ module workbench {
             }
             const holder: any = model;
             if (typeof holder.clearTarget !== 'string') {
-                const requested = locationParameter('context') || text(pageValue(model, 'context'));
+                // Only ?context= (a graph row's Clear link) or a rejected Clear's posted graph chooses a graph; the
+                // listing's first graph is not a choice.
+                const rejected = (model.vars || []).indexOf('error-message') >= 0;
+                const requested = locationParameter('context') || (rejected ? text(pageValue(model, 'context')) : '');
                 if (discoveryIncomplete && requested && !targets.some((target: any) => target.value === requested)) {
                     targets.unshift({ value: requested, label: requested + ' (not verified)', count: '', unavailable: true });
                 }
@@ -3065,10 +3248,8 @@ module workbench {
             const server = text(field(row, 'server') || info.server || info.location);
             return h`<form id="server-form" class="workbench-form-card" action="server" method="post"
                     @submit=${(event: Event) => {
-                        const globalWindow: any = typeof window !== 'undefined' ? window : null;
-                        if (globalWindow && typeof globalWindow.changeServer === 'function') {
-                            globalWindow.changeServer(event);
-                        }
+                        submitThroughPageScript(event, 'server.js', 'changeServer',
+                            modelOwner(event.currentTarget, model), (change: any) => change(event));
                     }}>
                 <div class="workbench-form-grid server-connection-fields"><div class="workbench-field">
                     <label for="workbench-server">Server</label><input id="workbench-server" name="workbench-server" type="text" size="40" value=${server} />
@@ -3442,6 +3623,13 @@ module workbench {
             const explanation = text(pageValue(model, 'explanation'));
             const explanationFormat = text(pageValue(model, 'explanation-format')) || 'text';
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
+            // A private query belongs to the signed-in server user; without one the server would store it for everyone.
+            const privateSave = queryFeatureEnabled(context, 'query-private-save');
+            const signedIn = !!serverUser();
+            // Controls the policy turns off are disabled as well as hidden, so the form never submits them (M-policy).
+            const languageEnabled = queryFeatureEnabled(context, 'query-language');
+            const timeoutEnabled = queryFeatureEnabled(context, 'query-timeout');
+            const inferEnabled = queryFeatureEnabled(context, 'query-inferred-statements');
             // Each pane follows its own toggle, so Tab from an open pane's toggle moves into the pane. The panes open
             // over the page (M14.3), so where they sit in the toolbar does not move its buttons.
             const saveDisclosure = workbench.detailDisclosure.render(h, {
@@ -3455,10 +3643,11 @@ module workbench {
                     <label class="query-form__label" for="query-name">Query name</label>
                     <input id="query-name" name="query-name" type="text" size="32" maxlength="32" value="" />
                 </div>
-                <label class="query-option query-save-disclosure__private"
-                    ?hidden=${!queryFeatureEnabled(context, 'query-private-save')}>
+                <label class="query-option query-save-disclosure__private" ?hidden=${!privateSave}>
                     <input id="save-private" name="save-private" type="checkbox" value="true"
-                        ?hidden=${!queryFeatureEnabled(context, 'query-private-save')} />Private</label>
+                        ?hidden=${!privateSave} ?disabled=${!privateSave || !signedIn} ?checked=${false}
+                        aria-describedby=${privateSave && !signedIn ? 'save-private-help' : runtime.nothing} />Private</label>
+                ${privateSave && !signedIn ? h`<p id="save-private-help" class="workbench-field__help query-save-disclosure__private-help">Sign in to the server to save a private query.</p>` : ''}
                 <div class="workbench-disclosure__actions query-disclosure__actions">
                     <input id="save" type="submit" value="Save" disabled
                         ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
@@ -3472,10 +3661,10 @@ module workbench {
                 contentClass: 'workbench-disclosure__fields',
                 toggleHidden: !queryFeatureEnabled(context, 'query-options')
             }, h`<div id="query-timeout-field" class="workbench-disclosure__field query-timeout-field"
-                    ?hidden=${!queryFeatureEnabled(context, 'query-timeout')}>
+                    ?hidden=${!timeoutEnabled}>
                     <label for="query-timeout">Timeout</label>
                     <div class="workbench-input-unit"><input id="query-timeout" name="query-timeout" type="number" min="0" step="1"
-                        value=${defaultTimeout} ?hidden=${!queryFeatureEnabled(context, 'query-timeout')}
+                        value=${defaultTimeout} ?hidden=${!timeoutEnabled} ?disabled=${!timeoutEnabled}
                         aria-describedby="query-timeout-unit query-timeout-help" /><span id="query-timeout-unit"
                         class="workbench-input-unit__suffix">seconds</span></div>
                     <p id="query-timeout-help" class="workbench-field__help">0 means no limit</p>
@@ -3483,7 +3672,7 @@ module workbench {
                 <div class="workbench-disclosure__field">
                     <label class="query-option" for="infer"><input id="infer" name="infer" type="checkbox" value="true"
                         ?checked=${text(defaults['default-infer']) === 'true'}
-                        ?hidden=${!queryFeatureEnabled(context, 'query-inferred-statements')} />
+                        ?hidden=${!inferEnabled} ?disabled=${!inferEnabled} />
                         <span>Include inferred statements</span></label>
                 </div>
                 <div class="workbench-disclosure__actions query-disclosure__actions"><button id="query-insert-prefixes"
@@ -3503,9 +3692,9 @@ module workbench {
                     <input type="hidden" name="query-request-id" id="query-request-id" value="" />
                     <div class="query-form">
                         <div id="query-language-row" class="query-form__row"
-                            ?hidden=${hideQueryLanguageRow || !queryFeatureEnabled(context, 'query-language')}>
+                            ?hidden=${hideQueryLanguageRow || !languageEnabled}>
                             <label class="query-form__label" for="queryLn">Query language</label>
-                            <div class="query-form__field"><select id="queryLn" name="queryLn"
+                            <div class="query-form__field"><select id="queryLn" name="queryLn" ?disabled=${!languageEnabled}
                                 @change=${() => invoke('workbench.query.onQlChange')}>
                                 ${queryFormats.length ? queryFormats.map((option: any) => h`<option value=${option.value}
                                     ?selected=${option.value === selectedQueryLanguage}>${option.label}</option>`)
@@ -3596,6 +3785,20 @@ module workbench {
             </div>`;
         }
 
+        /**
+         * Pages that show a model's error-message themselves, beside the form it belongs to (a rejected Add, Remove,
+         * Clear, Update, server change, Explore or query); on any other page such a model is only its error.
+         */
+        const errorFormViews: { [viewId: string]: boolean } = {
+            add: true, remove: true, clear: true, update: true, server: true, explore: true, query: true
+        };
+
+        /** True for a model whose only variable is error-message (an unauthorized answer, a rejected request). */
+        export function isErrorOnlyModel(model: PageModel): boolean {
+            const vars = model.vars || [];
+            return vars.length === 1 && vars[0] === 'error-message';
+        }
+
         function routeBody(model: PageModel, context: ViewContext, runtime: LitRuntime): any {
             if (isRepositoryNotFound(model)) {
                 return repositoryNotFoundPage(runtime, context);
@@ -3603,6 +3806,11 @@ module workbench {
             if (model.error) {
                 // A page the router could not load (M8.1) shows its error inside the shell.
                 return callout(runtime, 'error', model.error.message, 'Unable to load this Workbench page.');
+            }
+            if (isErrorOnlyModel(model) && !errorFormViews[model.viewId]) {
+                // Its row is the error, not data: no table, picker or form is shown for it.
+                return errorCallout(runtime, model)
+                    || callout(runtime, 'error', 'The server did not return this page.', 'Unable to load this Workbench page.');
             }
             switch (model.viewId) {
                 case 'summary': return summaryPage(runtime, model, context);
@@ -3637,8 +3845,9 @@ module workbench {
         };
 
         /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
-        export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string): string {
-            const view = repositoryScopedViews[activeView] ? activeView : 'summary';
+        export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string,
+                                               fallback?: string): string {
+            const view = repositoryScopedViews[activeView] ? activeView : fallback || 'summary';
             return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
         }
 
@@ -3666,7 +3875,8 @@ module workbench {
                 const item = document.createElement('li');
                 const link = document.createElement('a');
                 link.className = 'workbench-popover__option';
-                link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id));
+                link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id,
+                    panel.getAttribute('data-workbench-switch-fallback') || 'summary'));
                 link.setAttribute('data-repository-id', repository.id);
                 link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
                 if (repository.id === currentId) {
@@ -3704,14 +3914,21 @@ module workbench {
             }
         }
 
+        /** True when two repository lists name the same repositories with the same titles, in the same order. */
+        function sameRepositories(left: any[], right: any[]): boolean {
+            return !!left && !!right && left.length === right.length
+                && left.every((repository: any, index: number) => repository.id === right[index].id
+                    && repository.title === right[index].title);
+        }
+
         /**
-         * Fill the repository switcher. The list is fetched once per document, but the current repository and the
-         * page shown change with in-page navigation (M8.3), so every opening renders the options again.
+         * Fill the repository switcher. The current repository and the page shown change with in-page navigation
+         * (M8.3), and repositories are created and deleted in the page, so every opening renders the list known so far
+         * at once and asks the server for the current one (one request at a time), which replaces it when it differs.
          */
         function loadRepositoryOptions(panel: any, currentId: string): Promise<void> {
             if (panel.__rdf4jRepositories) {
                 renderRepositoryOptions(panel, panel.__rdf4jRepositories, currentId);
-                return Promise.resolve();
             }
             if (panel.__rdf4jRepositoriesLoading) {
                 return panel.__rdf4jRepositoriesLoading;
@@ -3721,7 +3938,7 @@ module workbench {
             if (!app || typeof app.loadModel !== 'function' || typeof window === 'undefined') {
                 return Promise.resolve();
             }
-            if (status) { status.textContent = 'Loading repositories…'; }
+            if (status && !panel.__rdf4jRepositories) { status.textContent = 'Loading repositories…'; }
             const url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
             const loading = app.loadModel(window.fetch.bind(window), url).then((model: any) => {
                 return model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
@@ -3734,12 +3951,17 @@ module workbench {
                     throw error;
                 });
             }).then((repositories: any[]) => {
+                panel.__rdf4jRepositoriesLoading = null;
                 panel.__rdf4jRepositoriesLoaded = true;
+                const shown = panel.__rdf4jRepositories;
                 panel.__rdf4jRepositories = repositories;
-                renderRepositoryOptions(panel, repositories, currentId);
+                // An unchanged list is left alone, so keyboard focus in it stays where it is.
+                if (!sameRepositories(shown, repositories)) {
+                    renderRepositoryOptions(panel, repositories, currentId);
+                }
             }, (error: any) => {
                 panel.__rdf4jRepositoriesLoading = null;
-                if (status) {
+                if (status && !panel.__rdf4jRepositories) {
                     status.textContent = 'Unable to load repositories: ' + (error && error.message ? error.message : String(error));
                 }
             });
@@ -3990,7 +4212,9 @@ module workbench {
             const hasRows = model.rowCount > 0 && model.rowStore
                 && hasQuery('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
             const hasPicker = hasQuery('[data-workbench-window-picker]');
-            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker) {
+            // Counts a browse list still waits for (Graphs' default graph) are loaded without rows too.
+            const countsPending = !!browseLists[model.viewId] && browseCounts(model).state === 'pending';
+            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker && !countsPending) {
                 return Promise.resolve(loadPageCounts(mount, model, context, runtime, targetWindow));
             }
             if (hasRows && typeof HeightIndex !== 'function') {
@@ -4039,13 +4263,27 @@ module workbench {
                 }
             };
 
+            /**
+             * Buttons this binding listens to. Lit reuses the buttons for the next page of the same view, so disposing
+             * removes the listeners and the marks that say a button is bound, and the next binding binds them again.
+             */
+            let controlDisposers: Array<() => void> = [];
+            const listenOnce = (button: any, mark: string, listener: (event: any) => void) => {
+                button.addEventListener('click', listener);
+                button[mark] = true;
+                controlDisposers.push(() => {
+                    button.removeEventListener('click', listener);
+                    delete button[mark];
+                });
+            };
+
             function bindExploreControls(): void {
                 if (model.viewId !== 'explore') { return; }
                 elements('[data-workbench-explore-action]').forEach((button: any) => {
                     if (button.__rdf4jWorkbenchExploreBound || !button.addEventListener) { return; }
                     const groupKey = button.getAttribute('data-workbench-explore-group');
                     const action = button.getAttribute('data-workbench-explore-action');
-                    button.addEventListener('click', (event: any) => {
+                    listenOnce(button, '__rdf4jWorkbenchExploreBound', (event: any) => {
                         if (event && event.preventDefault) { event.preventDefault(); }
                         const states = exploreGroupStates(model);
                         const state = states[groupKey];
@@ -4074,7 +4312,6 @@ module workbench {
                             bindExploreControls();
                         });
                     });
-                    button.__rdf4jWorkbenchExploreBound = true;
                 });
             }
 
@@ -4171,8 +4408,7 @@ module workbench {
                             renderCurrent();
                         });
                     };
-                    button.addEventListener('click', click);
-                    button.__rdf4jWorkbenchWindowBound = true;
+                    listenOnce(button, '__rdf4jWorkbenchWindowBound', click);
                 });
             };
 
@@ -4246,7 +4482,8 @@ module workbench {
                 const app: any = (workbench as any).app;
                 const counts = list ? browseCounts(model) : null;
                 const href = targetWindow.location && targetWindow.location.href;
-                if (!counts || counts.state !== 'pending' || !href || !app || typeof app.loadModel !== 'function') { return; }
+                if (!counts || counts.state !== 'pending' || !href || !app || typeof app.loadModel !== 'function'
+                        || typeof targetWindow.fetch !== 'function') { return; }
                 const url = new URL(String(href));
                 url.searchParams.set('counts', 'true');
                 app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString()).then((answer: PageModel) => {
@@ -4322,6 +4559,8 @@ module workbench {
                     disposed = true;
                     generation++;
                     groupGeneration++;
+                    controlDisposers.forEach((dispose) => dispose());
+                    controlDisposers = [];
                     disposeExecutionForms();
                     rowMenuDisposers.forEach((dispose) => dispose());
                     rowMenuDisposers = [];

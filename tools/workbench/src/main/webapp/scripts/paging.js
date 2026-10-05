@@ -13,25 +13,6 @@ var workbench;
         paging.LIMIT = 'limit';
         paging.LIM_ID = '#' + paging.LIMIT;
         var AMP = decodeURIComponent('%26');
-        function getMountedQueryPage() {
-            var queryPage = workbench.queryPage;
-            return queryPage && typeof queryPage.isMounted === 'function' && queryPage.isMounted()
-                ? queryPage : null;
-        }
-        function isStreamPagingParameter(name) {
-            return name === OFFSET || name === 'limit_query' || name.indexOf('limit_') === 0;
-        }
-        function changeStreamPagingParameter(queryPage, name, value) {
-            if (!queryPage || typeof queryPage.changePageParameter !== 'function'
-                || !isStreamPagingParameter(name)) {
-                return false;
-            }
-            var numericValue = typeof value === 'number' ? value : parseInt(String(value), 10);
-            if (!isFinite(numericValue) || numericValue < 0) {
-                return false;
-            }
-            return queryPage.changePageParameter(name, numericValue);
-        }
         function createHiddenInput(name, value) {
             var input = document.createElement('input');
             input.type = 'hidden';
@@ -126,9 +107,6 @@ var workbench;
          */
         function addGraphParam(name) {
             var value = $('#' + name).val();
-            if (name !== 'Accept' && changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
-                return;
-            }
             var url = document.location.href;
             if (url.match(/query$/)) { // looking at POST query results?
                 submitGraphParamRequest(name, value);
@@ -197,9 +175,6 @@ var workbench;
          * @param {number} value The value of the query parameter.
          */
         function addPagingParam(name, value) {
-            if (changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
-                return;
-            }
             if (document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
@@ -219,24 +194,10 @@ var workbench;
         }
         paging.addPagingParam = addPagingParam;
         /**
-         * Invoked in the tuple and explore views. Changes the limit query
-         * parameter and navigates to the new URL.
-         */
-        function addLimit(page) {
-            var suffix = '_' + page;
-            addPagingParam(paging.LIMIT + suffix, $(paging.LIM_ID + suffix).val());
-        }
-        paging.addLimit = addLimit;
-        /**
          * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         function nextOffset(page) {
-            var queryPage = getMountedQueryPage();
-            if (queryPage && typeof queryPage.nextPage === 'function') {
-                queryPage.nextPage();
-                return;
-            }
             addPagingParam(OFFSET, getOffset() + getLimit(page));
         }
         paging.nextOffset = nextOffset;
@@ -245,11 +206,6 @@ var workbench;
          * parameter and navigates to the new URL.
          */
         function previousOffset(page) {
-            var queryPage = getMountedQueryPage();
-            if (queryPage && typeof queryPage.previousPage === 'function') {
-                queryPage.previousPage();
-                return;
-            }
             addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
         }
         paging.previousOffset = previousOffset;
@@ -262,9 +218,23 @@ var workbench;
         }
         paging.getOffset = getOffset;
         /**
-         * @returns {number} The value of the limit query parameter.
+         * @returns {number} The limit applied to the shown page: its limit URL parameter, else the limit the page was
+         *          rendered with. The limit select only applies when its form is submitted, so a value chosen in it
+         *          but not applied must not change how far Previous and Next step.
          */
         function getLimit(page) {
+            var name = paging.LIMIT + '_' + page;
+            var applied = parseInt(getQueryParameter(name), 10);
+            if (!isNaN(applied)) {
+                return applied;
+            }
+            var select = document.getElementById(name);
+            var options = select && select.options;
+            for (var i = 0; options && i < options.length; i++) {
+                if (options[i].defaultSelected) {
+                    return parseInt(options[i].value, 10);
+                }
+            }
             return parseInt($(paging.LIM_ID + '_' + page).val(), 10);
         }
         paging.getLimit = getLimit;
@@ -382,10 +352,20 @@ var workbench;
                     ((exdays == null) ? "" :
                         "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
             }
-            /** Datatype tags (span.rdf-datatype) are hidden by a page class, so no cell needs re-rendering. */
-            function setShow(show) {
+            /**
+             * Datatype tags (span.rdf-datatype) are hidden by a class on the page's own outlet (root), so no cell
+             * needs re-rendering and the pages shown later are not affected (the body only without a root).
+             */
+            function apply(show, root) {
+                var target = root || document.body;
+                if (target && target.classList) {
+                    target.classList.toggle('workbench-hide-datatypes', !show);
+                }
+            }
+            DataTypeVisibility.apply = apply;
+            function setShow(show, root) {
                 setCookie('show-datatypes', show, 365);
-                document.body.classList.toggle('workbench-hide-datatypes', !show);
+                apply(show, root);
             }
             DataTypeVisibility.setShow = setShow;
         })(DataTypeVisibility || (DataTypeVisibility = {}));
@@ -396,10 +376,11 @@ var workbench;
             var showDTcb = root ? $(root).find(selector) : $(selector);
             if (hideDataTypes) {
                 showDTcb.prop('checked', false);
-                DataTypeVisibility.setShow(false);
             }
+            // Both ways: the next page may be rendered into the same outlet.
+            DataTypeVisibility.apply(!hideDataTypes, root);
             showDTcb.on('change.wbRoute', function () {
-                DataTypeVisibility.setShow(showDTcb.prop('checked'));
+                DataTypeVisibility.setShow(showDTcb.prop('checked'), root);
             });
         }
         paging.setShowDataTypesCheckboxAndSetChangeEvent = setShowDataTypesCheckboxAndSetChangeEvent;

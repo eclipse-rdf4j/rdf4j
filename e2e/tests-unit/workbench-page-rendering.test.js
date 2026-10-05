@@ -15,6 +15,7 @@ function loadWorkbench() {
     const context = vm.createContext({
         console,
         URL,
+        URLSearchParams,
         Promise,
         window,
         workbench,
@@ -639,12 +640,15 @@ test('Explore preserves its persisted datatype option and reports a result-limit
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    // The metadata the Explore servlet sends: the resolved resource and the total; the limit in use is the
+    // request's limit_explore (or its cookie), 100 without one (review fix A12).
     const model = {
         viewId: 'explore',
-        vars: ['resource'],
-        rows: [['urn:example:resource']],
+        vars: ['subject', 'predicate', 'object', 'context'],
+        rows: [[{ kind: 'iri', value: 'urn:example:resource' }, { kind: 'iri', value: 'urn:example:p' },
+            { kind: 'iri', value: 'urn:example:o' }, null]],
         rowCount: 100,
-        metadata: { resource: 'urn:example:resource', 'default-limit': '100' }
+        metadata: { 'explore-resource': '<urn:example:resource>', 'total-result-count': 150 }
     };
     const output = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
 
@@ -653,11 +657,8 @@ test('Explore preserves its persisted datatype option and reports a result-limit
         'Explore should preserve the request value consumed by the existing endpoint');
     assert.ok(output.includes('id="result-limited"'), 'a full default-limit page should identify truncated results');
 
-    const unlimited = collectTemplateText(workbench.views.pageTemplate({
-        ...model,
-        rowCount: 100,
-        metadata: { ...model.metadata, 'default-limit': '0' }
-    }, context, runtime)).join(' ');
+    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E&limit_explore=0' };
+    const unlimited = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
     assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
 });
 

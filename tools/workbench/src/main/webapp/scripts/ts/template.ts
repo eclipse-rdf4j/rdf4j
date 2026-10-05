@@ -1839,36 +1839,7 @@ module workbench {
         return href.substring(href.indexOf('?') + 1).split(
             decodeURIComponent('%26'));
     }
-
-    /**
-     * Utility method for assembling the query string for a request URL.
-     * 
-     * @param sb
-     *            string buffer, actually an array of strings to be joined later
-     * @param id
-     *            name of parameter to add, also the id of the document element
-     *            to get the value from
-     */
-    export function addParam(sb: string[], id: string) {
-        sb[sb.length] = id + '=';
-        var tag = <HTMLInputElement>document.getElementById(id);
-        sb[sb.length] = tag.type == 'checkbox' ? String(tag.checked) :
-        encodeURIComponent(tag.value);
-        sb[sb.length] = '&';
-    }
 }
-
-/**
- * Code to run when the document loads: eliminate the 'noscript' warning message.
- */
-workbench
-    .addLoad(function() {
-        var noScriptMessage = document.getElementById('noscript-message');
-        if (noScriptMessage) {
-            noScriptMessage.style.display = 'none';
-        }
-        // The server user is part of the rendered shell state (workbench.views.contextBarState).
-    });
 
 /**
  * Decorate the whole document once it has loaded: the shell, and the page of a route that is not mounted through

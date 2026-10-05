@@ -2,13 +2,14 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { evidenceScreenshots } = require('./workbench-test-helpers.js');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers.js');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 const WORKBENCH_BASE_URL = (process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench').replace(/\/+$/, '');
-const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
-	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
-const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final');
+// Screenshots go to WORKBENCH_VISUAL_REFINEMENT_DIRECTORY when it is set, otherwise to each test's output directory;
+// the coverage report is written only to that directory (an afterAll hook has no test output directory).
+const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY || '';
+const SCREENSHOT_DIRECTORY = ARTIFACT_DIRECTORY ? path.join(ARTIFACT_DIRECTORY, 'final') : '';
 const REPOSITORY_ID = `workbench-visual-${process.pid}-${Date.now()}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
@@ -84,7 +85,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	if (coverageRows.length) {
+	if (coverageRows.length && ARTIFACT_DIRECTORY) {
 		const routeCount = coverageRows.filter(row => row.kind === 'route').length;
 		const creationCount = coverageRows.filter(row => row.kind === 'creation').length;
 		const lines = [
@@ -113,7 +114,6 @@ test.afterAll(async ({ request }) => {
 
 test('captures all built-in Workbench route layouts across themes and viewport widths', async ({ page }) => {
 	test.setTimeout(15 * 60 * 1000);
-	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	page.on('pageerror', error => browserErrors.push(error.message));
 	page.on('console', message => {
 		if (message.type() === 'error') {
@@ -150,7 +150,6 @@ test('captures all built-in Workbench route layouts across themes and viewport w
 
 test('captures every repository creation form and its expanded advanced state', async ({ page }) => {
 	test.setTimeout(15 * 60 * 1000);
-	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	page.on('pageerror', error => browserErrors.push(error.message));
 	page.on('console', message => {
 		if (message.type() === 'error') {
@@ -233,8 +232,7 @@ async function captureCurrentPage(page, route, pathSuffix, theme, width, state) 
 	let screenshot = null;
 	if (evidenceScreenshots()) {
 		const fileName = `${safeName(route)}__${safeName(state)}__${theme}__${width}.png`;
-		screenshot = path.join(SCREENSHOT_DIRECTORY, 'routes', fileName);
-		fs.mkdirSync(path.dirname(screenshot), { recursive: true });
+		screenshot = evidencePath(SCREENSHOT_DIRECTORY, 'routes', fileName);
 		await page.screenshot({ path: screenshot, fullPage: true, animations: 'disabled' });
 	}
 	if (metrics.actualTheme !== theme) {

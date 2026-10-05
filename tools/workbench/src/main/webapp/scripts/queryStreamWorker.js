@@ -139,6 +139,7 @@ function queryRowStoreAppendBlocks(transaction, store, incoming) {
         }
         persist();
         store.count = logicalIndex;
+        store.touched = Date.now();
         transaction.objectStore('stores').put(store);
     }
     if (store.tailRows > 0 && store.tailRows < queryRowStoreBlockRows
@@ -171,7 +172,16 @@ function queryRowStoreDatabase() {
         return Promise.reject(new Error('IndexedDB is unavailable for Workbench query results.'));
     }
     queryRowStoreDatabasePromise = new Promise(function (resolve, reject) {
-        var request = queryRowStoreScope.indexedDB.open('rdf4j-workbench-query-results', 1);
+        var request;
+        try {
+            request = queryRowStoreScope.indexedDB.open('rdf4j-workbench-query-results', 1);
+        }
+        catch (error) {
+            // Browsers refuse to open IndexedDB synchronously where it is turned off (e.g. SecurityError).
+            queryRowStoreDatabasePromise = null;
+            reject(error);
+            return;
+        }
         request.onupgradeneeded = function () {
             var database = request.result;
             if (!database.objectStoreNames.contains('stores')) {
@@ -200,20 +210,33 @@ function queryRowStoreDatabase() {
     });
     return queryRowStoreDatabasePromise;
 }
+/** The error's message, prefixed by its name where the name says more than a generic 'Error'. */
 function queryRowStoreError(error) {
-    return error && (error.name || error.message) ? String(error.name || error.message) : String(error);
+    if (!error || !(error.name || error.message)) {
+        return String(error);
+    }
+    var name = error.name ? String(error.name) : '';
+    var message = error.message ? String(error.message) : '';
+    if (!message) {
+        return name;
+    }
+    return name && name !== 'Error' && message.indexOf(name) < 0 ? name + ': ' + message : message;
+}
+/** Marks a failure to open IndexedDB at all, as opposed to a failing operation on an open database. */
+function queryRowStoreUnavailable(error) {
+    return { queryRowStoreUnavailable: true, cause: error };
 }
 function queryRowStoreRun(message) {
     if (!message || !isFinite(message.requestId) || Math.floor(message.requestId) !== message.requestId) {
         return Promise.reject(new Error('Invalid query row-store request.'));
     }
-    return queryRowStoreDatabase().then(function (database) {
+    return queryRowStoreDatabase().then(null, function (error) { return Promise.reject(queryRowStoreUnavailable(error)); }).then(function (database) {
         if (message.op === 'create') {
             var storeId = 'rows-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2);
             return new Promise(function (resolve, reject) {
                 var transaction = database.transaction(['stores'], 'readwrite');
                 transaction.objectStore('stores').add({ id: storeId, count: 0, format: queryRowStoreBlockFormat,
-                    tailStart: 0, tailRows: 0, tailVolume: 0 });
+                    tailStart: 0, tailRows: 0, tailVolume: 0, touched: Date.now() });
                 transaction.oncomplete = function () {
                     resolve({ requestId: message.requestId, ok: true, storeId: storeId, count: 0 });
                 };
@@ -260,6 +283,7 @@ function queryRowStoreRun(message) {
                         rows.add({ storeId: message.storeId, index: store.count + index, values: message.rows[index] });
                     }
                     store.count = nextCount;
+                    store.touched = Date.now();
                     stores.put(store);
                 };
                 transaction.oncomplete = function () {
@@ -295,6 +319,7 @@ function queryRowStoreRun(message) {
                     function finish() {
                         rows.delete(queryRowStoreScope.IDBKeyRange.bound([message.storeId, message.count], [message.storeId, previousCount - 1]));
                         store.count = message.count;
+                        store.touched = Date.now();
                         stores.put(store);
                     }
                     if (store.format !== queryRowStoreBlockFormat) {
@@ -465,6 +490,70 @@ function queryRowStoreRun(message) {
                 };
             });
         }
+        if (message.op === 'touch') {
+            // The page that owns this store is alive: keep the store out of the sweep below.
+            return new Promise(function (resolve, reject) {
+                var transaction = database.transaction(['stores'], 'readwrite');
+                var stores = transaction.objectStore('stores');
+                var request = stores.get(message.storeId);
+                request.onsuccess = function () {
+                    var store = request.result;
+                    if (store) {
+                        store.touched = Date.now();
+                        stores.put(store);
+                    }
+                };
+                transaction.oncomplete = function () {
+                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId });
+                };
+                transaction.onerror = transaction.onabort = function () {
+                    reject(transaction.error || request.error || new Error('Unable to touch query result rows.'));
+                };
+            });
+        }
+        if (message.op === 'sweep') {
+            // Stores whose page ended without a destructive pagehide (a crash, a discarded tab, an evicted
+            // back/forward cache entry) are never disposed by it: delete the ones nobody touched for maxAge.
+            var maxAge = Number(message.maxAge);
+            if (!isFinite(maxAge) || maxAge <= 0) {
+                return Promise.reject(new Error('A positive sweep age is required.'));
+            }
+            var keep = Array.isArray(message.keep) ? message.keep : [];
+            var now = Date.now();
+            return new Promise(function (resolve, reject) {
+                var transaction = database.transaction(['stores', 'rows'], 'readwrite');
+                var stores = transaction.objectStore('stores');
+                var rows = transaction.objectStore('rows');
+                var swept = 0;
+                var request = stores.openCursor();
+                request.onsuccess = function () {
+                    var cursor = request.result;
+                    if (!cursor) {
+                        return;
+                    }
+                    var store = cursor.value;
+                    if (store && store.id !== message.storeId && keep.indexOf(store.id) < 0) {
+                        if (!Number.isSafeInteger(store.touched)) {
+                            // Written before stores kept their age: it starts aging now.
+                            store.touched = now;
+                            cursor.update(store);
+                        }
+                        else if (now - store.touched > maxAge) {
+                            stores.delete(store.id);
+                            rows.delete(queryRowStoreScope.IDBKeyRange.bound([store.id, 0], [store.id, 9007199254740991]));
+                            swept++;
+                        }
+                    }
+                    cursor.continue();
+                };
+                transaction.oncomplete = function () {
+                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, count: swept });
+                };
+                transaction.onerror = transaction.onabort = function () {
+                    reject(transaction.error || request.error || new Error('Unable to sweep query result storage.'));
+                };
+            });
+        }
         return Promise.reject(new Error('Unsupported query row-store operation.'));
     });
 }
@@ -473,11 +562,15 @@ if (queryRowStoreScope && typeof queryRowStoreScope.addEventListener === 'functi
         var message = event.data;
         queryRowStoreQueue = queryRowStoreQueue.then(function () { return queryRowStoreRun(message); })
             .then(function (response) { return queryRowStoreScope.postMessage(response); }, function (error) {
+            var unavailable = !!(error && error.queryRowStoreUnavailable);
             var response = {
                 requestId: message && message.requestId,
                 ok: false,
-                error: queryRowStoreError(error)
+                error: queryRowStoreError(unavailable ? error.cause : error)
             };
+            if (unavailable) {
+                response.unavailable = true;
+            }
             queryRowStoreScope.postMessage(response);
         });
     });

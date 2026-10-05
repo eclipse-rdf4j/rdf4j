@@ -53,13 +53,6 @@ module workbench {
             }
         }
 
-        /** Legacy page callers; route actions additionally retain their actual form and mount. */
-        export function deleteQuery(savedBy: string, name: string, urn: string): void {
-            const form = <HTMLFormElement>document.forms.namedItem(urn);
-            const owner = workbench.captureFormOwner(form);
-            confirmDeletion(savedBy, name, () => owner.isCurrent() ? form : null);
-        }
-
         /** IDs are opaque saved-query URNs, so never interpolate them into CSS selectors. */
         function element(page: Page, id: string): HTMLElement {
             const candidate = page.outlet.ownerDocument.getElementById(id);
@@ -109,18 +102,6 @@ module workbench {
                 page.expanded.delete(urn);
                 closeEditor(page, urn);
                 textarea.style.display = 'none';
-            }
-        }
-
-        /** Show or hide details for legacy callers as well as delegated native button activation. */
-        export function toggle(urn: string): void {
-            const button = document.getElementById(urn + '-toggle');
-            for (let parent: any = button; parent; parent = parent.parentNode) {
-                const page = pages.get(parent);
-                if (page && !page.disposed) {
-                    showDetails(page, urn, !page.expanded.has(urn));
-                    return;
-                }
             }
         }
 

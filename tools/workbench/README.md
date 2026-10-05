@@ -196,11 +196,17 @@ This runs `node --test tests-unit/*.test.js`. Most tests load the **committed** 
 browser harness, so compile the TypeScript (step 2) first or they test stale code. A few tests compile individual
 `.ts` files to a temporary directory with the `tsc` from `e2e/node_modules/.bin`, which `npm run` puts on `PATH`.
 
-Coverage with 100 % line, branch and function thresholds on the main Workbench scripts (Node 22+):
+Coverage of every script compiled from `scripts/ts` (Node 22+):
 
 ```bash
 cd e2e && npm run test:unit:coverage && cd ..
 ```
+
+It runs the same unit tests and prints a per-script coverage table. It fails when the total falls below floors set a
+little under what the suite reaches today (55 % lines, 70 % branches, 60 % functions; override with
+`WORKBENCH_COVERAGE_LINES`, `WORKBENCH_COVERAGE_BRANCHES` and `WORKBENCH_COVERAGE_FUNCTIONS`). It is not a 100 % gate:
+only scripts that a test loads under their file path are counted, so scripts that tests evaluate under a relative name
+(`workbenchViews.js`, `workbenchApp.js`, `queryStream.js`) show less coverage than the tests give them.
 
 ### Playwright end-to-end tests
 

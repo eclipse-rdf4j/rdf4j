@@ -56,26 +56,6 @@ test('export page prefers its own preview-limit query parameter', () => {
 	assert.equal(limitExport.value, '50');
 });
 
-test('tuple page prefers query params and updates result headings', () => {
-	const harness = createListBrowserHarness({
-		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?limit_query=20&offset=5&know_total=12'
-	});
-	const limitQuery = harness.registerElement('input', { id: 'limit_query', value: '0' });
-	harness.document.getElementById('title_heading').innerHTML = 'Results (';
-	harness.document.cookie = 'total_result_count=99';
-	harness.document.body.appendChild(limitQuery);
-
-	harness.loadPagingScripts(['tuple.js']);
-	harness.runLoadHandlers();
-
-	assert.equal(limitQuery.value, '20');
-    assert.equal(harness.document.getElementById('nextX').value, 'Next 20');
-    assert.equal(harness.document.getElementById('previousX').value, 'Previous 20');
-    assert.equal(harness.document.getElementById('previousX').disabled, false);
-    assert.equal(harness.document.getElementById('nextX').disabled, true);
-    assert.equal(harness.document.getElementById('title_heading').innerHTML, 'Results (6-12 of 12)');
-});
-
 // Repeated list items are left out by the view since M12.1 (the router renders Explore pages again in place).
 test('explore page leaves its lists to the view, restores limits, and renders ranges', () => {
     const harness = createExploreBrowserHarness({
@@ -221,8 +201,6 @@ test('paging helpers cover url, query, and cookie branches', () => {
     assert.equal(harness.document.lastSubmittedForm.formControls.find((control) => control.name === 'offset').value, '7');
     paging.previousOffset('query');
     assert.equal(harness.document.lastSubmittedForm.formControls.find((control) => control.name === 'offset').value, '0');
-    paging.addLimit('query');
-    assert.equal(harness.document.lastSubmittedForm.formControls.find((control) => control.name === 'limit_query').value, '7');
 
     // Datatype tags are hidden with a page class; cells are not rewritten (plan task M5.1).
     showDataType.checked = false;
@@ -236,8 +214,9 @@ test('paging helpers cover url, query, and cookie branches', () => {
     assert.match(harness.document.cookie, /show-datatypes=true/);
 });
 
-test('mounted query streams own server paging while explicit downloads remain native', () => {
-    const changes = [];
+// Review fix B1: the Query page pages with Load more, so a mounted (or parked) Query page never takes over
+// the shared paging buttons; paging requests and downloads stay ordinary page requests.
+test('a mounted query page does not take over paging while explicit downloads remain native', () => {
     const calls = [];
     const harness = createListBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
@@ -246,7 +225,7 @@ test('mounted query streams own server paging while explicit downloads remain na
                 isMounted() { return true; },
                 nextPage() { calls.push('next'); return true; },
                 previousPage() { calls.push('previous'); return true; },
-                changePageParameter(name, value) { changes.push([name, value]); return true; }
+                changePageParameter(name, value) { calls.push([name, value]); return true; }
             }
         }
     });
@@ -258,58 +237,19 @@ test('mounted query streams own server paging while explicit downloads remain na
 
     const paging = harness.context.workbench.paging;
     paging.nextOffset('query');
+    assert.equal(harness.document.lastSubmittedForm.serializeArray()
+        .find((entry) => entry.name === 'offset').value, '25');
     paging.previousOffset('query');
+    assert.equal(harness.document.lastSubmittedForm.serializeArray()
+        .find((entry) => entry.name === 'offset').value, '0');
     paging.addPagingParam('limit_query', 50);
+    assert.equal(harness.document.lastSubmittedForm.serializeArray()
+        .find((entry) => entry.name === 'limit_query').value, '50');
     paging.addGraphParam('Accept');
 
-    assert.deepEqual(calls, ['next', 'previous']);
-    assert.deepEqual(changes, [['limit_query', 50]]);
+    assert.deepEqual(calls, [], 'the query page is never asked to page');
     assert.equal(harness.document.lastSubmittedForm.action, 'query',
         'raw Accept downloads remain explicit browser POSTs');
-});
-
-// Plan task M9.1: with the result iframe gone, paging on the Query page goes to the mounted streamed renderer.
-test('paging hands offsets and limits to a mounted streamed query page and keeps other parameters', () => {
-    const changes = [];
-    const pages = [];
-    const queryPage = {
-        isMounted: () => true,
-        changePageParameter(name, value) {
-            changes.push([name, value]);
-            return true;
-        },
-        nextPage: () => pages.push('next'),
-        previousPage: () => pages.push('previous')
-    };
-    const harness = createListBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query',
-        workbench: { queryPage }
-    });
-    const limit = harness.registerElement('select', { id: 'limit_query', value: '50' });
-    harness.document.body.appendChild(limit);
-    harness.loadPagingScripts([]);
-    const paging = harness.context.workbench.paging;
-
-    paging.addPagingParam('offset', 25);
-    paging.addGraphParam('limit_query');
-    paging.nextOffset('query');
-    paging.previousOffset('query');
-    assert.deepEqual(changes, [['offset', 25], ['limit_query', 50]]);
-    assert.deepEqual(pages, ['next', 'previous']);
-
-    for (const [name, value] of [['offset', -1], ['offset', 'many'], ['know_total', 3]]) {
-        paging.addPagingParam(name, value);
-        assert.equal(harness.document.lastSubmittedForm.serializeArray()
-            .some((entry) => entry.name === name), true, name + ' is posted as a page request');
-    }
-    assert.equal(changes.length, 2, 'invalid values and other parameters are not handed to the renderer');
-
-    delete queryPage.changePageParameter;
-    paging.addPagingParam('offset', 50);
-    assert.equal(changes.length, 2);
-    queryPage.isMounted = () => false;
-    paging.nextOffset('query');
-    assert.deepEqual(pages, ['next', 'previous'], 'an unmounted renderer pages through the server');
 });
 
 test('the datatype toggle starts hidden when the cookie says so and binds only inside its page', () => {
@@ -326,11 +266,13 @@ test('the datatype toggle starts hidden when the cookie says so and binds only i
     harness.context.workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent(page);
 
     assert.equal(inside.checked, false);
-    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), true);
+    // Review fix B3: the class marks the page (its outlet), not the body every later page shares.
+    assert.equal(page.classList.contains('workbench-hide-datatypes'), true);
+    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
     assert.equal(inside.listenerCount('change'), 1);
     inside.checked = true;
     inside.trigger('change');
-    assert.equal(harness.document.body.classList.contains('workbench-hide-datatypes'), false);
+    assert.equal(page.classList.contains('workbench-hide-datatypes'), false);
 });
 
 // Plan task M10.1: paging that leaves the Query page goes through the router when it runs.

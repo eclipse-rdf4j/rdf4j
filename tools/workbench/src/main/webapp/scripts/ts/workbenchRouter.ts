@@ -32,6 +32,17 @@ module workbench {
             leaveUpload?: boolean;
             /** A form POST that stays on its page when the server accepts it with a redirect (M14.1). */
             inPlace?: boolean;
+            /** Told why a form POST sent in place was not accepted, before it resolves 'failed'. */
+            failed?: (failure: SendFailure) => void;
+        }
+
+        /**
+         * Why the server did not accept a form POST: the HTTP status of its answer (0 when nothing came back) and
+         * what it said, as text ('' when nothing came back).
+         */
+        export interface SendFailure {
+            status: number;
+            message: string;
         }
 
         /** What bootstrap hands over once the first route is mounted. */
@@ -127,22 +138,64 @@ module workbench {
             element.setAttribute('data-workbench-route-ready', ready ? 'true' : 'false');
         }
 
+        /**
+         * The outlet setBusy marked busy. It is tracked because the outlet that was busy can stop being the shown one:
+         * a kept page's outlet is parked (and later shown again) and the shown page gets another outlet.
+         */
+        let busyElement: any = null;
+
+        function clearBusyMark(element: any): void {
+            element.removeAttribute('aria-busy');
+            element.removeAttribute('data-workbench-route-loading');
+        }
+
         /** aria-busy while a navigation runs; a 2px progress bar once it takes longer than 150 ms. */
         function setBusy(busy: boolean): void {
-            const element = outlet();
             clearTimeout(progressTimer);
+            progressTimer = null;
+            if (busyElement) {
+                clearBusyMark(busyElement);
+                busyElement = null;
+            }
+            const element = outlet();
             if (busy) {
+                busyElement = element;
                 element.setAttribute('aria-busy', 'true');
-                progressTimer = setTimeout(() => element.setAttribute('data-workbench-route-loading', 'true'),
-                    progressDelayMillis);
+                progressTimer = setTimeout(() => {
+                    if (busyElement) { busyElement.setAttribute('data-workbench-route-loading', 'true'); }
+                }, progressDelayMillis);
             } else {
-                element.removeAttribute('aria-busy');
-                element.removeAttribute('data-workbench-route-loading');
+                clearBusyMark(element);
+            }
+        }
+
+        /** A busy outlet that leaves the shell hands its busy state to the outlet shown instead. */
+        function moveBusy(from: any, to: any): void {
+            if (!busyElement || busyElement !== from) {
+                return;
+            }
+            const loading = from.getAttribute('data-workbench-route-loading') === 'true';
+            clearBusyMark(from);
+            busyElement = to;
+            to.setAttribute('aria-busy', 'true');
+            if (loading) {
+                to.setAttribute('data-workbench-route-loading', 'true');
             }
         }
 
         function newKey(): string {
             return String(Date.now()) + '-' + (++keyCounter);
+        }
+
+        /** Scroll back to y, again while the page still grows (workbench.app.restoreScroll), or once without it. */
+        function restoreScroll(y: number): void {
+            const windowObject: any = window;
+            const loader = app();
+            if (loader && typeof loader.restoreScroll === 'function') {
+                loader.restoreScroll(windowObject, y);
+            } else {
+                windowObject.scrollTo(0, y);
+            }
         }
 
         /** Run callback after two animation frames, when a freshly rendered page has its final height. */
@@ -240,7 +293,9 @@ module workbench {
                 return;
             }
             event.preventDefault();
-            navigate(url.href, { history: 'push' });
+            // A link to the page already shown loads it again in the same history entry, as the browser does.
+            const shown = (window as any).location.href;
+            navigate(url.href, { history: url.href === shown ? 'replace' : 'push' });
         }
 
         /** The router-ready link an event happened in, if any. */
@@ -268,7 +323,8 @@ module workbench {
             }
             clearTimeout(prefetchTimer);
             prefetchTimer = setTimeout(() => {
-                app().loadScripts(routes.get(viewIdOf(url)).baseScripts());
+                // A prefetch is only a head start: a script that fails here is loaded (or reported) when followed.
+                app().loadScripts(routes.get(viewIdOf(url)).baseScripts()).then(null, (): void => undefined);
             }, prefetchDelayMillis);
         }
 
@@ -309,6 +365,25 @@ module workbench {
             navigate(url.href, { history: 'none' });
         }
 
+        /**
+         * The Workbench reads a multipart form's fields only up to its content part (WorkbenchRequest); fields after
+         * it would be decoded by the container (ISO-8859-1 on a stock Tomcat). The content part is sent last.
+         */
+        function contentLast(data: any): any {
+            if (typeof FormData !== 'function' || !data || typeof data.forEach !== 'function') {
+                return data;
+            }
+            const fields: any[][] = [];
+            const contents: any[][] = [];
+            data.forEach((value: any, name: string) => (name === 'content' ? contents : fields).push([name, value]));
+            if (!contents.length) {
+                return data;
+            }
+            const ordered: any = new FormData();
+            fields.concat(contents).forEach((entry: any[]) => ordered.append(entry[0], entry[1]));
+            return ordered;
+        }
+
         /** Build the request a form submission makes (FormData includes the button that submitted it). */
         function formRequest(form: any, submitter: any): { method: string; action: URL; data: any; multipart: boolean } {
             const windowObject: any = window;
@@ -319,11 +394,13 @@ module workbench {
             };
             // History moves before its next page loads; the form still belongs to the mounted route.
             const shownUrl = currentRoute ? currentRoute.url : windowObject.location.href;
+            const multipart = String(attribute('enctype') || '').toLowerCase() === 'multipart/form-data';
+            const data = new FormData(form, submitter);
             return {
                 method: String(attribute('method') || 'get').toLowerCase(),
                 action: new URL(attribute('action') || shownUrl, shownUrl),
-                data: new FormData(form, submitter),
-                multipart: String(attribute('enctype') || '').toLowerCase() === 'multipart/form-data'
+                data: multipart ? contentLast(data) : data,
+                multipart
             };
         }
 
@@ -373,12 +450,13 @@ module workbench {
         }
 
         /**
-         * Send a POST form and stay on its page (M14.1): 'done' when the server accepted it (its redirect is not
-         * followed), 'committed' when its answer is a page (an error) that is now shown, 'abandoned' when another
-         * page was opened meanwhile and 'failed' when the request failed. Without the router, or for a form the
-         * router cannot send, the browser posts it and the outcome is 'fallback'.
+         * Send a POST form and stay on its page (M14.1): 'done' when the write servlet acknowledged it
+         * (X-Workbench-Write: done), 'committed' when its answer is a page (an error) that is now shown, 'abandoned'
+         * when another page was opened meanwhile and 'failed' when the request failed, the server refused it or its
+         * outcome is unknown (failed says why). Without the router, or for a form the router cannot send, the browser
+         * posts it and the outcome is 'fallback'.
          */
-        export function send(form: any, submitter?: any): Promise<Outcome> {
+        export function send(form: any, submitter?: any, failed?: (failure: SendFailure) => void): Promise<Outcome> {
             // In-place writes are owned by the mounted outlet, including after an asynchronous confirmation.
             if (running && !outlet().contains(form)) { return Promise.resolve<Outcome>('abandoned'); }
             const request = running ? formRequest(form, submitter) : null;
@@ -386,8 +464,117 @@ module workbench {
                 form.submit();
                 return Promise.resolve<Outcome>('fallback');
             }
-            return navigate(request.action.href, { history: 'push', inPlace: true,
+            return navigate(request.action.href, { history: 'push', inPlace: true, failed,
                 body: request.multipart ? request.data : new URLSearchParams(request.data) });
+        }
+
+        /** The header and end-record metadata with which a write servlet acknowledges a completed write (J43). */
+        const writeResultHeader = 'X-Workbench-Write';
+        const writeResultMetadata = 'workbench-write';
+        const writeLocationMetadata = 'workbench-write-location';
+
+        /** A redirect does not say whether the write happened: only the write servlet's acknowledgement does. */
+        const unconfirmedRedirect = 'The server answered with a redirect (for example to a sign-in page) instead of '
+            + 'confirming this; check the repository before trying again.';
+
+        /** True when the write servlet says the write is done, in its header or in the end record of its answer. */
+        function writeAcknowledged(response: any, model: any): boolean {
+            const headers = response && response.headers;
+            const header = headers && typeof headers.get === 'function' ? headers.get(writeResultHeader) : null;
+            const metadata = model && model.metadata;
+            return String(header || '').trim().toLowerCase() === 'done'
+                || !!metadata && String(metadata[writeResultMetadata] || '') === 'done';
+        }
+
+        /** The longest server text a failure quotes. */
+        const failureTextLimit = 300;
+
+        /** An error page's text: markup, scripts and styles removed, whitespace collapsed, at most 300 characters. */
+        function answerText(body: string, contentType: string): string {
+            let value = String(body || '');
+            // Markup is removed from an HTML or XML answer only: a text report may quote <IRI>s.
+            if (/html|xml/i.test(contentType) || !contentType && /^\s*<(!doctype|html)/i.test(value)) {
+                value = value.replace(/<(script|style|title|head)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]*>/g, ' ')
+                    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+                    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+            }
+            value = value.replace(/\s+/g, ' ').trim();
+            return value.length > failureTextLimit ? value.substring(0, failureTextLimit - 1) + '…' : value;
+        }
+
+        /** "The server answered 409 Conflict: <text>", or the text alone when the answer had no error status. */
+        function failureMessage(status: number, statusText: string, detail: string): string {
+            if (status >= 400 || !detail) {
+                return 'The server answered ' + status + (statusText ? ' ' + statusText : '') + (detail ? ': ' + detail : '.');
+            }
+            return detail;
+        }
+
+        /** An error that carries the failure to report, so the navigation can tell it from a broken page. */
+        function rejection(failure: SendFailure): Error {
+            const error: any = new Error(failure.message);
+            error.sendFailure = failure;
+            return error;
+        }
+
+        /** A non page-protocol error answer (a container error page, a text/plain report) as a rejection. */
+        function rejectAnswer(response: any): Promise<never> {
+            const headers = response.headers;
+            const contentType = headers && typeof headers.get === 'function' ? String(headers.get('content-type') || '') : '';
+            const body: Promise<string> = typeof response.text === 'function'
+                ? Promise.resolve().then(() => response.text()).then(null, () => '') : Promise.resolve('');
+            return body.then((text: string) => {
+                const status = typeof response.status === 'number' ? response.status : 0;
+                throw rejection({ status, message: failureMessage(status, String(response.statusText || ''),
+                    answerText(text, contentType)) });
+            });
+        }
+
+        /** True for an answer in the page protocol, which describes a page even with an error status. */
+        function isPageAnswer(response: any): boolean {
+            const headers = response && response.headers;
+            const type = headers && typeof headers.get === 'function' ? String(headers.get('content-type') || '') : '';
+            return type.toLowerCase().indexOf(String(app().ACCEPT).toLowerCase()) === 0;
+        }
+
+        /**
+         * A form's answer that only says it failed: an error record (model.error) or a model whose only variable is
+         * error-message (an unauthorized answer, a rejected Create or Delete). Its message, or null for a page.
+         */
+        function refusalOf(model: any, status: number): Promise<SendFailure> {
+            if (model.error) {
+                // For example a SHACL validation report (409, code shacl-validation): quoted like any other answer text.
+                const errorStatus = model.error.status || status;
+                return Promise.resolve({ status: errorStatus,
+                    message: failureMessage(errorStatus, '', answerText(String(model.error.message || ''), 'text/plain')) });
+            }
+            const vars: string[] = model.vars || [];
+            if (vars.length !== 1 || vars[0] !== 'error-message' || !model.rowStore
+                    || typeof model.rowStore.read !== 'function') {
+                return Promise.resolve(null);
+            }
+            return model.rowStore.read(0, 1).then((rows: any[][]) => {
+                const term = rows && rows[0] ? rows[0][0] : null;
+                const detail = term && typeof term === 'object' ? String(term.value || '') : String(term || '');
+                return { status, message: failureMessage(status, '', answerText(detail, 'text/plain')) };
+            });
+        }
+
+        /**
+         * Show why a form POST sent through the router was not accepted on the page that sent it, which stays as it
+         * is with its input: its model carries the failure and its outlet renders again.
+         */
+        function showSendFailure(failure: SendFailure): void {
+            const route = currentRoute;
+            if (!route || !route.model) {
+                return;
+            }
+            route.model.sendFailure = failure;
+            route.context = route.context || app().viewContext(session.mount, route.model, route.url, session.runtime);
+            const renderer = views();
+            if (renderer && typeof renderer.renderOutlet === 'function') {
+                renderer.renderOutlet(outlet(), route.model, route.context, session.runtime);
+            }
         }
 
         function onPageHide(event: any): void {
@@ -429,6 +616,8 @@ module workbench {
             const route = currentRoute;
             route.context = route.context || app().viewContext(session.mount, route.model, route.url, session.runtime);
             kept = { route, outlet: views().detachOutlet(session.mount), scrollY: (window as any).scrollY };
+            // The parked page is not what is loading: the outlet shown instead stays busy until the next page is ready.
+            moveBusy(kept.outlet, outlet());
             return kept.outlet;
         }
 
@@ -445,14 +634,18 @@ module workbench {
             if (options.history !== 'none') {
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
+            // The navigation given up for this page (if any) left its outlet busy.
+            setBusy(false);
             currentRoute.instance.dispose('navigate');
             const restored = kept;
             kept = null;
             keptContainer().removeChild(restored.outlet);
             restored.outlet.setAttribute('id', 'workbench-outlet');
+            clearBusyMark(restored.outlet);
             views().attachOutlet(session.mount, restored.outlet);
             const entry = enterHistory(url, options);
             app().configureNamespaces(restored.route.model);
+            refreshKeptNamespaces(restored.route, generation);
             views().renderShell(session.mount, { viewId: restored.route.viewId, context: restored.route.context },
                 session.runtime);
             rebindContextBar(restored.route.context);
@@ -460,9 +653,29 @@ module workbench {
             markRoute(currentRoute.viewId, true);
             restored.route.instance.resume();
             const scrollTo = options.history === 'none' ? entry.restoreTo : restored.scrollY;
-            afterTwoFrames(() => windowObject.scrollTo(0, scrollTo));
+            afterTwoFrames(() => restoreScroll(scrollTo));
             announce();
             return 'committed';
+        }
+
+        /**
+         * The kept page's namespaces are those of when it was loaded; namespaces added or changed meanwhile (on the
+         * Namespaces page, or elsewhere) are asked for again and replace them while the page is still shown.
+         */
+        function refreshKeptNamespaces(route: ShownRoute, mine: number): void {
+            const loader = app();
+            if (!route.model || typeof loader.linkedModels !== 'function') {
+                return;
+            }
+            Promise.resolve().then(() => loader.linkedModels(session.fetcher, route.url, route.model,
+                ['_internal/namespaces'])).then(() => {
+                if (mine === generation && currentRoute && currentRoute.model === route.model) {
+                    loader.configureNamespaces(route.model);
+                }
+            }, (error: any) => {
+                // The namespaces known so far stay in use.
+                console.error('The Workbench could not refresh the namespaces of ' + route.url + '.', error);
+            });
         }
 
         function rebindContextBar(context: any): void {
@@ -572,6 +785,9 @@ module workbench {
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
             let answer: Promise<any>;
+            /** The HTTP status of a form POST's answer, and the answer itself. */
+            let answerStatus = 0;
+            let answerResponse: any = null;
             if (options.body) {
                 // A form POST: fetch follows the servlet's redirect with the same Accept header, so the answer is
                 // the page model of the page to show (M10.1).
@@ -581,11 +797,20 @@ module workbench {
                 const post: any = { method: 'POST', body: options.body, headers: { Accept: app().ACCEPT },
                     credentials: 'same-origin' };
                 if (options.inPlace) {
-                    // A redirect accepts a form sent in place; the page it names is not shown (M14.1).
+                    // The write servlet acknowledges a write sent in place with its own answer (J43); a redirect
+                    // comes from something else (a gateway, a sign-in proxy), so it is not followed and not success.
                     post.redirect = 'manual';
                 }
-                answer = fetcher(request, post).then((response: any) => response.type === 'opaqueredirect' ? null
-                    : app().loadModelFromResponse(response, signal, request));
+                answer = fetcher(request, post).then((response: any) => {
+                    if (response.type === 'opaqueredirect') {
+                        throw rejection({ status: 0, message: unconfirmedRedirect });
+                    }
+                    answerResponse = response;
+                    answerStatus = typeof response.status === 'number' ? response.status : 0;
+                    // An error answer that is not a page (a container error page, a SHACL report) still says why.
+                    return response.ok === false && !isPageAnswer(response) ? rejectAnswer(response)
+                        : app().loadModelFromResponse(response, signal, request);
+                });
             } else {
                 answer = app().loadModel(fetcher, request, signal);
             }
@@ -623,12 +848,27 @@ module workbench {
                     if (stale()) {
                         throw abandoned();
                     }
-                    if (!model) {
-                        // The server accepted a form sent in place: its page stays as it is (M14.1).
-                        endUpload(mine);
-                        return 'done';
+                    if (!options.body) {
+                        return show();
                     }
-                    return show();
+                    if (writeAcknowledged(answerResponse, model)) {
+                        // The write is done; its acknowledgement is not a page to show.
+                        const location = String(model.metadata && model.metadata[writeLocationMetadata] || 'summary');
+                        const next = new URL(location, model.finalUrl || request).href;
+                        model.rowStore.dispose();
+                        model = null;
+                        endUpload(mine);
+                        // A form sent in place stays on its page (M14.1); a form sent as a navigation opens the page
+                        // the write leads to, as the redirect other clients get does.
+                        return options.inPlace ? 'done' : navigate(next, { history: 'push' });
+                    }
+                    // A form's answer that only says it failed leaves the form as it is and is reported there.
+                    return refusalOf(model, answerStatus).then((failure: SendFailure) => {
+                        if (failure) {
+                            throw rejection(failure);
+                        }
+                        return show();
+                    });
                 })
                 .then(null, (error: any): Outcome => {
                     endUpload(mine);
@@ -643,9 +883,20 @@ module workbench {
                     if (error && error.name === 'AbortError') {
                         return 'abandoned';
                     }
-                    if (!model && options.inPlace) {
-                        // Nothing came back to show: the form's page stays and says that its request failed.
+                    const redirected = !!model && !!model.finalUrl && model.finalUrl !== request;
+                    if (options.body && !(redirected && !(error && error.sendFailure))) {
+                        // A form's answer cannot be posted again, and loading the form with GET would lose its input:
+                        // the form's page stays and says why the server did not take it.
                         console.error('The Workbench could not send ' + target.href + '.', error);
+                        const failure: SendFailure = error && error.sendFailure
+                            || { status: 0, message: '' };
+                        if (options.inPlace) {
+                            if (options.failed) { options.failed(failure); }
+                        } else {
+                            showSendFailure(failure.message ? failure : { status: failure.status,
+                                message: 'The request could not be completed (' + (error && error.message || 'no answer')
+                                    + '). Check the repository before trying again.' });
+                        }
                         return 'failed';
                     }
                     // Showing a page in place should not fail, so say why the browser loads it instead (M12.1).
@@ -713,7 +964,7 @@ module workbench {
                     setBusy(false);
                     markRoute(viewId, true);
                     if (options.history === 'none') {
-                        afterTwoFrames(() => windowObject.scrollTo(0, restoreTo));
+                        afterTwoFrames(() => restoreScroll(restoreTo));
                     } else {
                         const target = url.hash
                             ? windowObject.document.getElementById(decodeURIComponent(url.hash.substring(1))) : null;
@@ -723,6 +974,14 @@ module workbench {
                     }
                     announce();
                 });
+            }).then(null, (error: any) => {
+                if (mine !== generation) {
+                    return;
+                }
+                // A page whose scripts fail to open it is loaded by the browser instead (M12.1), never left busy.
+                setBusy(false);
+                console.error('The Workbench could not open ' + url.href + ' in place; loading it instead.', error);
+                windowObject.location.assign(url.href);
             });
         }
     }

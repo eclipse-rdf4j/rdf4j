@@ -30,6 +30,8 @@ var workbench;
         var RESULT_LOADING_ID = 'query-results-loading';
         var RESULT_STATUS_ID = 'query-results-status';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
+        /** The mounted Query page's own query endpoint, absolute: a later page may show another repository. */
+        var queryEndpointUrl = '';
         /** Loaded only for DOT explanations (M11.1). */
         var GRAPH_RENDERER_SCRIPTS = ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js'];
         var primaryExplanationPending = false;
@@ -43,6 +45,8 @@ var workbench;
         var compareNavigationDisclosureOpenBeforeCompare = null;
         var compareNavigationNarrowModeBeforeCompare = null;
         var compareSidebarPositionListenersInstalled = false;
+        /** The page is kept alive but hidden (M11.3): it must not change anything outside itself. */
+        var queryPageSuspended = false;
         /** Releases each pane editor's resize handle (workbench.editorSizing). */
         var editorSizingDisposers = {};
         var compareQuerySeeded = false;
@@ -781,6 +785,47 @@ var workbench;
          * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
          * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
          */
+        /**
+         * The query without its comments, string literals and IRIs (each replaced by a space), so that the keywords
+         * left are the query's own: '# PREFIX ex: <...>' or "PREFIX ex:" declare nothing.
+         */
+        function sparqlKeywordText(query) {
+            var result = '';
+            var index = 0;
+            while (index < query.length) {
+                var character = query.charAt(index);
+                if (character === '#') {
+                    while (index < query.length && query.charAt(index) !== '\n') {
+                        index++;
+                    }
+                    result += ' ';
+                }
+                else if (character === '"' || character === '\'') {
+                    var quote = query.substr(index, 3) === character + character + character
+                        ? character + character + character : character;
+                    index += quote.length;
+                    while (index < query.length && query.substr(index, quote.length) !== quote
+                        && (quote.length === 3 || query.charAt(index) !== '\n')) {
+                        index += query.charAt(index) === '\\' ? 2 : 1;
+                    }
+                    index += quote.length;
+                    result += ' ';
+                }
+                else {
+                    // An IRI has no spaces; anything else starting with '<' is the less-than operator.
+                    var iri = character === '<' ? /^<[^<>"{}|^`\\\s]*>/.exec(query.substring(index)) : null;
+                    if (iri) {
+                        index += iri[0].length;
+                        result += ' ';
+                    }
+                    else {
+                        result += character;
+                        index++;
+                    }
+                }
+            }
+            return result;
+        }
         function insertPrefixes() {
             if (!isPrefixInsertionEnabled()) {
                 return;
@@ -789,10 +834,12 @@ var workbench;
                 ? sparqlNamespaces : {};
             var query = getPaneRawQueryValue('primary');
             var declared = {};
-            var declaration = /^\s*PREFIX\s+([^:\s]*):/gim;
+            // A declaration may follow BASE or another PREFIX on its line; ?prefix or ex:PREFIX are no keyword.
+            var declaration = /(^|[^\w?$:.-])PREFIX\s+([^:\s]*):/gi;
+            var keywords = sparqlKeywordText(query);
             var match;
-            while ((match = declaration.exec(query)) !== null) {
-                declared[match[1]] = true;
+            while ((match = declaration.exec(keywords)) !== null) {
+                declared[match[2]] = true;
             }
             var lines = Object.keys(namespaces).map(function (key) {
                 var prefix = key.charAt(key.length - 1) === ':' ? key.slice(0, -1) : key;
@@ -1152,6 +1199,10 @@ var workbench;
             body.style.setProperty('--query-compare-nav-left', toggleBounds.left + 'px');
         }
         function syncCompareSidebarState() {
+            if (queryPageSuspended) {
+                // A hidden page leaves the menu and body of the page shown instead alone; resume syncs again.
+                return;
+            }
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
             // Only an older shell renders the menu inside a details disclosure.
             var navigationDisclosure = document.querySelector('details#workbench-navigation-disclosure');
@@ -1185,7 +1236,7 @@ var workbench;
             var navigationTransform = '';
             if (!compareModeEnabled) {
                 $('#navigation').css('transform', navigationTransform);
-                $('#title_heading, #noscript-message, .query-form').css('transform', '');
+                $('#title_heading, .query-form').css('transform', '');
                 sidebarToggle
                     .removeClass('query-sidebar-toggle--nav-open')
                     .attr('aria-hidden', 'true')
@@ -1196,7 +1247,7 @@ var workbench;
             }
             navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
             $('#navigation').css('transform', navigationTransform);
-            $('#title_heading, #noscript-message, .query-form').css('transform', '');
+            $('#title_heading, .query-form').css('transform', '');
             var label = compareSidebarOpen
                 ? sidebarToggle.attr('data-hide-label')
                 : sidebarToggle.attr('data-show-label');
@@ -1213,6 +1264,26 @@ var workbench;
                 window.addEventListener('scroll', updateCompareSidebarNavigationPosition, true);
                 compareSidebarPositionListenersInstalled = true;
             }
+        }
+        function exitEditorFullscreen(editor) {
+            if (editor && typeof editor.getOption === 'function' && editor.getOption('fullScreen')) {
+                editor.setOption('fullScreen', false);
+            }
+        }
+        /**
+         * Give the viewport back before the page is hidden or closed: results full screen, the Diff dialog and editor
+         * full screen each lock the document's scrolling.
+         */
+        function releasePageOverlays() {
+            var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+            if (fullscreenTarget) {
+                setResultsFullscreen(false, false, fullscreenTarget);
+            }
+            if (queryPageState && queryPageState.diffModal.kind === 'open') {
+                dispatchQueryPageEvent({ type: 'CLOSE_DIFF' });
+            }
+            exitEditorFullscreen(yasqe);
+            exitEditorFullscreen(compareYasqe);
         }
         /** Undo what compare mode changed outside the page: the menu's position, body classes and listeners. */
         function releaseCompareChrome() {
@@ -1935,10 +2006,6 @@ var workbench;
             workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, open, true);
         }
         query_1.setExplanationSettingsOpen = setExplanationSettingsOpen;
-        function toggleExplanationSettings() {
-            setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
-        }
-        query_1.toggleExplanationSettings = toggleExplanationSettings;
         /** Config offers the explanation timeout for every format, and highlighting and properties for Text. */
         function syncExplanationHighlightControls() {
             var planShown = !!queryPageState
@@ -2330,22 +2397,33 @@ var workbench;
                 }
             }
         }
-        function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
-            var response = jqXHR.responseJSON;
+        /** The message of a JSON error answer ({"error": "..."}), or '' when the answer has none. */
+        function jsonErrorMessage(jqXHR) {
+            var response = jqXHR && jqXHR.responseJSON;
             if (response && response.error) {
-                return response.error;
+                return String(response.error);
             }
-            var responseText = jqXHR.responseText;
+            var responseText = jqXHR && jqXHR.responseText;
             if (responseText) {
                 try {
                     var parsedResponse = JSON.parse(responseText);
                     if (parsedResponse && parsedResponse.error) {
-                        return parsedResponse.error;
+                        return String(parsedResponse.error);
                     }
                 }
                 catch (e) {
-                    // fall through and return plain response text
+                    // Not JSON.
                 }
+            }
+            return '';
+        }
+        function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
+            var message = jsonErrorMessage(jqXHR);
+            if (message) {
+                return message;
+            }
+            var responseText = jqXHR.responseText;
+            if (responseText) {
                 return responseText;
             }
             if (textStatus == 'timeout') {
@@ -2584,7 +2662,9 @@ var workbench;
         /** Config's explanation timeout is offered only where the server takes a query timeout at all. */
         function isExplanationTimeoutAvailable() {
             var section = document.getElementById('explanation-timeout-section');
-            return !!section && !section.hidden;
+            var queryTimeout = document.getElementById('query-timeout');
+            // A disabled query timeout control means the policy turned timeouts off: none may be sent.
+            return !!section && !section.hidden && !(queryTimeout && queryTimeout.disabled);
         }
         /** The explanation timeout in whole seconds, or '' to use the query timeout from Query settings. */
         function getExplanationTimeout() {
@@ -2648,7 +2728,10 @@ var workbench;
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: transportFormat });
             }
-            if (!seenInfer) {
+            // An unchecked checkbox is not serialized: send its explicit false, but only for an enabled control (a
+            // disabled one is turned off by policy and must not be sent at all).
+            var inferControl = document.getElementById('infer');
+            if (!seenInfer && inferControl && inferControl.type === 'checkbox' && !inferControl.disabled) {
                 serializedForm.push({ name: 'infer', value: 'false' });
             }
             if (!seenQuery) {
@@ -2672,16 +2755,40 @@ var workbench;
                 { name: 'explain-request-id', value: serverRequestId }
             ]);
         }
-        function postCancellationWithRetry(data, remainingRetries) {
+        /** A URL relative to the page shown now, made absolute (it must not change meaning on another page). */
+        function absolutePageUrl(relative) {
+            var base = document.baseURI || (document.location && document.location.href) || '';
+            var urlConstructor = typeof URL === 'function' ? URL : null;
+            if (urlConstructor && base) {
+                try {
+                    return new urlConstructor(relative, base).href;
+                }
+                catch (error) {
+                    // Fall back to resolving the path by hand below.
+                }
+            }
+            var page = base.split('#')[0].split('?')[0];
+            return /^[a-z][a-z0-9+.-]*:\/\/[^/]+\//i.test(page) ? page.substring(0, page.lastIndexOf('/') + 1) + relative
+                : relative;
+        }
+        function queryEndpoint() {
+            return queryEndpointUrl || 'query';
+        }
+        /**
+         * Retries failures that may pass (the network, the server); a 404 means the server does not know the
+         * request (it ended, or this is another repository's endpoint), and asking again changes nothing.
+         */
+        function postCancellationWithRetry(data, remainingRetries, url) {
             var retriesRemaining = remainingRetries === undefined
                 ? CANCEL_REQUEST_MAX_RETRIES : remainingRetries;
+            var endpoint = url || queryEndpoint();
             $.ajax({
-                url: 'query',
+                url: endpoint,
                 type: 'POST',
                 data: data
-            }).fail(function () {
-                if (retriesRemaining > 0) {
-                    postCancellationWithRetry(data, retriesRemaining - 1);
+            }).fail(function (jqXHR) {
+                if (retriesRemaining > 0 && !(jqXHR && jqXHR.status === 404)) {
+                    postCancellationWithRetry(data, retriesRemaining - 1, endpoint);
                 }
             });
         }
@@ -2691,17 +2798,56 @@ var workbench;
             }
             postCancellationWithRetry(serializeCancelExplainFormData(serverRequestId));
         }
-        function postCancelQuery(queryRequestId) {
+        /** A page being unloaded: only one keepalive request outlives it (a retrying XHR would be dropped). */
+        function postCancelExplainOnLeave(serverRequestId) {
+            var fetcher = window.fetch;
+            if (typeof fetcher !== 'function') {
+                postCancelExplain(serverRequestId);
+                return;
+            }
+            try {
+                fetcher.call(window, queryEndpoint(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    body: serializeCancelExplainFormData(serverRequestId),
+                    keepalive: true
+                });
+            }
+            catch (error) {
+                // The browser may refuse requests while the page is going away.
+            }
+        }
+        /** The explanations still running when the page goes: the server is asked to stop them. */
+        function cancelRunningExplanationsOnServer() {
+            var signatures = [activePrimaryRequestSignature];
+            Object.keys(activeCompareRequestSignatures).forEach(function (pane) {
+                signatures.push(activeCompareRequestSignatures[pane]);
+            });
+            // A document that is being unloaded is hidden before its pagehide (HTML 'unload a document').
+            var leaving = document.visibilityState === 'hidden';
+            signatures.forEach(function (signature) {
+                if (signature && signature.serverRequestId) {
+                    if (leaving) {
+                        postCancelExplainOnLeave(signature.serverRequestId);
+                    }
+                    else {
+                        postCancelExplain(signature.serverRequestId);
+                    }
+                }
+            });
+        }
+        function postCancelQuery(queryRequestId, url) {
             if (!queryRequestId) {
                 return;
             }
             postCancellationWithRetry($.param([
                 { name: 'action', value: 'cancel-query' },
                 { name: 'query-request-id', value: queryRequestId }
-            ]));
+            ]), undefined, url);
         }
-        function cancelServerQuery(queryRequestId) {
-            postCancelQuery(queryRequestId);
+        /** Cancel a query on the server: at url, the endpoint the query ran at, or this page's own. */
+        function cancelServerQuery(queryRequestId, url) {
+            postCancelQuery(queryRequestId, url);
         }
         query_1.cancelServerQuery = cancelServerQuery;
         function setQueryCancelVisible(visible) {
@@ -3266,7 +3412,12 @@ var workbench;
                         return;
                     }
                     feedback.removeClass().addClass('error');
-                    if (textStatus == 'timeout') {
+                    // The server's own reason, such as a private save without a signed-in user.
+                    var serverMessage = jsonErrorMessage(jqXHR);
+                    if (serverMessage) {
+                        feedback.text('Save failed: ' + serverMessage);
+                    }
+                    else if (textStatus == 'timeout') {
                         feedback.text('Timed out waiting for response. Uncertain if save occured.');
                     }
                     else {
@@ -3871,6 +4022,7 @@ var workbench;
          */
         function mountQueryPage(outlet) {
             var page = $(outlet);
+            queryEndpointUrl = absolutePageUrl('query');
             var bound = [];
             var timers = [];
             /** Bind handler to the events of the page element that selector names, in the .wbQuery namespace. */
@@ -3889,13 +4041,24 @@ var workbench;
              *          as false, if the parameter was not found
              */
             function getParameterFromUrl(param) {
-                var href = document.location.href;
-                var elements = href.substring(href.indexOf('?') + 1).substring(href.indexOf(';') + 1).split(decodeURIComponent('%26'));
+                var href = document.location.href.split('#')[0];
+                var start = href.indexOf('?') >= 0 ? href.indexOf('?') : href.indexOf(';');
+                if (start < 0) {
+                    return '';
+                }
+                var elements = href.substring(start + 1).split(decodeURIComponent('%26'));
                 var result = '';
                 for (var i = 0; elements.length - i; i++) {
-                    var pair = elements[i].split('=');
-                    var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
-                    if (pair[0] == param) {
+                    var separator = elements[i].indexOf('=');
+                    if (separator < 0 || elements[i].substring(0, separator) != param) {
+                        continue;
+                    }
+                    // '+' is a form-encoded space; an encoded plus (%2B) must survive, so replace before decoding.
+                    var value = elements[i].substring(separator + 1).replace(/\+/g, ' ');
+                    try {
+                        result = decodeURIComponent(value);
+                    }
+                    catch (error) {
                         result = value;
                     }
                 }
@@ -4091,10 +4254,6 @@ var workbench;
                     closeDiffModal();
                 }
             });
-            // Detect if there is no current authenticated user, and if so, disable the 'save privately' option.
-            if ($('#selected-user>span').is('.disabled')) {
-                page.find('#save-private').prop('checked', false).prop('disabled', true);
-            }
             var suspended = false;
             var cleanup = function () {
                 unlisten();
@@ -4115,13 +4274,16 @@ var workbench;
             cleanup.suspend = function () {
                 if (!suspended) {
                     suspended = true;
+                    queryPageSuspended = true;
                     unlisten();
+                    releasePageOverlays();
                     releaseCompareChrome();
                 }
             };
             cleanup.resume = function () {
                 if (suspended) {
                     suspended = false;
+                    queryPageSuspended = false;
                     listen();
                     syncCompareSidebarState();
                 }
@@ -4144,6 +4306,8 @@ var workbench;
                 clearTimeout(explainTimingTick);
                 explainTimingTick = null;
             }
+            cancelRunningExplanationsOnServer();
+            queryEndpointUrl = '';
             [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function (request) {
                 if (request && typeof request.abort === 'function') {
                     request.abort();
@@ -4155,6 +4319,9 @@ var workbench;
             releaseCompareChrome();
             releaseEditorSizing('primary');
             releaseEditorSizing('compare');
+            queryPageSuspended = false;
+            exitEditorFullscreen(yasqe);
+            exitEditorFullscreen(compareYasqe);
             if (yasqe && typeof yasqe.toTextArea === 'function') {
                 yasqe.toTextArea();
             }

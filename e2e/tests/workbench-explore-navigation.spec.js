@@ -12,9 +12,8 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { waitForRoute } = require('./workbench-test-helpers');
+const { evidencePath, evidenceScreenshots, waitForRoute } = require('./workbench-test-helpers');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
@@ -24,8 +23,11 @@ const REPOSITORY_ID = process.env.WORKBENCH_EXPLORE_REPOSITORY_ID
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const CONTEXT_IRI = 'http://example.org/e88fb5abd68086dad3eaf755db9ad140f78ab974b1e989ad817fae28ad8ccce3';
 const LARGE_RESOURCE_IRI = 'http://example.org/explore-large-resource';
-const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR
-	|| path.join(os.tmpdir(), `rdf4j-workbench-explore-${process.pid}-${Date.now().toString(36)}`, 'browser-evidence');
+// Screenshots go to WORKBENCH_EXPLORE_EVIDENCE_DIR when it is set, otherwise to each test's output directory; the
+// evidence summary is written only to that directory. The fixture repository is deleted after the run unless
+// WORKBENCH_EXPLORE_RETAIN_FIXTURE=true keeps it for debugging.
+const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR || '';
+const RETAIN_FIXTURE = process.env.WORKBENCH_EXPLORE_RETAIN_FIXTURE === 'true';
 
 const evidence = {
 	browserPlugin: 'Browser plugin not available; used the installed Playwright runner.',
@@ -115,10 +117,12 @@ async function assertFailurePageHealth(page, health) {
 }
 
 async function capture(page, name, health, details = {}) {
-	fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-	const screenshot = path.join(EVIDENCE_DIR, `${name}.png`);
-	await page.screenshot({ path: screenshot, fullPage: false });
-	evidence.screenshots.push(screenshot);
+	let screenshot = null;
+	if (evidenceScreenshots()) {
+		screenshot = evidencePath(EVIDENCE_DIR, `${name}.png`);
+		await page.screenshot({ path: screenshot, fullPage: false });
+		evidence.screenshots.push(screenshot);
+	}
 	evidence.states.push({
 		name,
 		url: page.url(),
@@ -142,7 +146,6 @@ async function expectExploreRows(page, count) {
 test.setTimeout(120_000);
 
 test.beforeAll(async ({ request }) => {
-	fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 	const existing = await request.get(REPOSITORY_URL);
 	if (existing.status() !== 400 && existing.status() !== 404) {
 		throw new Error(`Refusing to use pre-existing Explore review repository ${REPOSITORY_ID}: ${existing.status()}`);
@@ -168,13 +171,19 @@ test.beforeAll(async ({ request }) => {
 	expect((await namedGraph.text()).trim().split(/\r?\n/)).toHaveLength(8);
 });
 
-test.afterAll(async () => {
-	fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-	fs.writeFileSync(path.join(EVIDENCE_DIR, 'browser-evidence.json'), JSON.stringify({
-		...evidence,
-		retainedFixture: true,
-		retainedFixtureUrl: `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/contexts`
-	}, null, 2) + '\n');
+test.afterAll(async ({ request }) => {
+	if (!RETAIN_FIXTURE) {
+		const removed = await request.delete(REPOSITORY_URL);
+		expect([200, 204, 404], 'the fixture repository is deleted after the run').toContain(removed.status());
+	}
+	if (EVIDENCE_DIR) {
+		fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+		fs.writeFileSync(path.join(EVIDENCE_DIR, 'browser-evidence.json'), JSON.stringify({
+			...evidence,
+			retainedFixture: RETAIN_FIXTURE,
+			retainedFixtureUrl: RETAIN_FIXTURE ? `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/contexts` : null
+		}, null, 2) + '\n');
+	}
 });
 
 test('Contexts links the named graph into Explore and RDF term links remain navigable', async ({ page }) => {

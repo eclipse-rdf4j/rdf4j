@@ -25,27 +25,15 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
         href: 'http://localhost:8080/rdf4j-workbench/create?id=repo-1&title=My+Repo'
     });
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
-    const field = harness.registerElement('input', {
-        id: 'flag',
-        type: 'checkbox'
-    });
-    field.checked = true;
-    harness.document.body.appendChild(field);
-
     harness.loadScripts([]);
     const calls = [];
     harness.context.workbench.addLoad(() => calls.push('first'));
     harness.context.workbench.addLoad(() => calls.push('second'));
     harness.runLoadHandlers();
 
-    const params = [];
-    harness.context.workbench.addParam(params, 'flag');
-
     assert.deepEqual(calls, ['first', 'second']);
     assert.equal(harness.context.workbench.getCookie('server-user-password'), Buffer.from('alice:secret').toString('base64'));
     assert.deepEqual(Array.from(harness.context.workbench.getQueryStringElements()), ['id=repo-1', 'title=My+Repo']);
-    assert.deepEqual(params, ['flag=', 'true', '&']);
-    assert.equal(harness.document.getElementById('noscript-message').style.display, 'none');
     // The server user is rendered by the shell (workbench.views.contextBarState), not patched into the DOM.
     assert.equal(harness.document.getElementById('selected-user').textContent, '');
 });

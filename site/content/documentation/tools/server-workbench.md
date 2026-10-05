@@ -140,16 +140,24 @@ Workbench reads its flat `workbench.properties` policy once when the web applica
 
 1. Packaged defaults at `org/eclipse/rdf4j/common/app/config/defaults/workbench.properties`.
 2. An optional classpath override at `org/eclipse/rdf4j/common/app/config/workbench.properties`.
-3. `[RDF4J_DATA]/Workbench/conf/workbench.properties`.
+3. The external file `[RDF4J_DATA]/Workbench/conf/workbench.properties` on Windows and macOS, or
+   `[RDF4J_DATA]/workbench/conf/workbench.properties` on Linux and other UNIX systems, where the application
+   directories are lower case (like the `server` and `workbench` directories mentioned above).
 
-The external file can hide Workbench pages and capabilities without changing the deployed WAR. Every key is validated
-at application startup; an unknown key, undeclared ID, malformed boolean or order, unsafe href, or invalid theme stops
-startup with a configuration error. For example:
+The external file can hide Workbench pages and capabilities without changing the deployed WAR. It is read as UTF-8, so
+labels can use any characters; a file that is not valid UTF-8 is read as ISO-8859-1, and `\uXXXX` escapes work in
+both. Every key is validated when the Workbench starts: both the WAR and the Spring Boot runner load the Workbench at
+application startup. An unknown key, undeclared ID, malformed boolean or order, unsafe href, or invalid theme is a
+configuration error that is logged at startup; until it is fixed, the Workbench serves no pages (depending on the
+servlet container, the Workbench application either fails to start or answers its requests with an error). For
+example:
 
 ```properties
-# Show only Query under Explore and explicitly disable Summary.
-menu.items=query
-menu.groups=explore
+# Show only the repository list and Query, and explicitly disable Summary. Keep a Workbench landing page
+# (repositories or server) visible: without one, the Workbench root answers 503 Service Unavailable.
+menu.items=repositories,query
+menu.groups=repositories,explore
+menu.group.repositories.visible=true
 menu.group.explore.visible=true
 menu.item.query.order=10
 page.summary.enabled=false
@@ -178,13 +186,13 @@ theme.deployment-default=dark
 ```
 
 That resource overrides the packaged defaults in both the Workbench WAR and Spring Boot integration. The external
-`[RDF4J_DATA]/Workbench/conf/workbench.properties` file has the final say when the same key appears in both overrides.
+`workbench.properties` file in the data directory has the final say when the same key appears in both overrides.
 
-The built-in menu IDs are `server`, `repositories`, `create`, `delete`, `summary`, `namespaces`, `contexts`, `types`, `explore`, `query`, `saved-queries`, `export`, `update`, `add`, `remove`, `clear`, and `information`. `menu.items` is a comma- or whitespace-separated list; an omitted built-in item is hidden. `menu.groups` lists groups in display order. Built-in group IDs are `server`, `repositories`, `explore`, `modify`, and `system`; the packaged defaults list and enable all five. A group must be listed and have `menu.group.<id>.visible=true` for its children to appear. Each item must also be listed and visible, and `page.<id>.enabled` can further disable its canonical page. A `true` page setting cannot restore an item or group hidden by another setting. Thus, adding a second menu link to `/query` does not make the Query page available when the built-in `query` item is omitted or hidden. The policy gates the canonical servlet behind every configured alias before proxy cache handling, redirects, or command dispatch. The raw `/info` endpoint remains available. Query and Update use the read-only `/_internal/namespaces` metadata route when the Namespaces page is hidden.
+The built-in menu IDs are `server`, `repositories`, `create`, `delete`, `summary`, `namespaces`, `contexts`, `types`, `explore`, `query`, `saved-queries`, `export`, `update`, `add`, `remove`, `clear`, and `information`. `menu.items` is a comma- or whitespace-separated list; an omitted built-in item is hidden. `menu.groups` lists groups in display order. Built-in group IDs are `server`, `repositories`, `explore`, `modify`, and `system`; the packaged defaults list and enable all five. A group must be listed and have `menu.group.<id>.visible=true` for its children to appear. The Workbench root and `/repositories/` land on the `repositories` page, or on `server` when the repository list is hidden; when both are hidden they answer `503 Service Unavailable`. Each item must also be listed and visible, and `page.<id>.enabled` can further disable its canonical page. A `true` page setting cannot restore an item or group hidden by another setting. Thus, adding a second menu link to `/query` does not make the Query page available when the built-in `query` item is omitted or hidden. The policy gates the canonical servlet behind every configured alias before proxy cache handling, redirects, or command dispatch. The raw `/info` endpoint remains available. Query and Update use the read-only `/_internal/namespaces` metadata route when the Namespaces page is hidden.
 
 The optional item keys are `menu.item.<id>.visible` (`true` or `false`), `.label`, `.order` (integer, default `0`), `.group`, `.icon`, `.href`, and `.route`. Group keys are `menu.group.<id>.visible`, `.label`, `.icon`, and `.order` (integer, default `0`). Item order sorts numerically, then by position in `menu.items`, then by ID; group order follows the same rule using position in `menu.groups`. Hrefs may be HTTP(S) URLs or application-relative paths. Opaque schemes such as `javascript:` and protocol-relative URLs are rejected at startup. To add an embedded application's page, list its ID in `menu.consumer-ids`, add it to `menu.items`, declare its group in `menu.groups`, enable the group, and provide the item's `.href`; set `.route` when the endpoint path differs from the item ID. The page is then controlled by `page.<id>.enabled` in addition to its menu visibility.
 
-Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 48 built-in IDs are stable policy keys and map to the existing Workbench controls and operations:
+Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 47 built-in IDs are stable policy keys and map to the existing Workbench controls and operations:
 
 | Feature ID | Controls or operation |
 |---|---|
@@ -203,7 +211,7 @@ Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 4
 | `explain-level-timed` | Timed Explain level. |
 | `explain-format-text` | Text Explain format. |
 | `explain-format-dot` | DOT Explain format. |
-| `explain-format-json` | JSON Explain format. |
+| `explain-format-json` | JSON Explain format. The Query page also uses JSON to transport Text explanations, so JSON requests stay allowed while `explain-format-text` is enabled. |
 | `explain-highlight-syntax` | Syntax highlighting for explanations. |
 | `explain-highlight-hotspot` | Hotspot highlighting for explanations. |
 | `explain-property-selection` | Explanation property selection controls. |
@@ -212,7 +220,7 @@ Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 4
 | `explain-view-json` | JSON explanation view. |
 | `explain-download` | Download explanation. |
 | `explain-copy` | Copy explanation, including the compare-pane copy action. |
-| `explain-cancel` | Cancel a pending explanation. |
+| `explain-cancel` | Cancel control for a pending explanation. Disabling it hides the control only: the page still cancels explanations it abandons. |
 | `query-compare` | Open the comparison editor pane. |
 | `query-diff` | Show the explanation difference. |
 | `query-swap` | Swap the primary and comparison queries. |
@@ -231,14 +239,22 @@ Query capabilities use `query.feature.<id>.enabled` (`true` or `false`). These 4
 | `result-show-datatypes` | Show datatype details in tuple results. |
 | `result-fullscreen` | Fullscreen for the result frame. |
 | `query-rerun` | Rerun an existing explanation. |
-| `query-cancel` | Cancel a running query. |
+| `query-cancel` | Cancel control for a running query. Disabling it hides the control only: the page still cancels queries it abandons, for example when you leave the page. |
 | `editor-namespaces` | Clear/reload editor namespaces. |
 | `editor-sidebar` | Toggle the query sidebar. |
 | `editor-fullscreen` | YASQE editor fullscreen button and F11 shortcut. |
 
 Plan copying is controlled by `explain-copy`; `query-copy` and `editor-reset` are not built-in IDs because no matching actions are exposed. The built-in `result-download-limit` capability controls the query-results download-limit selector. Embedded applications declare additional stable feature IDs in `query.consumer-feature-ids`; unknown feature keys are rejected. `query.download.default-limit` is the fixed fallback value and defaults to `0`, meaning all results. The deployment theme default accepts `system`, `light`, or `dark`.
 
-Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` hides and disables the Explain again entry point while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
+Feature flags for server operations and accepted values are checked on Workbench requests as well as reflected in the controls. A request that sets a disabled option to a value other than its default is rejected with `403 Forbidden`; the default itself is accepted. The defaults are the `default-queryLn`, `default-query-timeout` and `default-infer` init parameters of the Workbench servlet (see below) for `query-language`, `query-timeout` and `query-inferred-statements`, and `query.download.default-limit` for `result-download-limit`. Some flags describe only user-interface actions that share an enabled operation: `query-rerun` hides and disables the Explain again entry point while `query-explain` is still allowed, and `editor-fullscreen` controls the YASQE fullscreen toggle and F11 shortcut. These are presentation controls, not authorization boundaries; use RDF4J's security configuration to restrict access to server operations or data.
+
+#### Default query timeout
+
+Workbench queries have a default timeout of 60 seconds, set by the `default-query-timeout` init parameter of the
+Workbench servlet (in `WEB-INF/web.xml` of the WAR, and in the registration of the Spring Boot runner). Earlier releases
+defaulted to `0`, which means no limit. Users can change the timeout for their queries in the Query settings; when the
+`query-timeout` feature is disabled, the default applies to every query. To restore unlimited queries by default, set
+`default-query-timeout` to `0` in `WEB-INF/web.xml`.
 
 ### OpenTelemetry Tracing
 
@@ -601,11 +617,11 @@ If you have executed queries previously, the query text area will show the most 
 The two other action buttons are “Save Query” and “Execute”:
 
 - “Save Query” is only enabled when a name has been entered into the adjacent text field. Once clicked, your query is saved under the given name. An option to back out or overwrite is given if the name already exists. Saved queries are associated with the current repository and user name. If the “Save privately (do not share)” option is checked, then the saved query will only be visible to the current user.
-- “Execute” attempts to execute the given query text, and then you are presented with a query results page. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
+- “Execute” runs the query and streams its results into the result area below the editor, on the same page. Large results arrive in batches: the first batch is shown while the query is still counting, and “Load more” fetches the next batch. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
 
 #### Cancelling long-running queries
 
-For an ordinary, non-transactional query, Workbench keeps the query page available while the result is rendered in a separate result window. The page shows a Cancel action while the query is active. Closing the result window requests cancellation. A result document signals completion or failure to the query page; downloads cannot reliably signal completion, so the Cancel action should remain available until the result window is closed or another terminal result signal is received.
+For an ordinary, non-transactional query, the Query page shows a Cancel action while the query runs; Cancel stops the query on the server and keeps the results that have already arrived. Running the query again, editing a query that is being explained, or leaving the page also cancels the running query or explanation. The streamed result ends with a completion or failure record, so the page knows when the query has finished; a result download cannot signal its completion to the page.
 
 Cancellation identifiers are scoped to a repository. Clients do not need to supply an identifier for automatic cancellation; Server generates and registers one for the request. In a deployment with multiple RDF4J Server instances, a cancellation request that reaches an instance that does not own the query can return `404`, while cancellation of an active query on the owning instance returns `204`. Workbench retries failed cancellation requests a bounded number of times. When an HTTP-backed repository forwards cancellation to another RDF4J Server, a downstream failure is reported as `502` so the request can be retried instead of being acknowledged as successful.
 

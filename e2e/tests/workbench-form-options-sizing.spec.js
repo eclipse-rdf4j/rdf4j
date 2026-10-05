@@ -1,9 +1,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl } = require('./workbench-test-helpers');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { evidencePath, evidenceScreenshots, serverBaseUrl, waitForRoute, waitForWriteDone, workbenchBaseUrl }
+	= require('./workbench-test-helpers');
 
 // Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the Add URL field fills
 // its form card (plan task M1.6, "one form layout") instead of a 320-560px range; Load more replaced the result
@@ -17,7 +15,8 @@ const WORKBENCH_BASE_URL = workbenchBaseUrl();
 const REPOSITORY_ID = `workbench-form-sizing-${process.pid}-${Date.now()}`;
 const REPOSITORY_BASE_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const SAVED_QUERY_NAME = `size-${process.pid}-${Date.now()}`.slice(0, 32);
-const SCREENSHOT_DIR = path.join(os.tmpdir(), 'workbench-config-coverage-20260925');
+// Screenshots go to WORKBENCH_FORM_OPTIONS_EVIDENCE when it is set, otherwise to each test's output directory.
+const SCREENSHOT_DIR = process.env.WORKBENCH_FORM_OPTIONS_EVIDENCE || '';
 let savedQueryUrn;
 
 const CREATE_TYPES = [
@@ -96,10 +95,12 @@ async function waitForSettledDisclosure(panel) {
 }
 
 async function captureGeometryScreenshot(page, name, width) {
-	fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+	if (!evidenceScreenshots()) {
+		return;
+	}
 	const engine = test.info().project.name;
 	await page.screenshot({
-		path: `${SCREENSHOT_DIR}/${name}-${width}-${engine}.png`,
+		path: evidencePath(SCREENSHOT_DIR, `${name}-${width}-${engine}.png`),
 		fullPage: true,
 		animations: 'disabled'
 	});

@@ -207,6 +207,9 @@ test('records built-in route rendering, query result states, and disposable-repo
 	}
 
 	expect(fatalRuntimeFailure, 'stop after transport/navigation failure; do not repeat failed requests').toBeNull();
+	// Every follow-up phase runs (and is recorded) even when an earlier one fails; any failure fails the test.
+	expect(evidence.followupErrors, 'follow-up phases: query UI controls, export preview, query states, mutating forms')
+		.toEqual([]);
 	expect(evidence.routes, 'built-in route registry matrix').toHaveLength(PAGE_ROUTES.length);
 	const routeFailures = evidence.routes.filter(route => !route.acceptable);
 	const variantFailures = evidence.createdTypes.filter(route => !route.acceptable);

@@ -1,13 +1,16 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const os = require('os');
-const path = require('path');
 const {
     deleteRepository,
+    evidencePath,
+    evidenceScreenshots,
     repositoryPageUrl,
     serverBaseUrl,
     uniqueRepositoryId
 } = require('./workbench-test-helpers');
+
+// Evidence goes to WORKBENCH_EXPLAIN_EVIDENCE when it is set, otherwise to each test's output directory.
+const EVIDENCE_DIRECTORY = process.env.WORKBENCH_EXPLAIN_EVIDENCE || '';
 
 // Each test used to delete and re-create a repository named testrepo1 through the Delete and Create pages of a
 // server on localhost:8080, then insert the chain data through the Update page. The spec now creates its own LMDB
@@ -175,10 +178,9 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         .first().getAttribute('data-heat');
     expect(primaryHeat).toBe(compareHeat);
     await expect(page.locator('.query-explanation-overlay--visible')).toHaveCount(0);
-    await page.screenshot({
-        path: '/tmp/rdf4j-query-explanation-desktop.png',
-        fullPage: true
-    });
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'query-explanation-desktop.png'), fullPage: true });
+    }
 
     await page.locator('#compare-toggle').click();
     await expect(page.locator('#query-explanation-row-compare')).toBeHidden();
@@ -199,10 +201,9 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
     });
     expect(narrowControlBounds.left).toBeGreaterThanOrEqual(0);
     expect(narrowControlBounds.right).toBeLessThanOrEqual(narrowControlBounds.viewportWidth);
-    await page.screenshot({
-        path: '/tmp/rdf4j-query-explanation-narrow.png',
-        fullPage: true
-    });
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'query-explanation-narrow.png'), fullPage: true });
+    }
     expect(consoleErrors).toEqual([]);
 });
 
@@ -262,7 +263,9 @@ test('Closing comparison cancels stale work and preserves the primary result', a
         .toBeLessThanOrEqual(1);
     expect.soft(desktopCompareGeometry.paneRight).toBeCloseTo(desktopCompareGeometry.layoutRight, 0);
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: path.join(os.tmpdir(), 'rdf4j-compare-close-desktop.png') });
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'compare-close-desktop.png') });
+    }
 
     await page.setViewportSize({ width: 320, height: 900 });
     await page.locator('#query-compare-close').scrollIntoViewIfNeeded();
@@ -282,7 +285,10 @@ test('Closing comparison cancels stale work and preserves the primary result', a
     expect.soft(mobileCloseBounds.left).toBeGreaterThanOrEqual(mobileCloseBounds.paneLeft);
     expect.soft(mobileCloseBounds.right).toBeLessThanOrEqual(mobileCloseBounds.paneRight + 1);
     expect.soft(mobileCloseBounds.right).toBeLessThanOrEqual(mobileCloseBounds.viewportWidth);
-    await page.locator('.query-compare-pane--secondary').screenshot({ path: path.join(os.tmpdir(), 'rdf4j-compare-close-mobile-320.png') });
+    if (evidenceScreenshots()) {
+        await page.locator('.query-compare-pane--secondary').screenshot({
+            path: evidencePath(EVIDENCE_DIRECTORY, 'compare-close-mobile-320.png') });
+    }
     await page.setViewportSize({ width: 1280, height: 900 });
 
     await page.evaluate(query => {

@@ -508,8 +508,11 @@ test('worker row store appends in order, reads bounded windows, disposes, and re
             }
         });
     };
-    await assert.rejects(
-        queryStream.createRowStore({ workerFactory: () => failingWorker }), /quota|QuotaExceededError/i);
+    // Review fix B21: a store IndexedDB cannot create (here: a full quota) keeps the rows in memory instead.
+    const fallback = await queryStream.createRowStore({ workerFactory: () => failingWorker });
+    assert.equal(failingWorker.terminated, true, 'the failing worker is closed');
+    assert.match(fallback.id, /^memory-/);
+    assert.equal(await fallback.append([[null]]), 1);
 });
 
 test('new same-tab row stores reclaim only stores marked by a destructive pagehide', async () => {
@@ -733,7 +736,7 @@ test('typed terms retain explore links, namespace abbreviations, nested triples,
         subject: { kind: 'iri', value: 'http://example.test/ns/item' },
         predicate: { kind: 'iri', value: 'http://example.test/ns/knows' },
         object: literal
-    }, { namespaces: [{ prefix: 'ex', name: 'http://example.test/ns/' }] }).label, /<< ex:item ex:knows/);
+    }, { namespaces: [{ prefix: 'ex', name: 'http://example.test/ns/' }] }).label, /<<\( ex:item ex:knows/);
 });
 
 test('RDF term output matches Workbench Explore, namespace, and datatype presentation', () => {
@@ -1421,7 +1424,10 @@ test('empty tuple and streamed error results retain distinct accessible states',
     await emptyRenderer.accept({ type: 'vars', values: ['value'] });
     await emptyRenderer.accept({ type: 'end', metadata: { 'total-result-count': 0 } });
 
-    assert.equal(emptyRenderer.status.getAttribute('role'), 'status');
+    // Review fix B24: the status line is no live region; a separate status region announces the milestones.
+    const announcement = emptyRenderer.root.querySelector('.query-result-announcement');
+    assert.equal(announcement.getAttribute('role'), 'status');
+    assert.equal(announcement.textContent, '0 rows · complete');
     assert.equal(emptyRenderer.status.textContent, '0 rows · complete');
     assert.equal(emptyTarget.querySelectorAll('[data-query-row-index]').length, 0);
     emptyRenderer.dispose();
@@ -1556,6 +1562,8 @@ test('partial Records stay scrollable without paging and keep Load more hidden',
         maxDomRows: 2,
         rowStore: inMemoryRowStore()
     });
+    // A viewport of about two records: the window cap bounds the overscan, never the visible rows (review fix B20).
+    renderer.records.clientHeight = 70;
 
     await renderer.accept({ type: 'view', id: 'query-result-tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });

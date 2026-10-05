@@ -209,13 +209,6 @@ function createQueryBrowserHarness(options = {}) {
 
     const navigation = registerElement('div', { id: 'navigation' });
     const titleHeading = registerElement('div', { id: 'title_heading', textContent: 'Query' });
-    const noScriptMessage = registerElement('div', { id: 'noscript-message' });
-    const selectedUser = registerElement('div', { id: 'selected-user' });
-    const selectedUserSpan = registerElement('span', {
-        className: options.noAuthenticatedUser ? 'disabled' : '',
-        textContent: options.selectedUserName || 'alice'
-    });
-    selectedUser.appendChild(selectedUserSpan);
     const queryFormContainer = registerElement('div', { className: 'query-form' });
     const queryPageOptions = { id: 'query-page' };
     if (options.editorFullscreenEnabled === false) {
@@ -236,8 +229,6 @@ function createQueryBrowserHarness(options = {}) {
     queryResults.appendChild(queryResultsStatus);
     document.body.appendChild(navigation);
     document.body.appendChild(titleHeading);
-    document.body.appendChild(noScriptMessage);
-    document.body.appendChild(selectedUser);
     document.body.appendChild(queryFormContainer);
     // The output card below the form: Results and Explanation tabs (M3.3).
     const queryOutputElements = {};

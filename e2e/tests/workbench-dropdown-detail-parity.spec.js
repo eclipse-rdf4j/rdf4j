@@ -1,7 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const path = require('path');
+const { evidencePath } = require('./workbench-test-helpers.js');
 
 const SERVER_BASE_URL = (process.env.RDF4J_SERVER_BASE_URL
 	|| 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
@@ -11,16 +10,16 @@ const EXTERNAL_REPOSITORY_ID = process.env.RDF4J_DROPDOWN_REPOSITORY_ID || '';
 const REPOSITORY_ID = EXTERNAL_REPOSITORY_ID || `workbench-dropdown-detail-${process.pid}-${Date.now()}`;
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
-const SCREENSHOT_DIR = '/tmp/rdf4j-dropdown-preview-20260929';
+// Screenshots (opt-in) go to RDF4J_DROPDOWN_SCREENSHOT_DIR when it is set, otherwise to the test's output directory.
+const SCREENSHOT_DIR = process.env.RDF4J_DROPDOWN_SCREENSHOT_DIR || '';
 const CAPTURE_SCREENSHOTS = process.env.RDF4J_DROPDOWN_SCREENSHOTS === 'true';
 
 async function capture(page, name) {
 	if (!CAPTURE_SCREENSHOTS) {
 		return;
 	}
-	fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 	await page.screenshot({
-		path: path.join(SCREENSHOT_DIR, name),
+		path: evidencePath(SCREENSHOT_DIR, name),
 		fullPage: true,
 		animations: 'disabled'
 	});

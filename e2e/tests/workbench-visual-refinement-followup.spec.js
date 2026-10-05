@@ -20,6 +20,7 @@ const {
 	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers');
 const fs = require('fs');
 const path = require('path');
 
@@ -180,8 +181,11 @@ test('query result table headers stay visible while scrolling rows on desktop an
 	await optionsToggle.click();
 	await expect(optionsPanel).toBeHidden();
 
-	const screenshotPrefix = process.env.WORKBENCH_STICKY_HEADER_SCREENSHOT_PREFIX
-		|| path.join(require('os').tmpdir(), 'workbench-query-sticky-header');
+	// Screenshots (when evidenceScreenshots() asks for them) are named by this prefix when it is set, otherwise they go
+	// to the test's output directory.
+	const screenshotPrefix = process.env.WORKBENCH_STICKY_HEADER_SCREENSHOT_PREFIX || '';
+	const stickyScreenshot = (suffix) => screenshotPrefix ? `${screenshotPrefix}-${suffix}.png`
+		: evidencePath('', `workbench-query-sticky-header-${suffix}.png`);
 	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
 		await page.setViewportSize(viewport);
 		if (viewport.width < 480) {
@@ -225,7 +229,9 @@ test('query result table headers stay visible while scrolling rows on desktop an
 			};
 		});
 		console.log(`QUERY_RESULT_STICKY_HEADER ${JSON.stringify({ viewport, after })}`);
-		await page.screenshot({ path: `${screenshotPrefix}-${viewport.width}px.png`, fullPage: false });
+		if (evidenceScreenshots()) {
+			await page.screenshot({ path: stickyScreenshot(`${viewport.width}px`), fullPage: false });
+		}
 		expect(after.tableHeaderBottom, `the table's own header row has scrolled under the context bar at ${viewport.width}px`)
 			.toBeLessThanOrEqual(after.contextBarBottom);
 		expect(Math.abs(after.headerTop - after.contextBarBottom),
@@ -261,7 +267,9 @@ test('query result table headers stay visible while scrolling rows on desktop an
 				};
 			});
 			console.log(`QUERY_RESULT_STICKY_HEADER_HORIZONTAL ${JSON.stringify(horizontal)}`);
-			await page.screenshot({ path: `${screenshotPrefix}-${viewport.width}px-scrolled.png`, fullPage: false });
+			if (evidenceScreenshots()) {
+				await page.screenshot({ path: stickyScreenshot(`${viewport.width}px-scrolled`), fullPage: false });
+			}
 			expect(horizontal.scrollWidth).toBeGreaterThan(horizontal.clientWidth);
 			expect(horizontal.scrollLeft).toBeGreaterThan(0);
 			expect(Math.abs(horizontal.headerCellLeft - horizontal.bodyCellLeft))

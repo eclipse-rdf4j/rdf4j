@@ -81,7 +81,12 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     });
     const toggle = harness.registerElement('button', {
         id: 'urn:query-toggle',
-        attributes: { 'aria-expanded': 'false' }
+        className: 'saved-query-toggle',
+        attributes: { 'aria-expanded': 'false', 'data-query-urn': 'urn:query' }
+    });
+    const remove = harness.registerElement('button', {
+        className: 'saved-query-delete',
+        attributes: { 'data-query-urn': 'urn:query', 'data-query-owner': 'alice', 'data-query-name': 'Query 1' }
     });
     const textarea = harness.registerElement('textarea', {
         id: 'urn:query-text',
@@ -99,6 +104,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     harness.document.body.appendChild(form);
     harness.document.body.appendChild(metadata);
     harness.document.body.appendChild(toggle);
+    harness.document.body.appendChild(remove);
     harness.document.body.appendChild(textarea);
     harness.document.body.appendChild(pre);
     harness.document.body.appendChild(queryForm);
@@ -113,14 +119,16 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(pre.innerHTML, 'ASK {}');
     assert.equal(queryInput.getAttribute('value'), 'DESCRIBE ?s');
 
-    harness.context.workbench.savedQueries.deleteQuery('alice', 'Query 1', 'urn:query');
+    remove.dispatchEvent({ type: 'click', bubbles: true });
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(form.submitCount, 1);
 
-    harness.context.workbench.savedQueries.deleteQuery('bob', 'Query 2', 'urn:query');
+    remove.setAttribute('data-query-owner', 'bob');
+    remove.setAttribute('data-query-name', 'Query 2');
+    remove.dispatchEvent({ type: 'click', bubbles: true });
     assert.match(harness.alerts[0], /User 'alice' is not allowed do delete it/);
 
-    harness.context.workbench.savedQueries.toggle('urn:query');
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(metadata.style.display, '');
     assert.equal(textarea.value, 'SELECT * WHERE {?s ?p ?o}');
     assert.equal(yasqe.state.instance.refreshCount, 1);
@@ -130,7 +138,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(toggle.textContent, 'Hide details');
 
-    harness.context.workbench.savedQueries.toggle('urn:query');
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(textarea.style.display, 'none');
     assert.equal(yasqe.state.instance.closed, true);
     assert.equal(toggle.getAttribute('aria-expanded'), 'false');
@@ -179,7 +187,7 @@ test('saved query refresh leaves unchanged card content in place', () => {
     assert.deepEqual(toggleTextWrites, []);
     assert.deepEqual(queryWrites, []);
 
-    harness.context.workbench.savedQueries.toggle('urn:query');
+    toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(toggle.textContent, 'Hide details');
     toggleTextWrites.length = 0;
     harness.context.workbench.savedQueries.refresh(harness.document.body);

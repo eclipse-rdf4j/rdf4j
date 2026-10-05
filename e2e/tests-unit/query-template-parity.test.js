@@ -189,7 +189,8 @@ test('query-page feature policy hides configured controls without rendering resu
         'the query language choices should retain the configured format values');
 
     const inferredSelection = bindingFor(page.bindings,
-        binding => binding.before.includes('?checked='), 'default inferred-statements choice');
+        binding => binding.before.includes('id="infer"') && binding.before.includes('?checked='),
+        'default inferred-statements choice');
     assert.equal(inferredSelection.value, true, 'the configured inferred-statements default should remain selected');
 });
 

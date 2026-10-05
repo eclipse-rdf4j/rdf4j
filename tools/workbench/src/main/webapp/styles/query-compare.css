@@ -90,7 +90,6 @@ body.query-compare-mode #content {
 }
 
 body.query-compare-mode #title_heading,
-body.query-compare-mode #noscript-message,
 body.query-compare-mode .query-form {
     transform: translateX(0);
     transition: transform var(--workbench-motion-layout) var(--workbench-motion-ease);
@@ -499,22 +498,27 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     padding: 0 0.12rem;
 }
 
+/* Added and removed lines are tinted apart from context lines; their changed words carry a stronger tint of the line
+   colour and a heavier weight (text stays at least 4.5:1 in both themes). */
 .query-diff-row--added {
-	background: var(--workbench-surface);
+	background: var(--workbench-selected);
 	color: var(--workbench-teal-dark);
 }
 
 .query-diff-row--added .query-diff-row__segment--changed {
-	background: var(--workbench-inset);
+	background: color-mix(in srgb, var(--workbench-teal) 25%, var(--workbench-selected));
+	font-weight: 600;
 }
 
 .query-diff-row--removed {
-	background: var(--workbench-surface);
+	background: var(--workbench-danger-surface);
 	color: var(--workbench-danger);
 }
 
 .query-diff-row--removed .query-diff-row__segment--changed {
-	background: var(--workbench-inset);
+	background: color-mix(in srgb, var(--workbench-danger) 22%, var(--workbench-danger-surface));
+	color: var(--workbench-danger-hover);
+	font-weight: 600;
 }
 
 .query-diff-row--context {
@@ -591,7 +595,6 @@ body.workbench-body .workbench-page-surface .query-compare-pane__close {
     body.query-compare-mode #navigation,
     body.query-compare-mode #content,
     body.query-compare-mode #title_heading,
-    body.query-compare-mode #noscript-message,
     body.query-compare-mode .query-form {
         transition: none;
         animation: none;

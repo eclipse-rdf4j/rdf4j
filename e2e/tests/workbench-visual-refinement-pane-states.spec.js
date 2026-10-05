@@ -21,7 +21,7 @@ const {
 	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers');
-const fs = require('fs');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers');
 const path = require('path');
 
 // Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): the result streams into
@@ -32,14 +32,13 @@ const path = require('path');
 
 const SERVER_BASE_URL = serverBaseUrl();
 const WORKBENCH_BASE_URL = workbenchBaseUrl();
-const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
-	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
-const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final', 'states');
+// Screenshots go to WORKBENCH_VISUAL_REFINEMENT_DIRECTORY when it is set, otherwise to each test's output directory.
+const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY || '';
+const SCREENSHOT_DIRECTORY = ARTIFACT_DIRECTORY ? path.join(ARTIFACT_DIRECTORY, 'final', 'states') : '';
 const REPOSITORY_ID = uniqueRepositoryId('workbench-visual-pane-states');
 const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 
 test.beforeAll(async ({ request }) => {
-	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	const response = await request.put(REPOSITORY_URL, {
 		headers: { 'Content-Type': 'text/turtle' },
 		data: memoryRepositoryConfiguration(REPOSITORY_ID, 'Workbench visual state fixture')
@@ -219,8 +218,11 @@ async function waitForComparison(page) {
 }
 
 async function captureState(page, fileName) {
+	if (!evidenceScreenshots()) {
+		return;
+	}
 	await page.screenshot({
-		path: path.join(SCREENSHOT_DIRECTORY, fileName),
+		path: evidencePath(SCREENSHOT_DIRECTORY, fileName),
 		fullPage: true,
 		animations: 'disabled',
 		caret: 'hide'

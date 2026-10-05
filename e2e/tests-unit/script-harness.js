@@ -170,12 +170,6 @@ function createScriptHarness(options = {}) {
         addLoad(callback) {
             loadCallbacks.push(callback);
         },
-        addParam(sb, id) {
-            sb[sb.length] = id + '=';
-            const tag = document.getElementById(id);
-            sb[sb.length] = tag.type === 'checkbox' ? String(tag.checked) : encodeURIComponent(tag.value);
-            sb[sb.length] = '&';
-        },
         getCookie(name) {
             const cookies = document.cookie.split(';');
             for (const cookie of cookies) {

@@ -21,28 +21,6 @@ module workbench {
 
         var AMP = decodeURIComponent('%26');
 
-        function getMountedQueryPage(): any {
-            var queryPage: any = (<any>workbench).queryPage;
-            return queryPage && typeof queryPage.isMounted === 'function' && queryPage.isMounted()
-                ? queryPage : null;
-        }
-
-        function isStreamPagingParameter(name: string): boolean {
-            return name === OFFSET || name === 'limit_query' || name.indexOf('limit_') === 0;
-        }
-
-        function changeStreamPagingParameter(queryPage: any, name: string, value: any): boolean {
-            if (!queryPage || typeof queryPage.changePageParameter !== 'function'
-                    || !isStreamPagingParameter(name)) {
-                return false;
-            }
-            var numericValue = typeof value === 'number' ? value : parseInt(String(value), 10);
-            if (!isFinite(numericValue) || numericValue < 0) {
-                return false;
-            }
-            return queryPage.changePageParameter(name, numericValue);
-        }
-
         function createHiddenInput(name: string, value: string): HTMLInputElement {
             var input = document.createElement('input');
             input.type = 'hidden';
@@ -151,9 +129,6 @@ module workbench {
          */
         export function addGraphParam(name: string) {
             var value = <string>$('#' + name).val();
-            if (name !== 'Accept' && changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
-                return;
-            }
             var url = document.location.href;
             if (url.match(/query$/)) { // looking at POST query results?
                 submitGraphParamRequest(name, value);
@@ -222,9 +197,6 @@ module workbench {
          * @param {number} value The value of the query parameter.
          */
         export function addPagingParam(name: string, value: number) {
-            if (changeStreamPagingParameter(getMountedQueryPage(), name, value)) {
-                return;
-            }
             if (document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
@@ -244,24 +216,10 @@ module workbench {
         }
 
         /**
-         * Invoked in the tuple and explore views. Changes the limit query
-         * parameter and navigates to the new URL.
-         */
-        export function addLimit(page: string) {
-            var suffix = '_' + page;
-            addPagingParam(LIMIT + suffix, $(LIM_ID + suffix).val());
-        }
-
-        /**
          * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         export function nextOffset(page: string) {
-            var queryPage = getMountedQueryPage();
-            if (queryPage && typeof queryPage.nextPage === 'function') {
-                queryPage.nextPage();
-                return;
-            }
             addPagingParam(OFFSET, getOffset() + getLimit(page));
         }
 
@@ -270,11 +228,6 @@ module workbench {
          * parameter and navigates to the new URL.
          */
         export function previousOffset(page: string) {
-            var queryPage = getMountedQueryPage();
-            if (queryPage && typeof queryPage.previousPage === 'function') {
-                queryPage.previousPage();
-                return;
-            }
             addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
         }
 
@@ -287,9 +240,23 @@ module workbench {
         }
 
         /**
-         * @returns {number} The value of the limit query parameter.
+         * @returns {number} The limit applied to the shown page: its limit URL parameter, else the limit the page was
+         *          rendered with. The limit select only applies when its form is submitted, so a value chosen in it
+         *          but not applied must not change how far Previous and Next step.
          */
         export function getLimit(page: string): number {
+            var name = LIMIT + '_' + page;
+            var applied = parseInt(getQueryParameter(name), 10);
+            if (!isNaN(applied)) {
+                return applied;
+            }
+            var select = <HTMLSelectElement>document.getElementById(name);
+            var options = select && select.options;
+            for (var i = 0; options && i < options.length; i++) {
+                if (options[i].defaultSelected) {
+                    return parseInt(options[i].value, 10);
+                }
+            }
             return parseInt($(LIM_ID + '_' + page).val(), 10);
         }
 
@@ -411,10 +378,20 @@ module workbench {
                     "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
             }
 
-            /** Datatype tags (span.rdf-datatype) are hidden by a page class, so no cell needs re-rendering. */
-            export function setShow(show: boolean) {
+            /**
+             * Datatype tags (span.rdf-datatype) are hidden by a class on the page's own outlet (root), so no cell
+             * needs re-rendering and the pages shown later are not affected (the body only without a root).
+             */
+            export function apply(show: boolean, root?: HTMLElement) {
+                var target = root || document.body;
+                if (target && target.classList) {
+                    target.classList.toggle('workbench-hide-datatypes', !show);
+                }
+            }
+
+            export function setShow(show: boolean, root?: HTMLElement) {
                 setCookie('show-datatypes', show, 365);
-                document.body.classList.toggle('workbench-hide-datatypes', !show);
+                apply(show, root);
             }
         }
 
@@ -425,10 +402,11 @@ module workbench {
             var showDTcb = root ? $(root).find(selector) : $(selector);
             if (hideDataTypes) {
                 showDTcb.prop('checked', false);
-                DataTypeVisibility.setShow(false);
             }
+            // Both ways: the next page may be rendered into the same outlet.
+            DataTypeVisibility.apply(!hideDataTypes, root);
             showDTcb.on('change.wbRoute', function() {
-                DataTypeVisibility.setShow(showDTcb.prop('checked'));
+                DataTypeVisibility.setShow(showDTcb.prop('checked'), root);
             });
         }
     }

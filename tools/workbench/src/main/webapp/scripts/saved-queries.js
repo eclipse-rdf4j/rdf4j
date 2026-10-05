@@ -39,13 +39,6 @@ var workbench;
                     + currentUser + "' is not allowed do delete it.");
             }
         }
-        /** Legacy page callers; route actions additionally retain their actual form and mount. */
-        function deleteQuery(savedBy, name, urn) {
-            var form = document.forms.namedItem(urn);
-            var owner = workbench.captureFormOwner(form);
-            confirmDeletion(savedBy, name, function () { return owner.isCurrent() ? form : null; });
-        }
-        savedQueries.deleteQuery = deleteQuery;
         /** IDs are opaque saved-query URNs, so never interpolate them into CSS selectors. */
         function element(page, id) {
             var candidate = page.outlet.ownerDocument.getElementById(id);
@@ -105,18 +98,6 @@ var workbench;
                 textarea.style.display = 'none';
             }
         }
-        /** Show or hide details for legacy callers as well as delegated native button activation. */
-        function toggle(urn) {
-            var button = document.getElementById(urn + '-toggle');
-            for (var parent_1 = button; parent_1; parent_1 = parent_1.parentNode) {
-                var page = pages.get(parent_1);
-                if (page && !page.disposed) {
-                    showDetails(page, urn, !page.expanded.has(urn));
-                    return;
-                }
-            }
-        }
-        savedQueries.toggle = toggle;
         /** Called after the virtual row renderer changes the visible cards. */
         function refresh(outlet) {
             var page = pages.get(outlet);

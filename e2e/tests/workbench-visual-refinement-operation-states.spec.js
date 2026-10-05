@@ -20,7 +20,7 @@ const {
 	waitForWriteDone,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers');
-const fs = require('fs');
+const { evidencePath, evidenceScreenshots } = require('./workbench-test-helpers');
 const path = require('path');
 
 // Migrated with the redesign (see .agent/execplans/workbench-stale-spec-migration-20261002.md): query results stream into
@@ -29,9 +29,9 @@ const path = require('path');
 
 const SERVER_BASE_URL = serverBaseUrl();
 const WORKBENCH_BASE_URL = workbenchBaseUrl();
-const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY
-	|| path.resolve(__dirname, '../../output/workbench-visual-refinement');
-const SCREENSHOT_DIRECTORY = path.join(ARTIFACT_DIRECTORY, 'final', 'operation-states');
+// Screenshots go to WORKBENCH_VISUAL_REFINEMENT_DIRECTORY when it is set, otherwise to each test's output directory.
+const ARTIFACT_DIRECTORY = process.env.WORKBENCH_VISUAL_REFINEMENT_DIRECTORY || '';
+const SCREENSHOT_DIRECTORY = ARTIFACT_DIRECTORY ? path.join(ARTIFACT_DIRECTORY, 'final', 'operation-states') : '';
 const RUN_ID = uniqueRepositoryId('run');
 const REPOSITORY_ID = `visual-operation-${RUN_ID}`;
 const DELETE_REPOSITORY_ID = `visual-delete-${RUN_ID}`;
@@ -39,7 +39,6 @@ const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const DELETE_REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${DELETE_REPOSITORY_ID}`;
 
 test.beforeAll(async ({ request }) => {
-	fs.mkdirSync(SCREENSHOT_DIRECTORY, { recursive: true });
 	await createRepository(request, REPOSITORY_ID);
 	await createRepository(request, DELETE_REPOSITORY_ID);
 	const loaded = await request.post(`${REPOSITORY_URL}/statements`, {
@@ -270,8 +269,11 @@ async function setCodeMirror(page, query) {
 }
 
 async function capture(page, fileName) {
+	if (!evidenceScreenshots()) {
+		return;
+	}
 	await page.screenshot({
-		path: path.join(SCREENSHOT_DIRECTORY, fileName),
+		path: evidencePath(SCREENSHOT_DIRECTORY, fileName),
 		fullPage: true,
 		animations: 'disabled',
 		caret: 'hide'

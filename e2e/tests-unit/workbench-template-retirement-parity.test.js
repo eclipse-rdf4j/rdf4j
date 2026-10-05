@@ -146,35 +146,6 @@ test('shared chevron adapter creates one decorative, accessible 16px SVG', () =>
     assert.equal(icons.length, 1, 'rebinding must not duplicate the shared icon');
 });
 
-test('shared disclosure adapter places the rotating chevron after its label', () => {
-    const workbench = loadWorkbench();
-    const document = new FakeDocument();
-    const button = document.createElement('button');
-    const label = document.createElement('span');
-    label.textContent = 'Save query';
-    button.appendChild(label);
-    button.firstChild = label;
-    button.setAttribute('aria-expanded', 'false');
-    document.body.appendChild(button);
-
-    workbench.icons.decorateDisclosureButton(button, 'Save query');
-    let icons = button.querySelectorAll('svg[data-workbench-icon]');
-    assert.equal(icons.length, 1);
-    assert.equal(button.children[0], label, 'the text label should precede the chevron');
-    assert.equal(button.children[1], icons[0], 'the chevron should be the final button child');
-    assert.ok(icons[0].classList.contains('workbench-disclosure-chevron'),
-        'the shared disclosure class should enable expanded-state rotation');
-    assert.equal(icons[0].getAttribute('data-workbench-icon'), 'chevron');
-    assert.equal(icons[0].getAttribute('aria-hidden'), 'true');
-    assert.equal(button.getAttribute('aria-label'), 'Save query');
-    assert.equal(button.getAttribute('aria-expanded'), 'false', 'decoration must preserve disclosure state');
-
-    workbench.icons.decorateDisclosureButton(button, 'Save query');
-    icons = button.querySelectorAll('svg[data-workbench-icon]');
-    assert.equal(icons.length, 1, 'rebinding must not duplicate the chevron');
-    assert.equal(button.children[1], icons[0], 'rebinding should preserve the trailing position');
-});
-
 test('shared detail disclosure restores keyboard access and releases dynamic observers', () => {
 	const document = new FakeDocument();
 	const observers = [];

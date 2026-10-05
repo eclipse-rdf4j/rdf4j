@@ -625,6 +625,8 @@ test('records layout scrolls through loaded rows with bounded DOM and no local p
         'result-next-offset': 25
     } });
 
+    // A viewport of one (1px) record: the window cap bounds the overscan, never the visible rows (review fix B20).
+    renderer.records.clientHeight = 1;
     renderer.layoutControl.value = 'records';
     renderer.layoutControl.trigger('change');
     await new Promise(resolve => setImmediate(resolve));

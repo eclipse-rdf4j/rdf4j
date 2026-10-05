@@ -23,8 +23,10 @@ const pixelmatch = require(path.join(playwrightLibraryDirectory, 'third_party/pi
 const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
 const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
 const REFERENCE_PATH = process.env.QUERY_EXPLANATION_REFERENCE;
-const ACTUAL_PATH = process.env.QUERY_EXPLANATION_ACTUAL || '/tmp/rdf4j-query-explanation-actual.png';
-const DIFF_PATH = process.env.QUERY_EXPLANATION_DIFF || '/tmp/rdf4j-query-explanation-diff.png';
+// The captured page and the pixel difference go where these name, otherwise to the test's output directory (not a
+// fixed temporary file that parallel runs would share).
+const ACTUAL_OVERRIDE = process.env.QUERY_EXPLANATION_ACTUAL || '';
+const DIFF_OVERRIDE = process.env.QUERY_EXPLANATION_DIFF || '';
 const REPOSITORY_ID = 'query-explanation-visual';
 const ORIGINAL_QUERY = `SELECT DISTINCT ?a WHERE {
   ?a a <http://example#Type> .
@@ -86,6 +88,8 @@ test('original query explanation matches the visual reference pixel-for-pixel', 
         };
     });
     await page.mouse.move(0, 0);
+    const ACTUAL_PATH = ACTUAL_OVERRIDE || test.info().outputPath('query-explanation-actual.png');
+    const DIFF_PATH = DIFF_OVERRIDE || test.info().outputPath('query-explanation-diff.png');
     await page.screenshot({ path: ACTUAL_PATH, clip, animations: 'disabled', caret: 'hide' });
 
     const surface = page.locator('#query-explanation-row .query-explanation-surface');

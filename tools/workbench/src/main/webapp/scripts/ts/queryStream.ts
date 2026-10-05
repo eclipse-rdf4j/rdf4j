@@ -229,6 +229,38 @@ namespace workbench {
         const rowStoreRecoveryKeyPrefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
         var currentDocumentRowStoreIds: string[] = [];
 
+        /**
+         * Stores of pages that ended without a destructive pagehide (a crash, a discarded tab, an evicted back/forward
+         * cache entry) are swept by age: a page touches its open stores every half hour, and a new store deletes the
+         * ones nobody touched for three days, at most once an hour per page.
+         */
+        var rowStoreMaxAge = 3 * 24 * 60 * 60 * 1000;
+        var rowStoreTouchInterval = 30 * 60 * 1000;
+        var rowStoreSweepInterval = 60 * 60 * 1000;
+        var lastRowStoreSweep: number = null;
+        var liveRowStoreTouches: { [storeId: string]: () => Promise<any> } = {};
+        var rowStoreHeartbeat: any = null;
+
+        function startRowStoreHeartbeat(): void {
+            var view: any = typeof window !== 'undefined' ? window : null;
+            if (rowStoreHeartbeat !== null || !view || typeof view.setInterval !== 'function') {
+                return;
+            }
+            rowStoreHeartbeat = view.setInterval(function() {
+                var ids = Object.keys(liveRowStoreTouches);
+                if (!ids.length) {
+                    view.clearInterval(rowStoreHeartbeat);
+                    rowStoreHeartbeat = null;
+                    return;
+                }
+                ids.forEach(function(id) {
+                    liveRowStoreTouches[id]().then(null, function() {
+                        // A store that cannot be touched is still disposed by its page.
+                    });
+                });
+            }, rowStoreTouchInterval);
+        }
+
         function rowStoreRecoveryStorage(): any {
             try {
                 return typeof window !== 'undefined' ? (window as any).localStorage : null;
@@ -702,7 +734,7 @@ namespace workbench {
          * belong to this layer.
          */
         export class NdjsonResultParser {
-            private buffer = '';
+            private lines = new NdjsonLineSplitter();
             private state: NdjsonFrameState = { headSeen: false, terminal: null };
 
             constructor(private onRecord: (record: QueryResultRecord) => void) {
@@ -715,21 +747,14 @@ namespace workbench {
                 if (typeof chunk !== 'string') {
                     throw protocolError('reader chunks must be decoded text.');
                 }
-                this.buffer += chunk;
-                var lineEnd = this.buffer.indexOf('\n');
-                while (lineEnd !== -1) {
-                    var line = this.buffer.substring(0, lineEnd);
-                    this.buffer = this.buffer.substring(lineEnd + 1);
-                    this.acceptLine(line);
-                    lineEnd = this.buffer.indexOf('\n');
-                }
+                this.lines.push(chunk).forEach(line => this.acceptLine(line));
             }
 
             finish() {
-                if (this.buffer.trim()) {
-                    this.acceptLine(this.buffer);
+                var tail = this.lines.rest();
+                if (tail.trim()) {
+                    this.acceptLine(tail);
                 }
-                this.buffer = '';
                 if (!this.state.terminal) {
                     throw protocolError('the response ended before an end or error record.');
                 }
@@ -750,6 +775,39 @@ namespace workbench {
                     throw protocolError('a record is not valid JSON.');
                 }
                 this.onRecord(validateFramingRecord(parsed, this.state));
+            }
+        }
+
+        /**
+         * Splits arriving text into lines and scans each chunk once: a record far larger than a chunk is kept as its
+         * parts until its newline arrives, instead of being joined and searched again for every chunk.
+         */
+        class NdjsonLineSplitter {
+            private parts: string[] = [];
+
+            /** The lines this chunk completes. */
+            push(chunk: string): string[] {
+                var lines: string[] = [];
+                var start = 0;
+                var lineEnd = chunk.indexOf('\n');
+                while (lineEnd !== -1) {
+                    this.parts.push(chunk.substring(start, lineEnd));
+                    lines.push(this.parts.join(''));
+                    this.parts = [];
+                    start = lineEnd + 1;
+                    lineEnd = chunk.indexOf('\n', start);
+                }
+                if (start < chunk.length) {
+                    this.parts.push(chunk.substring(start));
+                }
+                return lines;
+            }
+
+            /** The text after the last newline, which is taken. */
+            rest(): string {
+                var tail = this.parts.join('');
+                this.parts = [];
+                return tail;
             }
         }
 
@@ -788,7 +846,7 @@ namespace workbench {
             }
             var reader = response.body.getReader();
             var decoder = new TextDecoder('utf-8');
-            var buffer = '';
+            var splitter = new NdjsonLineSplitter();
             var state: NdjsonFrameState = { headSeen: false, terminal: null };
             var stale = false;
 
@@ -829,24 +887,19 @@ namespace workbench {
             }
 
             function processText(text: string): Promise<void> {
-                buffer += text;
-                var lineEnd = buffer.indexOf('\n');
+                var lines = splitter.push(text);
+                var index = 0;
                 function processLines(): Promise<void> {
-                    if (stale || lineEnd === -1) {
+                    if (stale || index >= lines.length) {
                         return Promise.resolve();
                     }
-                    var line = buffer.substring(0, lineEnd);
-                    buffer = buffer.substring(lineEnd + 1);
-                    lineEnd = buffer.indexOf('\n');
-                    return deliverLine(line).then(processLines);
+                    return deliverLine(lines[index++]).then(processLines);
                 }
                 return processLines();
             }
 
             function finish(): Promise<QueryStreamOutcome> {
-                var tail = buffer;
-                buffer = '';
-                return deliverLine(tail).then(function() {
+                return deliverLine(splitter.rest()).then(function() {
                     if (stale || isStale()) {
                         stale = true;
                         return cancelReader(reader).then(() => <QueryStreamOutcome>{ type: 'stale' });
@@ -912,7 +965,49 @@ namespace workbench {
             }
 
             return fetcher(url, init).then(function(response: any): Promise<QueryStreamOutcome> {
+                var contentType = responseContentType(response);
+                if (contentType && !/ndjson/i.test(contentType)) {
+                    return unexpectedResponse(response, contentType);
+                }
                 return consumeNdjsonResponse(response, callbacks);
+            });
+        }
+
+        function responseContentType(response: any): string {
+            var headers = response && response.headers;
+            return headers && typeof headers.get === 'function' ? String(headers.get('Content-Type') || '') : '';
+        }
+
+        /** The readable text of an answer that is not a query stream: an HTML page loses its markup. */
+        function responseSummary(text: string, contentType: string): string {
+            var summary = String(text || '');
+            if (/html/i.test(contentType)) {
+                summary = summary.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
+                    .replace(/&#(\d+);/g, (entity: string, code: string) => String.fromCharCode(Number(code)))
+                    .replace(/&(lt|gt|quot|apos|nbsp|ndash|mdash|amp);/g, (entity: string, name: string) =>
+                        (<any>{ lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', ndash: '–', mdash: '—', amp: '&' })[name]);
+            }
+            summary = summary.replace(/\s+/g, ' ').trim();
+            return summary.length > 300 ? summary.substring(0, 300) + '…' : summary;
+        }
+
+        /**
+         * A query answered with something other than a query stream (an error page of the server or of a proxy, a
+         * sign-in page): report its HTTP status and text instead of failing on its first line as invalid JSON.
+         */
+        function unexpectedResponse(response: any, contentType: string): Promise<QueryStreamOutcome> {
+            var text = typeof response.text === 'function'
+                ? Promise.resolve().then(() => response.text()).then(null, () => '') : Promise.resolve('');
+            return text.then((body: string) => {
+                var status = typeof response.status === 'number' ? response.status : 0;
+                var label = 'HTTP ' + status + (response.statusText ? ' ' + response.statusText : '');
+                var summary = responseSummary(body, contentType);
+                var error: any = new Error((response.ok === false
+                    ? 'The server refused the query (' + label + ')'
+                    : 'The server did not answer with query results (' + label + ', ' + contentType + ')')
+                    + (summary ? ': ' + summary : '.'));
+                error.status = status;
+                throw error;
             });
         }
 
@@ -962,7 +1057,8 @@ namespace workbench {
             try {
                 worker = createRowStoreWorker(options || {});
             } catch (error) {
-                return Promise.reject(error);
+                // Without Web Workers there are no IndexedDB stores to reclaim; the markers wait for a later boot.
+                return Promise.resolve();
             }
 
             return new Promise<void>(function(resolve, reject) {
@@ -1004,6 +1100,12 @@ namespace workbench {
                         return;
                     }
                     delete pending[key];
+                    if (!response.ok && response.unavailable) {
+                        // IndexedDB cannot be opened here (blocked site data, disabled storage): nothing to reclaim
+                        // now, and the markers wait for a later boot that has storage.
+                        finish();
+                        return;
+                    }
                     if (!response.ok) {
                         finish(new Error(response.error || 'Workbench query result recovery failed.'));
                         return;
@@ -1081,11 +1183,73 @@ namespace workbench {
         }
 
         /**
-         * Opens a dedicated worker and an IndexedDB-backed row store. Only the
-         * requested `read` window is cloned back to the main thread.
+         * Opens a row store: a dedicated worker with an IndexedDB-backed store, so only the requested `read` window
+         * is cloned back to the main thread. Where Web Workers or IndexedDB are unavailable (blocked site data,
+         * storage turned off, some web views, a full quota) the rows are kept in memory instead.
          */
         export function createRowStore(options?: RowStoreOptions): Promise<RowStore> {
-            var config = options || {};
+            return createWorkerRowStore(options || {}).then(null, function() {
+                return createMemoryRowStore();
+            });
+        }
+
+        var memoryRowStoreCount = 0;
+
+        /** A row store in this document's memory, with the worker store's interface and checks. */
+        function createMemoryRowStore(): RowStore {
+            var rows: any[][] = [];
+            var disposed = false;
+            function whileOpen<T>(operation: () => T): Promise<T> {
+                if (disposed) {
+                    return Promise.reject(new Error('The query row store has been disposed.'));
+                }
+                try {
+                    return Promise.resolve(operation());
+                } catch (error) {
+                    return Promise.reject(error);
+                }
+            }
+            return {
+                id: 'memory-' + (++memoryRowStoreCount),
+                append: (batch: any[][]): Promise<number> => {
+                    if (!Array.isArray(batch)) {
+                        return Promise.reject(new Error('Query rows must be provided as a batch.'));
+                    }
+                    return whileOpen(() => {
+                        for (var index = 0; index < batch.length; index++) {
+                            rows.push(batch[index]);
+                        }
+                        return rows.length;
+                    });
+                },
+                read: (start: number, count: number): Promise<any[][]> => {
+                    if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
+                        return Promise.reject(new Error('A non-negative row window is required.'));
+                    }
+                    return whileOpen(() => rows.slice(Math.floor(start), Math.floor(start) + Math.floor(count)));
+                },
+                count: (): Promise<number> => whileOpen(() => rows.length),
+                truncate: (count: number): Promise<number> => {
+                    if (!Number.isSafeInteger(count) || count < 0) {
+                        return Promise.reject(new Error('A non-negative safe truncate count is required.'));
+                    }
+                    return whileOpen(() => {
+                        if (count > rows.length) {
+                            throw new Error('The truncate count cannot exceed the stored row count.');
+                        }
+                        rows.length = count;
+                        return count;
+                    });
+                },
+                dispose: (): Promise<void> => {
+                    disposed = true;
+                    rows = [];
+                    return Promise.resolve();
+                }
+            };
+        }
+
+        function createWorkerRowStore(config: RowStoreOptions): Promise<RowStore> {
             var worker: any;
             try {
                 worker = createRowStoreWorker(config);
@@ -1180,6 +1344,16 @@ namespace workbench {
                     currentDocumentRowStoreIds.push(storeId);
                 }
                 listenForRowStorePagehide();
+                liveRowStoreTouches[storeId] = () => send('touch');
+                startRowStoreHeartbeat();
+                var now = Date.now();
+                if (lastRowStoreSweep === null || now - lastRowStoreSweep >= rowStoreSweepInterval) {
+                    lastRowStoreSweep = now;
+                    send('sweep', { maxAge: rowStoreMaxAge, keep: currentDocumentRowStoreIds.slice() }).then(null,
+                        function() {
+                            // A failed sweep leaves the stale stores for the next one.
+                        });
+                }
                 var rowStore: RowStore = {
                     id: storeId,
                     append: (rows: any[][]): Promise<number> => {
@@ -1216,6 +1390,7 @@ namespace workbench {
                         disposed = true;
                         function cleanup() {
                             forgetCurrentDocumentRowStore(storeId);
+                            delete liveRowStoreTouches[storeId];
                             closeWorker();
                         }
                         disposePromise = send('dispose').then(function() {
@@ -1492,14 +1667,14 @@ namespace workbench {
                 var start = Math.max(0, firstVisible - Math.floor(overscanRows));
                 var end = Math.min(count, afterVisible + Math.floor(overscanRows));
                 if (end - start > max) {
-                    var visibleCount = Math.max(1, afterVisible - firstVisible);
-                    var before = Math.max(0, Math.floor((max - visibleCount) / 2));
-                    start = Math.max(0, firstVisible - before);
-                    end = Math.min(count, start + max);
-                    if (end < afterVisible) {
-                        end = afterVisible;
-                        start = Math.max(0, end - max);
-                    }
+                    // Only the overscan is cut to the cap: every visible row is rendered, even when more rows fit
+                    // in the viewport than the cap allows (a very tall window).
+                    var spare = Math.max(0, max - (afterVisible - firstVisible));
+                    var before = Math.min(firstVisible - start, Math.floor(spare / 2));
+                    var after = Math.min(end - afterVisible, spare - before);
+                    before = Math.min(firstVisible - start, spare - after);
+                    start = firstVisible - before;
+                    end = afterVisible + after;
                 }
                 return {
                     start: start,
@@ -1895,8 +2070,9 @@ namespace workbench {
                 return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
             }
             if (term.kind === 'triple') {
-                return '<< ' + ntriplesTerm(term.subject) + ' ' + ntriplesTerm(term.predicate) + ' '
-                    + ntriplesTerm(term.object) + ' >>';
+                // RDF 1.2 triple-term syntax: '<< s p o >>' is a reified triple there, not the triple term.
+                return '<<( ' + ntriplesTerm(term.subject) + ' ' + ntriplesTerm(term.predicate) + ' '
+                    + ntriplesTerm(term.object) + ' )>>';
             }
             return ntriplesString(term.value || '') + (term.language
                 ? '@' + term.language + (term.direction ? '--' + term.direction : '')
@@ -1915,8 +2091,8 @@ namespace workbench {
                 return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
             }
             if (term.kind === 'triple') {
-                return '<< ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
-                    + ' ' + exploreResource(term.object) + ' >>';
+                return '<<( ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
+                    + ' ' + exploreResource(term.object) + ' )>>';
             }
             return JSON.stringify(term.value || '') + (term.language ? '@' + term.language
                 + (term.direction ? '--' + term.direction : '')
@@ -1983,9 +2159,9 @@ namespace workbench {
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             } else if (term.kind === 'triple') {
-                display.label = '<< ' + inlineTermLabel(term.subject, config) + ' '
+                display.label = '<<( ' + inlineTermLabel(term.subject, config) + ' '
                     + inlineTermLabel(term.predicate, config) + ' '
-                    + inlineTermLabel(term.object, config) + ' >>';
+                    + inlineTermLabel(term.object, config) + ' )>>';
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             } else {
@@ -2044,6 +2220,11 @@ namespace workbench {
             private tableColumns: any;
             private records: any;
             private downloadFrame: any = null;
+            private announcer: any = null;
+            private announced = '';
+            /** Taken out of its results area (detach) until it is moved into another one (moveTo). */
+            private detached = false;
+            private downloadError: any = null;
             private booleanResult: any;
             private errorResult: any;
             private maxDomRows: number;
@@ -2093,6 +2274,9 @@ namespace workbench {
             private recordRenderGeneration = 0;
             private renderGeneration = 0;
             private headerSignature = '';
+            /** The readable header widths of the automatic layout, and what they were measured for. */
+            private readableWidthsKey: string = null;
+            private readableWidths: number[] = [];
             private columnWidthRows: any[][] = null;
             private columnWidthReadCount = -1;
             private columnWidthReadPromise: Promise<any[][]> = null;
@@ -2256,6 +2440,10 @@ namespace workbench {
                 decorateWithWorkbenchIcon(downloadButton, 'download', 'Download');
                 downloadAction.appendChild(downloadButton);
                 downloadFields.appendChild(downloadAction);
+                // A download the server refuses loads its error page into the hidden download frame: say so here.
+                this.downloadError = createElement(this.document, 'p', 'query-result-download-error error');
+                this.downloadError.hidden = true;
+                downloadFields.appendChild(this.downloadError);
                 downloadDisclosure.content.appendChild(downloadFields);
 
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
@@ -2295,14 +2483,19 @@ namespace workbench {
 
                 // The status starts the toolbar row, at its left; Full screen, Download and Display end it.
                 var statusLine = createElement(this.document, 'div', 'query-result-status-line');
+                // The status line changes with every streamed frame, so it is no live region: the announcer below
+                // says only when results start, when they are complete and when they fail.
                 this.status = createElement(this.document, 'div', 'query-result-status');
-                this.status.setAttribute('role', 'status');
-                this.status.setAttribute('aria-live', 'polite');
                 statusLine.appendChild(this.status);
                 this.timer = createElement(this.document, 'span', 'query-result-timer');
                 this.timer.setAttribute('role', 'timer');
                 this.timer.hidden = true;
                 statusLine.appendChild(this.timer);
+                this.announcer = createElement(this.document, 'div',
+                    'query-result-announcement workbench-visually-hidden');
+                this.announcer.setAttribute('role', 'status');
+                this.announcer.setAttribute('aria-live', 'polite');
+                statusLine.appendChild(this.announcer);
                 header.appendChild(statusLine);
                 var controls = createElement(this.document, 'div', 'query-result-navigation');
                 this.countLabel = createElement(this.document, 'span', 'query-result-navigation__label');
@@ -2597,6 +2790,10 @@ namespace workbench {
                 }
                 this.suspended = true;
                 this.windowListeners.forEach((entry) => entry[0].removeEventListener(entry[1], entry[2], entry[3]));
+                // Full screen locks the document's scrolling: a hidden result gives the viewport back.
+                if (this.target.getAttribute('data-fullscreen') === 'true') {
+                    workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
+                }
             }
 
             resume(): void {
@@ -2665,17 +2862,34 @@ namespace workbench {
                 } else {
                     this.stopTimer();
                 }
-                this.target.setAttribute('aria-busy', busy ? 'true' : 'false');
+                this.syncTargetBusy();
                 this.cancelButton.hidden = !busy;
                 this.loadMoreButton.disabled = busy;
                 this.loadMoreButton.setAttribute('aria-busy', busy ? 'true' : 'false');
                 this.loadMoreButton.textContent = busy && this.batchStart > 0 ? 'Loading more…' : 'Load more';
-                var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
-                if (loading) {
-                    loading.hidden = !busy;
-                }
                 if (busy) {
                     this.status.textContent = this.batchStart > 0 ? 'Loading more results…' : 'Receiving query results…';
+                    this.announce(this.status.textContent);
+                }
+            }
+
+            /** Say a milestone (start, completion, failure) once to assistive technology. */
+            private announce(text: string): void {
+                if (text && text !== this.announced) {
+                    this.announced = text;
+                    this.announcer.textContent = text;
+                }
+            }
+
+            /** The results area says whether this result is loading; a detached result leaves it to its new page. */
+            private syncTargetBusy(): void {
+                if (this.detached) {
+                    return;
+                }
+                this.target.setAttribute('aria-busy', this.busy ? 'true' : 'false');
+                var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
+                if (loading) {
+                    loading.hidden = !this.busy;
                 }
             }
 
@@ -2689,6 +2903,7 @@ namespace workbench {
                 this.renderError();
                 this.errorResult.hidden = false;
                 this.status.textContent = this.errorStatusText();
+                this.announce(this.status.textContent);
                 this.countLabel.hidden = true;
                 this.countLabel.textContent = '';
                 this.loadMoreButton.hidden = !this.canLoadMore();
@@ -2811,6 +3026,10 @@ namespace workbench {
                 if (error.code === 'timeout' || error.code === 'cancelled' || error.code === 'circuit-breaker') {
                     return error.message;
                 }
+                if (error.code === 'client') {
+                    return 'The browser could not keep the results: ' + error.message
+                        + (this.state.rowCount > 0 ? ' The visible results are incomplete.' : '');
+                }
                 if (error.code === 'incomplete' || this.state.rowCount > 0
                         || /(?:EOFException|QueryEvaluationException)/i.test(error.message)) {
                     return 'The result stream ended before the query completed. The visible results are incomplete. '
@@ -2839,6 +3058,12 @@ namespace workbench {
                         ? 'Partial results: ' + rows + (rows === 1 ? ' row' : ' rows')
                             + ' retained before the server stopped the query.'
                         : 'The server stopped the query because of memory pressure.';
+                }
+                if (error && error.code === 'client') {
+                    return rows > 0
+                        ? 'Partial results: ' + rows + (rows === 1 ? ' row' : ' rows')
+                            + ' kept before the browser failed.'
+                        : 'The browser could not keep the results.';
                 }
                 return rows > 0
                     ? 'Incomplete results: ' + rows + (rows === 1 ? ' row' : ' rows')
@@ -2889,6 +3114,7 @@ namespace workbench {
                 }
                 this.leaveTarget();
                 this.target = target;
+                this.detached = false;
                 this.previousLabelledBy = target.getAttribute('aria-labelledby');
                 target.setAttribute('aria-labelledby', this.resultHeadingId);
                 this.legacyHeader = target.querySelector ? target.querySelector('.query-results__header') : null;
@@ -2898,6 +3124,7 @@ namespace workbench {
                 }
                 target.appendChild(this.root);
                 this.followPresentation();
+                this.syncTargetBusy();
                 if (executionForm) {
                     this.options.executionForm = executionForm;
                 }
@@ -2916,6 +3143,7 @@ namespace workbench {
             detach(): void {
                 if (!this.disposed) {
                     this.leaveTarget();
+                    this.detached = true;
                 }
             }
 
@@ -3101,7 +3329,7 @@ namespace workbench {
                     error: !!state.error
                 };
                 var key = JSON.stringify(detail);
-                if (key === this.publishedSummary) {
+                if (key === this.publishedSummary || this.detached) {
                     return;
                 }
                 this.publishedSummary = key;
@@ -3258,8 +3486,12 @@ namespace workbench {
                     this.downloadFrame.setAttribute('id', this.elementId('query-result-download-frame'));
                     this.downloadFrame.setAttribute('name', this.elementId('query-result-download-frame'));
                     this.downloadFrame.hidden = true;
+                    var frame = this.downloadFrame;
+                    // A file download leaves the frame empty; a page loaded into it is the server's refusal.
+                    frame.addEventListener('load', () => this.showDownloadError(frame));
                     (this.document.body || this.target).appendChild(this.downloadFrame);
                 }
+                this.setDownloadError('');
                 downloadForm.target = this.downloadFrame.name || this.elementId('query-result-download-frame');
                 var excluded = ['Accept', 'download_limit', 'query-request-id', 'action', 'submit', 'batch-size', 'batch-offset'];
                 if (snapshot) {
@@ -3281,14 +3513,43 @@ namespace workbench {
                 }
                 this.appendNativeDownloadInput(downloadForm, 'action', 'exec');
                 this.appendNativeDownloadInput(downloadForm, 'Accept', String(this.downloadFormatControl.value || ''));
-                this.appendNativeDownloadInput(downloadForm, 'download_limit',
-                    String(this.downloadLimitControl.value || '0'));
+                // A limit the policy hides is not sent: the server refuses a request that sets it.
+                if (!this.downloadLimitControl.hidden) {
+                    this.appendNativeDownloadInput(downloadForm, 'download_limit',
+                        String(this.downloadLimitControl.value || '0'));
+                }
                 (this.document.body || this.target).appendChild(downloadForm);
                 if (typeof downloadForm.submit === 'function') {
                     downloadForm.submit();
                 }
                 if (downloadForm.parentNode) {
                     downloadForm.parentNode.removeChild(downloadForm);
+                }
+            }
+
+            private showDownloadError(frame: any) {
+                var text = '';
+                try {
+                    var body = frame.contentDocument && frame.contentDocument.body;
+                    text = body ? String(body.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                } catch (error) {
+                    // A frame from another origin cannot be read; there is nothing to show.
+                }
+                if (text) {
+                    this.setDownloadError('Download failed: ' + (text.length > 300 ? text.substring(0, 300) + '…' : text));
+                }
+            }
+
+            private setDownloadError(message: string) {
+                if (this.downloadError) {
+                    this.downloadError.textContent = message;
+                    this.downloadError.hidden = !message;
+                    // An alert only while it holds an error, so it is announced when it appears.
+                    if (message) {
+                        this.downloadError.setAttribute('role', 'alert');
+                    } else {
+                        this.downloadError.removeAttribute('role');
+                    }
                 }
             }
 
@@ -3453,6 +3714,9 @@ namespace workbench {
                         + formatCount(state.progress['result-evaluated-count']) + ' processed';
                 } else if (!state.complete) {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);
+                }
+                if (state.error || state.complete) {
+                    this.announce(this.status.textContent);
                 }
                 this.countLabel.textContent = !partiallyLoaded ? ''
                     : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
@@ -4044,15 +4308,6 @@ namespace workbench {
                 }
             }
 
-            private visibleRow(): number {
-                var records = this.root.getAttribute('data-effective-layout') === 'records';
-                var heights = records ? this.recordHeights : this.rowHeights;
-                var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
-                var scrollport = records ? this.records : this.tableWrap;
-                var position = records ? this.recordPosition : this.tablePosition;
-                return heights.range(this.logicalPosition(scrollport, coordinates, position), 0, 0, 1).start;
-            }
-
             private prepareWindow(scrollport: any, heights: MeasuredRowHeights,
                     coordinates: ResultScrollCoordinates, viewportHeight: number): any {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
@@ -4373,6 +4628,11 @@ namespace workbench {
                 return width;
             }
 
+            /**
+             * The narrowest readable width of each column: its header text, and at least a budget of characters.
+             * They only change with the headers, the table font and the viewport (media queries), so a render frame
+             * (scrolling, streamed rows) reuses them instead of measuring every header again.
+             */
             private measureReadableColumnWidths(): number[] {
                 var header = this.table && this.table.querySelector ? this.table.querySelector('thead tr') : null;
                 if (!header || !header.children.length) {
@@ -4380,6 +4640,18 @@ namespace workbench {
                 }
                 var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
                 var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
+                var texts: string[] = [];
+                for (var textIndex = 0; textIndex < header.children.length; textIndex++) {
+                    texts.push(header.children[textIndex].textContent || '');
+                }
+                var documentElement = this.document.documentElement;
+                var key = [this.headerSignature, tableStyle ? tableStyle.font : '', view ? view.innerWidth : '',
+                    this.root.getAttribute('data-wrap'), this.target.getAttribute('data-fullscreen'),
+                    documentElement && documentElement.getAttribute ? documentElement.getAttribute('data-theme') : '',
+                    texts.join('\u0000')].join('\u0001');
+                if (key === this.readableWidthsKey) {
+                    return this.readableWidths.slice();
+                }
                 var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
                 var characterWidth = isFinite(fontSize) && fontSize > 0 ? fontSize * 0.55 : 8;
                 var rootStyle = view && view.getComputedStyle ? view.getComputedStyle(this.root) : null;
@@ -4394,70 +4666,90 @@ namespace workbench {
                     context.font = tableStyle.font;
                     characterWidth = context.measureText('0').width || characterWidth;
                 }
-                var widths: number[] = [];
+                var styles: CSSStyleDeclaration[] = [];
                 for (var index = 0; index < header.children.length; index++) {
-                    var cell = header.children[index];
-                    var style = view && view.getComputedStyle ? view.getComputedStyle(cell) : null;
+                    styles.push(view && view.getComputedStyle ? view.getComputedStyle(header.children[index]) : null);
+                }
+                var textWidths = context ? this.measureRenderedHeaderTexts(texts, styles, context, tableStyle) : [];
+                var widths = texts.map((headerText, columnIndex) => {
+                    var style = styles[columnIndex];
                     var padding = style
                         ? (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0) : 0;
                     var minimumContentWidth = characterWidth * characterBudget;
-                    var headerText = cell.textContent || '';
                     if (context && headerText) {
-                        context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
-                        var headerTextWidth = this.measureRenderedHeaderText(headerText, style, context);
-                        minimumContentWidth = Math.max(minimumContentWidth, headerTextWidth);
+                        minimumContentWidth = Math.max(minimumContentWidth, textWidths[columnIndex]);
                     }
-                    widths.push(minimumContentWidth + padding + 2);
-                }
-                return widths;
+                    return minimumContentWidth + padding + 2;
+                });
+                this.readableWidthsKey = key;
+                this.readableWidths = widths;
+                return widths.slice();
             }
 
-            private measureRenderedHeaderText(text: string, style: CSSStyleDeclaration | null,
-                    context: CanvasRenderingContext2D): number {
+            /** Rendered widths of the header texts, measured together: one layout for all of them. */
+            private measureRenderedHeaderTexts(texts: string[], styles: CSSStyleDeclaration[],
+                    context: CanvasRenderingContext2D, tableStyle: CSSStyleDeclaration): number[] {
+                var widths = texts.map(() => NaN);
                 var container = this.root;
                 if (container && this.document.createElement && container.appendChild
                         && container.removeChild) {
-                    var probe = this.document.createElement('span');
-                    var probeStyle = <any>probe.style;
-                    var computedStyle = <any>style;
-                    var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
-                        'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
-                        'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
-                        'textRendering', 'direction'];
-                    textProperties.forEach((property) => {
-                        if (computedStyle && computedStyle[property]) {
-                            probeStyle[property] = computedStyle[property];
+                    var holder = this.document.createElement('span');
+                    var holderStyle = <any>holder.style;
+                    holderStyle.position = 'fixed';
+                    holderStyle.left = '-10000px';
+                    holderStyle.top = '-10000px';
+                    holderStyle.visibility = 'hidden';
+                    var probes = texts.map((text, index) => {
+                        if (!text) {
+                            return null;
                         }
+                        var probe = this.document.createElement('span');
+                        var probeStyle = <any>probe.style;
+                        var computedStyle = <any>styles[index];
+                        var textProperties = ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings',
+                            'fontOpticalSizing', 'fontStretch', 'fontVariant', 'fontVariantCaps', 'fontSynthesis',
+                            'fontSizeAdjust', 'fontLanguageOverride', 'letterSpacing', 'wordSpacing', 'textTransform',
+                            'textRendering', 'direction'];
+                        textProperties.forEach((property) => {
+                            if (computedStyle && computedStyle[property]) {
+                                probeStyle[property] = computedStyle[property];
+                            }
+                        });
+                        probeStyle.display = 'block';
+                        probeStyle.whiteSpace = 'pre';
+                        probeStyle.width = 'max-content';
+                        probeStyle.minWidth = '0';
+                        probeStyle.maxWidth = 'none';
+                        probe.textContent = text;
+                        holder.appendChild(probe);
+                        return probe;
                     });
-                    probeStyle.position = 'fixed';
-                    probeStyle.left = '-10000px';
-                    probeStyle.top = '-10000px';
-                    probeStyle.visibility = 'hidden';
-                    probeStyle.display = 'inline-block';
-                    probeStyle.whiteSpace = 'pre';
-                    probeStyle.width = 'max-content';
-                    probeStyle.minWidth = '0';
-                    probeStyle.maxWidth = 'none';
-                    probe.textContent = text;
-                    container.appendChild(probe);
+                    container.appendChild(holder);
                     try {
-                        var renderedWidth = probe.getBoundingClientRect().width;
-                        if (isFinite(renderedWidth) && renderedWidth > 0) {
-                            return renderedWidth;
-                        }
+                        probes.forEach((probe, index) => {
+                            var renderedWidth = probe ? probe.getBoundingClientRect().width : NaN;
+                            if (isFinite(renderedWidth) && renderedWidth > 0) {
+                                widths[index] = renderedWidth;
+                            }
+                        });
                     } finally {
-                        container.removeChild(probe);
+                        container.removeChild(holder);
                     }
                 }
-                if (context) {
+                return widths.map((width, index) => {
+                    if (isFinite(width)) {
+                        return width;
+                    }
+                    var style = styles[index];
+                    var text = texts[index];
+                    context.font = style && style.font ? style.font : tableStyle && tableStyle.font;
                     var fallbackWidth = context.measureText(text).width;
                     var letterSpacing = style ? parseFloat(style.letterSpacing) : NaN;
                     if (isFinite(letterSpacing) && text.length > 1) {
                         fallbackWidth += letterSpacing * (text.length - 1);
                     }
                     return fallbackWidth;
-                }
-                return 0;
+                });
             }
 
             private installAutoLayoutObserver() {
@@ -4538,9 +4830,6 @@ namespace workbench {
             adopt?(form: any, target: any): void;
             dispose(): void;
             hasActiveRequest(): boolean;
-            changePageOffset(offset: number): boolean;
-            nextPage(): boolean;
-            previousPage(): boolean;
         }
 
         function formControls(form: any): any[] {
@@ -4643,33 +4932,33 @@ namespace workbench {
             return parameters;
         }
 
-        function setTotalResultCountCookie(document: any, count: number) {
-            var namespace: any = typeof workbench !== 'undefined' ? workbench : {};
-            if (namespace.query && typeof namespace.query.setWorkbenchCookie === 'function') {
-                namespace.query.setWorkbenchCookie('total_result_count', String(count));
-                return;
+        /** A URL made absolute against the document it was read in: it keeps its meaning on later pages. */
+        function absoluteUrl(url: string, documentObject: any): string {
+            var base = documentObject && (documentObject.baseURI
+                || documentObject.location && documentObject.location.href);
+            var urlConstructor: any = typeof URL === 'function' ? URL : null;
+            if (!base || !urlConstructor) {
+                return url;
             }
-            if (!document || typeof document.cookie !== 'string') {
-                return;
+            try {
+                return new urlConstructor(url, base).href;
+            } catch (error) {
+                return url;
             }
-            var pathname = document.location && document.location.pathname || '/';
-            var pathSegments = pathname.split('/');
-            var cookiePath = pathSegments.length > 1 && pathSegments[1] ? '/' + pathSegments[1] : '/';
-            document.cookie = 'total_result_count=' + encodeURIComponent(String(count)) + '; path=' + cookiePath
-                + '; SameSite=Lax';
         }
 
         /**
-         * Ask the server to cancel a query. In the page the Query page's retrying request is used; a page that is
-         * being left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
+         * Ask the server to cancel a query, at url: the endpoint of the repository it runs in (the page shown now
+         * may belong to another one). In the page the Query page's retrying request is used; a page that is being
+         * left (leaving) sends one keepalive fetch instead, the only request a browser lets outlive the page.
          */
-        function cancelServerRequest(id: string, leaving?: boolean) {
+        function cancelServerRequest(id: string, leaving?: boolean, url?: string) {
             if (!id) {
                 return;
             }
             var namespace: any = typeof workbench !== 'undefined' ? workbench : {};
             if (!leaving && namespace.query && typeof namespace.query.cancelServerQuery === 'function') {
-                namespace.query.cancelServerQuery(id);
+                namespace.query.cancelServerQuery(id, url);
                 return;
             }
             var fetcher: any = typeof window !== 'undefined' ? (window as any).fetch : null;
@@ -4678,7 +4967,7 @@ namespace workbench {
             }
             var body = 'action=cancel-query&query-request-id=' + encodeURIComponent(id);
             try {
-                fetcher.call(window, executionUrl({ getAttribute: () => 'query' }), {
+                fetcher.call(window, url || executionUrl({ getAttribute: () => 'query' }), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
                     body: body,
@@ -4742,8 +5031,16 @@ namespace workbench {
             var recovering = false;
             var frozenBody: URLSearchParams = null;
             var frozenUrl = '';
+            // The execution endpoint made absolute when the query starts: cancellations go there from any page.
+            var frozenCancelUrl = '';
             var batchSize = 1000000;
             var revealPending = false;
+            // The exact total the first batch reported: continuations send it, so the server can stop after the
+            // batch (and one look-ahead row) instead of counting the whole result again.
+            var knownTotal: number = null;
+            // Shelved (M13.4): the form and results area belong to whatever page is shown now, maybe the very same
+            // elements, so a request ending out of sight must not touch them.
+            var shelvedOut = false;
 
             /** Tell the page that a request started or ended (the menu shows queries running elsewhere, M13.5). */
             function notifyActivity() {
@@ -4754,17 +5051,23 @@ namespace workbench {
 
             /** Reveal the results once per execution, after its first rendered rows, answer or error. */
             function revealOnce() {
-                if (revealPending && !disposed) {
+                if (revealPending && !disposed && !shelvedOut) {
                     revealPending = false;
                     revealResults(target);
                 }
             }
 
             function setQueryRequestId(value: string) {
+                if (shelvedOut) {
+                    return;
+                }
                 setControlValue(form, 'query-request-id', value);
             }
 
             function setQueryCancelVisible(visible: boolean) {
+                if (shelvedOut) {
+                    return;
+                }
                 var document = target && target.ownerDocument;
                 var button = document && document.getElementById('query-cancel');
                 if (!button) {
@@ -4818,7 +5121,7 @@ namespace workbench {
                 if (abortController && typeof abortController.abort === 'function') {
                     abortController.abort();
                 }
-                cancelServerRequest(oldId, leaving);
+                cancelServerRequest(oldId, leaving, frozenCancelUrl);
                 setQueryRequestId('');
                 setQueryCancelVisible(false);
                 notifyActivity();
@@ -4847,6 +5150,9 @@ namespace workbench {
                 body.set('query-request-id', id);
                 body.set('batch-size', String(batchSize));
                 body.set('batch-offset', String(offset));
+                if (offset > 0 && knownTotal !== null) {
+                    body.set('batch-known-total', String(knownTotal));
+                }
                 abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
                 renderer.setBusy(true);
                 var stream = executeQueryStream(frozenUrl, body, {
@@ -4860,17 +5166,30 @@ namespace workbench {
                                 frozenBody.set('query', metadata['query-text']);
                                 frozenBody.set('ref', 'text');
                             }
-                            if (typeof metadata['query-language'] === 'string') {
+                            // Continuations repeat the resolved options only where the original request carried
+                            // them: an option whose control the policy disabled must not be sent (it is refused).
+                            if (typeof metadata['query-language'] === 'string' && frozenBody.has('queryLn')) {
                                 frozenBody.set('queryLn', metadata['query-language']);
                             }
-                            if (typeof metadata.infer === 'boolean') {
+                            if (typeof metadata.infer === 'boolean' && frozenBody.has('infer')) {
                                 frozenBody.set('infer', String(metadata.infer));
                             }
-                            if (typeof metadata['query-timeout'] !== 'undefined') {
+                            if (typeof metadata['query-timeout'] !== 'undefined' && frozenBody.has('query-timeout')) {
                                 frozenBody.set('query-timeout', String(metadata['query-timeout']));
                             }
                         }
-                        return currentRenderer.accept(record).then(() => {
+                        return currentRenderer.accept(record).then(null, (error: any) => {
+                            // Not the server's error record: the browser failed to keep a record (a full row
+                            // store, a record the result cannot take). Say so, and stop the server's query.
+                            if (record.type !== 'error' && error && typeof error === 'object' && !error.code) {
+                                error.code = 'client';
+                            }
+                            throw error;
+                        }).then(() => {
+                            if (offset === 0 && record.type === 'end' && record.metadata
+                                    && Number.isSafeInteger(record.metadata['total-result-count'])) {
+                                knownTotal = record.metadata['total-result-count'];
+                            }
                             if (offset === 0 && (record.type === 'rows' || record.type === 'boolean'
                                     || record.type === 'end' || record.type === 'error')) {
                                 revealOnce();
@@ -4892,6 +5211,13 @@ namespace workbench {
                     if (generation !== requestGeneration || disposed) {
                         return;
                     }
+                    if (error && error.code === 'client' && activeId === id) {
+                        // The server still runs the query and sends rows nobody reads any more.
+                        if (abortController && typeof abortController.abort === 'function') {
+                            abortController.abort();
+                        }
+                        cancelServerRequest(id, false, frozenCancelUrl);
+                    }
                     return recover(requestGeneration, currentRenderer,
                         error && error.message || 'Unable to load query results.', error && error.code,
                         error && error.status);
@@ -4905,6 +5231,7 @@ namespace workbench {
                 }
                 cancel(false);
                 recovering = false;
+                knownTotal = null;
                 if (renderer) {
                     renderer.dispose();
                 }
@@ -4913,9 +5240,14 @@ namespace workbench {
                 originalBody.forEach((value: any, name: string) => frozenBody.append(name, String(value)));
                 ['offset', 'limit_query', 'know_total', 'query-request-id'].forEach(name => frozenBody.delete(name));
                 frozenUrl = executionUrl(form);
+                frozenCancelUrl = absoluteUrl(frozenUrl, form.ownerDocument || (typeof document !== 'undefined'
+                    ? document : null));
+                // An unchecked checkbox is not submitted, so an enabled one is sent as an explicit false; a disabled
+                // one (the option is turned off by policy) is left out like the browser leaves it out.
                 var inferControls = allControls(form, 'infer');
-                if (inferControls.length && inferControls[inferControls.length - 1].type === 'checkbox') {
-                    frozenBody.set('infer', inferControls[inferControls.length - 1].checked ? 'true' : 'false');
+                var inferControl = inferControls.length ? inferControls[inferControls.length - 1] : null;
+                if (inferControl && inferControl.type === 'checkbox' && !inferControl.disabled) {
+                    frozenBody.set('infer', inferControl.checked ? 'true' : 'false');
                 }
                 batchSize = frozenBody.has('batch-size') ? Number(frozenBody.get('batch-size')) : 1000000;
                 var rendererConstructor = (<any>workbench.queryStream).QueryResultRenderer;
@@ -4965,6 +5297,7 @@ namespace workbench {
                 executedRequest: () => frozenBody ? new URLSearchParams(frozenBody.toString()) : null,
                 // Kept for its repository while no Query page shows it (M13.4): hidden like a kept-alive page.
                 shelve: () => {
+                    shelvedOut = true;
                     if (renderer) {
                         renderer.suspend();
                         renderer.detach();
@@ -4974,6 +5307,7 @@ namespace workbench {
                 adopt: (nextForm: any, nextTarget: any) => {
                     form = nextForm;
                     target = nextTarget;
+                    shelvedOut = false;
                     if (renderer) {
                         renderer.moveTo(nextTarget, nextForm);
                         nextTarget.hidden = false;
@@ -5003,10 +5337,7 @@ namespace workbench {
                         renderer.dispose();
                     }
                 },
-                hasActiveRequest: () => !!activeId,
-                changePageOffset: () => false,
-                nextPage: () => false,
-                previousPage: () => false
+                hasActiveRequest: () => !!activeId
             };
         }
 
@@ -5014,6 +5345,9 @@ namespace workbench {
          * Binds only HTML forms explicitly marked as query executions. Save,
          * explain, cancellation, and Accept/download forms remain browser-owned.
          */
+        /** Saved-query results kept for cards outside the list's row window, the oldest dropped first. */
+        var maxParkedSavedQueryResults = 8;
+
         export function bindExecutionForms(root: any, options?: any): () => void {
             if (!root || typeof root.querySelectorAll !== 'function') {
                 return function() {};
@@ -5022,8 +5356,13 @@ namespace workbench {
             var forms = root.querySelectorAll('form[data-workbench-query-execution="true"]');
             var rootState = (<any>root).__rdf4jQueryExecutionBindings;
             if (!rootState) {
-                rootState = { entries: [] as any[] };
+                // parked: results of forms that left the list's row window, until their saved query is shown again.
+                rootState = { entries: [] as any[], parked: [] as any[] };
                 (<any>root).__rdf4jQueryExecutionBindings = rootState;
+            }
+            /** The saved query a form executes: a card rendered again for it gets a new form with the same key. */
+            function formKey(form: any): string {
+                return [controlValue(form, 'owner'), controlValue(form, 'query'), controlValue(form, 'ref')].join('\n');
             }
             function bindForm(form: any) {
                 if (!isExecutionDescriptor(form) || form.id === 'query-form') {
@@ -5032,7 +5371,7 @@ namespace workbench {
                 if ((<any>form).__rdf4jQueryExecutionBinding) {
                     if (!rootState.entries.some((entry: any) => entry.form === form)) {
                         rootState.entries.push({ form: form, controller: (<any>form).__rdf4jQueryExecutionBinding,
-                            handler: (<any>form).__rdf4jQueryExecutionSubmitHandler });
+                            handler: (<any>form).__rdf4jQueryExecutionSubmitHandler, key: formKey(form) });
                     }
                     return;
                 }
@@ -5042,7 +5381,16 @@ namespace workbench {
                 if (!target) {
                     return;
                 }
-                var controller = createExecutionController(form, target, options);
+                var key = formKey(form);
+                var parked = rootState.parked.filter((entry: any) => entry.key === key)[0];
+                var controller: BoundExecutionController;
+                if (parked) {
+                    rootState.parked.splice(rootState.parked.indexOf(parked), 1);
+                    controller = parked.controller;
+                    controller.adopt(form, target);
+                } else {
+                    controller = createExecutionController(form, target, options);
+                }
                 var submitHandler = (event: any) => {
                     if (event && typeof event.preventDefault === 'function') {
                         event.preventDefault();
@@ -5052,15 +5400,34 @@ namespace workbench {
                 form.addEventListener('submit', submitHandler, false);
                 (<any>form).__rdf4jQueryExecutionBinding = controller;
                 (<any>form).__rdf4jQueryExecutionSubmitHandler = submitHandler;
-                rootState.entries.push({ form: form, controller: controller, handler: submitHandler });
+                rootState.entries.push({ form: form, controller: controller, handler: submitHandler, key: key });
             }
-            function unbind(entry: any) {
+            function release(entry: any) {
                 if (entry.handler) {
                     entry.form.removeEventListener('submit', entry.handler, false);
                 }
-                entry.controller.dispose();
                 delete (<any>entry.form).__rdf4jQueryExecutionBinding;
                 delete (<any>entry.form).__rdf4jQueryExecutionSubmitHandler;
+            }
+            function unbind(entry: any) {
+                release(entry);
+                entry.controller.dispose();
+            }
+            /**
+             * A form that left the list's row window (the list is virtualized): its result, or the query still
+             * running for it, waits for the card to come back instead of being cancelled and discarded.
+             */
+            function park(entry: any) {
+                release(entry);
+                if (!entry.controller.hasResult || !entry.controller.hasResult()) {
+                    entry.controller.dispose();
+                    return;
+                }
+                entry.controller.shelve();
+                rootState.parked.push({ key: entry.key, controller: entry.controller });
+                if (rootState.parked.length > maxParkedSavedQueryResults) {
+                    rootState.parked.shift().controller.dispose();
+                }
             }
             for (var formIndex = 0; formIndex < forms.length; formIndex++) {
                 bindForm(forms[formIndex]);
@@ -5072,7 +5439,7 @@ namespace workbench {
             for (var entryIndex = rootState.entries.length - 1; entryIndex >= 0; entryIndex--) {
                 var entry = rootState.entries[entryIndex];
                 if (currentForms.indexOf(entry.form) < 0) {
-                    unbind(entry);
+                    park(entry);
                     rootState.entries.splice(entryIndex, 1);
                 }
             }
@@ -5080,14 +5447,13 @@ namespace workbench {
                 while (rootState.entries.length) {
                     unbind(rootState.entries.pop());
                 }
+                while (rootState.parked.length) {
+                    rootState.parked.pop().controller.dispose();
+                }
                 if ((<any>root).__rdf4jQueryExecutionBindings === rootState) {
                     delete (<any>root).__rdf4jQueryExecutionBindings;
                 }
             };
-        }
-
-        export function hasQueryExecutionDescriptor(form: any): boolean {
-            return isExecutionDescriptor(form);
         }
 
         export function bindMainQueryForm(form: any, target: any, options?: any): BoundExecutionController {
@@ -5184,7 +5550,13 @@ namespace workbench {
                     shelfPageHide = (event: any) => {
                         if (!event || event.persisted !== true) {
                             markCurrentRowStoresForRecovery(event);
-                            shelved.splice(0).forEach(entry => entry.controller.dispose());
+                            shelved.splice(0).forEach(entry => {
+                                // The keepalive cancellation is the only request that outlives the page.
+                                if (entry.controller.cancelOnLeave) {
+                                    entry.controller.cancelOnLeave();
+                                }
+                                entry.controller.dispose();
+                            });
                         }
                     };
                     window.addEventListener('pagehide', shelfPageHide, false);
@@ -5361,18 +5733,6 @@ namespace workbench {
                 return mountedController ? mountedController.hasActiveRequest() : false;
             }
 
-            export function nextPage(): boolean {
-                return mountedController ? mountedController.nextPage() : false;
-            }
-
-            export function previousPage(): boolean {
-                return mountedController ? mountedController.previousPage() : false;
-            }
-
-            export function changePageParameter(name: string, value: number): boolean {
-                return false;
-            }
-
             export function loadMore(): boolean {
                 return mountedController ? mountedController.loadMore() : false;
             }
@@ -5420,18 +5780,6 @@ namespace workbench {
 
         export function hasActiveRequest(): boolean {
             return queryStream.queryPage.hasActiveRequest();
-        }
-
-        export function nextPage(): boolean {
-            return queryStream.queryPage.nextPage();
-        }
-
-        export function previousPage(): boolean {
-            return queryStream.queryPage.previousPage();
-        }
-
-        export function changePageParameter(name: string, value: number): boolean {
-            return queryStream.queryPage.changePageParameter(name, value);
         }
     }
 }

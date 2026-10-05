@@ -72,6 +72,11 @@ module workbench {
                 }
                 releaseSizing = null;
                 if (yasqe) {
+                    // Full screen hides the document's scrollbars (CodeMirror's add-on); closing the editor alone
+                    // would leave the next page unable to scroll.
+                    if (typeof yasqe.getOption === 'function' && yasqe.getOption('fullScreen')) {
+                        yasqe.setOption('fullScreen', false);
+                    }
                     yasqe.toTextArea();
                     yasqe = null;
                 }

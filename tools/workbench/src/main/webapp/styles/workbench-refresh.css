@@ -645,6 +645,12 @@ body.workbench-body .yasqe .CodeMirror-fullscreen {
 	z-index: 1000;
 }
 
+/* The completion list is appended to <body> (yasqe.min.css: z-index 10); it takes Up, Down and Enter, so it must stay
+   visible above a full-screen editor. */
+body.workbench-body .CodeMirror-hints {
+	z-index: 1001;
+}
+
 body.workbench-body .query-page .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
 body.workbench-body #update-editor .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn,
 body.workbench-body .saved-query-row .yasqe .CodeMirror-fullscreen .yasqe_buttons .svgImg.yasqe_smallscreenBtn {
@@ -1075,19 +1081,27 @@ body.query-result-embedded-body .workbench-disclosure__toggle:active {
 	body.query-result-embedded-body .workbench-disclosure-chevron {
 		transition: none;
 	}
+	/* The selectors of the press-feedback rules above, so these win by order (same specificity) and not lose to them. */
 	body.workbench-body .workbench-action button,
 	body.workbench-body .workbench-action,
+	body.workbench-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
+	body.workbench-body .workbench-action:not(:has(:disabled)),
 	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button,
 	input[type="button"],
 	input[type="submit"]),
+	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button, input[type="button"], input[type="submit"]):not(:disabled),
 	body.workbench-body .query-page .query-actions-compare > button,
+	body.workbench-body .query-page .query-actions-compare > button:not(:disabled),
 	body.workbench-body .workbench-disclosure__toggle,
 	body.workbench-body .query-compare-toolbar button,
+	body.workbench-body .query-compare-toolbar button:not(:disabled),
 	body.workbench-body .workbench-page-surface details.workbench-options > summary,
 	body.workbench-body .workbench-page-surface details.workbench-save > summary,
 	body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary,
 	body.query-result-embedded-body .workbench-action button,
 	body.query-result-embedded-body .workbench-action,
+	body.query-result-embedded-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
+	body.query-result-embedded-body .workbench-action:not(:has(:disabled)),
 	body.query-result-embedded-body .workbench-disclosure__toggle {
 		transition: none;
 	}
@@ -2035,10 +2049,6 @@ body.workbench-body #title_heading {
 	font-weight: 600;
 	line-height: 1.25;
 	white-space: normal;
-}
-
-body.workbench-body #noscript-message {
-	margin-bottom: 16px;
 }
 
 body.workbench-body .workbench-page-surface {
@@ -3542,7 +3552,9 @@ body.workbench-body .workbench-page-surface .rdf-datatype {
 	font-family: var(--workbench-code-font);
 }
 
-body.workbench-body.workbench-hide-datatypes .workbench-page-surface .rdf-datatype {
+/* Explore's "Show datatypes" marks its outlet (paging.ts); only Explore's own results follow it, never a later page. */
+body.workbench-body .workbench-hide-datatypes #explore-results .rdf-datatype,
+body.workbench-body.workbench-hide-datatypes #explore-results .rdf-datatype {
 	display: none;
 }
 

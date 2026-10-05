@@ -182,6 +182,25 @@ test('Clear shows a spinner while it clears, then a tick and the graphs that are
 	expect(held.summaries).toEqual([]);
 });
 
+test('a write answered by a redirect instead of the write acknowledgement is not reported as done', async ({ page }) => {
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'update'));
+	await waitForRoute(page, 'update');
+	// A gateway or a sign-in proxy answers before the write servlet: its redirect says nothing about the write (A8).
+	await page.route((url) => url.pathname.endsWith('/update'), (route) => (route.request().method() === 'POST'
+		? route.fulfill({ status: 302, headers: { Location: '/sign-in' } }) : route.continue()));
+	await page.locator('#update-editor .CodeMirror').evaluate((element) =>
+		element.CodeMirror.setValue('INSERT DATA { <urn:in-place:redirected> <urn:in-place:p> "r" }'));
+
+	await page.locator('#update-form [type="submit"]').click();
+
+	const status = page.locator('#update-form .workbench-submit-status');
+	await expect(status).toHaveAttribute('data-state', 'failed');
+	await expect(status).toContainText('redirect');
+	await expect(status).toContainText('check the repository');
+	await expect(status.locator('[data-workbench-icon="check"]')).toHaveCount(0);
+	await expect(page).toHaveURL(/\/update$/);
+});
+
 test('a write whose request fails says so on its page and can be sent again', async ({ page }) => {
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'update'));
 	await waitForRoute(page, 'update');
