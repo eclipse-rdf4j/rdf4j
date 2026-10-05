@@ -19,6 +19,18 @@ const { createServer } = require('./workbench-preview-scroll-fixture.cjs');
 let fixture;
 let baseUrl;
 
+async function focusByKeyboard(page, target) {
+    const tabStops = await page.locator('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), '
+        + 'select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])').count();
+    for (let index = 0; index < tabStops; index++) {
+        await page.keyboard.press('Tab');
+        if (await target.evaluate(element => document.activeElement === element)) {
+            return;
+        }
+    }
+    throw new Error('The preview scroll region was not reachable through keyboard tab navigation.');
+}
+
 test.beforeAll(async () => {
     fixture = createServer();
     await new Promise((resolve, reject) => {
@@ -99,7 +111,7 @@ test('export and remove previews scroll wide RDF tables without widening the pag
 
         const wrapper = page.locator(`${section} .workbench-preview-table-scroll`);
         if (await wrapper.count()) {
-            await wrapper.focus();
+            await focusByKeyboard(page, wrapper);
             await expect.soft(wrapper, `${viewId} ${width}px preview region receives keyboard focus`).toBeFocused();
             await wrapper.evaluate(element => { element.scrollLeft = 0; });
             await page.keyboard.press('ArrowRight');
