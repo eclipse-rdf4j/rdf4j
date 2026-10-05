@@ -114,6 +114,25 @@ class TracingRepositoryTest {
 	}
 
 	@Test
+	void captureQueryTextEnabled_longPrologue_stripsPrologueBeforeTruncating() {
+		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
+				.openTelemetry(otelTesting.getOpenTelemetry())
+				.captureQueryText(true)
+				.maxQueryTextLength(20)
+				.build());
+
+		try (RepositoryConnection conn = traced.getConnection()) {
+			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL,
+					"PREFIX ex: <http://example.org/some/very/long/namespace#>\nASK { ?s ?p ?o }");
+			query.evaluate();
+		}
+
+		SpanData span = otelTesting.getSpans().get(0);
+		// without prologue stripping, a 20-char truncation would only capture part of the PREFIX declaration
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT)).isEqualTo("ASK { ?s ?p ?o }");
+	}
+
+	@Test
 	void captureQueryParametersDisabled_recordsNoParameters() {
 		Repository traced = instrument(RDF4JOpenTelemetryConfig.defaultConfig());
 

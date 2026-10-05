@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
@@ -67,7 +68,7 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 
 		if (config.isCaptureQueryText() && operationString != null) {
 			span.setAttribute(DbOtelAttributes.DB_QUERY_TEXT,
-					truncate(operationString, config.getMaxQueryTextLength()));
+					truncateQueryText(operationString, config.getMaxQueryTextLength()));
 		}
 
 		if (config.isCaptureQueryParameters()) {
@@ -123,6 +124,26 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 	 */
 	static String truncate(String text, int maxLength) {
 		return text.length() > maxLength ? text.substring(0, maxLength) : text;
+	}
+
+	/**
+	 * Like {@link #truncate(String, int)}, but for SPARQL query/update text specifically: if the full text doesn't fit,
+	 * first try stripping the {@code PREFIX}/{@code BASE} prolog (per
+	 * {@link QueryParserUtil#removeSPARQLQueryProlog(String)}) before truncating, since a query with a long namespace
+	 * prolog otherwise loses its actual query body - the useful part - to truncation first. Not suitable for
+	 * non-query-text truncation (e.g. a single value or a triple pattern): {@code removeSPARQLQueryProlog} assumes its
+	 * input is a syntactically legal query, and can otherwise mangle arbitrary text that happens to start with
+	 * something resembling a prolog keyword.
+	 */
+	static String truncateQueryText(String queryText, int maxLength) {
+		if (queryText.length() <= maxLength) {
+			return queryText;
+		}
+		try {
+			return truncate(QueryParserUtil.removeSPARQLQueryProlog(queryText), maxLength);
+		} catch (RuntimeException e) {
+			return truncate(queryText, maxLength);
+		}
 	}
 
 	/**

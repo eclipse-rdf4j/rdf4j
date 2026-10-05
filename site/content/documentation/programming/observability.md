@@ -62,6 +62,10 @@ Repository traced = OpenTelemetrySupport.instrument(repository, "my-repo", confi
 
 The system properties are read once, as the default value used unless overridden programmatically via the corresponding builder method - this lets deployments that cannot set up an `RDF4JOpenTelemetryConfig` directly (such as RDF4J Server, see below) still configure this behaviour.
 
+### Truncation of SPARQL query/update text
+
+When a `SELECT`/`CONSTRUCT`/`DESCRIBE`/`ASK`/`UPDATE` span's query/update text exceeds `maxQueryTextLength`, it is first stripped of its `PREFIX`/`BASE` prolog before truncating, so a query with a long namespace prolog doesn't lose its actual query body - usually the more useful part to see - to truncation. This only applies to actual SPARQL query/update text; the `getStatements`/`hasStatement` triple pattern and `db.query.parameter.<name>` values below are truncated as plain text, without any prolog-stripping.
+
 ### Query text for `getStatements`/`hasStatement`
 
 For `GET_STATEMENTS`/`HAS_STATEMENT` spans, `db.query.text` (when `captureQueryText` is enabled) records the requested triple pattern rather than a SPARQL string. With no context argument, it's rendered as a plain triple pattern:
