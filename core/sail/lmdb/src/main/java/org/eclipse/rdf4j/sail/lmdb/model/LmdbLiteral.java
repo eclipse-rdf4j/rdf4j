@@ -58,7 +58,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	private long internalID;
 
-	private volatile boolean initialized = false;
+	private boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *
@@ -181,11 +181,6 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	@Override
 	public long getInternalID() {
 		return internalID;
-	}
-
-	@Override
-	public boolean isInitialized() {
-		return initialized;
 	}
 
 	@Override

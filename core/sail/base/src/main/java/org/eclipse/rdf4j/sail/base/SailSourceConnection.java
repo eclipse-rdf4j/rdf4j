@@ -487,15 +487,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	/** Counts the selected transaction view using the same branch and isolation selection as statement reads. */
-	protected long countStatementsInternal(Resource subj, IRI pred, Value obj, boolean includeInferred,
-			Resource... contexts) throws SailException {
-		try (SailSource source = branch(IncludeInferred.fromBoolean(includeInferred));
-				SailDataset dataset = source.dataset(getIsolationLevel())) {
-			return dataset.getStatementCount(subj, pred, obj, contexts);
-		}
-	}
-
 	@Override
 	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
 		SailSource branch = branch(IncludeInferred.explicitOnly);

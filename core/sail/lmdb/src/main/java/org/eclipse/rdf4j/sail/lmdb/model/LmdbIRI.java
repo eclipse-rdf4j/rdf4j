@@ -34,11 +34,11 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	private long internalID;
 
-	private volatile boolean initialized = false;
+	private boolean initialized = false;
 	/**
 	 * The IRI string.
 	 */
-	private volatile String iriString;
+	private String iriString;
 
 	/**
 	 * An index indicating the first character of the local name in the IRI string, -1 if not yet set.
@@ -101,11 +101,6 @@ public class LmdbIRI implements LmdbResource, IRI {
 	@Override
 	public long getInternalID() {
 		return internalID;
-	}
-
-	@Override
-	public boolean isInitialized() {
-		return iriString != null;
 	}
 
 	private void setIRIString(String iriString) {

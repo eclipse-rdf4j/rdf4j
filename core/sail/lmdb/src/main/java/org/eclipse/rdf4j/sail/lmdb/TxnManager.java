@@ -33,7 +33,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
@@ -118,15 +117,6 @@ final class TxnManager {
 	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
 
 	private volatile boolean managerClosed;
-	private final Object countPinsMonitor = new Object();
-	private int activeCountPins;
-	private volatile boolean countReadersFull;
-	private static final AtomicLong COUNT_RESOURCE_ORDER = new AtomicLong();
-	private final long countResourceOrder = COUNT_RESOURCE_ORDER.incrementAndGet();
-
-	long countResourceOrder() {
-		return countResourceOrder;
-	}
 
 	TxnManager(long env, Mode mode) throws IOException {
 		this.env = env;
@@ -181,119 +171,6 @@ final class TxnManager {
 	private Txn createReadTxnInternal(boolean resetOnWrite, boolean priority) throws IOException {
 		checkNotClosed();
 		Semaphore readerPermit = acquireReaderPermit(priority);
-		return createReadTxnWithPermit(resetOnWrite, readerPermit);
-	}
-
-	/** Count preflight never waits while holding a partial collection of admitted leases. */
-	Txn tryCreateReadTxnForCount(boolean priority) throws IOException {
-		checkNotClosed();
-		Semaphore permit = null;
-		try {
-			if (readerSlots.tryAcquire(0, TimeUnit.NANOSECONDS)) {
-				permit = readerSlots;
-			} else if (priority && priorityReaderSlot.tryAcquire(0, TimeUnit.NANOSECONDS)) {
-				permit = priorityReaderSlot;
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while reserving count reader", e);
-		}
-		if (permit == null) {
-			return null;
-		}
-		long stamp = lockManager.tryReadLock();
-		if (stamp == 0) {
-			releaseReaderPermit(permit);
-			return null;
-		}
-		try {
-			return tryCreateReadTxnWithPermit(permit);
-		} finally {
-			lockManager.unlockRead(stamp);
-		}
-	}
-
-	/** Waits for availability with no newly owned leases or native guards retained by the caller. */
-	void awaitReadTxnForCount(boolean priority, long remainingNanos) throws IOException {
-		Semaphore permit = acquireReaderPermit(priority, Math.min(remainingNanos, READER_ADMISSION_TIMEOUT_NANOS));
-		releaseReaderPermit(permit);
-		if (countReadersFull) {
-			readersFullWaiters.incrementAndGet();
-			try (MemoryStack stack = stackPush()) {
-				closePooledReaders();
-				checkForDeadReaders(stack.mallocInt(1));
-				readersFullLock.lock();
-				try {
-					readerInactive.awaitNanos(Math.min(remainingNanos,
-							TimeUnit.MILLISECONDS.toNanos(BACKOFF_MAX_MILLIS)));
-				} finally {
-					readersFullLock.unlock();
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while waiting for count reader table", e);
-			} finally {
-				readersFullWaiters.decrementAndGet();
-			}
-		}
-		LockSupport.parkNanos(Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(1)));
-		if (Thread.interrupted()) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while waiting for count environment");
-		}
-	}
-
-	/** Single begin/renew attempt; reader-table recovery happens only after all count leases are released. */
-	private Txn tryCreateReadTxnWithPermit(Semaphore readerPermit) throws IOException {
-		boolean consumed = false;
-		try {
-			Txn pooled = pollPooled();
-			if (pooled != null) {
-				boolean reused;
-				try {
-					reused = pooled.reuseForCount(readerPermit);
-				} catch (IOException | RuntimeException | Error e) {
-					discardPooled(pooled);
-					throw e;
-				}
-				if (!reused) {
-					countReadersFull = true;
-					discardPooled(pooled);
-					return null;
-				}
-				countReadersFull = false;
-				consumed = true;
-				return pooled;
-			}
-			checkNotClosed();
-			long nativeTxn;
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pointer = stack.mallocPointer(1);
-				int result = mdb_txn_begin(env, NULL, MDB_RDONLY, pointer);
-				if (result == MDB_READERS_FULL) {
-					countReadersFull = true;
-					return null;
-				}
-				E(result);
-				nativeTxn = pointer.get(0);
-			}
-			Txn created = new Txn(nativeTxn, true, true, readerPermit);
-			open.add(created);
-			if (managerClosed) {
-				discardPooled(created);
-				throw new IOException("Transaction manager is closed");
-			}
-			countReadersFull = false;
-			consumed = true;
-			return created;
-		} finally {
-			if (!consumed) {
-				releaseReaderPermit(readerPermit);
-			}
-		}
-	}
-
-	private Txn createReadTxnWithPermit(boolean resetOnWrite, Semaphore readerPermit) throws IOException {
 
 		boolean permitConsumed = false;
 		try {
@@ -380,20 +257,6 @@ final class TxnManager {
 
 	void close() {
 		managerClosed = true;
-		// Wake count preflight admission before waiting for already frozen count views to finish.
-		readerSlots.release(POOL_SIZE);
-		priorityReaderSlot.release();
-		signalReaderInactive();
-		boolean interrupted = false;
-		synchronized (countPinsMonitor) {
-			while (activeCountPins != 0) {
-				try {
-					countPinsMonitor.wait();
-				} catch (InterruptedException e) {
-					interrupted = true;
-				}
-			}
-		}
 
 		// Drain the idle pool first; the transactions themselves are still tracked in `open` and are aborted below.
 		if (txnPool != null) {
@@ -411,13 +274,12 @@ final class TxnManager {
 
 		// Poison both semaphores: wake admission waiters, which then fail fast in acquireReaderPermit().
 		// Permit accounting is irrelevant from here on, the manager is closed.
+		readerSlots.release(POOL_SIZE);
+		priorityReaderSlot.release();
 		signalReaderInactive();
 
 		for (Pool pool : pools) {
 			pool.close();
-		}
-		if (interrupted) {
-			Thread.currentThread().interrupt();
 		}
 	}
 
@@ -426,19 +288,15 @@ final class TxnManager {
 	// ---------------------------------------------------------------------------------------------
 
 	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
-		return acquireReaderPermit(priority, READER_ADMISSION_TIMEOUT_NANOS);
-	}
-
-	private Semaphore acquireReaderPermit(boolean priority, long timeoutNanos) throws IOException {
 		Semaphore slots;
 		try {
 			if (priority && readerSlots.tryAcquire(0, TimeUnit.NANOSECONDS)) {
 				slots = readerSlots;
 			} else {
 				slots = priority ? priorityReaderSlot : readerSlots;
-				if (!slots.tryAcquire(timeoutNanos, TimeUnit.NANOSECONDS)) {
+				if (!slots.tryAcquire(READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
 					throw new IOException("Timed out after "
-							+ TimeUnit.NANOSECONDS.toMillis(timeoutNanos)
+							+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
 							+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
 				}
 			}
@@ -670,8 +528,6 @@ final class TxnManager {
 		private volatile boolean idle;
 		private volatile boolean resetOnWrite;
 		private volatile boolean stale;
-		private int countPins;
-		private boolean closeRequested;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
@@ -696,38 +552,6 @@ final class TxnManager {
 			return valuePool;
 		}
 
-		long getCountResourceOrder() {
-			return countResourceOrder;
-		}
-
-		boolean isAvailableForCounting() {
-			return !managerClosed && !closed && !idle;
-		}
-
-		/** Keeps this exact transaction from being recycled or aborted until the count scope releases it. */
-		CountPin pinForCounting() throws IOException {
-			CountPin pin = new CountPin(this);
-			synchronized (countPinsMonitor) {
-				checkNotClosed();
-				activeCountPins++;
-			}
-			boolean success = false;
-			try {
-				synchronized (this) {
-					if (closed || idle) {
-						throw new IOException("Count transaction is closed");
-					}
-					countPins++;
-					success = true;
-				}
-				return pin;
-			} finally {
-				if (!success) {
-					releaseManagerCountPin();
-				}
-			}
-		}
-
 		@Override
 		public void close() {
 			if (!owned) {
@@ -737,10 +561,6 @@ final class TxnManager {
 			Semaphore permit;
 			synchronized (this) {
 				if (closed || idle) {
-					return;
-				}
-				if (countPins != 0) {
-					closeRequested = true;
 					return;
 				}
 				permit = readerPermit;
@@ -799,26 +619,6 @@ final class TxnManager {
 			this.idle = false;
 			this.closed = false;
 			activate();
-		}
-
-		private synchronized boolean reuseForCount(Semaphore readerPermit) throws IOException {
-			if (stale) {
-				resetNative();
-				stale = false;
-			}
-			if (!active) {
-				int result = mdb_txn_renew(txn);
-				if (result == MDB_READERS_FULL) {
-					return false;
-				}
-				E(result);
-				active = true;
-			}
-			this.resetOnWrite = true;
-			this.readerPermit = readerPermit;
-			this.idle = false;
-			this.closed = false;
-			return true;
 		}
 
 		private void activate() throws IOException {
@@ -901,65 +701,5 @@ final class TxnManager {
 					+ ", resetOnWrite=" + resetOnWrite + ", stale=" + stale + ", closed=" + closed + "}";
 		}
 
-	}
-
-	/** A lifetime pin, independent of the environment read guard that prevents reset and map growth. */
-	final class CountPin implements AutoCloseable {
-		private final Txn txn;
-		private boolean released;
-
-		private CountPin(Txn txn) {
-			this.txn = txn;
-		}
-
-		@Override
-		public synchronized void close() {
-			if (released) {
-				return;
-			}
-			released = true;
-			try {
-				boolean finishClose;
-				synchronized (txn) {
-					txn.countPins--;
-					finishClose = txn.countPins == 0 && txn.closeRequested;
-					if (finishClose) {
-						txn.closeRequested = false;
-					}
-				}
-				if (finishClose) {
-					txn.close();
-				}
-			} finally {
-				releaseManagerCountPin();
-			}
-		}
-	}
-
-	private void releaseManagerCountPin() {
-		synchronized (countPinsMonitor) {
-			activeCountPins--;
-			countPinsMonitor.notifyAll();
-		}
-	}
-
-	/** Protects an environment during preflight before an actual read lease can be admitted. */
-	AutoCloseable pinLifetimeForCounting() throws IOException {
-		AutoCloseable pin = new AutoCloseable() {
-			private boolean released;
-
-			@Override
-			public synchronized void close() {
-				if (!released) {
-					released = true;
-					releaseManagerCountPin();
-				}
-			}
-		};
-		synchronized (countPinsMonitor) {
-			checkNotClosed();
-			activeCountPins++;
-		}
-		return pin;
 	}
 }

@@ -15,10 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -35,7 +32,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -47,8 +43,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.sail.base.StatementCountScope;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -257,117 +251,6 @@ public class TxnManagerTest {
 				assertNotEquals(0L, renewed.get(5, TimeUnit.SECONDS));
 			} finally {
 				executor.shutdownNow();
-			}
-		}
-	}
-
-	@Test
-	void countAdmissionUsesReservedSlotAtTheNative128ReaderLimit(@TempDir Path dataDir) throws Exception {
-		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
-			fixture.hold(TxnManager.POOL_SIZE - 1);
-			assertNull(fixture.manager.tryCreateReadTxnForCount(false),
-					"A non-priority count lease must respect the ordinary reader limit");
-
-			TxnManager.Txn countTxn = fixture.manager.tryCreateReadTxnForCount(true);
-			assertNotNull(countTxn, "Priority count admission must be able to use the final native reader slot");
-			TxnManager.CountPin pin = countTxn.pinForCounting();
-			try {
-				countTxn.close();
-				assertTrue(countTxn.isAvailableForCounting(), "A pinned count transaction must remain available");
-				assertNull(fixture.manager.tryCreateReadTxnForCount(true),
-						"The count pin must keep the reserved native reader slot occupied");
-			} finally {
-				pin.close();
-			}
-
-			assertFalse(countTxn.isAvailableForCounting(), "Closing the pin must complete the deferred lease close");
-			TxnManager.Txn nextCountTxn = fixture.manager.tryCreateReadTxnForCount(true);
-			assertNotNull(nextCountTxn, "The reserved reader slot must be returned after the count pin closes");
-			nextCountTxn.close();
-		}
-	}
-
-	@Test
-	void countAdmissionReturnsPromptlyWhenTheNativeReaderTableIsExhausted(@TempDir Path dataDir) throws Exception {
-		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.ABORT)) {
-			long[] externalReaders = new long[TxnManager.POOL_SIZE];
-			try {
-				for (int i = 0; i < externalReaders.length; i++) {
-					externalReaders[i] = beginReadTxn(fixture.env);
-				}
-
-				assertTimeoutPreemptively(Duration.ofMillis(500), () -> assertNull(
-						fixture.manager.tryCreateReadTxnForCount(true),
-						"Native table exhaustion must reject count admission without entering readers-full recovery"));
-			} finally {
-				for (long txn : externalReaders) {
-					if (txn != 0) {
-						mdb_txn_abort(txn);
-					}
-				}
-			}
-		}
-	}
-
-	@Test
-	void countPinDefersClosingPinnedReadTransaction(@TempDir Path dataDir) throws Exception {
-		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
-			TxnManager.Txn readTxn = fixture.manager.createReadTxn();
-			try (TxnManager.CountPin pin = readTxn.pinForCounting()) {
-				readTxn.close();
-				assertTrue(readTxn.isAvailableForCounting(),
-						"A close request must not recycle the transaction while count reads are active");
-			}
-			assertFalse(readTxn.isAvailableForCounting(),
-					"Releasing the last count pin must complete the deferred transaction close");
-		}
-	}
-
-	@Test
-	void rejectedScopeRegistrationReleasesCountPin(@TempDir Path dataDir) throws Exception {
-		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
-			TxnManager.Txn readTxn = fixture.manager.createReadTxn();
-			TxnManager.CountPin pin = readTxn.pinForCounting();
-			try (StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
-				assertTrue(scope.freeze());
-				assertThrows(IllegalStateException.class, () -> scope.onRelease(pin));
-				readTxn.close();
-				assertFalse(readTxn.isAvailableForCounting(),
-						"A count pin rejected by a frozen scope must be released immediately");
-			} finally {
-				// Keep this fixture bounded on the regression: the pin is explicitly reclaimed if registration leaked
-				// it.
-				pin.close();
-				readTxn.close();
-			}
-		}
-	}
-
-	@Test
-	void rejectedScopeRegistrationReleasesManagerLifetimePin(@TempDir Path dataDir) throws Exception {
-		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
-				ExecutorService executor = Executors.newSingleThreadExecutor()) {
-			StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0]);
-			AutoCloseable pin = fixture.manager.pinLifetimeForCounting();
-			try {
-				assertTrue(scope.freeze());
-				assertThrows(IllegalStateException.class, () -> scope.onRelease(pin));
-				CountDownLatch closeStarted = new CountDownLatch(1);
-				Future<?> close = executor.submit(() -> {
-					closeStarted.countDown();
-					fixture.closeManager();
-				});
-				assertTrue(closeStarted.await(5, TimeUnit.SECONDS));
-				try {
-					close.get(1, TimeUnit.SECONDS);
-				} finally {
-					// Explicitly reclaim the owner so a failing registration cannot strand the manager close.
-					pin.close();
-					close.get(5, TimeUnit.SECONDS);
-				}
-			} finally {
-				pin.close();
-				scope.close();
 			}
 		}
 	}

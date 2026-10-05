@@ -32,8 +32,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -64,10 +62,6 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
-import org.eclipse.rdf4j.sail.base.StatementCountScope;
-import org.eclipse.rdf4j.sail.base.StatementCountSource;
-import org.eclipse.rdf4j.sail.base.StatementCountSourceProvider;
-import org.eclipse.rdf4j.sail.base.StatementCountSources;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -293,47 +287,6 @@ class LmdbSailStore implements SailStore {
 	 * done.
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
-	private static final AtomicLong COUNT_PUBLICATION_ORDER = new AtomicLong(Long.MIN_VALUE + 2);
-	private final long countPublicationOrder = COUNT_PUBLICATION_ORDER.getAndIncrement();
-	private volatile long countPublicationGeneration;
-
-	private void prepareCountPublication(StatementCountScope scope) {
-		if (scope.get(this) != null) {
-			return;
-		}
-		long generation = countPublicationGeneration;
-		StatementCountScope.CountResource publication = new StatementCountScope.CountResource() {
-			@Override
-			public long order() {
-				return countPublicationOrder;
-			}
-
-			@Override
-			public boolean tryLock() {
-				return sinkStoreAccessLock.tryLock();
-			}
-
-			@Override
-			public void awaitUnlocked(long remainingNanos) throws InterruptedException {
-				LockSupport.parkNanos(Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(1)));
-				if (Thread.interrupted()) {
-					throw new InterruptedException();
-				}
-			}
-
-			@Override
-			public void unlock() {
-				sinkStoreAccessLock.unlock();
-			}
-
-			@Override
-			public boolean isValid() {
-				return generation == countPublicationGeneration && (generation & 1) == 0;
-			}
-		};
-		scope.put(this, publication);
-		scope.register(this, publication);
-	}
 
 	/**
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
@@ -852,6 +805,65 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	long countStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			// there are no inferred statements and the iterator should only return inferred statements
+			return 0;
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return 0;
+			}
+		}
+
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		if (contexts.length == 0) {
+			contextIDList.add(LmdbValue.UNKNOWN_ID);
+		} else {
+			for (Resource context : contexts) {
+				if (context == null) {
+					contextIDList.add(0L);
+				} else if (!context.isTripleTerm()) {
+					long contextID = valueStore.getId(context);
+
+					if (contextID != LmdbValue.UNKNOWN_ID) {
+						contextIDList.add(contextID);
+					}
+				}
+			}
+		}
+
+		long count = 0;
+		for (long contextID : contextIDList) {
+			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
+				while (records.next() != null) {
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
 	/**
 	 * Creates a triple term iterator based on the supplied pattern.
 	 *
@@ -890,18 +902,12 @@ class LmdbSailStore implements SailStore {
 		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore);
 	}
 
-	private final class LmdbSailSource extends BackingSailSource implements StatementCountSourceProvider {
+	private final class LmdbSailSource extends BackingSailSource {
 
 		private final boolean explicit;
 
 		public LmdbSailSource(boolean explicit) {
 			this.explicit = explicit;
-		}
-
-		@Override
-		public StatementCountSource snapshotForCounting(StatementCountScope scope) {
-			prepareCountPublication(scope);
-			return new LmdbStatementCountSource(tripleStore, valueStore, explicit, scope);
 		}
 
 		@Override
@@ -1019,7 +1025,6 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void flush() throws SailException {
 			sinkStoreAccessLock.lock();
-			countPublicationGeneration++;
 			boolean activeTxn = storeTxnStarted.get();
 			try {
 				if (multiThreadingActive) {
@@ -1082,7 +1087,6 @@ class LmdbSailStore implements SailStore {
 				throw e;
 			} finally {
 				multiThreadingActive = false;
-				countPublicationGeneration++;
 				sinkStoreAccessLock.unlock();
 			}
 		}
@@ -1691,22 +1695,18 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-			return StatementCountSources.count(this, subj, pred, obj, contexts);
-		}
-
-		@Override
-		public StatementCountSource prepareStatementCount(StatementCountScope scope) {
-			if (closed) {
-				throw new SailException("Dataset is closed");
+			try {
+				return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				try {
+					logger.warn("Failed to count statements, retrying", e);
+					// try once more before giving up
+					Thread.yield();
+					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to count statements", e);
+				}
 			}
-			prepareCountPublication(scope);
-			return new LmdbStatementCountSource(tripleStore, valueStore, txn, explicit, scope);
-		}
-
-		@Override
-		public void prepareStatementCountValues(StatementCountScope scope) {
-			// A cleared statement view only needs dictionaries originating in the held/query values.
-			LmdbCountValue.install(scope);
 		}
 
 		@Override
