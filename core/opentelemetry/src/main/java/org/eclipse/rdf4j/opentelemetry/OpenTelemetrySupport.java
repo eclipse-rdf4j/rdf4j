@@ -14,6 +14,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.opentelemetry.repository.DbOtelAttributes;
 import org.eclipse.rdf4j.opentelemetry.repository.TracingRepository;
+import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
 
 /**
@@ -71,12 +72,30 @@ public final class OpenTelemetrySupport {
 	 * @param repositoryId an identifier recorded as the {@code db.namespace} span attribute, e.g. the id the repository
 	 *                     is known by in a {@code RepositoryManager}
 	 * @param config       the OpenTelemetry configuration to use
-	 * @return a {@link Repository} wrapping {@code repository} with tracing enabled
+	 * @return a {@link Repository} wrapping {@code repository} with tracing enabled, or {@code repository} itself if it
+	 *         is already a {@link TracingRepository}, or delegates (possibly transitively, through any number of
+	 *         {@link DelegatingRepository} layers) to one - calling this method is then idempotent, rather than adding
+	 *         a redundant extra layer of tracing spans each time.
 	 */
 	public static Repository instrument(Repository repository, String repositoryId, RDF4JOpenTelemetryConfig config) {
 		Objects.requireNonNull(repository, "repository must not be null");
 		Objects.requireNonNull(repositoryId, "repositoryId must not be null");
 		Objects.requireNonNull(config, "config must not be null");
+		if (isAlreadyTraced(repository)) {
+			return repository;
+		}
 		return new TracingRepository(repository, repositoryId, config);
+	}
+
+	private static boolean isAlreadyTraced(Repository repository) {
+		Repository current = repository;
+		while (current != null) {
+			if (current instanceof TracingRepository) {
+				return true;
+			}
+			current = current instanceof DelegatingRepository ? ((DelegatingRepository) current).getDelegate()
+					: null;
+		}
+		return false;
 	}
 }
