@@ -17,12 +17,18 @@ import java.util.UUID;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -62,61 +68,66 @@ public class QueryStorage {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(QueryStorage.class);
 
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
 	private static final String PRE = "PREFIX : <https://openrdf.org/workbench/>\n";
 
-	// SAVE needs xsd: prefix since explicit XSD data types will be substituted.
-	private static final String SAVE = "PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>\n" + PRE
-			+ "INSERT DATA { $<query> :userName $<userName> ; :queryName $<queryName> ; "
-			+ ":repository $<repository> ; :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }";
+	private static final String SAVE = PRE
+			+ "INSERT { ?query :userName ?userName ; :queryName ?queryName ; "
+			+ ":repository ?repository ; :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
+			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . } WHERE {}";
 
 	private static final String ASK_EXISTS = PRE
-			+ "ASK { [] :userName $<userName> ; :queryName $<queryName> ; :repository $<repository> . }";
+			+ "ASK { [] :userName ?userName ; :queryName ?queryName ; :repository ?repository . }";
 
-	private static final String UPDATE_FILTER = "FILTER (?user = $<userName> || ?user = \"\" ) } ";
+	private static final String UPDATE_FILTER = "FILTER (?user = ?currentUser || ?user = \"\" ) } ";
 
-	private static final String READ_FILTER = "FILTER (?user = $<userName> || ?user = \"\" || ?shared) } ";
+	private static final String READ_FILTER = "FILTER (?user = ?currentUser || ?user = \"\" || ?shared) } ";
 
-	private static final String ASK_UPDATABLE = PRE + "ASK { $<query> :userName ?user . " + UPDATE_FILTER;
+	private static final String ASK_UPDATABLE = PRE + "ASK { ?query :userName ?user . " + UPDATE_FILTER;
 
-	private static final String ASK_READABLE = PRE + "ASK { $<query> :userName ?user  ; :shared ?shared . "
+	private static final String ASK_READABLE = PRE + "ASK { ?query :userName ?user  ; :shared ?shared . "
 			+ READ_FILTER;
 
-	private static final String DELETE = PRE + "DELETE WHERE { $<query> :userName ?user ; ?p ?o . }";
+	private static final String DELETE = PRE
+			+ "DELETE { ?query ?p ?o } WHERE { ?query :userName ?user ; ?p ?o . " + UPDATE_FILTER;
 
-	private static final String MATCH = ":shared ?s ; :queryLanguage ?ql ; :query ?q ; :rowsPerPage ?rpp .\n";
+	private static final String MATCH = ":shared ?oldShared ; :queryLanguage ?oldQueryLanguage ; "
+			+ ":query ?oldQueryText ; :rowsPerPage ?oldRowsPerPage .\n";
 
-	private static final String OPTIONAL_UPDATE_FIELDS = "OPTIONAL { $<query> :infer ?infer . }\n"
-			+ "OPTIONAL { $<query> :queryTimeout ?queryTimeout . }\n";
+	private static final String OPTIONAL_UPDATE_FIELDS = "OPTIONAL { ?query :infer ?oldInfer . }\n"
+			+ "OPTIONAL { ?query :queryTimeout ?oldQueryTimeout . }\n";
 
 	private static final String UPDATE = PRE
-			+ "DELETE { $<query> " + MATCH + "$<query> :infer ?infer .\n$<query> :queryTimeout ?queryTimeout .\n"
-			+ "}\nINSERT { $<query> :shared $<shared> ; :queryLanguage $<queryLanguage> ; :query $<queryText> ; "
-			+ ":infer $<infer> ; :rowsPerPage $<rowsPerPage> ; :queryTimeout $<queryTimeout> . }\n"
-			+ "WHERE { $<query> :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
+			+ "DELETE { ?query " + MATCH + "?query :infer ?oldInfer .\n?query :queryTimeout ?oldQueryTimeout .\n"
+			+ "}\nINSERT { ?query :shared ?shared ; :queryLanguage ?queryLanguage ; :query ?queryText ; "
+			+ ":infer ?infer ; :rowsPerPage ?rowsPerPage ; :queryTimeout ?queryTimeout . }\n"
+			+ "WHERE { ?query :userName ?user ; " + MATCH + OPTIONAL_UPDATE_FIELDS + UPDATE_FILTER;
 
 	private static final String SELECT_URI = PRE
-			+ "SELECT ?query { ?query :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> . } ";
+			+ "SELECT ?query { ?query :repository ?repository ; :userName ?userName ; :queryName ?queryName . } ";
 
 	private static final String SELECT_TEXT = PRE
-			+ "SELECT ?queryText { [] :repository $<repository> ; :userName $<userName> ; :queryName $<queryName> ; :query ?queryText . } ";
+			+ "SELECT ?queryText { [] :repository ?repository ; :userName ?userName ; :queryName ?queryName ; :query ?queryText . } ";
 
 	private static final String SELECT = PRE
 			+ "SELECT ?query ?user ?queryName ?shared ?queryLn ?queryText ?infer ?rowsPerPage ?queryTimeout "
-			+ "{ ?query :repository $<repository> ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
+			+ "{ ?query :repository ?repository ; :userName ?user ; :queryName ?queryName ; :shared ?shared ; "
 			+ ":queryLanguage ?queryLn ; :query ?queryText ; :infer ?infer ; :rowsPerPage ?rowsPerPage .\n"
 			+ "OPTIONAL { ?query :queryTimeout ?queryTimeout . }\n"
 			+ READ_FILTER + "ORDER BY ?user ?queryName";
 
 	private final Repository queries;
 
-	private static final String USER_NAME = "$<userName>";
+	private static final String USER_NAME = "userName";
 
-	private static final String REPOSITORY = "$<repository>";
+	private static final String CURRENT_USER = "currentUser";
 
-	private static final String QUERY = "$<query>";
+	private static final String REPOSITORY = "repository";
 
-	private static final String QUERY_NAME = "$<queryName>";
+	private static final String QUERY = "query";
+
+	private static final String QUERY_NAME = "queryName";
 
 	/**
 	 * Create a new object for accessing the store of user queries.
@@ -164,8 +175,7 @@ public class QueryStorage {
 	}
 
 	/**
-	 * Save a query. UNSAFE from an injection point of view. It is the responsibility of the calling code to call
-	 * checkAccess() with the full credentials first.
+	 * Save a query. It is the responsibility of the calling code to call checkAccess() with the full credentials first.
 	 *
 	 * @param repository    the repository the query is associated with
 	 * @param queryName     the name for the query
@@ -181,23 +191,15 @@ public class QueryStorage {
 	public void saveQuery(final String repositoryReference, final String queryName, final String userName,
 			final boolean shared, final QueryLanguage queryLanguage, final String queryText, final boolean infer,
 			final int rowsPerPage, final int queryTimeout) throws RDF4JException {
-		if (QueryLanguage.SPARQL != queryLanguage) {
-			throw new RepositoryException("May only save SPARQL queries, not" + queryLanguage.toString());
+		validateSavedQueryFields(queryLanguage, rowsPerPage, queryTimeout);
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			Update save = connection.prepareUpdate(QueryLanguage.SPARQL, SAVE);
+			save.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			save.setBinding(QUERY, VF.createIRI("urn:uuid:" + UUID.randomUUID()));
+			save.setBinding(QUERY_NAME, VF.createLiteral(queryName));
+			bindSavedQueryFields(save, userName, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
+			save.execute();
 		}
-		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
-				&& 200 != rowsPerPage) {
-			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
-		}
-		if (queryTimeout < 0) {
-			throw new RepositoryException("Illegal value for query timeout: " + queryTimeout);
-		}
-		this.checkQueryText(queryText);
-		final QueryStringBuilder save = new QueryStringBuilder(SAVE);
-		save.replaceURI(REPOSITORY, repositoryReference);
-		save.replaceURI(QUERY, "urn:uuid:" + UUID.randomUUID());
-		save.replaceQuote(QUERY_NAME, queryName);
-		this.replaceUpdateFields(save, userName, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
-		updateQueryRepository(save.toString());
 	}
 
 	/**
@@ -226,24 +228,22 @@ public class QueryStorage {
 
 	private boolean performAccessQuery(String accessSPARQL, IRI query, String currentUser)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException {
-		final QueryStringBuilder canDelete = new QueryStringBuilder(accessSPARQL);
-		canDelete.replaceURI(QUERY, query.stringValue());
-		canDelete.replaceQuote(USER_NAME, currentUser);
-		LOGGER.info("{}", canDelete);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, canDelete.toString()).evaluate();
+			BooleanQuery accessQuery = connection.prepareBooleanQuery(QueryLanguage.SPARQL, accessSPARQL);
+			accessQuery.setBinding(QUERY, query);
+			accessQuery.setBinding(CURRENT_USER, VF.createLiteral(currentUser));
+			return accessQuery.evaluate();
 		}
 	}
 
 	public boolean askExists(final String repositoryReference, final String queryName, final String userName)
 			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
-		final QueryStringBuilder ask = new QueryStringBuilder(ASK_EXISTS);
-		ask.replaceURI(REPOSITORY, repositoryReference);
-		ask.replaceQuote(QUERY_NAME, queryName);
-		ask.replaceQuote(USER_NAME, userName);
-		LOGGER.info("{}", ask);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			return connection.prepareBooleanQuery(QueryLanguage.SPARQL, ask.toString()).evaluate();
+			BooleanQuery ask = connection.prepareBooleanQuery(QueryLanguage.SPARQL, ASK_EXISTS);
+			ask.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			ask.setBinding(QUERY_NAME, VF.createLiteral(queryName));
+			ask.setBinding(USER_NAME, VF.createLiteral(userName));
+			return ask.evaluate();
 		}
 	}
 
@@ -259,10 +259,12 @@ public class QueryStorage {
 	 */
 	public void deleteQuery(final IRI query, final String userName)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		final QueryStringBuilder delete = new QueryStringBuilder(DELETE);
-		delete.replaceQuote(QueryStorage.USER_NAME, userName);
-		delete.replaceURI(QUERY, query.stringValue());
-		updateQueryRepository(delete.toString());
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, DELETE);
+			delete.setBinding(QUERY, query);
+			delete.setBinding(CURRENT_USER, VF.createLiteral(userName));
+			delete.execute();
+		}
 	}
 
 	/**
@@ -285,11 +287,14 @@ public class QueryStorage {
 			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
 			final int queryTimeout)
 			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		final QueryStringBuilder update = new QueryStringBuilder(UPDATE);
-		update.replaceURI(QUERY, query);
-		this.replaceUpdateFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage,
-				queryTimeout);
-		this.updateQueryRepository(update.toString());
+		validateSavedQueryFields(queryLanguage, rowsPerPage, queryTimeout);
+		try (RepositoryConnection connection = this.queries.getConnection()) {
+			Update update = connection.prepareUpdate(QueryLanguage.SPARQL, UPDATE);
+			update.setBinding(QUERY, query);
+			update.setBinding(CURRENT_USER, VF.createLiteral(userName));
+			bindSavedQueryFields(update, userName, shared, queryLanguage, queryText, infer, rowsPerPage, queryTimeout);
+			update.execute();
+		}
 	}
 
 	/**
@@ -310,11 +315,11 @@ public class QueryStorage {
 	public void selectSavedQueries(final String repositoryReference, final String userName,
 			final TupleResultBuilder builder)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException, QueryResultHandlerException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT);
-		select.replaceQuote(USER_NAME, userName);
-		select.replaceURI(REPOSITORY, repositoryReference);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			EVAL.evaluateTupleQuery(builder, connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString()));
+			TupleQuery select = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT);
+			select.setBinding(CURRENT_USER, VF.createLiteral(userName));
+			select.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			EVAL.evaluateTupleQuery(builder, select);
 		}
 	}
 
@@ -330,12 +335,11 @@ public class QueryStorage {
 	 */
 	public IRI selectSavedQuery(final String repositoryReference, final String owner, final String queryName)
 			throws RDF4JException, BadRequestException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT_URI);
-		select.replaceQuote(QueryStorage.USER_NAME, owner);
-		select.replaceURI(REPOSITORY, repositoryReference);
-		select.replaceQuote(QUERY_NAME, queryName);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString());
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_URI);
+			query.setBinding(USER_NAME, VF.createLiteral(owner));
+			query.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			query.setBinding(QUERY_NAME, VF.createLiteral(queryName));
 			try (TupleQueryResult result = query.evaluate()) {
 				if (result.hasNext()) {
 					return (IRI) (result.next().getValue("query"));
@@ -360,12 +364,11 @@ public class QueryStorage {
 	 */
 	public String getQueryText(final String repositoryReference, final String owner, final String queryName)
 			throws RDF4JException, BadRequestException {
-		final QueryStringBuilder select = new QueryStringBuilder(SELECT_TEXT);
-		select.replaceQuote(QueryStorage.USER_NAME, owner);
-		select.replaceURI(REPOSITORY, repositoryReference);
-		select.replaceQuote(QUERY_NAME, queryName);
 		try (RepositoryConnection connection = this.queries.getConnection()) {
-			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, select.toString());
+			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, SELECT_TEXT);
+			query.setBinding(USER_NAME, VF.createLiteral(owner));
+			query.setBinding(REPOSITORY, VF.createIRI(repositoryReference));
+			query.setBinding(QUERY_NAME, VF.createLiteral(queryName));
 			try (TupleQueryResult result = query.evaluate()) {
 				if (result.hasNext()) {
 					return result.next().getValue("queryText").stringValue();
@@ -377,48 +380,30 @@ public class QueryStorage {
 		}
 	}
 
-	private void updateQueryRepository(final String update)
-			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
-		LOGGER.info("SPARQL/Update of Query Storage:\n--\n{}\n--", update);
-		try (RepositoryConnection connection = this.queries.getConnection()) {
-			connection.prepareUpdate(QueryLanguage.SPARQL, update).execute();
+	private void bindSavedQueryFields(Operation operation, String userName, boolean shared,
+			QueryLanguage queryLanguage, String queryText, boolean infer, int rowsPerPage, int queryTimeout) {
+		operation.setBinding(USER_NAME, VF.createLiteral(userName));
+		operation.setBinding("shared", VF.createLiteral(shared));
+		operation.setBinding("queryLanguage", VF.createLiteral(queryLanguage.toString()));
+		operation.setBinding("queryText", VF.createLiteral(queryText));
+		operation.setBinding("infer", VF.createLiteral(infer));
+		operation.setBinding("rowsPerPage",
+				VF.createLiteral(String.valueOf(rowsPerPage), CoreDatatype.XSD.UNSIGNED_BYTE));
+		operation.setBinding("queryTimeout",
+				VF.createLiteral(String.valueOf(queryTimeout), CoreDatatype.XSD.INTEGER));
+	}
+
+	private void validateSavedQueryFields(QueryLanguage queryLanguage, int rowsPerPage, int queryTimeout)
+			throws RepositoryException {
+		if (QueryLanguage.SPARQL != queryLanguage) {
+			throw new RepositoryException("May only save SPARQL queries, not" + queryLanguage.toString());
 		}
-	}
-
-	/**
-	 * Perform replacement on several common fields for update operations.
-	 *
-	 * @param userName      the name of the current user
-	 * @param shared        whether the saved query is to be shared with other users
-	 * @param queryLanguage the language of the saved query
-	 * @param queryText     the actual text of the query to save
-	 * @param infer
-	 * @param rowsPerPage   the rows per page to display for results
-	 * @param queryTimeout  query timeout in seconds, may be 0 to use the repository default
-	 */
-	private void replaceUpdateFields(final QueryStringBuilder builder, final String userName, final boolean shared,
-			final QueryLanguage queryLanguage, final String queryText, final boolean infer, final int rowsPerPage,
-			final int queryTimeout) {
-		builder.replaceQuote(USER_NAME, userName);
-		builder.replace("$<shared>", QueryStringBuilder.xsdQuote(String.valueOf(shared), "boolean"));
-		builder.replaceQuote("$<queryLanguage>", queryLanguage.toString());
-		checkQueryText(queryText);
-		builder.replace("$<queryText>", QueryStringBuilder.quote(queryText, "'''", "'''"));
-		builder.replace("$<infer>", QueryStringBuilder.xsdQuote(String.valueOf(infer), "boolean"));
-		builder.replace("$<rowsPerPage>", QueryStringBuilder.xsdQuote(String.valueOf(rowsPerPage), "unsignedByte"));
-		builder.replace("$<queryTimeout>", QueryStringBuilder.xsdQuote(String.valueOf(queryTimeout), "integer"));
-	}
-
-	/**
-	 * Imposes the rule that the query may not contain '''-quoted string, since that is how we'll be quoting it in our
-	 * SPARQL/Update statements. Quoting the query with ''' assuming all string literals in the query are of the
-	 * STRING_LITERAL1, STRING_LITERAL2 or STRING_LITERAL_LONG2 types.
-	 *
-	 * @param queryText the query text
-	 */
-	private void checkQueryText(final String queryText) {
-		if (queryText.indexOf("'''") > 0) {
-			throw new IllegalArgumentException("queryText may not contain '''-quoted strings.");
+		if (0 != rowsPerPage && 10 != rowsPerPage && 20 != rowsPerPage && 50 != rowsPerPage && 100 != rowsPerPage
+				&& 200 != rowsPerPage) {
+			throw new RepositoryException("Illegal value for rows per page: " + rowsPerPage);
+		}
+		if (queryTimeout < 0) {
+			throw new RepositoryException("Illegal value for query timeout: " + queryTimeout);
 		}
 	}
 }
