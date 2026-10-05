@@ -43,6 +43,10 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final String CHANGE_SERVER = "change-server-path";
 
 	private static final String SERVER_COOKIE = "workbench-server";
+	private static final String TLS_CIPHER_SUITE_ATTRIBUTE = "jakarta.servlet.request.cipher_suite";
+	private static final String TLS_KEY_SIZE_ATTRIBUTE = "jakarta.servlet.request.key_size";
+	private static final String TLS_SESSION_ID_ATTRIBUTE = "jakarta.servlet.request.ssl_session_id";
+	private static final String TLS_CERTIFICATE_ATTRIBUTE = "jakarta.servlet.request.X509Certificate";
 
 	protected static final String TRANSFORMATIONS = "transformations";
 
@@ -247,7 +251,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (servlets.containsKey(server)) {
 			servlet = servlets.get(server);
 		} else {
-			if (isServerFixed() || isRelativeDefaultServer(selection) || selection.validServer
+			if (isAllowedConfiguredDefault(selection) || selection.validServer
 					|| this.serverValidator.isValidServer(server)) {
 				synchronized (servlets) {
 					// Even though the map is thread-safe, we only wish one
@@ -271,8 +275,14 @@ public class WorkbenchGateway extends AbstractServlet {
 		return servlet;
 	}
 
-	private boolean isRelativeDefaultServer(ServerSelection selection) {
-		return selection.defaultServer && getDefaultServerPath().startsWith("/");
+	private boolean isAllowedConfiguredDefault(ServerSelection selection) {
+		if (!selection.defaultServer) {
+			return false;
+		}
+		String configuredDefault = getDefaultServerPath();
+		return configuredDefault.startsWith("/")
+				? serverValidator.isValidServer(configuredDefault)
+				: isServerFixed();
 	}
 
 	private boolean isSubmittedDefaultServer(String server, HttpServletRequest req) {
@@ -285,7 +295,7 @@ public class WorkbenchGateway extends AbstractServlet {
 			return null;
 		}
 		if (isSubmittedDefaultServer(server, req)) {
-			return getDefaultServer(req);
+			return this.serverValidator.isValidServer(getDefaultServerPath()) ? getDefaultServer(req) : null;
 		}
 		String sameOriginPath = getSameOriginPath(req, server);
 		if (sameOriginPath != null && this.serverValidator.isValidServer(sameOriginPath)) {
@@ -315,21 +325,26 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	private String getRequestRoot(final HttpServletRequest req) {
-		final StringBuffer url = req.getRequestURL();
-		final StringBuilder path = getServerPath(req);
-		final int pathStart = path.length() > 0 ? url.indexOf(path.toString()) : -1;
-		if (pathStart > 0) {
-			url.setLength(pathStart);
-			return url.toString();
+		String scheme = isTlsConnector(req) ? "https" : "http";
+		String localAddress = req.getLocalAddr();
+		if (localAddress == null || localAddress.isBlank()) {
+			throw new IllegalArgumentException("Cannot resolve a relative server without a local connector address");
 		}
+		int localPort = req.getLocalPort();
+		int uriPort = localPort > 0 && localPort != defaultPort(scheme) ? localPort : -1;
+		try {
+			return new URI(scheme, null, localAddress, uriPort, null, null, null)
+					.toASCIIString();
+		} catch (URISyntaxException e) {
+			throw new IllegalArgumentException("Cannot resolve a relative server against the local connector", e);
+		}
+	}
 
-		final StringBuilder root = new StringBuilder();
-		root.append(req.getScheme()).append("://").append(req.getServerName());
-		int port = req.getServerPort();
-		if (port > 0 && port != defaultPort(req.getScheme())) {
-			root.append(':').append(port);
-		}
-		return root.toString();
+	private boolean isTlsConnector(HttpServletRequest request) {
+		return request.getAttribute(TLS_CIPHER_SUITE_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_KEY_SIZE_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_SESSION_ID_ATTRIBUTE) != null
+				|| request.getAttribute(TLS_CERTIFICATE_ATTRIBUTE) != null;
 	}
 
 	private String getSameOriginPath(final HttpServletRequest req, final String server) {
@@ -355,12 +370,16 @@ public class WorkbenchGateway extends AbstractServlet {
 	}
 
 	private boolean isSameOrigin(final HttpServletRequest req, final URI uri) {
-		if (req.getScheme() == null || req.getServerName() == null) {
+		URI localOrigin;
+		try {
+			localOrigin = new URI(getRequestRoot(req));
+		} catch (IllegalArgumentException | URISyntaxException e) {
 			return false;
 		}
-		return req.getScheme().equalsIgnoreCase(uri.getScheme())
-				&& req.getServerName().equalsIgnoreCase(uri.getHost())
-				&& effectivePort(req.getScheme(), req.getServerPort()) == effectivePort(uri.getScheme(), uri.getPort());
+		return localOrigin.getScheme().equalsIgnoreCase(uri.getScheme())
+				&& localOrigin.getHost().equalsIgnoreCase(uri.getHost())
+				&& effectivePort(localOrigin.getScheme(), localOrigin.getPort()) == effectivePort(uri.getScheme(),
+						uri.getPort());
 	}
 
 	private int effectivePort(String scheme, int port) {
@@ -378,26 +397,6 @@ public class WorkbenchGateway extends AbstractServlet {
 			return 443;
 		}
 		return -1;
-	}
-
-	/**
-	 * Returns the full path for the given request.
-	 *
-	 * @param req the request for which the path is sought
-	 * @return the full path for the given request
-	 */
-	private StringBuilder getServerPath(final HttpServletRequest req) {
-		final StringBuilder path = new StringBuilder();
-		if (req.getContextPath() != null) {
-			path.append(req.getContextPath());
-		}
-		if (req.getServletPath() != null) {
-			path.append(req.getServletPath());
-		}
-		if (req.getPathInfo() != null) {
-			path.append(req.getPathInfo());
-		}
-		return path;
 	}
 
 	private String getTransformationUrl(final HttpServletRequest req) {
