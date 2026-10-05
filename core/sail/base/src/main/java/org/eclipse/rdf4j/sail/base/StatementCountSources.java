@@ -72,7 +72,10 @@ public final class StatementCountSources {
 			{
 				scope.onPrepareStatementKeys(() -> {
 					List<Statement> statements = new ArrayList<>();
-					try (CloseableIteration<? extends Statement> rows = dataset.getStatements(null, null, null)) {
+					boolean indexed = scope.usesStandardValueEquality();
+					try (CloseableIteration<? extends Statement> rows = dataset.getStatements(
+							indexed ? scope.subject() : null, indexed ? scope.predicate() : null,
+							indexed ? scope.object() : null, indexed ? scope.contexts() : new Resource[0])) {
 						while (rows.hasNext()) {
 							statements.add(rows.next());
 						}

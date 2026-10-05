@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -254,6 +256,250 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void testBoundStatementCountUsesPendingModelIndex() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Statement match = values.createStatement(values.createIRI("urn:count-index:match"), RDF.TYPE, RDFS.RESOURCE);
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new DynamicModel(LinkedHashModel::new) {
+					@Override
+					public <T> T[] toArray(T[] target) {
+						throw new AssertionError("A bound count must retain the pending model's indexed lookup");
+					}
+				};
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.approve(match);
+		changes.approve(values.createIRI("urn:count-index:unrelated"), RDF.TYPE, RDFS.CLASS, null);
+		try (SailDataset dataset = new SailDatasetImpl(
+				new ChangingLegacyCountDataset(List.of(), null, match), changes)) {
+			assertEquals(1, dataset.getStatementCount(match.getSubject(), match.getPredicate(), match.getObject(),
+					(Resource) null));
+		}
+	}
+
+	@Test
+	public void testBoundStatementCountRetainsLegacyDatasetPattern() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Resource subject = values.createIRI("urn:legacy-pattern:subject");
+		IRI predicate = RDF.TYPE;
+		Value object = RDFS.RESOURCE;
+		Resource context = values.createIRI("urn:legacy-pattern:context");
+		Statement match = values.createStatement(subject, predicate, object, context);
+		ChangingLegacyCountDataset derived = new ChangingLegacyCountDataset(List.of(match), context, match) {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
+				assertEquals(subject, subj, "Count preflight must retain the bound subject");
+				assertEquals(predicate, pred, "Count preflight must retain the bound predicate");
+				assertEquals(object, obj, "Count preflight must retain the bound object");
+				assertEquals(List.of(context), Arrays.asList(contexts), "Count preflight must retain the contexts");
+				return super.getStatements(subj, pred, obj, contexts);
+			}
+		};
+		Changeset changes = new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return new NativeCountModel();
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+		changes.approve(match);
+		try (SailDataset dataset = new SailDatasetImpl(derived, changes)) {
+			assertEquals(1, dataset.getStatementCount(subject, predicate, object, context),
+					"An approved statement already present in the base must count once");
+		}
+	}
+
+	@Test
+	public void testCountProjectionRetainsCustomEqualityAcrossLaterUnionLeaf() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Resource subject = values.createIRI("urn:custom-count:subject");
+		Statement match = values.createStatement(subject, RDF.TYPE, RDFS.RESOURCE);
+		IRI lazySubject = new IRI() {
+			@Override
+			public String stringValue() {
+				throw new AssertionError("A native count must not resolve the lazy query subject");
+			}
+
+			@Override
+			public String getNamespace() {
+				throw new AssertionError("A native count must not resolve the lazy query namespace");
+			}
+
+			@Override
+			public String getLocalName() {
+				throw new AssertionError("A native count must not resolve the lazy query local name");
+			}
+
+			@Override
+			public int hashCode() {
+				throw new AssertionError("A native count must not hash the lazy query subject");
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				throw new AssertionError("A native count must use its prepared RDF equality");
+			}
+		};
+		ChangingLegacyCountDataset legacy = new ChangingLegacyCountDataset(List.of(match), null, match) {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) {
+				assertEquals(null, subj, "Custom equality must keep the legacy reference-only capture");
+				assertEquals(null, pred);
+				assertEquals(null, obj);
+				assertEquals(0, contexts.length);
+				return super.getStatements(subj, pred, obj, contexts);
+			}
+		};
+		Changeset changes = countChanges(LinkedHashModel::new);
+		changes.approve(match);
+		SailDataset laterNativeLeaf = new DelegatingSailDataset(countOnlyDataset(0)) {
+			@Override
+			public StatementCountSource prepareStatementCount(StatementCountScope scope) {
+				Function<Value, Value> normalized = value -> value == lazySubject ? subject : value;
+				scope.setValueEquality((left, right) -> normalized.apply(left).equals(normalized.apply(right)));
+				scope.setValueHash(value -> normalized.apply(value).hashCode());
+				return StatementCountSources.EMPTY;
+			}
+		};
+		try (SailDataset dataset = UnionSailDataset.getInstance(new SailDatasetImpl(legacy, changes),
+				laterNativeLeaf)) {
+			assertEquals(1, dataset.getStatementCount(lazySubject, RDF.TYPE, RDFS.RESOURCE, (Resource) null),
+					"The later leaf's equality must apply to both the generic model and legacy base capture");
+		}
+	}
+
+	@Test
+	public void testCountProjectionHandlesNestedDeltasAndContextSets() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Resource subject = values.createIRI("urn:nested-projection:subject");
+		Resource otherSubject = values.createIRI("urn:nested-projection:other");
+		Resource contextA = values.createIRI("urn:nested-projection:a");
+		Resource contextB = values.createIRI("urn:nested-projection:b");
+		Value label = values.createLiteral("label");
+		Statement cleared = values.createStatement(subject, RDF.TYPE, RDFS.RESOURCE, contextA);
+		Statement removed = values.createStatement(subject, RDF.TYPE, RDFS.CLASS, contextB);
+		Statement defaultRemoved = values.createStatement(otherSubject, RDF.TYPE, RDFS.RESOURCE);
+		Statement retained = values.createStatement(subject, RDFS.LABEL, label, contextB);
+		Statement defaultAdded = values.createStatement(subject, RDF.TYPE, RDFS.RESOURCE);
+		Statement readded = values.createStatement(subject, RDF.TYPE, RDFS.CLASS, contextA);
+		Statement added = values.createStatement(otherSubject, RDF.TYPE, RDFS.RESOURCE, contextB);
+		Changeset lower = countChanges(() -> new DynamicModel(LinkedHashModel::new));
+		lower.deprecate(removed);
+		lower.approve(cleared);
+		lower.approve(defaultAdded);
+		Changeset upper = countChanges(() -> new DynamicModel(LinkedHashModel::new));
+		upper.clear(contextA);
+		upper.approve(readded);
+		upper.deprecate(defaultRemoved);
+		upper.approve(added);
+		List<Statement> expected = List.of(retained, defaultAdded, readded, added);
+		List<Resource[]> contextSets = List.of(new Resource[0], new Resource[] { null },
+				new Resource[] { contextA }, new Resource[] { contextB }, new Resource[] { null, contextA, contextB },
+				new Resource[] { contextB, contextB, null });
+		try (SailDataset dataset = new SailDatasetImpl(new SailDatasetImpl(
+				new ChangingLegacyCountDataset(List.of(cleared, removed, defaultRemoved, retained), null, removed),
+				lower), upper)) {
+			for (Resource querySubject : Arrays.asList(null, subject, otherSubject)) {
+				for (IRI queryPredicate : Arrays.asList(null, RDF.TYPE, RDFS.LABEL)) {
+					for (Value queryObject : Arrays.asList(null, RDFS.RESOURCE, RDFS.CLASS, label)) {
+						for (Resource[] contexts : contextSets) {
+							long count = expected.stream()
+									.filter(statement -> ChangingLegacyCountDataset.matches(statement, querySubject,
+											queryPredicate, queryObject, contexts))
+									.count();
+							assertEquals(count, dataset.getStatementCount(querySubject, queryPredicate, queryObject,
+									contexts));
+						}
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	public void testDeferredCountCaptureKeepsOriginalGenerationAndPreparesValuesOutsideLocks() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Statement statement = values.createStatement(values.createIRI("urn:deferred-count:subject"), RDF.TYPE,
+				RDFS.RESOURCE);
+		Changeset changes = countChanges(LinkedHashModel::new);
+		changes.approve(statement);
+		AtomicBoolean mutated = new AtomicBoolean();
+		try (SailDataset dataset = new SailDatasetImpl(
+				new ChangingLegacyCountDataset(List.of(), null, statement), changes);
+				StatementCountScope scope = new StatementCountScope(null, null, null, new Resource[0])) {
+			dataset.prepareStatementCount(scope);
+			scope.observeHeldValues(value -> {
+				if (mutated.compareAndSet(false, true)) {
+					changes.approve(values.createIRI("urn:deferred-count:later"), RDF.TYPE, RDFS.CLASS, null);
+				}
+			});
+			assertFalse(scope.freeze(),
+					"Mutation during deferred value preparation must invalidate the original capture");
+			assertTrue(mutated.get(), "Held values must be prepared after complete source discovery");
+		}
+	}
+
+	private static Changeset countChanges(ModelFactory factory) {
+		return new Changeset() {
+			@Override
+			public Model createEmptyModel() {
+				return factory.createEmptyModel();
+			}
+
+			@Override
+			public void flush() {
+			}
+		};
+	}
+
+	@Test
+	public void testRetainedEmptyApprovedModelSkipsAllClearedValuePreflight() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Changeset changes = countChanges(LinkedHashModel::new);
+		changes.approve(values.createIRI("urn:empty-capture:subject"), RDF.TYPE, RDFS.RESOURCE, null);
+		changes.clear();
+		SailDataset derived = new DelegatingSailDataset(countOnlyDataset(7)) {
+			@Override
+			public void prepareStatementCountValues(StatementCountScope scope) {
+				throw new AssertionError("An all-cleared empty model must not prepare derived values");
+			}
+		};
+		try (SailDataset dataset = new SailDatasetImpl(derived, changes)) {
+			assertEquals(0, dataset.getStatementCount(null, null, null));
+		}
+	}
+
+	@Test
+	public void testRetainedEmptyGenericDeltaModelsSkipStatementKeyPreflight() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Statement statement = values.createStatement(values.createIRI("urn:empty-key-capture:subject"), RDF.TYPE,
+				RDFS.RESOURCE);
+		for (boolean withRemovalModel : List.of(false, true)) {
+			Changeset changes = countChanges(LinkedHashModel::new);
+			if (withRemovalModel) {
+				changes.deprecate(statement);
+			}
+			changes.approve(statement);
+			changes.removeApproved(statement);
+			try (SailDataset dataset = new SailDatasetImpl(countOnlyDataset(7), changes)) {
+				assertEquals(7, dataset.getStatementCount(null, null, null),
+						"Empty generic additions and removals must retain the derived count shortcut");
+			}
+		}
+	}
+
+	@Test
 	public void testStatementCountUsesOneLegacySnapshotForNativeDeltaCorrections() {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		IRI predicate = valueFactory.createIRI("urn:legacy-count:predicate");
@@ -352,7 +598,7 @@ public class SnapshotSailStoreTest {
 		}
 	}
 
-	private static final class ChangingLegacyCountDataset implements SailDataset {
+	private static class ChangingLegacyCountDataset implements SailDataset {
 		private final List<Statement> liveStatements;
 		private final Resource contextToChange;
 		private final Statement statementToChange;

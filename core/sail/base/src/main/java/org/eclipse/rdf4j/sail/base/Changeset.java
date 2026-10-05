@@ -1077,8 +1077,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 		Model added;
 		Model removed;
-		Statement[] heldAdded;
-		Statement[] heldRemoved;
 		Resource[] cleared;
 		boolean allCleared;
 		long generation;
@@ -1089,12 +1087,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (closed) {
 				throw new SailException("Changeset is closed");
 			}
-			added = approved;
-			removed = statementCleared ? null : deprecated;
-			heldAdded = added == null || added instanceof StatementCountSourceProvider ? null
-					: added.toArray(Statement[]::new);
-			heldRemoved = removed == null || removed instanceof StatementCountSourceProvider ? null
-					: removed.toArray(Statement[]::new);
+			added = nonEmptyCountingModel(approved);
+			removed = statementCleared ? null : nonEmptyCountingModel(deprecated);
 			cleared = deprecatedContexts == null ? new Resource[0] : deprecatedContexts.toArray(Resource[]::new);
 			allCleared = statementCleared;
 			generation = state.generation;
@@ -1112,21 +1106,68 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		for (Resource context : cleared) {
 			scope.prepareValue(context);
 		}
-		StatementCountSource additions = captureModel(added, heldAdded, scope);
-		StatementCountSource removals = captureModel(removed, heldRemoved, scope);
+		StatementCountSource additions = captureModel(added, scope, state, generation);
+		StatementCountSource removals = captureModel(removed, scope, state, generation);
 		CountSnapshot snapshot = new CountSnapshot(additions, removals, cleared, allCleared);
 		scope.put(this, snapshot);
 		return snapshot;
 	}
 
-	private static StatementCountSource captureModel(Model model, Statement[] held, StatementCountScope scope) {
+	/** Generic emptiness is safe under the capture locks; native providers perform their own capture outside them. */
+	private static Model nonEmptyCountingModel(Model model) {
+		return model != null && !(model instanceof StatementCountSourceProvider) && model.isEmpty() ? null : model;
+	}
+
+	private StatementCountSource captureModel(Model model, StatementCountScope scope, CountMutationState state,
+			long generation) {
 		if (model == null) {
 			return StatementCountSources.EMPTY;
 		}
 		if (model instanceof StatementCountSourceProvider provider) {
 			return provider.snapshotForCounting(scope);
 		}
-		return StatementCountSources.fromStatements(held, scope);
+		return new StatementCountSource() {
+			private StatementCountSource captured;
+
+			{
+				// Other leaves can install native equality during discovery. Do not use ordinary Model indexes until
+				// every leaf has had that opportunity, and never prepare lazy held values under Changeset locks.
+				scope.onPrepare(() -> {
+					Statement[] held;
+					boolean readLock = readWriteLock.readLock();
+					state.lock.lock();
+					try {
+						if (closed || countMutationState != state || state.generation != generation) {
+							held = new Statement[0];
+						} else if (scope.usesStandardValueEquality()) {
+							List<Statement> statements = new ArrayList<>();
+							for (Statement statement : model.getStatements(scope.subject(), scope.predicate(),
+									scope.object(), scope.contexts())) {
+								statements.add(statement);
+							}
+							held = statements.toArray(Statement[]::new);
+						} else {
+							held = model.toArray(Statement[]::new);
+						}
+					} finally {
+						state.lock.unlock();
+						readWriteLock.unlockReader(readLock);
+					}
+					captured = StatementCountSources.fromStatements(held, scope);
+				});
+			}
+
+			@Override
+			public long count(Resource subj, IRI pred, Value obj, Resource[] contexts, StatementKeyFilter filter,
+					StatementCountScope countScope) {
+				return captured.count(subj, pred, obj, contexts, filter, countScope);
+			}
+
+			@Override
+			public PreparedStatementTest prepareContains(StatementKey key, StatementCountScope countScope) {
+				return captured.prepareContains(key, countScope);
+			}
+		};
 	}
 
 	static final class CountSnapshot {

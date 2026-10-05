@@ -34,6 +34,25 @@ import org.junit.jupiter.api.Test;
 class StatementCountScopeTest {
 
 	@Test
+	void deferredPreparationFinishesBeforeAnyResourceAdmission() {
+		List<String> events = new ArrayList<>();
+		RecordingResource first = new RecordingResource("first", 1, events);
+		RecordingResource discovered = new RecordingResource("discovered", 2, events);
+		try (StatementCountScope scope = scope(first)) {
+			scope.onPrepare(() -> {
+				assertFalse(first.leaseHeld, "Deferred preparation must not run under native leases");
+				assertFalse(first.guardHeld, "Deferred preparation must not run under native guards");
+				events.add("prepare");
+				scope.register(discovered, discovered);
+			});
+			assertTrue(scope.freeze());
+			assertTrue(discovered.leaseHeld);
+			assertTrue(discovered.guardHeld);
+		}
+		assertBefore(events, "prepare", "first.tryLease");
+	}
+
+	@Test
 	void partialLeaseAdmissionReleasesBeforeWaiting() {
 		List<String> events = new ArrayList<>();
 		RecordingResource first = new RecordingResource("first", 1, events);

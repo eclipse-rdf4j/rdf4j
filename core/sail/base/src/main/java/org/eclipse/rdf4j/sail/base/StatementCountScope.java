@@ -83,6 +83,7 @@ public final class StatementCountScope implements AutoCloseable {
 	private final List<CountResource> resources = new ArrayList<>();
 	private final List<AutoCloseable> closeActions = new ArrayList<>();
 	private final List<AutoCloseable> releaseActions = new ArrayList<>();
+	private final List<Runnable> preparations = new ArrayList<>();
 	private final List<Runnable> keyPreparations = new ArrayList<>();
 	private final Map<Value, Boolean> heldValues = new IdentityHashMap<>();
 	private final List<Consumer<Value>> valueObservers = new ArrayList<>();
@@ -98,6 +99,7 @@ public final class StatementCountScope implements AutoCloseable {
 	private boolean frozen;
 	private boolean closed;
 	private boolean statementKeysRequired;
+	private boolean customValueEquality;
 
 	public StatementCountScope(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		this(subj, pred, obj, contexts, newAcquisitionDeadline());
@@ -208,6 +210,17 @@ public final class StatementCountScope implements AutoCloseable {
 		keyPreparations.add(action);
 	}
 
+	/** Runs after source discovery, while held values and resources can still be registered without guards. */
+	public void onPrepare(Runnable action) {
+		requirePreflight();
+		preparations.add(action);
+	}
+
+	/** Ordinary model indexes can only project the query when their equality matches this count operation. */
+	public boolean usesStandardValueEquality() {
+		return !customValueEquality;
+	}
+
 	/** Registers a held value without invoking its hashCode or lazy lexical getters. */
 	public void prepareValue(Value value) {
 		requirePreflight();
@@ -242,6 +255,7 @@ public final class StatementCountScope implements AutoCloseable {
 	public void setValueEquality(BiPredicate<Value, Value> equality) {
 		requirePreflight();
 		valueEquality = Objects.requireNonNull(equality);
+		customValueEquality = true;
 	}
 
 	public void setValueHash(ToIntFunction<Value> hash) {
@@ -270,6 +284,10 @@ public final class StatementCountScope implements AutoCloseable {
 	/** Returns false when capture became stale; the caller must recapture the complete source graph. */
 	public boolean freeze() {
 		requirePreflight();
+		for (int i = 0; i < preparations.size(); i++) {
+			preparations.get(i).run();
+		}
+		preparations.clear();
 		if (statementKeysRequired) {
 			for (int i = 0; i < keyPreparations.size(); i++) {
 				keyPreparations.get(i).run();
