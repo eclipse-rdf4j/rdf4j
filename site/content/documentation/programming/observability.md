@@ -64,15 +64,19 @@ The system properties are read once, as the default value used unless overridden
 
 ### Query text for `getStatements`/`hasStatement`
 
-For `GET_STATEMENTS`/`HAS_STATEMENT` spans, `db.query.text` (when `captureQueryText` is enabled) records the requested triple pattern rather than a SPARQL string, e.g.:
+For `GET_STATEMENTS`/`HAS_STATEMENT` spans, `db.query.text` (when `captureQueryText` is enabled) records the requested triple pattern rather than a SPARQL string. With no context argument, it's rendered as a plain triple pattern:
+
+```
+{ ?subj <http://example.com/predicate> "object" }
+```
+
+With one or more context arguments, it's rendered as a quad, with one context term per argument:
 
 ```
 { ?subj <http://example.com/predicate> "object" <http://context> }
 ```
 
-Unbound arguments (`null` subject/predicate/object, or no context given) are rendered as a `?subj`/`?pred`/`?obj`/`?context` variable; bound terms use the same SPARQL-syntax string representation as `db.query.parameter.<name>` above.
-
-Note the distinction between *no* context argument at all (`{ ?subj ?pred ?obj ?context }`, meaning "any context") and an explicit `(Resource) null` context element (meaning "the default/null context specifically"), which is rendered as the non-SPARQL marker `<urn:x-rdf4j:null-context>` so the two aren't conflated.
+Unbound subject/predicate/object arguments (`null`) are rendered as a `?subj`/`?pred`/`?obj` variable; bound terms use the same SPARQL-syntax string representation as `db.query.parameter.<name>` above. An explicit `(Resource) null` context argument (meaning "the default/null context specifically", as opposed to no context argument at all, which means "any context") is rendered as `RDF4J.NIL` (`<http://rdf4j.org/schema/rdf4j#nil>`), RDF4J's own vocabulary term for the SPARQL default context, used elsewhere (e.g. by Rio writers) whenever the null context needs an explicit identifier.
 
 ### Write operations (`add`/`remove`/`clear`)
 

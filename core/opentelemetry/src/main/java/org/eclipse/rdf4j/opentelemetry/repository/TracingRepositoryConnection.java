@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.opentelemetry.RDF4JOpenTelemetryConfig;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
@@ -66,10 +67,12 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 
 	/**
 	 * Rendered for an explicit {@code null} element in a {@code contexts} array, i.e. "the default/null context
-	 * specifically" - distinct from the {@code ?context} wildcard rendered when no context argument is given at all
-	 * (meaning "any context").
+	 * specifically" - distinct from omitting the context argument entirely (which renders as a plain triple pattern,
+	 * meaning "any context"). {@link RDF4J#NIL} is RDF4J's own vocabulary term for the SPARQL default context, used
+	 * elsewhere (e.g. by Rio writers) whenever the null context needs an explicit identifier, so it's the natural
+	 * choice here too rather than an invented marker.
 	 */
-	private static final String NULL_CONTEXT = "<urn:x-rdf4j:null-context>";
+	private static final String NULL_CONTEXT = TracingOperation.valueToString(RDF4J.NIL);
 
 	private final String repositoryId;
 	private final RDF4JOpenTelemetryConfig config;
@@ -215,16 +218,12 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 		pattern.append(termOrVariable(subj, "subj")).append(' ');
 		pattern.append(termOrVariable(pred, "pred")).append(' ');
 		pattern.append(termOrVariable(obj, "obj"));
-		if (contexts.length == 0) {
-			// no context given means "any context"; render the same wildcard variable as an unbound argument
-			pattern.append(' ').append("?context");
-		} else {
-			for (Resource context : contexts) {
-				// an explicit null element means "the default/null context" specifically, which is a different
-				// thing from the "?context" wildcard above (no context args given at all); use a distinct,
-				// non-SPARQL marker so the two aren't conflated
-				pattern.append(' ').append(context != null ? TracingOperation.valueToString(context) : NULL_CONTEXT);
-			}
+		// no context given means "any context"; rendered as a plain triple pattern rather than adding a 4th,
+		// always-unbound term. A context element that is explicitly null means "the default/null context"
+		// specifically, which is different from "no context given" - use a distinct, non-SPARQL marker so the two
+		// aren't conflated.
+		for (Resource context : contexts) {
+			pattern.append(' ').append(context != null ? TracingOperation.valueToString(context) : NULL_CONTEXT);
 		}
 		pattern.append(" }");
 		return pattern.toString();

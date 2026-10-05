@@ -290,7 +290,7 @@ class TracingRepositoryTest {
 	}
 
 	@Test
-	void getStatements_noContextGiven_rendersWildcardContext() {
+	void getStatements_noContextGiven_rendersAsTriple() {
 		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
 				.openTelemetry(otelTesting.getOpenTelemetry())
 				.captureQueryText(true)
@@ -306,11 +306,11 @@ class TracingRepositoryTest {
 		}
 
 		SpanData span = otelTesting.getSpans().get(0);
-		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT)).isEqualTo("{ ?subj ?pred ?obj ?context }");
+		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT)).isEqualTo("{ ?subj ?pred ?obj }");
 	}
 
 	@Test
-	void getStatements_explicitNullContext_rendersDistinctFromWildcard() {
+	void getStatements_explicitNullContext_rendersAsQuad() {
 		Repository traced = instrument(RDF4JOpenTelemetryConfig.builder()
 				.openTelemetry(otelTesting.getOpenTelemetry())
 				.captureQueryText(true)
@@ -327,7 +327,7 @@ class TracingRepositoryTest {
 
 		SpanData span = otelTesting.getSpans().get(0);
 		assertThat(span.getAttributes().get(DbOtelAttributes.DB_QUERY_TEXT))
-				.isEqualTo("{ ?subj ?pred ?obj <urn:x-rdf4j:null-context> }");
+				.isEqualTo("{ ?subj ?pred ?obj <http://rdf4j.org/schema/rdf4j#nil> }");
 	}
 
 	@Test
