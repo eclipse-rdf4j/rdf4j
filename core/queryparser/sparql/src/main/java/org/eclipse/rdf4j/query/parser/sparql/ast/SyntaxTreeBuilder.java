@@ -120,43 +120,13 @@ public class SyntaxTreeBuilder
 	}
 
 	private static void validateStringLiteral(String raw, int line, int col) throws ParseException {
-		StringBuilder resolved = new StringBuilder();
-		int i = 0;
-		while (i < raw.length()) {
-			char c = raw.charAt(i);
-			if (c == '\\' && i + 1 < raw.length()) {
-				char next = raw.charAt(i + 1);
-				if (next == 'u' && i + 5 <= raw.length()) {
-					try {
-						char r = (char) Integer.parseInt(raw.substring(i + 2, i + 6), 16);
-						resolved.append(r);
-						i += 6;
-						continue;
-					} catch (NumberFormatException e) {
-						// not a valid Unicode escape, treat \ as literal character
-					}
-				} else if (next == 'U' && i + 9 <= raw.length()) {
-					try {
-						int cp = Integer.parseInt(raw.substring(i + 2, i + 10), 16);
-						resolved.appendCodePoint(cp);
-						i += 10;
-						continue;
-					} catch (NumberFormatException e) {
-						// not a valid Unicode escape, treat \ as literal character
-					}
-				}
-			}
-			resolved.append(c);
-			i++;
-		}
-
-		// Then validate all backslash sequences are valid ECHARs
-		String s = resolved.toString();
-		for (int j = 0; j < s.length(); j++) {
-			if (s.charAt(j) == '\\') {
-				if (j + 1 >= s.length() || !isValidEscapeChar(s.charAt(j + 1))) {
-					throw new ParseException(
-							"Invalid escape sequence at line " + line + ", column " + col);
+		// Codepoint escapes have already been resolved by UnicodeEscapeStream, which re-encodes any resolved character
+		// that is unsafe inside a literal as an ECHAR, so every remaining backslash must start an ECHAR. Each pair is
+		// consumed as a unit: the escaped character is never re-read as the start of another escape.
+		for (int j = 0; j < raw.length(); j++) {
+			if (raw.charAt(j) == '\\') {
+				if (j + 1 >= raw.length() || !isValidEscapeChar(raw.charAt(j + 1))) {
+					throw new ParseException("Invalid escape sequence at line " + line + ", column " + col);
 				}
 				j++;
 			}

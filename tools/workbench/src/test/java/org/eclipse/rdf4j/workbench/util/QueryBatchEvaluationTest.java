@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
@@ -212,8 +214,8 @@ class QueryBatchEvaluationTest {
 	}
 
 	@ParameterizedTest
-	@MethodSource("escapedOuterSlices")
-	void escapedOuterSlicesPreserveResultsAndOriginalMetadata(String text) throws Exception {
+	@MethodSource("validScopedCodepointEscapes")
+	void validScopedCodepointEscapesPreserveResultsAndOriginalMetadata(String text) throws Exception {
 		List<JsonNode> first = evaluate(text, rawRequest(Map.of("batch-size", "1")));
 		List<JsonNode> second = evaluate(text, rawRequest(Map.of("batch-size", "1", "batch-offset", "1")));
 		List<JsonNode> exhausted = evaluate(text, rawRequest(Map.of("batch-size", "1", "batch-offset", "2")));
@@ -227,21 +229,63 @@ class QueryBatchEvaluationTest {
 		assertThat(metadata(second).path("query-text").asText()).isEqualTo(text);
 	}
 
-	static Stream<String> escapedOuterSlices() {
+	static Stream<String> validScopedCodepointEscapes() {
 		return Stream.of(
+				VALUES_QUERY + " LIMIT 2 OFFSET 1",
+				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } "
+						+ "BIND(\"\\u004cIMIT 2 OFFSET 99\" AS ?note) } ORDER BY ?n LIMIT 2 OFFSET 1",
+				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } "
+						+ "BIND(\"\\u00C5\\U0001F603\" AS ?unicode) "
+						+ "BIND('\\u0042' AS ?singleShort) "
+						+ "BIND(\"\"\"\\u0043\"\"\" AS ?doubleLong) "
+						+ "BIND('''\\u0044''' AS ?singleLong) "
+						+ "BIND(\"a\\tb\" AS ?tab) "
+						+ "BIND(\"\\u005Cu0041\" AS ?singlePass) "
+						+ "FILTER(?singleShort = \"B\" && ?doubleLong = \"C\" && ?singleLong = \"D\" "
+						+ "&& ?unicode = \"Å😃\" && STRLEN(?tab) = 3 && ?singlePass = \"\\\\u0041\") } "
+						+ "ORDER BY ?n LIMIT 2 OFFSET 1",
+				"BASE <http://example/\\U00000061/> PREFIX ex: <http://example/\\u0061/> "
+						+ "SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } "
+						+ "FILTER(ex:item = <http://example/a/item> && <item> = <http://example/a/item>) } "
+						+ "ORDER BY ?n LIMIT 2 OFFSET 1",
+				"SELECT ?n WHERE { { SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } } } "
+						+ "OPTIONAL { BIND(<urn:ex\\u0061mple:optional> AS ?optional) } "
+						+ "FILTER(?optional = <urn:example:optional>) "
+						+ "FILTER EXISTS { { VALUES ?match { \"\\u0061\" } FILTER(?match = \"a\") } "
+						+ "UNION { VALUES ?match { \"\\u0062\" } FILTER(?match = \"b\") } } "
+						+ "FILTER NOT EXISTS { VALUES ?absent { \"\\u0063\" } FILTER(?absent != \"c\") } "
+						+ "MINUS { VALUES ?n { 99 } } } ORDER BY ?n LIMIT 2 OFFSET 1",
+				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } "
+						+ "BIND(\"Å😃\" AS ?unicode) BIND(\"a\\tb\" AS ?tab) } "
+						+ "ORDER BY ?n # escaped newline is comment text: \\u000ALIMIT 0 OFFSET 99\r\n"
+						+ "LIMIT\t2\r\nOFFSET\t1");
+	}
+
+	@ParameterizedTest
+	@MethodSource("invalidEscapesOutsideStringsAndIris")
+	void codepointEscapesOutsideStringsAndIrisAreRejectedByBrowserAndLegacyRequests(String query,
+			boolean browserRequest) {
+		MockHttpServletRequest request = browserRequest ? rawRequest(Map.of("batch-size", "1"))
+				: legacyRequest(Map.of());
+
+		assertThatThrownBy(() -> evaluate(query, request)).isInstanceOf(MalformedQueryException.class);
+	}
+
+	static Stream<Arguments> invalidEscapesOutsideStringsAndIris() {
+		return Stream.of(
+				// Escapes are valid only in string and IRI lexical contexts.
 				VALUES_QUERY + " LIMIT \\u0032 OFFSET 1",
 				VALUES_QUERY + " LIMIT \\u00302 OFFSET \\u00301",
 				VALUES_QUERY + " \\u004cIMIT 2 \\u004fFFSET 1",
-				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } BIND(\"\\u00C5\\U0001F603\" AS ?note) } "
-						+ "ORDER BY ?n LIMIT 2 OFFSET 1",
 				VALUES_QUERY + " LIMIT 2 OFFSET \\u0031",
 				VALUES_QUERY + " LIMIT \\U00000032 OFFSET \\U00000031",
-				VALUES_QUERY + " # comment terminated by escaped line feed\\u000ALIMIT 2 OFFSET 1",
 				VALUES_QUERY + "\\u000D\\u000ALIMIT\t2\\u000DOFFSET\t1",
-				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } BIND(\"Å😃\" AS ?note) } "
-						+ "ORDER BY ?n LIMIT 2 OFFSET 1",
-				"SELECT ?n WHERE { VALUES ?n { 0 1 2 3 4 5 6 7 } BIND(\"a\\tb\" AS ?note) } "
-						+ "ORDER BY ?n # another comment\r\nLIMIT\t2\r\nOFFSET\t1");
+				// Keep isolated and nested grammar positions covered as well.
+				VALUES_QUERY + " \\u004cIMIT 2 OFFSET 1",
+				VALUES_QUERY + " LIMIT 2 OFFSET \\U00000031",
+				"SELECT ?n WHERE { { SELECT ?n WHERE { VALUES ?n { 0 1 } } LIMIT \\u0032 } }",
+				"SELECT ?n WHERE { VALUES ?n { 0 1 } OPTIONAL { VALUES ?m { 1 } FILTER(?m = \\u0031) } }")
+				.flatMap(query -> Stream.of(Arguments.of(query, true), Arguments.of(query, false)));
 	}
 
 	@ParameterizedTest
@@ -384,8 +428,13 @@ class QueryBatchEvaluationTest {
 	}
 
 	private static MockHttpServletRequest rawRequest(Map<String, String> parameters) {
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		MockHttpServletRequest request = legacyRequest(parameters);
 		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		return request;
+	}
+
+	private static MockHttpServletRequest legacyRequest(Map<String, String> parameters) {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
 		parameters.forEach(request::addParameter);
 		return request;
 	}
