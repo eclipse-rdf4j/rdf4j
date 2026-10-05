@@ -44,8 +44,10 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -111,6 +113,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private boolean replayTransactionStart;
 	private boolean transactionWriteAttempted;
 	private boolean transactionObserved;
+	private boolean transactionReplayable = true;
 	private boolean transactionFinished;
 	private volatile LmdbSailStore.ReadAttemptLease readAttemptLease;
 	private volatile LmdbSailStore.ReadAttemptLease transactionAdmissionLease;
@@ -240,6 +243,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			synchronized (readAttemptLock) {
 				transactionWriteAttempted = false;
 				transactionObserved = false;
+				transactionReplayable = true;
 				transactionFinished = false;
 				replayRequested = false;
 				replayInProgress = false;
@@ -589,7 +593,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		BindingSet queryBindings = copyBindings(bindings);
 		boolean queryIncludeInferred = includeInferred;
 		ExplainTupleExprCapture explanationCapture = explainTupleExprCapture.get();
+		boolean repeatable = hasRepeatableQueryInputs(expression);
 		ReplayFactory<BindingSet> factory = () -> {
+			if (!repeatable) {
+				sealReadReplay();
+			}
 			TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
 			CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
 					queryBindings, queryIncludeInferred);
@@ -766,6 +774,31 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private void detachTupleValues(TupleExpr expression) {
 		ExternalValuePreparation.initializeQueryModel(expression, LmdbStoreConnection::protectValueTree);
+	}
+
+	private static boolean hasRepeatableQueryInputs(TupleExpr expression) {
+		var visitor = new AbstractQueryModelVisitor<RuntimeException>() {
+			private boolean repeatable = true;
+
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				repeatable &= assignment.hasRepeatableBindingSets();
+			}
+		};
+		expression.visit(visitor);
+		return visitor.repeatable;
+	}
+
+	/** A consumed input cannot be reconstructed even before any result has escaped. */
+	private void sealReadReplay() {
+		ReadExposureScope scope = activeReadExposureScope.get();
+		synchronized (readAttemptLock) {
+			if (scope.operationAttempt != null) {
+				scope.operationAttempt.sealed = true;
+			} else if (scope.admissionAttempt == readAttemptLease) {
+				transactionReplayable = false;
+			}
+		}
 	}
 
 	private <T extends Value> T detachValue(T value) {
@@ -1496,7 +1529,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private boolean isResultReplayAvailableLocked() {
-		return !transactionFinished && !transactionWriteAttempted && isActive() && readAttemptLease != null
+		return transactionReplayable && !transactionFinished && !transactionWriteAttempted && isActive()
+				&& readAttemptLease != null
 				&& !readAttemptLease.isClosed() && isReplayIsolation(getTransactionIsolation());
 	}
 
@@ -1527,7 +1561,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private boolean isReplayEligibleLocked() {
 		boolean transactionSnapshot = isTransactionSnapshot();
-		if (!transactionSnapshot || transactionFinished || transactionWriteAttempted || transactionObserved
+		if (!transactionSnapshot || !transactionReplayable || transactionFinished || transactionWriteAttempted
+				|| transactionObserved
 				|| !isActive()
 				|| readAttemptLease == null || readAttemptLease.isClosed()
 				|| replayAttempts >= lmdbStore.getReadOnlyReplayMaxRetries()) {

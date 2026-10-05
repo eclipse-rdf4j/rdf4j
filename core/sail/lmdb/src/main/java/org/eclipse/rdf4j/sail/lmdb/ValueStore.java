@@ -2689,14 +2689,15 @@ class ValueStore extends AbstractValueFactory {
 					mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 							saturatedEstimateAdd(occupied, requiredSize), true);
 				}
-				if (replayDecision != null && !replayDecision.track) {
-					growForTransactionRetry(requiredSize, null);
+				TxnReplayPolicy.Decision decision = replayDecision;
+				if (decision != null && !decision.track) {
+					growForTransactionRetry(requiredSize, null, decision);
 				}
 				LmdbSailStore.MapGrowthAttempt growthAttempt;
 				try {
 					growthAttempt = beginMapGrowthAttempt();
 				} catch (LmdbTransactionRetryException unsafeContinuation) {
-					growForTransactionRetry(requiredSize, unsafeContinuation);
+					growForTransactionRetry(requiredSize, unsafeContinuation, decision);
 					throw unsafeContinuation;
 				}
 				try (growthAttempt) {
@@ -2771,10 +2772,11 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private void growForTransactionRetry(long requiredSize, Throwable cause) throws IOException {
-		LmdbTransactionRetryException retry = replayDecision == null
+	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision)
+			throws IOException {
+		LmdbTransactionRetryException retry = decision == null
 				? new LmdbTransactionRetryException("ValueStore", cause)
-				: replayDecision.capacityFailure("ValueStore", cause);
+				: decision.capacityFailure("ValueStore", cause);
 		long projectedBytes = writeTxn == 0 ? saturatedEstimateAdd(committedHighWaterBytes, requiredSize)
 				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredSize);
 		// No dictionary checkpoint may publish this transaction's prefix when its replay was omitted.
@@ -2847,8 +2849,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void checkReplayFailure() throws IOException {
-		if (replayDecision != null) {
-			replayDecision.check();
+		TxnReplayPolicy.Decision decision = replayDecision;
+		if (decision != null) {
+			decision.check();
 		}
 	}
 
@@ -4599,8 +4602,9 @@ class ValueStore extends AbstractValueFactory {
 				nativeMutation = true;
 				return result;
 			} catch (LmdbUtil.MapFullException mapFull) {
-				if (autoGrow && replayDecision != null && !replayDecision.track) {
-					growForTransactionRetry(0L, mapFull);
+				TxnReplayPolicy.Decision decision = replayDecision;
+				if (autoGrow && decision != null && !decision.track) {
+					growForTransactionRetry(0L, mapFull, decision);
 				}
 				throw mapFull;
 			}
@@ -5161,8 +5165,9 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {
-			if (autoGrow && replayDecision != null && !replayDecision.track) {
-				growForTransactionRetry(0L, mapFull);
+			TxnReplayPolicy.Decision decision = replayDecision;
+			if (autoGrow && decision != null && !decision.track) {
+				growForTransactionRetry(0L, mapFull, decision);
 			}
 			throw mapFull;
 		} finally {
@@ -5467,8 +5472,9 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			endTransaction(true, false);
 		} catch (LmdbUtil.MapFullException mapFull) {
-			if (autoGrow && replayDecision != null && !replayDecision.track) {
-				growForTransactionRetry(0L, mapFull);
+			TxnReplayPolicy.Decision decision = replayDecision;
+			if (autoGrow && decision != null && !decision.track) {
+				growForTransactionRetry(0L, mapFull, decision);
 			}
 			throw mapFull;
 		} catch (IOException | RuntimeException | Error failure) {
