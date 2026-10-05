@@ -1267,7 +1267,7 @@ test('result disclosure panels open below their trigger and stay inside the resu
 		'the panel arrow should remain centered under its trigger after clamping');
 	assert.equal(renderer.optionsToggle.getAttribute('aria-expanded'), 'true');
 	renderer.optionsToggle.getBoundingClientRect = () => rect(400, 10, 80, 36);
-	observer.callback();
+	observer.callback([{ target: card }]);
 	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-left'), '60px',
 		'resizing should refresh the panel position against its card');
 	assert.equal(panel.style.getPropertyValue('--workbench-disclosure-anchor-x'), '280px');

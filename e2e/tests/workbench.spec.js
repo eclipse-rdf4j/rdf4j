@@ -35,7 +35,7 @@ test('RDF4J Workbench has correct title', async ({page}) => {
 // The menu item is "Create repository" (plan task M2.4). Its first step chooses the type (Memory Store by default);
 // the repository id is asked on the next step, whose button is #create.
 async function createRepo(page) {
-    await page.getByRole('link', {name: 'Create repository'}).click();
+	await page.locator('#workbench-nav-items-repositories').getByRole('link', { name: 'Create repository' }).click();
     await waitForRoute(page, 'create');
     await page.getByText('Next').click();
     await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});
@@ -131,7 +131,7 @@ test('Create repo', async ({page}) => {
         dialog.dismiss();
     });
 
-    await page.getByRole('link', {name: 'Create repository'}).click();
+    await page.locator('#repositories-results').getByRole('link', { name: 'Create repository' }).click();
     await waitForRoute(page, 'create');
     await page.getByText('Next').click();
     await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});

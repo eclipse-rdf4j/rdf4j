@@ -23,6 +23,23 @@ let repositoryCreated = false;
 
 test.setTimeout(120_000);
 
+async function waitForDisclosureMotion(page, panelSelector) {
+	await page.waitForFunction(selector => {
+		const panel = document.querySelector(selector);
+		return panel && !panel.hidden && panel.getAnimations().length === 0;
+	}, panelSelector);
+}
+
+async function panelViewportGeometry(page, panelId) {
+	return page.evaluate(id => {
+		const panel = document.getElementById(id);
+		const rect = panel.getBoundingClientRect();
+		return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+			width: rect.width, height: rect.height, scrollHeight: panel.scrollHeight,
+			clientHeight: panel.clientHeight, viewport: { width: innerWidth, height: innerHeight } };
+	}, panelId);
+}
+
 test.beforeAll(async ({ request }) => {
 	const existing = await request.get(REPOSITORY_URL);
 	if (existing.status() !== 400 && existing.status() !== 404) {
@@ -207,6 +224,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await expect(configToggle).toHaveAttribute('aria-expanded', 'true');
 	const explanationPanel = page.locator('#explanation-settings-panel');
 	await expect(explanationPanel).toBeVisible();
+	await waitForDisclosureMotion(page, '#explanation-settings-panel');
 	const explanationGeometry = await page.evaluate(() => {
 		const trigger = document.querySelector('#explanation-settings-toggle').getBoundingClientRect();
 		const panel = document.querySelector('#explanation-settings-panel').getBoundingClientRect();
@@ -227,6 +245,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await configToggle.click();
 	await expect(configToggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(explanationPanel).toBeVisible();
+	await waitForDisclosureMotion(page, '#explanation-settings-panel');
 	const narrowExplanationGeometry = await page.evaluate(() => {
 		const trigger = document.querySelector('#explanation-settings-toggle').getBoundingClientRect();
 		const panel = document.querySelector('#explanation-settings-panel').getBoundingClientRect();
@@ -249,6 +268,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await page.locator('#compare-toggle').click();
 	await expect(page.locator('#query-compare-toolbar')).toBeVisible();
 	await configToggle.click();
+	await waitForDisclosureMotion(page, '#explanation-settings-panel');
 	const compareExplanationGeometry = await page.evaluate(() => {
 		const trigger = document.querySelector('#explanation-settings-toggle').getBoundingClientRect();
 		const panel = document.querySelector('#explanation-settings-panel').getBoundingClientRect();
@@ -310,6 +330,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await resultOptions.click();
 	await expect(resultOptions).toHaveAttribute('aria-expanded', 'true');
 	const resultPanelId = await resultOptions.getAttribute('aria-controls');
+	await waitForDisclosureMotion(page, `#${resultPanelId}`);
 	const resultGeometry = await page.evaluate(id => {
 		const trigger = document.querySelector('#query-results .query-result-toolbar__disclosures .query-result-disclosure:nth-child(2) .query-disclosure__toggle').getBoundingClientRect();
 		const panel = document.getElementById(id).getBoundingClientRect();
@@ -328,6 +349,7 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await resultOptions.click();
 	await page.setViewportSize({ width: 390, height: 844 });
 	await resultOptions.click();
+	await waitForDisclosureMotion(page, `#${resultPanelId}`);
 	const narrowResultGeometry = await page.evaluate(id => {
 		const trigger = document.querySelector('#query-results .query-result-toolbar__disclosures .query-result-disclosure:nth-child(2) .query-disclosure__toggle').getBoundingClientRect();
 		const panel = document.getElementById(id).getBoundingClientRect();
@@ -340,5 +362,69 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	expect.soft(narrowResultGeometry.panel.right).toBeLessThanOrEqual(narrowResultGeometry.viewport.width);
 	expect.soft(narrowResultGeometry.panel.y).toBeGreaterThanOrEqual(0);
 	expect.soft(narrowResultGeometry.panel.bottom).toBeLessThanOrEqual(narrowResultGeometry.viewport.height);
+	await resultOptions.click();
+	await expect(resultOptions).toHaveAttribute('aria-expanded', 'false');
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await resultOptions.click();
+	await waitForDisclosureMotion(page, `#${resultPanelId}`);
+	const reducedMotionGeometry = await panelViewportGeometry(page, resultPanelId);
+	console.log('REDUCED_MOTION_RESULT_OPTIONS_GEOMETRY', JSON.stringify(reducedMotionGeometry));
+	expect.soft(reducedMotionGeometry.bottom, 'reduced-motion result options remain within viewport')
+		.toBeLessThanOrEqual(reducedMotionGeometry.viewport.height);
+	await resultOptions.click();
+	await expect(resultOptions).toHaveAttribute('aria-expanded', 'false');
+	await page.evaluate(id => {
+		const panel = document.getElementById(id);
+		const toggle = document.querySelector('#query-results .query-result-options-toggle');
+		workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, true, false);
+	}, resultPanelId);
+	const immediateGeometry = await panelViewportGeometry(page, resultPanelId);
+	console.log('NON_ANIMATED_RESULT_OPTIONS_GEOMETRY', JSON.stringify(immediateGeometry));
+	expect.soft(immediateGeometry.bottom, 'non-animated result options remain within viewport')
+		.toBeLessThanOrEqual(immediateGeometry.viewport.height);
+	await page.evaluate(id => {
+		const panel = document.getElementById(id);
+		const toggle = document.querySelector('#query-results .query-result-options-toggle');
+		workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, false, false);
+	}, resultPanelId);
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.setViewportSize({ width: 390, height: 480 });
+	await resultOptions.click();
+	await waitForDisclosureMotion(page, `#${resultPanelId}`);
+	const shortViewportGeometry = await page.evaluate(id => {
+		const panel = document.getElementById(id);
+		panel.scrollTop = panel.scrollHeight;
+		const content = panel.querySelector('.workbench-disclosure__content');
+		const lastControl = content.lastElementChild.getBoundingClientRect();
+		const rect = panel.getBoundingClientRect();
+		return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom,
+			width: rect.width, height: rect.height, scrollHeight: panel.scrollHeight,
+			clientHeight: panel.clientHeight,
+			lastControlBottom: lastControl.bottom,
+			scrollportBottom: rect.top + parseFloat(getComputedStyle(panel).borderTopWidth) + panel.clientHeight,
+			viewport: { width: innerWidth, height: innerHeight } };
+	}, resultPanelId);
+	console.log('SHORT_VIEWPORT_RESULT_OPTIONS_GEOMETRY', JSON.stringify(shortViewportGeometry));
+	expect.soft(shortViewportGeometry.bottom, 'short-viewport result options remain within viewport')
+		.toBeLessThanOrEqual(shortViewportGeometry.viewport.height);
+	expect.soft(shortViewportGeometry.scrollHeight, 'short-viewport result options remain internally scrollable')
+		.toBeGreaterThan(shortViewportGeometry.clientHeight);
+	expect.soft(shortViewportGeometry.lastControlBottom, 'short-viewport result options keep the final control reachable')
+		.toBeLessThanOrEqual(shortViewportGeometry.scrollportBottom);
+	await resultOptions.click();
+	await expect(resultOptions).toHaveAttribute('aria-expanded', 'false');
+	await page.setViewportSize({ width: 1280, height: 900 });
+	const fullscreen = page.locator('#query-results .query-result-toolbar .query-results__fullscreen');
+	await fullscreen.click();
+	await expect(page.locator('#query-results')).toHaveAttribute('data-fullscreen', 'true');
+	await resultOptions.click();
+	await waitForDisclosureMotion(page, `#${resultPanelId}`);
+	const fullscreenGeometry = await panelViewportGeometry(page, resultPanelId);
+	console.log('FULLSCREEN_RESULT_OPTIONS_GEOMETRY', JSON.stringify(fullscreenGeometry));
+	expect.soft(fullscreenGeometry.bottom, 'fullscreen result options remain within viewport')
+		.toBeLessThanOrEqual(fullscreenGeometry.viewport.height);
+	await resultOptions.click();
+	await fullscreen.click();
+	await expect(page.locator('#query-results')).not.toHaveAttribute('data-fullscreen', 'true');
 	expect.soft(pageErrors).toEqual([]);
 });

@@ -671,6 +671,17 @@ body.query-results-fullscreen-active {
 	background: var(--query-surface);
 }
 
+:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar__actions {
+	display: flex;
+	flex: 0 1 auto;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
 /* In the page the toolbar scrolls with its rows: stuck at the top it would sit under the sticky context bar, and the
  * pinned header row already names the columns. Full screen, which covers the context bar, keeps it at the top. */
 body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-toolbar {

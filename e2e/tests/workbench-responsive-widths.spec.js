@@ -258,6 +258,12 @@ test('Query toolbars stay tidy as they wrap on phones', async ({ page }) => {
 		await expectToolbarRowsFilled(page, '.query-actions-toolbar', width);
 		await page.locator('#exec').click();
 		await expect(page.locator('.query-result-toolbar').first()).toBeVisible();
+		await page.waitForFunction(() => {
+			const results = document.querySelector('#query-results');
+			const status = results && results.querySelector('.query-result-status');
+			return !!results && results.getAttribute('aria-busy') === 'false' && !!status
+				&& !!status.textContent && !/Receiving|Loading/.test(status.textContent);
+		}, null, { timeout: 30000 });
 		// The result toolbar keeps its controls at their own widths and at its end: Full screen shows its icon only, so
 		// the three controls share one row on most phones.
 		const results = await page.locator('.query-result-toolbar').first().evaluate(toolbar => {

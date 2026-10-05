@@ -168,6 +168,9 @@ test('comparison explanation reverses cleanly and respects reduced motion', asyn
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	await page.locator('#explain-trigger').click();
 	await expect(page.locator('#query-explanation')).toContainText(/\S/);
+	await expect(page.locator('#copy-explanation')).toBeEnabled();
+	await expect(page.locator('#query-explanation-panel')).toHaveAttribute('aria-busy', 'false');
+	await waitForOwnedAnimations(page.locator('#query-explanation-row'));
 	await expect(page.locator('#compare-toggle')).toBeVisible();
 
 	const compareRow = page.locator('#query-explanation-row-compare');
@@ -533,6 +536,68 @@ test('completed disclosures release their fill effects and follow natural sizing
 	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
 	const grownHeight = await advancedPanel.evaluate(element => element.getBoundingClientRect().height);
 	expect.soft(grownHeight - advancedHeight).toBeGreaterThanOrEqual(70);
+	await advancedPanel.locator('[data-motion-growth-probe]').evaluate(element => element.remove());
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
+	await page.setViewportSize({ width: 390, height: 480 });
+	const shortViewportState = () => advancedPanel.evaluate(element => {
+		const rootStyle = getComputedStyle(document.documentElement);
+		let bottom = Math.min(window.innerHeight - (parseFloat(rootStyle.fontSize) || 16), document.documentElement.clientHeight);
+		for (let box = element.parentElement; box; box = box.parentElement) {
+			const style = getComputedStyle(box);
+			if (/^(clip|hidden|auto|scroll)$/.test(style.overflowY)) {
+				bottom = Math.min(bottom, box.getBoundingClientRect().bottom - (parseFloat(style.borderBottomWidth) || 0));
+			}
+		}
+		const panel = element.getBoundingClientRect();
+		return { contained: panel.bottom <= bottom, scrollable: element.scrollHeight > element.clientHeight,
+			panelTop: panel.top, panelBottom: panel.bottom, limitBottom: bottom, scrollHeight: element.scrollHeight,
+			clientHeight: element.clientHeight, maxHeight: getComputedStyle(element).maxHeight,
+			windowScroll: window.scrollY, panelScroll: element.scrollTop };
+	});
+	await expect.poll(async () => {
+		const state = await shortViewportState();
+		return state.contained && state.scrollable;
+	}).toBe(true);
+	const intrinsicBeforeRegrowth = await advancedPanel.evaluate(element => element.scrollHeight);
+	await advancedPanel.evaluate(element => {
+		const probe = document.createElement('div');
+		probe.setAttribute('data-motion-growth-probe', '');
+		probe.style.cssText = 'display:block;height:72px;box-sizing:border-box';
+		element.appendChild(probe);
+	});
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
+	await expect.poll(async () => {
+		const state = await shortViewportState();
+		return state.contained && state.scrollable;
+	}).toBe(true);
+	const intrinsicAfterRegrowth = await advancedPanel.evaluate(element => element.scrollHeight);
+	expect.soft(intrinsicAfterRegrowth - intrinsicBeforeRegrowth).toBeGreaterThanOrEqual(70);
+	await advancedPanel.evaluate(element => element.scrollTop = element.scrollHeight);
+	const reachedLastContent = () => advancedPanel.evaluate(element => {
+		const panel = element.getBoundingClientRect();
+		const probe = element.querySelector('[data-motion-growth-probe]').getBoundingClientRect();
+		const rootStyle = getComputedStyle(document.documentElement);
+		let bottom = Math.min(window.innerHeight - (parseFloat(rootStyle.fontSize) || 16), document.documentElement.clientHeight);
+		for (let box = element.parentElement; box; box = box.parentElement) {
+			const style = getComputedStyle(box);
+			if (/^(clip|hidden|auto|scroll)$/.test(style.overflowY)) {
+				bottom = Math.min(bottom, box.getBoundingClientRect().bottom - (parseFloat(style.borderBottomWidth) || 0));
+			}
+		}
+		return { probeBottom: probe.bottom, panelTop: panel.top, panelBottom: panel.bottom, containedBottom: bottom,
+			windowInnerHeight: window.innerHeight, documentClientHeight: document.documentElement.clientHeight,
+			rootFontSize: rootStyle.fontSize, maxHeight: getComputedStyle(element).maxHeight,
+			scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop };
+	});
+	await expect.poll(async () => {
+		const geometry = await reachedLastContent();
+		return geometry.scrollTop > 0 && geometry.probeBottom <= geometry.panelBottom
+			&& geometry.panelBottom <= geometry.containedBottom;
+	}).toBe(true);
+	const finalContentGeometry = await reachedLastContent();
+	expect.soft(finalContentGeometry.scrollTop).toBeGreaterThan(0);
+	expect.soft(finalContentGeometry.probeBottom).toBeLessThanOrEqual(finalContentGeometry.panelBottom);
+	expect.soft(finalContentGeometry.panelBottom).toBeLessThanOrEqual(finalContentGeometry.containedBottom);
 });
 
 test('primary query and form actions show compact keyboard press feedback in both themes', async ({ page, browserName }) => {

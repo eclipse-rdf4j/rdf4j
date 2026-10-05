@@ -240,3 +240,23 @@ test('releasing an open pane stops listening and stops watching its card', () =>
     assert.equal(pane.document.listenerCount('pointerdown'), 0);
     assert.equal(pane.document.listenerCount('keydown'), 0);
 });
+
+test('releasing a pane keeps its target watched while another pane uses it as content', () => {
+    const observed = new Set();
+    class ResizeObserver {
+        observe(element) { observed.add(element); }
+        unobserve(element) { observed.delete(element); }
+        disconnect() { observed.clear(); }
+    }
+    const pane = paneHarness({ window: { ResizeObserver } });
+    assert.equal(observed.has(pane.field), true, 'the outer pane watches its direct content');
+
+    const releaseInner = pane.workbench.detailDisclosure.bind(pane.outside, pane.field, pane.card);
+    assert.equal(observed.has(pane.field), true, 'the inner pane also watches the shared target');
+
+    releaseInner();
+
+    assert.equal(observed.has(pane.field), true, 'the outer pane still uses the target as content');
+    pane.release();
+    assert.equal(observed.has(pane.field), false, 'the target is released with its final owner');
+});

@@ -225,7 +225,11 @@ test('mobile records use the table header labels and the last record is reachabl
 	const listUrl = require('./workbench-test-helpers.js').repositoryPageUrl('NONE', 'repositories');
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(listUrl, { waitUntil: 'networkidle' });
-	const headerTexts = await page.locator('#workbench-page-surface table.data thead th').allTextContents();
+	const headerTexts = await page.locator('#workbench-page-surface table.data thead th').evaluateAll(headers =>
+		headers.map(header => {
+			const sortLabel = header.querySelector('.workbench-repository-sort > span:first-child');
+			return (sortLabel || header).textContent.trim();
+		}));
 	expect(headerTexts.length).toBeGreaterThan(0);
 	for (const width of [390, 320]) {
 		await page.setViewportSize({ width, height: 844 });
@@ -236,7 +240,7 @@ test('mobile records use the table header labels and the last record is reachabl
 				const content = getComputedStyle(cell, '::before').content;
 				return /^attr\(/.test(content) ? cell.getAttribute('data-label') : content.replace(/^"|"$/g, '');
 			}));
-		expect(labels, `records at ${width}px`).toEqual(headerTexts.map(textContent => textContent.trim()));
+		expect(labels, `records at ${width}px`).toEqual(headerTexts);
 	}
 
 	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 390, height: 844 } });

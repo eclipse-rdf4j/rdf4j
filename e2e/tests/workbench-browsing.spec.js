@@ -164,11 +164,25 @@ test('Repository rows open their summary, list access as text and offer actions'
 	const card = page.locator('#repositories-results');
 	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Repositories');
 	await expect(card.getByRole('link', { name: 'Create' })).toHaveAttribute('href', /\/repositories\/NONE\/create$/);
-	await expect(card.locator('thead th')).toHaveText(['ID', 'Title', 'Access', 'Actions']);
+	const headers = card.locator('thead th');
+	await expect(headers).toHaveCount(5);
+	expect(await headers.evaluateAll((cells) => cells.map(cell => cell.getAttribute('data-repository-column'))))
+		.toEqual(['repository', 'id', 'title', 'access', 'actions']);
+	await expect(headers.nth(0)).toHaveText('Repository');
+	await expect(headers.nth(4)).toHaveText('Actions');
+	for (const [column, label] of [['id', 'ID'], ['title', 'Title'], ['access', 'Access']]) {
+		const button = card.locator(`thead th[data-repository-column="${column}"] button[data-workbench-sort]`);
+		await expect(button).toHaveAttribute('data-workbench-sort', column);
+		await expect(button.locator('span').first()).toHaveText(label);
+		await expect(button).toHaveAccessibleName(new RegExp(`^Sort by ${label}, (ascending|descending)$`));
+	}
+	await expect(headers.nth(0).locator('button[data-workbench-sort]')).toHaveCount(0);
+	await expect(headers.nth(4).locator('button[data-workbench-sort]')).toHaveCount(0);
+	await expect(card.locator('thead button[data-workbench-sort]')).toHaveCount(3);
 	const row = await repositoryRow(page, REPOSITORY_ID);
-	await expect(row.locator('td').nth(1)).toHaveText('Workbench seeded fixture');
-	await expect(row.locator('td').nth(2)).toHaveText('Read Write');
-	await expect(row.locator('td').nth(1)).toHaveAttribute('title', new RegExp(`/repositories/${REPOSITORY_ID}$`));
+	await expect(row.locator('td').nth(2)).toHaveText('Workbench seeded fixture');
+	await expect(row.locator('td').nth(3)).toHaveText('Read Write');
+	await expect(row.locator('td').nth(2)).toHaveAttribute('title', new RegExp(`/repositories/${REPOSITORY_ID}$`));
 
 	await row.getByRole('button', { name: `Actions for ${REPOSITORY_ID}` }).click();
 	const menu = row.locator('.workbench-row-menu__panel');
@@ -179,7 +193,7 @@ test('Repository rows open their summary, list access as text and offer actions'
 	await page.keyboard.press('Escape');
 	await expect(menu).toBeHidden();
 
-	await row.locator('td').nth(1).click();
+	await row.locator('td').nth(2).click();
 	await expect(page).toHaveURL(new RegExp(`/repositories/${REPOSITORY_ID}/summary$`));
 });
 
@@ -191,12 +205,12 @@ test('Repository row cells share one vertical centre', async ({ page }) => {
 		const centre = (rect) => rect.top + rect.height / 2;
 		const cells = tr.querySelectorAll('td');
 		const title = document.createRange();
-		title.selectNodeContents(cells[1]);
+		title.selectNodeContents(cells[2]);
 		return {
-			id: centre(cells[0].querySelector('a').getBoundingClientRect()),
+			id: centre(cells[1].querySelector('a').getBoundingClientRect()),
 			title: centre(title.getBoundingClientRect()),
-			access: centre(cells[2].querySelector('.workbench-badge').getBoundingClientRect()),
-			actions: centre(cells[3].querySelector('button').getBoundingClientRect())
+			access: centre(cells[3].querySelector('.workbench-badge').getBoundingClientRect()),
+			actions: centre(cells[4].querySelector('button').getBoundingClientRect())
 		};
 	});
 	for (const cell of ['id', 'title', 'access']) {
@@ -225,13 +239,12 @@ test('Access pills keep one gap whether they sit side by side or stacked', async
 	expect([...arrangements].sort()).toEqual(['side by side', 'stacked']);
 });
 
-test('Repository records on phones use the labels Id, Title and Access', async ({ page }) => {
-	// The actions cell also carries its column label; its label is not shown in the record layout.
+test('Repository records on phones retain every column label', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(`${workbenchBaseUrl()}/repositories/NONE/repositories`, { waitUntil: 'domcontentloaded' });
 	const row = await repositoryRow(page, REPOSITORY_ID);
 	const labels = await row.locator('td[data-label]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-label')));
-	expect(labels).toEqual(['ID', 'Title', 'Access', 'Actions']);
+	expect(labels).toEqual(['Repository', 'ID', 'Title', 'Access', 'Actions']);
 });
 
 /** The number of statements in the test repository, read through the server's REST API. */

@@ -377,6 +377,8 @@ body.query-result-embedded-body .workbench-disclosure__panel {
 	background: var(--workbench-inset);
 	color: var(--workbench-body);
 	box-shadow: var(--workbench-shadow);
+	max-height: var(--workbench-disclosure-max-height, calc(100vh - 2rem));
+	overflow: auto;
 	transform-origin: var(--workbench-disclosure-anchor-x, 50%) 0;
 	z-index: 10;
 }

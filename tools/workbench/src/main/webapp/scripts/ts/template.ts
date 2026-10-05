@@ -565,6 +565,12 @@ module workbench {
         panel: HTMLElement;
         /** The card the pane stays inside, or null (the viewport is the limit). */
         bounds: HTMLElement;
+        contentElements: HTMLElement[];
+        contentObserver: any;
+        contentRefreshPending: boolean;
+        contentRefreshFrame: number;
+        lastIntrinsicHeight: number;
+        lastAvailableHeight: number;
     }
 
     var ownedMotions: OwnedMotion[] = [];
@@ -1025,13 +1031,30 @@ module workbench {
         return room;
     }
 
+    /** The vertical space an overlaid pane can use without escaping its viewport or a clipping container. */
+    function disclosureVerticalRoom(panel: HTMLElement): { top: number; bottom: number } {
+        var rootStyle = window.getComputedStyle(document.documentElement);
+        var viewportInset = parseFloat(rootStyle.fontSize) || 16;
+        var room = { top: 0, bottom: window.innerHeight - viewportInset };
+        for (var box: any = panel.parentNode; box && box.getBoundingClientRect; box = box.parentNode) {
+            var style = window.getComputedStyle(box);
+            if (/^(clip|hidden|auto|scroll)$/.test(style.overflowY)) {
+                var rect = box.getBoundingClientRect();
+                room.top = Math.max(room.top, rect.top + (parseFloat(style.borderTopWidth) || 0));
+                room.bottom = Math.min(room.bottom, rect.bottom - (parseFloat(style.borderBottomWidth) || 0));
+            }
+        }
+        return room;
+    }
+
     /**
      * Place an open pane over the page (M14.3): just below its button, or below the whole toolbar the button is in
      * so that it never covers the toolbar's other buttons, with its end at the button's end (its start in
      * right-to-left text), moved inward to stay inside its card, and no wider than the card's content. The
      * stylesheet positions the panel absolutely from these values, so opening it moves nothing.
      */
-    function refreshDisclosureAnchor(button: HTMLButtonElement, panel: HTMLElement, bounds: HTMLElement): void {
+    function refreshDisclosureAnchor(button: HTMLButtonElement, panel: HTMLElement, bounds: HTMLElement,
+                                     constrainHeight: boolean): void {
         var frame = <HTMLElement>panel.offsetParent;
         if (!frame || panel.hidden || button.hidden || button.disabled || button.getClientRects().length === 0) {
             return;
@@ -1049,8 +1072,39 @@ module workbench {
             (left - frameRect.left - frame.clientLeft + frame.scrollLeft) + 'px');
         panel.style.setProperty('--workbench-disclosure-top',
             (bottom - frameRect.top - frame.clientTop + frame.scrollTop) + 'px');
+        if (constrainHeight) {
+            var verticalRoom = disclosureVerticalRoom(panel);
+            var panelTop = panel.getBoundingClientRect().top;
+            panel.style.setProperty('--workbench-disclosure-max-height',
+                Math.max(0, verticalRoom.bottom - panelTop) + 'px');
+        }
         var anchorOffset = Math.max(4, Math.min(width - 4, (buttonRect.left + buttonRect.right) / 2 - left));
         panel.style.setProperty('--workbench-disclosure-anchor-x', anchorOffset + 'px');
+    }
+
+    function disclosureAnchorResize(entries: any[]): void {
+        var refreshAnchors = false;
+        for (var entryIndex = 0; entries && entryIndex < entries.length; entryIndex++) {
+            var target = entries[entryIndex].target;
+            var observed = false;
+            for (var anchorIndex = 0; anchorIndex < disclosureAnchors.length; anchorIndex++) {
+                var anchor = disclosureAnchors[anchorIndex];
+                if (anchor.contentElements.indexOf(target) >= 0) {
+                    observed = true;
+                    scheduleDisclosureContentRefresh(anchor);
+                }
+                if (anchor.button === target || anchor.panel === target || anchor.bounds === target) {
+                    observed = true;
+                    refreshAnchors = true;
+                }
+            }
+            if (!observed) {
+                refreshAnchors = true;
+            }
+        }
+        if (refreshAnchors) {
+            scheduleDisclosureAnchorRefresh();
+        }
     }
 
     function refreshDisclosureAnchors(): void {
@@ -1060,16 +1114,139 @@ module workbench {
         }
     }
 
+    function disclosureStateFor(anchor: DisclosureAnchor): PanelDisclosureState {
+        for (var i = 0; i < panelDisclosureStates.length; i++) {
+            if (panelDisclosureStates[i].button === anchor.button && panelDisclosureStates[i].panel === anchor.panel) {
+                return panelDisclosureStates[i];
+            }
+        }
+        return null;
+    }
+
+    function disclosureAnchorIsCurrent(anchor: DisclosureAnchor, state: PanelDisclosureState): boolean {
+        return !!anchor && !!state && disclosureAnchors.indexOf(anchor) >= 0
+            && panelDisclosureStates.indexOf(state) >= 0 && anchor.button === state.button && anchor.panel === state.panel
+            && anchor.button.isConnected && anchor.panel.isConnected && (!state.owner || state.owner.isConnected)
+            && state.expanded && anchor.button.getAttribute('aria-expanded') === 'true';
+    }
+
+    function disclosureIntrinsicHeight(panel: HTMLElement): number {
+        var style = window.getComputedStyle(panel);
+        var borderHeight = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+        return Math.max(elementHeight(panel), panel.scrollHeight + borderHeight);
+    }
+
+    function disclosureAvailableHeight(panel: HTMLElement): number {
+        var room = disclosureVerticalRoom(panel);
+        return Math.max(0, room.bottom - Math.max(room.top, panel.getBoundingClientRect().top));
+    }
+
+    function disclosureTargetUsedElsewhere(target: HTMLElement, except: DisclosureAnchor): boolean {
+        for (var i = 0; i < disclosureAnchors.length; i++) {
+            var anchor = disclosureAnchors[i];
+            if (anchor === except) {
+                continue;
+            }
+            if (anchor.button === target || anchor.panel === target || anchor.bounds === target
+                    || anchor.contentElements.indexOf(target) >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Keep direct intrinsic children observed as dynamic content is added or removed. */
+    function syncDisclosureContentTargets(anchor: DisclosureAnchor): void {
+        var current: HTMLElement[] = [];
+        for (var childIndex = 0; childIndex < anchor.panel.children.length; childIndex++) {
+            current.push(<HTMLElement>anchor.panel.children[childIndex]);
+        }
+        for (var previousIndex = 0; previousIndex < anchor.contentElements.length; previousIndex++) {
+            var previous = anchor.contentElements[previousIndex];
+            if (current.indexOf(previous) < 0 && disclosureAnchorObserver
+                    && !disclosureTargetUsedElsewhere(previous, anchor)) {
+                disclosureAnchorObserver.unobserve(previous);
+            }
+        }
+        if (disclosureAnchorObserver) {
+            for (var currentIndex = 0; currentIndex < current.length; currentIndex++) {
+                if (anchor.contentElements.indexOf(current[currentIndex]) < 0) {
+                    disclosureAnchorObserver.observe(current[currentIndex]);
+                }
+            }
+        }
+        anchor.contentElements = current;
+    }
+
+    function scheduleDisclosureContentRefresh(anchor: DisclosureAnchor): void {
+        if (!anchor || anchor.contentRefreshPending) {
+            return;
+        }
+        anchor.contentRefreshPending = true;
+        var refresh = function() {
+            anchor.contentRefreshPending = false;
+            anchor.contentRefreshFrame = 0;
+            if (disclosureAnchors.indexOf(anchor) < 0) {
+                return;
+            }
+            syncDisclosureContentTargets(anchor);
+            var state = disclosureStateFor(anchor);
+            if (!disclosureAnchorIsCurrent(anchor, state) || motionFor(anchor.panel)) {
+                return;
+            }
+            var intrinsicHeight = disclosureIntrinsicHeight(anchor.panel);
+            var availableHeight = disclosureAvailableHeight(anchor.panel);
+            if (intrinsicHeight === anchor.lastIntrinsicHeight && availableHeight === anchor.lastAvailableHeight) {
+                return;
+            }
+            revealOpenedDisclosure(anchor, state);
+        };
+        if (window.requestAnimationFrame) {
+            anchor.contentRefreshFrame = window.requestAnimationFrame(refresh);
+        } else {
+            refresh();
+        }
+    }
+
+    function observeDisclosureContent(anchor: DisclosureAnchor): void {
+        var MutationObserverConstructor = (<any>window).MutationObserver;
+        if (MutationObserverConstructor) {
+            anchor.contentObserver = new MutationObserverConstructor(function() {
+                if (disclosureAnchors.indexOf(anchor) >= 0) {
+                    syncDisclosureContentTargets(anchor);
+                    scheduleDisclosureContentRefresh(anchor);
+                }
+            });
+            anchor.contentObserver.observe(anchor.panel, { childList: true, characterData: true, subtree: true });
+        }
+        syncDisclosureContentTargets(anchor);
+    }
+
+    function releaseDisclosureContent(anchor: DisclosureAnchor): void {
+        if (anchor.contentObserver) {
+            anchor.contentObserver.disconnect();
+            anchor.contentObserver = null;
+        }
+        if (anchor.contentRefreshPending && anchor.contentRefreshFrame && window.cancelAnimationFrame) {
+            window.cancelAnimationFrame(anchor.contentRefreshFrame);
+        }
+        anchor.contentRefreshPending = false;
+        anchor.contentRefreshFrame = 0;
+        if (disclosureAnchorObserver) {
+            for (var i = 0; i < anchor.contentElements.length; i++) {
+                if (!disclosureTargetUsedElsewhere(anchor.contentElements[i], anchor)) {
+                    disclosureAnchorObserver.unobserve(anchor.contentElements[i]);
+                }
+            }
+        }
+        anchor.contentElements = [];
+    }
+
     /** Stop watching an anchor's card unless another pane is in it too. */
     function unwatchDisclosureBounds(anchor: DisclosureAnchor): void {
         var bounds = anchor.bounds;
         anchor.bounds = null;
-        for (var i = 0; i < disclosureAnchors.length; i++) {
-            if (disclosureAnchors[i].bounds === bounds) {
-                return;
-            }
-        }
-        if (bounds && disclosureAnchorObserver) {
+        if (bounds && disclosureAnchorObserver && !disclosureTargetUsedElsewhere(bounds, anchor)) {
             disclosureAnchorObserver.unobserve(bounds);
         }
     }
@@ -1078,7 +1255,7 @@ module workbench {
      * Place a pane, and watch the card it is in now: a card that grows (a taller editor, a new callout) moves the
      * button the pane hangs from, and a pane may be bound before it is placed in its card.
      */
-    function placeDisclosure(anchor: DisclosureAnchor): void {
+    function placeDisclosure(anchor: DisclosureAnchor, constrainHeight?: boolean): void {
         var bounds = disclosureBounds(anchor.panel);
         if (bounds !== anchor.bounds) {
             unwatchDisclosureBounds(anchor);
@@ -1087,7 +1264,7 @@ module workbench {
                 disclosureAnchorObserver.observe(bounds);
             }
         }
-        refreshDisclosureAnchor(anchor.button, anchor.panel, bounds);
+        refreshDisclosureAnchor(anchor.button, anchor.panel, bounds, constrainHeight !== false);
     }
 
     function scheduleDisclosureAnchorRefresh(): void {
@@ -1109,7 +1286,17 @@ module workbench {
             }
         }
 
-        var anchor: DisclosureAnchor = { button: button, panel: panel, bounds: null };
+        var anchor: DisclosureAnchor = {
+            button: button,
+            panel: panel,
+            bounds: null,
+            contentElements: [],
+            contentObserver: null,
+            contentRefreshPending: false,
+            contentRefreshFrame: 0,
+            lastIntrinsicHeight: -1,
+            lastAvailableHeight: -1
+        };
         disclosureAnchors.push(anchor);
         if (!disclosureAnchorResizeListenerInstalled) {
             window.addEventListener('resize', scheduleDisclosureAnchorRefresh);
@@ -1117,12 +1304,13 @@ module workbench {
         }
         if (!disclosureAnchorObserver && (<any>window).ResizeObserver) {
             var ResizeObserverConstructor = (<any>window).ResizeObserver;
-            disclosureAnchorObserver = new ResizeObserverConstructor(scheduleDisclosureAnchorRefresh);
+            disclosureAnchorObserver = new ResizeObserverConstructor(disclosureAnchorResize);
         }
         if (disclosureAnchorObserver) {
             disclosureAnchorObserver.observe(button);
             disclosureAnchorObserver.observe(panel);
         }
+        observeDisclosureContent(anchor);
         placeDisclosure(anchor);
         return anchor;
     }
@@ -1200,9 +1388,14 @@ module workbench {
         for (var anchorIndex = disclosureAnchors.length - 1; anchorIndex >= 0; anchorIndex--) {
             var anchor = disclosureAnchors[anchorIndex];
             if (anchor.panel === panel || button && anchor.button === button) {
+                releaseDisclosureContent(anchor);
                 if (disclosureAnchorObserver) {
-                    disclosureAnchorObserver.unobserve(anchor.button);
-                    disclosureAnchorObserver.unobserve(anchor.panel);
+                    if (!disclosureTargetUsedElsewhere(anchor.button, anchor)) {
+                        disclosureAnchorObserver.unobserve(anchor.button);
+                    }
+                    if (!disclosureTargetUsedElsewhere(anchor.panel, anchor)) {
+                        disclosureAnchorObserver.unobserve(anchor.panel);
+                    }
                 }
                 disclosureAnchors.splice(anchorIndex, 1);
                 unwatchDisclosureBounds(anchor);
@@ -1229,18 +1422,51 @@ module workbench {
      * A pane that opens over the page (M14.3) past the bottom of the window scrolls the page just enough to show it,
      * but never so far that its button goes under the sticky context bar (the page's top scroll padding).
      */
-    function revealOpenedPane(button: HTMLElement, panel: HTMLElement, height: number): void {
+    function revealOpenedPane(button: HTMLElement, panel: HTMLElement, height: number,
+                              room: { top: number; bottom: number }): void {
         if (typeof window.scrollBy !== 'function' || window.getComputedStyle(panel).position !== 'absolute') {
             return;
         }
-        var overflow = panel.getBoundingClientRect().top + height - window.innerHeight;
+        var overflow = panel.getBoundingClientRect().top + height - room.bottom;
         if (overflow <= 0) {
             return;
         }
         var clearTop = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
-        var distance = Math.min(overflow, button.getBoundingClientRect().top - clearTop);
-        if (distance > 0) {
-            window.scrollBy(0, distance);
+        var distance = Math.min(overflow, button.getBoundingClientRect().top - Math.max(clearTop, room.top));
+        var remaining = distance;
+        for (var box: any = panel.parentNode; box && box !== document.body
+                && box !== document.documentElement && remaining > 0; box = box.parentNode) {
+            var style = window.getComputedStyle(box);
+            if (/^(hidden|auto|scroll)$/.test(style.overflowY)) {
+                var available = box.scrollHeight - box.clientHeight - box.scrollTop;
+                var scroll = Math.min(remaining, Math.max(0, available));
+                if (scroll > 0) {
+                    box.scrollTop += scroll;
+                    remaining -= scroll;
+                }
+            }
+        }
+        if (remaining > 0) {
+            window.scrollBy(0, remaining);
+        }
+    }
+
+    /** Re-anchor after opening; animation can temporarily remove the absolute pane from the scroll range. */
+    function revealOpenedDisclosure(anchor: DisclosureAnchor, state: PanelDisclosureState): void {
+        if (!disclosureAnchorIsCurrent(anchor, state)) {
+            return;
+        }
+        var panel = anchor.panel;
+        panel.style.removeProperty('--workbench-disclosure-max-height');
+        placeDisclosure(anchor, false);
+        var intrinsicHeight = disclosureIntrinsicHeight(panel);
+        var room = disclosureVerticalRoom(panel);
+        var revealHeight = Math.min(intrinsicHeight, Math.max(0, room.bottom - room.top));
+        revealOpenedPane(anchor.button, panel, revealHeight, room);
+        if (disclosureAnchorIsCurrent(anchor, state)) {
+            placeDisclosure(anchor);
+            anchor.lastIntrinsicHeight = disclosureIntrinsicHeight(panel);
+            anchor.lastAvailableHeight = disclosureAvailableHeight(panel);
         }
     }
 
@@ -1328,16 +1554,19 @@ module workbench {
         } else {
             panel.setAttribute('aria-hidden', expanded ? state.ariaHidden : 'true');
         }
+        if (expanded) {
+            revealOpenedDisclosure(anchor, state);
+        }
         var endHeight = expanded ? elementHeight(panel) : 0;
         var endPanelStyle = snapshotDisclosureBoxStyle(window.getComputedStyle(panel));
         dispatchWorkbenchResize();
         if (animate === false) {
             panel.hidden = !expanded;
             restoreMotionStyles(panel, styles);
+            if (expanded) {
+                revealOpenedDisclosure(anchor, state);
+            }
             return;
-        }
-        if (expanded) {
-            revealOpenedPane(button, panel, endHeight);
         }
         panel.style.overflow = 'hidden';
         var startBox = expanded && !existingMotion
@@ -1354,6 +1583,9 @@ module workbench {
                 panel.setAttribute('aria-hidden', 'false');
             } else {
                 panel.setAttribute('aria-hidden', expanded ? state.ariaHidden : 'true');
+            }
+            if (expanded) {
+                revealOpenedDisclosure(anchor, state);
             }
         });
     }

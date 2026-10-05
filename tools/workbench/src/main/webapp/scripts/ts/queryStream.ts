@@ -2206,7 +2206,8 @@ namespace workbench {
                 this.fullscreenButton.appendChild(fullscreenLabel);
                 this.fullscreenButton.hidden = true;
                 toolbar.appendChild(header);
-                var actions = createElement(this.document, 'div', 'workbench-action-toolbar__actions');
+                var actions = createElement(this.document, 'div',
+                    'workbench-action-toolbar__actions query-result-toolbar__actions');
                 actions.appendChild(this.fullscreenButton);
                 // Each pane stays in its own disclosure right after its toggle, so Tab from an open pane's toggle moves
                 // into the pane. The panes open over the page (M14.3), so where they sit does not move the toolbar.
