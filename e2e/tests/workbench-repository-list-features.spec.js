@@ -161,3 +161,141 @@ test('repository list sorts complete rows and keeps icon and action columns fixe
         expect((await rowSnapshot()).map(row => row.id)).toEqual(['repo-1', 'repo-2', 'repo-3', 'repo-10']);
     }
 });
+
+test('repository list header labels share one baseline and line up with their columns', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`${baseUrl}/rdf4j-workbench/repositories/a/repositories`, { waitUntil: 'networkidle' });
+
+    const table = page.locator('#repositories-results table.data');
+    await expect(table.locator('tbody tr[data-workbench-row-index]')).toHaveCount(4);
+
+    const geometry = await table.evaluate(element => {
+        const textBox = node => {
+            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT,
+                { acceptNode: text => text.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+            const text = walker.nextNode();
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            return range.getBoundingClientRect();
+        };
+        const contentBox = cell => {
+            const rect = cell.getBoundingClientRect();
+            const style = getComputedStyle(cell);
+            return {
+                left: rect.left + parseFloat(style.paddingLeft) + parseFloat(style.borderLeftWidth),
+                right: rect.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth)
+            };
+        };
+        const firstRow = element.querySelector('tbody tr[data-workbench-row-index]');
+        const labels = {};
+        for (const column of ['id', 'title', 'access', 'actions']) {
+            const header = element.querySelector(`thead th[data-repository-column="${column}"]`);
+            const label = textBox(header.querySelector('button span') || header);
+            labels[column] = { left: label.left, right: label.right, middle: (label.top + label.bottom) / 2 };
+        }
+        const cell = label => contentBox(firstRow.querySelector(`td[data-label="${label}"]`));
+        const table = element.getBoundingClientRect();
+        const action = firstRow.querySelector('td[data-label="Actions"] button').getBoundingClientRect();
+        return {
+            labels,
+            columns: { id: cell('ID'), title: cell('Title'), access: cell('Access') },
+            iconInset: firstRow.querySelector('td[data-label="Repository"] svg').getBoundingClientRect().right - table.left,
+            actionsInset: table.right - labels.actions.right,
+            actionCentre: action.left + action.width / 2
+        };
+    });
+
+    const middles = Object.values(geometry.labels).map(label => label.middle);
+    expect.soft(Math.max(...middles) - Math.min(...middles),
+        `header labels are vertically centred on one line; middles: ${JSON.stringify(geometry.labels)}`).toBeLessThanOrEqual(1);
+    for (const column of ['id', 'title', 'access']) {
+        expect.soft(Math.abs(geometry.labels[column].left - geometry.columns[column].left),
+            `the ${column} header label starts where its column content starts`).toBeLessThanOrEqual(1);
+    }
+    expect.soft(Math.abs(geometry.actionsInset - geometry.iconInset),
+        `the Actions label ends as far from the right edge (${geometry.actionsInset}px) as the repository icon ends from `
+        + `the left edge (${geometry.iconInset}px)`).toBeLessThanOrEqual(1);
+    const actionsLabelCentre = (geometry.labels.actions.left + geometry.labels.actions.right) / 2;
+    expect.soft(Math.abs(geometry.actionCentre - actionsLabelCentre),
+        'the row action buttons sit centred under the Actions label').toBeLessThanOrEqual(1);
+});
+
+test('repository list phone records lead with the repository and sort from one row of pills', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${baseUrl}/rdf4j-workbench/repositories/a/repositories`, { waitUntil: 'networkidle' });
+
+    const table = page.locator('#repositories-results table.data');
+    await expect(table.locator('tbody tr[data-workbench-row-index]')).toHaveCount(4);
+
+    const header = await table.evaluate(element => {
+        const shown = cell => {
+            const rect = cell.getBoundingClientRect();
+            return rect.width > 1 && rect.height > 1;
+        };
+        const cells = [...element.querySelectorAll('thead th')];
+        return {
+            shown: cells.filter(shown).map(cell => cell.getAttribute('data-repository-column')),
+            hiddenNames: cells.filter(cell => !shown(cell)).map(cell => cell.textContent.trim()),
+            sorts: [...element.querySelectorAll('thead button[data-workbench-sort]')]
+                .map(button => button.getBoundingClientRect().toJSON())
+        };
+    });
+    expect.soft(header.shown, 'only the sort controls show above the phone records').toEqual(['id', 'title', 'access']);
+    expect.soft(header.hiddenNames, 'the icon and action columns keep their accessible names')
+        .toEqual(['Repository', 'Actions']);
+    const sortTops = header.sorts.map(sort => sort.top);
+    const sortHeights = header.sorts.map(sort => sort.height);
+    expect.soft(Math.max(...sortTops) - Math.min(...sortTops), 'the sort pills share one row').toBeLessThanOrEqual(1);
+    expect.soft(Math.max(...sortHeights) - Math.min(...sortHeights), 'the sort pills share one height').toBeLessThanOrEqual(1);
+    expect.soft(Math.min(...sortHeights), 'the sort pills are comfortable touch targets').toBeGreaterThanOrEqual(36);
+
+    const records = await table.locator('tbody tr[data-workbench-row-index]').evaluateAll(rows => rows.map(row => {
+        const rect = element => element.getBoundingClientRect();
+        const style = getComputedStyle(row);
+        const box = rect(row);
+        const content = {
+            left: box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft),
+            right: box.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight),
+            bottom: box.bottom - parseFloat(style.borderBottomWidth) - parseFloat(style.paddingBottom)
+        };
+        const icon = rect(row.querySelector('td[data-label="Repository"] svg'));
+        const id = rect(row.querySelector('.workbench-repository-link'));
+        const menu = rect(row.querySelector('td[data-label="Actions"] button'));
+        const title = row.querySelector('td[data-label="Title"]');
+        const access = row.querySelector('td[data-label="Access"]');
+        const labelled = cell => getComputedStyle(cell, '::before').display !== 'none';
+        return {
+            id: row.querySelector('.workbench-repository-link').textContent.trim(),
+            centres: [icon, id, menu].map(part => part.top + part.height / 2),
+            iconInset: icon.left - content.left,
+            idGap: id.left - icon.right,
+            menuInset: content.right - menu.right,
+            title: title.getClientRects().length ? { left: rect(title).left - id.left, below: rect(title).top - id.bottom } : null,
+            accessLeft: rect(access).left - id.left,
+            accessInset: content.bottom - rect(access).bottom,
+            labels: ['Repository', 'ID', 'Title', 'Access']
+                .filter(label => labelled(row.querySelector(`td[data-label="${label}"]`)))
+        };
+    }));
+
+    for (const record of records) {
+        expect.soft(Math.max(...record.centres) - Math.min(...record.centres),
+            `${record.id}: icon, ID, and menu share one line`).toBeLessThanOrEqual(1);
+        expect.soft(Math.abs(record.iconInset), `${record.id}: the icon starts the record`).toBeLessThanOrEqual(1);
+        expect.soft(record.idGap, `${record.id}: the ID follows the icon`).toBeGreaterThanOrEqual(8);
+        expect.soft(record.idGap, `${record.id}: the ID stays next to the icon`).toBeLessThanOrEqual(16);
+        expect.soft(Math.abs(record.menuInset), `${record.id}: the menu ends the first line`).toBeLessThanOrEqual(1);
+        expect.soft(Math.abs(record.accessLeft), `${record.id}: access lines up under the ID`).toBeLessThanOrEqual(1);
+        expect.soft(Math.abs(record.accessInset), `${record.id}: access ends the record`).toBeLessThanOrEqual(1);
+        expect.soft(record.labels, `${record.id}: only access keeps a field label`).toEqual(['Access']);
+    }
+    expect.soft(records[0].title, 'an empty title takes no room').toBeNull();
+    for (const record of records.slice(1)) {
+        expect.soft(record.title, `${record.id}: the title shows`).not.toBeNull();
+        if (record.title) {
+            expect.soft(Math.abs(record.title.left), `${record.id}: the title lines up under the ID`).toBeLessThanOrEqual(1);
+            expect.soft(record.title.below, `${record.id}: the title sits below the ID`).toBeGreaterThanOrEqual(0);
+        }
+    }
+    await page.screenshot({ path: '../.agent/evidence/workbench-repository-list-features/repository-list-phone.png', fullPage: true });
+});

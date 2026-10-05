@@ -3096,8 +3096,9 @@ body.workbench-body .workbench-browse-card__tools > .workbench-browse-card__filt
 	min-width: 15rem;
 }
 
-/* Scoped to the page surface so it outranks the surface's top-aligned table cells, which come later. */
-body.workbench-body .workbench-page-surface .workbench-browse-card table.data td {
+/* Scoped to the page surface so it outranks the surface's top-aligned table cells, which come later.
+ * Header cells centre too, so a plain label lines up with the taller sort buttons beside it. */
+body.workbench-body .workbench-page-surface .workbench-browse-card table.data :is(th, td) {
 	vertical-align: middle;
 }
 
@@ -3275,6 +3276,13 @@ body.workbench-body .workbench-repository-link {
 		width: 1%;
 		white-space: nowrap;
 	}
+
+	/* The actions column mirrors the icon column: its content ends as far from the right edge as the icon ends from the
+	 * left (10px cell padding plus the 16px icon), and the menu button sits centred under its label. */
+	body.workbench-body .workbench-page-surface #repositories-results table.data :is(th[data-repository-column="actions"], td.workbench-row-actions) {
+		padding-right: 26px;
+		text-align: center;
+	}
 }
 
 body.workbench-body .workbench-repository-create {
@@ -3287,6 +3295,8 @@ body.workbench-body #repositories-results .workbench-repository-sort {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
+	/* The negative margin cancels the side padding so the label starts where its column's text starts. */
+	margin: 0 -2px;
 	padding: 4px 2px;
 	border: 0;
 	border-radius: var(--workbench-control-radius);
@@ -4879,9 +4889,9 @@ body.workbench-body .workbench-preview-table-scroll > table.data td {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 4px 8px;
+		gap: var(--workbench-space-related);
 		width: 100%;
-		margin: 0 0 8px;
+		margin: 0 0 var(--workbench-space-field);
 		padding: 0;
 		border: 0;
 		background: transparent;
@@ -4890,9 +4900,19 @@ body.workbench-body .workbench-preview-table-scroll > table.data td {
 	body.workbench-body #repositories-results table.data thead th {
 		display: block;
 		flex: 0 0 auto;
-		padding: 6px 4px;
-		font-size: 12px;
+		padding: 0;
+		border: 0;
+		background: transparent;
 		white-space: nowrap;
+	}
+
+	/* The icon and action columns have nothing to sort; only assistive technology still reads their names. */
+	body.workbench-body #repositories-results table.data thead th:not([aria-sort]) {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 
 	body.workbench-body #repositories-results table.data tbody {
@@ -4906,10 +4926,109 @@ body.workbench-body .workbench-preview-table-scroll > table.data td {
 		width: 100%;
 	}
 
+	/* The sort controls become a row of pills; the active one takes the selection colours. */
 	body.workbench-body #repositories-results .workbench-repository-sort {
-		gap: 2px;
-		padding: 4px 0;
-		font-size: 12px;
+		min-height: var(--workbench-control-height);
+		gap: 6px;
+		margin: 0;
+		padding: 0 12px;
+		border: 1px solid var(--workbench-soft-rule);
+		border-radius: 999px;
+		background: var(--workbench-surface);
+		font-size: var(--workbench-control-font-size);
+	}
+
+	body.workbench-body #repositories-results th:is([aria-sort="ascending"], [aria-sort="descending"]) .workbench-repository-sort {
+		border-color: var(--workbench-primary);
+		background: var(--workbench-selected);
+		color: var(--workbench-primary);
+	}
+
+	body.workbench-body #repositories-results th:is([aria-sort="ascending"], [aria-sort="descending"]) .workbench-repository-sort__indicator {
+		color: inherit;
+	}
+
+	/* A record leads with its icon, ID and menu on one line; the title and access follow under the ID. */
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: center;
+		gap: var(--workbench-space-association) var(--workbench-space-field);
+		padding: 12px 8px 12px 14px;
+	}
+
+	/* Grid gaps would leave the cell backgrounds patchy, so the whole record takes the hover colour. */
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index]:hover {
+		background: var(--workbench-inset);
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td {
+		display: block;
+		width: auto;
+		min-width: 0;
+		min-height: 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td::before {
+		display: none;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td > :last-child {
+		margin-right: 0;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Repository"] {
+		display: flex;
+		grid-area: 1 / 1;
+		color: var(--workbench-muted);
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="ID"] {
+		grid-area: 1 / 2;
+		font-size: 15px;
+	}
+
+	/* The touch-sized menu reaches into the record's padding instead of making the first line taller. */
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td.workbench-row-actions {
+		position: static;
+		grid-area: 1 / 3;
+		margin: -8px 0;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td:is([data-label="Title"], [data-label="Access"]) {
+		grid-column: 2 / -1;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Title"] {
+		color: var(--workbench-muted);
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Title"]:empty {
+		display: none;
+	}
+
+	/* Access keeps its label: "None" alone would not say what is missing. */
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Access"] {
+		display: flex;
+		align-items: center;
+		gap: var(--workbench-space-related);
+		margin-top: var(--workbench-space-association);
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Access"]::before {
+		display: block;
+		flex: none;
+		content: attr(data-label);
+		color: var(--workbench-muted);
+		font-size: var(--workbench-label-font-size);
+		font-weight: 600;
+	}
+
+	body.workbench-body #repositories-results table.data tbody tr[data-workbench-row-index] > td[data-label="Access"] > .workbench-badges {
+		min-width: 0;
 	}
 }
 

@@ -198,7 +198,8 @@ test('A phone record shows its lone row menu beside the first field', async ({ p
 	expect(geometry.actionsCentre, 'the menu sits on the first field row').toBeLessThan(geometry.firstBottom);
 	expect(Math.abs(geometry.actionsRight - geometry.contentRight), 'the menu ends the first field row').toBeLessThanOrEqual(1);
 	expect(geometry.firstValueRight, 'the first value stays clear of the menu').toBeLessThanOrEqual(geometry.actionsLeft);
-	expect(Math.abs(geometry.firstValueLeft - geometry.secondValueLeft), 'the first value keeps its column').toBeLessThanOrEqual(1);
+	// The repository record leads with its icon and puts the ID beside it on the same line.
+	expect(geometry.secondValueLeft, 'the ID follows the icon on its line').toBeGreaterThan(geometry.firstValueRight);
 	expect(Math.abs(geometry.lastBottom - geometry.contentBottom), 'the last field ends the record').toBeLessThanOrEqual(1);
 	expect(geometry.lastBorder, 'the last field has no divider below it').toBe(0);
 });
