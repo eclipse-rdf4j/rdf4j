@@ -28,4 +28,28 @@ class WorkbenchFrontendSecurityTest {
 				.contains("selectedUser.textContent = user;")
 				.doesNotContain("selectedUser.innerHTML = user;");
 	}
+
+	@Test
+	void browserRefreshesTheSessionTokenForEveryPostAndSameOriginAjaxRequest() throws Exception {
+		String template = Files.readString(Path.of("src/main/webapp/scripts/ts/template.ts"));
+		String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"));
+
+		assertThat(template)
+				.contains("getCookie('rdf4j-workbench-csrf')")
+				.contains("input.name = '_csrf';")
+				.contains("input.value = token;")
+				.contains("$.ajaxPrefilter")
+				.contains("if (!options.crossDomain)")
+				.contains("options.headers['X-RDF4J-CSRF-Token'] = requestToken;")
+				.doesNotContain("$.ajaxSetup")
+				.contains("document.addEventListener('submit'")
+				.contains("if (!nativeFormSubmit.rdf4jCsrfProtected)")
+				.contains("csrfProtectedFormSubmit.rdf4jCsrfProtected = true;")
+				.contains("HTMLFormElement.prototype.submit = csrfProtectedFormSubmit;")
+				.contains("nativeFormSubmit.call(this);")
+				.contains("workbench.installCsrfProtection();");
+		assertThat(webXml)
+				.contains("org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter")
+				.contains("<url-pattern>/repositories/*</url-pattern>");
+	}
 }

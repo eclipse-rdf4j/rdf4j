@@ -89,6 +89,7 @@ class FakeElement {
         this.name = options.name || '';
         this.value = options.value || '';
         this.type = options.type || '';
+        this.method = options.method || (this.tagName === 'FORM' ? 'get' : '');
         this.checked = !!options.checked;
         this.selected = !!options.selected;
         this.disabled = !!options.disabled;
@@ -196,6 +197,8 @@ class FakeElement {
             this.value = normalizedValue;
         } else if (name === 'type') {
             this.type = normalizedValue;
+        } else if (name === 'method') {
+            this.method = normalizedValue;
         } else if (name === 'checked') {
             this.checked = normalizedValue !== 'false';
         } else if (name === 'selected') {
@@ -208,7 +211,13 @@ class FakeElement {
     }
 
     getAttribute(name) {
-        return this.attributes.has(name) ? this.attributes.get(name) : undefined;
+        if (this.attributes.has(name)) {
+            return this.attributes.get(name);
+        }
+        if (['id', 'name', 'type', 'method'].includes(name) && this[name]) {
+            return String(this[name]);
+        }
+        return undefined;
     }
 
     removeAttribute(name) {
@@ -327,6 +336,10 @@ class FakeElement {
 
         visit(this);
         return result;
+    }
+
+    querySelector(selector) {
+        return selectElements([this], selector, true)[0] || null;
     }
 
     serializeArray() {
@@ -988,6 +1001,7 @@ function createFragment(document, selector) {
 }
 
 function createJQuery(document, ajaxHandler) {
+    const ajaxPrefilters = [];
     const $ = (selector) => {
         if (selector instanceof FakeElement) {
             return new JQueryCollection([selector]);
@@ -1018,7 +1032,37 @@ function createJQuery(document, ajaxHandler) {
             })
             .join('&');
     };
-    $.ajax = ajaxHandler;
+    $.ajaxSettings = { headers: {} };
+    $.ajax = (urlOrOptions, options) => {
+        const originalOptions = typeof urlOrOptions === 'string'
+            ? Object.assign({}, options || {}, { url: urlOrOptions })
+            : Object.assign({}, urlOrOptions || {});
+        const settings = Object.assign({}, $.ajaxSettings, originalOptions, {
+            headers: Object.assign({}, $.ajaxSettings.headers, originalOptions.headers || {})
+        });
+        if (settings.crossDomain == null) {
+            const pageUrl = new URL(document.location.href);
+            const requestUrl = new URL(settings.url || pageUrl.href, pageUrl.href);
+            settings.crossDomain = requestUrl.origin !== pageUrl.origin;
+        }
+        const jqXHR = {
+            setRequestHeader(name, value) {
+                settings.headers[name] = value;
+                return this;
+            }
+        };
+        ajaxPrefilters.forEach((prefilter) => prefilter(settings, originalOptions, jqXHR));
+        return ajaxHandler(settings);
+    };
+    $.ajaxPrefilter = (dataTypes, handler) => {
+        const prefilter = typeof dataTypes === 'function' ? dataTypes : handler;
+        ajaxPrefilters.push(prefilter);
+    };
+    $.ajaxSetup = (settings = {}) => {
+        $.ajaxSettings = Object.assign({}, $.ajaxSettings, settings, {
+            headers: Object.assign({}, $.ajaxSettings.headers, settings.headers || {})
+        });
+    };
     $.getJSON = (url, data, callback) => {
         if (typeof callback === 'function') {
             callback({});
