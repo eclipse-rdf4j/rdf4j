@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
@@ -80,6 +81,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
 	// Caps dataset-acquisition retry backoff at about one millisecond.
 	private static final int MAX_RETRY_BACKOFF_SHIFT = 10;
+	// Bounds acquisition retries (roughly one second of backoff) for reads that have no query deadline.
+	private static final int MAX_DATASET_ACQUISITION_RETRIES = 1000;
 
 	/*-----------*
 	 * Variables *
@@ -540,6 +543,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 			if (deadline != null && deadline.isExpired()) {
 				throw new QueryInterruptedException("Query evaluation took too long", retryFailure);
+			}
+			if (retries >= MAX_DATASET_ACQUISITION_RETRIES) {
+				throw new SailConflictException("Unable to acquire a consistent dataset after " + retries
+						+ " attempts; retry the operation", retryFailure);
 			}
 			// Back off while the backing source finishes the change that invalidated this acquisition.
 			LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(1L << Math.min(retries++, MAX_RETRY_BACKOFF_SHIFT)));

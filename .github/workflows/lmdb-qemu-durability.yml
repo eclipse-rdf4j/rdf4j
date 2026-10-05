@@ -2,6 +2,11 @@ name: LMDB QEMU durability
 
 on:
   pull_request:
+    paths:
+      - 'core/sail/lmdb/**'
+      - 'core/sail/base/**'
+      - 'scripts/lmdb-crashlab/**'
+      - '.github/workflows/lmdb-qemu-durability.yml'
 
 permissions:
   contents: read

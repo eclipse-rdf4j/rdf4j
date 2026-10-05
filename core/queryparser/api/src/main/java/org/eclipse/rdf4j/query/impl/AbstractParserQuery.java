@@ -30,6 +30,21 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	private final ParsedQuery parsedQuery;
 	// Scope only modern hook dispatch; direct legacy callers retain their independent timeout.
 	private final ThreadLocal<QueryExecutionDeadline> legacyHookDeadline = new ThreadLocal<>();
+	private static final ClassValue<Boolean> OVERRIDES_LEGACY_HOOK = new ClassValue<>() {
+		@Override
+		protected Boolean computeValue(Class<?> type) {
+			for (Class<?> current = type; current != null
+					&& current != AbstractParserQuery.class; current = current.getSuperclass()) {
+				try {
+					current.getDeclaredMethod("enforceMaxQueryTime", CloseableIteration.class);
+					return true;
+				} catch (NoSuchMethodException notDeclared) {
+					// continue with the superclass
+				}
+			}
+			return false;
+		}
+	};
 
 	protected static final int DEFAULT_EXPLANATION_EXECUTION_TIMEOUT = 60;
 
@@ -78,6 +93,10 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 */
 	protected CloseableIteration<? extends BindingSet> applyMaxQueryTimeHook(
 			CloseableIteration<? extends BindingSet> bindingsIter, QueryExecutionDeadline deadline) {
+		if (!OVERRIDES_LEGACY_HOOK.get(getClass())) {
+			// The default hook would only add a second wrapper for the deadline that the public result already owns.
+			return bindingsIter;
+		}
 		QueryExecutionDeadline previous = legacyHookDeadline.get();
 		if (deadline == null) {
 			legacyHookDeadline.remove();

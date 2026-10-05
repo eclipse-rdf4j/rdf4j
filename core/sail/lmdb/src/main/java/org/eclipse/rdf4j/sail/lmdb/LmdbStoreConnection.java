@@ -858,6 +858,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					prepareForReadAttempt();
 					long generation = beginReadCreation();
 					if (generation < 0) {
+						if (internalReadScopeDepth.get() > 0) {
+							// prepareForReadAttempt() does not wait in a nested scope, and the owning tracked read
+							// holds activeReadOperations, so the requested replay cannot start until it unwinds.
+							throw new LmdbSailStore.MapResizeConflictException(resizeKind(null),
+									"LMDB map changed while opening a nested read result; retry its owning read operation");
+						}
 						continue;
 					}
 					ReadExposureScope exposure = beginReadExposureScope(null, deadline, operationAttempt);
