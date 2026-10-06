@@ -422,9 +422,9 @@ test('a shell whose Info answer has no menu keeps the recovery links', async ({ 
 	await page.goto(`${workbenchBaseUrlForSpec()}/repositories/${REPOSITORY_ID}/summary`);
 	await waitForRoute(page, 'summary');
 
-	await page.locator('#workbench-server-switcher').click();
-	await expect(page.locator('#workbench-server-popover')).toBeVisible();
-	await expect(page.locator('#workbench-server-popover').getByRole('link', { name: /Change server or user/ })).toBeVisible();
+	await page.locator('#workbench-repository-switcher').click();
+	await expect(page.locator('#workbench-repository-popover')).toBeVisible();
+	await expect(page.locator('#workbench-repository-popover').getByRole('link', { name: /Change server or user/ })).toBeVisible();
 	await page.keyboard.press('Escape');
 
 	await page.locator('#workbench-repository-switcher').click();
@@ -628,9 +628,8 @@ test('a user whose credentials encode with "+" is the signed-in user everywhere 
 	let urn = null;
 	try {
 		await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
-		await page.locator('#workbench-server-switcher').click();
-		await expect(page.locator('#workbench-server-popover .workbench-kv__row').filter({ hasText: 'User' })
-			.locator('dd')).toHaveText(user);
+		await page.locator('#workbench-repository-switcher').click();
+		await expect(page.locator('#workbench-repository-popover .workbench-popover__server')).toContainText(user);
 		await page.keyboard.press('Escape');
 
 		await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 2');

@@ -20,7 +20,7 @@ test('repository landing shell owns full-width layout and loads server navigatio
 				const box = element.getBoundingClientRect();
 				return { x: box.x, y: box.y, width: box.width, height: box.height };
 			};
-			const server = document.querySelector('#workbench-server-switcher .workbench-switcher__value');
+			const server = document.querySelector('#workbench-repository-popover .workbench-popover__server code');
 			const createLink = Array.from(document.querySelectorAll('#navigation a[data-workbench-nav-href]'))
 				.find(anchor => new URL(anchor.href).pathname.replace(/\/+$/, '').endsWith('/create'));
 			return {

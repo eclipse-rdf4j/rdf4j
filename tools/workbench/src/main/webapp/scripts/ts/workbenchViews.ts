@@ -217,6 +217,30 @@ module workbench {
             server: 'Connect to RDF4J Server'
         };
 
+        /** One line under each title that says what the page is for (the layout preview's copy). */
+        const descriptions: { [key: string]: string } = {
+            summary: 'Where this repository is stored, how much data it holds and how it is configured.',
+            information: 'Version, Java and memory details for this Workbench, handy when you report a problem.',
+            repositories: 'Every repository on this server. Open one to query and browse its data.',
+            create: 'Pick a store type, then set the repository\'s ID, title and options on the next step.',
+            delete: 'Deleting a repository removes it and all of its data from the server. This can\'t be undone.',
+            namespaces: 'Prefixes let you write short names like foaf:Person instead of full IRIs in queries and results.',
+            contexts: 'Named graphs in this repository and their statement counts. Explore or clear a graph from its row.',
+            types: 'The classes used in this repository and how many resources belong to each. Click a type to explore it.',
+            explore: 'Enter a resource to see every statement that mentions it, then click any value to keep exploring.',
+            query: 'Write a SPARQL query, run it against this repository, and save it if you\'ll need it again.',
+            'saved-queries': 'Queries saved for this repository. Run, edit or delete them from here.',
+            export: 'Download the whole repository as an RDF file, or preview the first statements before you do.',
+            add: 'Load RDF from a file, a web address or pasted text. Pick a target graph to keep the new data separate.',
+            remove: 'Remove specific statements by matching their subject, predicate, object or graph.',
+            clear: 'Remove all statements from this repository, or only those in one graph. The repository itself stays.',
+            update: 'Change the data in this repository with SPARQL Update operations such as INSERT DATA and DELETE WHERE.',
+            server: 'Enter the address of the RDF4J Server you want the Workbench to use.'
+        };
+
+        /** The sidebar icon of a page when the policy names none; keep in sync with the page definitions in WorkbenchPolicy.java. */
+        const defaultPageIcons: { [key: string]: string } = { 'saved-queries': 'saved' };
+
         function text(value: any): string {
             if (value === null || typeof value === 'undefined') {
                 return '';
@@ -307,6 +331,31 @@ module workbench {
                 return 'Repository not found';
             }
             return text(meta(model, 'title')) || titles[model.viewId] || 'RDF4J Workbench';
+        }
+
+        /** The page's one-line description; Repositories names the connected server. */
+        function routeDescription(model: PageModel, context: ViewContext): string {
+            const description = descriptions[model.viewId] || '';
+            if (model.viewId === 'repositories') {
+                const server = contextBarState(context).server;
+                return server ? description.replace('this server', hostAndPort(server)) : description;
+            }
+            return description;
+        }
+
+        /** The icon the sidebar shows for a page: the policy's menu item icon, else the page's default icon. */
+        function pageIcon(context: ViewContext, viewId: string): string {
+            const groups = menuEntries(context, true);
+            for (let g = 0; g < groups.length; g++) {
+                const items = groups[g].items || [];
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if ((item.id || item['menu-item-id']) === viewId) {
+                        return item.icon || item['menu-item-icon'] || defaultPageIcons[viewId] || viewId;
+                    }
+                }
+            }
+            return defaultPageIcons[viewId] || viewId;
         }
 
         /** In-shell page for an unknown repository (mockup 13). */
@@ -499,7 +548,8 @@ module workbench {
             return repositoryLandingPages.filter((pageId: string) => pageEnabled(context, pageId))[0] || 'summary';
         }
 
-        function menuEntries(context: ViewContext): any[] {
+        /** The menu groups of the policy-filtered Info model; `quiet` skips the missing-menu warning the shell already logs. */
+        function menuEntries(context: ViewContext, quiet?: boolean): any[] {
             const info = normalizeWorkbench(context.workbench,
                 context.linked && context.linked.info);
             const menu = info.menu || info.menuGroups || info.menuItems;
@@ -534,7 +584,7 @@ module workbench {
                 return menu;
             }
             // The menu always comes from the policy-filtered Info model; never invent one.
-            if (typeof console !== 'undefined' && console.error) {
+            if (!quiet && typeof console !== 'undefined' && console.error) {
                 console.error('Workbench menu is unavailable');
             }
             return [];
@@ -692,7 +742,11 @@ module workbench {
             return icon(runtime, 'chevron', 'workbench-switcher__chevron');
         }
 
-        /** The 56px context bar (mockups 01 and 04): brand, server and repository switchers; the server menu names the user. */
+        /**
+         * The context bar: brand and the repository switcher. On a desktop it tops the sidebar; below 900px it is the
+         * compact row that opens the menu sheet. The repository panel's footer names the server and the user, with the
+         * link to change them: users rarely change the server, so it has no switcher of its own.
+         */
         function contextBar(context: ViewContext, active: string, runtime: LitRuntime): any {
             const h = runtime.html;
             const state = contextBarState(context);
@@ -704,28 +758,11 @@ module workbench {
                     <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.png'} alt="rdf4j" />
                     <img class="product workbench-brand__dark" src=${context.basePath + '/images/product-dark.png'} alt="workbench" />
                 </a>
-                <div class="workbench-switcher" data-workbench-switcher="server">
-                    <button id="workbench-server-switcher" class="workbench-switcher__button" type="button"
-                            aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-server-popover"
-                            title=${server || 'No server'}>
-                        ${icon(runtime, 'server')}<span class="workbench-switcher__key">Server</span>
-                        <span class="workbench-switcher__value">${server ? hostAndPort(server) : 'None'}</span>
-                        ${switcherChevron(runtime)}
-                    </button>
-                    <div id="workbench-server-popover" class="workbench-popover" role="dialog" aria-label="Server" hidden>
-                        <dl class="workbench-kv">
-                            <div class="workbench-kv__row"><dt>Server</dt><dd class="workbench-kv__code">${server || 'None'}</dd></div>
-                            <div class="workbench-kv__row"><dt>User</dt><dd>${state.user || 'Not signed in'}</dd></div>
-                        </dl>
-                        ${pageEnabled(context, 'server') ? h`<div class="workbench-popover__footer">
-                            <a href=${urlFor(context, 'server')}>${icon(runtime, 'settings')}Change server or user…</a>
-                        </div>` : ''}
-                    </div>
-                </div>
-                <span class="workbench-contextbar__divider" aria-hidden="true"></span>
                 <div class="workbench-switcher" data-workbench-switcher="repository">
                     <button id="workbench-repository-switcher" class="workbench-switcher__button" type="button"
-                            aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-repository-popover">
+                            aria-haspopup="dialog" aria-expanded="false" aria-controls="workbench-repository-popover"
+                            title=${state.repositoryId ? (state.repositoryTitle
+                                ? state.repositoryId + ' — ' + state.repositoryTitle : state.repositoryId) : 'No repository'}>
                         ${icon(runtime, 'repository')}<span class="workbench-switcher__key">Repository</span>
                         ${state.repositoryId
                             ? h`<span class="workbench-switcher__value"><span class="workbench-switcher__id">${state.repositoryId}</span>${state.repositoryTitle
@@ -749,6 +786,13 @@ module workbench {
                                 icon(runtime, 'repository')}All repositories</a>` : ''}
                             ${pageEnabled(context, 'create') ? h`<a href=${urlFor(context, 'create')}>${
                                 icon(runtime, 'create')}Create repository</a>` : ''}
+                        </div>
+                        <div class="workbench-popover__server">
+                            <p class="workbench-popover__server-text">${icon(runtime, 'server')}<span>Server <code
+                                title=${server || runtime.nothing}>${server ? hostAndPort(server) : 'None'}</code> · ${
+                                state.user || 'Not signed in'}</span></p>
+                            ${pageEnabled(context, 'server') ? h`<a href=${urlFor(context, 'server')}>${
+                                icon(runtime, 'settings')}Change server or user…</a>` : ''}
                         </div>
                     </div>
                 </div>
@@ -809,10 +853,19 @@ module workbench {
          * The page area that changes from route to route: title, why the server did not take a form the router sent
          * from this page (the router sets model.sendFailure) and page surface.
          */
-        function outletContentTemplate(model: PageModel, runtime: LitRuntime, body: any): any {
+        function outletContentTemplate(model: PageModel, context: ViewContext, runtime: LitRuntime, body: any): any {
             const h = runtime.html;
             const failure: any = (model as any).sendFailure;
-            return h`<h1 id="title_heading" tabindex="-1">${routeTitle(model)}</h1>
+            const notFound = isRepositoryNotFound(model);
+            const description = notFound ? '' : routeDescription(model, context);
+            return h`<header class="workbench-page-header">
+                ${notFound ? '' : h`<span class="workbench-page-header__icon" aria-hidden="true">${
+                    icon(runtime, pageIcon(context, model.viewId), 'workbench-page-header__icon-glyph')}</span>`}
+                <div class="workbench-page-header__text">
+                    <h1 id="title_heading" tabindex="-1">${routeTitle(model)}</h1>
+                    ${description ? h`<p class="workbench-page-header__description">${description}</p>` : ''}
+                </div>
+            </header>
                 ${failure ? callout(runtime, 'error', text(failure.message), failure.status
                     ? 'The server did not accept this.' : 'The request failed.', 'workbench-send-failure') : ''}
                 <div id="workbench-page-surface" class="workbench-page-surface">${body}</div>`;
@@ -821,7 +874,7 @@ module workbench {
         function shell(model: PageModel, context: ViewContext, runtime: LitRuntime, body: any): any {
             const h = runtime.html;
             return shellTemplate({ viewId: model.viewId, context }, runtime,
-                h`<div id="workbench-outlet" class="workbench-outlet" tabindex="-1">${outletContentTemplate(model, runtime, body)}</div>`);
+                h`<div id="workbench-outlet" class="workbench-outlet" tabindex="-1">${outletContentTemplate(model, context, runtime, body)}</div>`);
         }
 
         function workbenchData(context: ViewContext): any {
@@ -4491,7 +4544,7 @@ module workbench {
         }
 
         /**
-         * Bind the context bar switchers once per shell: popovers (workbench.popover from template.ts),
+         * Bind the context bar's repository switcher once per shell: its popover (workbench.popover from template.ts),
          * the lazily loaded repository list, its filter and arrow-key movement.
          */
         export function bindContextBar(appMount: any, context: ViewContext): () => void {
@@ -4502,12 +4555,9 @@ module workbench {
             }
             const disposers: Array<() => void> = [];
             const currentId = contextBarState(context).repositoryId;
-            ['server', 'repository'].forEach((name) => {
-                const button = document.getElementById('workbench-' + name + '-switcher');
-                const panel = document.getElementById('workbench-' + name + '-popover');
-                disposers.push(popover.bind(button, panel, name === 'repository'
-                    ? { onOpen: (opened: any) => { loadRepositoryOptions(opened, currentId); } } : {}));
-            });
+            disposers.push(popover.bind(document.getElementById('workbench-repository-switcher'),
+                document.getElementById('workbench-repository-popover'),
+                { onOpen: (opened: any) => { loadRepositoryOptions(opened, currentId); } }));
             disposers.push(bindMenuSheet(document));
             const repositoryPanel = document.getElementById('workbench-repository-popover');
             const filter = document.getElementById('workbench-repository-filter');
@@ -4657,7 +4707,7 @@ module workbench {
             if (regions) {
                 regions.resultTables = {};
             }
-            renderPage(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount,
+            renderPage(outletContentTemplate(model, renderedContext, runtime, routeBody(model, renderedContext, runtime)), outletMount,
                 model, regions, runtime);
             return outletMount;
         }

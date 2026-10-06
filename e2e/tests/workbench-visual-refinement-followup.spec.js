@@ -197,9 +197,12 @@ test('query result table headers stay visible while scrolling rows on desktop an
 		await expect(results.locator('.query-result-layout')).toHaveAttribute('data-effective-layout', 'table');
 		const tableWrap = results.locator('.query-result-table-wrap');
 		// Rows scroll with the page (M4.1): scroll until the table's own header row is 160 px under the context bar.
+		// Whatever sticks across the top of the viewport sets its height through this token: the compact bar on a
+		// phone, nothing on a desktop (where the context block sits in the sidebar).
 		await tableWrap.evaluate(element => {
-			const contextBar = document.querySelector('#workbench-contextbar').getBoundingClientRect();
-			window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - contextBar.bottom + 160);
+			const stickyTop = parseFloat(getComputedStyle(document.documentElement)
+				.getPropertyValue('--workbench-contextbar-height')) || 0;
+			window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - stickyTop + 160);
 		});
 		await expect.poll(() => page.evaluate(() => window.scrollY),
 			{ message: `the page scrolls the rows at ${viewport.width}px` }).toBeGreaterThan(0);
@@ -217,7 +220,8 @@ test('query result table headers stay visible while scrolling rows on desktop an
 			const headerBounds = header.getBoundingClientRect();
 			return {
 				scrollY: window.scrollY,
-				contextBarBottom: document.querySelector('#workbench-contextbar').getBoundingClientRect().bottom,
+				contextBarBottom: parseFloat(getComputedStyle(document.documentElement)
+					.getPropertyValue('--workbench-contextbar-height')) || 0,
 				tableHeaderBottom: element.querySelector('thead').getBoundingClientRect().bottom,
 				headerTop: pinnedBounds.top,
 				headerBackground: getComputedStyle(header).backgroundColor,

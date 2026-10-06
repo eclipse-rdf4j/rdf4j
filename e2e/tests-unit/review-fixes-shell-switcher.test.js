@@ -38,8 +38,7 @@ function switcher() {
     panel.querySelectorAll = (selector) => selector === 'a.workbench-popover__option'
         ? list.children.map((item) => item.children[0]) : [];
     const elements = { 'workbench-repository-popover': panel, 'workbench-repository-filter': filter,
-        'workbench-repository-switcher': node('button'), 'workbench-server-switcher': node('button'),
-        'workbench-server-popover': node('div') };
+        'workbench-repository-switcher': node('button') };
     document.getElementById = (id) => elements[id] || null;
     return { document, panel, list, ids: () => list.children.map((item) => item.children[0].getAttribute('data-repository-id')) };
 }

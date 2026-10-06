@@ -37,7 +37,7 @@ test('RDF4J Workbench has correct title', async ({page}) => {
 async function createRepo(page) {
 	await page.locator('#workbench-nav-items-repositories').getByRole('link', { name: 'Create repository' }).click();
     await waitForRoute(page, 'create');
-    await page.getByText('Next').click();
+    await page.getByRole('button', { name: 'Next' }).click();
     await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});
 
     await page.getByRole('textbox', {name: 'Repository ID'}).fill(repositoryId);
@@ -133,7 +133,7 @@ test('Create repo', async ({page}) => {
 
     await page.locator('#repositories-results').getByRole('link', { name: 'Create repository' }).click();
     await waitForRoute(page, 'create');
-    await page.getByText('Next').click();
+    await page.getByRole('button', { name: 'Next' }).click();
     await waitForRoute(page, 'create', {url: url => url.searchParams.has('type')});
 
     await page.getByRole('textbox', {name: 'Repository ID'}).fill(repositoryId);

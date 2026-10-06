@@ -1655,13 +1655,6 @@ body.workbench-body .workbench-switcher__chevron {
 	color: var(--workbench-muted);
 }
 
-body.workbench-body .workbench-contextbar__divider {
-	flex: 0 0 1px;
-	width: 1px;
-	height: 24px;
-	background: var(--workbench-soft-rule);
-}
-
 body.workbench-body .workbench-contextbar__spacer {
 	flex: 1 1 auto;
 }
@@ -1819,6 +1812,48 @@ body.workbench-body .workbench-popover__footer a:visited {
 	text-decoration: none;
 }
 
+/* The repository panel ends with the server and user, and the link that changes them. */
+body.workbench-body .workbench-popover__server {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px 12px;
+	margin: 8px -8px -8px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--workbench-soft-rule);
+	background: var(--workbench-inset);
+	border-radius: 0 0 var(--workbench-radius) var(--workbench-radius);
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+}
+
+body.workbench-body .workbench-popover__server-text {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	margin: 0;
+}
+
+body.workbench-body .workbench-popover__server code {
+	color: var(--workbench-ink);
+	font-family: var(--workbench-code-font);
+	font-size: 12px;
+}
+
+body.workbench-body .workbench-popover__server a {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-contextbar .workbench-popover__server {
+	margin: 8px -12px -12px;
+	border-radius: 0;
+}
+
 body.workbench-body .workbench-popover__footer a:hover {
 	background: var(--workbench-inset);
 	text-decoration: none;
@@ -1840,13 +1875,6 @@ body.workbench-body .workbench-popover__footer a:hover {
 
 	body.workbench-body .workbench-contextbar .workbench-brand {
 		margin-right: 4px;
-	}
-}
-
-@media (max-width: 600px) {
-	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
-	body.workbench-body .workbench-contextbar__divider {
-		display: none;
 	}
 }
 
@@ -1975,6 +2003,189 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		top: calc(var(--workbench-contextbar-height) + 24px);
 		max-height: calc(100vh - var(--workbench-contextbar-height) - 48px);
 		overflow: auto;
+	}
+}
+
+/* Desktop: no bar across the top of the page. The sidebar is a full-height panel along the left edge: the brand and
+ * the server and repository switchers at its top, the menu under them, both staying put while the page scrolls. The
+ * page itself starts at the top of the viewport. Below 900px the context bar stays the compact top row that opens
+ * the menu sheet. */
+@media (min-width: 901px) {
+	:root {
+		/* Nothing is stuck across the top of the viewport: scroll padding and pinned result headers start at 0. */
+		--workbench-contextbar-height: 0px;
+		--workbench-sidebar-width: 224px;
+		--workbench-sidebar-context-height: 96px;
+	}
+
+	/* Opening the repository switcher widens the whole sidebar so its panel (search, list, links) fits inside it. */
+	body.workbench-body:has(#workbench-contextbar .workbench-switcher__button[aria-expanded="true"]) {
+		--workbench-sidebar-width: 400px;
+	}
+
+	body.workbench-body {
+		grid-template-columns: var(--workbench-sidebar-width) minmax(0, 1fr);
+		/* Spare height goes to the menu row only, so the context block stays at the top of the sidebar column. */
+		grid-template-rows: auto 1fr auto;
+		/* The panel spans the menu and footer rows, so the footer ends the page column at the viewport's bottom on
+		   short pages and after the content on long ones. */
+		grid-template-areas:
+			"header main"
+			"nav main"
+			"nav footer";
+		column-gap: 0;
+	}
+
+	body.workbench-body #workbench-contextbar.workbench-contextbar {
+		position: sticky;
+		top: 0;
+		align-self: start;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 2px;
+		width: var(--workbench-sidebar-width);
+		height: var(--workbench-sidebar-context-height);
+		margin: 0;
+		padding: 12px 12px 6px;
+		border: 0;
+		border-right: 1px solid var(--workbench-soft-rule);
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	/* The menu fills the rest of the viewport's height, so the panel reaches the bottom on short pages too. */
+	body.workbench-body .workbench-navigation-disclosure {
+		top: var(--workbench-sidebar-context-height);
+		width: var(--workbench-sidebar-width);
+		height: calc(100vh - var(--workbench-sidebar-context-height));
+		max-height: none;
+		margin: 0;
+		border: 0;
+		border-right: 1px solid var(--workbench-soft-rule);
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	body.workbench-body #navigation.workbench-nav {
+		padding: 12px 12px 24px;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-brand,
+	body.workbench-body .workbench-contextbar .workbench-brand:link,
+	body.workbench-body .workbench-contextbar .workbench-brand:visited {
+		gap: 8px;
+		margin: 0 0 4px;
+		padding: 0 8px 8px;
+		border-bottom: 1px solid var(--workbench-soft-rule);
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-brand img {
+		height: 24px;
+		max-height: 24px;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-brand img.product {
+		height: 16px;
+		max-height: 16px;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-switcher,
+	body.workbench-body .workbench-contextbar .workbench-switcher:not([data-workbench-switcher="repository"]) {
+		flex: 0 0 auto;
+		width: 100%;
+	}
+
+	/* One switcher per row: icon, then the key over the value, then the chevron. */
+	body.workbench-body .workbench-contextbar .workbench-switcher__button {
+		display: grid;
+		grid-template-columns: 16px minmax(0, 1fr) 14px;
+		grid-template-rows: auto auto;
+		column-gap: 8px;
+		row-gap: 1px;
+		align-items: center;
+		width: 100%;
+		max-width: none;
+		height: 40px;
+		padding: 2px 8px;
+		text-align: left;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-switcher__button > .workbench-action-icon {
+		grid-row: 1 / 3;
+		grid-column: 1;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-switcher__key {
+		grid-row: 1;
+		grid-column: 2;
+		line-height: 1.2;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-switcher__value,
+	body.workbench-body .workbench-contextbar .workbench-switcher:not([data-workbench-switcher="repository"]) .workbench-switcher__value {
+		display: block;
+		grid-row: 2;
+		grid-column: 2;
+		overflow: hidden;
+		font-size: 13px;
+		line-height: 1.2;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* The sidebar is too narrow for the repository's title; the button's tooltip and the Summary page carry it. */
+	body.workbench-body .workbench-contextbar .workbench-switcher__title {
+		display: none;
+	}
+
+	body.workbench-body .workbench-contextbar .workbench-switcher__button > .workbench-action-icon.workbench-switcher__chevron {
+		grid-row: 1 / 3;
+		grid-column: 3;
+	}
+
+	body.workbench-body .workbench-contextbar__spacer {
+		display: none;
+	}
+
+	/* The panel is a drawer inside the sidebar: it spans the rail's width and lies over the menu. */
+	body.workbench-body .workbench-contextbar .workbench-popover {
+		top: calc(100% + 8px);
+		left: -12px;
+		width: calc(100% + 24px);
+		max-width: none;
+		padding: 8px 12px 12px;
+		border: 0;
+		border-bottom: 1px solid var(--workbench-soft-rule);
+		border-right: 1px solid var(--workbench-soft-rule);
+		border-radius: 0;
+		box-shadow: 0 16px 24px -12px rgba(15, 23, 42, .2);
+	}
+
+	/* The widening animates on the grid and on the rail's parts themselves (a transition on the custom property would
+	   need @property, which crashed Chromium's renderer on viewport changes). */
+	@media (prefers-reduced-motion: no-preference) {
+		body.workbench-body {
+			transition: grid-template-columns var(--workbench-motion-layout) var(--workbench-motion-ease);
+		}
+
+		body.workbench-body #workbench-contextbar.workbench-contextbar,
+		body.workbench-body .workbench-navigation-disclosure {
+			transition: width var(--workbench-motion-layout) var(--workbench-motion-ease);
+		}
+	}
+
+	/* Compare mode folds the sidebar column away behind its own toggle; the context block goes with it. The menu then
+	   opens as a floating card of its old width, as tall as its items (query-compare.css positions it). */
+	body.workbench-body.query-compare-mode {
+		--workbench-sidebar-width: 184px;
+	}
+
+	body.workbench-body.query-compare-mode #workbench-contextbar.workbench-contextbar {
+		display: none;
+	}
+
+	body.workbench-body.query-compare-mode .workbench-navigation-disclosure {
+		height: auto;
 	}
 }
 
@@ -2126,17 +2337,66 @@ body.workbench-body #workbench-outlet:focus {
 	outline: none;
 }
 
+/* The page header: the page's sidebar icon in a 44px tile beside a 24px title, with a one-line description under it.
+ * The same scale is used at every viewport; only the gap and bottom margin tighten on small screens. */
+body.workbench-body .workbench-page-header {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+	margin: 0 0 24px;
+}
+
+body.workbench-body .workbench-page-header__icon {
+	box-sizing: border-box;
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 10px;
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
+	box-shadow: var(--workbench-shadow);
+}
+
+body.workbench-body .workbench-page-header__icon .workbench-page-header__icon-glyph {
+	flex: 0 0 20px;
+	width: 20px;
+	height: 20px;
+	margin: 0;
+	stroke-width: 1.6;
+}
+
+body.workbench-body .workbench-page-header__text {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+	padding-top: 1px;
+}
+
 body.workbench-body #content.workbench-main > h1,
 body.workbench-body #title_heading {
-	margin: 0 0 16px;
+	margin: 0;
 	padding: 0;
 	border: 0;
 	color: var(--workbench-ink);
 	font-family: inherit;
 	font-size: 24px;
-	font-weight: 600;
-	line-height: 1.25;
+	font-weight: 700;
+	letter-spacing: -0.015em;
+	line-height: 1.2;
 	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-page-header__description {
+	max-width: 72ch;
+	margin: 0;
+	color: var(--workbench-muted);
+	font-size: 14px;
+	line-height: 1.45;
 }
 
 body.workbench-body .workbench-page-surface {
@@ -2373,11 +2633,6 @@ body.workbench-body .workbench-menu-sheet__nav span.disabled {
 
 	body.workbench-body #workbench-contextbar .workbench-menu-button {
 		display: inline-flex;
-	}
-
-	body.workbench-body .workbench-switcher[data-workbench-switcher="server"],
-	body.workbench-body .workbench-contextbar__divider {
-		display: none;
 	}
 
 	body.workbench-body:not(.query-compare-mode) .workbench-navigation-disclosure {
@@ -3972,6 +4227,15 @@ body.workbench-body #footer.workbench-footer > div {
 	border-top: 1px solid var(--workbench-soft-rule);
 }
 
+/* Desktop: the page and the footer keep a gutter from the sidebar rail (the grid has no column gap there). This sits
+   after the base rules above so it wins at equal specificity. */
+@media (min-width: 901px) {
+	body.workbench-body #content.workbench-main,
+	body.workbench-body #footer.workbench-footer {
+		margin-left: var(--workbench-desktop-gutter);
+	}
+}
+
 body.workbench-body .workbench-page-surface details.workbench-options,
 body.workbench-body .workbench-page-surface details.workbench-save {
 	width: fit-content;
@@ -4254,9 +4518,9 @@ body.workbench-body .saved-query-row > .yasqe {
 		padding-bottom: 16px;
 	}
 
-	body.workbench-body #content.workbench-main > h1,
-	body.workbench-body #title_heading {
-		font-size: 24px;
+	body.workbench-body .workbench-page-header {
+		gap: 12px;
+		margin-bottom: 16px;
 	}
 
 	body.workbench-body .workbench-page-surface {

@@ -116,10 +116,13 @@ test('running a query brings a low output card up under the context bar', async 
 	expect(before).toBeGreaterThan(900 * 0.4);
 	await page.locator('#exec').click();
 	await page.locator('#query-results table.data tbody tr[data-query-row-index]').first().waitFor();
+	// Whatever sticks across the top of the viewport (nothing on a desktop) sets its height through this token.
+	const stickyTop = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement)
+		.getPropertyValue('--workbench-contextbar-height')) || 0);
 	await expect.poll(() => page.locator('#query-output').evaluate(element => Math.round(element.getBoundingClientRect().top)),
-		{ timeout: 5000 }).toBeLessThanOrEqual(56 + 16 + 2);
+		{ timeout: 5000 }).toBeLessThanOrEqual(stickyTop + 16 + 2);
 	const top = await page.locator('#query-output').evaluate(element => element.getBoundingClientRect().top);
-	expect(top).toBeGreaterThanOrEqual(56);
+	expect(top).toBeGreaterThanOrEqual(stickyTop);
 });
 
 test('a result card that is already high stays where it is', async ({ page }) => {

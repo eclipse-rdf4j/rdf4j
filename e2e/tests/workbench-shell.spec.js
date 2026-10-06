@@ -43,27 +43,30 @@ async function openRepositorySwitcher(page) {
 		.toBeVisible();
 }
 
-test('the context bar is one compact row', async ({ page }) => {
+test('on a desktop the context block tops the sidebar and names the server and repository', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
 	const bar = page.locator('#workbench-contextbar');
 	await expect(bar).toBeVisible();
 	const box = await bar.boundingBox();
-	expect(box.height).toBeLessThanOrEqual(60);
+	const menu = await page.locator('#navigation').boundingBox();
+	expect(Math.abs(box.x - menu.x), 'the context block sits in the sidebar column').toBeLessThanOrEqual(1);
+	expect(box.y + box.height, 'the menu follows the context block').toBeLessThanOrEqual(menu.y + 1);
 	await expect(bar.locator('#workbench-repository-switcher')).toContainText(REPOSITORY_ID);
-	await expect(bar.locator('#workbench-server-switcher')).toContainText(new URL(serverBaseUrl()).host);
 });
 
-test('the context bar shows the user only in the server menu', async ({ page }) => {
+test('the repository panel, not a switcher of its own, names the server and the user', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
 	const bar = page.locator('#workbench-contextbar');
-	await expect(bar.locator('.workbench-switcher__button')).toHaveCount(2);
+	await expect(bar.locator('.workbench-switcher__button')).toHaveCount(1);
+	await expect(bar.locator('#workbench-server-switcher')).toHaveCount(0);
 	await expect(bar.locator('#workbench-user-switcher')).toHaveCount(0);
-	await bar.locator('#workbench-server-switcher').click();
-	const popover = page.locator('#workbench-server-popover');
+	await bar.locator('#workbench-repository-switcher').click();
+	const popover = page.locator('#workbench-repository-popover');
 	await expect(popover).toBeVisible();
-	await expect(popover.locator('.workbench-kv__row', { hasText: 'User' }).locator('dd')).toHaveText('Not signed in');
+	await expect(popover.locator('.workbench-popover__server')).toContainText(new URL(serverBaseUrl()).host);
+	await expect(popover.locator('.workbench-popover__server')).toContainText('Not signed in');
 });
 
 test('the repository switcher filters and chooses repositories', async ({ page }) => {

@@ -265,7 +265,7 @@ test('context bar switchers stay compact and use muted keys', async ({ page }) =
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
 	const switchers = page.locator('#workbench-contextbar .workbench-switcher__button');
-	await expect(switchers).toHaveCount(2);
+	await expect(switchers).toHaveCount(1);
 	const measurements = await switchers.evaluateAll(elements => elements.map(element => {
 		const key = element.querySelector('.workbench-switcher__key');
 		return {
@@ -295,8 +295,9 @@ test('desktop navigation surface keeps its locked width and gutter', async ({ pa
 		const main = document.querySelector('#content').getBoundingClientRect();
 		return { left: navigation.left, width: navigation.width, gap: main.left - navigation.right };
 	});
-	expect(metrics.left).toBe(24);
-	expect(metrics.width).toBe(184);
+	// The sidebar is a full-height rail along the left edge; the page keeps its gutter from it.
+	expect(metrics.left).toBe(0);
+	expect(metrics.width).toBe(224);
 	expect(metrics.gap).toBe(24);
 });
 

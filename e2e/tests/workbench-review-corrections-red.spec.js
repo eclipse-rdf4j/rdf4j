@@ -184,7 +184,9 @@ test('shared shell keeps desktop gutters and mobile controls usable', async ({ p
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	await page.locator('form[action="create"] input[type="button"]').first().waitFor({ state: 'attached' });
 	const desktop = await page.locator('#navigation.workbench-nav').boundingBox();
-	expect(desktop?.x ?? 0, 'desktop navigation should keep an outer gutter').toBeGreaterThanOrEqual(16);
+	const content = await page.locator('#content').boundingBox();
+	expect((content?.x ?? 0) - ((desktop?.x ?? 0) + (desktop?.width ?? 0)),
+		'the page should keep a gutter from the desktop navigation rail').toBeGreaterThanOrEqual(16);
 
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });

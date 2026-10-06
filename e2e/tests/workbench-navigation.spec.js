@@ -113,5 +113,5 @@ test('the server page shows the same menu and server as every other page', async
 	const server = await groupLabels('/repositories/NONE/server');
 	expect(server).toEqual(repositories);
 	const serverUrl = WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server');
-	await expect(page.locator('#workbench-server-switcher')).toHaveAttribute('title', serverUrl);
+	await expect(page.locator('#workbench-repository-popover .workbench-popover__server code')).toHaveAttribute('title', serverUrl);
 });
