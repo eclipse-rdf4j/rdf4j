@@ -1823,7 +1823,8 @@ body.workbench-body .workbench-popover__server {
 	padding: 8px 12px;
 	border-top: 1px solid var(--workbench-soft-rule);
 	background: var(--workbench-inset);
-	border-radius: 0 0 var(--workbench-radius) var(--workbench-radius);
+	/* One pixel less than the panel's radius, so the strip tucks inside the panel's border at the corners. */
+	border-radius: 0 0 calc(var(--workbench-radius) - 1px) calc(var(--workbench-radius) - 1px);
 	color: var(--workbench-muted);
 	font-size: var(--workbench-control-font-size);
 }
@@ -1847,11 +1848,6 @@ body.workbench-body .workbench-popover__server a {
 	align-items: center;
 	gap: 6px;
 	font-weight: 600;
-}
-
-body.workbench-body .workbench-contextbar .workbench-popover__server {
-	margin: 8px -12px -12px;
-	border-radius: 0;
 }
 
 body.workbench-body .workbench-popover__footer a:hover {
@@ -2018,9 +2014,10 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		--workbench-sidebar-context-height: 96px;
 	}
 
-	/* Opening the repository switcher widens the whole sidebar so its panel (search, list, links) fits inside it. */
+	/* Opening the repository switcher widens the whole sidebar so its panel (search, list, links) fits inside it,
+	   with room to spare on either side of the panel. */
 	body.workbench-body:has(#workbench-contextbar .workbench-switcher__button[aria-expanded="true"]) {
-		--workbench-sidebar-width: 400px;
+		--workbench-sidebar-width: 440px;
 	}
 
 	body.workbench-body {
@@ -2147,18 +2144,32 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		display: none;
 	}
 
-	/* The panel is a drawer inside the sidebar: it spans the rail's width and lies over the menu. */
+	/* The panel hangs from the switcher button: it shares the button's left and right edges and radius, sits just
+	   under it, and floats over the menu as a card, so it reads as part of the control that opened it rather than
+	   as a drawer the width of the sidebar. */
 	body.workbench-body .workbench-contextbar .workbench-popover {
-		top: calc(100% + 8px);
-		left: -12px;
-		width: calc(100% + 24px);
+		top: calc(100% + 6px);
+		left: 0;
+		width: 100%;
 		max-width: none;
-		padding: 8px 12px 12px;
-		border: 0;
-		border-bottom: 1px solid var(--workbench-soft-rule);
-		border-right: 1px solid var(--workbench-soft-rule);
-		border-radius: 0;
-		box-shadow: 0 16px 24px -12px rgba(15, 23, 42, .2);
+		padding: 8px;
+		border: 1px solid var(--workbench-rule);
+		border-radius: var(--workbench-radius);
+		box-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 20px 40px -16px rgba(15, 23, 42, .3);
+	}
+
+	/* The open button is drawn with the same rule as the panel under it, so the two read as one control. */
+	body.workbench-body .workbench-contextbar .workbench-switcher__button[aria-expanded="true"] {
+		border-color: var(--workbench-rule);
+		background: var(--workbench-surface);
+	}
+
+	/* While the panel is open the menu's items blur and fade back, so the panel is the one thing in focus. The blur
+	   is on the items, not the sidebar panel itself, so the panel's background and its right-hand rule stay sharp and
+	   continuous with the context block above (a blurred panel would soften its own edges into a visible seam). */
+	body.workbench-body:has(#workbench-contextbar .workbench-switcher__button[aria-expanded="true"]) #navigation.workbench-nav {
+		filter: blur(3px);
+		opacity: .55;
 	}
 
 	/* The widening animates on the grid and on the rail's parts themselves (a transition on the custom property would
@@ -2171,6 +2182,12 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		body.workbench-body #workbench-contextbar.workbench-contextbar,
 		body.workbench-body .workbench-navigation-disclosure {
 			transition: width var(--workbench-motion-layout) var(--workbench-motion-ease);
+		}
+
+		body.workbench-body #navigation.workbench-nav {
+			transition:
+				filter var(--workbench-motion-layout) var(--workbench-motion-ease),
+				opacity var(--workbench-motion-layout) var(--workbench-motion-ease);
 		}
 	}
 
@@ -2337,7 +2354,7 @@ body.workbench-body #workbench-outlet:focus {
 	outline: none;
 }
 
-/* The page header: the page's sidebar icon in a 44px tile beside a 24px title, with a one-line description under it.
+/* The page header: the page's sidebar icon in a 50px tile beside a 24px title, with a one-line description under it.
  * The same scale is used at every viewport; only the gap and bottom margin tighten on small screens. */
 body.workbench-body .workbench-page-header {
 	display: flex;
@@ -2352,8 +2369,9 @@ body.workbench-body .workbench-page-header__icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 44px;
-	height: 44px;
+	width: 50px;
+	height: 50px;
+	margin-top: 2px;
 	border: 1px solid var(--workbench-soft-rule);
 	border-radius: 10px;
 	background: var(--workbench-surface);
@@ -2362,9 +2380,9 @@ body.workbench-body .workbench-page-header__icon {
 }
 
 body.workbench-body .workbench-page-header__icon .workbench-page-header__icon-glyph {
-	flex: 0 0 20px;
-	width: 20px;
-	height: 20px;
+	flex: 0 0 22px;
+	width: 22px;
+	height: 22px;
 	margin: 0;
 	stroke-width: 1.6;
 }
