@@ -37,6 +37,29 @@ import org.junit.jupiter.api.Test;
 class FederationManagerShutdownTest {
 
 	@Test
+	void shutdownCompletesAndRestoresCallerInterrupt() throws Exception {
+		boolean wasInterrupted = Thread.interrupted();
+		FedXRepository repository = FedXFactory.newFederation().withMembers(List.of()).create();
+
+		try {
+			repository.init();
+			Thread.currentThread().interrupt();
+
+			assertDoesNotThrow(repository::shutDown);
+			assertFalse(repository.isInitialized(), "shutdown should leave the repository uninitialized");
+			assertTrue(Thread.currentThread().isInterrupted(), "shutdown should restore the caller's interrupt status");
+		} finally {
+			Thread.interrupted();
+			if (repository.isInitialized()) {
+				repository.shutDown();
+			}
+			if (wasInterrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	@Test
 	void shutdownCompletesAndRestoresInterruptArrivingDuringSchedulerWait() throws Exception {
 		boolean wasInterrupted = Thread.interrupted();
 		FedXRepository repository = FedXFactory.newFederation().withMembers(List.of()).create();
