@@ -60,6 +60,7 @@ test('export page prefers its own preview-limit query parameter', () => {
 test('explore page leaves its lists to the view, restores limits, and renders ranges', () => {
     const harness = createExploreBrowserHarness({
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa&offset=2'
+            + '&limit_explore=4'
     });
     const firstListWrapper = harness.registerElement('div', { id: 'wrapper-1' });
     const firstList = harness.registerElement('ul', { id: 'list-1' });
@@ -78,7 +79,8 @@ test('explore page leaves its lists to the view, restores limits, and renders ra
     const shellList = harness.registerElement('ul', { id: 'workbench-repository-options' });
     popover.appendChild(shellList);
     harness.document.body.appendChild(popover);
-    harness.document.cookie = 'limit_explore=4; total_result_count=9';
+    // The limit is the request's (ExploreServlet reads no limit_explore cookie; round-2 R10), not an older page's cookie.
+    harness.document.cookie = 'limit_explore=7; total_result_count=9';
 
     harness.loadExploreScript();
     harness.workbench.explore.mount(harness.document.body);

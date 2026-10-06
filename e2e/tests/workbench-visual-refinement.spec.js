@@ -543,9 +543,10 @@ async function exportContentGap(page) {
 	return page.locator('#export-results').evaluate(section => {
 		const actions = section.querySelector('.export-preview__controls').getBoundingClientRect();
 		const empty = section.querySelector('.workbench-empty');
+		// The statements are the shared result table; its root starts where its table (or records) start.
 		const content = empty && getComputedStyle(empty).display !== 'none'
 			? empty
-			: section.querySelector('table.data');
+			: section.querySelector('.query-result-layout');
 		return content.getBoundingClientRect().top - actions.bottom;
 	});
 }

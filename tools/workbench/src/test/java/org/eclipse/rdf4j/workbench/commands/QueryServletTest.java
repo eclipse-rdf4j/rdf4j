@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.support.TestServerCredentials;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
@@ -425,6 +426,95 @@ public class QueryServletTest {
 				eq(SHORT_QUERY), eq(true), eq(100), eq(17));
 	}
 
+	/**
+	 * The Connection page signs in by storing the server credentials in the {@code server-user-password} cookie, as
+	 * base64 of {@code user:password}; nothing sends a {@code server-user} parameter or cookie.
+	 */
+	@Test
+	public void privateSavesBelongToTheUserOfTheServerCredentialsCookie() throws Exception {
+		QueryStorage storage = prepareSave("true", null);
+		MockHttpServletRequest rawRequest = rawSaveRequest("true");
+		rawRequest.setCookies(credentialsCookie("alice", "secret"));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.doPost(new WorkbenchRequest(servlet.repository(), rawRequest, Map.of()), response);
+
+		assertThat(response.getContentAsString()).doesNotContain("require a signed-in user");
+		verify(storage).saveQuery(any(), eq("my-query"), eq("alice"), eq(false), eq(QueryLanguage.SPARQL),
+				eq(SHORT_QUERY), eq(true), eq(100), eq(17));
+	}
+
+	@Test
+	public void aServerUserParameterDoesNotSignInForPrivateSaves() throws Exception {
+		QueryStorage storage = prepareSave("true", null);
+		MockHttpServletRequest rawRequest = rawSaveRequest("true");
+		rawRequest.addParameter("server-user", "mallory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.doPost(new WorkbenchRequest(servlet.repository(), rawRequest, Map.of()), response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+		assertThat(response.getContentAsString()).contains("Private saved queries require a signed-in user");
+		verify(storage, never()).saveQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any(),
+				any(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(),
+				org.mockito.ArgumentMatchers.anyInt());
+	}
+
+	@Test
+	public void sharedSavesOfAnonymousUsersIgnoreAServerUserParameter() throws Exception {
+		QueryStorage storage = prepareSave("false", null);
+		MockHttpServletRequest rawRequest = rawSaveRequest("false");
+		rawRequest.addParameter("server-user", "mallory");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.doPost(new WorkbenchRequest(servlet.repository(), rawRequest, Map.of()), response);
+
+		verify(storage).saveQuery(any(), eq("my-query"), eq(""), eq(true), eq(QueryLanguage.SPARQL),
+				eq(SHORT_QUERY), eq(true), eq(100), eq(17));
+	}
+
+	@Test
+	public void savedQueryReadsAreCheckedForTheUserOfTheServerCredentialsCookie() throws Exception {
+		QueryStorage storage = prepareSave("false", null);
+		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
+		when(storage.selectSavedQuery(anyString(), eq("alice"), eq("private-query"))).thenReturn(queryId);
+		when(storage.canRead(queryId, "bob")).thenReturn(false);
+		MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
+		rawRequest.addParameter("action", "edit");
+		rawRequest.addParameter("ref", "id");
+		rawRequest.addParameter("query", "private-query");
+		rawRequest.addParameter("owner", "alice");
+		rawRequest.addParameter("server-user", "alice");
+		rawRequest.setCookies(credentialsCookie("bob", "secret"));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		WorkbenchRequest request = new WorkbenchRequest(servlet.repository(), rawRequest, Map.of());
+
+		assertThatThrownBy(() -> servlet.doPost(request, response))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessage("Current user may not read the given query.");
+		verify(storage).canRead(queryId, "bob");
+	}
+
+	private static Cookie credentialsCookie(String user, String password) {
+		// The Connection page encodes the credentials with window.btoa, which maps each character to one byte.
+		return new Cookie("server-user-password", java.util.Base64.getEncoder()
+				.encodeToString((user + ":" + password).getBytes(StandardCharsets.ISO_8859_1)));
+	}
+
+	private static MockHttpServletRequest rawSaveRequest(String savePrivate) {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		request.addParameter("action", "save");
+		request.addParameter("query", SHORT_QUERY);
+		request.addParameter("query-name", "my-query");
+		request.addParameter("queryLn", "SPARQL");
+		request.addParameter("limit_query", "100");
+		request.addParameter("query-timeout", "17");
+		request.addParameter("overwrite", "false");
+		request.addParameter("save-private", savePrivate);
+		request.addParameter("infer", "true");
+		return request;
+	}
+
 	@Test
 	public void executingADeletedSavedQueryAnswersAPageDataErrorRecord() throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore());
@@ -583,7 +673,9 @@ public class QueryServletTest {
 		when(request.getParameter("save-private")).thenReturn(savePrivate);
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
-		when(request.getParameter("server-user")).thenReturn(user);
+		if (user != null) {
+			when(request.getCookies()).thenReturn(TestServerCredentials.signedIn(user));
+		}
 		return request;
 	}
 
@@ -988,7 +1080,7 @@ public class QueryServletTest {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
 		when(request.getParameter("owner")).thenReturn("other-user");
-		when(request.getParameter("server-user")).thenReturn("current-user");
+		when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("current-user"));
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
 		when(request.getParameter("explain-format")).thenReturn("text");
@@ -1947,6 +2039,10 @@ public class QueryServletTest {
 	private static final class TestableQueryServlet extends QueryServlet {
 		private void setCookieHandler(CookieHandler cookieHandler) {
 			this.cookies = cookieHandler;
+		}
+
+		private Repository repository() {
+			return repository;
 		}
 
 		private void setPolicy(WorkbenchPolicy policy) {

@@ -1724,7 +1724,7 @@ for (const stage of ['lookup', 'replacement confirmation', 'unusual id confirmat
         const route = loadSendRouter();
         const browser = require('./form-browser-harness.js').createFormBrowserHarness();
         const form = browser.registerElement('form', { attributes: { action: 'create', method: 'post' } });
-        const id = browser.registerElement('input', { id: 'id', value: 'Unusual ID' });
+        const id = browser.registerElement('input', { id: 'id', value: 'Unusual_ID' });
         form.appendChild(id);
         browser.document.body.appendChild(form);
         browser.loadScripts(['create.js']);
@@ -1738,11 +1738,13 @@ for (const stage of ['lookup', 'replacement confirmation', 'unusual id confirmat
             return confirmations[dialogs.length - 1].promise;
         };
         browser.context.checkOverwrite();
-        if (stage !== 'lookup') { browser.ajaxRequests[0].resolve({}); }
+        // The repository list, which names the id: it exists.
+        const listed = { results: { bindings: [{ id: { value: 'Unusual_ID' } }] } };
+        if (stage !== 'lookup') { browser.ajaxRequests[0].resolve(listed); await settle(); }
         if (stage === 'unusual id confirmation') { confirmations[0].resolve(true); await settle(); }
         await visit(route, 'contexts');
         await visit(route, 'update');
-        if (stage === 'lookup') { browser.ajaxRequests[0].resolve({}); }
+        if (stage === 'lookup') { browser.ajaxRequests[0].resolve(listed); }
         confirmations[0].resolve(true);
         confirmations[1].resolve(true);
         await settle();
@@ -1866,8 +1868,24 @@ test('A42: a form sent in place answered by a page-protocol error stays on its p
     assert.equal(await sent, 'failed');
     assert.equal(harness.log.some((line) => line.startsWith('render')), false, 'the form is not replaced');
     assert.deepEqual(failures.map((failure) => failure.status), [409]);
-    assert.match(failures[0].message, /409: Failed SHACL validation <urn:shape> sh:conforms false/, 'the report keeps its IRIs');
+    // Round 3 (C13): the server's message is kept whole and line by line, not squeezed onto one cut line.
+    assert.match(failures[0].message, /409: Failed SHACL validation\n<urn:shape> sh:conforms false/, 'the report keeps its IRIs and lines');
     assert.deepEqual(harness.disposed, ['update']);
+});
+
+// Round 3 (C13): a long server explanation is not cut at 300 characters.
+test('a form refused with a long server explanation reports all of it', async () => {
+    const harness = loadSendRouter();
+    const failures = [];
+    const lines = Array.from({ length: 20 }, (_, index) => '- ex:node' + index + ', ex:age: value "x": expected datatype xsd:integer');
+    harness.workbench.app.loadModelFromResponse = (response) => Promise.resolve(harness.model('update', {
+        finalUrl: response.url, error: { status: 409, code: 'shacl-validation',
+            message: 'SHACL validation failed: 20 results\r\n' + lines.join('\r\n') + '\r\n\r\n\r\n' } }));
+    const sent = harness.router.send(fakeForm(harness, { action: 'update', method: 'post' }), null,
+        (failure) => failures.push(failure));
+    harness.respond({ url: base + 'update', status: 409, viewId: 'update' });
+    assert.equal(await sent, 'failed');
+    assert.equal(failures[0].message, 'The server answered 409: SHACL validation failed: 20 results\n' + lines.join('\n'));
 });
 
 test('A4: the parked Query outlet does not stay busy, and is not busy when it is shown again', async () => {
@@ -1906,6 +1924,43 @@ test('A4: restoring the kept Query page while another page loads leaves no busy 
     assert.equal(typesOutlet.getAttribute('aria-busy'), null, 'the page that was left is not busy either');
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.equal(queryOutlet.getAttribute('data-workbench-route-loading'), null, 'no late progress bar');
+});
+
+/** The keep-alive router with the views' real outlet lifecycle: a detached outlet leaves none until the next render. */
+function loadDetachingKeepAliveRouter() {
+    const harness = loadKeepAliveRouter();
+    let current = harness.currentOutlet();
+    harness.workbench.views.outletOf = () => current;
+    harness.workbench.views.detachOutlet = () => {
+        const old = current;
+        current = null;
+        return old;
+    };
+    harness.workbench.views.attachOutlet = (appMount, element) => { current = element; };
+    const render = harness.workbench.views.render;
+    harness.workbench.views.render = function(appMount, loaded) {
+        if (!current) {
+            current = fakeElement({ id: 'workbench-outlet' });
+            current.querySelector = () => null;
+        }
+        return render.apply(this, arguments);
+    };
+    return Object.assign(harness, { currentOutlet: () => current });
+}
+
+test('leaving the kept Query page navigates although the next outlet only exists once that page is rendered', async () => {
+    const harness = loadDetachingKeepAliveRouter();
+    harness.start();
+    await visit(harness, 'query');
+    const queryOutlet = harness.currentOutlet();
+    assert.equal(await visit(harness, 'types'), 'committed', 'the menu leaves the Query page');
+    const typesOutlet = harness.currentOutlet();
+    assert.notEqual(typesOutlet, queryOutlet);
+    assert.deepEqual(harness.kept.children, [queryOutlet]);
+    assert.equal(queryOutlet.getAttribute('aria-busy'), null, 'the parked page is not busy');
+    await settle();
+    assert.equal(typesOutlet.getAttribute('aria-busy'), null, 'the page shown is not left busy');
+    assert.equal(await visit(harness, 'summary'), 'committed', 'and keeps navigating afterwards');
 });
 
 test('A20: a multipart form is sent with its content part last, where the Workbench reads it', async () => {
@@ -1952,6 +2007,49 @@ for (const stage of ['mount', 'ready']) {
         assert.deepEqual(harness.window.assigned, [base + 'types'], 'the browser loads the page instead');
     });
 }
+
+// Round 2 (R12): loading the page again with GET is no cure for a page shown from a form's answer (it loses what the
+// form sent, e.g. Saved queries Edit -> Query page), nor for a row store that failed (mostly transient).
+function registerFailingTypes(harness, failure) {
+    harness.workbench.routes.register({
+        viewId: 'types', routerReady: true, scripts: () => [], baseScripts: () => [],
+        mount() {
+            return { ready: Promise.reject(failure), dispose() {} };
+        }
+    });
+}
+
+test('a page shown from a form\'s answer whose ready fails stays and says why instead of being loaded with GET', async () => {
+    const harness = loadFormRouter();
+    registerFailingTypes(harness, new Error('route script failed'));
+    harness.start();
+    const sent = harness.router.send(fakeForm(harness, { action: 'types', method: 'post' }, [['action', 'edit']]));
+    harness.respond({ type: 'basic', url: base + 'types', redirected: false, viewId: 'types' });
+    assert.equal(await sent, 'committed');
+    await settle();
+    await settle();
+    assert.deepEqual(harness.window.assigned, [], 'the page is not loaded again with GET');
+    assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the page is not left busy');
+    assert.equal(harness.router.current().viewId, 'types');
+    assert.match(harness.consoleErrors[harness.consoleErrors.length - 1][0], /could not open .*\/types completely/);
+});
+
+test('a page whose row store fails while it opens stays and says why instead of being loaded again', async () => {
+    const harness = loadRouter();
+    const failure = new Error('Workbench query result worker stopped unexpectedly.');
+    failure.rowStore = true;
+    registerFailingTypes(harness, failure);
+    harness.start();
+    const model = harness.model('types');
+    const navigation = harness.router.navigate(base + 'types', { history: 'push' });
+    await harness.answer('types', model);
+    assert.equal(await navigation, 'committed');
+    await settle();
+    await settle();
+    assert.deepEqual(harness.window.assigned, [], 'the page is not loaded again');
+    assert.equal(harness.outlet.getAttribute('aria-busy'), null, 'the page is not left busy');
+    assert.match(model.sendFailure && model.sendFailure.message, /worker stopped unexpectedly/, 'the page says what failed');
+});
 
 test('A7: the kept Query page shown again gets the repository namespaces as they are now', async () => {
     const harness = loadKeepAliveRouter();

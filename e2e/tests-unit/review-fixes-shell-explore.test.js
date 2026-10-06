@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createFormBrowserHarness } = require('./form-browser-harness.js');
+const { renderPageResultTables } = require('./page-result-table-harness.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
@@ -82,7 +83,7 @@ test('A10: Create keeps a "+" in the id and title from its URL', () => {
     assert.equal(title.value, 'C++ store');
 });
 
-test('A11: a large Explore page shows its terms like the grouped view (IRIs, literals, datatypes, default graph)', () => {
+test('A11: a large Explore page shows its terms like the grouped view (IRIs, literals, datatypes, default graph)', async () => {
     const wb = loadViews();
     const rows = [];
     for (let index = 0; index < 90; index++) {
@@ -92,8 +93,10 @@ test('A11: a large Explore page shows its terms like the grouped view (IRIs, lit
             index % 2 ? iri('urn:g') : null]);
     }
     const model = { viewId: 'explore', vars, rows, rowCount: rows.length, metadata: { 'explore-resource': '<urn:p>' } };
-    const markup = flat(quiet(() => wb.views.pageTemplate(model, ctx, runtime())));
-    const table = markup.slice(markup.indexOf('<table'), markup.indexOf('</table>'));
+    // Both are the shared result table (.agent/execplans/workbench-shared-result-table.md).
+    const page = await quiet(() => renderPageResultTables(wb, model, ctx));
+    const table = page.markup('explore-all');
+    assert.deepEqual(page.headers('explore-all'), ['Subject', 'Predicate', 'Object', 'Graph']);
     assert.match(table, /class="rdf-datatype"/, 'datatypes are tagged so "Show datatypes" applies');
     assert.match(table, /Default graph/, 'a statement in the default graph says so');
     assert.match(table, /class="resource"/, 'cells are formatted like query results');

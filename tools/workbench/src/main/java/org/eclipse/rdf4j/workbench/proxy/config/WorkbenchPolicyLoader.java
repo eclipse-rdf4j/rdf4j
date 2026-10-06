@@ -26,13 +26,22 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.app.config.Configuration;
 import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 
-/** Loads and caches the validated Workbench policy for one servlet application. */
+/**
+ * Loads and caches the validated Workbench policy for one servlet application. A policy that cannot be loaded is logged
+ * once and also cached: the Workbench then answers with the policy error until it is restarted with a valid file.
+ */
 public final class WorkbenchPolicyLoader {
 	public static final String POLICY_ATTRIBUTE = WorkbenchPolicyLoader.class.getName() + ".policy";
+
+	private static final String POLICY_FAILURE_ATTRIBUTE = WorkbenchPolicyLoader.class.getName() + ".failure";
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(WorkbenchPolicyLoader.class);
 
 	private static final String APP_CONFIGURATION_ATTRIBUTE = WorkbenchPolicyLoader.class.getName()
 			+ ".appConfiguration";
@@ -46,7 +55,9 @@ public final class WorkbenchPolicyLoader {
 	 * @param context          servlet application context
 	 * @param appConfiguration already initialized Workbench application configuration, if available
 	 * @return immutable application policy
-	 * @throws ServletException if the configuration cannot be loaded or validated
+	 * @throws InvalidWorkbenchPolicyException if the policy cannot be loaded or validated, now or when it was first
+	 *                                         loaded
+	 * @throws ServletException                if there is no servlet context
 	 */
 	public static WorkbenchPolicy getPolicy(ServletContext context, AppConfiguration appConfiguration)
 			throws ServletException {
@@ -62,16 +73,32 @@ public final class WorkbenchPolicyLoader {
 			if (existing instanceof WorkbenchPolicy) {
 				return (WorkbenchPolicy) existing;
 			}
+			Object failure = context.getAttribute(POLICY_FAILURE_ATTRIBUTE);
+			if (failure instanceof Throwable cause) {
+				throw new InvalidWorkbenchPolicyException(cause);
+			}
+			Path dataDirectory = null;
 			try {
 				AppConfiguration config = getAppConfiguration(context, appConfiguration);
-				Properties properties = loadProperties(config.getDataDir().toPath());
+				dataDirectory = config.getDataDir().toPath();
+				Properties properties = loadProperties(dataDirectory);
 				WorkbenchPolicy policy = WorkbenchPolicy.fromProperties(properties, Set.of());
 				context.setAttribute(POLICY_ATTRIBUTE, policy);
 				return policy;
 			} catch (IOException | IllegalArgumentException e) {
-				throw new ServletException("Unable to load valid Workbench policy", e);
+				InvalidWorkbenchPolicyException invalid = new InvalidWorkbenchPolicyException(e);
+				LOGGER.error("The RDF4J Workbench policy is invalid: {}. The Workbench answers its pages with "
+						+ "503 Service Unavailable until workbench.properties is fixed and the Workbench is restarted "
+						+ "(external file: {}).", invalid.getProblem(), externalFile(dataDirectory), e);
+				context.setAttribute(POLICY_FAILURE_ATTRIBUTE, e);
+				throw invalid;
 			}
 		}
+	}
+
+	private static Object externalFile(Path dataDirectory) {
+		return dataDirectory == null ? "unknown data directory"
+				: dataDirectory.resolve(Configuration.DIR).resolve("workbench.properties");
 	}
 
 	private static AppConfiguration getAppConfiguration(ServletContext context, AppConfiguration supplied)

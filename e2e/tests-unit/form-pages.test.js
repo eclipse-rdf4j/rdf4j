@@ -137,10 +137,12 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.advanceTimers(0);
     assert.equal(createButton.disabled, true);
 
-    id.value = 'invalid id';
+    // The repository list tells whether the id exists (an unknown id's information page would answer 404).
+    id.value = 'Unusual_ID';
     harness.context.checkOverwrite();
-    const infoRequest = harness.ajaxRequests[0];
-    infoRequest.resolve({});
+    const listRequest = harness.ajaxRequests[0];
+    assert.equal(listRequest.options.url, '../NONE/repositories');
+    listRequest.resolve({ results: { bindings: [{ id: { value: 'Unusual_ID' } }] } });
     await settle();
     assert.equal(createForm.submitCount, 1);
     assert.equal(harness.confirms.length, 2);
@@ -150,16 +152,22 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     createForm.submitCount = 0;
     id.value = 'new-id';
     harness.context.checkOverwrite();
-    harness.ajaxRequests[1].status(500);
+    harness.ajaxRequests[1].resolve({ results: { bindings: [{ id: { value: 'other' } }] } });
     await settle();
     assert.equal(createForm.submitCount, 1);
 
-    // Unknown repositories answer 404 since the in-shell not-found page; 500 stays accepted for older servers.
-    createForm.submitCount = 0;
-    harness.context.checkOverwrite();
-    harness.ajaxRequests[2].status(404);
-    await settle();
-    assert.equal(createForm.submitCount, 1);
+    // Without the list (a policy can hide it) the id's information page answers: 404 since the in-shell not-found
+    // page, 500 on older servers.
+    for (const status of [500, 404]) {
+        createForm.submitCount = 0;
+        const sent = harness.ajaxRequests.length;
+        harness.context.checkOverwrite();
+        harness.ajaxRequests[sent].status(403);
+        assert.equal(harness.ajaxRequests[sent + 1].options.url, '../new-id/info');
+        harness.ajaxRequests[sent + 1].status(status);
+        await settle();
+        assert.equal(createForm.submitCount, 1);
+    }
 });
 
 test('create federate page enables create only for valid member selection', () => {

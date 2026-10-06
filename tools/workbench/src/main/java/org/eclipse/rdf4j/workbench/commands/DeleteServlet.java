@@ -63,6 +63,7 @@ public class DeleteServlet extends TransformationServlet {
 			// Respond to 'checkSafe' XmlHttpRequest with JSON.
 			ObjectNode jsonObject = mapper.createObjectNode();
 			jsonObject.put("safe", manager.isSafeToRemove(checkSafe));
+			resp.setContentType("application/json");
 			final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));
 			writer.write(mapper.writeValueAsString(jsonObject));
 			writer.flush();

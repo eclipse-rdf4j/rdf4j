@@ -19,6 +19,131 @@ module workbench {
         export var id: JQuery;
         export var title: JQuery;
 
+        /** The id of the message that explains an id the server cannot use. */
+        var ID_ERROR = 'repository-id-error';
+
+        /**
+         * The repository ids the server accepts (CreateServlet answers any other with 400 and the same message): ASCII
+         * letters, digits, '-', '_', '.' and '@' (the Remote template's default id is SYSTEM@localhost), and not only
+         * dots. Such an id works as a URL path segment and as a directory name.
+         */
+        var VALID_ID = /^(?!\.+$)[A-Za-z0-9._@-]+$/;
+
+        /**
+         * Why a repository id cannot be used, or '' when it can. An empty id is explained only when asked for (once
+         * the field was edited): a form that opens without an id keeps Create disabled without an error.
+         */
+        export function idProblem(value: string, explainEmpty?: boolean): string {
+            if (!value) {
+                return explainEmpty ? 'Enter a repository ID.' : '';
+            }
+            return VALID_ID.test(value) ? '' : "Repository ID '" + value + "' is not valid: use only the letters a-z "
+                + "and A-Z, digits, '-', '_', '.' and '@', and not only dots.";
+        }
+
+        /** The message under the id field, created on first use. */
+        function idError(field: HTMLElement): HTMLElement {
+            var doc = field.ownerDocument;
+            var error = <HTMLElement>doc.getElementById(ID_ERROR);
+            if (!error) {
+                error = doc.createElement('span');
+                error.id = ID_ERROR;
+                error.className = 'error workbench-field-error';
+                error.setAttribute('role', 'alert');
+                error.hidden = true;
+                if (field.parentNode) {
+                    field.parentNode.insertBefore(error, field.nextSibling);
+                }
+            }
+            return error;
+        }
+
+        /**
+         * Shows or clears the explanation of an unusable id at the id field (of an empty one too with explainEmpty).
+         * With focus, the field takes focus so the id can be corrected. Returns whether the id can be used.
+         */
+        export function checkId(focus?: boolean, explainEmpty?: boolean): boolean {
+            var field = id && <HTMLInputElement>id.get(0);
+            if (!field) {
+                return true;
+            }
+            var problem = idProblem(field.value, explainEmpty);
+            var error = idError(field);
+            error.textContent = problem;
+            error.hidden = !problem;
+            if (problem) {
+                field.setAttribute('aria-invalid', 'true');
+                field.setAttribute('aria-describedby', ID_ERROR);
+                if (focus) {
+                    field.focus();
+                }
+            } else {
+                field.removeAttribute('aria-invalid');
+                if (field.getAttribute('aria-describedby') === ID_ERROR) {
+                    field.removeAttribute('aria-describedby');
+                }
+            }
+            return !problem && !!field.value;
+        }
+
+        /**
+         * Whether a repository with this id exists: 'exists', 'absent', or '' when the server could not tell. It reads
+         * the repository list, which answers without an error either way (an unknown id's information page answers
+         * 404 Not Found, which browsers log as an error). When the list cannot be read (a policy can hide it), the
+         * id's information page answers instead.
+         */
+        export function existence(value: string, ownerUrl: string, isCurrent?: () => boolean): Promise<string> {
+            var resolve = function(path: string) {
+                return ownerUrl ? new URL(path, ownerUrl).href : path;
+            };
+            return new Promise<string>(function(done) {
+                var listed: string = null;
+                $.ajax({
+                    url: resolve('../NONE/repositories'),
+                    dataType: 'json',
+                    headers: { Accept: 'application/sparql-results+json' },
+                    success: function(data: any) {
+                        var bindings = data && data.results && data.results.bindings;
+                        if (bindings && typeof bindings.length === 'number') {
+                            listed = 'absent';
+                            for (var i = 0; i < bindings.length; i++) {
+                                if (bindings[i] && bindings[i].id && bindings[i].id.value === value) {
+                                    listed = 'exists';
+                                }
+                            }
+                        }
+                    },
+                    complete: function() {
+                        // A form that is no longer shown needs no second answer.
+                        if (listed || (isCurrent && !isCurrent())) {
+                            done(listed || '');
+                            return;
+                        }
+                        var found = '';
+                        $.ajax({
+                            url: resolve('../' + encodeURIComponent(value) + '/info'),
+                            success: function() {
+                                found = 'exists';
+                            },
+                            statusCode: {
+                                // 404 answers an unknown repository; 500 is kept for servers from before the
+                                // not-found page.
+                                404: function() {
+                                    found = 'absent';
+                                },
+                                500: function() {
+                                    found = 'absent';
+                                }
+                            },
+                            complete: function() {
+                                done(found);
+                            }
+                        });
+                    }
+                });
+            });
+        }
+
         /**
          * Route mount (plan task M7.2): group the advanced settings, fill id and title from the URL and keep Create
          * disabled while the id is empty. The returned function unbinds the id handler and the advanced disclosure.
@@ -245,11 +370,11 @@ module workbench {
             title = findFieldByRole('repository-title', '#title', outlet);
 
             /**
-             * Disables the create button if the id field doesn't have any text.
+             * Disables the create button while the id is empty or one the server does not accept.
              */
             var createButton = $(outlet).find('input#create');
-            function disableCreateIfEmptyId() {
-                createButton.prop('disabled', !(/.+/.test(id.val())));
+            function disableCreateUnlessValidId() {
+                createButton.prop('disabled', !VALID_ID.test(id.val() || ''));
             }
 
             // Populate parameters
@@ -268,13 +393,19 @@ module workbench {
                 }
             }
 
-            disableCreateIfEmptyId();
+            disableCreateUnlessValidId();
+            checkId(false);
 
-            // Calls another function with a delay of 0 msec. (Workaround for 
+            // Calls another function with a delay of 0 msec. (Workaround for
             // annoying browser behavior.)
             var fields = id;
             fields.on('keydown.wbRoute paste.wbRoute cut.wbRoute', function() {
-                setTimeout(disableCreateIfEmptyId, 0);
+                setTimeout(disableCreateUnlessValidId, 0);
+            });
+            // Explains an id the server cannot use (or an emptied one) as it is typed, and clears that once it is fixed.
+            fields.on('input.wbRoute', function() {
+                disableCreateUnlessValidId();
+                checkId(false, true);
             });
             return function() {
                 fields.off('.wbRoute');
@@ -285,58 +416,41 @@ module workbench {
 }
 
 /**
- * Invoked by the "Create" button on the form for all but 
- * Create form views. Checks with the InfoServlet for the user-provided id
- * for the existence of the id already, giving a chance to back out if it
- * does. An unknown id answers 404 Not Found (500 on older servers).
+ * Invoked by the "Create" button on the form for all but Create form views. An id the server cannot use is explained
+ * at the id field and not sent. Otherwise the repository list tells whether the id exists already, giving a chance to
+ * back out before its configuration is replaced.
  */
 function checkOverwrite() {
-    // 'exists' asks before replacing the configuration; 'absent' creates; anything else sends nothing.
-    var found = '';
     var id = workbench.create.id.val();
     var form = <HTMLFormElement>$(workbench.create.id.get(0)).closest('form').get(0);
     var owner = workbench.captureFormOwner(form);
     if (!owner.isCurrent()) { return; }
-    var lookup = '../' + id + '/info';
-    $.ajax({
-        url: owner.url ? new URL(lookup, owner.url).href : lookup,
-        success: function () {
-            found = 'exists';
-        },
-        statusCode: {
-            // 404 answers an unknown repository; 500 is kept for servers from before the not-found page.
-            404: function () {
-                found = 'absent';
-            },
-            500: function () {
-                found = 'absent';
+    if (!workbench.create.checkId(true, true)) { return; }
+    // 'exists' asks before replacing the configuration; 'absent' creates; anything else sends nothing.
+    workbench.create.existence(id, owner.url, owner.isCurrent).then(function(found: string) {
+        if (!owner.isCurrent()) { return false; }
+        var overwrite: Promise<boolean> = found == 'exists' ? workbench.confirmDialog.open({
+            title: 'Replace repository configuration?',
+            body: 'A repository with the id "' + id + '" already exists. Creating it again replaces its configuration.',
+            confirmLabel: 'Replace configuration',
+            danger: true
+        }) : Promise.resolve(found == 'absent');
+        return overwrite.then(function(submit: boolean) {
+            if (!owner.isCurrent()) { return false; }
+            if (submit && !id.match(/^[a-z0-9._-]+$/)) {
+                return workbench.confirmDialog.open({
+                    title: 'Use this repository id?',
+                    body: 'The id "' + id + '" contains characters other than lowercase letters a-z, digits, '
+                        + 'dots, underscores and hyphens, which some tools cannot handle.',
+                    confirmLabel: 'Create repository',
+                    danger: false
+                });
             }
-        },
-		complete : function(xhr, status) {
-            if (!owner.isCurrent()) { return; }
-            var overwrite: Promise<boolean> = found == 'exists' ? workbench.confirmDialog.open({
-                title: 'Replace repository configuration?',
-                body: 'A repository with the id "' + id + '" already exists. Creating it again replaces its configuration.',
-                confirmLabel: 'Replace configuration',
-                danger: true
-            }) : Promise.resolve(found == 'absent');
-            overwrite.then(function(submit: boolean) {
-                if (!owner.isCurrent()) { return false; }
-                if (submit && !id.match(/^[a-z0-9._-]+$/)) {
-                    return workbench.confirmDialog.open({
-                        title: 'Use this repository id?',
-                        body: 'The id "' + id + '" contains characters other than lowercase letters, digits, '
-                            + 'dots, underscores and hyphens, which some tools cannot handle.',
-                        confirmLabel: 'Create repository',
-                        danger: false
-                    });
-                }
-                return submit;
-            }).then(function(submit: boolean) {
-                if (submit && owner.isCurrent()) {
-                    workbench.submitForm(form);
-                }
-            });
+            return submit;
+        });
+    }).then(function(submit: boolean) {
+        if (submit && owner.isCurrent()) {
+            workbench.submitForm(form);
         }
     });
 }

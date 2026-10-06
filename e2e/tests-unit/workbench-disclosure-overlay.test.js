@@ -160,6 +160,18 @@ test('a press outside an open pane closes it; a press in it or on its toggle doe
     assert.equal(pane.document.listenerCount('keydown'), 0);
 });
 
+// Round-3 finding C2: a pane in the page flow (a form's Advanced settings, position: relative) is part of its form, so
+// a press elsewhere in the form leaves it open; Escape still closes it.
+test('a pane in the page flow stays open when the page is pressed elsewhere', () => {
+    const pane = paneHarness();
+    pane.panel.style.position = 'relative';
+    pane.button.click();
+    pane.document.trigger('pointerdown', { target: pane.outside });
+    assert.equal(pane.open(), true);
+    pane.button.click();
+    assert.equal(pane.open(), false, 'its toggle closes it');
+});
+
 test('Escape in an open pane or on its toggle closes it and returns focus to the toggle', () => {
     const pane = paneHarness();
     pane.button.click();
@@ -259,4 +271,22 @@ test('releasing a pane keeps its target watched while another pane uses it as co
     assert.equal(observed.has(pane.field), true, 'the outer pane still uses the target as content');
     pane.release();
     assert.equal(observed.has(pane.field), false, 'the target is released with its final owner');
+});
+
+// Round 2 (R23): a page rendered again in place keeps its disclosure elements and binds them again. Released, the
+// closed pane must not keep the inert and aria-hidden it was closed with, or the next binding opens an inert pane.
+test('a pane released while closed and bound again opens live, not inert', () => {
+    const pane = paneHarness();
+    assert.equal(pane.panel.inert, true, 'a bound closed pane is inert');
+
+    pane.release();
+    assert.equal(!!pane.panel.inert, false, 'releasing gives the pane back as it was before it was bound');
+    assert.equal(pane.panel.getAttribute('aria-hidden') ?? null, null, 'and without the aria-hidden it closed with');
+
+    const releaseAgain = pane.workbench.detailDisclosure.bind(pane.button, pane.panel, pane.owner);
+    pane.button.click();
+    assert.equal(pane.open(), true);
+    assert.equal(!!pane.panel.inert, false, 'the pane opened by the second binding takes clicks');
+    assert.equal(pane.panel.getAttribute('aria-hidden'), 'false');
+    releaseAgain();
 });

@@ -12,7 +12,8 @@
 
 // Plan task M14.3 (user request): every settings pane opens over the page. Opening one moves nothing (its card and
 // the content after it keep their boxes), the pane is on top of what it covers and inside the viewport, and it
-// closes with Escape (focus returns to its toggle) and with a press outside it.
+// closes with Escape (focus returns to its toggle) and with a press outside it. A form's own Advanced settings are the
+// exception since round-3 finding C2 (FORM_PANES below).
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
@@ -59,8 +60,14 @@ const PANES = [
 	{ name: 'explanation Config', view: 'query', toggle: '#explanation-settings-toggle', prepare: explain },
 	{ name: 'Explore Display', view: 'explore', search: `?resource=${encodeURIComponent(PRODUCT)}`,
 		toggle: '#explore-result-options-toggle' },
+	{ name: 'Add advanced settings', view: 'add', toggle: '#add-import-settings-toggle' }
+];
+
+// Round-3 finding C2: a form's own Advanced settings, above the form's buttons, are part of the form. They open in its
+// flow and push the buttons down (an overlay covered Download, Change and Create); Escape still closes them, a press
+// elsewhere in the form does not. (Add's Advanced settings follow Upload in its actions row and stay a pane above.)
+const FORM_PANES = [
 	{ name: 'Export advanced settings', view: 'export', toggle: '#export-advanced-toggle' },
-	{ name: 'Add advanced settings', view: 'add', toggle: '#add-import-settings-toggle' },
 	{ name: 'Server advanced settings', view: 'server', repository: 'NONE', toggle: '#server-auth-toggle' },
 	{ name: 'Create advanced settings', view: 'create', repository: 'NONE', search: '?type=native',
 		toggle: '#create-advanced-toggle' }
@@ -192,6 +199,50 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 				await page.locator('#workbench-outlet h1').first().click();
 				await expect(panel).toBeHidden();
 				expect(await layoutOf(page, pane.toggle), 'closing it moves nothing either').toEqual(before);
+			});
+		}
+
+		for (const pane of FORM_PANES) {
+			test(`${pane.name} open in their form, push what follows down and close with Escape`, async ({ page, browserName }) => {
+				await page.goto(repositoryPageUrl(pane.repository || REPOSITORY_ID, pane.view) + (pane.search || ''));
+				await waitForRoute(page, pane.view);
+				const toggle = page.locator(pane.toggle).first();
+				await expect(toggle).toBeVisible({ timeout: 15000 });
+				await toggle.scrollIntoViewIfNeeded();
+				const panel = page.locator(`#${await toggle.getAttribute('aria-controls')}`);
+				const actions = page.locator('#workbench-page-surface form .workbench-form-actions').last();
+				const before = await settledLayout(page, pane.toggle);
+				const actionsBefore = await actions.boundingBox();
+
+				await toggle.click();
+				await expect(panel).toBeVisible();
+				await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+				const geometry = await panel.evaluate((element, toggleSelector) => {
+					const rect = element.getBoundingClientRect();
+					const button = document.querySelector(toggleSelector).getBoundingClientRect();
+					return { top: Math.round(rect.top - button.bottom), left: rect.left, right: rect.right, height: rect.height,
+						viewport: document.documentElement.clientWidth };
+				}, pane.toggle);
+				expect(geometry.top, 'the section opens just below its toggle').toBeGreaterThanOrEqual(0);
+				expect(geometry.top).toBeLessThanOrEqual(12);
+				expect(geometry.left, 'inside the viewport').toBeGreaterThanOrEqual(0);
+				expect(geometry.right, 'inside the viewport').toBeLessThanOrEqual(geometry.viewport);
+				const actionsOpen = await actions.boundingBox();
+				expect(actionsOpen.y - actionsBefore.y, 'the form\'s buttons move down below the section')
+					.toBeGreaterThanOrEqual(geometry.height - 2);
+
+				await toggle.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+				expect(await panel.evaluate((element) => element.contains(document.activeElement)),
+					'Tab from the toggle moves into the section').toBe(true);
+				await page.locator('#workbench-outlet h1').first().click();
+				await expect(panel, 'a press elsewhere leaves the section open').toBeVisible();
+
+				await panel.locator('input, select, button').first().focus();
+				await page.keyboard.press('Escape');
+				await expect(panel).toBeHidden();
+				await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+				await expect(toggle).toBeFocused();
+				expect(await layoutOf(page, pane.toggle), 'closed, the form is as before').toEqual(before);
 			});
 		}
 	});

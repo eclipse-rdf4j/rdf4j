@@ -143,14 +143,14 @@ for (const variant of VARIANTS) {
 			await expectAlignedCallouts(page, 'Add');
 			await capture(page, `${variant.name}-add-error`);
 
-			// A page whose answer is an error, opened directly: the shell shows the error.
+			// Explore refuses a resource it cannot read, opened directly: its form stays with the value to correct and the
+			// reason in a callout of the page itself, not in an empty card (round-3 finding C10).
 			await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${encodeURIComponent('"unterminated')}`);
 			await expect(page.locator('#workbench-app [role="alert"]').first()).toBeVisible();
 			await expectAlignedCallouts(page, 'Explore');
-			// The error is the page: no empty card around it.
-			const surface = await page.locator('#workbench-page-surface').boundingBox();
-			const error = await page.locator('#workbench-page-surface > .workbench-callout').boundingBox();
-			expect(surface.height - error.height, 'the error page has no empty card around its callout').toBeLessThanOrEqual(1);
+			await expect(page.locator('#resource')).toHaveValue('"unterminated');
+			await expect(page.locator('#workbench-page-surface > .workbench-callout--error')).toBeVisible();
+			await expect(page.locator('#explore-results')).toHaveCount(0);
 			await capture(page, `${variant.name}-explore-error`);
 		});
 

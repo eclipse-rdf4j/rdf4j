@@ -44,12 +44,17 @@ test('Explore shows the resource card and groups rows by the role of the resourc
 	await expect(page.locator('#explore-resource-card h2')).toHaveText('turgescence retrospection');
 	const outgoing = page.locator('section.explore-group[data-explore-role="outgoing"]');
 	await expect(outgoing.locator('h3')).toContainText('Outgoing');
-	await expect(outgoing.locator('tbody tr').first().locator('td').first()).toHaveText(/^[\w-]+:[\w-]+$/);
+	// The groups are the Query page's result table: the term is a link (beside the external-link arrow of an IRI).
+	await expect(outgoing.locator('tbody tr').first().locator('td').first().locator('a').first())
+		.toHaveText(/^[\w-]+:[\w-]+$/);
 	const dateCell = outgoing.locator('td').filter({ has: page.locator('.rdf-datatype', { hasText: 'xsd:date' }) }).first();
 	await expect(dateCell).toContainText('xsd:date');
+	// Show datatypes off renders the cells again without their tags, so find the same cell by its row.
+	const dateRow = await dateCell.locator('xpath=..').getAttribute('data-workbench-row-index');
+	const sameCell = outgoing.locator(`tr[data-workbench-row-index="${dateRow}"] td[data-label="Object"]`);
 	await page.locator('#explore-result-options-toggle').click();
 	await page.locator('label[for="explore-show-datatypes"]').click();
-	await expect.poll(() => dateCell.innerText()).not.toContain('xsd:date');
+	await expect.poll(() => sameCell.innerText()).not.toContain('xsd:date');
 });
 
 /** The numbers in a column of count cells, once none of them is pending. */
@@ -270,7 +275,8 @@ test('Add RDF marks the chosen source and uploads a dropped file into the target
 	await expect(page.locator('#Content-Type option[value="autodetect"]')).toHaveText('Detect from file name');
 	await expect(page.locator('label[for="context"]')).toHaveText('Target graph');
 	await expect(page.locator('#context')).toBeEnabled();
-	await expect(page.locator('#context')).toHaveAttribute('placeholder', 'Default graph');
+	// Empty keeps the graphs named in the data (round-3 finding C32b), as the field's help says.
+	await expect(page.locator('#context')).toHaveAttribute('placeholder', 'Graphs named in the data');
 
 	const before = await repositorySize(request);
 	const dataTransfer = await page.evaluateHandle(() => {

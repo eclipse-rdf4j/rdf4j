@@ -15,6 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 
@@ -26,6 +29,8 @@ import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -77,6 +82,89 @@ class CreateDeletePageDataErrorTest {
 		List<JsonNode> records = records(response);
 		assertThat(view(records)).isEqualTo("delete");
 		assertThat(errorMessage(records)).contains("The repository is in use");
+	}
+
+	/** C25: the safety check of a delete answers JSON, and says so, so browsers do not parse it as XML. */
+	@Test
+	void theDeleteSafetyCheckAnswersJson() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.isSafeToRemove("memory")).thenReturn(true);
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/delete");
+		request.addParameter("checkSafe", "memory");
+
+		MockHttpServletResponse response = run(new DeleteServlet(), "delete", manager, request);
+
+		assertThat(response.getContentType()).startsWith("application/json");
+		assertThat(JSON_MAPPER.readTree(response.getContentAsString()).path("safe").asBoolean()).isTrue();
+	}
+
+	/**
+	 * C14: an ID becomes a segment of the Workbench's and the server's URLs (and, on a local server, a directory name),
+	 * so the Workbench only creates repositories whose ID needs no escaping there.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = { "bad id", "a/b", "q?x", "50%", "bøk", "..", "." })
+	void aRepositoryIdThatIsNotUrlSafeIsRejectedWithAClearMessage(String id) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		MockHttpServletRequest request = pageDataPost("/create");
+		request.addParameter("type", "memory");
+		request.addParameter("Repository ID", id);
+		request.addParameter("Repository title", "Memory store");
+
+		MockHttpServletResponse response = run(new CreateServlet(), "create", manager, request);
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		List<JsonNode> records = records(response);
+		assertThat(view(records)).isEqualTo("create");
+		assertThat(errorMessage(records)).isEqualTo("Repository ID '" + id
+				+ "' is not valid: use only the letters a-z and A-Z, digits, '-', '_', '.' and '@', and not only dots.");
+		verify(manager, never()).addRepositoryConfig(any(RepositoryConfig.class));
+	}
+
+	@Test
+	void aFederationIdThatIsNotUrlSafeIsRejected() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		MockHttpServletRequest request = pageDataPost("/create");
+		request.addParameter("type", "federate");
+		request.addParameter("Local repository ID", "my federation");
+		request.addParameter("Repository title", "Federation");
+		request.addParameter("memberID", "alpha");
+
+		MockHttpServletResponse response = run(new CreateServlet(), "create", manager, request);
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(errorMessage(records(response))).startsWith("Repository ID 'my federation' is not valid");
+		verify(manager, never()).addRepositoryConfig(any(RepositoryConfig.class));
+	}
+
+	@Test
+	void anEmptyRepositoryIdIsRejected() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		MockHttpServletRequest request = pageDataPost("/create");
+		request.addParameter("type", "memory");
+		request.addParameter("Repository ID", "");
+		request.addParameter("Repository title", "Memory store");
+
+		MockHttpServletResponse response = run(new CreateServlet(), "create", manager, request);
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(errorMessage(records(response))).isEqualTo("Enter a repository ID.");
+		verify(manager, never()).addRepositoryConfig(any(RepositoryConfig.class));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "memory", "My_Repo-2.0", ".hidden", "a..b", "SYSTEM@localhost" })
+	void aUrlSafeRepositoryIdIsCreated(String id) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		MockHttpServletRequest request = pageDataPost("/create");
+		request.addParameter("type", "memory");
+		request.addParameter("Repository ID", id);
+		request.addParameter("Repository title", "Memory store");
+
+		MockHttpServletResponse response = run(new CreateServlet(), "create", manager, request);
+
+		assertThat(response.getRedirectedUrl()).isEqualTo("../" + id + "/summary");
+		verify(manager).addRepositoryConfig(any(RepositoryConfig.class));
 	}
 
 	private static MockHttpServletRequest pageDataPost(String path) {

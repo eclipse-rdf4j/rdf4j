@@ -18,6 +18,9 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
@@ -68,6 +71,7 @@ import org.eclipse.rdf4j.workbench.util.QueryBatch;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.QueryStreamCompression;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
@@ -893,7 +897,21 @@ public class QueryServlet extends TransformationServlet {
 		if (throwable instanceof QueryResultParseException) {
 			return BINARY_QUERY_TIMEOUT_ERROR.equals(throwable.getMessage());
 		}
+		if (isResponseTimeout(throwable)) {
+			// The HTTP client waits for a remote repository's answer at most the query timeout, so it can give up just
+			// before the server reports its own timeout: the query timed out either way.
+			return true;
+		}
+		if (throwable.getCause() == throwable) {
+			return false;
+		}
 		return isStreamedQueryTimeout(throwable.getCause());
+	}
+
+	/** A read timeout of the HTTP client, not a timeout while connecting. */
+	private static boolean isResponseTimeout(Throwable throwable) {
+		return throwable instanceof SocketTimeoutException
+				|| throwable instanceof HttpTimeoutException && !(throwable instanceof HttpConnectTimeoutException);
 	}
 
 	private static boolean isStreamedQueryCircuitBreaker(Throwable throwable) {
@@ -1276,7 +1294,7 @@ public class QueryServlet extends TransformationServlet {
 					|| (privateSave && rejectDisabledFeature(resp, "query-private-save"))) {
 				return;
 			}
-			if (privateSave && getUserNameFromParameter(req, SERVER_USER).isBlank()) {
+			if (privateSave && ServerCredentials.userName(req).isEmpty()) {
 				// An anonymous query is stored for the empty user name, which every user may read and change.
 				writeSaveError(resp, HttpServletResponse.SC_BAD_REQUEST,
 						"Private saved queries require a signed-in user");
@@ -1437,7 +1455,7 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("accessible", accessible);
 		if (accessible) {
 			final String queryName = req.getParameter("query-name");
-			String userName = getUserNameFromParameter(req, SERVER_USER);
+			String userName = ServerCredentials.userName(req);
 			final boolean existed = storage.askExists(repositoryReference, queryName, userName);
 			jsonObject.put("existed", existed);
 			final boolean written = Boolean.valueOf(req.getParameter("overwrite")) || !existed;
@@ -1819,7 +1837,7 @@ public class QueryServlet extends TransformationServlet {
 					? storage.canRead(
 							storage.selectSavedQuery(getRepositoryReference(),
 									getUserNameFromParameter(req, "owner"), req.getParameter(QUERY)),
-							getUserNameFromParameter(req, SERVER_USER))
+							ServerCredentials.userName(req))
 					: true;
 		} else {
 			throw new BadRequestException("Expected 'ref' parameter in request.");

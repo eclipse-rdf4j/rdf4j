@@ -122,14 +122,21 @@ test('A15: the Types/Graphs filter shows each page\'s own filter, but keeps what
         const filtered = { viewId: 'types', vars: ['type', 'instances'], rows: [], rowCount: 0, metadata: { filter: 'foo' } };
         const first = bindingAfter(views.pageTemplate(filtered, ctx, runtime), /name="filter"\s+\.?value=$/);
         assert.ok(first, 'the filter is bound');
-        assert.match(first.before, /\.value=$/, 'a property binding: the attribute does not change a typed field');
-        assert.equal(String(first.value), 'foo');
-        const again = bindingAfter(views.pageTemplate(filtered, ctx, runtime), /name="filter"\s+\.?value=$/);
-        assert.equal(again.value, first.value, 'the same page rendering again leaves the typed text alone');
-        const unfiltered = { viewId: 'types', vars: ['type', 'instances'], rows: [], rowCount: 0, metadata: {} };
-        const next = bindingAfter(views.pageTemplate(unfiltered, ctx, runtime), /name="filter"\s+\.?value=$/);
-        assert.equal(String(next.value), '');
-        assert.notEqual(next.value, first.value, 'another page sets the field to its own filter');
+        // lit sets a property binding on every render (an object value always counts as changed), which would clear
+        // what is typed whenever the page renders again; the attribute only gives a field that was not typed into
+        // its value.
+        assert.match(first.before, /\svalue=$/, 'an attribute binding');
+        assert.equal(first.value, 'foo');
+        // A page opened in place may keep the previous page's field: mounting the page sets it to its own filter.
+        const field = { value: 'typed on the page before' };
+        const outlet = { querySelector: (selector) => selector === '#types-filter' ? field : null,
+            querySelectorAll: () => [] };
+        const unfiltered = { viewId: 'types', vars: ['type', 'instances'], rows: [], rowCount: 0, metadata: {},
+            rowStore: { dispose() {} } };
+        views.bindRowWindows(outlet, unfiltered, ctx, runtime);
+        assert.equal(field.value, '', 'the page opened shows its own (empty) filter');
+        views.bindRowWindows(outlet, filtered, ctx, runtime);
+        assert.equal(field.value, 'foo');
     } finally {
         console.error = quiet;
     }

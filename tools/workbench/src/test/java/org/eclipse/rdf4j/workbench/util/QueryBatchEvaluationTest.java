@@ -160,6 +160,41 @@ class QueryBatchEvaluationTest {
 		assertCompleted(end(records), 100);
 	}
 
+	/**
+	 * The known total comes from an earlier evaluation; the result may have shrunk or grown since (rows deleted or
+	 * added, RAND(), SAMPLE). A continuation that reaches the end of the result reports the exact total it saw, and one
+	 * that stops at its lookahead row reports a total beyond its next offset, so that {@code result-has-more} always
+	 * equals {@code total-result-count > result-next-offset}.
+	 */
+	@ParameterizedTest
+	@MethodSource("continuationsOfAChangedResult")
+	void continuationsOfAChangedResultReportATotalThatAgreesWithHasMore(String offset, String knownTotal,
+			List<String> window, boolean hasMore, long total) throws Exception {
+		List<JsonNode> records = evaluate(VALUES_QUERY,
+				rawRequest(Map.of("batch-size", "2", "batch-offset", offset, "batch-known-total", knownTotal)));
+
+		JsonNode end = end(records);
+		assertThat(numbers(records)).containsExactlyElementsOf(window);
+		assertThat(end.path("result-has-more").asBoolean()).isEqualTo(hasMore);
+		assertThat(end.path("total-result-count").asLong()).isEqualTo(total);
+		assertThat(end.path("result-has-more").asBoolean())
+				.isEqualTo(end.path("total-result-count").asLong() > end.path("result-next-offset").asLong());
+	}
+
+	static Stream<Arguments> continuationsOfAChangedResult() {
+		return Stream.of(
+				// shrank from 100 rows to 8: the last window ends the result, with the exact total
+				Arguments.of("6", "100", List.of("6", "7"), false, 8L),
+				// shrank below the requested offset: an empty window, with the exact total
+				Arguments.of("10", "100", List.of(), false, 8L),
+				// shrank, but rows remain after the window: the known total still lies beyond the next offset
+				Arguments.of("2", "100", List.of("2", "3"), true, 100L),
+				// grew from 3 rows to 8: rows remain after the window, so the total exceeds the next offset
+				Arguments.of("2", "3", List.of("2", "3"), true, 5L),
+				// grew from 7 rows to 8 and the window reaches the end: the exact total
+				Arguments.of("6", "7", List.of("6", "7"), false, 8L));
+	}
+
 	@Test
 	void graphContinuationsWithAKnownTotalAlsoStopAfterTheirWindow() throws Exception {
 		String text = "CONSTRUCT { ?s <urn:p> ?n } WHERE { VALUES (?s ?n) { (<urn:s0> 0) (<urn:s1> 1) (<urn:s2> 2) "

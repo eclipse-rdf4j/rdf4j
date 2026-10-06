@@ -141,6 +141,18 @@ test('the Query page reads form-encoded spaces and survives a malformed escape i
     assert.equal(malformed.context.workbench.query.getQueryValue(), 'ASK+%7B%7D+%ZZ'.replace(/\+/g, ' '));
 });
 
+// Round 2 (R20): a hand-typed query link may hold an unencoded '#': the browser takes it as the fragment, and the query
+// is read from the whole address, as before the '+' fix.
+test('the Query page reads a query whose unencoded "#" the browser took as the fragment', () => {
+    const harness = createQueryBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query?query=PREFIX%20ex:%20%3Chttp://ex.org/ns'
+            + '#%3E%20ASK%20%7B%7D',
+        query: ''
+    });
+    harness.runPageLoad();
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'PREFIX ex: <http://ex.org/ns#> ASK {}');
+});
+
 // Review finding B17: a PREFIX declared after other text on its line is still a declaration.
 test('Insert prefixes finds declarations anywhere, but not in comments or strings', () => {
     const harness = createQueryBrowserHarness({ sparqlNamespaces: {
@@ -196,10 +208,10 @@ test('a Query page unloaded while an explanation runs cancels it with one keepal
     const cleanup = harness.runPageLoad();
     harness.context.workbench.query.setQueryValue('ASK {}');
     harness.click('explain-trigger');
-    // A document being unloaded is hidden before its pagehide (HTML 'unload a document').
-    harness.document.visibilityState = 'hidden';
+    // Round 2 (R11): pagehide runs while the document is still visible; the route is disposed with reason 'pagehide'.
+    assert.equal(harness.document.visibilityState === 'hidden', false);
 
-    cleanup();
+    cleanup('pagehide');
     assert.equal(harness.requestsByAction('cancel-explain').length, 0, 'no retrying request that dies with the page');
     assert.equal(fetches.length, 1);
     assert.equal(fetches[0].url, 'http://localhost:8080/rdf4j-workbench/repositories/test/query');
@@ -212,8 +224,7 @@ test('a page being unloaded falls back to the retrying cancellation without fetc
     const cleanup = withoutFetch.runPageLoad();
     withoutFetch.context.workbench.query.setQueryValue('ASK {}');
     withoutFetch.click('explain-trigger');
-    withoutFetch.document.visibilityState = 'hidden';
-    cleanup();
+    cleanup('pagehide');
     assert.equal(withoutFetch.requestsByAction('cancel-explain').length, 1);
 
     const refused = createQueryBrowserHarness({ serverRequestIds: ['request-2'] });
@@ -221,8 +232,42 @@ test('a page being unloaded falls back to the retrying cancellation without fetc
     const refusedCleanup = refused.runPageLoad();
     refused.context.workbench.query.setQueryValue('ASK {}');
     refused.click('explain-trigger');
-    refused.document.visibilityState = 'hidden';
-    assert.doesNotThrow(() => refusedCleanup());
+    assert.doesNotThrow(() => refusedCleanup('pagehide'));
+});
+
+// Round 2 (R11): Firefox and Safari stop a page's requests before its pagehide; the explanation request then fails
+// without an answer (status 0) while the server still runs it, so it is cancelled with one keepalive request.
+test('an explanation request that fails without an answer is cancelled on the server with a keepalive request', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1'] });
+    const fetches = [];
+    harness.window.fetch = (url, init) => { fetches.push({ url, init }); return Promise.resolve({ ok: true }); };
+    const cleanup = harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.click('explain-trigger');
+    const explanation = harness.pendingExplainRequests[harness.pendingExplainRequests.length - 1];
+    explanation.jqXHR.status = 0;
+    explanation.reject('error', '');
+    assert.equal(fetches.length, 1);
+    assert.equal(fetches[0].init.keepalive, true);
+    assert.equal(fetches[0].init.body, 'action=cancel-explain&explain-request-id=request-1');
+
+    cleanup('pagehide');
+    assert.equal(fetches.length, 1, 'the explanation is cancelled once');
+    assert.equal(harness.requestsByAction('cancel-explain').length, 0);
+});
+
+test('an explanation the server answered with an error, or the page aborted, is not cancelled again', () => {
+    const harness = createQueryBrowserHarness({ serverRequestIds: ['request-1', 'request-2'] });
+    const fetches = [];
+    harness.window.fetch = (url, init) => { fetches.push({ url, init }); return Promise.resolve({ ok: true }); };
+    const cleanup = harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('ASK {}');
+    harness.click('explain-trigger');
+    const answered = harness.pendingExplainRequests[harness.pendingExplainRequests.length - 1];
+    answered.jqXHR.status = 500;
+    answered.reject('error', 'Internal Server Error');
+    assert.equal(fetches.length, 0);
+    cleanup();
 });
 
 test('the Query page endpoint is resolved with URL against the document base, or left relative', () => {
@@ -246,8 +291,9 @@ test('the Query page endpoint is resolved with URL against the document base, or
     assert.equal(unresolved.requestsByAction('cancel-explain')[0].options.url, 'query');
 });
 
-// Review finding B18: a cancellation goes to the repository that runs the query, and a 404 is not retried.
-test('a query cancellation is posted to the given endpoint and not retried when the server answers 404', () => {
+// Review finding B18: a cancellation goes to the repository that runs the query. Round 2 (R6): a 404 is retried like
+// any other failure (GH-5904: a replica that does not run the query, or a cancellation that overtook its registration).
+test('a query cancellation is posted to the given endpoint and retried there when the server answers 404', () => {
     const harness = createQueryBrowserHarness({
         onAjaxRequest(request) {
             if (request.action === 'cancel-query') {
@@ -259,8 +305,9 @@ test('a query cancellation is posted to the given endpoint and not retried when 
     harness.context.workbench.query.cancelServerQuery('query-1',
         'http://localhost:8080/rdf4j-workbench/repositories/shelved/query');
     const cancels = harness.requestsByAction('cancel-query');
-    assert.equal(cancels.length, 1, 'a 404 (unknown or finished query) is not retried');
-    assert.equal(cancels[0].options.url, 'http://localhost:8080/rdf4j-workbench/repositories/shelved/query');
+    assert.equal(cancels.length, 21, 'a 404 is retried, 20 times at most');
+    assert.deepEqual([...new Set(cancels.map((cancel) => cancel.options.url))],
+        ['http://localhost:8080/rdf4j-workbench/repositories/shelved/query'], 'every retry goes to the same endpoint');
 });
 
 // Review finding B10 (server contract): the server refuses a private save by an anonymous user with a JSON message;

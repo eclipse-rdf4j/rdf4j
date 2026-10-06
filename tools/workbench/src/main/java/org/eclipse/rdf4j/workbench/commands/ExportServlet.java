@@ -63,7 +63,7 @@ public class ExportServlet extends TupleServlet {
 	private static final int PREVIEW_LIMIT_DEFAULT = 100;
 	private static final int TIMEOUT_DEFAULT_SECONDS = 12 * 60 * 60;
 
-	private final BrowseList browseList = new BrowseList();
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	public ExportServlet() {
 		super("subject", "predicate", "object", "context");

@@ -33,6 +33,93 @@ var workbench;
         var keyCounter = 0;
         /** The scroll position each history entry (by its wbKey) was left at. */
         var positions = {};
+        /**
+         * What was typed in the forms of the pages left, by history entry (wbKey): Back and Forward bring it back
+         * (round-3 finding C9). Only pages whose input is the user's own draft: the others take their fields from the
+         * address or the server.
+         */
+        var drafts = {};
+        var draftViews = ['update', 'add', 'remove'];
+        /** The code editor (CodeMirror, YASQE) that shows a textarea, if any. */
+        function editorOf(element) {
+            if (!element || element.tagName !== 'TEXTAREA') {
+                return null;
+            }
+            var sibling = element.nextElementSibling;
+            if (sibling && sibling.CodeMirror) {
+                return sibling.CodeMirror;
+            }
+            var near = element.parentNode && element.parentNode.querySelector
+                ? element.parentNode.querySelector('.CodeMirror') : null;
+            return near && near.CodeMirror ? near.CodeMirror : null;
+        }
+        function draftable(element) {
+            var type = String(element.type || '').toLowerCase();
+            return !!element.name && !/^(hidden|file|password|submit|button|reset|image)$/.test(type);
+        }
+        function captureDraft(container) {
+            var fields = [];
+            var forms = container && container.querySelectorAll ? container.querySelectorAll('form') : [];
+            for (var formIndex = 0; formIndex < forms.length; formIndex++) {
+                var elements = forms[formIndex].elements || [];
+                for (var index = 0; index < elements.length; index++) {
+                    var element = elements[index];
+                    if (!draftable(element)) {
+                        continue;
+                    }
+                    var editor = editorOf(element);
+                    fields.push({ form: formIndex, name: element.name, type: String(element.type || '').toLowerCase(),
+                        value: editor ? editor.getValue() : String(element.value), checked: !!element.checked });
+                }
+            }
+            return fields;
+        }
+        function fire(element, type) {
+            var view = element.ownerDocument && element.ownerDocument.defaultView;
+            if (view && typeof view.Event === 'function') {
+                element.dispatchEvent(new view.Event(type, { bubbles: true }));
+            }
+        }
+        /** Put the typed values back: choices first (they enable the fields they belong to), then the values. */
+        function restoreDraft(container, fields) {
+            var forms = container && container.querySelectorAll ? container.querySelectorAll('form') : [];
+            var choice = function (field) { return field.type === 'radio' || field.type === 'checkbox'; };
+            fields.filter(choice).concat(fields.filter(function (field) { return !choice(field); })).forEach(function (field) {
+                var form = forms[field.form];
+                var elements = form ? form.elements || [] : [];
+                for (var index = 0; index < elements.length; index++) {
+                    var element = elements[index];
+                    if (element.name !== field.name || !draftable(element)) {
+                        continue;
+                    }
+                    if (choice(field)) {
+                        if (String(element.value) === field.value && !!element.checked !== field.checked) {
+                            element.checked = field.checked;
+                            fire(element, 'change');
+                        }
+                        continue;
+                    }
+                    var editor = editorOf(element);
+                    if (editor) {
+                        if (editor.getValue() !== field.value) {
+                            editor.setValue(field.value);
+                        }
+                    }
+                    else if (String(element.value) !== field.value) {
+                        element.value = field.value;
+                        fire(element, 'input');
+                        fire(element, 'change');
+                    }
+                    return;
+                }
+            });
+        }
+        /** Keep what is typed on the page being left, for its history entry. */
+        function keepDraft() {
+            if (currentRoute && draftViews.indexOf(currentRoute.viewId) >= 0) {
+                drafts[currentRoute.key] = captureDraft(outlet());
+            }
+        }
         var currentRoute = null;
         /** The keep-alive route (Query) parked in #workbench-kept-alive while another page is shown (M11.3). */
         var kept = null;
@@ -83,43 +170,59 @@ var workbench;
          * a kept page's outlet is parked (and later shown again) and the shown page gets another outlet.
          */
         var busyElement = null;
+        /** Whether a navigation runs ('busy') and has passed the progress delay ('loading'). */
+        var busyState = 'idle';
         function clearBusyMark(element) {
-            element.removeAttribute('aria-busy');
-            element.removeAttribute('data-workbench-route-loading');
+            if (element) {
+                element.removeAttribute('aria-busy');
+                element.removeAttribute('data-workbench-route-loading');
+            }
+        }
+        function applyBusyMark(element) {
+            if (element && busyState !== 'idle') {
+                element.setAttribute('aria-busy', 'true');
+                if (busyState === 'loading') {
+                    element.setAttribute('data-workbench-route-loading', 'true');
+                }
+            }
         }
         /** aria-busy while a navigation runs; a 2px progress bar once it takes longer than 150 ms. */
         function setBusy(busy) {
             clearTimeout(progressTimer);
             progressTimer = null;
-            if (busyElement) {
-                clearBusyMark(busyElement);
-                busyElement = null;
-            }
-            var element = outlet();
+            clearBusyMark(busyElement);
+            busyElement = null;
             if (busy) {
-                busyElement = element;
-                element.setAttribute('aria-busy', 'true');
+                busyState = 'busy';
+                busyElement = outlet();
+                applyBusyMark(busyElement);
                 progressTimer = setTimeout(function () {
-                    if (busyElement) {
-                        busyElement.setAttribute('data-workbench-route-loading', 'true');
-                    }
+                    busyState = 'loading';
+                    applyBusyMark(busyElement);
                 }, progressDelayMillis);
             }
             else {
-                clearBusyMark(element);
+                busyState = 'idle';
+                clearBusyMark(outlet());
             }
         }
-        /** A busy outlet that leaves the shell hands its busy state to the outlet shown instead. */
+        /**
+         * A busy outlet that leaves the shell hands its busy state to the outlet shown instead. That outlet may not
+         * exist yet (a parked page's outlet is detached before the next page renders one): adoptBusy marks it then.
+         */
         function moveBusy(from, to) {
             if (!busyElement || busyElement !== from) {
                 return;
             }
-            var loading = from.getAttribute('data-workbench-route-loading') === 'true';
             clearBusyMark(from);
-            busyElement = to;
-            to.setAttribute('aria-busy', 'true');
-            if (loading) {
-                to.setAttribute('data-workbench-route-loading', 'true');
+            busyElement = to || null;
+            applyBusyMark(busyElement);
+        }
+        /** Give a navigation's busy state to the outlet that was just rendered, if no outlet carries it. */
+        function adoptBusy() {
+            if (busyState !== 'idle' && !busyElement) {
+                busyElement = outlet();
+                applyBusyMark(busyElement);
             }
         }
         function newKey() {
@@ -142,10 +245,23 @@ var workbench;
             windowObject.requestAnimationFrame(function () { return windowObject.requestAnimationFrame(callback); });
         }
         /** Move keyboard focus to the new page's heading and announce the page to screen readers. */
-        function announce() {
+        function announce(focusId) {
             var windowObject = window;
+            // A filter refined on its own page keeps the caret in its field, at the end of what was typed (C22).
+            var field = focusId ? windowObject.document.getElementById(focusId) : null;
             var heading = outlet().querySelector('h1');
-            if (heading) {
+            if (field && outlet().contains(field) && typeof field.focus === 'function') {
+                field.focus({ preventScroll: true });
+                if (typeof field.setSelectionRange === 'function' && typeof field.value === 'string') {
+                    try {
+                        field.setSelectionRange(field.value.length, field.value.length);
+                    }
+                    catch (error) {
+                        // Not a text field.
+                    }
+                }
+            }
+            else if (heading) {
                 heading.setAttribute('tabindex', '-1');
                 heading.focus({ preventScroll: true });
             }
@@ -338,7 +454,11 @@ var workbench;
             }
             if (request.method === 'get') {
                 request.action.search = new URLSearchParams(request.data).toString();
-                navigate(request.action.href, { history: 'push' });
+                // A search or filter sent on its own page keeps its field focused on the page shown (C22).
+                var active = window.document.activeElement;
+                var sameView = !!currentRoute && viewIdOf(request.action) === currentRoute.viewId;
+                navigate(request.action.href, { history: 'push',
+                    focus: sameView && active && active.id && form.contains(active) ? active.id : undefined });
                 return true;
             }
             navigate(request.action.href, { history: 'push',
@@ -424,6 +544,15 @@ var workbench;
             value = value.replace(/\s+/g, ' ').trim();
             return value.length > failureTextLimit ? value.substring(0, failureTextLimit - 1) + '…' : value;
         }
+        /**
+         * A message the Workbench server wrote for people (an error record, an error-message row; for example its
+         * summary of a SHACL validation report, C13): kept whole and line by line, only its line ends and blank runs
+         * tidied. Unlike an error page's text it is not cut short.
+         */
+        function serverMessage(message) {
+            return String(message || '').replace(/\r\n?/g, '\n').split('\n')
+                .map(function (line) { return line.replace(/\s+$/, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
         /** "The server answered 409 Conflict: <text>", or the text alone when the answer had no error status. */
         function failureMessage(status, statusText, detail) {
             if (status >= 400 || !detail) {
@@ -460,10 +589,10 @@ var workbench;
          */
         function refusalOf(model, status) {
             if (model.error) {
-                // For example a SHACL validation report (409, code shacl-validation): quoted like any other answer text.
+                // For example a SHACL validation report (409, code shacl-validation): the server's message, whole.
                 var errorStatus = model.error.status || status;
                 return Promise.resolve({ status: errorStatus,
-                    message: failureMessage(errorStatus, '', answerText(String(model.error.message || ''), 'text/plain')) });
+                    message: failureMessage(errorStatus, '', serverMessage(model.error.message)) });
             }
             var vars = model.vars || [];
             if (vars.length !== 1 || vars[0] !== 'error-message' || !model.rowStore
@@ -473,7 +602,7 @@ var workbench;
             return model.rowStore.read(0, 1).then(function (rows) {
                 var term = rows && rows[0] ? rows[0][0] : null;
                 var detail = term && typeof term === 'object' ? String(term.value || '') : String(term || '');
-                return { status: status, message: failureMessage(status, '', answerText(detail, 'text/plain')) };
+                return { status: status, message: failureMessage(status, '', serverMessage(detail)) };
             });
         }
         /**
@@ -542,6 +671,7 @@ var workbench;
                 controller.abort();
             }
             positions[currentRoute.key] = windowObject.scrollY;
+            keepDraft();
             if (options.history !== 'none') {
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
@@ -822,6 +952,7 @@ var workbench;
             var windowObject = window;
             var history = windowObject.history;
             positions[currentRoute.key] = windowObject.scrollY;
+            keepDraft();
             if (options.history !== 'none') {
                 // The current entry still belongs to the page being left (after Back it already does not).
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
@@ -843,6 +974,7 @@ var workbench;
             session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
             var context = app().viewContext(session.mount, model, url.href, session.runtime);
             views().render(session.mount, model, context, session.runtime);
+            adoptBusy();
             if (parked) {
                 // The kept page's outlet waits, hidden and inert, without the id that belongs to the page shown.
                 parked.removeAttribute('id');
@@ -856,7 +988,9 @@ var workbench;
             currentRoute = { url: url.href, viewId: viewId, repositoryId: repositoryIdOf(url), key: key, instance: { dispose: function () { } }, model: model, context: context };
             markRoute(viewId, false);
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
-            var mounted = model.error ? { dispose: function () { return model.rowStore.dispose(); } }
+            var showsOwnError = views().showsOwnError;
+            var mounted = model.error && !(typeof showsOwnError === 'function' && showsOwnError(model))
+                ? { dispose: function () { return model.rowStore.dispose(); } }
                 : definition.mount({ outlet: outlet(), model: model, context: context, runtime: session.runtime, url: url, state: { rendered: true } });
             Promise.resolve(mounted).then(function (instance) {
                 if (mine !== generation) {
@@ -869,6 +1003,10 @@ var workbench;
                         return;
                     }
                     setBusy(false);
+                    if (options.history === 'none' && drafts[key]) {
+                        // Back or Forward to a page that was typed in: what was typed is there again (C9).
+                        restoreDraft(outlet(), drafts[key]);
+                    }
                     markRoute(viewId, true);
                     if (options.history === 'none') {
                         afterTwoFrames(function () { return restoreScroll(restoreTo); });
@@ -880,14 +1018,23 @@ var workbench;
                             target.scrollIntoView();
                         }
                     }
-                    announce();
+                    announce(options.focus);
                 });
             }).then(null, function (error) {
                 if (mine !== generation) {
                     return;
                 }
-                // A page whose scripts fail to open it is loaded by the browser instead (M12.1), never left busy.
                 setBusy(false);
+                if (options.body || (error && error.rowStore)) {
+                    // A page shown from a form's answer cannot be loaded again with GET without losing what the form
+                    // sent (Saved queries Edit opens the Query page so), and a failing row store is mostly transient:
+                    // the page stays and says what failed.
+                    console.error('The Workbench could not open ' + url.href + ' completely.', error);
+                    showSendFailure({ status: 0, message: 'The page could not be opened completely ('
+                            + (error && error.message || 'no reason given') + '). Reload the page to try again.' });
+                    return;
+                }
+                // A page whose scripts fail to open it is loaded by the browser instead (M12.1), never left busy.
                 console.error('The Workbench could not open ' + url.href + ' in place; loading it instead.', error);
                 windowObject.location.assign(url.href);
             });

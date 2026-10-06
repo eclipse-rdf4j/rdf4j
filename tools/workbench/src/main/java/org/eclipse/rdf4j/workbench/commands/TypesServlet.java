@@ -52,7 +52,7 @@ public class TypesServlet extends TupleServlet {
 			.reversed()
 			.thenComparing(row -> row[0], BrowseList.BY_NAME);
 
-	private final BrowseList browseList = new BrowseList();
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	@Override
 	protected String[] variables(WorkbenchRequest req) {

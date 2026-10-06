@@ -21,17 +21,19 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
@@ -52,6 +54,8 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
+import org.eclipse.rdf4j.workbench.util.ShaclValidationSummary;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
@@ -187,28 +191,30 @@ public class WorkbenchServlet extends AbstractServlet {
 		} catch (UnauthorizedException e) {
 			handleUnauthorizedException(req, resp);
 		} catch (RepositoryConfigException | RepositoryException e) {
-			if (e.getCause() instanceof ValidationException) {
-				Model model = ((ValidationException) e.getCause()).validationReportAsModel();
-				StringWriter report = new StringWriter();
-				PrintWriter writer = new PrintWriter(report);
-
-				writer.println("SHACL validation failed with the following report:\n");
-				WriterConfig writerConfig = new WriterConfig();
-				writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
-				writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
-				Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
-
-				writer.println(
-						"\n" +
-								"THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - " +
-								"DO NOT TRY TO PARSE THIS ERROR MESSAGE");
-				writer.flush();
+			Optional<ValidationException> validation = ShaclValidationSummary.find(e);
+			if (validation.isPresent()) {
+				Model model = validation.get().validationReportAsModel();
+				// One line per violation (focus node, path, value, what was expected), not the report's RDF.
+				String summary = ShaclValidationSummary.summarize(model, repositoryNamespaces(repoID));
 
 				if (WorkbenchPageProtocol.requestsPageData(req) && !resp.isCommitted()) {
 					// An in-page change (Add, Remove, Clear, Update) reads a page model, not plain text.
-					writePageError(req, resp, HttpServletResponse.SC_CONFLICT, "shacl-validation",
-							report.toString());
+					writePageError(req, resp, HttpServletResponse.SC_CONFLICT, "shacl-validation", summary);
 				} else {
+					StringWriter report = new StringWriter();
+					PrintWriter writer = new PrintWriter(report);
+					writer.println(summary);
+					writer.println("\nThe validation report:\n");
+					WriterConfig writerConfig = new WriterConfig();
+					writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+					writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+					Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
+
+					writer.println(
+							"\n" +
+									"THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - " +
+									"DO NOT TRY TO PARSE THIS ERROR MESSAGE");
+					writer.flush();
 					resp.setStatus(HttpServletResponse.SC_CONFLICT);
 					resp.setContentType(TEXT_PLAIN);
 					resp.getWriter().print(report);
@@ -222,6 +228,22 @@ public class WorkbenchServlet extends AbstractServlet {
 			} else {
 				throw e;
 			}
+		}
+	}
+
+	/** The namespaces of a repository, to write the names of a validation report with; none when unavailable. */
+	private List<Namespace> repositoryNamespaces(String repoID) {
+		try {
+			Repository repository = manager.getRepository(repoID);
+			if (repository == null) {
+				return List.of();
+			}
+			try (RepositoryConnection connection = repository.getConnection()) {
+				return ShaclValidationSummary.namespaces(connection);
+			}
+		} catch (RepositoryConfigException | RepositoryException e) {
+			LOGGER.debug("Unable to read the namespaces of repository {}", repoID, e);
+			return List.of();
 		}
 	}
 
@@ -385,14 +407,13 @@ public class WorkbenchServlet extends AbstractServlet {
 			if (user_password == null) {
 				rrm.setUsernameAndPassword(null, null);
 			} else {
-				String decoded;
-				try {
-					decoded = new String(Base64.getDecoder().decode(user_password));
-				} catch (IllegalArgumentException e) {
+				String decoded = ServerCredentials.decode(user_password);
+				if (decoded == null) {
 					decoded = user_password; // older browsers
 				}
-				final String user = decoded.substring(0, decoded.indexOf(':'));
-				final String password = decoded.substring(decoded.indexOf(':') + 1);
+				int colon = decoded.indexOf(':');
+				final String user = colon >= 0 ? decoded.substring(0, colon) : decoded;
+				final String password = colon >= 0 ? decoded.substring(colon + 1) : "";
 				LOGGER.info("Setting user '{}' and their password.", user);
 				rrm.setUsernameAndPassword(user, password);
 			}

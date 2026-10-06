@@ -34,6 +34,11 @@ module workbench {
             inPlace?: boolean;
             /** Told why a form POST sent in place was not accepted, before it resolves 'failed'. */
             failed?: (failure: SendFailure) => void;
+            /**
+             * The id of the field that keeps focus on the page shown (a filter or search field of a GET form sent from
+             * a page of the same view, C22) instead of the page heading.
+             */
+            focus?: string;
         }
 
         /**
@@ -76,6 +81,108 @@ module workbench {
         let keyCounter = 0;
         /** The scroll position each history entry (by its wbKey) was left at. */
         const positions: { [key: string]: number } = {};
+
+        /** A field of a form as it was typed: its form's place in the page, name, type and value or state. */
+        interface DraftField {
+            form: number;
+            name: string;
+            type: string;
+            value: string;
+            checked: boolean;
+        }
+
+        /**
+         * What was typed in the forms of the pages left, by history entry (wbKey): Back and Forward bring it back
+         * (round-3 finding C9). Only pages whose input is the user's own draft: the others take their fields from the
+         * address or the server.
+         */
+        const drafts: { [key: string]: DraftField[] } = {};
+        const draftViews = ['update', 'add', 'remove'];
+
+        /** The code editor (CodeMirror, YASQE) that shows a textarea, if any. */
+        function editorOf(element: any): any {
+            if (!element || element.tagName !== 'TEXTAREA') {
+                return null;
+            }
+            const sibling = element.nextElementSibling;
+            if (sibling && sibling.CodeMirror) {
+                return sibling.CodeMirror;
+            }
+            const near = element.parentNode && element.parentNode.querySelector
+                ? element.parentNode.querySelector('.CodeMirror') : null;
+            return near && near.CodeMirror ? near.CodeMirror : null;
+        }
+
+        function draftable(element: any): boolean {
+            const type = String(element.type || '').toLowerCase();
+            return !!element.name && !/^(hidden|file|password|submit|button|reset|image)$/.test(type);
+        }
+
+        function captureDraft(container: any): DraftField[] {
+            const fields: DraftField[] = [];
+            const forms = container && container.querySelectorAll ? container.querySelectorAll('form') : [];
+            for (let formIndex = 0; formIndex < forms.length; formIndex++) {
+                const elements = forms[formIndex].elements || [];
+                for (let index = 0; index < elements.length; index++) {
+                    const element = elements[index];
+                    if (!draftable(element)) {
+                        continue;
+                    }
+                    const editor = editorOf(element);
+                    fields.push({ form: formIndex, name: element.name, type: String(element.type || '').toLowerCase(),
+                        value: editor ? editor.getValue() : String(element.value), checked: !!element.checked });
+                }
+            }
+            return fields;
+        }
+
+        function fire(element: any, type: string): void {
+            const view: any = element.ownerDocument && element.ownerDocument.defaultView;
+            if (view && typeof view.Event === 'function') {
+                element.dispatchEvent(new view.Event(type, { bubbles: true }));
+            }
+        }
+
+        /** Put the typed values back: choices first (they enable the fields they belong to), then the values. */
+        function restoreDraft(container: any, fields: DraftField[]): void {
+            const forms = container && container.querySelectorAll ? container.querySelectorAll('form') : [];
+            const choice = (field: DraftField) => field.type === 'radio' || field.type === 'checkbox';
+            fields.filter(choice).concat(fields.filter((field) => !choice(field))).forEach((field) => {
+                const form = forms[field.form];
+                const elements = form ? form.elements || [] : [];
+                for (let index = 0; index < elements.length; index++) {
+                    const element = elements[index];
+                    if (element.name !== field.name || !draftable(element)) {
+                        continue;
+                    }
+                    if (choice(field)) {
+                        if (String(element.value) === field.value && !!element.checked !== field.checked) {
+                            element.checked = field.checked;
+                            fire(element, 'change');
+                        }
+                        continue;
+                    }
+                    const editor = editorOf(element);
+                    if (editor) {
+                        if (editor.getValue() !== field.value) {
+                            editor.setValue(field.value);
+                        }
+                    } else if (String(element.value) !== field.value) {
+                        element.value = field.value;
+                        fire(element, 'input');
+                        fire(element, 'change');
+                    }
+                    return;
+                }
+            });
+        }
+
+        /** Keep what is typed on the page being left, for its history entry. */
+        function keepDraft(): void {
+            if (currentRoute && draftViews.indexOf(currentRoute.viewId) >= 0) {
+                drafts[currentRoute.key] = captureDraft(outlet());
+            }
+        }
         interface ShownRoute {
             url: string;
             viewId: string;
@@ -143,43 +250,63 @@ module workbench {
          * a kept page's outlet is parked (and later shown again) and the shown page gets another outlet.
          */
         let busyElement: any = null;
+        /** Whether a navigation runs ('busy') and has passed the progress delay ('loading'). */
+        let busyState: 'idle' | 'busy' | 'loading' = 'idle';
 
         function clearBusyMark(element: any): void {
-            element.removeAttribute('aria-busy');
-            element.removeAttribute('data-workbench-route-loading');
+            if (element) {
+                element.removeAttribute('aria-busy');
+                element.removeAttribute('data-workbench-route-loading');
+            }
+        }
+
+        function applyBusyMark(element: any): void {
+            if (element && busyState !== 'idle') {
+                element.setAttribute('aria-busy', 'true');
+                if (busyState === 'loading') {
+                    element.setAttribute('data-workbench-route-loading', 'true');
+                }
+            }
         }
 
         /** aria-busy while a navigation runs; a 2px progress bar once it takes longer than 150 ms. */
         function setBusy(busy: boolean): void {
             clearTimeout(progressTimer);
             progressTimer = null;
-            if (busyElement) {
-                clearBusyMark(busyElement);
-                busyElement = null;
-            }
-            const element = outlet();
+            clearBusyMark(busyElement);
+            busyElement = null;
             if (busy) {
-                busyElement = element;
-                element.setAttribute('aria-busy', 'true');
+                busyState = 'busy';
+                busyElement = outlet();
+                applyBusyMark(busyElement);
                 progressTimer = setTimeout(() => {
-                    if (busyElement) { busyElement.setAttribute('data-workbench-route-loading', 'true'); }
+                    busyState = 'loading';
+                    applyBusyMark(busyElement);
                 }, progressDelayMillis);
             } else {
-                clearBusyMark(element);
+                busyState = 'idle';
+                clearBusyMark(outlet());
             }
         }
 
-        /** A busy outlet that leaves the shell hands its busy state to the outlet shown instead. */
+        /**
+         * A busy outlet that leaves the shell hands its busy state to the outlet shown instead. That outlet may not
+         * exist yet (a parked page's outlet is detached before the next page renders one): adoptBusy marks it then.
+         */
         function moveBusy(from: any, to: any): void {
             if (!busyElement || busyElement !== from) {
                 return;
             }
-            const loading = from.getAttribute('data-workbench-route-loading') === 'true';
             clearBusyMark(from);
-            busyElement = to;
-            to.setAttribute('aria-busy', 'true');
-            if (loading) {
-                to.setAttribute('data-workbench-route-loading', 'true');
+            busyElement = to || null;
+            applyBusyMark(busyElement);
+        }
+
+        /** Give a navigation's busy state to the outlet that was just rendered, if no outlet carries it. */
+        function adoptBusy(): void {
+            if (busyState !== 'idle' && !busyElement) {
+                busyElement = outlet();
+                applyBusyMark(busyElement);
             }
         }
 
@@ -205,10 +332,21 @@ module workbench {
         }
 
         /** Move keyboard focus to the new page's heading and announce the page to screen readers. */
-        function announce(): void {
+        function announce(focusId?: string): void {
             const windowObject: any = window;
+            // A filter refined on its own page keeps the caret in its field, at the end of what was typed (C22).
+            const field = focusId ? windowObject.document.getElementById(focusId) : null;
             const heading = outlet().querySelector('h1');
-            if (heading) {
+            if (field && outlet().contains(field) && typeof field.focus === 'function') {
+                field.focus({ preventScroll: true });
+                if (typeof field.setSelectionRange === 'function' && typeof field.value === 'string') {
+                    try {
+                        field.setSelectionRange(field.value.length, field.value.length);
+                    } catch (error) {
+                        // Not a text field.
+                    }
+                }
+            } else if (heading) {
                 heading.setAttribute('tabindex', '-1');
                 heading.focus({ preventScroll: true });
             }
@@ -412,7 +550,11 @@ module workbench {
             }
             if (request.method === 'get') {
                 request.action.search = new URLSearchParams(request.data).toString();
-                navigate(request.action.href, { history: 'push' });
+                // A search or filter sent on its own page keeps its field focused on the page shown (C22).
+                const active: any = (window as any).document.activeElement;
+                const sameView = !!currentRoute && viewIdOf(request.action) === currentRoute.viewId;
+                navigate(request.action.href, { history: 'push',
+                    focus: sameView && active && active.id && form.contains(active) ? active.id : undefined });
                 return true;
             }
             navigate(request.action.href, { history: 'push',
@@ -502,6 +644,16 @@ module workbench {
             return value.length > failureTextLimit ? value.substring(0, failureTextLimit - 1) + '…' : value;
         }
 
+        /**
+         * A message the Workbench server wrote for people (an error record, an error-message row; for example its
+         * summary of a SHACL validation report, C13): kept whole and line by line, only its line ends and blank runs
+         * tidied. Unlike an error page's text it is not cut short.
+         */
+        function serverMessage(message: string): string {
+            return String(message || '').replace(/\r\n?/g, '\n').split('\n')
+                .map((line: string) => line.replace(/\s+$/, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+
         /** "The server answered 409 Conflict: <text>", or the text alone when the answer had no error status. */
         function failureMessage(status: number, statusText: string, detail: string): string {
             if (status >= 400 || !detail) {
@@ -543,10 +695,10 @@ module workbench {
          */
         function refusalOf(model: any, status: number): Promise<SendFailure> {
             if (model.error) {
-                // For example a SHACL validation report (409, code shacl-validation): quoted like any other answer text.
+                // For example a SHACL validation report (409, code shacl-validation): the server's message, whole.
                 const errorStatus = model.error.status || status;
                 return Promise.resolve({ status: errorStatus,
-                    message: failureMessage(errorStatus, '', answerText(String(model.error.message || ''), 'text/plain')) });
+                    message: failureMessage(errorStatus, '', serverMessage(model.error.message)) });
             }
             const vars: string[] = model.vars || [];
             if (vars.length !== 1 || vars[0] !== 'error-message' || !model.rowStore
@@ -556,7 +708,7 @@ module workbench {
             return model.rowStore.read(0, 1).then((rows: any[][]) => {
                 const term = rows && rows[0] ? rows[0][0] : null;
                 const detail = term && typeof term === 'object' ? String(term.value || '') : String(term || '');
-                return { status, message: failureMessage(status, '', answerText(detail, 'text/plain')) };
+                return { status, message: failureMessage(status, '', serverMessage(detail)) };
             });
         }
 
@@ -631,6 +783,7 @@ module workbench {
                 controller.abort();
             }
             positions[currentRoute.key] = windowObject.scrollY;
+            keepDraft();
             if (options.history !== 'none') {
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
@@ -913,6 +1066,7 @@ module workbench {
             const windowObject: any = window;
             const history = windowObject.history;
             positions[currentRoute.key] = windowObject.scrollY;
+            keepDraft();
             if (options.history !== 'none') {
                 // The current entry still belongs to the page being left (after Back it already does not).
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
@@ -934,6 +1088,7 @@ module workbench {
             session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
             const context = app().viewContext(session.mount, model, url.href, session.runtime);
             views().render(session.mount, model, context, session.runtime);
+            adoptBusy();
             if (parked) {
                 // The kept page's outlet waits, hidden and inert, without the id that belongs to the page shown.
                 parked.removeAttribute('id');
@@ -948,7 +1103,9 @@ module workbench {
                 instance: { dispose() {} }, model, context };
             markRoute(viewId, false);
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
-            const mounted = model.error ? { dispose: () => model.rowStore.dispose() }
+            const showsOwnError = views().showsOwnError;
+            const mounted = model.error && !(typeof showsOwnError === 'function' && showsOwnError(model))
+                ? { dispose: () => model.rowStore.dispose() }
                 : definition.mount({ outlet: outlet(), model, context, runtime: session.runtime, url,
                     state: { rendered: true } });
             Promise.resolve(mounted).then((instance: routes.RouteInstance) => {
@@ -962,6 +1119,10 @@ module workbench {
                         return;
                     }
                     setBusy(false);
+                    if (options.history === 'none' && drafts[key]) {
+                        // Back or Forward to a page that was typed in: what was typed is there again (C9).
+                        restoreDraft(outlet(), drafts[key]);
+                    }
                     markRoute(viewId, true);
                     if (options.history === 'none') {
                         afterTwoFrames(() => restoreScroll(restoreTo));
@@ -972,14 +1133,23 @@ module workbench {
                             target.scrollIntoView();
                         }
                     }
-                    announce();
+                    announce(options.focus);
                 });
             }).then(null, (error: any) => {
                 if (mine !== generation) {
                     return;
                 }
-                // A page whose scripts fail to open it is loaded by the browser instead (M12.1), never left busy.
                 setBusy(false);
+                if (options.body || (error && error.rowStore)) {
+                    // A page shown from a form's answer cannot be loaded again with GET without losing what the form
+                    // sent (Saved queries Edit opens the Query page so), and a failing row store is mostly transient:
+                    // the page stays and says what failed.
+                    console.error('The Workbench could not open ' + url.href + ' completely.', error);
+                    showSendFailure({ status: 0, message: 'The page could not be opened completely ('
+                        + (error && error.message || 'no reason given') + '). Reload the page to try again.' });
+                    return;
+                }
+                // A page whose scripts fail to open it is loaded by the browser instead (M12.1), never left busy.
                 console.error('The Workbench could not open ' + url.href + ' in place; loading it instead.', error);
                 windowObject.location.assign(url.href);
             });

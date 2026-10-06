@@ -94,6 +94,13 @@ module workbench {
                     return;
                 }
                 disposeRows = disposer;
+            }, (error: any) => {
+                // The row windows read the page's row store: their failure is the row store's (often transient), and
+                // loading the page again is no cure the router should reach for (it shows the failure instead).
+                if (error && typeof error === 'object') {
+                    error.rowStore = true;
+                }
+                throw error;
             });
             return {
                 ready,
@@ -220,7 +227,8 @@ module workbench {
                 if (renderer && reason === 'pagehide') {
                     renderer.cancelExecutionOnLeave();
                 }
-                unmount();
+                // A page being unloaded ('pagehide') cancels its running explanations with keepalive requests.
+                unmount(reason);
                 // Leaving within the tab keeps the result for this repository's next Query page (M13.4).
                 disposeRenderer(reason);
             };

@@ -48,7 +48,8 @@ test('the loading bar loops without a jump: it moves linearly and starts and end
     const to = percentageValue(keyframes[2]);
 
     const rules = [...css.matchAll(/([^{}]+)\{([^{}]*animation:\s*workbench-route-progress[^{}]*)\}/g)];
-    assert.equal(rules.length, 2, 'the page bar and the panel bar both run the loop');
+    // The panel bar has two rules (one with :has(), round 2 R15): a browser without :has() drops a mixed selector list.
+    assert.equal(rules.length, 3, 'the page bar and the panel bar (both of its rules) run the loop');
     for (const [, selector, body] of rules) {
         assert.match(body, /animation:\s*workbench-route-progress\s+[\d.]+m?s\s+linear\s+infinite/,
             `${selector.trim()} moves at a constant speed, so the loop has no pause or jump`);

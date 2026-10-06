@@ -480,7 +480,13 @@ test('compare menu remains a touch-sized toolbar action and anchors its navigati
 	expect(touchTargets390.every(action => action.wrapperHeight >= 44)).toBe(true);
 	expect(Math.max(...touchTargets390.map(action => action.wrapperHeight))
 		- Math.min(...touchTargets390.map(action => action.wrapperHeight))).toBeLessThanOrEqual(1);
+	// Keyboard focus draws the focus indicator (only :focus-visible does; a focus after a click does not): focus the
+	// toggle, Shift+Tab away and Tab back (Tab after it would indent in the editor). Safari moves focus to buttons with
+	// Option+Tab.
 	await toggle.focus();
+	const tab = page.context().browser()?.browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
+	await page.keyboard.press(`Shift+${tab}`);
+	await page.keyboard.press(tab);
 	const closed = await compareToggleGeometry(toggle);
 	console.log(`COMPARE_SIDEBAR_TOGGLE_MOBILE ${JSON.stringify(closed)}`);
 	expect(closed.width).toBeGreaterThanOrEqual(44);
@@ -734,6 +740,9 @@ test('advanced creation forms separate their contents and provide labeled choice
 		if (await details.count()) {
 			const toggle = details.locator(':scope > .workbench-disclosure__toggle');
 			await toggle.press('Enter');
+			// The section opens in the form's flow (round-3 finding C2), growing from its toggle: measure it opened.
+			await details.evaluate(element => Promise.all(element.getAnimations({ subtree: true })
+				.map(animation => animation.finished.catch(() => undefined))));
 			const state = await details.evaluate(element => {
 				const toggleElement = element.querySelector(':scope > .workbench-disclosure__toggle');
 				const panel = element.querySelector(':scope > .workbench-disclosure__panel');

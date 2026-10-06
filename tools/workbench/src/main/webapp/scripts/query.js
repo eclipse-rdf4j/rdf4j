@@ -881,11 +881,28 @@ var workbench;
          */
         function handleNameChange() {
             setTimeout(function disableSaveIfNotValidName() {
-                $('#save').prop('disabled', !/^[- \w]{1,32}$/.test($('#query-name').val()));
+                var name = String($('#query-name').val() || '');
+                var valid = validQueryName(name);
+                $('#save').prop('disabled', !valid);
                 workbench.query.clearFeedback();
+                if (name && !valid) {
+                    // Say why Save stays off (C23).
+                    $('#save-feedback').addClass('error')
+                        .text('A name has 1 to 32 letters, digits, spaces, \'-\' or \'_\'.');
+                }
             }, 0);
         }
         query_1.handleNameChange = handleNameChange;
+        /** A saved query's name: 1 to 32 letters (of any language), digits, spaces, '-' or '_' (C23). */
+        function validQueryName(name) {
+            try {
+                return new RegExp('^[-\\s\\p{L}\\p{N}_]{1,32}$', 'u').test(name);
+            }
+            catch (error) {
+                // A browser without Unicode property escapes.
+                return /^[- \w]{1,32}$/.test(name);
+            }
+        }
         function getPaneState(paneKey) {
             return paneKey === 'compare' ? comparePaneState : primaryPaneState;
         }
@@ -2786,8 +2803,10 @@ var workbench;
                 url: endpoint,
                 type: 'POST',
                 data: data
-            }).fail(function (jqXHR) {
-                if (retriesRemaining > 0 && !(jqXHR && jqXHR.status === 404)) {
+            }).fail(function () {
+                // Every failure is retried, 404 included (GH-5904): behind a load balancer the cancellation may reach
+                // a replica that does not run the query, or overtake the query's own registration.
+                if (retriesRemaining > 0) {
                     postCancellationWithRetry(data, retriesRemaining - 1, endpoint);
                 }
             });
@@ -2817,14 +2836,27 @@ var workbench;
                 // The browser may refuse requests while the page is going away.
             }
         }
-        /** The explanations still running when the page goes: the server is asked to stop them. */
-        function cancelRunningExplanationsOnServer() {
+        /**
+         * An explanation request that failed without an answer (status 0: the network failed, or the browser stopped
+         * the requests of a page it unloads, which Firefox and Safari do before pagehide) may still run on the server:
+         * ask it to stop, with one keepalive request that outlives a page being unloaded. A request this page aborted
+         * itself (textStatus 'abort') was cancelled where it was aborted.
+         */
+        function cancelUnansweredExplanation(jqXHR, textStatus, signature) {
+            if (textStatus !== 'abort' && (!jqXHR || !jqXHR.status) && signature && signature.serverRequestId) {
+                postCancelExplainOnLeave(signature.serverRequestId);
+            }
+        }
+        /**
+         * The explanations still running when the page goes: the server is asked to stop them. leaving: the document
+         * is being unloaded (the route is disposed for 'pagehide'), so only a keepalive request outlives it. pagehide
+         * runs before the document is hidden, so visibilityState cannot tell.
+         */
+        function cancelRunningExplanationsOnServer(leaving) {
             var signatures = [activePrimaryRequestSignature];
             Object.keys(activeCompareRequestSignatures).forEach(function (pane) {
                 signatures.push(activeCompareRequestSignatures[pane]);
             });
-            // A document that is being unloaded is hidden before its pagehide (HTML 'unload a document').
-            var leaving = document.visibilityState === 'hidden';
             signatures.forEach(function (signature) {
                 if (signature && signature.serverRequestId) {
                     if (leaving) {
@@ -3039,6 +3071,9 @@ var workbench;
                 dataType: 'json',
                 data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format, signature.serverRequestId),
                 error: function (jqXHR, textStatus, errorThrown) {
+                    if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
+                        cancelUnansweredExplanation(jqXHR, textStatus, signature);
+                    }
                     if (textStatus !== 'abort' && activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
                         dispatchQueryPageEvent({
                             type: 'EXPLAIN_ERROR',
@@ -3361,6 +3396,10 @@ var workbench;
                 dataType: 'json',
                 data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format, signature.serverRequestId),
                 error: function (jqXHR, textStatus, errorThrown) {
+                    if (activeCompareRequestSignatures[signature.pane]
+                        && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
+                        cancelUnansweredExplanation(jqXHR, textStatus, signature);
+                    }
                     if (textStatus !== 'abort'
                         && activeCompareRequestSignatures[signature.pane]
                         && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
@@ -4041,7 +4080,9 @@ var workbench;
              *          as false, if the parameter was not found
              */
             function getParameterFromUrl(param) {
-                var href = document.location.href.split('#')[0];
+                // The whole address, the fragment included: a query link typed by hand may hold an unencoded '#'
+                // (PREFIX ex: <http://example.org/ns#>), which the browser takes as the start of the fragment.
+                var href = document.location.href;
                 var start = href.indexOf('?') >= 0 ? href.indexOf('?') : href.indexOf(';');
                 if (start < 0) {
                     return '';
@@ -4227,7 +4268,8 @@ var workbench;
                 setAllExplanationPropertiesVisible(false);
             });
             // Add event handlers to the save name field to react to changes in it.
-            on('#query-name', 'keydown cut paste', handleNameChange);
+            // 'input' covers autofill and a dropped text, which press no key (C23).
+            on('#query-name', 'keydown cut paste input', handleNameChange);
             // Add event handlers to the query text area to react to changes in it.
             function deferInputChange(handler) {
                 return function () {
@@ -4255,7 +4297,7 @@ var workbench;
                 }
             });
             var suspended = false;
-            var cleanup = function () {
+            var cleanup = function (reason) {
                 unlisten();
                 bound.forEach(function (element) {
                     element.off('.wbQuery');
@@ -4267,12 +4309,17 @@ var workbench;
                 timers.forEach(function (timer) {
                     clearTimeout(timer);
                 });
-                resetState();
+                resetState(reason);
             };
             // Kept alive (M11.3): hidden, the page listens to nothing outside itself and compare mode leaves the
             // page shown instead alone; the editors, results and a running query stay as they are.
             cleanup.suspend = function () {
                 if (!suspended) {
+                    // The compare-mode menu flyout was the way out of this page: it is closed when the page comes back
+                    // (C28).
+                    if (compareModeEnabled && compareSidebarOpen) {
+                        dispatchQueryPageEvent({ type: 'TOGGLE_SIDEBAR' });
+                    }
                     suspended = true;
                     queryPageSuspended = true;
                     unlisten();
@@ -4296,7 +4343,7 @@ var workbench;
          * modal, stop pending explanation requests and timers, and undo compare mode outside the page. The Query
          * route's dispose and the unit tests use it.
          */
-        function resetState() {
+        function resetState(reason) {
             ['primary', 'compare'].forEach(function (controllerKey) {
                 var uiState = getExplainRequestUiState(controllerKey);
                 clearTimeout(uiState.spinnerDelayTimeoutId);
@@ -4306,7 +4353,7 @@ var workbench;
                 clearTimeout(explainTimingTick);
                 explainTimingTick = null;
             }
-            cancelRunningExplanationsOnServer();
+            cancelRunningExplanationsOnServer(reason === 'pagehide');
             queryEndpointUrl = '';
             [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function (request) {
                 if (request && typeof request.abort === 'function') {

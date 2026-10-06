@@ -74,7 +74,9 @@ test('compact terms stay packed in storage and render lexical values losslessly'
     assert.equal(cells[2].title, '"-01"^^<' + XSD + 'integer>');
     assert.equal(cells[2].textContent, '-01');
     assert.equal(cells[3].getAttribute('lang'), 'en-GB');
-    assert.equal(cells[4].querySelector('pre').textContent, '<strong>inert</strong>');
+    // XML keeps its white space in a linked value (C27), as text: the markup is not rendered.
+    assert.equal(cells[4].querySelector('a.rdf-preformatted').textContent, '<strong>inert</strong>');
+    assert.equal(cells[4].querySelector('strong'), null);
     assert.equal(cells[6].getAttribute('aria-label'), 'Unbound');
     assert.match(cells[7].title, /same-label/);
     assert.equal(stored[0][3][1], lexical, 'the complete literal lexical value stays unmodified in storage');

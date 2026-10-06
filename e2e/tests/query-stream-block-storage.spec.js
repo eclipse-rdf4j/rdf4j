@@ -289,7 +289,9 @@ test('legacy version-1 rows keep their format with another connection open', asy
 	const blockSnapshot = await physical(page, newStore);
 	await evidence(testInfo, 'legacy-open-connection', { initial, legacySnapshot, blockSnapshot });
 	expect(legacySnapshot.versionChanges).toBe(0);
-	expect(legacySnapshot.metadata).toEqual({ id: storeId, count: expected.length });
+	// The store keeps its legacy format; reading it only stamps when it was last used, for the sweep of stores
+	// abandoned without a pagehide.
+	expect(legacySnapshot.metadata).toEqual({ id: storeId, count: expected.length, touched: expect.any(Number) });
 	expect(legacySnapshot.recordCount).toBe(expected.length);
 	expect(legacySnapshot.recordLengths).toEqual(Array(expected.length).fill(4));
 	expectPacked(blockSnapshot, 1030);

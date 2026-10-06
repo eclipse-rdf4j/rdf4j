@@ -69,6 +69,18 @@ test('A35: under reduced motion every press-feedback transition is switched off 
     assert.deepEqual(missing, [], 'each press-feedback selector is repeated (same specificity, later) with transition: none');
 });
 
+// Round 2 (R15): a browser without :has() drops a whole selector list that contains one; the reduced-motion rules keep
+// their :has() selectors in lists of their own, so the other controls still lose their transitions there.
+test('no reduced-motion rule mixes :has() selectors with selectors that work without it', () => {
+    const refresh = css('workbench-refresh.css');
+    const mixed = rules(refresh).filter((rule) => /prefers-reduced-motion:\s*reduce/.test(rule.selector))
+        .flatMap((block) => rules(block.body))
+        .map(selectorsOf)
+        .filter((list) => list.some((selector) => selector.includes(':has('))
+            && list.some((selector) => !selector.includes(':has(')));
+    assert.deepEqual(mixed, []);
+});
+
 function bodyOf(source, selector) {
     const rule = rules(source).find((candidate) => selectorsOf(candidate).indexOf(selector) >= 0);
     return rule ? rule.body : '';

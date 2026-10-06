@@ -538,8 +538,24 @@ test('completed disclosures release their fill effects and follow natural sizing
 	expect.soft(grownHeight - advancedHeight).toBeGreaterThanOrEqual(70);
 	await advancedPanel.locator('[data-motion-growth-probe]').evaluate(element => element.remove());
 	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
+	// Since round-3 finding C2 a form's own Advanced settings are in the page flow: the page scrolls them. A pane over the
+	// page (Add's Advanced settings, beside Upload) stays inside a short viewport and scrolls inside itself.
 	await page.setViewportSize({ width: 390, height: 480 });
-	const shortViewportState = () => advancedPanel.evaluate(element => {
+	await openRoute(page, `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`, 'add');
+	const overlayToggle = page.locator('#add-import-settings-toggle');
+	const overlayPanel = page.locator('#add-import-settings-panel');
+	await overlayToggle.scrollIntoViewIfNeeded();
+	await overlayToggle.click();
+	await waitForOwnedAnimations(overlayPanel);
+	// Content taller than the short viewport leaves, as the Create pane had.
+	await overlayPanel.evaluate(element => {
+		const filler = document.createElement('div');
+		filler.setAttribute('data-motion-filler', '');
+		filler.style.cssText = 'display:block;height:480px;box-sizing:border-box';
+		element.appendChild(filler);
+	});
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
+	const shortViewportState = () => overlayPanel.evaluate(element => {
 		const rootStyle = getComputedStyle(document.documentElement);
 		let bottom = Math.min(window.innerHeight - (parseFloat(rootStyle.fontSize) || 16), document.documentElement.clientHeight);
 		for (let box = element.parentElement; box; box = box.parentElement) {
@@ -549,7 +565,8 @@ test('completed disclosures release their fill effects and follow natural sizing
 			}
 		}
 		const panel = element.getBoundingClientRect();
-		return { contained: panel.bottom <= bottom, scrollable: element.scrollHeight > element.clientHeight,
+		// Half a pixel absorbs layout rounding (Firefox lands 0.00002px past an exact limit).
+		return { contained: panel.bottom <= bottom + 0.5, scrollable: element.scrollHeight > element.clientHeight,
 			panelTop: panel.top, panelBottom: panel.bottom, limitBottom: bottom, scrollHeight: element.scrollHeight,
 			clientHeight: element.clientHeight, maxHeight: getComputedStyle(element).maxHeight,
 			windowScroll: window.scrollY, panelScroll: element.scrollTop };
@@ -558,8 +575,8 @@ test('completed disclosures release their fill effects and follow natural sizing
 		const state = await shortViewportState();
 		return state.contained && state.scrollable;
 	}).toBe(true);
-	const intrinsicBeforeRegrowth = await advancedPanel.evaluate(element => element.scrollHeight);
-	await advancedPanel.evaluate(element => {
+	const intrinsicBeforeRegrowth = await overlayPanel.evaluate(element => element.scrollHeight);
+	await overlayPanel.evaluate(element => {
 		const probe = document.createElement('div');
 		probe.setAttribute('data-motion-growth-probe', '');
 		probe.style.cssText = 'display:block;height:72px;box-sizing:border-box';
@@ -570,10 +587,10 @@ test('completed disclosures release their fill effects and follow natural sizing
 		const state = await shortViewportState();
 		return state.contained && state.scrollable;
 	}).toBe(true);
-	const intrinsicAfterRegrowth = await advancedPanel.evaluate(element => element.scrollHeight);
+	const intrinsicAfterRegrowth = await overlayPanel.evaluate(element => element.scrollHeight);
 	expect.soft(intrinsicAfterRegrowth - intrinsicBeforeRegrowth).toBeGreaterThanOrEqual(70);
-	await advancedPanel.evaluate(element => element.scrollTop = element.scrollHeight);
-	const reachedLastContent = () => advancedPanel.evaluate(element => {
+	await overlayPanel.evaluate(element => element.scrollTop = element.scrollHeight);
+	const reachedLastContent = () => overlayPanel.evaluate(element => {
 		const panel = element.getBoundingClientRect();
 		const probe = element.querySelector('[data-motion-growth-probe]').getBoundingClientRect();
 		const rootStyle = getComputedStyle(document.documentElement);
@@ -592,12 +609,12 @@ test('completed disclosures release their fill effects and follow natural sizing
 	await expect.poll(async () => {
 		const geometry = await reachedLastContent();
 		return geometry.scrollTop > 0 && geometry.probeBottom <= geometry.panelBottom
-			&& geometry.panelBottom <= geometry.containedBottom;
+			&& geometry.panelBottom <= geometry.containedBottom + 0.5;
 	}).toBe(true);
 	const finalContentGeometry = await reachedLastContent();
 	expect.soft(finalContentGeometry.scrollTop).toBeGreaterThan(0);
 	expect.soft(finalContentGeometry.probeBottom).toBeLessThanOrEqual(finalContentGeometry.panelBottom);
-	expect.soft(finalContentGeometry.panelBottom).toBeLessThanOrEqual(finalContentGeometry.containedBottom);
+	expect.soft(finalContentGeometry.panelBottom).toBeLessThanOrEqual(finalContentGeometry.containedBottom + 0.5);
 });
 
 test('primary query and form actions show compact keyboard press feedback in both themes', async ({ page, browserName }) => {

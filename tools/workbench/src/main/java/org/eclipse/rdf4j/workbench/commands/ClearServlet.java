@@ -43,7 +43,7 @@ public class ClearServlet extends TransformationServlet {
 	/** How long Clear waits to discover graph choices. */
 	static final long CONTEXT_DISCOVERY_BUDGET_MILLIS = 60_000;
 
-	private final BrowseList browseList = new BrowseList();
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	private final long contextDiscoveryBudgetMillis;
 

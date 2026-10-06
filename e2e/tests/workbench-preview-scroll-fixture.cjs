@@ -38,9 +38,17 @@ const repositoryRows = [
     ['repo-10', 'Zulu store', 'http://127.0.0.1:8080/rdf4j-server/repositories/repo-10', true, false]
 ];
 
+// The menu a default Workbench sends: links to pages that are not in it are hidden (WorkbenchPolicy hides them).
 const menu = [
+    { id: 'query', label: 'Query', groupId: 'Repository', groupLabel: 'Repository' },
+    { id: 'explore', label: 'Explore', groupId: 'Repository', groupLabel: 'Repository' },
+    { id: 'summary', label: 'Summary', groupId: 'Repository', groupLabel: 'Repository' },
     { id: 'export', label: 'Export', groupId: 'Repository', groupLabel: 'Repository' },
-    { id: 'remove', label: 'Remove', groupId: 'Repository', groupLabel: 'Repository' }
+    { id: 'remove', label: 'Remove', groupId: 'Repository', groupLabel: 'Repository' },
+    { id: 'repositories', label: 'Repositories', groupId: 'Server', groupLabel: 'Server' },
+    { id: 'create', label: 'Create repository', groupId: 'Server', groupLabel: 'Server' },
+    { id: 'delete', label: 'Delete repository', groupId: 'Server', groupLabel: 'Server' },
+    { id: 'server', label: 'Connection', groupId: 'Server', groupLabel: 'Server' }
 ];
 
 function metadata(extra = {}) {

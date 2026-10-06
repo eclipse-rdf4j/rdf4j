@@ -77,6 +77,20 @@ test('createRowStore falls back to an in-memory store when the worker factory th
     await exerciseStore(died);
 });
 
+// Round 2 (R13): the in-memory fallback is bounded, so a million-row batch cannot exhaust the tab, and it says so.
+test('the in-memory fallback store keeps at most its row limit and says why it refuses more', async () => {
+    const { api } = loadApi();
+    assert.equal(api.MEMORY_ROW_STORE_LIMIT, 100000);
+    const store = await api.createRowStore({ memoryRowLimit: 3 });
+    assert.equal(store.inMemory, true, 'the store says it lives in memory');
+    assert.equal(await store.append([[null], [null]]), 2);
+    await assert.rejects(store.append([[null], [null]]),
+        /Browser storage is unavailable here, so the Workbench keeps at most 3 rows in memory\. Add a LIMIT/);
+    assert.equal(await store.count(), 2, 'a batch that does not fit is not kept in part');
+    assert.equal(await store.append([[null]]), 3, 'rows that fit are still kept');
+    await store.dispose();
+});
+
 test('in-memory row stores are not marked for IndexedDB recovery', async () => {
     const { api, window } = loadApi();
     await api.createRowStore();
@@ -291,6 +305,111 @@ test('the row-store worker sweeps stores untouched for longer than the given age
     assert.deepEqual(storage.objectStores.get('stores').records.map((record) => record.key).sort(),
         [current, live].sort());
     assert.equal((await send({ op: 'sweep', storeId: current, maxAge: 0 })).ok, false, 'an age is required');
+});
+
+// Round 2 (R19): a frozen or sleeping tab touches nothing but still shows its rows; it holds the Web Lock of each of its
+// stores, and the sweep keeps every locked store. Without Web Locks only a much longer age tells a store apart.
+test('the row-store sweep keeps stores whose Web Lock is held, and falls back to a longer age without Web Locks', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const clock = { now: Date.UTC(2026, 0, 1) };
+    const FixedDate = class extends Date { static now() { return clock.now; } };
+    const held = new Set();
+    const storage = fakeIndexedDB();
+    const worker = loadWorker({ indexedDB: storage.indexedDB, IDBKeyRange: storage.IDBKeyRange,
+        navigator: { locks: { query: async () => ({ held: [...held].map((name) => ({ name, mode: 'exclusive' })),
+            pending: [] }) } } }, { Date: FixedDate });
+    let requestId = 0;
+    const send = (message) => worker.send(Object.assign({ requestId: ++requestId }, message));
+    const frozen = (await send({ op: 'create' })).storeId;
+    const ended = (await send({ op: 'create' })).storeId;
+    held.add('rdf4j-workbench-query-rows:' + frozen);
+    clock.now += 5 * day;
+    const current = (await send({ op: 'create' })).storeId;
+    const swept = await send({ op: 'sweep', storeId: current, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [current] });
+    assert.equal(swept.ok, true, swept.error);
+    assert.deepEqual(storage.objectStores.get('stores').records.map((record) => record.key).sort(), [current, frozen].sort(),
+        'the store of the page that ended goes; the locked store of the frozen page stays');
+
+    const noLocks = fakeIndexedDB();
+    const plain = loadWorker({ indexedDB: noLocks.indexedDB, IDBKeyRange: noLocks.IDBKeyRange }, { Date: FixedDate });
+    const sendPlain = (message) => plain.send(Object.assign({ requestId: ++requestId }, message));
+    const old = (await sendPlain({ op: 'create' })).storeId;
+    clock.now += 5 * day;
+    const now = (await sendPlain({ op: 'create' })).storeId;
+    const kept = await sendPlain({ op: 'sweep', storeId: now, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [now] });
+    assert.equal(kept.count, 0, 'without Web Locks a five-day-old store may belong to a frozen page');
+    clock.now += 30 * day;
+    const later = await sendPlain({ op: 'sweep', storeId: now, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [now] });
+    assert.equal(later.count, 1, 'it goes after the fallback age');
+    assert.equal(noLocks.objectStores.get('stores').records.some((record) => record.key === old), false);
+});
+
+test('a worker row store holds the Web Lock of its store until it is disposed', async () => {
+    const { api, window } = loadApi();
+    const requests = [];
+    const navigatorLocks = { request(name, options, callback) {
+        const entry = { name, options, released: false };
+        requests.push(entry);
+        return Promise.resolve(callback({ name })).then(() => { entry.released = true; });
+    } };
+    window.navigator = { locks: navigatorLocks };
+    const store = await api.createRowStore({ workerFactory: () => new MemoryWorker() });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].name, 'rdf4j-workbench-query-rows:' + store.id);
+    assert.equal(requests[0].options.mode, 'exclusive');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests[0].released, false, 'held while the store is in use');
+    await store.dispose();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(requests[0].released, true, 'released when the store is disposed');
+});
+
+// Round-3 C31 follow-up: a store disposed while its document unloads is left for the next page to reclaim. The
+// requests it still waits on go with the document: rejecting them only made Firefox report each one that a renderer
+// being torn down no longer handles ("The query row-store worker was closed.").
+test('a row store disposed during a destructive pagehide abandons its pending requests instead of rejecting them', async () => {
+    const listeners = new Map();
+    const { api, window } = loadApi({
+        addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }
+    });
+    /** Leaves reads unanswered, as an IndexedDB read still running when the page goes away. */
+    class SlowReadWorker extends MemoryWorker {
+        postMessage(message) {
+            if (message.op === 'read') {
+                this.messages.push(message);
+                return;
+            }
+            super.postMessage(message);
+        }
+    }
+    const worker = new SlowReadWorker();
+    const store = await api.createRowStore({ workerFactory: () => worker });
+    let outcome = 'pending';
+    store.read(0, 1).then(() => { outcome = 'resolved'; }, (error) => { outcome = 'rejected: ' + error.message; });
+    for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
+    await store.dispose();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(outcome, 'pending', 'the read is abandoned with its document');
+    assert.equal(worker.terminated, true);
+    assert.equal(worker.messages.some((message) => message.op === 'dispose'), false, 'the next page reclaims the store');
+    assert.equal(window.localStorage.getItem(recoveryPrefix + store.id), 'pending');
+});
+
+test('a row store disposed in a live page still rejects the requests its worker leaves unanswered', async () => {
+    const { api } = loadApi();
+    class SlowReadWorker extends MemoryWorker {
+        postMessage(message) {
+            if (message.op === 'read') {
+                this.messages.push(message);
+                return;
+            }
+            super.postMessage(message);
+        }
+    }
+    const store = await api.createRowStore({ workerFactory: () => new SlowReadWorker() });
+    const read = store.read(0, 1);
+    await store.dispose();
+    await assert.rejects(read, /worker was closed/);
 });
 
 test('creating a row store sweeps stale stores at most once an hour, keeping this document\'s stores', async () => {

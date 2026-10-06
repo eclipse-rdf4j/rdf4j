@@ -66,7 +66,7 @@ public class RemoveServlet extends TransformationServlet {
 
 	private static final String GRAPH_COUNT_QUERY = "SELECT (COUNT(*) AS ?count) WHERE { GRAPH ?graph { ?s ?p ?o } }";
 
-	private final BrowseList browseList = new BrowseList();
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp)

@@ -346,6 +346,52 @@ test('a shelved query that finishes leaves the shown Query page\'s Cancel, reque
     second();
 });
 
+// Round 2 (R4): the shelved result must also give back the busy state it set on the results area when it leaves,
+// or the next Query page rendered into the same elements shows an endless progress bar.
+test('a query shelved while it runs leaves its results area idle for the next Query page', async () => {
+    const { workbench, document, window } = require('./query-load-more-harness.js').loadApi();
+    const releases = heldQueryServer(window);
+    const form = document.createElement('form');
+    form.setAttribute('id', 'query-form');
+    form.setAttribute('action', 'query');
+    const query = document.createElement('textarea');
+    query.name = 'query';
+    query.value = 'SELECT ?item WHERE { VALUES ?item { "row" } }';
+    form.appendChild(query);
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    target.setAttribute('aria-busy', 'false');
+    const loading = document.createElement('div');
+    loading.setAttribute('id', 'query-results-loading');
+    loading.hidden = true;
+    target.appendChild(loading);
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const { MemoryWorker } = require('./query-load-more-harness.js');
+    const render = (repositoryId) => workbench.queryPage.renderInto(document.body, {}, {
+        executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
+        rowStoreOptions: { workerFactory: () => new MemoryWorker() }
+    });
+
+    const first = render('repo-a');
+    form.trigger('submit');
+    await settle();
+    assert.equal(target.getAttribute('aria-busy'), 'true');
+    assert.equal(loading.hidden, false);
+    first('navigate');
+    assert.equal(workbench.queryPage.activity('repo-a'), 'running');
+    assert.equal(target.getAttribute('aria-busy'), 'false', 'the area the running result left is not busy');
+    assert.equal(loading.hidden, true, 'and shows no loading line');
+
+    const second = render('repo-b');
+    releases[0]();
+    await settle();
+    assert.equal(workbench.queryPage.activity('repo-a'), 'ready');
+    assert.equal(target.getAttribute('aria-busy'), 'false', 'the shown page stays idle when the shelved one ends');
+    assert.equal(loading.hidden, true);
+    second();
+});
+
 // Review finding B23: the saved-query list is virtualized; a card that scrolls out of the row window loses its form.
 test('a running saved query survives its card scrolling out of the list window and comes back with it', async () => {
     const { api, document, window, MemoryWorker } = Object.assign(require('./query-load-more-harness.js').loadApi(),
@@ -459,16 +505,26 @@ test('automatic layout measures the readable header widths once per header set a
 });
 
 // Review finding B20: a viewport taller than the row cap left its first visible rows blank under the top spacer.
-test('the row window always covers every visible row and caps only the overscan', () => {
+// Round 2 (R1): the cap is a hard bound on the rows in the document. More rows than the cap only seem visible while
+// the row-height estimate is too small; the renderer raises the cap for really tall viewports (see windowCap and
+// e2e/tests/workbench-round2-client.spec.js), so the window never grows with a wrong estimate.
+test('the row window never exceeds its cap and starts at the first visible row when the cap is short', () => {
     const { api } = require('./query-load-more-harness.js').loadApi();
     const heights = new api.MeasuredRowHeights(1000, 10);
     const tall = heights.range(0, 1000, 4, 80);
     assert.equal(tall.start, 0, 'the first visible row is rendered');
-    assert.ok(tall.end >= 100, 'every visible row is rendered: ' + tall.end);
+    assert.equal(tall.end, 80, 'the window stops at the cap');
     assert.equal(tall.topSpacer, 0);
 
     const middle = heights.range(2000, 1000, 4, 80);
-    assert.ok(middle.start <= 200 && middle.end >= 300, middle.start + '-' + middle.end);
+    assert.deepEqual([middle.start, middle.end], [200, 280], 'the top of the viewport is never left blank');
+    assert.equal(middle.topSpacer, 2000);
+
+    const onePixel = new api.MeasuredRowHeights(1000, 1).range(0, 1400, 4, 80);
+    assert.equal(onePixel.end - onePixel.start, 80, 'a 1px estimate does not render one row per pixel');
+
+    const end = heights.range(9000, 1000, 4, 80);
+    assert.deepEqual([end.start, end.end], [920, 1000], 'scrolled to the end, the last rows stay in view');
 
     const overscan = heights.range(2000, 500, 40, 80);
     assert.ok(overscan.start <= 200 && overscan.end >= 250, 'visible rows stay in a capped window');
@@ -723,5 +779,64 @@ test('Load more keeps the resolved options of options the original request carri
     assert.equal(body.get('infer'), 'false');
     assert.equal(body.get('queryLn'), 'SPARQL');
     assert.equal(body.get('query-timeout'), '30');
+    current.controller.dispose();
+});
+
+// Round 2 (R5): a continuation sent with the first batch's total (batch-known-total) may meet a result that changed
+// since. Its has-more decides; the stale total is dropped (more follow) or replaced by the rows seen (it ended).
+test('Load more after the result changed follows the continuation\'s has-more, not the stale total', async () => {
+    const current = execution({ responses: [
+        batch([0, 1], 0, true, { 'total-result-count': 6 }),
+        // Shrunk: only one row left after offset 2, while the total still says 6.
+        batch([2], 2, false, { 'total-result-count': 6 })
+    ] });
+    current.controller.submit();
+    await settle();
+    current.controller.loadMore();
+    await settle();
+    assert.equal(current.requests[1].init.body.get('batch-known-total'), '6');
+    const status = current.target.querySelector('.query-result-status');
+    assert.match(status.textContent, /^3 rows · complete/, status.textContent);
+    assert.doesNotMatch(current.target.textContent, /Load more failed|Invalid Workbench query stream/);
+    current.controller.dispose();
+
+    const growing = execution({ responses: [
+        batch([0, 1], 0, true, { 'total-result-count': 4 }),
+        // More rows than the first total said: has-more stays true although the total equals the next offset.
+        batch([2, 3], 2, true, { 'total-result-count': 4 })
+    ] });
+    growing.controller.submit();
+    await settle();
+    growing.controller.loadMore();
+    await settle();
+    assert.equal(growing.requests.length, 2);
+    assert.doesNotMatch(growing.target.textContent, /Load more failed|Invalid Workbench query stream/);
+    assert.equal(growing.target.querySelector('.query-result-load-more').hidden, false, 'Load more stays offered');
+    growing.controller.dispose();
+});
+
+test('an empty continuation of a result that shrank below its offset completes with the rows shown', async () => {
+    const current = execution({ responses: [
+        batch([0, 1], 0, true, { 'total-result-count': 6, 'query-elapsed-ms': 2, 'query-result-status': 'completed' }),
+        // Only one row is left: the continuation at offset 2 is empty and the total is below the rows shown.
+        batch([], 2, false, { 'total-result-count': 1, 'query-elapsed-ms': 3, 'query-result-status': 'completed' })
+    ] });
+    current.controller.submit();
+    await settle();
+    current.controller.loadMore();
+    await settle();
+    const status = current.target.querySelector('.query-result-status');
+    assert.match(status.textContent, /^2 rows · complete in 3 ms/, status.textContent);
+    assert.doesNotMatch(current.target.textContent, /Load more failed|Invalid Workbench query stream/);
+    current.controller.dispose();
+});
+
+test('the first batch still has to report a total that agrees with its has-more', async () => {
+    const current = execution({ responses: [batch([0, 1], 0, true, { 'total-result-count': 2 })] });
+    current.controller.submit();
+    await settle();
+    assert.match(current.target.textContent, /Invalid Workbench query stream: batch continuation metadata must match the exact total/);
+    // R14: the server broke the protocol; the browser kept every row it was sent.
+    assert.doesNotMatch(current.target.textContent, /browser could not keep|before the browser failed/);
     current.controller.dispose();
 });

@@ -388,6 +388,23 @@ body.query-result-embedded-body .workbench-disclosure__panel[hidden] {
 	display: none !important;
 }
 
+/* A form's own Advanced settings above its buttons (Export, Connection, Create; round-3 C2) are part of the form: they
+ * open in its flow, under their toggle, and push the buttons down instead of covering them. template.ts does not close
+ * a pane in the flow when the form is pressed elsewhere. Panes in a toolbar or an actions row (Display, Download,
+ * Query settings, Add's Advanced settings after Upload) stay over the page. */
+body.workbench-body .workbench-disclosure:is(.workbench-options, .workbench-advanced):not(.workbench-form-actions > *)
+		> .workbench-disclosure__panel {
+	position: relative;
+	top: auto;
+	left: auto;
+	width: auto;
+	max-width: none;
+	max-height: none;
+	margin-top: var(--workbench-space-related);
+	box-shadow: none;
+	z-index: auto;
+}
+
 body.workbench-body .workbench-disclosure__panel::before,
 body.query-result-embedded-body .workbench-disclosure__panel::before {
 	position: absolute;
@@ -984,9 +1001,11 @@ body.query-result-embedded-body .workbench-action--ghost:hover {
 	}
 }
 
-body.workbench-body .workbench-action:focus-within,
-body.query-result-embedded-body .workbench-action:focus-within {
-	outline: 2px solid var(--workbench-teal);
+/* An action that wraps its control (a label around an input) shows the control's keyboard focus ring. Only keyboard
+ * focus draws it (:focus-visible): a button that a click focuses shows no ring. */
+body.workbench-body .workbench-action:has(:focus-visible),
+body.query-result-embedded-body .workbench-action:has(:focus-visible) {
+	outline: 2px solid var(--workbench-focus);
 	outline-offset: 2px;
 }
 
@@ -1081,11 +1100,11 @@ body.query-result-embedded-body .workbench-disclosure__toggle:active {
 	body.query-result-embedded-body .workbench-disclosure-chevron {
 		transition: none;
 	}
-	/* The selectors of the press-feedback rules above, so these win by order (same specificity) and not lose to them. */
+	/* The selectors of the press-feedback rules above, so these win by order (same specificity) and not lose to them.
+	   The :has() selectors have a rule of their own: a browser without :has() drops a whole selector list with one. */
 	body.workbench-body .workbench-action button,
 	body.workbench-body .workbench-action,
 	body.workbench-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
-	body.workbench-body .workbench-action:not(:has(:disabled)),
 	body.workbench-body .query-page .query-actions-toolbar__primary > :is(button,
 	input[type="button"],
 	input[type="submit"]),
@@ -1101,8 +1120,11 @@ body.query-result-embedded-body .workbench-disclosure__toggle:active {
 	body.query-result-embedded-body .workbench-action button,
 	body.query-result-embedded-body .workbench-action,
 	body.query-result-embedded-body .workbench-action:not(.workbench-action--primary) button:not(:disabled),
-	body.query-result-embedded-body .workbench-action:not(:has(:disabled)),
 	body.query-result-embedded-body .workbench-disclosure__toggle {
+		transition: none;
+	}
+	body.workbench-body .workbench-action:not(:has(:disabled)),
+	body.query-result-embedded-body .workbench-action:not(:has(:disabled)) {
 		transition: none;
 	}
 }
@@ -2038,6 +2060,19 @@ body.workbench-body #content.workbench-main {
 	font-size: 14px;
 }
 
+/* After an in-page navigation the router moves focus to the page heading so screen readers start reading there; the
+   heading is not a control, so it shows no focus ring (Safari draws one for that programmatic focus). */
+body.workbench-body h1[tabindex="-1"]:focus {
+	outline: none;
+}
+
+/* The outlet that holds the page takes focus only as a fallback (tabindex -1): a click on blank page space, or in
+   Safari, whose buttons take no focus from a click, a press on a button. It is not a control, so it never shows a
+   focus ring around the whole page, not even after a key press. */
+body.workbench-body #workbench-outlet:focus {
+	outline: none;
+}
+
 body.workbench-body #content.workbench-main > h1,
 body.workbench-body #title_heading {
 	margin: 0 0 16px;
@@ -2960,14 +2995,37 @@ body.workbench-body .workbench-search-field__icon {
 	pointer-events: none;
 }
 
+/* One column no wider than the card (minmax(0, 1fr)): a long IRI, label, type or comment wraps inside it instead of
+ * widening the card and the page past a phone's screen. */
 body.workbench-body .explore-resource-card {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 10px;
 	justify-items: start;
 }
 
+body.workbench-body .explore-resource-card > * {
+	max-width: 100%;
+}
+
+body.workbench-body .explore-resource-card > h2,
+body.workbench-body .explore-resource-card p.explore-resource-card__comment,
+body.workbench-body .explore-resource-card .explore-chip {
+	overflow-wrap: anywhere;
+}
+
 body.workbench-body .explore-resource-card > h2 {
 	margin: 0;
+}
+
+body.workbench-body .explore-resource-card__types > li {
+	min-width: 0;
+	max-width: 100%;
+}
+
+body.workbench-body .explore-resource-card .explore-chip {
+	box-sizing: border-box;
+	max-width: 100%;
 }
 
 body.workbench-body .explore-resource-card__iri {
@@ -3122,11 +3180,8 @@ body.workbench-body .workbench-browse-card table.data td.workbench-count-cell[ar
 	color: var(--workbench-muted);
 }
 
-body.workbench-body .workbench-browse-card table.data th[aria-sort="descending"]::after {
-	content: "\25BE";
-	margin-left: 4px;
-	font-size: 10px;
-}
+/* The count column's aria-sort only says how the list is ordered: no marker that would look like a sort control or a
+ * dropdown (round-3 finding C22); the counts themselves show the order. */
 
 body.workbench-body .workbench-browse-card table.data td.workbench-row-actions {
 	width: 1%;
@@ -3223,6 +3278,13 @@ body.workbench-body .workbench-submit-status {
 	font-size: var(--workbench-label-font-size);
 	font-weight: 600;
 	line-height: 1.25;
+	/* A refusal the server explains over several lines (a SHACL validation summary, C13) keeps its lines. */
+	white-space: pre-line;
+}
+
+/* The same for a refusal shown above the page. */
+body.workbench-body #workbench-send-failure .workbench-callout__body {
+	white-space: pre-line;
 }
 
 body.workbench-body .workbench-submit-status[data-state="done"] {
@@ -4760,7 +4822,24 @@ body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
 	position: relative;
 }
 
-.workbench-local-progress[aria-busy='true']::before,
+/* Two rules, not one list: a browser without :has() drops a whole selector list that contains it. */
+.workbench-local-progress[aria-busy='true']::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	right: 0;
+	left: 0;
+	z-index: 3;
+	height: 2px;
+	background-image: linear-gradient(90deg, transparent, var(--workbench-primary), transparent);
+	background-repeat: no-repeat;
+	background-size: 40% 2px;
+	background-position: calc(-40% / 0.6) 0;
+	opacity: 0;
+	pointer-events: none;
+	animation: workbench-route-progress 1.4s linear infinite, workbench-local-progress-reveal 0s linear 150ms forwards;
+}
+
 .workbench-local-progress:has(> [aria-busy='true'])::before {
 	content: '';
 	position: absolute;
@@ -4792,7 +4871,13 @@ body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
 		animation: none;
 	}
 
-	.workbench-local-progress[aria-busy='true']::before,
+	.workbench-local-progress[aria-busy='true']::before {
+		background-image: linear-gradient(var(--workbench-primary), var(--workbench-primary));
+		background-size: 100% 2px;
+		background-position: 0 0;
+		animation: workbench-local-progress-reveal 0s linear 150ms forwards;
+	}
+
 	.workbench-local-progress:has(> [aria-busy='true'])::before {
 		background-image: linear-gradient(var(--workbench-primary), var(--workbench-primary));
 		background-size: 100% 2px;
@@ -4801,81 +4886,11 @@ body.workbench-body .workbench-outlet[data-workbench-route-loading='true'] {
 	}
 }
 
-/* Export and Remove keep their four statement columns in a bounded, keyboard-accessible horizontal scroll region. */
-body.workbench-body .workbench-preview-table-scroll {
-	box-sizing: border-box;
-	max-width: 100%;
-	min-width: 0;
-	overflow-x: auto;
-	overflow-y: hidden;
-	overscroll-behavior-x: contain;
-}
-
-body.workbench-body .workbench-preview-table-scroll:focus-visible {
+/* The shared result table's boxes (Query results, Explore, the Export and Remove previews) take keyboard focus to
+ * scroll; they show the focus ring of the controls, inside the box so its card does not clip it. */
+body.workbench-body :is(.query-result-table-wrap, .query-result-records):focus-visible {
 	outline: 2px solid var(--workbench-focus);
-	outline-offset: 2px;
-}
-
-body.workbench-body .workbench-preview-table-scroll > table.data {
-	box-sizing: border-box;
-	width: max-content;
-	min-width: 100%;
-	table-layout: auto;
-}
-
-body.workbench-body .workbench-preview-table-scroll > table.data td {
-	white-space: nowrap;
-}
-
-@media (max-width: 600px) {
-	body.workbench-body .workbench-preview-table-scroll > table.data {
-		display: table;
-		border: 0;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data thead {
-		position: static;
-		width: auto;
-		height: auto;
-		overflow: visible;
-		clip: auto;
-		clip-path: none;
-		white-space: normal;
-		display: table-header-group;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data thead tr {
-		display: table-row;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data tbody {
-		display: table-row-group;
-		width: auto;
-		min-width: 0;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data tr {
-		display: table-row;
-		width: auto;
-		margin: 0;
-		padding: 0;
-		border: 0;
-		border-radius: 0;
-		background: transparent;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data td {
-		display: table-cell;
-		width: auto;
-		min-width: 0;
-		padding: 7px 8px;
-		border: 0;
-		vertical-align: top;
-	}
-
-	body.workbench-body .workbench-preview-table-scroll > table.data td[data-label]::before {
-		display: none;
-	}
+	outline-offset: -2px;
 }
 
 @media (max-width: 600px) {

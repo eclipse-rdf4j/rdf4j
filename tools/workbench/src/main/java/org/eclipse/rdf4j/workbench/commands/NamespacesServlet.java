@@ -36,17 +36,27 @@ import jakarta.servlet.http.HttpServletResponse;
  * Lists the namespaces in prefix order and changes them. {@code action=save} sets {@code prefix} to {@code namespace}
  * and, with a different {@code previousPrefix}, removes that one (a rename); {@code action=delete} removes
  * {@code prefix}. Both redirect to the listing, or answer 400 with an error message when the prefix or the namespace is
- * not valid. A request without {@code action} keeps the original behavior: an empty namespace removes the prefix.
+ * not valid. A save never silently replaces another binding: a rename onto a bound prefix is refused, and adding (a
+ * save without {@code previousPrefix}) a prefix that is bound to another namespace is refused with the
+ * {@code existing-namespace} metadata unless {@code overwrite=true} confirms it. A request without {@code action} keeps
+ * the original behavior: an empty namespace removes the prefix.
  */
 public class NamespacesServlet extends TransformationServlet {
 
 	/** Name used for validation error metadata in page responses. */
 	private static final String ERROR_MESSAGE = "error-message";
 
+	/** Confirms that adding a prefix replaces the namespace it is bound to. */
+	private static final String OVERWRITE = "overwrite";
+
+	/** The namespace a prefix that was not replaced is bound to, in the metadata of the refusal. */
+	private static final String EXISTING_NAMESPACE = "existing-namespace";
+
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		String action = req.getParameter("action");
 		boolean legacy = action == null || action.isEmpty();
+		String existingNamespace = null;
 		try (RepositoryConnection con = repository.getConnection()) {
 			if (legacy) {
 				String namespace = required(req, "namespace");
@@ -66,6 +76,13 @@ public class NamespacesServlet extends TransformationServlet {
 						// A rename must not silently replace another namespace's binding.
 						throw new BadRequestException("Prefix '" + prefix + "' is already defined");
 					}
+				} else if (previousPrefix == null && !"true".equals(req.getParameter(OVERWRITE))) {
+					// Adding a prefix that is bound to another namespace replaces that binding only when confirmed.
+					String existing = con.getNamespace(prefix);
+					if (existing != null && !existing.equals(namespace)) {
+						existingNamespace = existing;
+						throw new BadRequestException("Prefix '" + prefix + "' is already defined");
+					}
 				}
 				saveNamespace(con, prefix, namespace, previousPrefix);
 			} else if ("delete".equals(action)) {
@@ -77,6 +94,9 @@ public class NamespacesServlet extends TransformationServlet {
 			resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.metadata(ERROR_MESSAGE, exception.getMessage());
+			if (existingNamespace != null) {
+				builder.metadata(EXISTING_NAMESPACE, existingNamespace);
+			}
 			service(builder);
 			return;
 		}

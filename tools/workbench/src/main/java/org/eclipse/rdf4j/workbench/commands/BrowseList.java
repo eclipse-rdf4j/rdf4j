@@ -14,37 +14,34 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.WeakHashMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
-import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -82,15 +79,19 @@ final class BrowseList {
 	static final String DEFAULT_GRAPH = "";
 
 	/**
-	 * How many counts may run at once in this Workbench, including abandoned ones that have not returned yet. A count
-	 * of a remote repository blocks in an HTTP call that ignores interrupts and holds a pooled connection, so the
-	 * Workbench bounds them instead of letting abandoned counts exhaust its threads and the connection pool.
+	 * How many counts of one repository may run at once, including abandoned ones that have not returned yet. A count
+	 * of a slow or unreachable repository may block in a call that ignores interrupts (the size of a remote repository
+	 * is an HTTP call that holds a pooled connection), so each repository is bounded on its own: its abandoned counts
+	 * cannot exhaust the Workbench's threads and connections, and they do not hold back the counts of other
+	 * repositories.
 	 */
 	static final int MAX_IN_FLIGHT_COUNTS = 8;
 
-	private static final Semaphore SHARED_IN_FLIGHT_COUNTS = new Semaphore(MAX_IN_FLIGHT_COUNTS);
+	/** The in-flight limit of each repository, shared by all of its pages. */
+	private static final Map<Repository, Semaphore> IN_FLIGHT_COUNTS_PER_REPOSITORY = Collections
+			.synchronizedMap(new WeakHashMap<>());
 
-	private final Semaphore inFlightCounts;
+	private final Supplier<Semaphore> inFlightCounts;
 
 	private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
 		Thread thread = new Thread(runnable, "rdf4j-workbench-counts");
@@ -98,13 +99,19 @@ final class BrowseList {
 		return thread;
 	});
 
-	BrowseList() {
-		this.inFlightCounts = SHARED_IN_FLIGHT_COUNTS;
+	/**
+	 * @param repository the repository the page counts, read when a count starts (servlets receive it after they are
+	 *                   constructed)
+	 */
+	BrowseList(Supplier<Repository> repository) {
+		this.inFlightCounts = () -> IN_FLIGHT_COUNTS_PER_REPOSITORY.computeIfAbsent(repository.get(),
+				counted -> new Semaphore(MAX_IN_FLIGHT_COUNTS));
 	}
 
 	/** A list with its own limit of counts in flight (tests use a small one). */
 	BrowseList(int maxInFlightCounts) {
-		this.inFlightCounts = new Semaphore(maxInFlightCounts);
+		Semaphore limit = new Semaphore(maxInFlightCounts);
+		this.inFlightCounts = () -> limit;
 	}
 
 	static boolean countsRequested(WorkbenchRequest req) {
@@ -189,25 +196,66 @@ final class BrowseList {
 		return await(submit(count, deadline), deadline);
 	}
 
-	/** Starts a count, or answers null when the in-flight limit is reached. */
+	/** Starts a count, or answers null when the repository's in-flight limit is reached. */
 	private <T> Future<T> submit(Callable<T> count, Deadline deadline) {
-		if (!inFlightCounts.tryAcquire()) {
+		Semaphore limit = inFlightCounts.get();
+		if (!limit.tryAcquire()) {
 			return null;
 		}
+		CountTask<T> task = new CountTask<>(() -> {
+			deadline.checkActive();
+			T value = count.call();
+			deadline.checkActive();
+			return value;
+		}, limit);
 		try {
-			return executor.submit(() -> {
-				try {
-					deadline.checkActive();
-					T value = count.call();
-					deadline.checkActive();
-					return value;
-				} finally {
-					inFlightCounts.release();
-				}
-			});
+			executor.execute(task);
 		} catch (RuntimeException e) {
-			inFlightCounts.release();
+			task.releasePlace();
 			throw e;
+		}
+		return task;
+	}
+
+	/**
+	 * A count that holds one place of its repository's in-flight limit from its submission until its work returns, also
+	 * when it was abandoned meanwhile, or until it is cancelled before its worker started it: such a count never runs.
+	 */
+	private static final class CountTask<T> extends FutureTask<T> {
+
+		private final Semaphore limit;
+
+		private final AtomicBoolean started = new AtomicBoolean();
+
+		private final AtomicBoolean placeHeld = new AtomicBoolean(true);
+
+		private CountTask(Callable<T> count, Semaphore limit) {
+			super(count);
+			this.limit = limit;
+		}
+
+		@Override
+		public void run() {
+			started.set(true);
+			try {
+				super.run();
+			} finally {
+				releasePlace();
+			}
+		}
+
+		@Override
+		protected void done() {
+			if (!started.get()) {
+				// Cancelled before its worker started it, so it will never run.
+				releasePlace();
+			}
+		}
+
+		private void releasePlace() {
+			if (placeHeld.compareAndSet(true, false)) {
+				limit.release();
+			}
 		}
 	}
 
@@ -255,7 +303,7 @@ final class BrowseList {
 		}
 	}
 
-	private static boolean stoppedByTimeLimit(Throwable failure) {
+	static boolean stoppedByTimeLimit(Throwable failure) {
 		for (Throwable current = failure; current != null; current = current.getCause()) {
 			if (current instanceof QueryInterruptedException) {
 				return true;
@@ -315,16 +363,6 @@ final class BrowseList {
 		Deadline deadline = new Deadline(budgetMillis);
 		Optional<Boolean> finished = withinBudget(() -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
-				if (ServerBoundedCounts.appliesTo(connection)) {
-					int seconds = ServerBoundedCounts.seconds(deadline.remainingNanos());
-					keep(counts, REPOSITORY, ServerBoundedCounts.all(connection, seconds), deadline);
-					keep(counts, DEFAULT_GRAPH, ServerBoundedCounts.defaultGraph(connection, seconds), deadline);
-					Map<Resource, Long> graphs = ServerBoundedCounts.namedGraphs(connection, seconds);
-					for (Resource context : contexts) {
-						keep(counts, key(context), graphs.getOrDefault(context, 0L), deadline);
-					}
-					return Boolean.TRUE;
-				}
 				deadline.checkActive();
 				long repositorySize = connection.size();
 				keep(counts, REPOSITORY, repositorySize, deadline);
@@ -388,75 +426,6 @@ final class BrowseList {
 		private synchronized void publish(Runnable publication) throws InterruptedException {
 			checkActive();
 			publication.run();
-		}
-	}
-
-	/**
-	 * Statement counts of a remote repository as SPARQL COUNT queries with a maximum execution time, so that the server
-	 * stops counting when the Workbench stops waiting. The size of a remote repository is an HTTP call that neither the
-	 * Workbench nor the server can stop. Like {@link RepositoryConnection#size(Resource...)} they count explicit
-	 * statements only, each statement once for each graph it is in.
-	 */
-	static final class ServerBoundedCounts {
-
-		private static final String ALL = "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }";
-
-		private static final String DEFAULT_GRAPH = "SELECT (COUNT(*) AS ?count) FROM <" + RDF4J.NIL.stringValue()
-				+ "> WHERE { ?s ?p ?o }";
-
-		private static final String NAMED_GRAPHS = "SELECT ?graph (COUNT(*) AS ?count) "
-				+ "WHERE { GRAPH ?graph { ?s ?p ?o } } GROUP BY ?graph";
-
-		private ServerBoundedCounts() {
-		}
-
-		/** Whether the connection's counts are remote calls, which only the server can bound. */
-		static boolean appliesTo(RepositoryConnection connection) {
-			return connection.getRepository() instanceof HTTPRepository;
-		}
-
-		/** The whole seconds left of a count budget, at least one. */
-		static int seconds(long remainingNanos) {
-			long seconds = (TimeUnit.NANOSECONDS.toMillis(Math.max(0, remainingNanos)) + 999) / 1000;
-			return (int) Math.max(1, Math.min(Integer.MAX_VALUE, seconds));
-		}
-
-		static long all(RepositoryConnection connection, int maxExecutionSeconds) {
-			return single(connection, ALL, maxExecutionSeconds);
-		}
-
-		static long defaultGraph(RepositoryConnection connection, int maxExecutionSeconds) {
-			return single(connection, DEFAULT_GRAPH, maxExecutionSeconds);
-		}
-
-		static Map<Resource, Long> namedGraphs(RepositoryConnection connection, int maxExecutionSeconds) {
-			Map<Resource, Long> counts = new HashMap<>();
-			try (TupleQueryResult result = prepare(connection, NAMED_GRAPHS, maxExecutionSeconds).evaluate()) {
-				while (result.hasNext()) {
-					BindingSet bindings = result.next();
-					if (bindings.getValue("graph")instanceof Resource graph
-							&& bindings.getValue("count")instanceof Literal count) {
-						counts.put(graph, count.longValue());
-					}
-				}
-			}
-			return counts;
-		}
-
-		private static long single(RepositoryConnection connection, String query, int maxExecutionSeconds) {
-			try (TupleQueryResult result = prepare(connection, query, maxExecutionSeconds).evaluate()) {
-				if (result.hasNext() && result.next().getValue("count")instanceof Literal count) {
-					return count.longValue();
-				}
-				return 0;
-			}
-		}
-
-		private static TupleQuery prepare(RepositoryConnection connection, String query, int maxExecutionSeconds) {
-			TupleQuery tupleQuery = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
-			tupleQuery.setIncludeInferred(false);
-			tupleQuery.setMaxExecutionTime(maxExecutionSeconds);
-			return tupleQuery;
 		}
 	}
 

@@ -380,10 +380,15 @@ public final class QueryEvaluator {
 			addBatchTerminalMetadata(builder, batch, 0, false, null);
 			writeBooleanResult(builder, booleanValue);
 			builder.endBoolean();
-		} else if (knownTotal != null) {
-			long seen = batch.nextOffset(emitted) + (rowBeyondWindow ? 1 : 0);
-			endBatch(builder, batch, emitted, rowBeyondWindow, Math.max(knownTotal, seen));
+		} else if (knownTotal != null && rowBeyondWindow) {
+			// Rows remain after the window. The result may have changed since the total was counted (rows deleted or
+			// added, RAND(), SAMPLE), so the total answered is at least the rows seen, which lie beyond the next
+			// offset.
+			long seen = batch.nextOffset(emitted) + 1;
+			endBatch(builder, batch, emitted, true, Math.max(knownTotal, seen));
 		} else {
+			// The evaluation reached the end of the result, so it counted the exact total, also when a known total was
+			// sent: the result may have shrunk or grown since that total was counted.
 			endBatch(builder, batch, emitted, total > batch.nextOffset(emitted), total);
 		}
 		completeResponseHeartbeat(heartbeat);

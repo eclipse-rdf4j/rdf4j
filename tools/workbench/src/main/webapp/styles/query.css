@@ -202,6 +202,14 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror[data-wor
     max-height: none;
 }
 
+/* Full screen (CodeMirror's add-on fixes the editor to the viewport): the text area fills it, without the six-line to
+ * half-viewport limits of the page editor. */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror.CodeMirror-fullscreen .CodeMirror-scroll {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
 .query-editor-resize {
     position: relative;
     height: 10px;
@@ -1079,6 +1087,27 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
 .query-result-layout .rdf-datatype,
 .query-result-layout .query-result-variable {
     font-family: var(--workbench-code-font);
+}
+
+/* A literal with line breaks (or XML) keeps them, in the cell's font, and wraps its long lines like any other value;
+ * with wrapping off each of its lines stays one line (C27). */
+.query-result-layout .rdf-preformatted {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    tab-size: 4;
+}
+
+.query-result-layout[data-wrap="false"] .rdf-preformatted {
+    white-space: pre;
+}
+
+/* With wrapping on, a tag longer than its column (a datatype IRI without a prefix) wraps inside it instead of being
+ * cut off at the edge of the cell or record. */
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout[data-wrap="true"] :is(.rdf-language, .rdf-datatype) {
+    box-sizing: border-box;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 /* The pinned copy of the header row: zero height in the flow, so showing it never moves the table. */

@@ -17,8 +17,9 @@ import static org.eclipse.rdf4j.model.util.Values.bnode;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Callable;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -51,7 +52,10 @@ public class SummaryServlet extends TransformationServlet {
 
 	private static final String EFFECTIVE_CONFIG_TURTLE = "config-model-turtle";
 
-	private final BrowseList browseList = new BrowseList();
+	/** The reason the counts could not be made, in the metadata of the counts answer. */
+	static final String COUNTS_FAILED = "counts-failed";
+
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(SummaryServlet.class);
 
@@ -95,19 +99,17 @@ public class SummaryServlet extends TransformationServlet {
 
 	/**
 	 * The number of statements ({@code size}) and of named graphs ({@code contexts}), counted on their own connection
-	 * for at most two seconds. A count that did not finish is empty, and {@code counts-timed-out} is set.
+	 * for at most two seconds. A count that did not finish is empty, and {@code counts-timed-out} is set. A count that
+	 * failed (for example on a repository that cannot be reached) is empty too, and {@code counts-failed} gives the
+	 * reason of the first failure, so the page can say why.
 	 */
 	private void counts(TupleResultBuilder builder) throws Exception {
 		// Each count runs on its own connection and worker, so a slow statement count does not hold back the graphs.
-		List<Optional<Long>> counts = browseList.allWithinBudget(List.of(() -> {
+		List<Optional<CountOutcome>> counts = browseList.allWithinBudget(List.of(outcome(() -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
-				if (BrowseList.ServerBoundedCounts.appliesTo(connection)) {
-					return BrowseList.ServerBoundedCounts.all(connection,
-							BrowseList.ServerBoundedCounts.seconds(TimeUnit.MILLISECONDS.toNanos(countBudgetMillis)));
-				}
 				return connection.size();
 			}
-		}, () -> {
+		}), outcome(() -> {
 			try (RepositoryConnection connection = repository.getConnection();
 					RepositoryResult<Resource> contexts = connection.getContextIDs()) {
 				long count = 0;
@@ -117,16 +119,51 @@ public class SummaryServlet extends TransformationServlet {
 				}
 				return count;
 			}
-		}), countBudgetMillis);
-		Optional<Long> size = counts.get(0);
-		Optional<Long> contexts = counts.get(1);
+		})), countBudgetMillis);
+		Optional<CountOutcome> size = counts.get(0);
+		Optional<CountOutcome> contexts = counts.get(1);
 		builder.start("size", "contexts");
 		builder.link(List.of(INFO));
 		if (size.isEmpty() || contexts.isEmpty()) {
 			BrowseList.countsTimedOut(builder);
 		}
-		builder.result(count(size.orElse(null)), count(contexts.orElse(null)));
+		counts.stream()
+				.flatMap(Optional::stream)
+				.map(CountOutcome::failure)
+				.filter(Objects::nonNull)
+				.findFirst()
+				.ifPresent(failure -> {
+					LOGGER.warn("Unable to count the statements or named graphs of repository {}",
+							info == null ? null : info.getId(), failure);
+					String reason = CreateServlet.failureMessage(failure);
+					builder.metadata(COUNTS_FAILED, reason == null ? failure.getClass().getSimpleName() : reason);
+				});
+		builder.result(count(size.map(CountOutcome::value).orElse(null)),
+				count(contexts.map(CountOutcome::value).orElse(null)));
 		builder.end();
+	}
+
+	/** A count that finished: its value, or the failure that stopped it. */
+	private record CountOutcome(Long value, Exception failure) {
+	}
+
+	/**
+	 * A count whose failure is its outcome, so that one failing count neither fails the answer nor hides the counts
+	 * that finished. A count stopped by the time budget is still answered as not finished in time.
+	 */
+	private static Callable<CountOutcome> outcome(Callable<Long> count) {
+		return () -> {
+			try {
+				return new CountOutcome(count.call(), null);
+			} catch (InterruptedException e) {
+				throw e;
+			} catch (Exception e) {
+				if (BrowseList.stoppedByTimeLimit(e)) {
+					throw e;
+				}
+				return new CountOutcome(null, e);
+			}
+		};
 	}
 
 	private static Value count(Long count) {

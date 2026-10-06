@@ -159,6 +159,11 @@ var workbench;
     (function (queryStream) {
         queryStream.ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
         queryStream.COMPACT_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
+        /**
+         * The most rows the in-memory fallback store keeps. The worker store keeps a million-row batch in IndexedDB; in
+         * the page's own memory that many rows can exhaust the tab.
+         */
+        queryStream.MEMORY_ROW_STORE_LIMIT = 100000;
         var rowStoreRecoveryKeyPrefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
         var currentDocumentRowStoreIds = [];
         /**
@@ -167,11 +172,51 @@ var workbench;
          * ones nobody touched for three days, at most once an hour per page.
          */
         var rowStoreMaxAge = 3 * 24 * 60 * 60 * 1000;
+        /** Where Web Locks are unavailable a live page's store cannot be told apart: only much older ones are swept. */
+        var rowStoreFallbackMaxAge = 30 * 24 * 60 * 60 * 1000;
         var rowStoreTouchInterval = 30 * 60 * 1000;
         var rowStoreSweepInterval = 60 * 60 * 1000;
         var lastRowStoreSweep = null;
         var liveRowStoreTouches = {};
         var rowStoreHeartbeat = null;
+        /**
+         * Hold the Web Lock of a row store while this page uses it, so the sweep of another page (queryStreamWorker)
+         * keeps it even when this page is frozen or asleep and touches nothing; the browser releases the lock when the
+         * page ends. Returns the release.
+         */
+        function holdRowStoreLock(storeId) {
+            var browser = typeof navigator !== 'undefined' ? navigator
+                : typeof window !== 'undefined' ? window.navigator : null;
+            var locks = browser ? browser.locks : null;
+            if (!storeId || !locks || typeof locks.request !== 'function') {
+                return function () { };
+            }
+            var released = false;
+            var release = null;
+            try {
+                Promise.resolve(locks.request('rdf4j-workbench-query-rows:' + storeId, { mode: 'exclusive' }, function () {
+                    return new Promise(function (resolve) {
+                        if (released) {
+                            resolve();
+                        }
+                        else {
+                            release = resolve;
+                        }
+                    });
+                })).then(null, function () {
+                    // Without the lock the store is kept by its age, as before.
+                });
+            }
+            catch (error) {
+                return function () { };
+            }
+            return function () {
+                released = true;
+                if (release) {
+                    release();
+                }
+            };
+        }
         function startRowStoreHeartbeat() {
             var view = typeof window !== 'undefined' ? window : null;
             if (rowStoreHeartbeat !== null || !view || typeof view.setInterval !== 'function') {
@@ -245,6 +290,37 @@ var workbench;
          * Marks this document's stores on its own pagehide, so a store is reclaimed even when the page is left before
          * a route takes ownership of it (a page left while it is still loading).
          */
+        /**
+         * True from a destructive pagehide (the document is being unloaded, not cached) until a pageshow: an IndexedDB
+         * transaction started now is aborted by the unload (Firefox warns about each, C31), so stores are marked for
+         * the next page to reclaim instead of being disposed. Listened to in the capture phase, before the pages' own
+         * pagehide handlers dispose their results.
+         */
+        var documentUnloading = false;
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('pagehide', function (event) {
+                if (event && event.persisted === false) {
+                    documentUnloading = true;
+                }
+            }, true);
+            window.addEventListener('pageshow', function () {
+                documentUnloading = false;
+            }, true);
+        }
+        /** Mark one store for the next page of this origin to reclaim; false when the mark cannot be stored. */
+        function markRowStoreForRecovery(id) {
+            var storage = rowStoreRecoveryStorage();
+            if (!id || !storage || typeof storage.setItem !== 'function') {
+                return false;
+            }
+            try {
+                storage.setItem(rowStoreRecoveryKeyPrefix + id, 'pending');
+                return true;
+            }
+            catch (error) {
+                return false;
+            }
+        }
         function listenForRowStorePagehide() {
             if (rowStorePagehideListening || typeof window === 'undefined' || !window.addEventListener) {
                 return;
@@ -455,8 +531,11 @@ var workbench;
         function isObject(value) {
             return value !== null && typeof value === 'object' && !Array.isArray(value);
         }
+        /** The server's stream broke the protocol: never a failure of the browser to keep the rows. */
         function protocolError(message) {
-            return new Error('Invalid Workbench query stream: ' + message);
+            var error = new Error('Invalid Workbench query stream: ' + message);
+            error.protocol = true;
+            return error;
         }
         function validateTerm(term) {
             if (term === null) {
@@ -1052,14 +1131,26 @@ var workbench;
          * storage turned off, some web views, a full quota) the rows are kept in memory instead.
          */
         function createRowStore(options) {
-            return createWorkerRowStore(options || {}).then(null, function () {
-                return createMemoryRowStore();
+            var config = options || {};
+            return createWorkerRowStore(config).then(null, function (error) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('Workbench query results are kept in memory, at most ' + memoryRowLimit(config)
+                        + ' rows: browser storage is unavailable.', error);
+                }
+                return createMemoryRowStore(memoryRowLimit(config));
             });
         }
         queryStream.createRowStore = createRowStore;
+        function memoryRowLimit(config) {
+            var limit = config.memoryRowLimit;
+            return Number.isSafeInteger(limit) && limit > 0 ? limit : queryStream.MEMORY_ROW_STORE_LIMIT;
+        }
         var memoryRowStoreCount = 0;
-        /** A row store in this document's memory, with the worker store's interface and checks. */
-        function createMemoryRowStore() {
+        /**
+         * A row store in this document's memory, with the worker store's interface and checks. It keeps at most
+         * limit rows: a batch that does not fit is refused with a message that says why and what to do instead.
+         */
+        function createMemoryRowStore(limit) {
             var rows = [];
             var disposed = false;
             function whileOpen(operation) {
@@ -1075,9 +1166,15 @@ var workbench;
             }
             return {
                 id: 'memory-' + (++memoryRowStoreCount),
+                inMemory: true,
                 append: function (batch) {
                     if (!Array.isArray(batch)) {
                         return Promise.reject(new Error('Query rows must be provided as a batch.'));
+                    }
+                    if (!disposed && rows.length + batch.length > limit) {
+                        return Promise.reject(new Error('Browser storage is unavailable here, so the Workbench keeps at most '
+                            + formatCount(limit) + ' rows in memory. Add a LIMIT to the query, '
+                            + 'or use Download for the full result.'));
                     }
                     return whileOpen(function () {
                         for (var index = 0; index < batch.length; index++) {
@@ -1157,7 +1254,11 @@ var workbench;
                 worker.onmessage = receive;
                 worker.onerror = onError;
             }
-            function closeWorker() {
+            /**
+             * abandonPending: leave the requests still waiting unanswered instead of rejecting them, for a document
+             * that is being unloaded (nothing is left to handle the rejections, which Firefox reports as errors).
+             */
+            function closeWorker(abandonPending) {
                 if (typeof worker.removeEventListener === 'function') {
                     worker.removeEventListener('message', receive);
                     worker.removeEventListener('error', onError);
@@ -1166,7 +1267,14 @@ var workbench;
                     worker.onmessage = null;
                     worker.onerror = null;
                 }
-                rejectPending(new Error('The query row-store worker was closed.'));
+                if (abandonPending) {
+                    Object.keys(pending).forEach(function (id) {
+                        delete pending[id];
+                    });
+                }
+                else {
+                    rejectPending(new Error('The query row-store worker was closed.'));
+                }
                 if (typeof worker.terminate === 'function') {
                     worker.terminate();
                 }
@@ -1209,11 +1317,13 @@ var workbench;
                 }
                 listenForRowStorePagehide();
                 liveRowStoreTouches[storeId] = function () { return send('touch'); };
+                var releaseLock = holdRowStoreLock(storeId);
                 startRowStoreHeartbeat();
                 var now = Date.now();
                 if (lastRowStoreSweep === null || now - lastRowStoreSweep >= rowStoreSweepInterval) {
                     lastRowStoreSweep = now;
-                    send('sweep', { maxAge: rowStoreMaxAge, keep: currentDocumentRowStoreIds.slice() }).then(null, function () {
+                    send('sweep', { maxAge: rowStoreMaxAge, fallbackMaxAge: rowStoreFallbackMaxAge,
+                        keep: currentDocumentRowStoreIds.slice() }).then(null, function () {
                         // A failed sweep leaves the stale stores for the next one.
                     });
                 }
@@ -1251,10 +1361,18 @@ var workbench;
                             return disposePromise || Promise.resolve();
                         }
                         disposed = true;
-                        function cleanup() {
+                        function cleanup(abandonPending) {
                             forgetCurrentDocumentRowStore(storeId);
                             delete liveRowStoreTouches[storeId];
-                            closeWorker();
+                            releaseLock();
+                            closeWorker(abandonPending);
+                        }
+                        if (documentUnloading && markRowStoreForRecovery(storeId)) {
+                            // The unload would abort the deletion: the next page reclaims the store (C31). The
+                            // requests still waiting go with the document.
+                            cleanup(true);
+                            disposePromise = Promise.resolve();
+                            return disposePromise;
                         }
                         disposePromise = send('dispose').then(function () {
                             cleanup();
@@ -1403,6 +1521,8 @@ var workbench;
             document.body.removeChild(probe);
             return capacity;
         }
+        /** The fewest pixels a rendered result row takes (one line of text and its padding is about 36). */
+        var MIN_RENDERED_ROW_HEIGHT = 20;
         /**
          * Block-indexed variable row geometry. Unknown rows use a measured
          * estimate; per-row deviations stay sparse while a Fenwick tree over
@@ -1521,14 +1641,23 @@ var workbench;
                 var start = Math.max(0, firstVisible - Math.floor(overscanRows));
                 var end = Math.min(count, afterVisible + Math.floor(overscanRows));
                 if (end - start > max) {
-                    // Only the overscan is cut to the cap: every visible row is rendered, even when more rows fit
-                    // in the viewport than the cap allows (a very tall window).
-                    var spare = Math.max(0, max - (afterVisible - firstVisible));
-                    var before = Math.min(firstVisible - start, Math.floor(spare / 2));
-                    var after = Math.min(end - afterVisible, spare - before);
-                    before = Math.min(firstVisible - start, spare - after);
-                    start = firstVisible - before;
-                    end = afterVisible + after;
+                    if (afterVisible - firstVisible >= max) {
+                        // The cap bounds the rows in the document. More rows than it allows only seem visible while
+                        // the row-height estimate is too small (before the first rows are measured): the window then
+                        // starts at the first visible row, so the top of the viewport is never left blank, unless the
+                        // viewport reaches the last row, which stays in view when scrolled to the end.
+                        start = afterVisible >= count ? count - max : firstVisible;
+                        end = start + max;
+                    }
+                    else {
+                        // Only the overscan is cut to the cap, shared before and after the visible rows.
+                        var spare = max - (afterVisible - firstVisible);
+                        var before = Math.min(firstVisible - start, Math.floor(spare / 2));
+                        var after = Math.min(end - afterVisible, spare - before);
+                        before = Math.min(firstVisible - start, spare - after);
+                        start = firstVisible - before;
+                        end = afterVisible + after;
+                    }
                 }
                 return {
                     start: start,
@@ -1945,23 +2074,20 @@ var workbench;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }
             else {
-                // Literals show their lexical value; the renderer adds language badges and datatype tags (M4.3).
+                // Literals show their lexical value; the renderer adds language badges and datatype tags (M4.3). Every
+                // literal links to its Explore page; one with line breaks, or XML, keeps its white space (C27).
                 var literalValue = term.value || '';
-                var plainString = !term.datatype || term.datatype === XSD_STRING;
                 display.label = literalValue;
                 if (term.language) {
                     display.language = term.language;
-                    display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
-                }
-                else if (term.datatype === RDF_NAMESPACE + 'XMLLiteral'
-                    || (plainString && literalValue.indexOf('\n') >= 0)) {
-                    display.datatype = term.datatype;
-                    display.preformatted = true;
                 }
                 else {
                     display.datatype = term.datatype;
-                    display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
                 }
+                if (/[\n\r]/.test(literalValue) || term.datatype === RDF_NAMESPACE + 'XMLLiteral') {
+                    display.preformatted = true;
+                }
+                display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
                 display.numeric = isNumericDatatype(term.datatype);
             }
             display.ntriples = ntriplesTerm(term);
@@ -1987,47 +2113,12 @@ var workbench;
                 /** Taken out of its results area (detach) until it is moved into another one (moveTo). */
                 this.detached = false;
                 this.downloadError = null;
-                this.layout = 'auto';
-                this.wrap = true;
                 this.normalWrapBeforeFullscreen = null;
-                this.showDatatypes = true;
                 this.activeDownloadFormatView = '';
                 this.rowStore = null;
                 this.rowStorePromise = null;
                 this.ownsRowStore = false;
-                this.rowHeightEstimateSampled = false;
-                this.recordHeightEstimateSampled = false;
-                this.requestedRow = null;
-                /**
-                 * 'page' when the rows scroll with the page (the default), 'element' in full screen and for results taller
-                 * than the browser's scroll capacity, where tableWrap or records scroll themselves.
-                 */
-                this.scrollMode = '';
-                this.floatingSignature = '';
-                this.pageEndIntent = false;
-                this.reflowAnchor = null;
-                this.viewportMeasurement = null;
-                this.tablePosition = { logical: 0, physical: 0 };
-                this.recordPosition = { logical: 0, physical: 0 };
-                this.rowNodes = {};
-                this.recordNodes = {};
-                this.topSpacer = null;
-                this.bottomSpacer = null;
-                this.recordTopSpacer = null;
-                this.recordBottomSpacer = null;
-                this.rowRenderGeneration = 0;
-                this.recordRenderGeneration = 0;
                 this.renderGeneration = 0;
-                this.headerSignature = '';
-                /** The readable header widths of the automatic layout, and what they were measured for. */
-                this.readableWidthsKey = null;
-                this.readableWidths = [];
-                this.columnWidthRows = null;
-                this.columnWidthReadCount = -1;
-                this.columnWidthReadPromise = null;
-                this.columnWidthGeneration = 0;
-                this.columnWidthPresentationSignature = '';
-                this.columnWidthAppliedWidth = -1;
                 this.disposed = false;
                 this.disposers = [];
                 /** The window listeners this renderer added, so a kept-alive Query page can drop them (M11.3). */
@@ -2038,6 +2129,7 @@ var workbench;
                 this.batchState = null;
                 this.batchStart = 0;
                 this.batchOffset = 0;
+                this.batchKnownTotal = false;
                 this.batchGeneration = 0;
                 this.committedMetadata = {};
                 this.committedComplete = false;
@@ -2058,7 +2150,6 @@ var workbench;
                 this.options = options || {};
                 this.requestedOffset = nonNegativeInteger(this.options.requestedOffset, 0);
                 this.requestedLimit = nonNegativeInteger(this.options.requestedLimit, 0);
-                this.maxDomRows = Math.max(1, nonNegativeInteger(this.options.maxDomRows, 80));
                 this.instanceSuffix = String(++queryResultRendererSequence)
                     + (target && target.id ? '-' + String(target.id).replace(/[^A-Za-z0-9_-]/g, '-') : '');
                 this.rowStore = this.options.rowStore || null;
@@ -2069,16 +2160,16 @@ var workbench;
                 var query = workbench.query;
                 var presentation = query && typeof query.getResultPresentationState === 'function'
                     ? query.getResultPresentationState() : {};
-                this.layout = this.options.initialLayout || presentation.layout || 'auto';
-                this.wrap = typeof this.options.initialWrap === 'boolean' ? this.options.initialWrap
+                var initialLayout = this.options.initialLayout || presentation.layout || 'auto';
+                var initialWrap = typeof this.options.initialWrap === 'boolean' ? this.options.initialWrap
                     : typeof presentation.wrap === 'boolean' ? presentation.wrap : true;
-                this.showDatatypes = typeof this.options.showDatatypes === 'boolean'
+                var initialShowDatatypes = typeof this.options.showDatatypes === 'boolean'
                     ? this.options.showDatatypes : getShowDatatypesPreference(this.document);
                 this.root = createElement(this.document, 'div', 'query-result-layout query-result-embedded');
                 this.root.setAttribute('id', this.elementId('query-result-layout'));
                 this.root.setAttribute('data-query-stream-root', 'true');
-                this.root.setAttribute('data-layout', this.layout);
-                this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
+                this.root.setAttribute('data-layout', initialLayout);
+                this.root.setAttribute('data-wrap', initialWrap ? 'true' : 'false');
                 target.appendChild(this.root);
                 var toolbar = createElement(this.document, 'div', 'query-result-toolbar workbench-action-toolbar');
                 var header = createElement(this.document, 'div', 'query-result-toolbar__header workbench-action-toolbar__primary');
@@ -2175,16 +2266,17 @@ var workbench;
                 // A download the server refuses loads its error page into the hidden download frame: say so here.
                 this.downloadError = createElement(this.document, 'p', 'query-result-download-error error');
                 this.downloadError.hidden = true;
-                downloadFields.appendChild(this.downloadError);
                 downloadDisclosure.content.appendChild(downloadFields);
+                // Below the fields, not one of them: the fields keep their row, and the message its own line.
+                downloadDisclosure.content.appendChild(this.downloadError);
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
                     { value: 'auto', label: 'Auto' }, { value: 'table', label: 'Table' },
                     { value: 'records', label: 'Records' }
                 ]);
-                this.layoutControl.value = this.layout;
-                var wrap = this.createCheckbox('result-wrap-values', 'Wrap values', this.wrap);
+                this.layoutControl.value = initialLayout;
+                var wrap = this.createCheckbox('result-wrap-values', 'Wrap values', initialWrap);
                 this.wrapControl = wrap.input;
-                this.datatypeControl = this.createCheckbox('show-datatypes', 'Show datatypes', this.showDatatypes).input;
+                this.datatypeControl = this.createCheckbox('show-datatypes', 'Show datatypes', initialShowDatatypes).input;
                 var optionFields = createElement(this.document, 'div', 'workbench-disclosure__fields query-result-fields query-result-option-fields');
                 optionFields.appendChild(this.createLabeledControl('Layout', this.layoutControl));
                 optionFields.appendChild(wrap.label);
@@ -2242,35 +2334,28 @@ var workbench;
                 this.errorResult.setAttribute('role', 'alert');
                 this.errorResult.hidden = true;
                 this.root.appendChild(this.errorResult);
-                this.tableWrap = createElement(this.document, 'div', 'query-result-table-wrap');
-                this.tableWrap.setAttribute('id', this.elementId('query-result-table-wrap'));
-                this.tableWrap.tabIndex = 0;
-                this.table = createElement(this.document, 'table', 'data');
-                this.table.setAttribute('aria-label', 'Query results');
-                this.tableColumns = createElement(this.document, 'colgroup');
-                this.table.appendChild(this.tableColumns);
-                this.table.appendChild(createElement(this.document, 'thead'));
-                this.tableBody = createElement(this.document, 'tbody');
-                this.table.appendChild(this.tableBody);
-                this.tableWrap.appendChild(this.table);
-                // A copy of the header row pinned under the context bar while the page scrolls the rows; the real
-                // header stays in the table for assistive technology.
-                this.floatingHead = createElement(this.document, 'div', 'query-result-floating-head');
-                this.floatingHead.setAttribute('aria-hidden', 'true');
-                this.floatingHead.hidden = true;
-                this.floatingViewport = createElement(this.document, 'div', 'query-result-floating-head__viewport');
-                this.floatingTable = createElement(this.document, 'table', 'data');
-                this.floatingViewport.appendChild(this.floatingTable);
-                this.floatingHead.appendChild(this.floatingViewport);
-                this.root.appendChild(this.floatingHead);
-                this.root.appendChild(this.tableWrap);
+                // The rows: floating header, table box and records, shared with the pages that list statements.
+                this.resultTable = new ResultTable(this.root, {
+                    rowCount: function () { return _this.state.rowCount; },
+                    variables: function () { return _this.state.variables; },
+                    read: function (start, count) { return _this.ensureRowStore().then(function (store) { return store.read(start, count); }); },
+                    namespaces: function (rowIndex) { return _this.namespacesForRow(rowIndex); }
+                }, {
+                    layout: initialLayout,
+                    wrap: initialWrap,
+                    showDatatypes: initialShowDatatypes,
+                    maxDomRows: this.options.maxDomRows,
+                    label: 'Query results',
+                    elementId: function (name) { return _this.elementId(name); },
+                    // Tuple results name their columns by variable, written as in the query: ?product (M4.3).
+                    columnLabel: function (name) { return _this.state.view === 'tuple' ? '?' + name : name; },
+                    columnClass: function (name) { return _this.state.view === 'tuple' ? 'query-result-variable' : ''; },
+                    fullscreen: function () { return _this.target.getAttribute('data-fullscreen') === 'true'; },
+                    render: function () { return _this.renderAndReport(); },
+                    schedule: function () { return _this.scheduleRender(); }
+                });
                 this.emptyResult = this.createEmptyState();
-                this.root.appendChild(this.emptyResult);
-                this.records = createElement(this.document, 'div', 'query-result-records');
-                this.records.setAttribute('id', this.elementId('query-result-records'));
-                this.records.hidden = true;
-                this.records.tabIndex = 0;
-                this.root.appendChild(this.records);
+                this.root.insertBefore(this.emptyResult, this.resultTable.records);
                 var continuation = createElement(this.document, 'div', 'workbench-actions query-result-load-more-actions');
                 this.loadMoreButton = this.createButton('Load more', function () {
                     if (_this.options.onLoadMore && _this.canLoadMore() && !_this.busy) {
@@ -2281,19 +2366,9 @@ var workbench;
                 this.loadMoreButton.hidden = true;
                 continuation.appendChild(this.loadMoreButton);
                 this.root.appendChild(continuation);
-                this.rowHeights = new MeasuredRowHeights(0, this.measureRowEstimate());
-                this.recordHeights = new MeasuredRowHeights(0, this.measureRowEstimate());
-                this.tableScrollCapacity = measureScrollCapacity(this.document, true);
-                this.recordScrollCapacity = measureScrollCapacity(this.document, false);
-                this.rowCoordinates = new ResultScrollCoordinates(this.tableScrollCapacity);
-                this.recordCoordinates = new ResultScrollCoordinates(this.recordScrollCapacity);
-                this.installPreciseScrolling(this.tableWrap, this.rowCoordinates, this.tablePosition);
-                this.installPreciseScrolling(this.records, this.recordCoordinates, this.recordPosition);
                 this.layoutControl.addEventListener('change', function () {
-                    _this.retainScrollAnchor();
-                    _this.layout = _this.layoutControl.value;
+                    _this.resultTable.setLayout(_this.layoutControl.value);
                     _this.savePresentationPreferences();
-                    _this.invalidateVisibleRows();
                     _this.renderAndReport();
                 }, false);
                 this.wrapControl.addEventListener('change', function () {
@@ -2303,35 +2378,97 @@ var workbench;
                     }
                 }, false);
                 this.datatypeControl.addEventListener('change', function () {
-                    _this.showDatatypes = _this.datatypeControl.checked;
-                    saveShowDatatypesPreference(_this.document, _this.showDatatypes);
-                    _this.invalidateVisibleRows();
+                    _this.resultTable.setShowDatatypes(_this.datatypeControl.checked);
+                    saveShowDatatypesPreference(_this.document, _this.datatypeControl.checked);
                     _this.renderAndReport();
                 }, false);
-                this.onScroll = function () {
-                    _this.syncFloatingHeadScroll();
-                    if (_this.scrollMode === 'element') {
-                        _this.scheduleRender();
-                    }
-                };
-                this.tableWrap.addEventListener('scroll', this.onScroll, false);
-                this.records.addEventListener('scroll', this.onScroll, false);
-                var pageView = this.pageView();
-                if (pageView) {
-                    var onPageScroll = function () {
-                        if (_this.scrollMode === 'page') {
-                            _this.updateFloatingHead();
-                            _this.scheduleRender();
-                        }
-                    };
-                    this.listenWindow(pageView, 'scroll', onPageScroll, { passive: true });
-                    this.installPageEndIntent(pageView);
-                    this.listenWindow(pageView, 'resize', onPageScroll, false);
-                }
                 this.followPresentation();
-                this.installAutoLayoutObserver();
                 this.renderAndReport();
             }
+            Object.defineProperty(QueryResultRenderer.prototype, "tableWrap", {
+                get: function () {
+                    return this.resultTable.tableWrap;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "table", {
+                get: function () {
+                    return this.resultTable.table;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "tableColumns", {
+                get: function () {
+                    return this.resultTable.tableColumns;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "tableBody", {
+                get: function () {
+                    return this.resultTable.tableBody;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "records", {
+                get: function () {
+                    return this.resultTable.records;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "floatingHead", {
+                get: function () {
+                    return this.resultTable.floatingHead;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "floatingTable", {
+                get: function () {
+                    return this.resultTable.floatingTable;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "rowCoordinates", {
+                get: function () {
+                    return this.resultTable.rowCoordinates;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "tableScrollCapacity", {
+                get: function () {
+                    return this.resultTable.tableScrollCapacity;
+                },
+                set: function (capacity) {
+                    this.resultTable.tableScrollCapacity = capacity;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            /** Show the pinned header copy only while the real header row is hidden above the sticky offset. */
+            QueryResultRenderer.prototype.updateFloatingHead = function () {
+                this.resultTable.updateFloatingHead();
+            };
+            Object.defineProperty(QueryResultRenderer.prototype, "layout", {
+                get: function () {
+                    return this.resultTable.layout;
+                },
+                enumerable: false,
+                configurable: true
+            });
+            Object.defineProperty(QueryResultRenderer.prototype, "wrap", {
+                get: function () {
+                    return this.resultTable.wrap;
+                },
+                enumerable: false,
+                configurable: true
+            });
             QueryResultRenderer.prototype.accept = function (record) {
                 var _this = this;
                 if (this.disposed) {
@@ -2354,9 +2491,11 @@ var workbench;
                     throw error;
                 });
             };
-            QueryResultRenderer.prototype.beginBatch = function (offset) {
+            /** Start a result batch at offset; knownTotal: the request sent the first batch's total with it. */
+            QueryResultRenderer.prototype.beginBatch = function (offset, knownTotal) {
                 this.batchStart = this.state.rowCount;
                 this.batchOffset = offset;
+                this.batchKnownTotal = !!knownTotal;
                 this.batchGeneration++;
                 this.batchState = new QueryResultState();
                 this.committedMetadata = this.state.terminalMetadata;
@@ -2394,9 +2533,7 @@ var workbench;
                     _this.state.complete = _this.committedComplete;
                     _this.state.progress = {};
                     _this.batchContexts.pop();
-                    _this.rowHeights.resize(_this.batchStart);
-                    _this.recordHeights.resize(_this.batchStart);
-                    _this.invalidateVisibleRows();
+                    _this.resultTable.truncate(_this.batchStart);
                     _this.appendFailure = true;
                     _this.fail(message, code, status);
                     return _this.render();
@@ -2471,9 +2608,30 @@ var workbench;
                             throw protocolError('batch continuation metadata must match its offset, limit, and row count.');
                         }
                         if (batch.view !== 'boolean' && typeof total !== 'undefined'
-                            && (!Number.isSafeInteger(total) || total < 0 || (count > 0 && total < next)
-                                || metadata['result-has-more'] !== (total > next))) {
+                            && (!Number.isSafeInteger(total) || total < 0)) {
                             throw protocolError('batch continuation metadata must match the exact total.');
+                        }
+                        if (batch.view !== 'boolean' && typeof total !== 'undefined'
+                            && ((count > 0 && total < next) || metadata['result-has-more'] !== (total > next))) {
+                            if (!this.batchKnownTotal) {
+                                throw protocolError('batch continuation metadata must match the exact total.');
+                            }
+                            // A continuation was sent the total of the first batch (batch-known-total), and the result
+                            // has changed since (rows removed, RAND() or SAMPLE): its has-more decides. The total is
+                            // exact once the result has ended, and unknown while more rows follow.
+                            metadata = Object.assign({}, metadata);
+                            if (metadata['result-has-more']) {
+                                delete metadata['total-result-count'];
+                            }
+                            else {
+                                metadata['total-result-count'] = next;
+                            }
+                        }
+                        else if (batch.view !== 'boolean' && this.batchOffset > 0 && typeof total !== 'undefined'
+                            && !metadata['result-has-more'] && total < next) {
+                            // The result shrank below this continuation's offset: it is empty, and the result ends
+                            // with the rows already shown, which the server no longer counts.
+                            metadata = Object.assign({}, metadata, { 'total-result-count': next });
                         }
                         this.state.terminalMetadata = metadata;
                         this.state.complete = true;
@@ -2513,6 +2671,7 @@ var workbench;
                 }
                 this.suspended = true;
                 this.windowListeners.forEach(function (entry) { return entry[0].removeEventListener(entry[1], entry[2], entry[3]); });
+                this.resultTable.suspend();
                 // Full screen locks the document's scrolling: a hidden result gives the viewport back.
                 if (this.target.getAttribute('data-fullscreen') === 'true') {
                     workbench.resultFullscreen.set(this.target, this.fullscreenButton, false, false);
@@ -2524,6 +2683,7 @@ var workbench;
                 }
                 this.suspended = false;
                 this.windowListeners.forEach(function (entry) { return entry[0].addEventListener(entry[1], entry[2], entry[3]); });
+                this.resultTable.resume();
                 if (this.renderDeferred) {
                     this.renderDeferred = false;
                     this.renderAndReport();
@@ -2609,9 +2769,32 @@ var workbench;
                     return;
                 }
                 this.target.setAttribute('aria-busy', this.busy ? 'true' : 'false');
+                // Mark the busy state as this result's, so the result can take it back when it leaves the area.
+                if (this.busy) {
+                    this.target.setAttribute('data-query-busy-owner', this.resultHeadingId);
+                }
+                else if (this.target.getAttribute('data-query-busy-owner') === this.resultHeadingId) {
+                    this.target.removeAttribute('data-query-busy-owner');
+                }
                 var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
                 if (loading) {
                     loading.hidden = !this.busy;
+                }
+            };
+            /**
+             * A result leaving its results area (shelved while its repository's Query page is not shown, moved or
+             * disposed) leaves the area idle: the next page shown there must not show this result's progress. A busy
+             * state some other result set since is left alone.
+             */
+            QueryResultRenderer.prototype.releaseTargetBusy = function () {
+                if (this.target.getAttribute('data-query-busy-owner') !== this.resultHeadingId) {
+                    return;
+                }
+                this.target.removeAttribute('data-query-busy-owner');
+                this.target.setAttribute('aria-busy', 'false');
+                var loading = this.target.querySelector ? this.target.querySelector('#query-results-loading') : null;
+                if (loading) {
+                    loading.hidden = true;
                 }
             };
             QueryResultRenderer.prototype.fail = function (message, code, status) {
@@ -2624,7 +2807,7 @@ var workbench;
                 this.renderError();
                 this.errorResult.hidden = false;
                 this.status.textContent = this.errorStatusText();
-                this.announce(this.status.textContent);
+                this.announce(this.status.textContent || this.state.error.message);
                 this.countLabel.hidden = true;
                 this.countLabel.textContent = '';
                 this.loadMoreButton.hidden = !this.canLoadMore();
@@ -2660,8 +2843,10 @@ var workbench;
                 var location = classified ? null : errorLocation(message);
                 this.errorResult.textContent = '';
                 clearChildren(this.errorResult);
+                // An empty query (C18) and a query the user cancelled (C32f) are no errors: they say so plainly.
+                var plain = !!error && (error.code === 'empty-query' || error.code === 'cancelled');
                 this.errorResult.className = 'ERROR query-result-error workbench-callout '
-                    + (error && error.code === 'empty-query' ? 'workbench-callout--info' : 'workbench-callout--error');
+                    + (plain ? 'workbench-callout--info' : 'workbench-callout--error');
                 var icon = createSvgElement(this.document, 'svg', 'workbench-callout__icon');
                 icon.setAttribute('viewBox', '0 0 24 24');
                 icon.setAttribute('width', '18');
@@ -2669,7 +2854,7 @@ var workbench;
                 icon.setAttribute('focusable', 'false');
                 icon.setAttribute('aria-hidden', 'true');
                 var iconPath = createSvgElement(this.document, 'path');
-                iconPath.setAttribute('d', error && error.code === 'empty-query'
+                iconPath.setAttribute('d', plain
                     ? 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 7v5m0-8h.01'
                     : 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 8v5m0 3h.01');
                 icon.appendChild(iconPath);
@@ -2747,6 +2932,10 @@ var workbench;
                     return 'The browser could not keep the results: ' + error.message
                         + (this.state.rowCount > 0 ? ' The visible results are incomplete.' : '');
                 }
+                if (error.code === 'protocol') {
+                    return 'The server sent a result the Workbench cannot read. ' + error.message
+                        + (this.state.rowCount > 0 ? ' The visible results are incomplete.' : '');
+                }
                 if (error.code === 'incomplete' || this.state.rowCount > 0
                     || /(?:EOFException|QueryEvaluationException)/i.test(error.message)) {
                     return 'The result stream ended before the query completed. The visible results are incomplete. '
@@ -2757,6 +2946,10 @@ var workbench;
             QueryResultRenderer.prototype.errorStatusText = function () {
                 var error = this.state.error;
                 var rows = this.state.rowCount;
+                if (error && error.code === 'empty-query') {
+                    // Nothing was run: the hint below says what to do (C18).
+                    return '';
+                }
                 if (this.appendFailure) {
                     return 'Load more failed; ' + rows + ' rows retained. Retry Load more.';
                 }
@@ -2870,6 +3063,7 @@ var workbench;
                 }
                 this.presentationDisposer();
                 this.presentationDisposer = function () { };
+                this.releaseTargetBusy();
                 if (this.legacyHeader) {
                     this.legacyHeader.hidden = this.legacyHeaderHidden;
                 }
@@ -2950,10 +3144,7 @@ var workbench;
                 this.timerRunning = false;
                 this.clearTimerTick();
                 this.disposed = true;
-                this.rowRenderGeneration++;
-                this.recordRenderGeneration++;
-                this.tableWrap.removeEventListener('scroll', this.onScroll, false);
-                this.records.removeEventListener('scroll', this.onScroll, false);
+                this.resultTable.dispose();
                 this.leaveTarget();
                 this.disposers.forEach(function (dispose) { return dispose(); });
                 this.disposers = [];
@@ -3129,12 +3320,8 @@ var workbench;
                 }
             };
             QueryResultRenderer.prototype.setWrap = function (wrap) {
-                this.retainScrollAnchor();
-                this.wrap = wrap;
+                this.resultTable.setWrap(wrap);
                 this.wrapControl.checked = wrap;
-                this.root.setAttribute('data-wrap', wrap ? 'true' : 'false');
-                this.resetRowMeasurements();
-                this.invalidateVisibleRows();
                 this.renderAndReport();
             };
             QueryResultRenderer.prototype.setFullscreenPresentation = function (enabled) {
@@ -3267,7 +3454,6 @@ var workbench;
                 this.render().catch(function (error) { return _this.fail(error && error.message ? error.message : String(error)); });
             };
             QueryResultRenderer.prototype.render = function () {
-                var _this = this;
                 if (this.disposed) {
                     return Promise.resolve();
                 }
@@ -3277,24 +3463,11 @@ var workbench;
                     this.renderDeferred = true;
                     return Promise.resolve();
                 }
-                var generation = ++this.renderGeneration;
-                var requestedRow = this.requestedRow;
+                ++this.renderGeneration;
                 var state = this.state;
                 var isRows = state.view === 'tuple' || state.view === 'graph';
-                var isResult = isRows || state.view === 'boolean';
-                var availableWidth = this.resultWidth();
-                var currentScrollport = this.root.getAttribute('data-effective-layout') === 'records'
-                    ? this.records : this.tableWrap;
-                var viewportHeight = this.measuredViewportHeight(currentScrollport);
-                if (isRows && this.viewportMeasurement && (this.viewportMeasurement.width !== availableWidth
-                    || this.viewportMeasurement.height !== viewportHeight)) {
-                    // Native reflow can clamp scrollTop before ResizeObserver runs. Use the committed logical anchor.
-                    this.retainScrollAnchor();
-                    if (this.viewportMeasurement.width !== availableWidth) {
-                        this.resetRowMeasurements();
-                        this.invalidateVisibleRows();
-                    }
-                }
+                // The rows first: header, table or records layout, column widths and the visible row window.
+                var rendered = this.resultTable.render(isRows);
                 if (state.view && state.view !== 'error' && state.view !== this.activeDownloadFormatView) {
                     var formats = this.downloadFormatsForView(state.view);
                     var info = this.options.workbench || {};
@@ -3302,16 +3475,7 @@ var workbench;
                     this.setSelectChoices(this.downloadFormatControl, formats, defaults['default-Accept']);
                     this.activeDownloadFormatView = state.view;
                 }
-                if (isRows) {
-                    this.renderHeaders();
-                }
                 var paging = state.getPaging(this.requestedOffset, this.requestedLimit);
-                var effectiveLayout = this.layout === 'auto'
-                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
-                    : this.layout;
-                this.root.setAttribute('data-layout', this.layout);
-                this.setEffectiveLayout(effectiveLayout, isRows);
-                this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
                 var layoutEnabled = this.featureEnabled('result-layout');
                 var wrapEnabled = this.featureEnabled('result-wrap');
                 var datatypeEnabled = this.featureEnabled('result-show-datatypes');
@@ -3326,8 +3490,6 @@ var workbench;
                 this.setControlHidden(this.datatypeControl, !isRows || !datatypeEnabled);
                 this.setControlHidden(this.downloadFormatControl, !formatEnabled || !isRows);
                 this.setControlHidden(this.downloadLimitControl, !downloadLimitEnabled || !isRows);
-                this.viewportMeasurement = { width: availableWidth,
-                    height: this.measuredViewportHeight(effectiveLayout === 'records' ? this.records : this.tableWrap) };
                 this.booleanResult.hidden = state.view !== 'boolean' || typeof state.booleanValue !== 'boolean'
                     || !!state.error;
                 this.errorResult.hidden = !state.error;
@@ -3357,7 +3519,6 @@ var workbench;
                         : state.terminalMetadata['result-has-more'] === true);
                 this.countLabel.hidden = !!state.error || !partiallyLoaded || !this.featureEnabled('result-totals');
                 this.emptyResult.hidden = !isRows || !state.complete || !!state.error || state.rowCount > 0;
-                this.table.setAttribute('aria-rowcount', String(state.rowCount + 1));
                 if (state.error) {
                     this.renderError();
                 }
@@ -3366,21 +3527,6 @@ var workbench;
                 }
                 else {
                     clearChildren(this.booleanResult);
-                }
-                var rendered = Promise.resolve();
-                if (isRows) {
-                    rendered = this.updateTableColumnWidths(generation).then(function () {
-                        if (_this.disposed || generation !== _this.renderGeneration) {
-                            return;
-                        }
-                        if (effectiveLayout === 'table') {
-                            return _this.renderRows();
-                        }
-                        if (effectiveLayout === 'records') {
-                            return _this.renderRecords();
-                        }
-                        return undefined;
-                    });
                 }
                 var elapsed = state.terminalMetadata ? state.terminalMetadata['query-elapsed-ms'] : undefined;
                 var completion = typeof elapsed === 'number' ? ' · complete in ' + formatCount(elapsed) + ' ms' : ' · complete';
@@ -3417,8 +3563,211 @@ var workbench;
                     : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
                         : formatCount(state.rowCount) + ' loaded';
                 this.publishSummary(state, isRows);
+                return rendered;
+            };
+            return QueryResultRenderer;
+        }());
+        queryStream.QueryResultRenderer = QueryResultRenderer;
+        var resultTableSequence = 0;
+        /**
+         * The RDF result table shared by the Query page and every page that lists statements: the header, the table
+         * or records layout (chosen automatically from readable column widths), column widths, wrapping, cells with
+         * prefixed names, breakable IRIs, language and datatype tags and Explore links, the header pinned under the
+         * context bar, sideways scrolling inside its own box, and windowed rows (only the visible ones are in the DOM,
+         * scrolling with the page or, when full screen or taller than the browser can scroll, in their own box).
+         *
+         * It adds its parts (pinned header copy, table box, records) to root, a .query-result-layout element that
+         * carries its data-layout, data-wrap, data-effective-layout and data-scroll-source attributes. The owner calls
+         * render() after the rows change; scrolling and resizing lay it out again through options.render/schedule.
+         */
+        var ResultTable = /** @class */ (function () {
+            function ResultTable(root, source, options) {
+                var _this = this;
+                this.layout = 'auto';
+                this.wrap = true;
+                this.showDatatypes = true;
+                /** Whether the owner shows rows at all (not for a boolean answer or a failure without rows). */
+                this.active = false;
+                this.layoutGeneration = 0;
+                this.disposed = false;
+                this.disposers = [];
+                this.windowListeners = [];
+                this.suspended = false;
+                this.renderFramePending = false;
+                this.rowHeightEstimateSampled = false;
+                /** The height of a probe row measured in the table for the current layout (null: not measured). */
+                this.probedRowEstimate = null;
+                this.recordHeightEstimateSampled = false;
+                this.requestedRow = null;
+                /**
+                 * 'page' when the rows scroll with the page (the default), 'element' in full screen and for results taller
+                 * than the browser's scroll capacity, where tableWrap or records scroll themselves.
+                 */
+                this.scrollMode = '';
+                this.floatingSignature = '';
+                this.pageEndIntent = false;
+                this.reflowAnchor = null;
+                this.viewportMeasurement = null;
+                this.tablePosition = { logical: 0, physical: 0 };
+                this.recordPosition = { logical: 0, physical: 0 };
+                this.rowNodes = {};
+                this.recordNodes = {};
+                this.topSpacer = null;
+                this.bottomSpacer = null;
+                this.recordTopSpacer = null;
+                this.recordBottomSpacer = null;
+                this.rowRenderGeneration = 0;
+                this.recordRenderGeneration = 0;
+                this.headerSignature = '';
+                /** The readable header widths of the automatic layout, and what they were measured for. */
+                this.readableWidthsKey = null;
+                this.readableWidths = [];
+                this.columnWidthRows = null;
+                this.columnWidthReadCount = -1;
+                this.columnWidthReadPromise = null;
+                this.columnWidthGeneration = 0;
+                this.columnWidthPresentationSignature = '';
+                this.columnWidthAppliedWidth = -1;
+                this.options = options || {};
+                this.root = root;
+                this.source = source;
+                this.document = root && root.ownerDocument;
+                if (!root || !this.document || typeof this.document.createElement !== 'function' || !source) {
+                    throw new Error('A result table mount and row source are required.');
+                }
+                var sequence = ++resultTableSequence;
+                var elementId = this.options.elementId || (function (name) { return name + '-table-' + sequence; });
+                this.maxDomRows = Math.max(1, nonNegativeInteger(this.options.maxDomRows, 80));
+                this.layout = this.options.layout || 'auto';
+                this.wrap = typeof this.options.wrap === 'boolean' ? this.options.wrap : true;
+                this.showDatatypes = typeof this.options.showDatatypes === 'boolean'
+                    ? this.options.showDatatypes : getShowDatatypesPreference(this.document);
+                root.setAttribute('data-layout', this.layout);
+                root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
+                this.tableWrap = createElement(this.document, 'div', 'query-result-table-wrap');
+                this.tableWrap.setAttribute('id', elementId('query-result-table-wrap'));
+                this.tableWrap.tabIndex = 0;
+                this.table = createElement(this.document, 'table', 'data');
+                this.table.setAttribute('aria-label', this.options.label || 'Query results');
+                this.tableColumns = createElement(this.document, 'colgroup');
+                this.table.appendChild(this.tableColumns);
+                this.table.appendChild(createElement(this.document, 'thead'));
+                this.tableBody = createElement(this.document, 'tbody');
+                this.table.appendChild(this.tableBody);
+                this.tableWrap.appendChild(this.table);
+                // A copy of the header row pinned under the context bar while the page scrolls the rows; the real
+                // header stays in the table for assistive technology.
+                this.floatingHead = createElement(this.document, 'div', 'query-result-floating-head');
+                this.floatingHead.setAttribute('aria-hidden', 'true');
+                this.floatingHead.hidden = true;
+                this.floatingViewport = createElement(this.document, 'div', 'query-result-floating-head__viewport');
+                this.floatingTable = createElement(this.document, 'table', 'data');
+                this.floatingViewport.appendChild(this.floatingTable);
+                this.floatingHead.appendChild(this.floatingViewport);
+                root.appendChild(this.floatingHead);
+                root.appendChild(this.tableWrap);
+                this.records = createElement(this.document, 'div', 'query-result-records');
+                this.records.setAttribute('id', elementId('query-result-records'));
+                this.records.hidden = true;
+                this.records.tabIndex = 0;
+                root.appendChild(this.records);
+                this.rowHeights = new MeasuredRowHeights(0, this.measureRowEstimate());
+                this.recordHeights = new MeasuredRowHeights(0, this.measureRowEstimate());
+                this.tableScrollCapacity = measureScrollCapacity(this.document, true);
+                this.recordScrollCapacity = measureScrollCapacity(this.document, false);
+                this.rowCoordinates = new ResultScrollCoordinates(this.tableScrollCapacity);
+                this.recordCoordinates = new ResultScrollCoordinates(this.recordScrollCapacity);
+                this.installPreciseScrolling(this.tableWrap, this.rowCoordinates, this.tablePosition);
+                this.installPreciseScrolling(this.records, this.recordCoordinates, this.recordPosition);
+                this.installKeyboardSideScrolling(this.tableWrap);
+                this.onScroll = function () {
+                    _this.syncFloatingHeadScroll();
+                    if (_this.scrollMode === 'element') {
+                        _this.requestScheduledRender();
+                    }
+                };
+                this.tableWrap.addEventListener('scroll', this.onScroll, false);
+                this.records.addEventListener('scroll', this.onScroll, false);
+                var pageView = this.pageView();
+                if (pageView) {
+                    var onPageResize = function () {
+                        if (_this.scrollMode === 'page') {
+                            _this.updateFloatingHead();
+                            _this.requestScheduledRender();
+                        }
+                    };
+                    // A table that renders all of its rows has no other rows to show when the page scrolls.
+                    var onPageScroll = function () {
+                        if (_this.rendersAllRows()) {
+                            if (_this.scrollMode === 'page') {
+                                _this.updateFloatingHead();
+                            }
+                            return;
+                        }
+                        onPageResize();
+                    };
+                    this.listenWindow(pageView, 'scroll', onPageScroll, { passive: true });
+                    this.installPageEndIntent(pageView);
+                    this.listenWindow(pageView, 'resize', onPageResize, false);
+                }
+                this.installAutoLayoutObserver();
+            }
+            /**
+             * Lay the rows out: the header, the effective layout (table or records), the column widths and the
+             * visible window of rows. active is false while the owner shows no rows (a boolean answer, or a failure
+             * that kept none); the table and records are then hidden.
+             */
+            ResultTable.prototype.render = function (active) {
+                var _this = this;
+                if (this.disposed) {
+                    return Promise.resolve();
+                }
+                var isRows = active !== false;
+                this.active = isRows;
+                var generation = ++this.layoutGeneration;
+                var requestedRow = this.requestedRow;
+                var availableWidth = this.resultWidth();
+                var currentScrollport = this.root.getAttribute('data-effective-layout') === 'records'
+                    ? this.records : this.tableWrap;
+                var viewportHeight = this.measuredViewportHeight(currentScrollport);
+                if (isRows && this.viewportMeasurement && (this.viewportMeasurement.width !== availableWidth
+                    || this.viewportMeasurement.height !== viewportHeight)) {
+                    // Native reflow can clamp scrollTop before ResizeObserver runs. Use the committed logical anchor.
+                    this.retainScrollAnchor();
+                    if (this.viewportMeasurement.width !== availableWidth) {
+                        this.resetRowMeasurements();
+                        this.invalidateVisibleRows();
+                    }
+                }
+                if (isRows) {
+                    this.renderHeaders();
+                }
+                var effectiveLayout = this.layout === 'auto'
+                    ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
+                    : this.layout;
+                this.root.setAttribute('data-layout', this.layout);
+                this.setEffectiveLayout(effectiveLayout, isRows);
+                this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
+                this.viewportMeasurement = { width: availableWidth,
+                    height: this.measuredViewportHeight(effectiveLayout === 'records' ? this.records : this.tableWrap) };
+                this.table.setAttribute('aria-rowcount', String(this.source.rowCount() + 1));
+                var rendered = Promise.resolve();
+                if (isRows) {
+                    rendered = this.updateTableColumnWidths(generation).then(function () {
+                        if (_this.disposed || generation !== _this.layoutGeneration) {
+                            return;
+                        }
+                        if (effectiveLayout === 'table') {
+                            return _this.renderRows();
+                        }
+                        if (effectiveLayout === 'records') {
+                            return _this.renderRecords();
+                        }
+                        return undefined;
+                    });
+                }
                 return rendered.then(function () {
-                    if (_this.disposed || generation !== _this.renderGeneration) {
+                    if (_this.disposed || generation !== _this.layoutGeneration) {
                         return;
                     }
                     if (_this.layout === 'auto' && isRows) {
@@ -3436,9 +3785,113 @@ var workbench;
                     return undefined;
                 });
             };
-            QueryResultRenderer.prototype.renderHeaders = function () {
+            /** Choose 'auto', 'table' or 'records'; the owner renders afterwards. */
+            ResultTable.prototype.setLayout = function (layout) {
+                this.retainScrollAnchor();
+                this.layout = layout;
+                this.invalidateVisibleRows();
+            };
+            /** Wrap long values or keep them on one line; the owner renders afterwards. */
+            ResultTable.prototype.setWrap = function (wrap) {
+                this.retainScrollAnchor();
+                this.wrap = wrap;
+                this.root.setAttribute('data-wrap', wrap ? 'true' : 'false');
+                this.resetRowMeasurements();
+                this.invalidateVisibleRows();
+            };
+            /** Show or hide the datatype tags of literals; the owner renders afterwards. */
+            ResultTable.prototype.setShowDatatypes = function (show) {
+                this.showDatatypes = show;
+                this.invalidateVisibleRows();
+            };
+            /** Forget the rows from rowCount on (a failed Load more takes its rows back). */
+            ResultTable.prototype.truncate = function (rowCount) {
+                this.rowHeights.resize(rowCount);
+                this.recordHeights.resize(rowCount);
+                this.invalidateVisibleRows();
+            };
+            /** Hidden (a kept-alive page, M11.3): stop listening to the window until resume(). */
+            ResultTable.prototype.suspend = function () {
+                if (this.suspended) {
+                    return;
+                }
+                this.suspended = true;
+                this.windowListeners.forEach(function (entry) { return entry[0].removeEventListener(entry[1], entry[2], entry[3]); });
+            };
+            ResultTable.prototype.resume = function () {
+                if (!this.suspended) {
+                    return;
+                }
+                this.suspended = false;
+                this.windowListeners.forEach(function (entry) { return entry[0].addEventListener(entry[1], entry[2], entry[3]); });
+            };
+            ResultTable.prototype.dispose = function () {
+                if (this.disposed) {
+                    return;
+                }
+                this.disposed = true;
+                this.rowRenderGeneration++;
+                this.recordRenderGeneration++;
+                this.tableWrap.removeEventListener('scroll', this.onScroll, false);
+                this.records.removeEventListener('scroll', this.onScroll, false);
+                this.disposers.forEach(function (dispose) { return dispose(); });
+                this.disposers = [];
+                this.windowListeners = [];
+            };
+            ResultTable.prototype.listenWindow = function (view, type, handler, options) {
+                view.addEventListener(type, handler, options);
+                this.windowListeners.push([view, type, handler, options]);
+                this.disposers.push(function () { return view.removeEventListener(type, handler, options); });
+            };
+            /** True for a short table whose owner asked for all of its rows (renderAllRows). */
+            ResultTable.prototype.rendersAllRows = function () {
+                return !!this.options.renderAllRows && this.source.rowCount() <= this.maxDomRows;
+            };
+            ResultTable.prototype.isFullscreen = function () {
+                return !!this.options.fullscreen && this.options.fullscreen();
+            };
+            /** Lay out again now: the owner's render, or this table's own. */
+            ResultTable.prototype.requestRender = function () {
+                if (this.options.render) {
+                    this.options.render();
+                }
+                else if (!this.disposed && this.root.isConnected !== false) {
+                    // A page table whose page was rendered away waits for its page to dispose it.
+                    this.render().catch(function (error) {
+                        if (typeof console !== 'undefined') {
+                            console.error('Unable to lay out the result table.', error);
+                        }
+                    });
+                }
+            };
+            /** Lay out again in the next animation frame: the owner's schedule, or this table's own. */
+            ResultTable.prototype.requestScheduledRender = function () {
                 var _this = this;
-                var signature = this.state.variables.join('\u0000');
+                if (this.options.schedule) {
+                    this.options.schedule();
+                    return;
+                }
+                if (this.renderFramePending || this.disposed || this.suspended) {
+                    return;
+                }
+                this.renderFramePending = true;
+                var render = function () {
+                    _this.renderFramePending = false;
+                    if (!_this.disposed && !_this.suspended) {
+                        _this.requestRender();
+                    }
+                };
+                var view = this.document.defaultView || window;
+                if (view && typeof view.requestAnimationFrame === 'function') {
+                    view.requestAnimationFrame(render);
+                }
+                else {
+                    setTimeout(render, 0);
+                }
+            };
+            ResultTable.prototype.renderHeaders = function () {
+                var _this = this;
+                var signature = this.source.variables().join('\u0000');
                 if (signature === this.headerSignature) {
                     return;
                 }
@@ -3457,24 +3910,32 @@ var workbench;
                 var header = this.table.querySelector('thead');
                 clearChildren(header);
                 var row = createElement(this.document, 'tr');
-                this.state.variables.forEach(function (name) {
-                    var cell = createElement(_this.document, 'th', _this.state.view === 'tuple' ? 'query-result-variable' : '');
+                this.source.variables().forEach(function (name) {
+                    var cell = createElement(_this.document, 'th', _this.columnClass(name));
                     cell.scope = 'col';
-                    cell.textContent = _this.variableLabel(name);
+                    cell.textContent = _this.columnLabel(name);
                     row.appendChild(cell);
                 });
                 header.appendChild(row);
             };
-            /** Tuple results name their columns by variable, written as in the query: ?product (M4.3). */
-            QueryResultRenderer.prototype.variableLabel = function (name) {
-                return this.state.view === 'tuple' ? '?' + name : name;
+            /** A column's header text: the owner's label (?product on the Query page, M4.3), else its name. */
+            ResultTable.prototype.columnLabel = function (name) {
+                return this.options.columnLabel ? this.options.columnLabel(name) : name;
             };
-            QueryResultRenderer.prototype.updateTableColumnWidths = function (renderGeneration) {
+            /** The class of a column's header and record key (query-result-variable for ?variables). */
+            ResultTable.prototype.columnClass = function (name) {
+                return this.options.columnClass ? this.options.columnClass(name) || '' : '';
+            };
+            /** A cell's data-label: the owner's label for it, else the column name. */
+            ResultTable.prototype.cellLabel = function (name) {
+                return this.options.cellLabel ? this.options.cellLabel(name) : name;
+            };
+            ResultTable.prototype.updateTableColumnWidths = function (renderGeneration) {
                 var _this = this;
-                var sampleCount = Math.min(10, this.state.rowCount);
+                var sampleCount = Math.min(10, this.source.rowCount());
                 if (!this.columnWidthRows || this.columnWidthRows.length !== sampleCount) {
                     return this.readColumnWidthSample(sampleCount).then(function (rows) {
-                        if (_this.disposed || renderGeneration !== _this.renderGeneration
+                        if (_this.disposed || renderGeneration !== _this.layoutGeneration
                             || rows.length !== sampleCount) {
                             return;
                         }
@@ -3486,7 +3947,7 @@ var workbench;
                 }
                 return Promise.resolve(this.applyTableColumnWidths(renderGeneration));
             };
-            QueryResultRenderer.prototype.readColumnWidthSample = function (count) {
+            ResultTable.prototype.readColumnWidthSample = function (count) {
                 var _this = this;
                 if (this.columnWidthReadPromise && this.columnWidthReadCount === count) {
                     return this.columnWidthReadPromise;
@@ -3495,7 +3956,7 @@ var workbench;
                 var schemaGeneration = this.columnWidthGeneration;
                 this.columnWidthReadCount = count;
                 var read = count === 0 ? Promise.resolve([])
-                    : this.ensureRowStore().then(function (store) { return store.read(0, count); });
+                    : this.source.read(0, count);
                 var pending;
                 pending = read.then(function (rows) {
                     if (!_this.disposed && schemaGeneration === _this.columnWidthGeneration
@@ -3509,8 +3970,8 @@ var workbench;
                 this.columnWidthReadPromise = pending;
                 return pending;
             };
-            QueryResultRenderer.prototype.applyTableColumnWidths = function (renderGeneration) {
-                if (this.disposed || renderGeneration !== this.renderGeneration) {
+            ResultTable.prototype.applyTableColumnWidths = function (renderGeneration) {
+                if (this.disposed || renderGeneration !== this.layoutGeneration) {
                     return;
                 }
                 var width = this.resultWidth();
@@ -3521,7 +3982,7 @@ var workbench;
                     return;
                 }
                 var widths = this.measureInitialColumnWidths(this.columnWidthRows || [], width);
-                if (this.disposed || renderGeneration !== this.renderGeneration) {
+                if (this.disposed || renderGeneration !== this.layoutGeneration) {
                     return;
                 }
                 this.setTableColumnWidths(widths, width);
@@ -3529,9 +3990,9 @@ var workbench;
                 this.columnWidthAppliedWidth = width;
                 this.columnWidthPresentationSignature = presentation;
             };
-            QueryResultRenderer.prototype.measureInitialColumnWidths = function (rows, viewportWidth) {
+            ResultTable.prototype.measureInitialColumnWidths = function (rows, viewportWidth) {
                 var _this = this;
-                var columnCount = this.state.variables.length;
+                var columnCount = this.source.variables().length;
                 if (!columnCount) {
                     return [];
                 }
@@ -3556,10 +4017,10 @@ var workbench;
                 probe.style.tableLayout = 'auto';
                 var header = createElement(this.document, 'thead');
                 var headerRow = createElement(this.document, 'tr');
-                this.state.variables.forEach(function (name) {
-                    var cell = createElement(_this.document, 'th', _this.state.view === 'tuple' ? 'query-result-variable' : '');
+                this.source.variables().forEach(function (name) {
+                    var cell = createElement(_this.document, 'th', _this.columnClass(name));
                     cell.scope = 'col';
-                    cell.textContent = _this.variableLabel(name);
+                    cell.textContent = _this.columnLabel(name);
                     headerRow.appendChild(cell);
                 });
                 header.appendChild(headerRow);
@@ -3588,7 +4049,7 @@ var workbench;
                 return widths.some(function (value) { return value > 0; }) ? widths : [];
             };
             /** Right-align a column's header when every sampled value in it is a number (M4.3). */
-            QueryResultRenderer.prototype.markNumericColumns = function (rows) {
+            ResultTable.prototype.markNumericColumns = function (rows) {
                 var header = this.table.querySelector('thead tr');
                 if (!header) {
                     return;
@@ -3601,7 +4062,7 @@ var workbench;
                     }
                 }
             };
-            QueryResultRenderer.prototype.setTableColumnWidths = function (widths, viewportWidth) {
+            ResultTable.prototype.setTableColumnWidths = function (widths, viewportWidth) {
                 var _this = this;
                 clearChildren(this.tableColumns);
                 if (!widths.length || !widths.some(function (value) { return value > 0; })) {
@@ -3633,10 +4094,10 @@ var workbench;
                 this.table.style.minWidth = tableWidth + 'px';
                 this.table.style.maxWidth = 'none';
             };
-            QueryResultRenderer.prototype.renderRows = function () {
+            ResultTable.prototype.renderRows = function () {
                 var _this = this;
                 if (this.root.getAttribute('data-effective-layout') !== 'table'
-                    || (this.state.view !== 'tuple' && this.state.view !== 'graph') || this.state.rowCount === 0) {
+                    || !this.active || this.source.rowCount() === 0) {
                     this.reconcileTableRows([], { start: 0, end: 0, topSpacer: 0, bottomSpacer: 0 });
                     return Promise.resolve();
                 }
@@ -3648,7 +4109,7 @@ var workbench;
                 var geometry = this.prepareWindow(this.tableWrap, this.rowHeights, this.rowCoordinates, viewportHeight);
                 var scrollTop = geometry.scrollTop;
                 var range = geometry.range;
-                return this.ensureRowStore().then(function (store) { return store.read(range.start, range.end - range.start); })
+                return this.source.read(range.start, range.end - range.start)
                     .then(function (rows) {
                     if (_this.disposed || generation !== _this.rowRenderGeneration) {
                         return;
@@ -3697,26 +4158,34 @@ var workbench;
                     _this.followPageEnd(range.end);
                 });
             };
-            QueryResultRenderer.prototype.createTableRow = function (rowIndex, values) {
+            ResultTable.prototype.createTableRow = function (rowIndex, values) {
                 var _this = this;
                 var row = createElement(this.document, 'tr');
                 row.setAttribute('data-query-row-index', String(rowIndex));
                 row.setAttribute('aria-rowindex', String(rowIndex + 2));
+                this.setRowAttributes(row, rowIndex);
+                var variables = this.source.variables();
                 values.forEach(function (term, valueIndex) {
                     var cell = createElement(_this.document, 'td');
-                    cell.setAttribute('data-label', _this.state.variables[valueIndex] || '');
+                    cell.setAttribute('data-label', _this.cellLabel(variables[valueIndex] || ''));
                     if (!_this.wrap) {
                         cell.style.whiteSpace = 'nowrap';
                     }
-                    _this.renderTerm(cell, term, rowIndex);
+                    _this.renderTerm(cell, term, rowIndex, variables[valueIndex] || '');
                     row.appendChild(cell);
                 });
                 return row;
             };
-            QueryResultRenderer.prototype.renderTerm = function (target, storedTerm, rowIndex) {
+            /** The owner's own attributes of a row or record, for example the page row index of an Explore row. */
+            ResultTable.prototype.setRowAttributes = function (element, rowIndex) {
+                var attributes = this.options.rowAttributes ? this.options.rowAttributes(rowIndex) : null;
+                Object.keys(attributes || {}).forEach(function (name) { return element.setAttribute(name, attributes[name]); });
+            };
+            ResultTable.prototype.renderTerm = function (target, storedTerm, rowIndex, column) {
                 var term = unpackTerm(storedTerm);
+                var namespaces = this.source.namespaces(rowIndex);
                 var display = formatRdfTerm(term, {
-                    namespaces: typeof rowIndex === 'number' ? this.namespacesForRow(rowIndex) : this.state.namespaces,
+                    namespaces: namespaces,
                     showDatatypes: this.showDatatypes
                 });
                 if (term && term.direction) {
@@ -3724,9 +4193,17 @@ var workbench;
                 }
                 target.title = display.title;
                 if (display.kind === 'unbound') {
+                    // An owner may name what an empty value means in a column, such as "Default graph" for a graph.
+                    var unbound = this.options.unboundLabel ? this.options.unboundLabel(column) : '';
                     target.className = 'query-result-unbound';
-                    target.setAttribute('aria-label', 'Unbound');
-                    target.textContent = display.label;
+                    if (unbound) {
+                        target.title = unbound;
+                        target.textContent = unbound;
+                    }
+                    else {
+                        target.setAttribute('aria-label', 'Unbound');
+                        target.textContent = display.label;
+                    }
                     return;
                 }
                 if (!this.wrap) {
@@ -3738,18 +4215,10 @@ var workbench;
                         target.classList.add('rdf-numeric');
                     }
                 }
-                if (display.preformatted) {
-                    var preformatted = createElement(this.document, 'pre');
-                    preformatted.textContent = display.label;
-                    target.appendChild(preformatted);
-                    if (display.language) {
-                        target.setAttribute('lang', display.language);
-                    }
-                    return;
-                }
                 if (display.exploreHref) {
                     var resource = createElement(this.document, 'div', 'resource');
-                    var explore = createElement(this.document, 'a');
+                    // A literal with line breaks keeps them, in the cell's font, and wraps its long lines (C27).
+                    var explore = createElement(this.document, 'a', display.preformatted ? 'rdf-preformatted' : '');
                     explore.setAttribute('href', display.exploreHref);
                     if (display.kind === 'iri' || display.kind === 'bnode') {
                         appendBreakableText(this.document, explore, display.label);
@@ -3768,8 +4237,7 @@ var workbench;
                         resource.appendChild(external);
                     }
                     target.appendChild(resource);
-                    this.appendTermTags(resource, display, term && term.direction, typeof rowIndex === 'number'
-                        ? this.namespacesForRow(rowIndex) : this.state.namespaces);
+                    this.appendTermTags(resource, display, term && term.direction, namespaces);
                 }
                 else {
                     target.textContent = display.label;
@@ -3779,7 +4247,7 @@ var workbench;
                 }
             };
             /** A language badge, and a datatype tag unless the value is a string or a number (M4.3). */
-            QueryResultRenderer.prototype.appendTermTags = function (target, display, direction, namespaces) {
+            ResultTable.prototype.appendTermTags = function (target, display, direction, namespaces) {
                 if (display.kind !== 'literal') {
                     return;
                 }
@@ -3795,9 +4263,9 @@ var workbench;
                     target.appendChild(datatype);
                 }
             };
-            QueryResultRenderer.prototype.renderRecords = function () {
+            ResultTable.prototype.renderRecords = function () {
                 var _this = this;
-                if ((this.state.view !== 'tuple' && this.state.view !== 'graph') || this.state.rowCount === 0) {
+                if (!this.active || this.source.rowCount() === 0) {
                     this.reconcileRecords([]);
                     return Promise.resolve();
                 }
@@ -3808,7 +4276,7 @@ var workbench;
                 var range = geometry.range;
                 var start = range.start;
                 var end = range.end;
-                return this.ensureRowStore().then(function (store) { return store.read(start, end - start); }).then(function (rows) {
+                return this.source.read(start, end - start).then(function (rows) {
                     if (_this.disposed || generation !== _this.recordRenderGeneration) {
                         return;
                     }
@@ -3854,26 +4322,27 @@ var workbench;
                     _this.followPageEnd(end);
                 });
             };
-            QueryResultRenderer.prototype.createRecord = function (rowIndex, values) {
+            ResultTable.prototype.createRecord = function (rowIndex, values) {
                 var _this = this;
                 var record = createElement(this.document, 'article', 'query-result-record');
                 record.setAttribute('data-query-record-index', String(rowIndex));
+                this.setRowAttributes(record, rowIndex);
                 var title = createElement(this.document, 'h3', 'query-result-record__title');
                 title.textContent = 'Record ' + (rowIndex + 1);
                 record.appendChild(title);
                 var fields = createElement(this.document, 'dl', 'query-result-record__fields');
-                this.state.variables.forEach(function (name, valueIndex) {
-                    var key = createElement(_this.document, 'dt', _this.state.view === 'tuple' ? 'query-result-variable' : '');
-                    key.textContent = _this.variableLabel(name);
+                this.source.variables().forEach(function (name, valueIndex) {
+                    var key = createElement(_this.document, 'dt', _this.columnClass(name));
+                    key.textContent = _this.columnLabel(name);
                     var value = createElement(_this.document, 'dd');
-                    _this.renderTerm(value, values[valueIndex], rowIndex);
+                    _this.renderTerm(value, values[valueIndex], rowIndex, name);
                     fields.appendChild(key);
                     fields.appendChild(value);
                 });
                 record.appendChild(fields);
                 return record;
             };
-            QueryResultRenderer.prototype.reconcileTableRows = function (desired, range) {
+            ResultTable.prototype.reconcileTableRows = function (desired, range) {
                 var _this = this;
                 Object.keys(this.rowNodes).forEach(function (key) {
                     var index = Number(key);
@@ -3887,7 +4356,7 @@ var workbench;
                 });
                 this.placeChildrenInOrder(this.tableBody, desired);
             };
-            QueryResultRenderer.prototype.reconcileRecords = function (desired) {
+            ResultTable.prototype.reconcileRecords = function (desired) {
                 var _this = this;
                 var visible = {};
                 desired.forEach(function (record) { return visible[record.getAttribute('data-query-record-index')] = true; });
@@ -3902,7 +4371,7 @@ var workbench;
                 });
                 this.placeChildrenInOrder(this.records, desired);
             };
-            QueryResultRenderer.prototype.placeChildrenInOrder = function (parent, desired) {
+            ResultTable.prototype.placeChildrenInOrder = function (parent, desired) {
                 for (var childIndex = parent.children.length - 1; childIndex >= 0; childIndex--) {
                     if (desired.indexOf(parent.children[childIndex]) < 0) {
                         parent.removeChild(parent.children[childIndex]);
@@ -3925,7 +4394,7 @@ var workbench;
                     }
                 }
             };
-            QueryResultRenderer.prototype.getSpacer = function (which) {
+            ResultTable.prototype.getSpacer = function (which) {
                 var row = which === 'top' ? this.topSpacer : this.bottomSpacer;
                 if (!row) {
                     row = createElement(this.document, 'tr', 'query-result-virtual-spacer');
@@ -3935,7 +4404,7 @@ var workbench;
                     row.style.border = '0';
                     row.style.lineHeight = '0';
                     var cell = createElement(this.document, 'td');
-                    cell.colSpan = Math.max(1, this.state.variables.length);
+                    cell.colSpan = Math.max(1, this.source.variables().length);
                     cell.style.padding = '0';
                     cell.style.border = '0';
                     cell.style.lineHeight = '0';
@@ -3949,7 +4418,7 @@ var workbench;
                 }
                 return row;
             };
-            QueryResultRenderer.prototype.updateSpacerHeights = function (range) {
+            ResultTable.prototype.updateSpacerHeights = function (range) {
                 var spacers = this.rowCoordinates.spacers(this.rowHeights.offsetOf(range.start), this.rowHeights.offsetOf(range.end) - this.rowHeights.offsetOf(range.start), this.tablePosition.physical, this.tablePosition.logical);
                 if (this.topSpacer) {
                     this.setSpacerHeight(this.topSpacer, spacers.top);
@@ -3958,7 +4427,7 @@ var workbench;
                     this.setSpacerHeight(this.bottomSpacer, spacers.bottom);
                 }
             };
-            QueryResultRenderer.prototype.updateRecordSpacerHeights = function (start, end) {
+            ResultTable.prototype.updateRecordSpacerHeights = function (start, end) {
                 var spacers = this.recordCoordinates.spacers(this.recordHeights.offsetOf(start), this.recordHeights.offsetOf(end) - this.recordHeights.offsetOf(start), this.recordPosition.physical, this.recordPosition.logical);
                 if (this.recordTopSpacer) {
                     this.recordTopSpacer.style.height = spacers.top + 'px';
@@ -3967,7 +4436,7 @@ var workbench;
                     this.recordBottomSpacer.style.height = spacers.bottom + 'px';
                 }
             };
-            QueryResultRenderer.prototype.getRecordSpacer = function (which) {
+            ResultTable.prototype.getRecordSpacer = function (which) {
                 var spacer = which === 'top' ? this.recordTopSpacer : this.recordBottomSpacer;
                 if (!spacer) {
                     spacer = createElement(this.document, 'div', 'query-result-record-spacer');
@@ -3983,18 +4452,18 @@ var workbench;
                 return spacer;
             };
             /** Keep the first visible row in place across a re-render of the inner scroll element. */
-            QueryResultRenderer.prototype.keepAnchor = function (geometry) {
+            ResultTable.prototype.keepAnchor = function (geometry) {
                 if (this.scrollMode !== 'page') {
                     this.requestedRow = geometry.anchor;
                 }
             };
-            QueryResultRenderer.prototype.prepareWindow = function (scrollport, heights, coordinates, viewportHeight) {
+            ResultTable.prototype.prepareWindow = function (scrollport, heights, coordinates, viewportHeight) {
                 var position = scrollport === this.records ? this.recordPosition : this.tablePosition;
                 var oldLogical = this.logicalPosition(scrollport, coordinates, position);
                 var anchor = heights.range(oldLogical, 0, 0, 1).start;
                 var within = oldLogical - heights.offsetOf(anchor);
-                heights.resize(this.state.rowCount);
-                coordinates.update(heights.offsetOf(this.state.rowCount), viewportHeight);
+                heights.resize(this.source.rowCount());
+                coordinates.update(heights.offsetOf(this.source.rowCount()), viewportHeight);
                 var requestedRow = this.requestedRow;
                 var reflowAnchor = this.reflowAnchor;
                 if (this.scrollMode === 'page') {
@@ -4005,19 +4474,22 @@ var workbench;
                     within = 0;
                 }
                 else if (reflowAnchor) {
-                    anchor = reflowAnchor.end ? this.state.rowCount - 1 : reflowAnchor.row;
+                    anchor = reflowAnchor.end ? this.source.rowCount() - 1 : reflowAnchor.row;
                     within = reflowAnchor.end ? 0 : reflowAnchor.within;
                 }
                 position.logical = Math.max(0, Math.min(coordinates.maximumOffset, heights.offsetOf(anchor) + within));
                 var scrollTop = coordinates.physicalOffset(position.logical);
                 position.physical = scrollTop;
                 var logical = position.logical;
-                var range = heights.range(logical, viewportHeight, 4, this.maxDomRows);
+                var rowCount = this.source.rowCount();
+                var range = this.rendersAllRows()
+                    ? { start: 0, end: rowCount, topSpacer: 0, bottomSpacer: 0 }
+                    : heights.range(logical, viewportHeight, 4, this.windowCap(scrollport));
                 return { range: range, scrollTop: scrollTop, anchor: anchor, within: within,
                     requestedRow: requestedRow, reflowAnchor: reflowAnchor,
                     atEnd: coordinates.maximumOffset > 0 && position.logical >= coordinates.maximumOffset };
             };
-            QueryResultRenderer.prototype.logicalPosition = function (scrollport, coordinates, position) {
+            ResultTable.prototype.logicalPosition = function (scrollport, coordinates, position) {
                 var current = this.scrollPosition(scrollport);
                 // Preserve subpixel logical positions when an engine rounds programmatic scrollTop to CSS pixels.
                 if (Math.abs(current - position.physical) < 1) {
@@ -4026,13 +4498,13 @@ var workbench;
                 return coordinates.logicalOffset(current);
             };
             /** The window that scrolls the rows in page mode, or null where there is none (unit-test fakes). */
-            QueryResultRenderer.prototype.pageView = function () {
+            ResultTable.prototype.pageView = function () {
                 var view = this.document.defaultView;
                 return view && typeof view.addEventListener === 'function' && typeof view.innerHeight === 'number'
                     && typeof view.scrollBy === 'function' ? view : null;
             };
             /** The height of the sticky context bar, read from --workbench-contextbar-height. */
-            QueryResultRenderer.prototype.stickyOffset = function () {
+            ResultTable.prototype.stickyOffset = function () {
                 var view = this.pageView();
                 var documentElement = this.document.documentElement;
                 if (!view || !documentElement || typeof view.getComputedStyle !== 'function') {
@@ -4042,10 +4514,10 @@ var workbench;
                 return isFinite(value) && value > 0 ? value : 0;
             };
             /** Pick the scroll source for the visible rows and expose it as data-scroll-source for the CSS. */
-            QueryResultRenderer.prototype.updateScrollMode = function (heights, coordinates) {
-                heights.resize(this.state.rowCount);
-                var mode = this.pageView() && this.target.getAttribute('data-fullscreen') !== 'true'
-                    && !coordinates.exceedsCapacity(heights.offsetOf(this.state.rowCount)) ? 'page' : 'element';
+            ResultTable.prototype.updateScrollMode = function (heights, coordinates) {
+                heights.resize(this.source.rowCount());
+                var mode = this.pageView() && !this.isFullscreen()
+                    && !coordinates.exceedsCapacity(heights.offsetOf(this.source.rowCount())) ? 'page' : 'element';
                 if (mode !== this.scrollMode) {
                     this.scrollMode = mode;
                     this.root.setAttribute('data-scroll-source', mode);
@@ -4055,7 +4527,7 @@ var workbench;
             };
             /** Scroll offset of the rows: the element's scrollTop, or in page mode how far the rows sit above the
              *  visible area under the context bar (and under the pinned header for the table). */
-            QueryResultRenderer.prototype.scrollPosition = function (scrollport) {
+            ResultTable.prototype.scrollPosition = function (scrollport) {
                 if (this.scrollMode !== 'page') {
                     return scrollport.scrollTop || 0;
                 }
@@ -4063,17 +4535,17 @@ var workbench;
                 var top = rows && rows.getBoundingClientRect ? rows.getBoundingClientRect().top : 0;
                 return Math.max(0, this.visibleTop(scrollport) - top);
             };
-            QueryResultRenderer.prototype.visibleTop = function (scrollport) {
+            ResultTable.prototype.visibleTop = function (scrollport) {
                 return this.stickyOffset() + (scrollport === this.records ? 0
                     : this.measureElementHeight(this.table.querySelector('thead')));
             };
             /** The height whose change re-anchors the rows: the window in page mode, else the scroll element. */
-            QueryResultRenderer.prototype.measuredViewportHeight = function (scrollport) {
+            ResultTable.prototype.measuredViewportHeight = function (scrollport) {
                 var view = this.pageView();
                 return this.scrollMode === 'page' && view ? view.innerHeight : scrollport.clientHeight || 0;
             };
             /** Height available to the rows: the scroll element's box, or the window below the pinned parts. */
-            QueryResultRenderer.prototype.rowViewportHeight = function (scrollport, headerHeight) {
+            ResultTable.prototype.rowViewportHeight = function (scrollport, headerHeight) {
                 var view = this.pageView();
                 if (this.scrollMode === 'page' && view) {
                     return Math.max(1, view.innerHeight - this.visibleTop(scrollport));
@@ -4081,7 +4553,7 @@ var workbench;
                 return Math.max(1, (scrollport.clientHeight || this.measureRowEstimate() * 24) - headerHeight);
             };
             /** True in page mode when the page is scrolled to its bottom. */
-            QueryResultRenderer.prototype.pageAtBottom = function () {
+            ResultTable.prototype.pageAtBottom = function () {
                 var view = this.pageView();
                 var documentElement = this.document.documentElement;
                 return this.scrollMode === 'page' && !!view && !!documentElement
@@ -4092,19 +4564,19 @@ var workbench;
              * after End scrolled the page to what was its bottom. Until the last row is on screen, keep going to the
              * new bottom; any other scrolling input cancels this.
              */
-            QueryResultRenderer.prototype.followPageEnd = function (renderedEnd) {
+            ResultTable.prototype.followPageEnd = function (renderedEnd) {
                 var view = this.pageView();
                 var documentElement = this.document.documentElement;
                 if (!this.pageEndIntent || !view || !documentElement || this.scrollMode !== 'page') {
                     return;
                 }
-                if (renderedEnd >= this.state.rowCount && this.pageAtBottom()) {
+                if (renderedEnd >= this.source.rowCount() && this.pageAtBottom()) {
                     this.pageEndIntent = false;
                     return;
                 }
                 view.scrollTo(view.scrollX, documentElement.scrollHeight);
             };
-            QueryResultRenderer.prototype.installPageEndIntent = function (view) {
+            ResultTable.prototype.installPageEndIntent = function (view) {
                 var _this = this;
                 var onKey = function (event) {
                     var target = event.target;
@@ -4123,16 +4595,16 @@ var workbench;
                 this.listenWindow(view, 'touchstart', cancel, { passive: true });
                 this.listenWindow(view, 'mousedown', cancel, false);
             };
-            QueryResultRenderer.prototype.syncFloatingHeadScroll = function () {
+            ResultTable.prototype.syncFloatingHeadScroll = function () {
                 if (this.floatingViewport && !this.floatingHead.hidden) {
                     this.floatingViewport.scrollLeft = this.tableWrap.scrollLeft || 0;
                 }
             };
             /** Show the pinned header copy only while the real header row is hidden above the sticky offset. */
-            QueryResultRenderer.prototype.updateFloatingHead = function () {
+            ResultTable.prototype.updateFloatingHead = function () {
                 var head = this.table.querySelector('thead');
                 var show = this.scrollMode === 'page' && !this.tableWrap.hidden && !!head
-                    && this.root.getAttribute('data-effective-layout') === 'table' && this.state.rowCount > 0;
+                    && this.root.getAttribute('data-effective-layout') === 'table' && this.source.rowCount() > 0;
                 if (show) {
                     var offset = this.stickyOffset();
                     var headBox = head.getBoundingClientRect();
@@ -4163,14 +4635,14 @@ var workbench;
                 this.floatingHead.hidden = false;
                 this.syncFloatingHeadScroll();
             };
-            QueryResultRenderer.prototype.refreshPosition = function (scrollport, heights, coordinates, position, viewportHeight, geometry) {
-                coordinates.update(heights.offsetOf(this.state.rowCount), viewportHeight);
+            ResultTable.prototype.refreshPosition = function (scrollport, heights, coordinates, position, viewportHeight, geometry) {
+                coordinates.update(heights.offsetOf(this.source.rowCount()), viewportHeight);
                 // New height measurements can move the first visible row without changing an end seek's intent.
                 position.logical = geometry.atEnd ? coordinates.maximumOffset
                     : Math.max(0, Math.min(coordinates.maximumOffset, heights.offsetOf(geometry.anchor) + geometry.within));
                 position.physical = coordinates.physicalOffset(position.logical);
             };
-            QueryResultRenderer.prototype.commitScroll = function (scrollport, position, geometry) {
+            ResultTable.prototype.commitScroll = function (scrollport, position, geometry) {
                 if (this.scrollMode === 'page') {
                     // The page scrolls natively and the browser's scroll anchoring keeps the visible rows in place
                     // when rows above them are measured, so the renderer never moves the page itself.
@@ -4198,11 +4670,32 @@ var workbench;
                     this.reflowAnchor = null;
                 }
             };
-            QueryResultRenderer.prototype.installPreciseScrolling = function (scrollport, coordinates, position) {
+            /**
+             * The left and right arrow keys scroll a focused table box that is wider than its column, by the 40 px
+             * step Chromium uses: WebKit does not scroll a focused box sideways by itself.
+             */
+            ResultTable.prototype.installKeyboardSideScrolling = function (scrollport) {
+                var keyboard = function (event) {
+                    if (event.target !== scrollport || event.defaultPrevented || event.altKey || event.ctrlKey
+                        || event.metaKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) {
+                        return;
+                    }
+                    var maximum = Math.max(0, (scrollport.scrollWidth || 0) - (scrollport.clientWidth || 0));
+                    var current = scrollport.scrollLeft || 0;
+                    var next = Math.max(0, Math.min(maximum, current + (event.key === 'ArrowRight' ? 40 : -40)));
+                    if (maximum > 0 && next !== current) {
+                        event.preventDefault();
+                        scrollport.scrollLeft = next;
+                    }
+                };
+                scrollport.addEventListener('keydown', keyboard, false);
+                this.disposers.push(function () { return scrollport.removeEventListener('keydown', keyboard, false); });
+            };
+            ResultTable.prototype.installPreciseScrolling = function (scrollport, coordinates, position) {
                 var _this = this;
                 var move = function (offset) {
                     position.logical = Math.max(0, Math.min(coordinates.maximumOffset, offset));
-                    _this.renderAndReport();
+                    _this.requestRender();
                 };
                 var wheel = function (event) {
                     if (!coordinates.compressed || event.ctrlKey || event.shiftKey || !event.deltaY) {
@@ -4243,35 +4736,79 @@ var workbench;
                     scrollport.removeEventListener('keydown', keyboard, false);
                 });
             };
-            QueryResultRenderer.prototype.setSpacerHeight = function (row, height) {
+            ResultTable.prototype.setSpacerHeight = function (row, height) {
                 var value = Math.max(0, height) + 'px';
                 row.style.height = value;
                 if (row.children && row.children[0]) {
                     row.children[0].style.height = value;
                 }
             };
-            QueryResultRenderer.prototype.measureElementHeight = function (element) {
+            ResultTable.prototype.measureElementHeight = function (element) {
                 var rectangle = element && element.getBoundingClientRect ? element.getBoundingClientRect() : null;
                 return rectangle && isFinite(rectangle.height) ? rectangle.height : 0;
             };
-            QueryResultRenderer.prototype.measureRowEstimate = function () {
-                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
-                if (view && typeof view.getComputedStyle === 'function') {
-                    var cell = this.document.createElement('td');
-                    var style = view.getComputedStyle(cell);
-                    var lineHeight = parseFloat(style.lineHeight);
-                    var fontSize = parseFloat(style.fontSize);
-                    if (!isFinite(lineHeight) || lineHeight <= 0) {
-                        lineHeight = isFinite(fontSize) && fontSize > 0 ? fontSize * 1.4 : 1;
-                    }
-                    var padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-                    var border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
-                    return Math.max(1, lineHeight + padding + border);
+            /**
+             * The most rows the window renders: the configured cap (maxDomRows), raised only as far as a measured
+             * viewport taller than that many rows needs, counting each row at least MIN_RENDERED_ROW_HEIGHT high. It
+             * never depends on the row-height estimate, so an estimate that is too small cannot fill the document with
+             * rows, nor on the guessed height of a scroll element that is not laid out.
+             */
+            ResultTable.prototype.windowCap = function (scrollport) {
+                var view = this.pageView();
+                var height = this.scrollMode === 'page' && view ? view.innerHeight : scrollport.clientHeight;
+                height = isFinite(height) && height > 0 ? height : 0;
+                return Math.max(this.maxDomRows, Math.ceil(height / MIN_RENDERED_ROW_HEIGHT));
+            };
+            /**
+             * The height of one row of one line: a hidden probe row in the result table when the table is in the
+             * document (its cells get the table's styles there), else the cell styles. A cell that is not in the
+             * document has no computed styles, so it can only be measured inside the table.
+             */
+            ResultTable.prototype.measureRowEstimate = function () {
+                // A probe measured for this layout is reused (wheel and key scrolling ask for it on every event).
+                if (this.probedRowEstimate !== null) {
+                    return this.probedRowEstimate;
                 }
-                return 1;
+                var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
+                var cell = this.document.createElement('td');
+                var probe = null;
+                var body = this.tableBody;
+                var root = this.document.documentElement;
+                if (body && root && typeof root.contains === 'function' && root.contains(body)) {
+                    probe = this.document.createElement('tr');
+                    probe.setAttribute('aria-hidden', 'true');
+                    probe.style.visibility = 'hidden';
+                    cell.textContent = '0';
+                    probe.appendChild(cell);
+                    body.appendChild(probe);
+                }
+                try {
+                    var measured = probe ? this.measureElementHeight(probe) : 0;
+                    if (measured > 0) {
+                        this.probedRowEstimate = measured;
+                        return measured;
+                    }
+                    if (view && typeof view.getComputedStyle === 'function') {
+                        var style = view.getComputedStyle(cell);
+                        var lineHeight = parseFloat(style.lineHeight);
+                        var fontSize = parseFloat(style.fontSize);
+                        if (!isFinite(lineHeight) || lineHeight <= 0) {
+                            lineHeight = isFinite(fontSize) && fontSize > 0 ? fontSize * 1.4 : 1;
+                        }
+                        var padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+                        var border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+                        return Math.max(1, lineHeight + padding + border);
+                    }
+                    return 1;
+                }
+                finally {
+                    if (probe && probe.parentNode) {
+                        probe.parentNode.removeChild(probe);
+                    }
+                }
             };
             /** Width of one "0" in the table font. */
-            QueryResultRenderer.prototype.tableCharacterWidth = function () {
+            ResultTable.prototype.tableCharacterWidth = function () {
                 var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
                 var tableStyle = view && view.getComputedStyle ? view.getComputedStyle(this.table) : null;
                 var fontSize = tableStyle ? parseFloat(tableStyle.fontSize) : 14;
@@ -4289,7 +4826,7 @@ var workbench;
              * They only change with the headers, the table font and the viewport (media queries), so a render frame
              * (scrolling, streamed rows) reuses them instead of measuring every header again.
              */
-            QueryResultRenderer.prototype.measureReadableColumnWidths = function () {
+            ResultTable.prototype.measureReadableColumnWidths = function () {
                 var header = this.table && this.table.querySelector ? this.table.querySelector('thead tr') : null;
                 if (!header || !header.children.length) {
                     return [];
@@ -4302,7 +4839,7 @@ var workbench;
                 }
                 var documentElement = this.document.documentElement;
                 var key = [this.headerSignature, tableStyle ? tableStyle.font : '', view ? view.innerWidth : '',
-                    this.root.getAttribute('data-wrap'), this.target.getAttribute('data-fullscreen'),
+                    this.root.getAttribute('data-wrap'), this.isFullscreen() ? 'true' : 'false',
                     documentElement && documentElement.getAttribute ? documentElement.getAttribute('data-theme') : '',
                     texts.join('\u0000')].join('\u0001');
                 if (key === this.readableWidthsKey) {
@@ -4342,7 +4879,7 @@ var workbench;
                 return widths.slice();
             };
             /** Rendered widths of the header texts, measured together: one layout for all of them. */
-            QueryResultRenderer.prototype.measureRenderedHeaderTexts = function (texts, styles, context, tableStyle) {
+            ResultTable.prototype.measureRenderedHeaderTexts = function (texts, styles, context, tableStyle) {
                 var _this = this;
                 var widths = texts.map(function () { return NaN; });
                 var container = this.root;
@@ -4407,7 +4944,7 @@ var workbench;
                     return fallbackWidth;
                 });
             };
-            QueryResultRenderer.prototype.installAutoLayoutObserver = function () {
+            ResultTable.prototype.installAutoLayoutObserver = function () {
                 var _this = this;
                 var view = this.document.defaultView || (typeof window !== 'undefined' ? window : null);
                 if (!view || typeof view.ResizeObserver !== 'function') {
@@ -4418,18 +4955,18 @@ var workbench;
                         ? _this.records : _this.tableWrap;
                     if (!_this.viewportMeasurement || _this.viewportMeasurement.width !== _this.resultWidth()
                         || _this.viewportMeasurement.height !== _this.measuredViewportHeight(scrollport)) {
-                        _this.scheduleRender();
+                        _this.requestScheduledRender();
                     }
                 });
                 // The visible owner has stable width in both layouts; a hidden table has zero clientWidth.
                 observer.observe(this.root);
                 this.disposers.push(function () { return observer.disconnect(); });
             };
-            QueryResultRenderer.prototype.resultWidth = function () {
+            ResultTable.prototype.resultWidth = function () {
                 return this.root.clientWidth || this.tableWrap.clientWidth || this.records.clientWidth || 0;
             };
-            QueryResultRenderer.prototype.retainScrollAnchor = function () {
-                if (!this.state.rowCount || this.requestedRow !== null || this.reflowAnchor || this.scrollMode === 'page') {
+            ResultTable.prototype.retainScrollAnchor = function () {
+                if (!this.source.rowCount() || this.requestedRow !== null || this.reflowAnchor || this.scrollMode === 'page') {
                     return;
                 }
                 var records = this.root.getAttribute('data-effective-layout') === 'records';
@@ -4442,13 +4979,14 @@ var workbench;
                 this.reflowAnchor = { row: row, within: logical - heights.offsetOf(row),
                     end: coordinates.maximumOffset > 0 && logical >= coordinates.maximumOffset };
             };
-            QueryResultRenderer.prototype.resetRowMeasurements = function () {
-                this.rowHeights = new MeasuredRowHeights(this.state.rowCount, this.measureRowEstimate());
-                this.recordHeights = new MeasuredRowHeights(this.state.rowCount, this.measureRowEstimate());
+            ResultTable.prototype.resetRowMeasurements = function () {
+                this.probedRowEstimate = null;
+                this.rowHeights = new MeasuredRowHeights(this.source.rowCount(), this.measureRowEstimate());
+                this.recordHeights = new MeasuredRowHeights(this.source.rowCount(), this.measureRowEstimate());
                 this.rowHeightEstimateSampled = false;
                 this.recordHeightEstimateSampled = false;
             };
-            QueryResultRenderer.prototype.setEffectiveLayout = function (layout, rows) {
+            ResultTable.prototype.setEffectiveLayout = function (layout, rows) {
                 if (rows && layout !== this.root.getAttribute('data-effective-layout')) {
                     this.retainScrollAnchor();
                     this.invalidateVisibleRows();
@@ -4457,15 +4995,15 @@ var workbench;
                 this.tableWrap.hidden = !rows || layout !== 'table';
                 this.records.hidden = !rows || layout !== 'records';
             };
-            QueryResultRenderer.prototype.invalidateVisibleRows = function () {
+            ResultTable.prototype.invalidateVisibleRows = function () {
                 this.rowNodes = {};
                 this.recordNodes = {};
                 this.rowRenderGeneration++;
                 this.recordRenderGeneration++;
             };
-            return QueryResultRenderer;
+            return ResultTable;
         }());
-        queryStream.QueryResultRenderer = QueryResultRenderer;
+        queryStream.ResultTable = ResultTable;
         function formControls(form) {
             var controls = form && (form.elements || form.formControls);
             if (!controls) {
@@ -4753,7 +5291,7 @@ var workbench;
                     return false;
                 }
                 var currentRenderer = renderer;
-                renderer.beginBatch(offset);
+                renderer.beginBatch(offset, offset > 0 && knownTotal !== null);
                 var id = requestId();
                 activeId = id;
                 var requestGeneration = ++generation;
@@ -4797,7 +5335,7 @@ var workbench;
                             // Not the server's error record: the browser failed to keep a record (a full row
                             // store, a record the result cannot take). Say so, and stop the server's query.
                             if (record.type !== 'error' && error && typeof error === 'object' && !error.code) {
-                                error.code = 'client';
+                                error.code = error.protocol ? 'protocol' : 'client';
                             }
                             throw error;
                         }).then(function () {
@@ -4832,7 +5370,7 @@ var workbench;
                         }
                         cancelServerRequest(id, false, frozenCancelUrl);
                     }
-                    return recover(requestGeneration, currentRenderer, error && error.message || 'Unable to load query results.', error && error.code, error && error.status);
+                    return recover(requestGeneration, currentRenderer, error && error.message || 'Unable to load query results.', error && (error.code || (error.protocol ? 'protocol' : undefined)), error && error.status);
                 });
                 return false;
             }

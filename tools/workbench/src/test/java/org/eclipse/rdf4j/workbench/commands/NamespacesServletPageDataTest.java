@@ -229,6 +229,48 @@ class NamespacesServletPageDataTest {
 				.doesNotContain("target=http://example.org/renamed/");
 	}
 
+	/** C8: adding a prefix that is bound already would replace that binding silently; it needs overwrite=true. */
+	@Test
+	void addingAnExistingPrefixIsRejectedUnlessTheReplacementIsConfirmed() throws Exception {
+		setNamespace("target", "http://example.org/target-original/");
+		MockHttpServletResponse rejected = new MockHttpServletResponse();
+		servlet.service(saveRequest("target", "http://example.org/replacement/", null), rejected);
+
+		assertThat(rejected.getStatus()).isEqualTo(400);
+		List<JsonNode> records = records(rejected);
+		assertThat(errorMessage(records)).isEqualTo("Prefix 'target' is already defined");
+		assertThat(metadata(records, "existing-namespace")).isEqualTo("http://example.org/target-original/");
+		assertThat(namespaces()).contains("target=http://example.org/target-original/")
+				.doesNotContain("target=http://example.org/replacement/");
+
+		MockHttpServletRequest confirmed = saveRequest("target", "http://example.org/replacement/", null);
+		confirmed.addParameter("overwrite", "true");
+		MockHttpServletResponse replaced = new MockHttpServletResponse();
+		servlet.service(confirmed, replaced);
+
+		assertThat(replaced.getRedirectedUrl()).isEqualTo("namespaces");
+		assertThat(namespaces()).contains("target=http://example.org/replacement/")
+				.doesNotContain("target=http://example.org/target-original/");
+	}
+
+	@Test
+	void addingTheSameBindingAgainChangesNothingAndIsAccepted() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(saveRequest("dc", "http://purl.org/dc/elements/1.1/", null), response);
+
+		assertThat(response.getRedirectedUrl()).isEqualTo("namespaces");
+		assertThat(namespaces()).contains("dc=http://purl.org/dc/elements/1.1/").hasSize(3);
+	}
+
+	@Test
+	void editingTheNamespaceOfAPrefixInPlaceNeedsNoConfirmation() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(saveRequest("dc", "http://purl.org/dc/terms/", "dc"), response);
+
+		assertThat(response.getRedirectedUrl()).isEqualTo("namespaces");
+		assertThat(namespaces()).contains("dc=http://purl.org/dc/terms/");
+	}
+
 	@Test
 	void renamesToTheDefaultPrefix() throws Exception {
 
@@ -388,6 +430,15 @@ class NamespacesServletPageDataTest {
 				.filter(record -> "metadata".equals(record.path("type").asText()))
 				.map(record -> record.path("values").path("error-message").asText())
 				.filter(message -> !message.isEmpty())
+				.findFirst()
+				.orElse("");
+	}
+
+	private static String metadata(List<JsonNode> records, String name) {
+		return records.stream()
+				.filter(record -> "metadata".equals(record.path("type").asText()))
+				.map(record -> record.path("values").path(name).asText())
+				.filter(value -> !value.isEmpty())
 				.findFirst()
 				.orElse("");
 	}

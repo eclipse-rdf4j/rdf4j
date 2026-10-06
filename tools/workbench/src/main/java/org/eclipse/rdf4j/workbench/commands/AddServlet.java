@@ -14,13 +14,16 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -163,7 +166,7 @@ public class AddServlet extends TransformationServlet {
 		try {
 			URLConnection connection = url.openConnection();
 			setAcceptHeaders(connection, contentType, url.getPath());
-			try (InputStream stream = connection.getInputStream()) {
+			try (InputStream stream = openSource(url, connection)) {
 				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
 				URL sourceURL = connection.getURL();
 				String sourceName = sourceURL == null ? url.getPath() : sourceURL.getPath();
@@ -184,6 +187,47 @@ public class AddServlet extends TransformationServlet {
 		} catch (MalformedURLException | IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
 		}
+	}
+
+	/**
+	 * Connects to the source URL. A source that cannot be read (an unknown host, a refused connection, an HTTP error
+	 * status) is a mistake in the request, reported on the Add page as {@code Could not read <url>: <reason>}.
+	 */
+	private static InputStream openSource(URL url, URLConnection connection) throws BadRequestException {
+		try {
+			if (connection instanceof HttpURLConnection http) {
+				int status = http.getResponseCode();
+				if (status >= 400) {
+					String reason = http.getResponseMessage();
+					if (reason == null || reason.isBlank()) {
+						// HTTP/1.1 servers such as Tomcat send no reason phrase.
+						reason = STANDARD_REASONS.get(status);
+					}
+					throw new BadRequestException(
+							unreadableSource(url, reason == null ? "HTTP " + status : status + " " + reason));
+				}
+			}
+			return connection.getInputStream();
+		} catch (UnknownHostException e) {
+			throw new BadRequestException(unreadableSource(url, "unknown host " + e.getMessage()), e);
+		} catch (IOException e) {
+			String reason = e.getMessage();
+			throw new BadRequestException(
+					unreadableSource(url, reason == null || reason.isBlank() ? e.getClass().getSimpleName() : reason),
+					e);
+		}
+	}
+
+	/** The reason phrases of the error statuses a source URL commonly answers. */
+	private static final Map<Integer, String> STANDARD_REASONS = Map.ofEntries(Map.entry(400, "Bad Request"),
+			Map.entry(401, "Unauthorized"), Map.entry(403, "Forbidden"), Map.entry(404, "Not Found"),
+			Map.entry(405, "Method Not Allowed"), Map.entry(406, "Not Acceptable"), Map.entry(408, "Request Timeout"),
+			Map.entry(410, "Gone"), Map.entry(429, "Too Many Requests"), Map.entry(500, "Internal Server Error"),
+			Map.entry(501, "Not Implemented"), Map.entry(502, "Bad Gateway"), Map.entry(503, "Service Unavailable"),
+			Map.entry(504, "Gateway Timeout"));
+
+	private static String unreadableSource(URL url, String reason) {
+		return "Could not read " + url.toExternalForm() + ": " + reason;
 	}
 
 	private void setAcceptHeaders(URLConnection connection, String contentType, String sourceName) {

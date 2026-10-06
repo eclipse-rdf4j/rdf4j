@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -136,6 +137,59 @@ class SummaryServletPageDataTest {
 		assertThat(slowCounts.getCount()).as("the response did not wait for the slow count").isEqualTo(1);
 		assertThat(row(records)).containsExactly(null, "2");
 		assertThat(metadata(records).path("counts-timed-out").asBoolean()).isTrue();
+	}
+
+	/**
+	 * C32c: a repository that cannot be counted (an unreachable SPARQL endpoint) answers its counts request with the
+	 * reason, so the page can say why there are no counts, instead of a server error.
+	 */
+	@Test
+	void countsThatFailAreAnsweredWithTheReason() throws Exception {
+		Repository unreachable = new RepositoryWrapper(store) {
+			@Override
+			public RepositoryConnection getConnection() throws RepositoryException {
+				return new RepositoryConnectionWrapper(this, super.getConnection()) {
+					@Override
+					public long size(Resource... contexts) throws RepositoryException {
+						throw new RepositoryException("Query evaluation error: Connect to http://127.0.0.1:1 failed",
+								new ConnectException("Connection refused"));
+					}
+
+					@Override
+					public RepositoryResult<Resource> getContextIDs() throws RepositoryException {
+						throw new RepositoryException("Connect to http://127.0.0.1:1 failed: Connection refused");
+					}
+				};
+			}
+		};
+
+		List<JsonNode> records = run(new SummaryServlet(), unreachable, true);
+
+		assertThat(vars(records)).containsExactly("size", "contexts");
+		assertThat(row(records)).containsExactly(null, null);
+		assertThat(metadata(records).path("counts-failed").asText())
+				.isEqualTo("Query evaluation error: Connect to http://127.0.0.1:1 failed");
+		assertThat(metadata(records).has("counts-timed-out")).isFalse();
+	}
+
+	@Test
+	void aCountThatFailsDoesNotHideTheCountThatFinished() throws Exception {
+		Repository failingSize = new RepositoryWrapper(store) {
+			@Override
+			public RepositoryConnection getConnection() throws RepositoryException {
+				return new RepositoryConnectionWrapper(this, super.getConnection()) {
+					@Override
+					public long size(Resource... contexts) throws RepositoryException {
+						throw new RepositoryException("size is not supported");
+					}
+				};
+			}
+		};
+
+		List<JsonNode> records = run(new SummaryServlet(), failingSize, true);
+
+		assertThat(row(records)).containsExactly(null, "2");
+		assertThat(metadata(records).path("counts-failed").asText()).isEqualTo("size is not supported");
 	}
 
 	private List<JsonNode> run(SummaryServlet servlet, Repository repository, boolean counts) throws Exception {

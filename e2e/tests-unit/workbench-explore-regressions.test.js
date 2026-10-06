@@ -18,6 +18,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
+const { renderPageResultTables } = require('./page-result-table-harness.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
@@ -320,7 +321,7 @@ const terms = [
         '"42"^^<http://www.w3.org/2001/XMLSchema#integer>']
 ];
 
-for (const viewId of ['contexts', 'types', 'explore', 'export']) {
+for (const viewId of ['contexts', 'types']) {
     test(`${viewId} RDF links serialize absolute IRIs and literal syntax before URL encoding`, () => {
         const { workbench } = loadWorkbench();
         const mount = {};
@@ -340,7 +341,9 @@ for (const viewId of ['contexts', 'types', 'explore', 'export']) {
     });
 }
 
-test('Explore first row window starts from its actual pending result markup and remains bounded', async () => {
+// The statements of a long Explore page are the shared result table, which reads only a window of rows itself;
+// bindRowWindows reads the page in bounded chunks for the resource card (.agent/execplans/workbench-shared-result-table.md).
+test('Explore reads a long page in bounded windows and leaves its rows to the shared result table', async () => {
     const { workbench, window } = loadWorkbench();
     const rows = Array.from({ length: 300 }, (_unused, index) => [
         { kind: 'iri', value: `urn:subject:${index}` },
@@ -355,35 +358,24 @@ test('Explore first row window starts from its actual pending result markup and 
         async count() { return rows.length; }
     };
     const listeners = new Map();
-    window.innerHeight = 220;
-    window.scrollY = 0;
     window.addEventListener = (name, listener) => listeners.set(name, listener);
     window.removeEventListener = name => listeners.delete(name);
-    const rowTable = {
-        getBoundingClientRect() { return { top: -window.scrollY, height: rows.length * 44 }; }
-    };
-    const mount = {
-        querySelectorAll(selector) {
-            const markup = flatten(mount.template);
-            return selector.includes('data-workbench-row-table')
-                && markup.includes('data-workbench-row-table=true') ? [rowTable] : [];
-        }
-    };
-    const renderer = runtime();
-    workbench.views.render(mount, model, context, renderer);
-    assert.match(flatten(mount.template), /Loading rows\.\.\./, 'pending results must be visible before the first read');
-    const dispose = await workbench.views.bindRowWindows(mount, model, context, renderer);
-    assert.ok(model.rows.length > 0, 'pending Explore results must bootstrap the first row window');
-    assert.ok(model.rows.length <= 80, 'the first window must stay bounded');
-    assert.ok(reads.every(read => read.count < rows.length), 'summary scans and viewport reads must stay bounded');
-    assert.doesNotMatch(flatten(mount.template), /Loading rows\.\.\./);
-    assert.match(flatten(mount.template), /urn:subject:0/);
-    window.scrollY = 145 * 44;
-    await listeners.get('scroll')();
-    assert.ok(model.rowStart > 0, 'scrolling must read a later result window');
-    assert.ok(model.rows.length <= 80, 'later windows must stay bounded');
+    const page = await renderPageResultTables(workbench, model, context);
+    assert.doesNotMatch(flatten(page.template), /Loading rows/, 'a page too long to group shows its table at once');
+    const host = page.host('explore-all');
+    assert.ok(host, 'the statements are one shared result table');
+    const dispose = await workbench.views.bindRowWindows(page.mount, model, context, page.runtime);
+    await page.settle();
+    assert.equal(page.host('explore-all'), host, 'rendering the page again keeps the table');
+    assert.ok(reads.length > 0 && reads.every(read => read.count < rows.length),
+        'summary scans and table windows must stay bounded');
+    const rendered = host.querySelectorAll('tr').filter(row => row.getAttribute('data-workbench-row-index') !== null
+        && row.getAttribute('data-workbench-row-index') !== undefined);
+    assert.ok(rendered.length > 0 && rendered.length <= 80, `a bounded window of rows: ${rendered.length}`);
+    assert.equal(rendered[0].getAttribute('data-workbench-row-index'), '0');
+    assert.match(rendered[0].textContent, /urn:subject:0/);
+    assert.equal(listeners.size, 0, 'Explore leaves window scrolling to its result table');
     dispose();
-    assert.equal(listeners.size, 0, 'disposing the route must release window listeners');
 });
 
 test('Explore empty resources show an empty result without opening a row window', async () => {
@@ -493,7 +485,9 @@ for (const example of countCases) {
     });
 }
 
-for (const viewId of ['explore', 'export', 'saved-queries']) {
+// Explore and Export statements are shared result tables that window their own rows without rendering the page
+// (workbench-shared-result-table.test.js); saved queries keep the page's row windows.
+for (const viewId of ['saved-queries']) {
     test(`${viewId} row-window changes preserve open disclosures and edited controls`, async () => {
         const { workbench, window } = loadWorkbench();
         const rows = Array.from({ length: 300 }, (_unused, index) => [
@@ -580,8 +574,30 @@ for (const viewId of ['repositories', 'contexts']) {
     });
 }
 
+// Explore and Export show statements in the shared result table (.agent/execplans/workbench-shared-result-table.md),
+// whose links are the Query page's: every term links to Explore; a multi-line literal keeps its line breaks (C27).
+for (const viewId of ['explore', 'export']) {
+    test(`${viewId} RDF links serialize absolute IRIs and literal syntax before URL encoding`, async () => {
+        const { workbench } = loadWorkbench();
+        const model = modelFor(viewId, terms.map(([term]) => [term]));
+        model.vars = ['value'];
+        model.metadata['statement-preview-requested'] = 'true';
+        const page = await renderPageResultTables(workbench, model, context);
+        assert.equal(page.hosts.length, 1, `${viewId} shows its statements in one shared result table`);
+        const links = page.hosts[0].querySelectorAll('a').filter(link => !link.classList.contains('resourceURL'))
+            .map(link => link.getAttribute('href'));
+        assert.equal(links.length, terms.length);
+        terms.forEach(([term, expected], index) => {
+            const decoded = new URL(links[index], 'https://workbench.test/').searchParams.get('resource');
+            assert.equal(decoded, expected, `${viewId} must preserve ${term.kind} RDF syntax`);
+        });
+        assert.equal(page.hosts[0].querySelectorAll('pre').length, 0, 'no bare <pre>');
+        assert.equal(page.hosts[0].querySelectorAll('a.rdf-preformatted').length, 1, 'a multi-line literal keeps its breaks');
+    });
+}
+
 // Task M5.1 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: Explore groups rows by role.
-test('Explore groups rows by the role the resource plays and shows prefixed names', () => {
+test('Explore groups rows by the role the resource plays and shows prefixed names', async () => {
     const { workbench } = loadWorkbench();
     const iri = value => ({ kind: 'iri', value });
     const ex = 'http://example.org/';
@@ -599,9 +615,8 @@ test('Explore groups rows by the role the resource plays and shows prefixed name
     model.vars = ['subject', 'predicate', 'object', 'context'];
     model.namespaceMap = { 'ex:': ex, 'rdfs:': rdfs };
     model.metadata = { resource: 'ex:item', 'explore-resource': '<' + ex + 'item>', 'total-result-count': rows.length };
-    const mount = {};
-    workbench.views.render(mount, model, context, runtime());
-    const markup = flatten(routeTemplate(workbench, mount));
+    const page = await renderPageResultTables(workbench, model, context);
+    const markup = flatten(page.template);
     const group = role => {
         const match = new RegExp(`data-explore-role="?${role}"?[\\s>]`).exec(markup);
         const start = match ? match.index : -1;
@@ -613,10 +628,17 @@ test('Explore groups rows by the role the resource plays and shows prefixed name
     assert.match(group('incoming'), /Incoming/);
     assert.match(group('predicate'), /Used as predicate/);
     assert.match(group('graph'), /Graph contents/);
-    assert.match(group('outgoing'), />rdfs:label</, 'predicates use the repository prefixes');
     assert.match(group('outgoing'), /Graph: ex:graph/, 'one graph is named in the group header');
-    const outgoingHeaders = Array.from(group('outgoing').matchAll(/<th[^>]*>([^<]*)<\/th>/g)).map(match => match[1].trim());
-    assert.deepEqual(outgoingHeaders, ['Predicate', 'Object'], 'no Graph column when every row shares one graph');
+    // Each group is the shared result table, with the page's row index on its rows.
+    assert.deepEqual(page.hosts.map(host => host.getAttribute('data-workbench-result-table')),
+        ['explore-outgoing', 'explore-incoming', 'explore-predicate', 'explore-graph']);
+    assert.ok(page.host('explore-outgoing').querySelectorAll('a').map(link => link.textContent).includes('rdfs:label'),
+        'predicates use the repository prefixes');
+    assert.deepEqual(page.headers('explore-outgoing'), ['Predicate', 'Object'],
+        'no Graph column when every row shares one graph');
+    assert.deepEqual(page.headers('explore-graph'), ['Subject', 'Predicate', 'Object']);
+    assert.deepEqual(page.host('explore-incoming').querySelectorAll('tbody tr')
+        .map(row => row.getAttribute('data-workbench-row-index')), ['2']);
     assert.match(markup, /<h2[^>]*>Item label<\/h2>/, 'the label of the explored resource is the heading');
 });
 

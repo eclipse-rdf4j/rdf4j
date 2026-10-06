@@ -286,7 +286,8 @@ test('populated fixture keeps list pages and Explore readable', async ({ page })
 	await expect(page.locator('#explore-results table.data tr, #explore-results table.simple tr')).not.toHaveCount(0);
 	// Rows about the explored resource are grouped by role, so the tables show its neighbours by prefixed name and
 	// the resource itself is named in the card above them (plan task M5.1). The header row shows before the rows load.
-	await expect(page.locator('#explore-results')).toContainText(/\bex:\w+/);
+	// The cells are the Query page's (shared result table): each term is a link of its own.
+	await expect(page.locator('#explore-results a').filter({ hasText: /^ex:\w+$/ })).not.toHaveCount(0);
 	await expect(page.locator('#explore-resource-iri')).toContainText('example.org/alice');
 	await expect(page.locator('#explore-results a[href*="example.org"]')).not.toHaveCount(0);
 });

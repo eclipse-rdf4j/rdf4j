@@ -407,7 +407,9 @@ test.describe('forms through the router', () => {
 		await added.getByRole('textbox', { name: 'Namespace' }).fill('http://example.org/bad#');
 		await added.getByRole('button', { name: 'Save' }).click();
 
-		await expect(page.locator('#workbench-outlet .workbench-callout--error')).toContainText('1 bad');
+		// The refusal is shown in the row that was sent, which keeps what was typed (round-3 finding C29).
+		await expect(page.locator('#workbench-outlet .workbench-namespace-edit-error')).toContainText('1 bad');
+		await expect(added.getByRole('textbox', { name: 'Prefix' })).toHaveValue('1 bad');
 		await expect(page).toHaveURL(new RegExp(`/repositories/${FORMS_ID}/namespaces$`));
 		expect(documents).toEqual([]);
 	});
@@ -617,8 +619,9 @@ test('deleting a saved query shows the remaining ones without loading a document
 	await row(names[0]).locator('.saved-query-delete').click();
 	await page.getByRole('dialog', { name: 'Delete saved query?' }).getByRole('button', { name: 'Delete' }).click();
 
-	await waitForRoute(page, 'saved-queries', { url: /\/saved-queries\?delete=/ });
+	// The urn is sent in the form's body, so the address stays the Saved queries page (round-3 finding C30).
 	await expect(row(names[0])).toHaveCount(0);
+	await waitForRoute(page, 'saved-queries', { url: /\/saved-queries$/ });
 	await expect(row(names[1])).toHaveCount(1);
 	await expect(row(names[1])).toBeVisible();
 	expect(documents).toEqual([]);

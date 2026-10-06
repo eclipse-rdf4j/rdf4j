@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -24,9 +25,11 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -38,6 +41,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.exception.ValidationException;
+import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -51,6 +55,7 @@ import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
 import org.eclipse.rdf4j.workbench.commands.SummaryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
@@ -411,7 +416,45 @@ public class WorkbenchServletTest {
 			assertThat(record.path("type").asText()).isEqualTo("error");
 			assertThat(record.path("status").asInt()).isEqualTo(HttpServletResponse.SC_CONFLICT);
 			assertThat(record.path("message").asText()).contains("SHACL validation failed")
-					.contains("ValidationReport");
+					.doesNotContain("ValidationReport", "@prefix");
+		});
+	}
+
+	/** C13: a SHACL failure of an in-page change reads as one line per violation, not as the report's RDF. */
+	@Test
+	void shaclValidationFailureOfAnInPageChangeIsAReadableSummary() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.toThrow = new RepositoryException(new RemoteShaclValidationException(new StringReader("""
+				@prefix sh: <http://www.w3.org/ns/shacl#> .
+				[] a sh:ValidationReport ; sh:conforms false ;
+				  sh:result [ a sh:ValidationResult ; sh:focusNode <http://example.org/bob> ;
+				      sh:resultPath <http://example.org/name> ; sh:resultSeverity sh:Violation ;
+				      sh:sourceConstraintComponent sh:MinCountConstraintComponent ; sh:sourceShape _:name ] .
+				_:name a sh:PropertyShape ; sh:path <http://example.org/name> ; sh:minCount 1 .
+				"""), "", RDFFormat.TURTLE));
+		servlet.createdServlets.add(proxy);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		MockHttpServletRequest request = request("/workbench/repo/add", "/repo/add");
+		request.setMethod("POST");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_CONFLICT);
+		List<JsonNode> records = response.getContentAsString()
+				.lines()
+				.filter(line -> !line.isBlank())
+				.map(line -> new ObjectMapper().readTree(line))
+				.toList();
+		assertThat(records).last().satisfies(record -> {
+			assertThat(record.path("code").asText()).isEqualTo("shacl-validation");
+			assertThat(record.path("message").asText()).isEqualTo("""
+					SHACL validation failed with 1 violation:
+					- <http://example.org/bob>, <http://example.org/name>: expected at least 1 value""");
 		});
 	}
 
@@ -532,6 +575,40 @@ public class WorkbenchServletTest {
 		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
+	}
+
+	/**
+	 * C15: the Connection page encodes the credentials as UTF-8 before base64; the Workbench decodes them the same way
+	 * (and still reads credentials stored one byte per character by earlier versions), and a value without a password
+	 * is a user without a password rather than a server error.
+	 */
+	@Test
+	void cookieCredentialsAreDecodedAsUtf8() throws Exception {
+		assertThat(credentialsSentFor(Base64.getEncoder()
+				.encodeToString("håvard:pass✓".getBytes(StandardCharsets.UTF_8)))).containsExactly("håvard", "pass✓");
+		assertThat(credentialsSentFor(Base64.getEncoder()
+				.encodeToString("Håvard:sécret".getBytes(StandardCharsets.ISO_8859_1))))
+						.containsExactly("Håvard", "sécret");
+		assertThat(credentialsSentFor(Base64.getEncoder().encodeToString("alice".getBytes(StandardCharsets.UTF_8))))
+				.containsExactly("alice", "");
+	}
+
+	private static List<String> credentialsSentFor(String cookie) throws Exception {
+		RemoteRepositoryManager manager = mock(RemoteRepositoryManager.class);
+		when(manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
+		when(manager.getRepository(anyString())).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
+		List<String> sent = new ArrayList<>();
+		doAnswer(invocation -> {
+			sent.add(invocation.getArgument(0));
+			sent.add(invocation.getArgument(1));
+			return null;
+		}).when(manager).setUsernameAndPassword(anyString(), anyString());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		servlet.cookieHandler = new FixedCookieHandler(cookie);
+		servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
+		servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
+		return sent;
 	}
 
 	@Test

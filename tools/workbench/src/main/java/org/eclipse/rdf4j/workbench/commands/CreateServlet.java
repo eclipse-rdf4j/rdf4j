@@ -149,6 +149,7 @@ public class CreateServlet extends TransformationServlet {
 		String newID;
 		if (FEDERATE.equals(type)) {
 			newID = req.getParameter("Local repository ID");
+			validateRepositoryId(newID);
 			addFederated(newID, req.getParameter("Repository title"),
 					Arrays.asList(req.getParameterValues("memberID")));
 		} else {
@@ -170,8 +171,40 @@ public class CreateServlet extends TransformationServlet {
 								"could not find instance of Repository class in config")));
 		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);
 		repConfig.validate();
+		validateRepositoryId(repConfig.getID());
 		manager.addRepositoryConfig(repConfig);
 		return repConfig;
+	}
+
+	/**
+	 * Accepts only IDs that the Workbench can address: an ID is written unescaped into the Workbench's and the RDF4J
+	 * Server's URLs, and is the directory name of the repository on a local server, so it may only contain the letters
+	 * a-z and A-Z, digits, '-', '_' and '.' (the characters {@code RepositoryManager.getNewRepositoryID} keeps) and '@'
+	 * (as in the default ID of the Remote RDF Store template), which need no escaping in a URL path and are valid in
+	 * file names, and may not consist of dots only ("." and ".." are path segments of their own).
+	 *
+	 * @throws RepositoryConfigException for an ID that is empty or not URL-safe, with a message for the user
+	 */
+	static void validateRepositoryId(String id) throws RepositoryConfigException {
+		if (id == null || id.isEmpty()) {
+			throw new RepositoryConfigException("Enter a repository ID.");
+		}
+		boolean urlSafe = true;
+		boolean onlyDots = true;
+		for (int index = 0; index < id.length(); index++) {
+			char c = id.charAt(index);
+			urlSafe &= isRepositoryIdCharacter(c);
+			onlyDots &= c == '.';
+		}
+		if (!urlSafe || onlyDots) {
+			throw new RepositoryConfigException("Repository ID '" + id + "' is not valid: use only the letters a-z and"
+					+ " A-Z, digits, '-', '_', '.' and '@', and not only dots.");
+		}
+	}
+
+	private static boolean isRepositoryIdCharacter(char c) {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_'
+				|| c == '.' || c == '@';
 	}
 
 	private void addFederated(String repositoryId, String repositoryTitle, List<String> memberIds) {

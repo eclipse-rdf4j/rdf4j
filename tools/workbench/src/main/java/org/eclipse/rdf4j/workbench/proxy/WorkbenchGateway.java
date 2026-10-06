@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.InvalidWorkbenchPolicyException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
@@ -65,7 +66,7 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private ServerValidator serverValidator;
 
-	private WorkbenchPolicy policy;
+	private volatile WorkbenchPolicy policy;
 
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
@@ -73,7 +74,12 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (getDefaultServerPath() == null) {
 			throw new MissingInitParameterException(DEFAULT_SERVER);
 		}
-		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
+		try {
+			this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
+		} catch (InvalidWorkbenchPolicyException e) {
+			// Logged by the loader. The application keeps running and the Workbench answers with the policy error.
+			this.policy = null;
+		}
 		this.cookies = createCookieHandler(config);
 		this.serverValidator = createServerValidator(config);
 	}
@@ -114,6 +120,16 @@ public class WorkbenchGateway extends AbstractServlet {
 			throws ServletException, IOException {
 		// Before the page-protocol checks below read the first parameter, which makes the container decode the body.
 		useUtf8RequestEncoding(req);
+		WorkbenchPolicy policy = this.policy;
+		if (policy == null) {
+			try {
+				policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
+				this.policy = policy;
+			} catch (InvalidWorkbenchPolicyException e) {
+				WorkbenchPolicyResponse.sendInvalidPolicy(resp, e);
+				return;
+			}
+		}
 		if (WorkbenchPageProtocol.requestsHtmlNavigation(req) || WorkbenchPageProtocol.requestsPageData(req)) {
 			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
 		}

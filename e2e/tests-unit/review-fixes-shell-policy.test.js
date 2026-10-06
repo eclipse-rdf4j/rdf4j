@@ -193,3 +193,16 @@ test('A31: renaming a prefix onto one that exists is refused in the editor, whic
     assert.match(markup, /Prefix 'foaf' is already defined/);
     assert.match(markup, /workbench-namespace-edit/, 'the editor stays open with the typed values');
 });
+
+// Round 2 (R7): an Info answer whose menu is empty (a user the server does not authorize, a failed Info) says nothing
+// about hidden pages: the shell keeps the links that lead to signing in and to the other repositories.
+test('an empty Info menu hides no recovery link', () => {
+    const wb = loadViews();
+    const empty = { basePath: '/workbench', repositoryId: 'r', workbench: { menu: [] } };
+    const markup = page(wb, { viewId: 'summary' }, empty);
+    assert.match(markup, /Change server or user/);
+    assert.match(markup, /All repositories/);
+    assert.match(markup, /Create repository/);
+    const missing = { viewId: 'summary', error: { status: 404, code: 'repository-not-found', message: 'missing' } };
+    assert.match(page(wb, missing, empty), />Change server</, 'the not-found page offers Change server');
+});

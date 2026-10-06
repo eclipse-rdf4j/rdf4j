@@ -308,9 +308,75 @@ module workbench {
     /**
      * A modal confirmation (M6.2): a native dialog with a title, a body, an optional typed confirmation,
      * Cancel (focused first) and the confirm button. Escape and Cancel resolve false; only confirming resolves true.
+     * Closing it returns focus to the control that opened it.
      */
     export module confirmDialog {
         var counter = 0;
+
+        /**
+         * The control the pointer pressed last, until a key is pressed. Safari gives a button no focus when it is
+         * clicked; focus then lands on the page around it (the outlet), so the press is how a dialog finds its opener.
+         */
+        var pressedControl: HTMLElement = null;
+
+        /** The form control or link at or around a node; for a node inside a label, the label's control. */
+        function controlAt(node: any): HTMLElement {
+            if (!node || typeof node.closest !== 'function') {
+                return null;
+            }
+            try {
+                var control = <HTMLElement>node.closest('a, button, input, select, textarea, summary');
+                if (control) {
+                    return control;
+                }
+                var label = <HTMLLabelElement>node.closest('label');
+                return label && label.control ? label.control : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        // On the window, so the page's own document listeners stay as they are; capturing sees every press first.
+        if (typeof window !== 'undefined' && window && typeof window.addEventListener === 'function'
+                && !(<any>window).__workbenchConfirmPressTracking) {
+            (<any>window).__workbenchConfirmPressTracking = true;
+            window.addEventListener('pointerdown', function(event: Event) {
+                pressedControl = controlAt(event.target);
+            }, true);
+            window.addEventListener('keydown', function() {
+                pressedControl = null;
+            }, true);
+        }
+
+        /**
+         * The element focus returns to when the dialog closes: the focused control, else the control just pressed
+         * (Safari), else whatever has focus.
+         */
+        function opener(doc: Document): HTMLElement {
+            var active = <HTMLElement>doc.activeElement;
+            var pressed = pressedControl;
+            pressedControl = null;
+            if (active && active !== doc.body && controlAt(active) === active) {
+                return active;
+            }
+            if (pressed && pressed.isConnected !== false) {
+                return pressed;
+            }
+            return active && active !== doc.body ? active : null;
+        }
+
+        /** Focus the opener again if it is still on the page and can take focus. */
+        function restoreFocus(target: HTMLElement): void {
+            if (!target || typeof target.focus !== 'function' || target.isConnected === false
+                    || (<any>target).disabled) {
+                return;
+            }
+            try {
+                target.focus({ preventScroll: true });
+            } catch (error) {
+                target.focus();
+            }
+        }
 
         function renderBody(container: HTMLElement, body: any): void {
             var lit = (<any>window).RDF4JLitHTML;
@@ -333,6 +399,7 @@ module workbench {
 
         export function open(options: ConfirmDialogOptions): Promise<boolean> {
             var doc = document;
+            var returnFocusTo = opener(doc);
             var id = 'workbench-confirm-' + (++counter);
             var dialog = <any>doc.createElement('dialog');
             dialog.className = 'workbench-dialog';
@@ -401,6 +468,8 @@ module workbench {
                     if (dialog.parentNode) {
                         dialog.parentNode.removeChild(dialog);
                     }
+                    // Before resolving: what the answer starts (a submission, a new page) can move focus on from there.
+                    restoreFocus(returnFocusTo);
                     resolve(confirmed);
                 });
                 doc.body.appendChild(dialog);
@@ -408,6 +477,67 @@ module workbench {
                 cancel.focus();
             });
         }
+    }
+
+    /**
+     * Full screen of the YASQE editors (CodeMirror's fullScreen option) on the Query, Update and Saved queries pages.
+     * YASQE's full-screen toggles are icons that take no focus, so a click on one leaves focus on the page around the
+     * editor, out of reach of the editor's own Escape key. A click on a toggle therefore focuses its editor, and Escape
+     * anywhere on the page leaves full screen (after the editor's own uses of Escape, such as closing the completion
+     * list).
+     */
+    export module editorFullscreen {
+        function editorAt(node: any): any {
+            var wrapper = node && typeof node.closest === 'function' ? node.closest('.CodeMirror') : null;
+            return wrapper && wrapper.CodeMirror ? wrapper.CodeMirror : null;
+        }
+
+        function onClick(event: Event): void {
+            var target: any = event.target;
+            var toggle = target && typeof target.closest === 'function'
+                ? target.closest('.yasqe_fullscreenBtn, .yasqe_smallscreenBtn') : null;
+            var editor = editorAt(toggle);
+            if (editor && typeof editor.focus === 'function') {
+                editor.focus();
+            }
+        }
+
+        function onKeyDown(event: KeyboardEvent): void {
+            if (event.key !== 'Escape' || event.defaultPrevented) {
+                return;
+            }
+            var target: any = event.target;
+            var doc: Document = target && target.ownerDocument ? target.ownerDocument : document;
+            // Escape there belongs to the open dialog.
+            if (!doc || typeof doc.querySelector !== 'function' || doc.querySelector('dialog[open]')) {
+                return;
+            }
+            var editor = editorAt(doc.querySelector('.CodeMirror.CodeMirror-fullscreen'));
+            if (!editor || typeof editor.getOption !== 'function' || !editor.getOption('fullScreen')) {
+                return;
+            }
+            event.preventDefault();
+            editor.setOption('fullScreen', false);
+            editor.focus();
+        }
+
+        /**
+         * Installs the listeners once per window. They listen on the window, after the editor and the page had the
+         * event, and leave the page's own document listeners as they are.
+         */
+        export function install(target: Window): void {
+            if (!target || typeof target.addEventListener !== 'function'
+                    || (<any>target).__workbenchEditorFullscreen) {
+                return;
+            }
+            (<any>target).__workbenchEditorFullscreen = true;
+            target.addEventListener('click', onClick);
+            target.addEventListener('keydown', onKeyDown);
+        }
+    }
+
+    if (typeof window !== 'undefined') {
+        editorFullscreen.install(window);
     }
 
     export module popover {
@@ -1330,7 +1460,10 @@ module workbench {
         var target = <Node>event.target;
         expandedDisclosures().forEach(function(state) {
             state.focusInPanelOnPress = state.button.contains(target) && state.panel.contains(document.activeElement);
-            if (!state.panel.contains(target) && !state.button.contains(target)) {
+            // A pane in the page flow (a form's Advanced settings, C2) is part of its form, not over the page.
+            var overlay = !window.getComputedStyle
+                || !/^(static|relative|sticky)$/.test(window.getComputedStyle(state.panel).position);
+            if (overlay && !state.panel.contains(target) && !state.button.contains(target)) {
                 setDisclosureExpanded(state.button, state.panel, state.owner, false, true);
             }
         });
@@ -1380,7 +1513,17 @@ module workbench {
             restoreMotionStyles(panel, motion.styles);
         }
         for (var stateIndex = panelDisclosureStates.length - 1; stateIndex >= 0; stateIndex--) {
-            if (panelDisclosureStates[stateIndex].panel === panel) {
+            var released = panelDisclosureStates[stateIndex];
+            if (released.panel === panel) {
+                // Give the panel back as it was before it was bound. A page rendered again in place keeps these
+                // elements and binds them again, taking the panel's inert and aria-hidden as its open state: a
+                // closed panel's inert would make the pane it opens ignore every click.
+                (<any>panel).inert = released.inert;
+                if (released.ariaHidden === null) {
+                    panel.removeAttribute('aria-hidden');
+                } else {
+                    panel.setAttribute('aria-hidden', released.ariaHidden);
+                }
                 panelDisclosureStates.splice(stateIndex, 1);
             }
         }

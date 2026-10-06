@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.workbench.commands;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -41,7 +40,7 @@ public class ContextsServlet extends TupleServlet {
 		super("context");
 	}
 
-	private final BrowseList browseList = new BrowseList();
+	private final BrowseList browseList = new BrowseList(() -> repository);
 
 	@Override
 	protected String[] variables(WorkbenchRequest req) {
@@ -86,19 +85,6 @@ public class ContextsServlet extends TupleServlet {
 		Optional<List<Value[]>> counts = browseList.withinBudget(() -> {
 			List<Value[]> rows = new ArrayList<>();
 			try (RepositoryConnection connection = repository.getConnection()) {
-				if (BrowseList.ServerBoundedCounts.appliesTo(connection)) {
-					// One grouped count of all graphs, which the server stops at the count budget.
-					int seconds = BrowseList.COUNT_BUDGET_SECONDS;
-					Map<Resource, Long> graphs = BrowseList.ServerBoundedCounts.namedGraphs(connection, seconds);
-					for (Resource context : contexts(connection, filter)) {
-						rows.add(new Value[] { context, statements(graphs.getOrDefault(context, 0L)) });
-					}
-					if (includeDefaultGraph) {
-						rows.add(new Value[] { null,
-								statements(BrowseList.ServerBoundedCounts.defaultGraph(connection, seconds)) });
-					}
-					return rows;
-				}
 				for (Resource context : contexts(connection, filter)) {
 					if (Thread.currentThread().isInterrupted()) {
 						throw new InterruptedException("Graph counts were abandoned");

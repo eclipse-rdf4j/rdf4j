@@ -155,6 +155,8 @@ test('the built-in definitions carry the script lists the pages load today', () 
 test('bootstrap mounts a registered route once and disposes it once on a real pagehide', async () => {
     const { window, mount, dependencies } = page('contexts');
     const workbench = loadWorkbench(window);
+    // queryStream.js listens for pagehide from its load on (round 3, C31): only the route's own listener is counted.
+    const loaded = window.listenerCount('pagehide');
     installTestStream(workbench);
     workbench.views.render = () => ({ status: 'rendered' });
     const contexts = [];
@@ -174,13 +176,13 @@ test('bootstrap mounts a registered route once and disposes it once on a real pa
     assert.equal(contexts[0].model.viewId, 'contexts');
     assert.equal(contexts[0].context.repositoryId, 'repo-1');
     assert.equal(String(contexts[0].url), 'https://example.test/workbench/repositories/repo-1/contexts');
-    assert.equal(window.listenerCount('pagehide'), 1);
+    assert.equal(window.listenerCount('pagehide'), loaded + 1);
     window.dispatchEvent({ type: 'pagehide', persisted: true });
     assert.deepEqual(disposals, [], 'a page kept in the back/forward cache stays mounted');
     window.dispatchEvent({ type: 'pagehide', persisted: false });
     window.dispatchEvent({ type: 'pagehide', persisted: false });
     assert.deepEqual(disposals, ['pagehide'], 'a page that is left is disposed exactly once');
-    assert.equal(window.listenerCount('pagehide'), 0);
+    assert.equal(window.listenerCount('pagehide'), loaded);
 });
 
 test('the default mount releases the row windows and the row store exactly once', async () => {
@@ -214,6 +216,18 @@ test('the default mount releases the row windows and the row store exactly once'
     await bare.ready;
     bare.dispose('navigate');
     assert.deepEqual(released, [], 'a page without row windows or a row store has nothing to release');
+});
+
+// Round 2 (R12): a failure to bind the row windows is the row store's; the router keeps the page for it.
+test('the default mount marks a failure to bind the row windows as a row-store failure', async () => {
+    const workbench = loadWorkbench();
+    workbench.views.bindRowWindows = () => Promise.reject(new Error('Workbench query result worker stopped unexpectedly.'));
+    workbench.views.renderOutlet = () => {};
+    const ctx = { outlet: {}, model: { rowStore: { dispose() {} } }, context: {}, runtime: fakeRuntime(),
+        url: new URL('https://example.test/'), state: { rendered: true } };
+    const instance = workbench.routes.defaultMount(ctx);
+    await assert.rejects(instance.ready, (error) => error.rowStore === true && /worker stopped/.test(error.message));
+    instance.dispose('navigate');
 });
 
 // Plan task M7.2: the simple routes are router-ready, and mounting, disposing and mounting again leaves nothing behind.

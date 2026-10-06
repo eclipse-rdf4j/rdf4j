@@ -794,12 +794,21 @@ test('RDF term output matches Workbench Explore, namespace, and datatype present
             label: 'widget', exploreResource: '"widget"^^<http://example.test/types/Code>',
             externalHref: null, preformatted: false
         },
-        { label: '<item/>', exploreResource: null, externalHref: null, preformatted: true },
-        { label: 'first line\nsecond line', exploreResource: null, externalHref: null, preformatted: true }
+        // A literal with line breaks (or XML) keeps its white space and links to Explore like any other (C27).
+        {
+            label: '<item/>', exploreResource: '"<item/>"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral>',
+            externalHref: null, preformatted: true
+        },
+        {
+            label: 'first line\nsecond line', exploreResource: '"first line\\nsecond line"', externalHref: null,
+            preformatted: true
+        }
     ]);
 });
 
-test('XML and multiline literals render as preformatted text in table cells', async () => {
+// C27: they keep their white space (white-space: pre-wrap on .rdf-preformatted) in a linked value with its tags,
+// instead of a bare <pre>.
+test('XML and multiline literals keep their white space in linked table cells', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
     const target = document.createElement('section');
@@ -814,9 +823,21 @@ test('XML and multiline literals render as preformatted text in table cells', as
         { kind: 'literal', value: 'first line\nsecond line' }
     ]] });
 
-    const row = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0');
-    assert.equal(row.children[0].querySelector('pre').textContent, '<item/>');
-    assert.equal(row.children[1].querySelector('pre').textContent, 'first line\nsecond line');
+    await renderer.accept({ type: 'rows', values: [[
+        { kind: 'literal', value: 'erste Zeile\nzweite Zeile', language: 'de' },
+        { kind: 'literal', value: 'one line' }
+    ]] });
+
+    const row = index => renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === index);
+    const first = row('0').children;
+    assert.equal(first[0].querySelector('pre'), null, 'no bare <pre>');
+    assert.equal(first[0].querySelector('a.rdf-preformatted').textContent, '<item/>');
+    assert.match(first[0].querySelector('a.rdf-preformatted').getAttribute('href'), /^explore\?resource=/);
+    assert.equal(first[1].querySelector('a.rdf-preformatted').textContent, 'first line\nsecond line');
+    const second = row('1').children;
+    assert.equal(second[0].querySelector('a.rdf-preformatted').textContent, 'erste Zeile\nzweite Zeile');
+    assert.equal(second[0].querySelector('.rdf-language').textContent, '@de', 'the language tag stays');
+    assert.equal(second[1].querySelector('a.rdf-preformatted'), null, 'a one-line literal is an ordinary value');
     renderer.dispose();
 });
 
@@ -1562,8 +1583,6 @@ test('partial Records stay scrollable without paging and keep Load more hidden',
         maxDomRows: 2,
         rowStore: inMemoryRowStore()
     });
-    // A viewport of about two records: the window cap bounds the overscan, never the visible rows (review fix B20).
-    renderer.records.clientHeight = 70;
 
     await renderer.accept({ type: 'view', id: 'query-result-tuple' });
     await renderer.accept({ type: 'vars', values: ['value'] });
@@ -2067,6 +2086,36 @@ test('cells show language badges, datatype tags and right-aligned numbers, and h
     await new Promise(resolve => setImmediate(resolve));
     const hidden = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0').children;
     assert.equal(hidden[2].querySelector('.rdf-datatype'), null, 'Show datatypes off hides the tags');
+    renderer.dispose();
+});
+
+// .agent/execplans/workbench-shared-result-table.md: the Query page's rows are the shared ResultTable, which Explore,
+// the Export preview and the Remove preview use too; the renderer's DOM keeps its order and its element names.
+test('the Query page result renderer shows its rows in the shared result table', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { initialLayout: 'table', rowStore: inMemoryRowStore() });
+    assert.ok(renderer.resultTable instanceof queryStream.ResultTable);
+    for (const name of ['tableWrap', 'table', 'tableBody', 'tableColumns', 'records', 'floatingHead', 'floatingTable']) {
+        assert.equal(renderer[name], renderer.resultTable[name], `${name} is the shared table's`);
+    }
+    assert.deepEqual(renderer.root.children.map(child => child.className), [
+        'query-result-toolbar workbench-action-toolbar', 'query-result-navigation', 'queryResult',
+        'ERROR query-result-error workbench-callout workbench-callout--error', 'query-result-floating-head',
+        'query-result-table-wrap', 'query-result-empty', 'query-result-records',
+        'workbench-actions query-result-load-more-actions'
+    ]);
+    assert.match(renderer.tableWrap.getAttribute('id'), /^query-result-table-wrap-\d+/);
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['s'] });
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'iri', value: 'http://example.org/a/b' }]] });
+    await renderer.accept({ type: 'end', metadata: {} });
+    assert.deepEqual(renderer.root.querySelectorAll('thead th').map(cell => cell.textContent), ['?s']);
+    const cell = renderer.tableBody.children.find(child => child.getAttribute('data-query-row-index') === '0').children[0];
+    assert.equal(cell.getAttribute('data-label'), 's', 'Query cells keep the variable name as their label');
+    assert.equal(cell.querySelector('a').querySelectorAll('wbr').length, 5, 'a break after each : and /');
     renderer.dispose();
 });
 

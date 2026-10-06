@@ -54,6 +54,8 @@ module workbench {
         sliders: 'M4 7h9m4 0h3M17 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0M4 17h3m4 0h9M11 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
         more: 'M6 12h.01M12 12h.01M18 12h.01',
         check: 'm5 12 5 5 9-10',
+        // A failed write's status (C12): the error callout's circled exclamation mark.
+        error: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17ZM12 8v5m0 3h.01',
         'warning-sign': 'M12 4 2.8 20h18.4L12 4Zm0 6v4.5m0 2.5h.01'
     };
 
@@ -162,6 +164,17 @@ module workbench {
             savedCards: { [key: string]: HTMLElement };
             renderSavedRows?: () => void;
             groups: { [key: string]: { node: HTMLElement; render: () => void } };
+            /** The result tables built for this mount of the page, by key (resultTable). */
+            tableEntries?: { [key: string]: PageResultTable };
+            /** The result tables the current render of the page uses, by key. */
+            resultTables?: { [key: string]: PageResultTable };
+        }
+
+        /** A page's table of RDF terms: its host element and the shared result table in it. */
+        interface PageResultTable {
+            host: any;
+            table: any;
+            signature: string;
         }
 
         const rowRegionsByMount = new WeakMap<Element, RowRegions>();
@@ -462,15 +475,19 @@ module workbench {
         }
 
         /**
-         * False when the Workbench policy hides a page: the policy-filtered menu of the Info model is known and has no
-         * item for it. Without menu information nothing is known to be hidden.
+         * False when the Workbench policy hides a page: the policy-filtered menu of the Info model lists items and none
+         * for this page. Without menu items nothing is known to be hidden: an Info answer with an empty menu (a user the
+         * server does not authorize, a failed Info) must still offer the pages to sign in or pick another repository.
          */
         function pageEnabled(context: ViewContext, pageId: string): boolean {
             const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
             const known = ['menu', 'menuGroups', 'menuItems'].some((key: string) =>
                 Object.prototype.hasOwnProperty.call(info, key));
-            return !known || menuEntries(context).some((group: any) => (group.items || []).some((item: any) =>
-                text(item.id || item['menu-item-id']) === pageId));
+            if (!known) {
+                return true;
+            }
+            const items = menuEntries(context).reduce((all: any[], group: any) => all.concat(group.items || []), []);
+            return !items.length || items.some((item: any) => text(item.id || item['menu-item-id']) === pageId);
         }
 
         /** The pages a repository can open with, in the order the server picks its landing page. */
@@ -611,18 +628,43 @@ module workbench {
             if (typeof document === 'undefined') {
                 return '';
             }
-            const encoded = currentCookieValue('server-user-password');
+            // Base64, where '+' is a digit: the raw value (form decoding would make it a space).
+            const encoded = currentCookieValue('server-user-password', true);
             if (!encoded) {
                 return '';
             }
-            let decoded = encoded;
-            try {
-                decoded = typeof window !== 'undefined' && typeof window.atob === 'function' ? window.atob(encoded) : encoded;
-            } catch (error) {
+            const decoded = decodeCredentials(encoded);
+            if (!decoded) {
                 return '';
             }
             const user = decoded.indexOf(':') >= 0 ? decoded.substring(0, decoded.indexOf(':')) : decoded;
             return user === '""' ? '' : user;
+        }
+
+        /**
+         * The text of the base64 server-user-password credentials: UTF-8 "user:password" (C15), or, for credentials
+         * written one byte per character (an older Connection page), the bytes as they are. '' when it is no base64.
+         */
+        function decodeCredentials(encoded: string): string {
+            const view: any = typeof window !== 'undefined' ? window : null;
+            if (!view || typeof view.atob !== 'function') {
+                return encoded;
+            }
+            let binary: string;
+            try {
+                binary = view.atob(encoded);
+            } catch (error) {
+                return '';
+            }
+            try {
+                const bytes = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index++) {
+                    bytes[index] = binary.charCodeAt(index);
+                }
+                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            } catch (error) {
+                return binary;
+            }
         }
 
         function hostAndPort(server: string): string {
@@ -873,6 +915,145 @@ module workbench {
             return display;
         }
 
+        /**
+         * What a page shows in one table of RDF statements. Its rows are either held by the page (rows) or read from
+         * the page model's row store as the table scrolls (store and count).
+         */
+        interface ResultTableSpec {
+            /** Names the table on its page, for example 'explore-outgoing'. */
+            key: string;
+            /** The table's accessible name. */
+            label: string;
+            /** The page model's variables the table shows, in order. */
+            columns: string[];
+            rows?: any[][];
+            store?: { read(start: number, count: number): Promise<any[][]> };
+            count?: number;
+            /** The page row of a table row (data-workbench-row-index); the table row itself when absent. */
+            rowIndex?: (index: number) => number;
+            namespaces: { prefix: string; name: string }[];
+            /** Changes whenever the rows change; a table with another signature is built again. */
+            signature: string;
+        }
+
+        /** Statement columns are named as people say them; the graph column is the Graph. */
+        const statementColumnLabels: { [name: string]: string } = {
+            subject: 'Subject', predicate: 'Predicate', object: 'Object', context: 'Graph'
+        };
+
+        function statementColumnLabel(name: string): string {
+            return statementColumnLabels[name] || columnLabel(name);
+        }
+
+        /** Every result table built for a page model, on any mount; releasePage disposes them. */
+        const pageResultTables = new WeakMap<PageModel, PageResultTable[]>();
+
+        /**
+         * A table of RDF statements on a page: the Query page's result table (workbench.queryStream.ResultTable), so
+         * its cells, column widths, wrapping, datatype tags, sideways scrolling and row windows are the same. The
+         * template gets the table's host element, kept per mount of the page and key so the page can render again
+         * around it; renderPageResultTables lays it out once the host is in the document. Without a DOM document
+         * (unit-test fakes) the host is an empty placeholder.
+         */
+        function resultTable(runtime: LitRuntime, model: PageModel, context: ViewContext, spec: ResultTableSpec): any {
+            const h = runtime.html;
+            const regions = context.rowRegions;
+            const stream: any = (workbench as any).queryStream;
+            if (!regions || !regions.document || !stream || typeof stream.ResultTable !== 'function') {
+                return h`<div class="workbench-result-table" data-workbench-result-table=${spec.key}
+                    aria-label=${spec.label}></div>`;
+            }
+            // Tables belong to one mount of the page (its row regions), so two mounts never share their elements.
+            const tables = regions.tableEntries || (regions.tableEntries = {});
+            let entry = tables[spec.key];
+            if (entry && entry.signature !== spec.signature) {
+                disposePageResultTable(model, entry);
+                entry = null;
+            }
+            if (!entry) {
+                const host: any = regions.document.createElement('div');
+                host.className = 'query-result-layout query-result-embedded workbench-result-table';
+                host.setAttribute('data-workbench-result-table', spec.key);
+                const rows = spec.rows;
+                const source = {
+                    rowCount: () => rows ? rows.length : spec.count || 0,
+                    variables: () => spec.columns,
+                    read: (start: number, count: number) => rows
+                        ? Promise.resolve(rows.slice(start, start + count)) : spec.store.read(start, count),
+                    namespaces: () => spec.namespaces
+                };
+                const table = new stream.ResultTable(host, source, {
+                    label: spec.label,
+                    renderAllRows: true,
+                    columnLabel: statementColumnLabel,
+                    cellLabel: statementColumnLabel,
+                    unboundLabel: (name: string) => name === 'context' ? 'Default graph' : '',
+                    rowAttributes: (index: number) => ({
+                        'data-workbench-row-index': String(spec.rowIndex ? spec.rowIndex(index) : index)
+                    })
+                });
+                entry = { host, table, signature: spec.signature };
+                tables[spec.key] = entry;
+                const built = pageResultTables.get(model) || [];
+                built.push(entry);
+                pageResultTables.set(model, built);
+            }
+            if (!regions.resultTables) {
+                regions.resultTables = {};
+            }
+            regions.resultTables[spec.key] = entry;
+            return entry.host;
+        }
+
+        function disposePageResultTable(model: PageModel, entry: PageResultTable): void {
+            entry.table.dispose();
+            const built = pageResultTables.get(model) || [];
+            const index = built.indexOf(entry);
+            if (index >= 0) {
+                built.splice(index, 1);
+            }
+        }
+
+        /** Lay out the result tables a render of the page used, and dispose the ones it no longer uses. */
+        function renderPageResultTables(model: PageModel, regions: RowRegions): void {
+            const tables = regions && regions.tableEntries;
+            if (!tables) {
+                return;
+            }
+            const used = regions.resultTables || {};
+            Object.keys(tables).forEach((key) => {
+                const entry = tables[key];
+                if (used[key] !== entry) {
+                    disposePageResultTable(model, entry);
+                    delete tables[key];
+                    return;
+                }
+                if (entry.host.isConnected !== false) {
+                    entry.table.render().then(null, (error: any) => {
+                        if (typeof console !== 'undefined') {
+                            console.error('Unable to lay out a result table.', error);
+                        }
+                    });
+                }
+            });
+        }
+
+        /** Show or hide the datatype tags in every result table of a page (Explore's Display pane). */
+        function showPageResultDatatypes(model: PageModel, show: boolean): void {
+            (pageResultTables.get(model) || []).forEach((entry: PageResultTable) => {
+                entry.table.setShowDatatypes(show);
+                if (entry.host.isConnected !== false) {
+                    entry.table.render().then(null, () => {});
+                }
+            });
+        }
+
+        /** Dispose a page's result tables when its route is left. */
+        function releasePageResultTables(model: PageModel): void {
+            (pageResultTables.get(model) || []).forEach((entry: PageResultTable) => entry.table.dispose());
+            pageResultTables.delete(model);
+        }
+
         /** Shared key/value list (mockup 11): label column and value column, stacked below 600px. */
         function keyValueList(runtime: LitRuntime, rows: [string, any][]): any {
             const h = runtime.html;
@@ -903,8 +1084,16 @@ module workbench {
         }
 
         function errorCallout(runtime: LitRuntime, model: PageModel): any {
-            const message = text(pageValue(model, 'error-message'));
+            const message = pageErrorMessage(model);
             return message ? callout(runtime, 'error', message) : '';
+        }
+
+        /**
+         * The error-message of a page answered with a refusal, until its form is sent again in place: the next write's
+         * own status replaces it (C17).
+         */
+        function pageErrorMessage(model: PageModel): string {
+            return (model as any).errorSuperseded ? '' : text(pageValue(model, 'error-message'));
         }
 
         function systemRepositoryCallout(runtime: LitRuntime, context: ViewContext): any {
@@ -938,7 +1127,8 @@ module workbench {
                 const value = name in counts.values ? counts.values[name] : field(row, name);
                 if (text(value)) { return formatCount(value, context); }
                 return counts.state === 'counting' ? 'Counting…'
-                    : h`<span title=${counts.state === 'timed-out' ? countedPages.summary.timedOut : 'No count is available'}>—</span>`;
+                    : h`<span title=${counts.state === 'timed-out' ? countedPages.summary.timedOut
+                        : counts.reason ? 'Counts are not available: ' + counts.reason : 'No count is available'}>—</span>`;
             };
             return h`<section id="workbench-summary" class="workbench-island workbench-summary">
                 <h2>Repository</h2>
@@ -953,6 +1143,8 @@ module workbench {
                     ['Statements', count('size')],
                     ['Named graphs', count('contexts')]
                 ])}
+                ${counts.state === 'failed' ? h`<p class="workbench-page-meta workbench-summary__counts-note" role="note">Counts are not available: ${
+                    counts.reason || 'the server could not count this repository.'}</p>` : ''}
                 ${config ? h`<details id="summary-config-model" class="workbench-options workbench-summary-config">
                     <summary>Configuration (Turtle)${icon(runtime, 'chevron', 'workbench-disclosure-chevron')}</summary>
                     <pre role="region">${config}</pre>
@@ -1035,7 +1227,8 @@ module workbench {
 
         function repositoriesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const sorting = (model as any).repositorySort || null;
+            // The list is in ID order until another column is chosen (C32a); the server lists in no particular order.
+            const sorting = (model as any).repositorySort || { column: 'id', direction: 'ascending' };
             const labels: any = { id: 'ID', title: 'Title', access: 'Access' };
             const header = (name: string) => {
                 if (name === 'repository' || name === 'actions') {
@@ -1265,7 +1458,9 @@ module workbench {
             const h = runtime.html;
             const options = recordsFromRows(model, model.pickerRows || []).filter((row: any) => text(row.id) !== 'SYSTEM');
             if (typeof model.metadata.selectedRepositoryId !== 'string') {
-                model.metadata.selectedRepositoryId = locationParameter('id');
+                // ?id= (a repository list's Delete… item), or the repository whose menu opened the page (C32d).
+                model.metadata.selectedRepositoryId = locationParameter('id')
+                    || (context.repositoryId && context.repositoryId !== 'NONE' ? context.repositoryId : '');
             }
             const selectedId = text(model.metadata.selectedRepositoryId);
             const selectedRepository = model.metadata.selectedRepository;
@@ -1306,7 +1501,20 @@ module workbench {
             filter: string;
             /** Why the values in the editor were not sent, or ''. */
             error?: string;
+            /** The values to show in the editor instead of its row's (they were sent and refused). */
+            draft?: { prefix: string; namespace: string };
+            /** The page's error message is shown in the editor's row, not above the list. */
+            errorInRow?: boolean;
+            /** The namespace the server says the added prefix is bound to: ask before replacing it (C8). */
+            replaceAsk?: string;
         }
+
+        /**
+         * The change the Namespaces page sent last. The server answers a refused one with the listing and an error
+         * message: the page shown then puts the editor back, with what was typed and why (round-3 finding C29).
+         */
+        let sentNamespaceChange: { repository: string; editing: string; adding: boolean;
+            prefix: string; namespace: string } = null;
 
         /** False when the repository is known to be read-only (its Info model says writeable=false). */
         function repositoryWriteable(context: ViewContext): boolean {
@@ -1314,10 +1522,23 @@ module workbench {
             return info.writeable !== false && String(info.writeable) !== 'false';
         }
 
-        function namespaceEditor(model: PageModel): NamespaceEditor {
+        function namespaceEditor(model: PageModel, context: ViewContext): NamespaceEditor {
             const holder: any = model;
             if (!holder.namespaceEditor) {
                 holder.namespaceEditor = { editing: null, adding: false, filter: '' };
+                const sent = sentNamespaceChange;
+                const refusal = text(pageValue(model, 'error-message'));
+                if (sent) {
+                    sentNamespaceChange = null;
+                    if (refusal && sent.repository === text(context.repositoryId)) {
+                        // An add refused because the prefix is bound (another page bound it since this list was shown)
+                        // names that binding: ask about it, as for a prefix the list shows (C8).
+                        const existing = text(pageValue(model, 'existing-namespace'));
+                        holder.namespaceEditor = { editing: sent.editing, adding: sent.adding, filter: '', error: refusal,
+                            draft: { prefix: sent.prefix, namespace: sent.namespace }, errorInRow: true,
+                            replaceAsk: sent.adding && existing ? existing : undefined };
+                    }
+                }
             }
             return holder.namespaceEditor;
         }
@@ -1357,7 +1578,7 @@ module workbench {
         /** Namespaces (M6.3, mockup 07): rows in prefix order, edited in place; no field is prefilled from a row. */
         function namespacesPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const state = namespaceEditor(model);
+            const state = namespaceEditor(model, context);
             const rows = records(model).map((record: any) => ({ prefix: text(record.prefix), namespace: text(record.namespace) }));
             const needle = state.filter.trim().toLowerCase();
             const visible = rows.filter((row: any) => !needle || row.prefix.toLowerCase().indexOf(needle) >= 0
@@ -1373,23 +1594,57 @@ module workbench {
             const label = (prefix: string) => prefix || '(default)';
             // A read-only repository offers no changes (the menu leaves its write pages out the same way).
             const writeable = repositoryWriteable(context);
+            const send = (document: any, fields: any) => {
+                state.error = '';
+                sentNamespaceChange = { repository: text(context.repositoryId), editing: state.editing,
+                    adding: state.adding, prefix: fields.prefix, namespace: fields.namespace };
+                postNamespaces(document, fields);
+            };
+            /** Ask whether to replace the namespace a prefix is bound to; Replace sends the change with overwrite=true. */
+            const askReplace = (document: any, fields: any, bound: string, owns: () => boolean) => {
+                (workbench as any).confirmDialog.open({ title: 'Replace prefix ' + label(fields.prefix) + '?',
+                    body: 'Prefix \'' + fields.prefix + '\' is already defined as <' + bound + '>. Replace it?',
+                    confirmLabel: 'Replace', danger: true }).then((confirmed: boolean) => {
+                    if (confirmed && owns()) {
+                        send(document, Object.assign({}, fields, { overwrite: 'true' }));
+                    }
+                });
+            };
+            if (state.replaceAsk) {
+                const bound = state.replaceAsk;
+                state.replaceAsk = undefined;
+                const draft = state.draft;
+                const page: any = typeof window !== 'undefined' ? (window as any).document : null;
+                const outlet = page ? page.getElementById('workbench-outlet') : null;
+                const fields = { action: 'save', prefix: draft.prefix, namespace: draft.namespace };
+                // After this render: the dialog belongs to the page shown, which must still be this one.
+                setTimeout(() => askReplace(page, fields, bound, () => !!outlet && shownModels.get(outlet) === model), 0);
+            }
             const save = (event: any, row: any) => {
                 const inputs = event.currentTarget.closest('tr').querySelectorAll('input');
+                const document = event.currentTarget.ownerDocument;
                 const fields: any = { action: 'save', prefix: inputs[0].value.trim(), namespace: inputs[1].value.trim() };
                 if (row) { fields.previousPrefix = row.prefix; }
+                const bound = rows.filter((other: any) => other.prefix === fields.prefix)[0];
                 // Renaming onto a prefix that is bound already would replace that binding: the server refuses it too.
-                if (row && fields.prefix !== row.prefix && rows.some((other: any) => other.prefix === fields.prefix)) {
+                if (row && fields.prefix !== row.prefix && bound) {
                     state.error = 'Prefix \'' + fields.prefix + '\' is already defined';
                     rerender(event);
                     return;
                 }
-                state.error = '';
-                postNamespaces(event.currentTarget.ownerDocument, fields);
+                // Adding a prefix that is bound to another namespace replaces that binding: only when confirmed (C8).
+                if (!row && bound && bound.namespace !== fields.namespace) {
+                    askReplace(document, fields, bound.namespace, modelOwner(event.currentTarget, model));
+                    return;
+                }
+                send(document, fields);
             };
             const cancel = (event: any) => {
                 state.editing = null;
                 state.adding = false;
                 state.error = '';
+                state.draft = null;
+                state.errorInRow = false;
                 rerender(event);
             };
             const editKeys = (event: any, row: any) => {
@@ -1402,9 +1657,11 @@ module workbench {
                 }
             };
             const editRow = (row: any) => h`<tr class="workbench-namespace-edit">
-                <td data-label="Prefix"><input type="text" aria-label="Prefix" value=${row ? row.prefix : ''}
+                <td data-label="Prefix"><input type="text" aria-label="Prefix"
+                    value=${state.draft ? state.draft.prefix : row ? row.prefix : ''}
                     autocomplete="off" spellcheck="false" @keydown=${(event: any) => editKeys(event, row)} /></td>
-                <td data-label="Namespace"><input type="text" aria-label="Namespace" value=${row ? row.namespace : ''}
+                <td data-label="Namespace"><input type="text" aria-label="Namespace"
+                    value=${state.draft ? state.draft.namespace : row ? row.namespace : ''}
                     autocomplete="off" spellcheck="false" @keydown=${(event: any) => editKeys(event, row)} /></td>
                 <td class="workbench-row-actions" data-label="Actions"><button type="button"
                         class="workbench-action workbench-action--primary workbench-action--icon" aria-label="Save" title="Save"
@@ -1422,6 +1679,8 @@ module workbench {
                             state.editing = row.prefix;
                             state.adding = false;
                             state.error = '';
+                            state.draft = null;
+                            state.errorInRow = false;
                             rerender(event, true);
                         }}>${icon(runtime, 'edit')}</button><button type="button"
                         class="workbench-action workbench-action--ghost workbench-action--icon workbench-namespace-delete"
@@ -1435,7 +1694,7 @@ module workbench {
                             });
                         }}>${icon(runtime, 'delete')}</button>` : ''}</td>
             </tr>`;
-            return h`${errorCallout(runtime, model)}<section id="namespaces-results"
+            return h`${state.errorInRow ? '' : errorCallout(runtime, model)}<section id="namespaces-results"
                     class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
                     <h2>Namespaces</h2><span class="workbench-browse-card__count">${formatCount(String(rows.length), context)}</span>
@@ -1454,6 +1713,8 @@ module workbench {
                             state.adding = true;
                             state.editing = null;
                             state.error = '';
+                            state.draft = null;
+                            state.errorInRow = false;
                             rerender(event, true);
                         }}>${icon(runtime, 'add')}<span>Add namespace</span></button>` : ''}
                     </div>
@@ -1578,11 +1839,8 @@ module workbench {
                 browseNameCell(runtime, model, list, null)}${browseCountCell(runtime, list, counts, counts.values[''], context)}${
                 browseActionsCell(runtime, null, context)}</tr>` : null;
             const inputId = route + '-filter';
-            // The field shows this page's filter: a property binding (an attribute does not change a field that was
-            // typed into) whose value is one object per page model, so another page (Back, the menu) sets it again
-            // while this page rendering again (its counts arriving) leaves what is typed alone.
-            const holder: any = model;
-            const filterValue = holder.filterFieldValue || (holder.filterFieldValue = new String(filter));
+            // The value attribute leaves a field that was typed into alone, so this page rendering again (its counts
+            // arriving) keeps what is typed; bindRowWindows sets the field to the filter of each page opened.
             return h`${errorCallout(runtime, model)}<section id=${route + '-results'}
                     class="workbench-island workbench-responsive-records workbench-browse-card">
                 <div class="workbench-browse-card__header">
@@ -1590,7 +1848,7 @@ module workbench {
                     <form class="workbench-browse-card__filter" action=${route} method="get" role="search">
                         <label class="workbench-visually-hidden" for="${inputId}">${'Filter ' + list.noun}</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input
-                            type="text" id="${inputId}" name="filter" .value=${filterValue} placeholder=${'Filter ' + list.noun}
+                            type="text" id="${inputId}" name="filter" value=${filter} placeholder=${'Filter ' + list.noun}
                             autocomplete="off" spellcheck="false" /></div>
                     </form>
                 </div>
@@ -1636,26 +1894,6 @@ module workbench {
             }));
         }
 
-        /** One Explore cell, formatted like a query result cell (M4.3): prefixed names, values, tags. */
-        function exploreTerm(runtime: LitRuntime, term: any, namespaces: any[], alwaysLink?: boolean): any {
-            const h = runtime.html;
-            const stream = workbench.queryStream as any;
-            if (!term || typeof term !== 'object' || !term.kind || !stream || typeof stream.formatRdfTerm !== 'function') {
-                return text(term);
-            }
-            const display = stream.formatRdfTerm(term, { namespaces });
-            const tags = display.kind !== 'literal' ? ''
-                : display.language ? h`<span class="rdf-language">@${display.language}${term.direction ? '--' + term.direction : ''}</span>`
-                    : stream.showsDatatypeTag(display)
-                        ? h`<span class="rdf-datatype">${stream.abbreviateIri(display.datatype, namespaces)}</span>` : '';
-            const href = display.exploreHref
-                || (alwaysLink ? 'explore?resource=' + encodeURIComponent(stream.exploreResource(term)) : '');
-            const value = href
-                ? h`<a href=${href} title=${display.title}>${display.label}</a>`
-                : h`<span title=${display.title}>${display.label}</span>`;
-            return h`<div class="resource">${value}${tags}</div>`;
-        }
-
         function exploreGraphLabel(term: any, namespaces: any[]): string {
             if (!term) {
                 return 'Default graph';
@@ -1665,8 +1903,20 @@ module workbench {
                 ? stream.formatRdfTerm(term, { namespaces }).label : text(term);
         }
 
-        /** The four role groups: Outgoing, Incoming, Used as predicate and Graph contents (mockup 05). */
-        function exploreRoleGroups(runtime: LitRuntime, model: PageModel, roles: any): any {
+        /** A page's rows reduced to some of its columns, in their order; a missing value is unbound (null). */
+        function projectRows(model: PageModel, rows: any[][], columns: string[]): any[][] {
+            const indexes = columns.map((name: string) => (model.vars || []).indexOf(name));
+            return rows.map((row: any[]) => indexes.map((index: number) => {
+                const value = index >= 0 ? row[index] : null;
+                return typeof value === 'undefined' ? null : value;
+            }));
+        }
+
+        /**
+         * The four role groups: Outgoing, Incoming, Used as predicate and Graph contents (mockup 05). Each is the
+         * shared result table, so long IRIs wrap and the columns stay inside the card as on the Query page.
+         */
+        function exploreRoleGroups(runtime: LitRuntime, model: PageModel, context: ViewContext, roles: any): any {
             const h = runtime.html;
             const namespaces = exploreNamespaces(model);
             const index = (name: string) => model.vars.indexOf(name);
@@ -1683,13 +1933,15 @@ module workbench {
                         <span class="explore-group__count">${rows.length}</span>
                         ${oneGraph && role.key !== 'graph'
                             ? h`<span class="explore-group__graph">Graph: ${exploreGraphLabel(graphs[0], namespaces)}</span>` : ''}</h3>
-                    <table class="data">
-                        <thead><tr>${columns.map((name: string) => h`<th scope="col">${name === 'context' ? 'Graph' : columnLabel(name)}</th>`)}</tr></thead>
-                        <tbody>${entries.map((entry: any) => entry.values).map((row: any[], position: number) => h`<tr
-                            data-workbench-row-index=${entries[position].index}>${columns.map((name: string) => h`<td
-                            data-label=${name === 'context' ? 'Graph' : columnLabel(name)}>${name === 'context' && !row[index(name)]
-                                ? 'Default graph' : exploreTerm(runtime, row[index(name)], namespaces)}</td>`)}</tr>`)}</tbody>
-                    </table>
+                    ${resultTable(runtime, model, context, {
+                        key: 'explore-' + role.key,
+                        label: role.title + ' statements',
+                        columns,
+                        rows: projectRows(model, rows, columns),
+                        rowIndex: (position: number) => entries[position].index,
+                        namespaces,
+                        signature: columns.join(' ') + ':' + entries.map((entry: any) => entry.index).join(',')
+                    })}
                 </section>`;
             });
         }
@@ -1984,17 +2236,29 @@ module workbench {
                 </div>` : ''}`;
         }
 
-        /** The Explore limit in use, as the server picks it: the URL's limit_explore, its cookie, or 100. */
+        /**
+         * The Explore limit in use, as ExploreServlet picks it: the request's limit_explore, else 100. The server reads
+         * no cookie for it (isParameterPresent), so neither does this.
+         */
         function activeExploreLimit(): number {
-            const limit = Number(locationParameter('limit_explore') || currentCookieValue('limit_explore') || '100');
+            const limit = Number(locationParameter('limit_explore') || '100');
             return isFinite(limit) && limit >= 0 ? limit : 100;
+        }
+
+        /**
+         * An Explore pager button names the page size it moves by (C20), not the rows on this page. Its value keeps the
+         * rows shown: paging.correctButtons reads them to know whether a next page exists.
+         */
+        function pagerLabel(direction: string, pageSize: number): string {
+            return pageSize > 0 ? direction + ' ' + pageSize : direction;
         }
 
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const resource = text(pageValue(model, 'resource'));
-            // A rejected Explore answers with an error-message row: an error, not a result.
-            const rejected = isErrorOnlyModel(model);
+            // A refused resource (C10) has no page metadata: the field keeps what was asked for.
+            const resource = text(pageValue(model, 'resource')) || (model.error ? text(locationParameter('resource')) : '');
+            // A rejected Explore answers with an error-message row, or a 400 error: an error, not a result.
+            const rejected = isErrorOnlyModel(model) || !!model.error;
             const total = rejected ? 0 : rowCount(model);
             const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
             const info = workbenchData(context);
@@ -2029,13 +2293,29 @@ module workbench {
                 panelId: 'explore-result-options-panel', label: 'Display', accessibleName: 'Result display options',
                 ownerClass: 'workbench-options workbench-form-subgroup'
             }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
-                    ${limitSelect(runtime, 'limit_explore', context, text(pageValue(model, 'default-limit')) || '100')}
+                    ${limitSelect(runtime, 'limit_explore', context, String(resultLimit))}
                 </div><label class="workbench-check" for="explore-show-datatypes">
-                    <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked />
+                    <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked
+                        @change=${(event: any) => showPageResultDatatypes(model, !!event.currentTarget.checked)} />
                     <span>Show datatypes</span></label>`);
             const roles = summary.roles;
             const groupedRows = roles ? exploreRoles.reduce((sum: number, role: any) => sum + roles[role.key].length, 0) : 0;
             const grouped = !!roles && !!total && groupedRows === total;
+            // A page short enough to group waits until bindRowWindows has read all its rows, so it never shows the
+            // single table first and then the groups.
+            const groupingPending = !grouped && !!model.rowStore && !(model as any).exploreSummary
+                && (model.rows || []).length < total && total <= exploreGroupedRowLimit && !!exploreResourceKey(model);
+            const namespaces = exploreNamespaces(model);
+            const statements = () => resultTable(runtime, model, context, {
+                key: 'explore-all',
+                label: 'Explore statements',
+                columns: model.vars || [],
+                rows: model.rowStore ? undefined : projectRows(model, model.rows || [], model.vars || []),
+                store: model.rowStore,
+                count: total,
+                namespaces,
+                signature: 'all:' + total + ':' + (model.vars || []).join(' ')
+            });
             // explore.ts writes the resource and the row range into the summary's spans, so they hold no template
             // values: the router renders the next Explore page in place, and Lit must find its own nodes there (M12.1).
             return h`<form id="explore-form" class="workbench-island explore-form" action="explore">
@@ -2052,39 +2332,25 @@ module workbench {
                     </div>
                     <div class="workbench-action-toolbar__panels workbench-disclosure-track">${exploreDisplay.panel}</div>
                 </form>
-                ${resultLimited ? h`<p id="result-limited">The results shown maybe truncated.</p>` : ''}
-                ${errorCallout(runtime, model)}
-                ${resource || exploreResourceKey(model)
+                ${resultLimited ? h`<p id="result-limited">The results shown may be truncated.</p>` : ''}
+                ${model.error ? callout(runtime, 'error', model.error.message) : errorCallout(runtime, model)}
+                ${!model.error && (resource || exploreResourceKey(model))
                     ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model), context) : ''}
                 <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
                     <span id="explore-resource-value" hidden></span><span id="explore-result-count"></span>
                 </p>
-                ${rejected ? '' : h`<section id="explore-results" class="workbench-island workbench-responsive-records">
-                    ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, roles)
-                        : table(runtime, model, context, exploreTableOptions(runtime, model))}`
+                ${rejected ? '' : h`<section id="explore-results" class="workbench-island">
+                    ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, context, roles)
+                        : groupingPending ? h`<p class="workbench-page-meta workbench-result-pending" role="status">Loading rows…</p>`
+                            : statements()}`
                         : h`<p class="workbench-empty" role="status">No results to display.</p>`}
                     <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
                         <button id="previousX" class="workbench-action workbench-action--secondary" type="button" value=${'Previous ' + total}
-                            @click=${() => invoke('workbench.paging.previousOffset', 'explore')}>Previous ${total}</button>
+                            @click=${() => invoke('workbench.paging.previousOffset', 'explore')}>${pagerLabel('Previous', resultLimit)}</button>
                         <button id="nextX" class="workbench-action workbench-action--secondary" type="button" value=${'Next ' + total}
-                            @click=${() => invoke('workbench.paging.nextOffset', 'explore')}>Next ${total}</button>
+                            @click=${() => invoke('workbench.paging.nextOffset', 'explore')}>${pagerLabel('Next', resultLimit)}</button>
                     </div>
                 </section>`}`;
-        }
-
-        /**
-         * The single Explore table of a page too long to group: its cells are formatted as in the groups (prefixed
-         * IRIs, quoted literals with language and datatype tags, "Default graph"), each linking to its own Explore page.
-         */
-        function exploreTableOptions(runtime: LitRuntime, model: PageModel): any {
-            const h = runtime.html;
-            const namespaces = exploreNamespaces(model);
-            const label = (name: string) => name === 'context' ? 'Graph' : columnLabel(name);
-            return {
-                labels: { context: 'Graph' },
-                cells: (record: any) => (model.vars || []).map((name: string) => h`<td data-label=${label(name)}>${
-                    name === 'context' && !record[name] ? 'Default graph' : exploreTerm(runtime, record[name], namespaces, true)}</td>`)
-            };
         }
 
         function limitSelect(runtime: LitRuntime, id: string, _context: ViewContext, selected: string): any {
@@ -2206,7 +2472,7 @@ module workbench {
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
                                 <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit">Edit</button>
                             </form>
-                            <form method="post" id=${urn} action=${'saved-queries?delete=' + encodeURIComponent(urn)}>
+                            <form method="post" id=${urn} action="saved-queries"><input type="hidden" name="delete" value=${urn} />
                                 <button type="button" class="saved-query-delete workbench-action workbench-action--danger-outline" data-query-owner=${owner} data-query-name=${queryName}
                                     data-query-urn=${urn}>Delete…</button>
                             </form>
@@ -2227,12 +2493,6 @@ module workbench {
             }
             return formatOptions(info.graphDownloadFormats || info['graph-download-format'])
                 .map((format: any) => ({ value: format.value, label: format.label, extension: '', graphs: null as boolean }));
-        }
-
-        /** A focusable horizontal scroll region for the two full-statement preview tables. */
-        function previewTableScroll(runtime: LitRuntime, label: string, contents: any): any {
-            return runtime.html`<div class="workbench-preview-table-scroll" role="region" tabindex="0"
-                aria-label=${label}>${contents}</div>`;
         }
 
         /** What happens to the named graphs in the chosen format, so a single-graph format is never a surprise. */
@@ -2354,7 +2614,7 @@ module workbench {
                         class="workbench-action workbench-action--primary">${icon(runtime, 'download')}<span>Download <code
                         class="export-file-name">${fileName}</code></span></button></div>
             </form>
-            <section id="export-results" class="workbench-island workbench-responsive-records export-card">
+            <section id="export-results" class="workbench-island export-card">
                 <div class="export-card__header"><h2>Preview statements</h2>
                     <p class="workbench-page-meta">Shows the first statements of ${repositoryName} here. It does not change the
                         downloaded file.</p></div>
@@ -2369,12 +2629,16 @@ module workbench {
                 </form>
                 <p id="result-limited" class="workbench-field__help" ?hidden=${!(requested && previewLimit !== '0'
                     && rowCount(model) >= Number(previewLimit))}>${'Showing the first ' + previewLimit + ' statements.'}</p>
-                ${rowCount(model) ? previewTableScroll(runtime, 'Export statement preview', table(runtime, model, context, {
-                    labels: { context: 'Graph' },
-                    // Prefixed names and value tags, as on Explore, keep four columns readable beside the download card.
-                    cells: (record: any) => (model.vars || []).map((name: string) => h`<td data-label=${columnLabel(name,
-                        { labels: { context: 'Graph' } })}>${exploreTerm(runtime, record[name], exploreNamespaces(model), true)}</td>`)
-                })) : h`<p class="workbench-empty" role="status">${requested ? 'No statements to show.'
+                ${rowCount(model) ? resultTable(runtime, model, context, {
+                    key: 'export-preview',
+                    label: 'Export statement preview',
+                    columns: model.vars || [],
+                    rows: model.rowStore ? undefined : projectRows(model, model.rows || [], model.vars || []),
+                    store: model.rowStore,
+                    count: rowCount(model),
+                    namespaces: exploreNamespaces(model),
+                    signature: 'preview:' + rowCount(model) + ':' + (model.vars || []).join(' ')
+                }) : h`<p class="workbench-empty" role="status">${requested ? 'No statements to show.'
                         : 'Choose Show preview to see the first statements.'}</p>`}
             </section>`;
         }
@@ -2416,8 +2680,18 @@ module workbench {
             });
         }
 
-        function currentCookieValue(name: string): string {
+        /**
+         * A cookie's value, form-decoded ('+' is a space) unless raw: URI-decoded only, for base64 values such as the
+         * server-user-password credentials, where '+' is a digit (workbench.getCookie would make it a space).
+         */
+        function currentCookieValue(name: string, raw?: boolean): string {
             const namespace: any = workbench as any;
+            if (raw) {
+                const value = documentCookieValue(name, true);
+                if (value || typeof namespace.getCookie !== 'function') {
+                    return value;
+                }
+            }
             if (namespace && typeof namespace.getCookie === 'function') {
                 // template.ts reads document.cookie; without a document (workers, tests) there are no cookies.
                 try {
@@ -2426,6 +2700,10 @@ module workbench {
                     return '';
                 }
             }
+            return documentCookieValue(name, false);
+        }
+
+        function documentCookieValue(name: string, raw: boolean): string {
             if (typeof document === 'undefined' || typeof document.cookie !== 'string') {
                 return '';
             }
@@ -2442,7 +2720,8 @@ module workbench {
                 return '';
             }
             try {
-                return decodeURIComponent(cookie.substring(cookie.indexOf('=') + 1).replace(/\+/g, '%20'));
+                const value = cookie.substring(cookie.indexOf('=') + 1);
+                return decodeURIComponent(raw ? value : value.replace(/\+/g, '%20'));
             } catch (error) {
                 return cookie.substring(cookie.indexOf('=') + 1);
             }
@@ -2563,6 +2842,8 @@ module workbench {
             const submission = submissionOf(model);
             submission.state = 'running';
             submission.message = running;
+            // The refusal this page was answered with belongs to what was sent before (C17).
+            (model as any).errorSuperseded = true;
             renderAgain(form, model, context, runtime);
             sent.then((outcome: string) => {
                 // 'committed' shows the answer page and 'fallback' loads a document: this page is gone either way.
@@ -2589,7 +2870,7 @@ module workbench {
             const formats = formatOptions(info.uploadFormats || info['upload-format']);
             const isolationOptions = rows.filter((row: any) => field(row, 'isolation-level-option'));
             const selectedIsolation = text(pageValue(model, 'transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'));
-            const error = text(pageValue(model, 'error-message'));
+            const error = pageErrorMessage(model);
             return h`${error ? callout(runtime, 'error', error) : ''}
                 ${systemRepositoryCallout(runtime, context)}
                 <form id="add-form" method="post" action="add" enctype="multipart/form-data" class="workbench-form-card"
@@ -2630,7 +2911,7 @@ module workbench {
                             </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                         </div>
                         <div class="workbench-field add-target-graph"><label for="context">Target graph</label>
-                            <input id="context" name="context" type="text" size="48" placeholder="Default graph"
+                            <input id="context" name="context" type="text" size="48" placeholder="Graphs named in the data"
                                 aria-describedby="context-help" value=${text(pageValue(model, 'context'))} />
                             <p id="context-help" class="workbench-field__help">Leave empty to keep the graphs named in the data and put the rest in the default graph; a graph IRI, written as http://example.org/graph or &lt;http://example.org/graph&gt;, puts every statement in that graph.</p>
                         </div>
@@ -2694,6 +2975,7 @@ module workbench {
 
         /** Cancel what a page still has pending when its route is disposed: Remove's count or preview. */
         export function releasePage(model: PageModel): void {
+            releasePageResultTables(model);
             const state: RemoveCount = (model as any).removeCount;
             const preview: RemovePreview = (model as any).removePreview;
             if (preview && preview.controller) {
@@ -2933,7 +3215,7 @@ module workbench {
             const previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
                 || preview.state === 'loading';
             const namespaces = exploreNamespaces(model);
-            const previewLabels = ['Subject', 'Predicate', 'Object', 'Graph'];
+            const previewColumns = ['subject', 'predicate', 'object', 'context'];
             return h`<form id="remove-form" class="workbench-island workbench-form-card" method="post" action="remove"
                     aria-busy=${sending ? 'true' : 'false'} @submit=${confirmAndSubmit}
                     @input=${(event: any) => clearSubmission(event, model, context, runtime)}
@@ -2982,17 +3264,22 @@ module workbench {
                     ${submissionStatus(runtime, model)}
                 </div>
             </form>
-            <section id="remove-preview" class="workbench-island workbench-responsive-records remove-preview"
+            <section id="remove-preview" class="workbench-island remove-preview"
                     aria-labelledby="remove-preview-heading" aria-busy=${preview.state === 'loading' ? 'true' : 'false'}
                     ?hidden=${preview.state === 'hidden'}>
                 <h2 id="remove-preview-heading">Statements to remove</h2>
                 <p id="remove-preview-status" class="workbench-page-meta" role="status">${preview.state === 'hidden' ? ''
                     : removePreviewLabel(preview)}</p>
-                ${preview.rows.length ? previewTableScroll(runtime, 'Statements to remove preview', h`<table class="data"><thead><tr>${previewLabels.map((label: string) =>
-                        h`<th scope="col">${label}</th>`)}</tr></thead>
-                    <tbody>${preview.rows.map((row: any[]) => h`<tr>${previewLabels.map((label: string, index: number) =>
-                        h`<td data-label=${label}>${exploreTerm(runtime, row[index], namespaces, true)}</td>`)}</tr>`)}</tbody>
-                </table>`) : ''}
+                ${preview.rows.length ? resultTable(runtime, model, context, {
+                    key: 'remove-preview',
+                    label: 'Statements to remove preview',
+                    columns: previewColumns,
+                    rows: preview.rows.map((row: any[]) => previewColumns.map((_name: string, index: number) =>
+                        typeof row[index] === 'undefined' ? null : row[index])),
+                    namespaces,
+                    // Every preview request (and every change of the values) raises the generation.
+                    signature: 'preview:' + (preview.generation || 0) + ':' + preview.rows.length
+                }) : ''}
             </section>`;
         }
 
@@ -3033,6 +3320,8 @@ module workbench {
         interface PageCounts {
             state: string;
             values: { [key: string]: any };
+            /** Why the server could not count (its counts-failed metadata), when it said. */
+            reason?: string;
             /** Clear's graphs from its latest counts answer, newer than the page model's. */
             listing?: any[];
         }
@@ -3076,6 +3365,10 @@ module workbench {
                         counts.state = text(meta(answer, 'context-discovery-complete')) === 'true'
                             ? text(meta(answer, 'statement-counts-timed-out')) === 'true' ? 'timed-out' : 'done'
                             : 'discovery-timed-out';
+                    } else if (text(meta(answer, 'counts-failed'))) {
+                        // The server could not count (an unreachable SPARQL endpoint, C32c): it says why.
+                        counts.state = 'failed';
+                        counts.reason = text(meta(answer, 'counts-failed'));
                     } else {
                         counts.state = text(meta(answer, 'counts-timed-out')) === 'true' ? 'timed-out' : 'done';
                     }
@@ -3140,6 +3433,8 @@ module workbench {
             const everything = !discoveryIncomplete && selected.value === '';
             const repositoryId = context.repositoryId || '';
             const sending = submissionOf(model).state === 'running';
+            // Nothing to clear (C32e): the choice is counted and holds no statement.
+            const empty = text(selected.count) === '0';
             /** After a clear, ask for the graphs and their counts again; the tick stays (M14.2). */
             const recount = (form: any) => {
                 const counts = pageCounts(model);
@@ -3193,11 +3488,13 @@ module workbench {
                                     : 'Graph choices could not be refreshed within 60 seconds; existing choices and selection are kept.'}</p>`
                             : pageCounts(model).state === 'timed-out'
                                 ? h`<p id="clear-counts-help" class="workbench-field__help">${countedPages.clear.timedOut}; "—" marks a count that did not finish.</p>`
-                                : ''}
+                                : empty ? h`<p id="clear-empty-help" class="workbench-field__help">${everything
+                                    ? 'The repository is empty: there is nothing to clear.'
+                                    : 'This graph is empty: there is nothing to clear.'}</p>` : ''}
                     </div>
                 </div>
                 <div class="workbench-form-actions"><button type="submit" class="workbench-action workbench-action--danger"
-                    ?disabled=${sending || discoveryIncomplete || !!selected.unavailable}>${icon(runtime, 'clear')}<span>${
+                    ?disabled=${sending || discoveryIncomplete || !!selected.unavailable || empty}>${icon(runtime, 'clear')}<span>${
                         discoveryIncomplete ? 'Clear unavailable' : everything ? 'Clear entire repository…' : 'Clear graph…'}</span></button>
                     ${submissionStatus(runtime, model)}</div>
             </form>`;
@@ -3205,7 +3502,7 @@ module workbench {
 
         function updatePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const error = text(pageValue(model, 'error-message'));
+            const error = pageErrorMessage(model);
             const query = text(pageValue(model, 'update')) || '\n\t';
             const mappings = context.linked && context.linked.namespaces
                 ? context.linked.namespaces.namespaceMap : model.namespaceMap;
@@ -3277,7 +3574,8 @@ module workbench {
             }
             const platform = String((navigatorObject.userAgentData && navigatorObject.userAgentData.platform)
                 || navigatorObject.platform || '');
-            return platform.indexOf('Mac') >= 0;
+            // 'MacIntel' (navigator.platform), 'macOS' (userAgentData in Chrome and Edge, C24), 'iPhone', 'iPad'.
+            return /mac|iphone|ipad|ipod/i.test(platform);
         }
 
         function queryFeatureEnabled(context: ViewContext, id: string): boolean {
@@ -3643,11 +3941,12 @@ module workbench {
                     <label class="query-form__label" for="query-name">Query name</label>
                     <input id="query-name" name="query-name" type="text" size="32" maxlength="32" value="" />
                 </div>
-                <label class="query-option query-save-disclosure__private" ?hidden=${!privateSave}>
+                <label class="query-option query-save-disclosure__private" ?hidden=${!privateSave}
+                    title=${privateSave && !signedIn ? 'Sign in to the server to save a private query.' : runtime.nothing}>
                     <input id="save-private" name="save-private" type="checkbox" value="true"
                         ?hidden=${!privateSave} ?disabled=${!privateSave || !signedIn} ?checked=${false}
-                        aria-describedby=${privateSave && !signedIn ? 'save-private-help' : runtime.nothing} />Private</label>
-                ${privateSave && !signedIn ? h`<p id="save-private-help" class="workbench-field__help query-save-disclosure__private-help">Sign in to the server to save a private query.</p>` : ''}
+                        aria-describedby=${privateSave && !signedIn ? 'save-private-help' : runtime.nothing} />Private${
+                    privateSave && !signedIn ? h`<span id="save-private-help" class="workbench-visually-hidden">Sign in to the server to save a private query.</span>` : ''}</label>
                 <div class="workbench-disclosure__actions query-disclosure__actions">
                     <input id="save" type="submit" value="Save" disabled
                         ?hidden=${!queryFeatureEnabled(context, 'query-save')} /> <span id="save-feedback"></span>
@@ -3793,6 +4092,14 @@ module workbench {
             add: true, remove: true, clear: true, update: true, server: true, explore: true, query: true
         };
 
+        /**
+         * True when a page shows its load error itself, in its own form, instead of only the error: Explore refuses a
+         * resource it cannot read (400 'Malformed value: …'), and the Resource field must stay to correct it (C10).
+         */
+        export function showsOwnError(model: PageModel): boolean {
+            return !!model && !!model.error && model.viewId === 'explore' && model.error.status === 400;
+        }
+
         /** True for a model whose only variable is error-message (an unauthorized answer, a rejected request). */
         export function isErrorOnlyModel(model: PageModel): boolean {
             const vars = model.vars || [];
@@ -3803,7 +4110,7 @@ module workbench {
             if (isRepositoryNotFound(model)) {
                 return repositoryNotFoundPage(runtime, context);
             }
-            if (model.error) {
+            if (model.error && !showsOwnError(model)) {
                 // A page the router could not load (M8.1) shows its error inside the shell.
                 return callout(runtime, 'error', model.error.message, 'Unable to load this Workbench page.');
             }
@@ -3871,7 +4178,9 @@ module workbench {
             while (list.firstChild) {
                 list.removeChild(list.firstChild);
             }
-            repositories.forEach((repository: any) => {
+            // In ID order, as the Repositories list (C32a).
+            repositories.slice().sort((left: any, right: any) => String(left.id).localeCompare(String(right.id), undefined,
+                { numeric: true, sensitivity: 'base' })).forEach((repository: any) => {
                 const item = document.createElement('li');
                 const link = document.createElement('a');
                 link.className = 'workbench-popover__option';
@@ -4138,6 +4447,16 @@ module workbench {
             }
         }
 
+        /**
+         * Render a page template, then lay out the result tables it holds (resultTable). The caller empties
+         * regions.resultTables before it builds the template.
+         */
+        function renderPage(template: any, target: any, model: PageModel, regions: RowRegions, runtime: LitRuntime): void {
+            runtime.render(template, target);
+            renderRowRegions(regions);
+            renderPageResultTables(model, regions);
+        }
+
         /** The shell rendered last, so that it can show what changed behind the page (M13.5). */
         let lastShell: { appMount: Element; shellState: ShellState; runtime: LitRuntime } = null;
 
@@ -4172,8 +4491,11 @@ module workbench {
             shownModels.set(outletMount, model);
             const regions = prepareRowRegions(outletMount, model);
             const renderedContext = regions ? { ...context, rowRegions: regions } : context;
-            runtime.render(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount);
-            renderRowRegions(regions);
+            if (regions) {
+                regions.resultTables = {};
+            }
+            renderPage(outletContentTemplate(model, runtime, routeBody(model, renderedContext, runtime)), outletMount,
+                model, regions, runtime);
             return outletMount;
         }
 
@@ -4193,8 +4515,10 @@ module workbench {
             // Without a DOM document (unit-test fakes) the complete page renders as one template.
             const regions = prepareRowRegions(mount, model);
             const renderedContext = regions ? { ...context, rowRegions: regions } : context;
-            runtime.render(pageTemplate(model, renderedContext, runtime), mount);
-            renderRowRegions(regions);
+            if (regions) {
+                regions.resultTables = {};
+            }
+            renderPage(pageTemplate(model, renderedContext, runtime), mount, model, regions, runtime);
             return mount;
         }
 
@@ -4209,12 +4533,23 @@ module workbench {
             const windowSize = model.pickerPageSize || 50;
             const hasQuery = (selector: string): boolean => !!(mount && mount.querySelectorAll
                 && mount.querySelectorAll(selector) && mount.querySelectorAll(selector).length);
+            // A Types or Graphs page opened in place can keep the previous page's filter field (lit reuses the element),
+            // which still shows what was typed there: it shows the filter of the page opened instead.
+            if (browseLists[model.viewId] && mount && typeof mount.querySelector === 'function') {
+                const filterField = mount.querySelector('#' + model.viewId + '-filter');
+                if (filterField) {
+                    filterField.value = text(pageValue(model, 'filter'));
+                }
+            }
             const hasRows = model.rowCount > 0 && model.rowStore
                 && hasQuery('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
             const hasPicker = hasQuery('[data-workbench-window-picker]');
             // Counts a browse list still waits for (Graphs' default graph) are loaded without rows too.
             const countsPending = !!browseLists[model.viewId] && browseCounts(model).state === 'pending';
-            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker && !countsPending) {
+            // Explore reads its rows to find the resource's label, types and role groups; its statements are shown by
+            // result tables that window their own rows (resultTable).
+            const exploreRows = model.viewId === 'explore' && model.rowCount > 0;
+            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker && !countsPending && !exploreRows) {
                 return Promise.resolve(loadPageCounts(mount, model, context, runtime, targetWindow));
             }
             if (hasRows && typeof HeightIndex !== 'function') {
@@ -4367,7 +4702,7 @@ module workbench {
                 if (event.preventDefault) { event.preventDefault(); }
                 const column = button.getAttribute('data-workbench-sort');
                 if (['id', 'title', 'access'].indexOf(column) < 0) { return; }
-                const current = (model as any).repositorySort;
+                const current = (model as any).repositorySort || { column: 'id', direction: 'ascending' };
                 const direction = current && current.column === column && current.direction === 'ascending'
                     ? 'descending' : 'ascending';
                 const activeSortGeneration = ++repositorySortGeneration;
@@ -4530,7 +4865,17 @@ module workbench {
                     }
                 })
                 : Promise.resolve();
-            return initialPicker.then(() => prepareExploreSummary(model)).then((summary: any) => {
+            // The Repositories list starts in ID order (C32a).
+            const initialSort = model.viewId === 'repositories' && hasRows && !repositorySortedRows
+                ? model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
+                    if (!disposed && !repositorySortedRows) {
+                        repositorySortedRows = sortedRepositoryRows(model, rows, 'id', 'ascending');
+                        (model as any).repositorySortedRows = repositorySortedRows;
+                        (model as any).repositorySort = { column: 'id', direction: 'ascending' };
+                    }
+                })
+                : Promise.resolve();
+            return initialPicker.then(() => initialSort).then(() => prepareExploreSummary(model)).then((summary: any) => {
                 if (summary) { (model as any).exploreSummary = summary; }
                 return refreshRows(false);
             }).then(() => {

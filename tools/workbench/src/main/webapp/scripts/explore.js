@@ -13,18 +13,13 @@ var workbench;
          * inside the outlet. The view leaves out repeated list items (M12.1). The returned function unbinds the toggle.
          */
         function mount(outlet) {
+            // The view says when a page has no rows (.workbench-empty); the result tables lay their rows out later.
             function syncExplorePaginationVisibility() {
                 var pagination = outlet.querySelector('#explore-pagination');
                 if (!pagination) {
                     return;
                 }
-                var resultRows = outlet.querySelectorAll('#explore-results table.data tbody tr');
-                var resultTable = outlet.querySelector('#explore-results table.data');
-                var emptyResult = outlet.querySelector('#explore-results .workbench-empty');
-                var emptyPage = Boolean(emptyResult) || Boolean(resultTable && resultRows.length === 0);
-                if (resultTable) {
-                    resultTable.hidden = resultRows.length === 0;
-                }
+                var emptyPage = Boolean(outlet.querySelector('#explore-results .workbench-empty'));
                 var offset = workbench.paging.getOffset();
                 pagination.hidden = emptyPage && offset <= 0;
             }
@@ -35,7 +30,6 @@ var workbench;
             var suffix = '_explore';
             var limit_param = workbench.paging.LIMIT + suffix;
             var limit_id = workbench.paging.LIM_ID + suffix;
-            var limit_param_found = false;
             for (var i = 0; elements.length - i; i++) {
                 // A '+' in the query string is a space; an encoded one (%2B, as in <…/C++>) stays a '+'.
                 var separator = elements[i].indexOf('=');
@@ -47,15 +41,16 @@ var workbench;
                 }
                 else if (limit_param == pair[0]) {
                     page.find(limit_id).val(value);
-                    limit_param_found = true;
                 }
             }
-            if (!limit_param_found) {
-                var limit_cookie = workbench.getCookie(limit_param);
-                if (limit_cookie) {
-                    page.find(limit_id).val(limit_cookie);
+            // Without limit_explore the server uses 100 (ExploreServlet ignores the cookie), as the view's select shows.
+            // A new Result limit applies at once, like Show datatypes (C19).
+            page.find(limit_id).on('change.wbRoute', function () {
+                var chosen = parseInt($(this).val(), 10);
+                if (!isNaN(chosen)) {
+                    workbench.paging.addPagingParam(limit_param, chosen);
                 }
-            }
+            });
             var explore = 'explore';
             workbench.paging.correctButtons(explore);
             var rvalue = resource.val();
@@ -80,10 +75,7 @@ var workbench;
                 var offset = limit == 0 ? 0 : workbench.paging.getOffset();
                 var first = offset + 1;
                 var last = limit == 0 ? total_result_count : offset + limit;
-                var result_rows = outlet.querySelectorAll('#explore-results table.data tbody tr');
-                var result_table = outlet.querySelector('#explore-results table.data');
-                var empty_result = outlet.querySelector('#explore-results .workbench-empty');
-                var empty_page = Boolean(empty_result) || Boolean(result_table && result_rows.length === 0);
+                var empty_page = Boolean(outlet.querySelector('#explore-results .workbench-empty'));
                 // Truncate range if close to end.
                 last = have_total_count ? Math.min(total_result_count, last) : last;
                 var range = 'Rows ' + first + '–' + last;
@@ -101,6 +93,7 @@ var workbench;
             syncExplorePaginationVisibility();
             return function () {
                 page.find("input[name='show-datatypes']").off('.wbRoute');
+                page.find(limit_id).off('.wbRoute');
             };
         }
         explore_1.mount = mount;

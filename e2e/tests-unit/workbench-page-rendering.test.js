@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
+const { renderPageResultTables } = require('./page-result-table-harness.js');
 
 const scripts = process.env.WORKBENCH_SCRIPT_DIR
     || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
@@ -641,7 +642,7 @@ test('Explore preserves its persisted datatype option and reports a result-limit
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
     // The metadata the Explore servlet sends: the resolved resource and the total; the limit in use is the
-    // request's limit_explore (or its cookie), 100 without one (review fix A12).
+    // request's limit_explore, 100 without one (review fix A12; round 2 R10: the servlet reads no cookie for it).
     const model = {
         viewId: 'explore',
         vars: ['subject', 'predicate', 'object', 'context'],
@@ -660,6 +661,12 @@ test('Explore preserves its persisted datatype option and reports a result-limit
     workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E&limit_explore=0' };
     const unlimited = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
     assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
+
+    // A limit_explore cookie from an earlier page does not set this page's limit: 10 rows of a limit of 100.
+    workbench.getCookie = (name) => name === 'limit_explore' ? '10' : '';
+    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E' };
+    const ten = collectTemplateText(workbench.views.pageTemplate({ ...model, rowCount: 10 }, context, runtime)).join(' ');
+    assert.ok(!ten.includes('id="result-limited"'), 'the cookie is not the limit the server used');
 });
 
 test('Add template preserves isolation options and offers an editable target graph', () => {
@@ -687,7 +694,8 @@ test('Add template preserves isolation options and offers an editable target gra
     assert.ok(markup.includes('value=SNAPSHOT') && markup.includes('Snapshot'));
     // Plan task M5.5: the context is the "Target graph" next to Data format; empty keeps the data's own graphs.
     assert.ok(markup.includes('<label for="context">Target graph</label>'));
-    assert.ok(markup.includes('placeholder="Default graph"'));
+    // Round 3 (C32b): empty keeps the graphs named in the data, as the help says.
+    assert.ok(markup.includes('placeholder="Graphs named in the data"'));
     assert.ok(!markup.includes('id="overrideContext"'), 'an empty target graph replaces the override checkbox');
     assert.ok(markup.includes('id="context-help"') && markup.includes('keep the graphs named in the data'));
     assert.ok(markup.includes('it does not choose a graph'), 'Base URI explains that it does not choose a graph');
@@ -808,8 +816,9 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
             expected: ['namespaces-results', 'namespaces-filter', 'urn:<wbr>example:'] }],
         ['contexts', { vars: ['context'], rows: [['urn:graph']], expected: ['contexts-results', 'urn:graph'] }],
         ['types', { vars: ['type', 'count'], rows: [['urn:Type', '3']], expected: ['types-results', 'urn:Type'] }],
+        // Explore's statements are a shared result table, laid out once its host is in the page (resultTable).
         ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']],
-            expected: ['explore-form', 'explore-results', 'urn:s'] }],
+            expected: ['explore-form', 'explore-results', 'data-workbench-result-table'] }],
         ['query', { vars: [], rows: [], expected: ['query-form', 'query-results'] }],
         ['saved-queries', { vars: ['query', 'queryName', 'queryText'],
             rows: [['urn:saved:1', 'Example query', 'SELECT * WHERE {}']], expected: ['saved-queries', 'urn:saved:1'] }],
@@ -1953,7 +1962,7 @@ test('delete repository choices expose bounded row-window navigation', () => {
     assert.ok(!output.includes('repo-50'), 'later repository options must not be materialized in the DOM');
 });
 
-test('page tables label their columns for people instead of showing raw variable names', () => {
+test('page tables label their columns for people instead of showing raw variable names', async () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
@@ -1972,13 +1981,13 @@ test('page tables label their columns for people instead of showing raw variable
     }, context, runtime);
     // The repository list keeps Icon and Actions fixed while ID, Title and Access remain sortable.
     assert.deepEqual(headings(repositories), ['Repository', 'ID', 'Title', 'Access', 'Actions']);
-    const explore = workbench.views.pageTemplate({
+    const explore = await renderPageResultTables(workbench, {
         viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
         rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
         rowCount: 1, metadata: { resource: '<urn:s>' }
-    }, context, runtime);
+    }, context);
     // Rows about the explored resource are grouped by role; the Outgoing table names its two columns.
-    assert.deepEqual(headings(explore), ['Predicate', 'Object']);
+    assert.deepEqual(explore.headers('explore-outgoing'), ['Predicate', 'Object']);
 });
 
 test('summary and information render key/value lists instead of simple tables', () => {

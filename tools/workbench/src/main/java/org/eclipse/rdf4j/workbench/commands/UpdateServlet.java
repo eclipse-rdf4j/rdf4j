@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.util.ShaclValidationSummary;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
@@ -66,7 +67,12 @@ public class UpdateServlet extends TransformationServlet {
 						.prepareUpdate(QueryLanguage.SPARQL, updateString)
 						.execute();
 			} catch (RepositoryException | MalformedQueryException | UpdateExecutionException e) {
-				throw new BadRequestException(e.getMessage());
+				// A SHACL repository's rejection carries its validation report: show what violates which constraint.
+				String message = ShaclValidationSummary.find(e)
+						.map(report -> ShaclValidationSummary.summarize(report.validationReportAsModel(),
+								ShaclValidationSummary.namespaces(con)))
+						.orElse(e.getMessage());
+				throw new BadRequestException(message, e);
 			}
 		}
 	}

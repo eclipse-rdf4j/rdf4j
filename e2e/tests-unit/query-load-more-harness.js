@@ -67,7 +67,8 @@ class MemoryWorker {
     terminate() { this.terminated = true; }
 }
 
-function loadApi() {
+/** windowOverrides replace members of the fake window, e.g. addEventListener to see the module's own listeners. */
+function loadApi(windowOverrides = {}) {
     const document = new FakeDocument();
     const storage = () => {
         const values = new Map();
@@ -92,6 +93,7 @@ function loadApi() {
         matchMedia() { return { matches: true }; },
         sessionStorage: storage(), localStorage: storage()
     };
+    Object.assign(window, windowOverrides);
     document.defaultView = window;
     const context = vm.createContext({
         workbench: {}, document, window, URL, URLSearchParams, AbortController,

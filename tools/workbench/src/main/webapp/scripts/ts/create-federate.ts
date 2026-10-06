@@ -27,7 +27,11 @@ module workbench {
                     page.find('#create-feedback').show();
                 }
                 var fedID = id.val();
-                var validID = /.+/.test(fedID);
+                // The repository id rule of create.js (and of the server): an id it rejects is explained under the
+                // field and keeps Create disabled. Without create.js only a non-empty id is required.
+                var create: any = (workbench as any).create;
+                var validID = create && typeof create.checkId === 'function'
+                    ? create.checkId(false, false) : /.+/.test(fedID);
                 var disable = !(validID && enoughMembers);
                 var matchExisting = false;
 
@@ -59,7 +63,7 @@ module workbench {
             respondToFormState();
             memberID.on('change.wbRoute', respondToFormState);
             typeChoice.on('change.wbRoute', respondToFormState);
-            id.off('.wbRoute').on('keydown.wbRoute paste.wbRoute cut.wbRoute', timeoutRespond);
+            id.off('.wbRoute').on('input.wbRoute keydown.wbRoute paste.wbRoute cut.wbRoute', timeoutRespond);
             return function() {
                 memberID.off('.wbRoute');
                 typeChoice.off('.wbRoute');

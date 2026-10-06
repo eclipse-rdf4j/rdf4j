@@ -250,6 +250,53 @@ test('saved query controls bind inert data attributes to static handlers', async
     assert.equal(yasqe.state.instance.refreshCount, 1);
 });
 
+// Round 2 (R2 client): the owner of a saved query is checked against the user of the raw credentials cookie; base64
+// '+' must not be read as a space (which would name another user and refuse the owner's own delete).
+test('the owner whose credentials encode with "+" may delete their saved query', async () => {
+    const harness = createFormBrowserHarness({ confirmResponses: [true] });
+    const owner = 'n>>';
+    const form = harness.registerElement('form', { id: 'urn:query', name: 'urn:query' });
+    const deleteButton = harness.registerElement('input', {
+        id: 'urn:query-delete',
+        className: 'saved-query-delete',
+        attributes: { 'data-query-name': 'mine', 'data-query-owner': owner, 'data-query-urn': 'urn:query' }
+    });
+    [form, deleteButton].forEach((element) => harness.document.body.appendChild(element));
+    harness.context.YASQE = createYasqeStub(harness).api;
+    const encoded = Buffer.from(owner + ':pw').toString('base64');
+    assert.ok(encoded.includes('+'));
+    harness.document.cookie = 'server-user-password=' + encoded;
+    const alerts = [];
+    harness.context.alert = (message) => alerts.push(message);
+    harness.loadScripts(['saved-queries.js']);
+    harness.context.workbench.savedQueries.mount(harness.document.body);
+
+    deleteButton.dispatchEvent({ type: 'click', bubbles: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(alerts, [], 'the owner is not told someone else saved it');
+    assert.equal(form.submitCount, 1);
+});
+
+test('a credentials cookie that is not base64 is nobody, without an error', async () => {
+    const harness = createFormBrowserHarness({ confirmResponses: [true] });
+    const form = harness.registerElement('form', { id: 'urn:query', name: 'urn:query' });
+    const deleteButton = harness.registerElement('input', {
+        id: 'urn:query-delete',
+        className: 'saved-query-delete',
+        attributes: { 'data-query-name': 'theirs', 'data-query-owner': 'alice', 'data-query-urn': 'urn:query' }
+    });
+    [form, deleteButton].forEach((element) => harness.document.body.appendChild(element));
+    harness.context.YASQE = createYasqeStub(harness).api;
+    harness.document.cookie = 'server-user-password=%%%';
+    const alerts = [];
+    harness.context.alert = (message) => alerts.push(message);
+    harness.loadScripts(['saved-queries.js']);
+    harness.context.workbench.savedQueries.mount(harness.document.body);
+    assert.doesNotThrow(() => deleteButton.dispatchEvent({ type: 'click', bubbles: true }));
+    assert.equal(alerts.length, 1, 'an anonymous user may not delete alice\'s query');
+    assert.equal(form.submitCount || 0, 0);
+});
+
 test('update page initializes yasqe, applies defaults, and submits safely without init', () => {
     const harness = createFormBrowserHarness({
         globals: {

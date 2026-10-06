@@ -118,11 +118,11 @@ test('repository list sorts complete rows and keeps icon and action columns fixe
     if (await sortButtons.count() === 3) {
         const idHeader = table.locator('thead th[data-repository-column="id"]');
         const idSort = table.locator('button[data-workbench-sort="id"]');
-        await idSort.focus();
-        await page.keyboard.press('Enter');
+        // The list starts in ID order (round-3 finding C32a); the ID button turns it around, and back.
         await expect(idHeader).toHaveAttribute('aria-sort', 'ascending');
         expect((await rowSnapshot()).map(row => row.id)).toEqual(['repo-1', 'repo-2', 'repo-3', 'repo-10']);
-        await table.locator('button[data-workbench-sort="id"]').click();
+        await idSort.focus();
+        await page.keyboard.press('Enter');
         await expect(idHeader).toHaveAttribute('aria-sort', 'descending');
         const descendingSortPseudo = await idHeader.evaluate(element => getComputedStyle(element, '::after').content);
         expect.soft(descendingSortPseudo, 'the direction indicator is not duplicated by the shared browse-table rule')

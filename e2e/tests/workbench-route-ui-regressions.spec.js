@@ -176,13 +176,16 @@ test('route templates preserve paging, saved-query streams, export selection, an
 	await waitForRoute(page, 'export', { url: (url) => url.searchParams.get('action') === 'preview', timeout: 20_000 });
 	const previewResponse = await previewResponsePromise;
 	await expect(page.locator('#export-results')).toBeVisible();
+	// The preview is the shared result table (rows, or records in a narrow card), which lays its rows out after the page.
+	await expect(page.locator('#export-results :is(.query-result-layout [data-workbench-row-index], .workbench-empty)').first())
+		.toBeVisible();
 	const previewState = {
 		status: previewResponse.status(),
 		contentType: previewResponse.headers()['content-type'] || null,
 		requestMethod: previewResponse.request().method(),
 		requestUrl: previewResponse.url(),
 		selectedFormat: await page.locator('#Accept').inputValue(),
-		rowCount: await page.locator('#export-results table.data tbody tr').count(),
+		rowCount: await page.locator('#export-results .query-result-layout [data-workbench-row-index]').count(),
 		emptyState: await page.locator('#export-results .workbench-empty').count()
 	};
 	console.log('EXPORT_PREVIEW_SELECTION_RED', JSON.stringify(previewState));

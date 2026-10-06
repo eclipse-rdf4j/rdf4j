@@ -21,7 +21,8 @@ const {
 	repositoryPageUrl,
 	serverBaseUrl,
 	uniqueRepositoryId,
-	waitForRoute
+	waitForRoute,
+	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
 
 const REPOSITORY_ID = uniqueRepositoryId('workbench-write-in-place');
@@ -186,8 +187,10 @@ test('a write answered by a redirect instead of the write acknowledgement is not
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'update'));
 	await waitForRoute(page, 'update');
 	// A gateway or a sign-in proxy answers before the write servlet: its redirect says nothing about the write (A8).
+	// The write goes to the Workbench root instead, which answers with a real 302 (WebKit cannot fulfill a route
+	// with a redirect status).
 	await page.route((url) => url.pathname.endsWith('/update'), (route) => (route.request().method() === 'POST'
-		? route.fulfill({ status: 302, headers: { Location: '/sign-in' } }) : route.continue()));
+		? route.continue({ url: workbenchBaseUrl() + '/' }) : route.continue()));
 	await page.locator('#update-editor .CodeMirror').evaluate((element) =>
 		element.CodeMirror.setValue('INSERT DATA { <urn:in-place:redirected> <urn:in-place:p> "r" }'));
 

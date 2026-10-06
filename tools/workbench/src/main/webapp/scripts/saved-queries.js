@@ -18,10 +18,59 @@ var workbench;
     var savedQueries;
     (function (savedQueries) {
         var pages = new WeakMap();
+        /** A cookie's value, URI-decoded only (workbench.getCookie reads '+' as a space, a digit in base64). */
+        function rawCookie(name) {
+            var cookies = typeof document !== 'undefined' && typeof document.cookie === 'string'
+                ? document.cookie.split(';') : [];
+            for (var index = 0; index < cookies.length; index++) {
+                var cookie = cookies[index].trim();
+                var separator = cookie.indexOf('=');
+                if (separator > 0 && cookie.substring(0, separator) === name) {
+                    var value = cookie.substring(separator + 1);
+                    try {
+                        return decodeURIComponent(value);
+                    }
+                    catch (error) {
+                        return value;
+                    }
+                }
+            }
+            return '';
+        }
+        /**
+         * The text of the base64 server-user-password credentials: UTF-8 "user:password" (C15), or, for credentials
+         * written one byte per character (an older Connection page), the bytes as they are. '' when it is no base64.
+         */
+        function decodeCredentials(encoded) {
+            var view = typeof window !== 'undefined' ? window : null;
+            if (!view || typeof view.atob !== 'function') {
+                return encoded;
+            }
+            var binary;
+            try {
+                binary = view.atob(encoded);
+            }
+            catch (error) {
+                return '';
+            }
+            try {
+                var bytes = new Uint8Array(binary.length);
+                for (var index = 0; index < binary.length; index++) {
+                    bytes[index] = binary.charCodeAt(index);
+                }
+                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            }
+            catch (error) {
+                return binary;
+            }
+        }
         function confirmDeletion(savedBy, name, form) {
-            var encoded = workbench.getCookie('server-user-password');
-            var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
-            var currentUser = decoded && decoded.substring(0, decoded.indexOf(':'));
+            // The signed-in user as the server reads it: base64 "user:password" (raw: '+' is a base64 digit there).
+            var encoded = rawCookie('server-user-password') || workbench.getCookie('server-user-password');
+            var decoded = encoded ? decodeCredentials(encoded) : '';
+            var colon = decoded ? decoded.indexOf(':') : -1;
+            var user = colon >= 0 ? decoded.substring(0, colon) : decoded;
+            var currentUser = user === '""' ? '' : user;
             if (!savedBy || currentUser === savedBy) {
                 workbench.confirmDialog.open({
                     title: 'Delete saved query?',

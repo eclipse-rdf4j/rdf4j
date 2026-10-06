@@ -172,7 +172,8 @@
 			<param-name>/update</param-name>
 			<param-value>org.eclipse.rdf4j.workbench.commands.UpdateServlet</param-value>
 		</init-param>
-		<!-- Load at startup, so that an invalid workbench.properties policy is reported when the application starts. -->
+		<!-- Load at startup, so that an invalid workbench.properties policy is logged when the application starts. The
+			application keeps running; the Workbench then answers its pages with 503 and the policy error. -->
 		<load-on-startup>1</load-on-startup>
 	</servlet>
 	<servlet-mapping>

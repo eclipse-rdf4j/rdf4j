@@ -14,27 +14,22 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 
 /**
- * Counts that are abandoned after their budget are bounded, and the server-bounded statement counts used for remote
- * repositories agree with {@link RepositoryConnection#size(Resource...)}.
+ * Counts that are abandoned after their budget are bounded, and statement counts use {@link RepositoryConnection#size}.
  */
 class BrowseListCountsTest {
 
@@ -84,35 +79,28 @@ class BrowseListCountsTest {
 		}
 	}
 
+	/**
+	 * A count cancelled before its worker started never runs, so it must give its place back when it is cancelled:
+	 * otherwise every such count lowers the limit for good.
+	 */
 	@Test
-	void serverBoundedCountsAgreeWithTheRepositorySize() throws Exception {
-		Repository repository = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
-		repository.init();
-		try (RepositoryConnection connection = repository.getConnection()) {
-			ValueFactory vf = connection.getValueFactory();
-			IRI g1 = vf.createIRI("urn:g1");
-			IRI g2 = vf.createIRI("urn:g2");
-			IRI type = vf.createIRI("urn:Type");
-			IRI subType = vf.createIRI("urn:SubType");
-			connection.add(subType, RDFS.SUBCLASSOF, type);
-			connection.add(vf.createIRI("urn:a"), RDF.TYPE, subType);
-			connection.add(vf.createIRI("urn:a"), RDF.TYPE, subType, g1);
-			connection.add(vf.createIRI("urn:b"), RDFS.LABEL, vf.createLiteral("b"), g1);
-			connection.add(vf.createIRI("urn:b"), RDFS.LABEL, vf.createLiteral("b"), g2);
-			connection.add(vf.createIRI("urn:c"), RDFS.LABEL, vf.createLiteral("c"), g2);
-			assertThat(connection.hasStatement(vf.createIRI("urn:a"), RDF.TYPE, type, true))
-					.as("the store has inferred statements, which counts leave out")
-					.isTrue();
-
-			assertThat(BrowseList.ServerBoundedCounts.all(connection, 2)).isEqualTo(connection.size());
-			assertThat(BrowseList.ServerBoundedCounts.defaultGraph(connection, 2))
-					.isEqualTo(connection.size((Resource) null));
-			Map<Resource, Long> perGraph = BrowseList.ServerBoundedCounts.namedGraphs(connection, 2);
-			assertThat(perGraph).containsOnlyKeys(g1, g2)
-					.containsEntry(g1, connection.size(g1))
-					.containsEntry(g2, connection.size(g2));
+	void countsCancelledBeforeTheyStartGiveTheirPlaceBack() throws Exception {
+		BrowseList browseList = new BrowseList(1);
+		try {
+			for (int attempt = 0; attempt < 50; attempt++) {
+				// No budget at all: the count is cancelled at once, mostly before its worker starts it.
+				assertThat(browseList.withinBudget(() -> 1L, 0)).isEmpty();
+				Optional<Long> next = Optional.empty();
+				for (int retry = 0; retry < 100 && next.isEmpty(); retry++) {
+					next = browseList.withinBudget(() -> 2L, 1000);
+					if (next.isEmpty()) {
+						Thread.sleep(10);
+					}
+				}
+				assertThat(next).as("attempt %d: the cancelled count gave its place back", attempt).contains(2L);
+			}
 		} finally {
-			repository.shutDown();
+			browseList.shutdown();
 		}
 	}
 
@@ -120,7 +108,7 @@ class BrowseListCountsTest {
 	void statementCountsAnswerTheRepositoryTheDefaultGraphAndEachGraph() throws Exception {
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.init();
-		BrowseList browseList = new BrowseList();
+		BrowseList browseList = new BrowseList(() -> repository);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI g1 = vf.createIRI("urn:g1");

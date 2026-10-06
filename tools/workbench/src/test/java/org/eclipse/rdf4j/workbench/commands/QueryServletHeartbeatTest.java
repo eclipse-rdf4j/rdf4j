@@ -29,6 +29,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpConnectTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -722,6 +724,53 @@ class QueryServletHeartbeatTest {
 				new QueryEvaluationException("remote result parser failed",
 						new QueryResultParseException("QUERY_EVALUATION_ERROR: Query evaluation took too long"))),
 				true);
+	}
+
+	/**
+	 * The HTTP client waits for the answer of a remote repository at most the query timeout, so it may give up just
+	 * before the server reports its own timeout (C6): its read timeout is the query timing out.
+	 */
+	@Test
+	void clientReadTimeoutBeforeAnyRowIsReportedAsTheQueryTimeout() throws Exception {
+		Repository repository = mock(HTTPRepository.class);
+		when(((HTTPRepository) repository).getRepositoryURL()).thenReturn("http://localhost/repositories/test");
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		ProbeServletOutputStream output = new ProbeServletOutputStream(0);
+		HttpServletResponse response = responseWith(output);
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator, Duration.ofSeconds(30));
+		when(repository.getConnection()).thenReturn(connection);
+		stubTupleQuery(connection, tupleQuery);
+		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenThrow(new HTTPQueryEvaluationException("Read timed out",
+				new SocketTimeoutException("Read timed out")));
+		WorkbenchRequest request = pageDataRequest(QUERY);
+		when(request.getInt("query-timeout")).thenReturn(1);
+		when(request.getParameter("query-timeout")).thenReturn("1");
+		try {
+			servlet.service(request, response);
+
+			verify(response, atLeastOnce()).setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			JsonNode terminal = lastRecord(output.asString());
+			assertThat(terminal.path("type").asText()).isEqualTo("error");
+			assertThat(terminal.path("code").asText()).isEqualTo("timeout");
+			assertThat(terminal.path("message").asText()).contains("Query timed out after 1 second");
+		} finally {
+			coordinator.shutdown();
+		}
+	}
+
+	@Test
+	void clientReadTimeoutAfterStreamingRowsIsClassifiedAsTimeout() throws Exception {
+		assertQueryTimeoutErrorAfterRows(new HTTPQueryEvaluationException("remote query failed",
+				new QueryEvaluationException(new SocketTimeoutException("Read timed out"))), true);
+	}
+
+	@Test
+	void clientConnectTimeoutIsNotAQueryTimeout() throws Exception {
+		assertQueryErrorAfterRows(new HTTPQueryEvaluationException("remote query failed",
+				new HttpConnectTimeoutException("HTTP connect timed out")), true, "incomplete");
 	}
 
 	@Test
@@ -1499,6 +1548,13 @@ class QueryServletHeartbeatTest {
 
 	private static void stubTupleQuery(RepositoryConnection connection, TupleQuery tupleQuery) {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
+	}
+
+	/** The last record of a page-data answer. */
+	private static JsonNode lastRecord(String answer) throws Exception {
+		List<String> lines = answer.lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
+		assertThat(lines).isNotEmpty();
+		return JSON_MAPPER.readTree(lines.get(lines.size() - 1));
 	}
 
 	private static WorkbenchRequest pageDataRequest(String query) throws Exception {
