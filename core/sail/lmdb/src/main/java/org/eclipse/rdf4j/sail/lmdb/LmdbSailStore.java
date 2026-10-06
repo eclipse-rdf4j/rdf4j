@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -62,6 +63,10 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
+import org.eclipse.rdf4j.sail.base.SharedSnapshotValidationSource;
+import org.eclipse.rdf4j.sail.base.SnapshotObservation;
+import org.eclipse.rdf4j.sail.base.SnapshotReadContext;
+import org.eclipse.rdf4j.sail.base.SnapshotValidationSupport;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -284,6 +289,10 @@ class LmdbSailStore implements SailStore {
 	 * done.
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+	private final SnapshotValidationSupport.PublicationGroup snapshotPublicationGroup = new SnapshotValidationSupport.PublicationGroup(
+			sinkStoreAccessLock, false, true);
+	private final LmdbSailSource explicitSource = new LmdbSailSource(true);
+	private final LmdbSailSource inferredSource = new LmdbSailSource(false);
 
 	/**
 	 * Boolean indicating whether any {@link LmdbSailSink} has started a transaction on the {@link TripleStore}.
@@ -482,7 +491,11 @@ class LmdbSailStore implements SailStore {
 			tripleStoreException = null;
 			discardEstimatorStateTouchedByOpenTransaction();
 			storeTxnStarted.set(false);
-			sinkStoreAccessLock.unlock();
+			try {
+				snapshotPublicationGroup.discardPendingWrites();
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
 		}
 	}
 
@@ -546,6 +559,8 @@ class LmdbSailStore implements SailStore {
 		} catch (IOException e) {
 			logger.warn("Failed to close store", e);
 			throw new SailException(e);
+		} finally {
+			snapshotPublicationGroup.discardPendingWrites();
 		}
 	}
 
@@ -697,12 +712,12 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public SailSource getExplicitSailSource() {
-		return new LmdbSailSource(true);
+		return explicitSource;
 	}
 
 	@Override
 	public SailSource getInferredSailSource() {
-		return new LmdbSailSource(false);
+		return inferredSource;
 	}
 
 	/**
@@ -879,12 +894,15 @@ class LmdbSailStore implements SailStore {
 		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore);
 	}
 
-	private final class LmdbSailSource extends BackingSailSource {
+	private final class LmdbSailSource extends BackingSailSource implements SharedSnapshotValidationSource {
 
 		private final boolean explicit;
+		private final SnapshotValidationSupport validation;
 
 		public LmdbSailSource(boolean explicit) {
 			this.explicit = explicit;
+			validation = new SnapshotValidationSupport(this, snapshotPublicationGroup, true, null,
+					() -> dataset(IsolationLevels.SNAPSHOT_READ), explicit);
 		}
 
 		@Override
@@ -894,7 +912,27 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
-			return new LmdbSailSink(explicit, level);
+			return validation.sink(new LmdbSailSink(explicit, level), List.of(), () -> dataset(level));
+		}
+
+		@Override
+		public boolean supportsSnapshotValidation() {
+			return true;
+		}
+
+		@Override
+		public SnapshotReadContext acquireSnapshot(IsolationLevel level) {
+			return validation.acquire(() -> dataset(level));
+		}
+
+		@Override
+		public SnapshotReadContext acquireSnapshot(IsolationLevel level, SailDataset borrowedHandle) {
+			return validation.acquire(() -> borrowedHandle);
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level, List<SnapshotObservation> observations) {
+			return validation.sink(new LmdbSailSink(explicit, level), observations, () -> dataset(level));
 		}
 
 		@Override
