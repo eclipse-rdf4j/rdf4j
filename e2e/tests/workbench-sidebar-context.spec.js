@@ -83,6 +83,10 @@ test('opening the repository switcher widens the sidebar and shows its panel ins
 	const panel = page.locator('#workbench-repository-popover');
 	await expect(panel).toBeVisible();
 	await expect.poll(width, { message: 'the sidebar widens' }).toBeGreaterThanOrEqual(before.bar.width + 120);
+	// Measure once the widening has finished: the sidebar and its panel are read in separate calls, and mid-way
+	// through the transition the panel would already have grown past the width read for the sidebar a moment before.
+	await page.waitForFunction(() => [document.body, document.querySelector('#workbench-contextbar')]
+		.every((element) => element.getAnimations().length === 0));
 	const after = await shellGeometry(page);
 	const box = await panel.boundingBox();
 	expect(box.x, 'the panel starts inside the sidebar').toBeGreaterThanOrEqual(after.bar.x);
@@ -114,7 +118,9 @@ test('on a phone the compact bar with the menu button is unchanged', async ({ pa
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
 	const bar = await page.locator('#workbench-contextbar').boundingBox();
-	expect(bar.width).toBeGreaterThanOrEqual(380);
+	// The bar spans the page; a classic scrollbar (Linux) takes its width off the 390px viewport.
+	const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+	expect(bar.width, 'the bar spans the page').toBeGreaterThanOrEqual(pageWidth - 10);
 	expect(bar.height).toBeLessThanOrEqual(60);
 	await expect(page.locator('#workbench-menu-button')).toBeVisible();
 	await expect(page.locator('#workbench-repository-switcher')).toBeVisible();

@@ -83,6 +83,36 @@ test('every page renders a header with its sidebar icon, title and one-line desc
     }
 });
 
+test('page titles stay the short page names and never repeat the description', () => {
+    const titles = {
+        create: 'New Repository',
+        namespaces: 'Namespaces In Repository',
+        'saved-queries': 'Saved Queries',
+        add: 'Add RDF'
+    };
+    for (const [viewId, title] of Object.entries(titles)) {
+        assert.ok(render(viewId).includes('<h1 id="title_heading" tabindex="-1">' + title + '</h1>'),
+            viewId + ' should be titled ' + title);
+    }
+    for (const viewId of Object.keys(descriptions)) {
+        const heading = render(viewId).match(/<h1 id="title_heading" tabindex="-1">([\s\S]*?)<\/h1>/);
+        assert.ok(heading, viewId + ' should render a title heading');
+        assert.notEqual(heading[1], descriptions[viewId], viewId + ' should not use its description as its title');
+    }
+});
+
+test('every page header and sidebar icon draws valid SVG path data', () => {
+    const menu = Object.keys(descriptions).map((id) => ({ id, label: id, groupId: 'explore', groupLabel: 'Repository', href: id }));
+    for (const viewId of Object.keys(descriptions)) {
+        const markup = render(viewId, { workbench: { menu } });
+        const paths = Array.from(markup.matchAll(/<path d=([^>]*)>/g), (match) => match[1].replace(/^"|"$/g, ''));
+        assert.ok(paths.length > 0, viewId + ' should draw at least one icon');
+        for (const data of paths) {
+            assert.match(data, /^[Mm][\d\s.,+-]/, viewId + ' icon path data should start with a moveto command: ' + data);
+        }
+    }
+});
+
 test('the page header icon is the same icon the sidebar shows for that page', () => {
     const markup = render('saved-queries');
     assert.ok(/<svg class="?workbench-action-icon workbench-action-icon--saved workbench-page-header__icon-glyph"?/.test(markup),

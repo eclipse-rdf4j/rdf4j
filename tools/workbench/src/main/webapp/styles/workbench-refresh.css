@@ -2190,6 +2190,12 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 				filter var(--workbench-motion-layout) var(--workbench-motion-ease),
 				opacity var(--workbench-motion-layout) var(--workbench-motion-ease);
 		}
+
+		/* Compare mode folds the sidebar column away at once: a column still shrinking beside the comparison would
+		   hold the page off the left edge and push it past the viewport's right edge until the fold ended. */
+		body.workbench-body.query-compare-mode {
+			transition: none;
+		}
 	}
 
 	/* Compare mode folds the sidebar column away behind its own toggle; the context block goes with it. The menu then

@@ -538,7 +538,8 @@ test('Query editor and Explain match develop light theme and preserve dark color
     expect.soft(lightEditor.gutter).toBe('rgb(247, 247, 247)');
     expect.soft(lightEditor.gutterBorder).toBe('rgb(221, 221, 221)');
     expect.soft(lightEditor.lineNumber).toBe('rgb(153, 153, 153)');
-    expect.soft(lightEditor.cursor).toBe('rgb(0, 0, 0)');
+    // The cursor is drawn in the theme's ink colour (--workbench-ink), not yasqe's black, so it shows in both themes.
+    expect.soft(lightEditor.cursor).toBe('rgb(20, 36, 43)');
     expect.soft(lightEditor.focusedSelection).toBe('rgb(215, 212, 240)');
     expect.soft(lightEditor.unfocusedSelection).toBe('rgb(217, 217, 217)');
     expect.soft(lightEditor.keyword).toBe('rgb(119, 0, 136)');
@@ -596,7 +597,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
     expect.soft(darkEditor.background).toBe('rgb(17, 26, 29)');
     expect.soft(darkEditor.foreground).toBe('rgb(206, 218, 223)');
     expect.soft(darkEditor.gutter).toBe('rgb(24, 36, 40)');
-    expect.soft(darkEditor.cursor).toBe('rgb(0, 0, 0)');
+    expect.soft(darkEditor.cursor).toBe('rgb(232, 240, 243)');
     expect.soft(darkEditor.keyword).toBe('rgb(115, 196, 226)');
     for (const token of darkEditor.variables) {
         expect.soft(token.color).toBe('rgb(193, 179, 255)');
