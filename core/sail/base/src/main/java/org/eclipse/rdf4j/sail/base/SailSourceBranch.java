@@ -291,7 +291,16 @@ class SailSourceBranch implements SailSource {
 
 			@Override
 			public void close() throws SailException {
-				super.close();
+				try {
+					super.close();
+				} catch (RuntimeException | Error failure) {
+					SourceClosingSailDataset.closeAfterFailure(failure, this::releaseObserver);
+					throw failure;
+				}
+				releaseObserver();
+			}
+
+			private void releaseObserver() {
 				try {
 					semaphore.lock();
 					observers.remove(this);
@@ -317,18 +326,11 @@ class SailSourceBranch implements SailSource {
 	}
 
 	/**
-	 * Creates a disposable read branch from a {@link SnapshotSailStore} root. Its backing snapshot and changeset
-	 * overlays retain their normal lifetime, but reads do not contribute observations to the root's serializable sink.
-	 * Only implicit operations with a non-serializable default isolation level use this path.
+	 * Preserves this branch's backing snapshot and changeset overlays while bypassing its own observation layer.
+	 * Observing datasets already retained by a backing source are left intact.
 	 */
-	SailSource forkReadOnly() {
-		SailSource source = new DelegatingSailSource(this, false) {
-			@Override
-			public SailDataset dataset(IsolationLevel level) throws SailException {
-				return SailSourceBranch.this.dataset(level, false);
-			}
-		};
-		return new SailSourceBranch(source, modelFactory);
+	SailDataset datasetWithoutObservations(IsolationLevel level) {
+		return dataset(level, false);
 	}
 
 	@Override
