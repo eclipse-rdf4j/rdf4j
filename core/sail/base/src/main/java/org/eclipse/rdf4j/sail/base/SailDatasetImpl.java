@@ -58,6 +58,7 @@ class SailDatasetImpl implements SailDataset {
 	 * Changes that have not yet been {@link SailSource#flush()}ed to the backing {@link SailDataset}.
 	 */
 	private final Changeset changes;
+	private final boolean reduceApproved;
 
 	/**
 	 * Create a derivative dataset that applies the given changeset. The life cycle of this and the given
@@ -67,8 +68,13 @@ class SailDatasetImpl implements SailDataset {
 	 * @param changes     changeset to be observed with the given dataset
 	 */
 	public SailDatasetImpl(SailDataset derivedFrom, Changeset changes) {
+		this(derivedFrom, changes, true);
+	}
+
+	SailDatasetImpl(SailDataset derivedFrom, Changeset changes, boolean reduceApproved) {
 		this.derivedFrom = derivedFrom;
 		this.changes = changes;
+		this.reduceApproved = reduceApproved;
 		changes.addRefback(this);
 	}
 
@@ -177,6 +183,9 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+		if (!reduceApproved) {
+			return immutableContextIDs();
+		}
 		final CloseableIteration<? extends Resource> contextIDs;
 		contextIDs = derivedFrom.getContextIDs();
 		Iterator<Resource> added = null;
@@ -253,6 +262,52 @@ class SailDatasetImpl implements SailDataset {
 		};
 	}
 
+	private CloseableIteration<? extends Resource> immutableContextIDs() {
+		Set<Resource> approved = changes.getApprovedContexts();
+		Set<Resource> added = approved == null ? Set.of() : approved;
+		Set<Resource> cleared = changes.getDeprecatedContexts();
+		Set<Resource> removed = cleared == null ? Set.of() : cleared;
+		Set<Resource> affected = new HashSet<>();
+		for (Statement statement : changes.getDeprecatedStatements()) {
+			affected.add(statement.getContext());
+		}
+		CloseableIteration<? extends Resource> backing = changes.isStatementCleared()
+				? new EmptyIteration<>()
+				: derivedFrom.getContextIDs();
+		if (added.isEmpty() && removed.isEmpty() && affected.isEmpty()) {
+			return backing;
+		}
+		CloseableIteration<? extends Resource> candidates = added.isEmpty() ? backing
+				: DualUnionIteration.getWildcardInstance(new CloseableIteratorIteration<>(added.iterator()), backing);
+		Set<Resource> seen = new HashSet<>();
+		return new FilterIteration<Resource>(candidates) {
+			@Override
+			protected boolean accept(Resource context) {
+				if (!seen.add(context)) {
+					return false;
+				}
+				if (added.contains(context)) {
+					return true;
+				}
+				if (removed.contains(context)) {
+					return false;
+				}
+				if (affected.contains(context)) {
+					// Individual removals can empty a graph in an earlier immutable overlay.
+					try (CloseableIteration<? extends Statement> remaining = getStatements((Resource) null, null, null,
+							context)) {
+						return remaining.hasNext();
+					}
+				}
+				return true;
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
+	}
+
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
@@ -275,6 +330,22 @@ class SailDatasetImpl implements SailDataset {
 		}
 
 		if (changes.hasApproved() && iter != null) {
+			if (!reduceApproved) {
+				CloseableIteration<? extends Statement> distinctBacking = new FilterIteration<Statement>(iter) {
+					@Override
+					protected boolean accept(Statement statement) {
+						return !changes.hasApproved(statement.getSubject(), statement.getPredicate(),
+								statement.getObject(), new Resource[] { statement.getContext() });
+					}
+
+					@Override
+					protected void handleClose() {
+					}
+				};
+				return DualUnionIteration.getWildcardInstance(distinctBacking,
+						new CloseableIteratorIteration<>(
+								changes.getApprovedStatements(subj, pred, obj, contexts).iterator()));
+			}
 
 			return new DistinctModelReducingUnionIteration(
 					iter,

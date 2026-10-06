@@ -1047,13 +1047,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);
 		if (includeinferred == IncludeInferred.all && active && isolated) {
 			// use the transaction branch
-			return new DelegatingSailSource(includeInferredBranch, false);
+			return new SnapshotDelegatingSailSource(includeInferredBranch, false);
 		} else if (includeinferred == IncludeInferred.inferredOnly && active && isolated) {
 			// use the transaction branch
-			return new DelegatingSailSource(inferredOnlyBranch, false);
+			return new SnapshotDelegatingSailSource(inferredOnlyBranch, false);
 		} else if (active && isolated) {
 			// use the transaction branch
-			return new DelegatingSailSource(explicitOnlyBranch, false);
+			return new SnapshotDelegatingSailSource(explicitOnlyBranch, false);
 		} else if (includeinferred == IncludeInferred.all && active) {
 			// don't actually branch source
 			return new UnionSailSource(store.getInferredSailSource(), store.getExplicitSailSource());
