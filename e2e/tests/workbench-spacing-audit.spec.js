@@ -300,6 +300,9 @@ for (const variant of VARIANTS) {
 			// The form shows the next page in place once its model arrived; until then the previous page (default limit)
 			// stays on screen with its own paging buttons, so wait for the new page before using them.
 			await waitForRoute(page, 'explore', { url: /[?&]limit_explore=0(&|$)/ });
+			// The open Display pane lies over the page; close it before using the group pagers under it.
+			await page.locator('#explore-result-options-toggle').click();
+			await expect(page.locator('#explore-result-options-panel')).toBeHidden();
 			await expect(page.locator('[data-workbench-explore-action=next]').first()).toBeVisible();
 			await capture(page, info, 'explore', `${resource}-all-groups`);
 			const groups = await page.locator('[data-workbench-explore-action=next]').evaluateAll(elements =>

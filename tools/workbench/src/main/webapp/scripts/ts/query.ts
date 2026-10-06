@@ -3473,7 +3473,7 @@ module workbench {
         }
 
         export function applyResultPresentationState(layout: string, wrap: boolean) {
-            if (layout === 'table' || layout === 'records' || layout === 'auto') {
+            if (layout === 'table' || layout === 'records' || layout === 'auto' || layout === 'nquads') {
                 resultPresentationLayout = layout;
             }
             resultPresentationWrap = wrap !== false;

@@ -307,7 +307,8 @@ test('preview actions stay separate and empty result messages belong after table
 			chevronCount: select.parentElement.querySelectorAll('.workbench-select-chevron').length
 		}))
 	);
-	expect(exportSelects.map(select => select.id)).toEqual(['Accept', 'limit_export']);
+	// The preview's Display pane holds its Layout select (.agent/execplans/workbench-table-wrap-nquads.md).
+	expect(exportSelects.map(select => select.id)).toEqual(['Accept', 'export-preview-layout', 'limit_export']);
 	await expect(page.locator('#timeout')).toHaveValue('43200');
 	for (const select of exportSelects) {
 		expect(select.wrapperClass).toBe(true);

@@ -1742,7 +1742,7 @@ var workbench;
         }());
         queryStream.MeasuredRowHeights = MeasuredRowHeights;
         function chooseAutoLayout(availableWidth, minimumColumnWidths, selected, wrapValues) {
-            if (selected === 'table' || selected === 'records') {
+            if (selected === 'table' || selected === 'records' || selected === 'nquads') {
                 return selected;
             }
             if (wrapValues === false) {
@@ -1987,6 +1987,56 @@ var workbench;
                 : term.datatype && term.datatype !== XSD_STRING ? '^^<' + term.datatype + '>' : '');
         }
         queryStream.ntriplesTerm = ntriplesTerm;
+        function unicodeEscape(character) {
+            return '\\u' + ('000' + character.charCodeAt(0).toString(16).toUpperCase()).slice(-4);
+        }
+        var nquadsEscapes = {
+            '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f'
+        };
+        /**
+         * A term as N-Quads writes it: full IRIs with the characters an IRI reference may not contain as \uXXXX,
+         * strings with \" \\ \n \r \t \b \f and the other control characters as \uXXXX, language tags with their base
+         * direction, datatypes other than xsd:string, blank nodes by the server's label and RDF 1.2 triple terms.
+         * Packed row-store terms are read as well.
+         */
+        function nquadsTerm(storedTerm) {
+            var term = unpackTerm(storedTerm);
+            if (!term) {
+                return '';
+            }
+            if (term.kind === 'iri') {
+                return '<' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
+            }
+            if (term.kind === 'bnode') {
+                var blankNode = term.value || '';
+                return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
+            }
+            if (term.kind === 'triple') {
+                return '<<( ' + nquadsTerm(term.subject) + ' ' + nquadsTerm(term.predicate) + ' '
+                    + nquadsTerm(term.object) + ' )>>';
+            }
+            var string = '"' + String(term.value || '').replace(/["\\\u0000-\u001f\u007f]/g, function (character) { return nquadsEscapes[character] || unicodeEscape(character); }) + '"';
+            return string + (term.language
+                ? '@' + term.language + (term.direction ? '--' + term.direction : '')
+                : term.datatype && term.datatype !== XSD_STRING ? '^^' + nquadsTerm({ kind: 'iri', value: term.datatype }) : '');
+        }
+        queryStream.nquadsTerm = nquadsTerm;
+        /**
+         * One N-Quads line for a statement [subject, predicate, object, graph]: the graph is left out for the default
+         * graph (null or absent); '' when the subject, predicate or object is missing.
+         */
+        function nquadsStatement(terms) {
+            var values = terms || [];
+            if (!values[0] || !values[1] || !values[2]) {
+                return '';
+            }
+            var parts = [nquadsTerm(values[0]), nquadsTerm(values[1]), nquadsTerm(values[2])];
+            if (values[3]) {
+                parts.push(nquadsTerm(values[3]));
+            }
+            return parts.join(' ') + ' .';
+        }
+        queryStream.nquadsStatement = nquadsStatement;
         function exploreResource(term) {
             if (!term) {
                 return '';
@@ -2271,9 +2321,10 @@ var workbench;
                 downloadDisclosure.content.appendChild(this.downloadError);
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
                     { value: 'auto', label: 'Auto' }, { value: 'table', label: 'Table' },
-                    { value: 'records', label: 'Records' }
+                    { value: 'records', label: 'Records' }, { value: 'nquads', label: 'N-Quads' }
                 ]);
-                this.layoutControl.value = initialLayout;
+                this.nquadsLayoutOption = Array.prototype.filter.call(this.layoutControl.children, function (option) { return option.value === 'nquads'; })[0] || null;
+                this.layoutControl.value = initialLayout === 'nquads' ? 'auto' : initialLayout;
                 var wrap = this.createCheckbox('result-wrap-values', 'Wrap values', initialWrap);
                 this.wrapControl = wrap.input;
                 this.datatypeControl = this.createCheckbox('show-datatypes', 'Show datatypes', initialShowDatatypes).input;
@@ -2339,7 +2390,9 @@ var workbench;
                     rowCount: function () { return _this.state.rowCount; },
                     variables: function () { return _this.state.variables; },
                     read: function (start, count) { return _this.ensureRowStore().then(function (store) { return store.read(start, count); }); },
-                    namespaces: function (rowIndex) { return _this.namespacesForRow(rowIndex); }
+                    namespaces: function (rowIndex) { return _this.namespacesForRow(rowIndex); },
+                    // CONSTRUCT and DESCRIBE results are statements: subject, predicate, object and context.
+                    statements: function () { return _this.state.view === 'graph'; }
                 }, {
                     layout: initialLayout,
                     wrap: initialWrap,
@@ -3486,6 +3539,21 @@ var workbench;
                         : state.view === 'tuple' ? 'result-download-format-tuple' : 'result-download-format');
                 var downloadControlsVisible = downloadEnabled || formatEnabled || downloadLimitEnabled;
                 this.setControlHidden(this.layoutControl, !isRows || !layoutEnabled);
+                // N-Quads is offered for statements only (an option, not a hidden one: Safari shows hidden options); a
+                // chosen N-Quads layout waits for the next result of statements, and meanwhile the select says what
+                // the table shows.
+                var statements = state.view === 'graph';
+                if (this.nquadsLayoutOption && statements && this.nquadsLayoutOption.parentNode !== this.layoutControl) {
+                    this.layoutControl.appendChild(this.nquadsLayoutOption);
+                }
+                else if (this.nquadsLayoutOption && !statements
+                    && this.nquadsLayoutOption.parentNode === this.layoutControl) {
+                    this.layoutControl.removeChild(this.nquadsLayoutOption);
+                }
+                var shownLayout = this.layout === 'nquads' && !statements ? 'auto' : this.layout;
+                if (this.layoutControl.value !== shownLayout) {
+                    this.layoutControl.value = shownLayout;
+                }
                 this.setControlHidden(this.wrapControl, !isRows || !wrapEnabled);
                 this.setControlHidden(this.datatypeControl, !isRows || !datatypeEnabled);
                 this.setControlHidden(this.downloadFormatControl, !formatEnabled || !isRows);
@@ -3680,6 +3748,8 @@ var workbench;
                 this.installPreciseScrolling(this.tableWrap, this.rowCoordinates, this.tablePosition);
                 this.installPreciseScrolling(this.records, this.recordCoordinates, this.recordPosition);
                 this.installKeyboardSideScrolling(this.tableWrap);
+                // N-Quads lines kept whole scroll sideways in the records box.
+                this.installKeyboardSideScrolling(this.records);
                 this.onScroll = function () {
                     _this.syncFloatingHeadScroll();
                     if (_this.scrollMode === 'element') {
@@ -3727,7 +3797,7 @@ var workbench;
                 var generation = ++this.layoutGeneration;
                 var requestedRow = this.requestedRow;
                 var availableWidth = this.resultWidth();
-                var currentScrollport = this.root.getAttribute('data-effective-layout') === 'records'
+                var currentScrollport = this.inRecordBox(this.root.getAttribute('data-effective-layout'))
                     ? this.records : this.tableWrap;
                 var viewportHeight = this.measuredViewportHeight(currentScrollport);
                 if (isRows && this.viewportMeasurement && (this.viewportMeasurement.width !== availableWidth
@@ -3742,14 +3812,15 @@ var workbench;
                 if (isRows) {
                     this.renderHeaders();
                 }
-                var effectiveLayout = this.layout === 'auto'
+                var layout = this.layout === 'nquads' && !this.showsStatements() ? 'auto' : this.layout;
+                var effectiveLayout = layout === 'auto'
                     ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
-                    : this.layout;
+                    : layout;
                 this.root.setAttribute('data-layout', this.layout);
                 this.setEffectiveLayout(effectiveLayout, isRows);
                 this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
                 this.viewportMeasurement = { width: availableWidth,
-                    height: this.measuredViewportHeight(effectiveLayout === 'records' ? this.records : this.tableWrap) };
+                    height: this.measuredViewportHeight(this.inRecordBox(effectiveLayout) ? this.records : this.tableWrap) };
                 this.table.setAttribute('aria-rowcount', String(this.source.rowCount() + 1));
                 var rendered = Promise.resolve();
                 if (isRows) {
@@ -3760,7 +3831,7 @@ var workbench;
                         if (effectiveLayout === 'table') {
                             return _this.renderRows();
                         }
-                        if (effectiveLayout === 'records') {
+                        if (_this.inRecordBox(effectiveLayout)) {
                             return _this.renderRecords();
                         }
                         return undefined;
@@ -3770,7 +3841,7 @@ var workbench;
                     if (_this.disposed || generation !== _this.layoutGeneration) {
                         return;
                     }
-                    if (_this.layout === 'auto' && isRows) {
+                    if (layout === 'auto' && isRows) {
                         var measuredLayout = chooseAutoLayout(_this.resultWidth(), _this.measureReadableColumnWidths(), 'auto', _this.wrap);
                         if (measuredLayout !== effectiveLayout) {
                             if (requestedRow !== null && _this.requestedRow === null) {
@@ -3785,7 +3856,7 @@ var workbench;
                     return undefined;
                 });
             };
-            /** Choose 'auto', 'table' or 'records'; the owner renders afterwards. */
+            /** Choose 'auto', 'table', 'records' or 'nquads'; the owner renders afterwards. */
             ResultTable.prototype.setLayout = function (layout) {
                 this.retainScrollAnchor();
                 this.layout = layout;
@@ -4284,10 +4355,12 @@ var workbench;
                     if (range.topSpacer > 0) {
                         desired.push(_this.getRecordSpacer('top'));
                     }
+                    var nquads = _this.root.getAttribute('data-effective-layout') === 'nquads';
                     rows.forEach(function (values, index) {
                         var rowIndex = start + index;
                         var key = String(rowIndex);
-                        var record = _this.recordNodes[key] || _this.createRecord(rowIndex, values);
+                        var record = _this.recordNodes[key]
+                            || (nquads ? _this.createNquadLine(rowIndex, values) : _this.createRecord(rowIndex, values));
                         _this.recordNodes[key] = record;
                         desired.push(record);
                     });
@@ -4341,6 +4414,14 @@ var workbench;
                 });
                 record.appendChild(fields);
                 return record;
+            };
+            /** One statement as an N-Quads line, in the records box of the N-Quads layout. */
+            ResultTable.prototype.createNquadLine = function (rowIndex, values) {
+                var line = createElement(this.document, 'div', 'query-result-nquad');
+                line.setAttribute('data-query-record-index', String(rowIndex));
+                this.setRowAttributes(line, rowIndex);
+                line.textContent = nquadsStatement(this.statementOf(values, rowIndex));
+                return line;
             };
             ResultTable.prototype.reconcileTableRows = function (desired, range) {
                 var _this = this;
@@ -4951,7 +5032,7 @@ var workbench;
                     return;
                 }
                 var observer = new view.ResizeObserver(function () {
-                    var scrollport = _this.root.getAttribute('data-effective-layout') === 'records'
+                    var scrollport = _this.inRecordBox(_this.root.getAttribute('data-effective-layout'))
                         ? _this.records : _this.tableWrap;
                     if (!_this.viewportMeasurement || _this.viewportMeasurement.width !== _this.resultWidth()
                         || _this.viewportMeasurement.height !== _this.measuredViewportHeight(scrollport)) {
@@ -4969,7 +5050,7 @@ var workbench;
                 if (!this.source.rowCount() || this.requestedRow !== null || this.reflowAnchor || this.scrollMode === 'page') {
                     return;
                 }
-                var records = this.root.getAttribute('data-effective-layout') === 'records';
+                var records = this.inRecordBox(this.root.getAttribute('data-effective-layout'));
                 var heights = records ? this.recordHeights : this.rowHeights;
                 var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
                 var position = records ? this.recordPosition : this.tablePosition;
@@ -4987,13 +5068,39 @@ var workbench;
                 this.recordHeightEstimateSampled = false;
             };
             ResultTable.prototype.setEffectiveLayout = function (layout, rows) {
-                if (rows && layout !== this.root.getAttribute('data-effective-layout')) {
+                var previous = this.root.getAttribute('data-effective-layout');
+                if (rows && layout !== previous) {
                     this.retainScrollAnchor();
                     this.invalidateVisibleRows();
+                    if (this.inRecordBox(previous) && this.inRecordBox(layout)) {
+                        // Records and N-Quads lines share the box but not their heights.
+                        this.recordHeights = new MeasuredRowHeights(this.source.rowCount(), this.measureRowEstimate());
+                        this.recordHeightEstimateSampled = false;
+                    }
                 }
                 this.root.setAttribute('data-effective-layout', layout);
                 this.tableWrap.hidden = !rows || layout !== 'table';
-                this.records.hidden = !rows || layout !== 'records';
+                this.records.hidden = !rows || !this.inRecordBox(layout);
+            };
+            /** Records and N-Quads lines are shown, windowed and scrolled in the records box. */
+            ResultTable.prototype.inRecordBox = function (layout) {
+                return layout === 'records' || layout === 'nquads';
+            };
+            /** True when the rows are statements the N-Quads layout can show. */
+            ResultTable.prototype.showsStatements = function () {
+                return !!this.source.statements && this.source.statements();
+            };
+            /** A row's [subject, predicate, object, graph]: the source's, else the row's columns of those names. */
+            ResultTable.prototype.statementOf = function (values, rowIndex) {
+                if (this.source.statement) {
+                    return this.source.statement(values, rowIndex);
+                }
+                var variables = this.source.variables();
+                var indexes = ['subject', 'predicate', 'object', 'context'].map(function (name) { return variables.indexOf(name); });
+                if (indexes[0] < 0 || indexes[1] < 0 || indexes[2] < 0) {
+                    return values.slice(0, 4);
+                }
+                return indexes.map(function (index) { return index >= 0 ? values[index] : null; });
             };
             ResultTable.prototype.invalidateVisibleRows = function () {
                 this.rowNodes = {};

@@ -1893,7 +1893,7 @@ namespace workbench {
 
         export function chooseAutoLayout(
                 availableWidth: number, minimumColumnWidths: number[], selected?: string, wrapValues?: boolean): string {
-            if (selected === 'table' || selected === 'records') {
+            if (selected === 'table' || selected === 'records' || selected === 'nquads') {
                 return selected;
             }
             if (wrapValues === false) {
@@ -2214,6 +2214,59 @@ namespace workbench {
                 : term.datatype && term.datatype !== XSD_STRING ? '^^<' + term.datatype + '>' : '');
         }
 
+        function unicodeEscape(character: string): string {
+            return '\\u' + ('000' + character.charCodeAt(0).toString(16).toUpperCase()).slice(-4);
+        }
+
+        var nquadsEscapes: { [character: string]: string } = {
+            '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\b': '\\b', '\f': '\\f'
+        };
+
+        /**
+         * A term as N-Quads writes it: full IRIs with the characters an IRI reference may not contain as \uXXXX,
+         * strings with \" \\ \n \r \t \b \f and the other control characters as \uXXXX, language tags with their base
+         * direction, datatypes other than xsd:string, blank nodes by the server's label and RDF 1.2 triple terms.
+         * Packed row-store terms are read as well.
+         */
+        export function nquadsTerm(storedTerm: any): string {
+            var term = unpackTerm(storedTerm);
+            if (!term) {
+                return '';
+            }
+            if (term.kind === 'iri') {
+                return '<' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
+            }
+            if (term.kind === 'bnode') {
+                var blankNode = term.value || '';
+                return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
+            }
+            if (term.kind === 'triple') {
+                return '<<( ' + nquadsTerm(term.subject) + ' ' + nquadsTerm(term.predicate) + ' '
+                    + nquadsTerm(term.object) + ' )>>';
+            }
+            var string = '"' + String(term.value || '').replace(/["\\\u0000-\u001f\u007f]/g,
+                (character: string) => nquadsEscapes[character] || unicodeEscape(character)) + '"';
+            return string + (term.language
+                ? '@' + term.language + (term.direction ? '--' + term.direction : '')
+                : term.datatype && term.datatype !== XSD_STRING ? '^^' + nquadsTerm({ kind: 'iri', value: term.datatype }) : '');
+        }
+
+        /**
+         * One N-Quads line for a statement [subject, predicate, object, graph]: the graph is left out for the default
+         * graph (null or absent); '' when the subject, predicate or object is missing.
+         */
+        export function nquadsStatement(terms: any[]): string {
+            var values = terms || [];
+            if (!values[0] || !values[1] || !values[2]) {
+                return '';
+            }
+            var parts = [nquadsTerm(values[0]), nquadsTerm(values[1]), nquadsTerm(values[2])];
+            if (values[3]) {
+                parts.push(nquadsTerm(values[3]));
+            }
+            return parts.join(' ') + ' .';
+        }
+
         export function exploreResource(term: RdfTerm): string {
             if (!term) {
                 return '';
@@ -2347,6 +2400,8 @@ namespace workbench {
             readonly downloadLimitControl: any;
             readonly datatypeControl: any;
             readonly layoutControl: any;
+            /** The Layout choice N-Quads, in the select while the result is statements (CONSTRUCT and DESCRIBE). */
+            private nquadsLayoutOption: any;
             readonly wrapControl: any;
             private document: any;
             private downloadFrame: any = null;
@@ -2533,9 +2588,11 @@ namespace workbench {
 
                 this.layoutControl = this.createSelect('result-layout', 'Result layout', [
                     { value: 'auto', label: 'Auto' }, { value: 'table', label: 'Table' },
-                    { value: 'records', label: 'Records' }
+                    { value: 'records', label: 'Records' }, { value: 'nquads', label: 'N-Quads' }
                 ]);
-                this.layoutControl.value = initialLayout;
+                this.nquadsLayoutOption = Array.prototype.filter.call(this.layoutControl.children,
+                    (option: any) => option.value === 'nquads')[0] || null;
+                this.layoutControl.value = initialLayout === 'nquads' ? 'auto' : initialLayout;
                 var wrap = this.createCheckbox('result-wrap-values', 'Wrap values', initialWrap);
                 this.wrapControl = wrap.input;
                 this.datatypeControl = this.createCheckbox(
@@ -2610,7 +2667,9 @@ namespace workbench {
                     rowCount: () => this.state.rowCount,
                     variables: () => this.state.variables,
                     read: (start: number, count: number) => this.ensureRowStore().then(store => store.read(start, count)),
-                    namespaces: (rowIndex: number) => this.namespacesForRow(rowIndex)
+                    namespaces: (rowIndex: number) => this.namespacesForRow(rowIndex),
+                    // CONSTRUCT and DESCRIBE results are statements: subject, predicate, object and context.
+                    statements: () => this.state.view === 'graph'
                 }, {
                     layout: initialLayout,
                     wrap: initialWrap,
@@ -3759,6 +3818,20 @@ namespace workbench {
                         : state.view === 'tuple' ? 'result-download-format-tuple' : 'result-download-format');
                 var downloadControlsVisible = downloadEnabled || formatEnabled || downloadLimitEnabled;
                 this.setControlHidden(this.layoutControl, !isRows || !layoutEnabled);
+                // N-Quads is offered for statements only (an option, not a hidden one: Safari shows hidden options); a
+                // chosen N-Quads layout waits for the next result of statements, and meanwhile the select says what
+                // the table shows.
+                var statements = state.view === 'graph';
+                if (this.nquadsLayoutOption && statements && this.nquadsLayoutOption.parentNode !== this.layoutControl) {
+                    this.layoutControl.appendChild(this.nquadsLayoutOption);
+                } else if (this.nquadsLayoutOption && !statements
+                        && this.nquadsLayoutOption.parentNode === this.layoutControl) {
+                    this.layoutControl.removeChild(this.nquadsLayoutOption);
+                }
+                var shownLayout = this.layout === 'nquads' && !statements ? 'auto' : this.layout;
+                if (this.layoutControl.value !== shownLayout) {
+                    this.layoutControl.value = shownLayout;
+                }
                 this.setControlHidden(this.wrapControl, !isRows || !wrapEnabled);
                 this.setControlHidden(this.datatypeControl, !isRows || !datatypeEnabled);
                 this.setControlHidden(this.downloadFormatControl, !formatEnabled || !isRows);
@@ -3843,10 +3916,20 @@ namespace workbench {
             read(start: number, count: number): Promise<any[][]>;
             /** The prefixes that abbreviate the IRIs of a row. */
             namespaces(rowIndex: number): { prefix: string; name: string }[];
+            /** True when the rows are RDF statements, which the N-Quads layout can show; false when absent. */
+            statements?(): boolean;
+            /**
+             * A row's statement [subject, predicate, object, graph] for the N-Quads layout, for a table that shows only
+             * some of its terms; else the row's subject, predicate, object and context columns.
+             */
+            statement?(values: any[], rowIndex: number): any[];
         }
 
         export interface ResultTableOptions {
-            /** 'auto' (table when the readable columns fit, else records), 'table' or 'records'. */
+            /**
+             * 'auto' (table when the readable columns fit, else records), 'table', 'records' or 'nquads' (one N-Quads
+             * line per statement; 'auto' for rows that are not statements).
+             */
             layout?: string;
             /** Wrap long values in their columns (the default) or keep each value on one line. */
             wrap?: boolean;
@@ -4017,6 +4100,8 @@ namespace workbench {
                 this.installPreciseScrolling(this.tableWrap, this.rowCoordinates, this.tablePosition);
                 this.installPreciseScrolling(this.records, this.recordCoordinates, this.recordPosition);
                 this.installKeyboardSideScrolling(this.tableWrap);
+                // N-Quads lines kept whole scroll sideways in the records box.
+                this.installKeyboardSideScrolling(this.records);
                 this.onScroll = () => {
                     this.syncFloatingHeadScroll();
                     if (this.scrollMode === 'element') {
@@ -4064,7 +4149,7 @@ namespace workbench {
                 var generation = ++this.layoutGeneration;
                 var requestedRow = this.requestedRow;
                 var availableWidth = this.resultWidth();
-                var currentScrollport = this.root.getAttribute('data-effective-layout') === 'records'
+                var currentScrollport = this.inRecordBox(this.root.getAttribute('data-effective-layout'))
                     ? this.records : this.tableWrap;
                 var viewportHeight = this.measuredViewportHeight(currentScrollport);
                 if (isRows && this.viewportMeasurement && (this.viewportMeasurement.width !== availableWidth
@@ -4079,14 +4164,15 @@ namespace workbench {
                 if (isRows) {
                     this.renderHeaders();
                 }
-                var effectiveLayout = this.layout === 'auto'
+                var layout = this.layout === 'nquads' && !this.showsStatements() ? 'auto' : this.layout;
+                var effectiveLayout = layout === 'auto'
                     ? chooseAutoLayout(availableWidth, this.measureReadableColumnWidths(), 'auto', this.wrap)
-                    : this.layout;
+                    : layout;
                 this.root.setAttribute('data-layout', this.layout);
                 this.setEffectiveLayout(effectiveLayout, isRows);
                 this.root.setAttribute('data-wrap', this.wrap ? 'true' : 'false');
                 this.viewportMeasurement = { width: availableWidth,
-                    height: this.measuredViewportHeight(effectiveLayout === 'records' ? this.records : this.tableWrap) };
+                    height: this.measuredViewportHeight(this.inRecordBox(effectiveLayout) ? this.records : this.tableWrap) };
                 this.table.setAttribute('aria-rowcount', String(this.source.rowCount() + 1));
                 var rendered = Promise.resolve();
                 if (isRows) {
@@ -4097,7 +4183,7 @@ namespace workbench {
                         if (effectiveLayout === 'table') {
                             return this.renderRows();
                         }
-                        if (effectiveLayout === 'records') {
+                        if (this.inRecordBox(effectiveLayout)) {
                             return this.renderRecords();
                         }
                         return undefined;
@@ -4107,7 +4193,7 @@ namespace workbench {
                     if (this.disposed || generation !== this.layoutGeneration) {
                         return;
                     }
-                    if (this.layout === 'auto' && isRows) {
+                    if (layout === 'auto' && isRows) {
                         var measuredLayout = chooseAutoLayout(this.resultWidth(),
                             this.measureReadableColumnWidths(), 'auto', this.wrap);
                         if (measuredLayout !== effectiveLayout) {
@@ -4124,7 +4210,7 @@ namespace workbench {
                 });
             }
 
-            /** Choose 'auto', 'table' or 'records'; the owner renders afterwards. */
+            /** Choose 'auto', 'table', 'records' or 'nquads'; the owner renders afterwards. */
             setLayout(layout: string) {
                 this.retainScrollAnchor();
                 this.layout = layout;
@@ -4638,10 +4724,12 @@ namespace workbench {
                     if (range.topSpacer > 0) {
                         desired.push(this.getRecordSpacer('top'));
                     }
+                    var nquads = this.root.getAttribute('data-effective-layout') === 'nquads';
                     rows.forEach((values, index) => {
                         var rowIndex = start + index;
                         var key = String(rowIndex);
-                        var record = this.recordNodes[key] || this.createRecord(rowIndex, values);
+                        var record = this.recordNodes[key]
+                            || (nquads ? this.createNquadLine(rowIndex, values) : this.createRecord(rowIndex, values));
                         this.recordNodes[key] = record;
                         desired.push(record);
                     });
@@ -4696,6 +4784,15 @@ namespace workbench {
                 });
                 record.appendChild(fields);
                 return record;
+            }
+
+            /** One statement as an N-Quads line, in the records box of the N-Quads layout. */
+            private createNquadLine(rowIndex: number, values: any[]): any {
+                var line = createElement(this.document, 'div', 'query-result-nquad');
+                line.setAttribute('data-query-record-index', String(rowIndex));
+                this.setRowAttributes(line, rowIndex);
+                line.textContent = nquadsStatement(this.statementOf(values, rowIndex));
+                return line;
             }
 
             private reconcileTableRows(desired: any[], range: VirtualRowRange) {
@@ -5339,7 +5436,7 @@ namespace workbench {
                     return;
                 }
                 var observer = new view.ResizeObserver(() => {
-                    var scrollport = this.root.getAttribute('data-effective-layout') === 'records'
+                    var scrollport = this.inRecordBox(this.root.getAttribute('data-effective-layout'))
                         ? this.records : this.tableWrap;
                     if (!this.viewportMeasurement || this.viewportMeasurement.width !== this.resultWidth()
                             || this.viewportMeasurement.height !== this.measuredViewportHeight(scrollport)) {
@@ -5359,7 +5456,7 @@ namespace workbench {
                 if (!this.source.rowCount() || this.requestedRow !== null || this.reflowAnchor || this.scrollMode === 'page') {
                     return;
                 }
-                var records = this.root.getAttribute('data-effective-layout') === 'records';
+                var records = this.inRecordBox(this.root.getAttribute('data-effective-layout'));
                 var heights = records ? this.recordHeights : this.rowHeights;
                 var coordinates = records ? this.recordCoordinates : this.rowCoordinates;
                 var position = records ? this.recordPosition : this.tablePosition;
@@ -5379,13 +5476,42 @@ namespace workbench {
             }
 
             private setEffectiveLayout(layout: string, rows: boolean) {
-                if (rows && layout !== this.root.getAttribute('data-effective-layout')) {
+                var previous = this.root.getAttribute('data-effective-layout');
+                if (rows && layout !== previous) {
                     this.retainScrollAnchor();
                     this.invalidateVisibleRows();
+                    if (this.inRecordBox(previous) && this.inRecordBox(layout)) {
+                        // Records and N-Quads lines share the box but not their heights.
+                        this.recordHeights = new MeasuredRowHeights(this.source.rowCount(), this.measureRowEstimate());
+                        this.recordHeightEstimateSampled = false;
+                    }
                 }
                 this.root.setAttribute('data-effective-layout', layout);
                 this.tableWrap.hidden = !rows || layout !== 'table';
-                this.records.hidden = !rows || layout !== 'records';
+                this.records.hidden = !rows || !this.inRecordBox(layout);
+            }
+
+            /** Records and N-Quads lines are shown, windowed and scrolled in the records box. */
+            private inRecordBox(layout: string): boolean {
+                return layout === 'records' || layout === 'nquads';
+            }
+
+            /** True when the rows are statements the N-Quads layout can show. */
+            private showsStatements(): boolean {
+                return !!this.source.statements && this.source.statements();
+            }
+
+            /** A row's [subject, predicate, object, graph]: the source's, else the row's columns of those names. */
+            private statementOf(values: any[], rowIndex: number): any[] {
+                if (this.source.statement) {
+                    return this.source.statement(values, rowIndex);
+                }
+                var variables = this.source.variables();
+                var indexes = ['subject', 'predicate', 'object', 'context'].map(name => variables.indexOf(name));
+                if (indexes[0] < 0 || indexes[1] < 0 || indexes[2] < 0) {
+                    return values.slice(0, 4);
+                }
+                return indexes.map(index => index >= 0 ? values[index] : null);
             }
 
             invalidateVisibleRows() {

@@ -2975,7 +2975,7 @@ var workbench;
         }
         query_1.getResultPresentationState = getResultPresentationState;
         function applyResultPresentationState(layout, wrap) {
-            if (layout === 'table' || layout === 'records' || layout === 'auto') {
+            if (layout === 'table' || layout === 'records' || layout === 'auto' || layout === 'nquads') {
                 resultPresentationLayout = layout;
             }
             resultPresentationWrap = wrap !== false;

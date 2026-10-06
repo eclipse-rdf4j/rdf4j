@@ -1198,6 +1198,28 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     min-height: 0;
 }
 
+/* The N-Quads layout: one statement per line in the records box, in the code font. A line is never wrapped (whatever
+ * Wrap values says); the box scrolls sideways. */
+.query-result-layout[data-effective-layout="nquads"] > .query-result-records {
+    padding: 0.4rem 0;
+    overflow-x: auto;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--query-surface);
+    font-family: var(--workbench-code-font);
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+.query-result-nquad {
+    flex: none;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: 0.1rem 0.8rem;
+    white-space: pre;
+}
+
 .query-result-load-more-actions {
     margin-block-start: var(--workbench-space-subgroup);
 }

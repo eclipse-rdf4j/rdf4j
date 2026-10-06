@@ -850,12 +850,125 @@ module workbench {
                 regions.renderTableRows = () => runtime.render(tableRows(runtime, model, context, options,
                     records(model), rowStart(model), rowCount(model), emptyText), regions.tableBody);
             }
-            return h`<table class="data" data-workbench-row-table=${model.rowStore && total ? 'true' : runtime.nothing}>
+            return tableScroll(runtime, h`<table class="data" data-workbench-row-table=${model.rowStore && total ? 'true' : runtime.nothing}>
                 ${columns.length ? h`<thead><tr>${columns.map((name: string) => options && options.header
                     ? options.header(name) : h`<th scope="col">${columnLabel(name, options)}</th>`)}</tr></thead>` : ''}
                 ${regions ? regions.tableBody
                     : h`<tbody>${tableRows(runtime, model, context, options, allRows, rowStart(model), total, emptyText)}</tbody>`}
-            </table>`;
+            </table>`);
+        }
+
+        /**
+         * How a kind of page presents its tables (Display: Layout and Wrap values). The choice is kept in memory while
+         * the Workbench document lives, as the Query page keeps its own, so the next Explore resource or the next
+         * preview starts with it.
+         */
+        interface TablePresentation {
+            /** 'auto', 'table', 'records' or 'nquads' (tables of statements only). */
+            layout: string;
+            /** Wrap long values in their columns, or keep each on one line and scroll the table sideways. */
+            wrap: boolean;
+        }
+
+        const tablePresentations: { [kind: string]: TablePresentation } = Object.create(null);
+
+        function tablePresentation(kind: string): TablePresentation {
+            return tablePresentations[kind] || (tablePresentations[kind] = { layout: 'auto', wrap: true });
+        }
+
+        /** A list table's box: it scrolls the table sideways when the card does not wrap its values. */
+        function tableScroll(runtime: LitRuntime, content: any): any {
+            return runtime.html`<div class="workbench-table-scroll">${content}</div>`;
+        }
+
+        const tableLayouts: string[][] = [['auto', 'Auto'], ['table', 'Table'], ['records', 'Records'], ['nquads', 'N-Quads']];
+
+        /**
+         * The Display fields of a page's tables: Layout (tables of statements: Auto, Table, Records or N-Quads) and Wrap
+         * values. The controls have no name, so a form around them does not send them.
+         */
+        function tableDisplayFields(runtime: LitRuntime, model: PageModel, ids: { layout?: string; wrap: string },
+                                    onWrap: (wrap: boolean, event: any) => void): any {
+            const h = runtime.html;
+            const presentation = tablePresentation(model.viewId);
+            return h`${ids.layout ? h`<div class="workbench-field workbench-disclosure__field"><label for=${ids.layout}>Layout</label>
+                    <select id=${ids.layout} @change=${(event: any) => setPageResultPresentation(model,
+                        { layout: String(event.currentTarget.value) })}>${tableLayouts.map((choice: string[]) =>
+                        h`<option value=${choice[0]} ?selected=${presentation.layout === choice[0]}>${choice[1]}</option>`)}</select>
+                </div>` : ''}<label class="workbench-check" for=${ids.wrap}>
+                    <input id=${ids.wrap} type="checkbox" .checked=${presentation.wrap}
+                        @change=${(event: any) => onWrap(!!event.currentTarget.checked, event)} />
+                    <span>Wrap values</span></label>`;
+        }
+
+        /**
+         * A Display disclosure (toggle and pane) for a card of tables, with tableDisplayFields; it is in the card's first
+         * render, so the route's decoratePage binds it, and hidden while the card shows no table.
+         */
+        function tableDisplay(runtime: LitRuntime, model: PageModel, prefix: string, ids: { layout?: string; wrap: string },
+                              onWrap: (wrap: boolean, event: any) => void, hidden?: boolean): any {
+            return workbench.detailDisclosure.render(runtime.html, {
+                id: prefix + '-options', toggleId: prefix + '-options-toggle', panelId: prefix + '-options-panel',
+                label: 'Display', accessibleName: 'Table display options', hidden: !!hidden,
+                ownerClass: 'workbench-table-display',
+                toggleClass: 'workbench-action workbench-action--secondary'
+            }, runtime.html`<div class="workbench-disclosure__fields">${tableDisplayFields(runtime, model, ids, onWrap)}</div>`);
+        }
+
+        /**
+         * A row menu in a list table that scrolls sideways (Wrap values off) would be cut off by the table's box, so it
+         * opens fixed under its button and follows the button while the page or the box scrolls; otherwise it keeps
+         * its place in the row.
+         */
+        function placeRowMenu(button: any, panel: any): void {
+            const card = button.closest ? button.closest('[data-table-wrap]') : null;
+            const scrolling = !!card && card.getAttribute('data-table-wrap') === 'false'
+                && !!button.closest('.workbench-table-scroll');
+            const view = button.ownerDocument && button.ownerDocument.defaultView;
+            if (!scrolling || !view) {
+                panel.style.position = '';
+                panel.style.top = '';
+                panel.style.right = '';
+                panel.style.left = '';
+                return;
+            }
+            const place = () => {
+                if (panel.hidden) {
+                    view.removeEventListener('scroll', place, true);
+                    view.removeEventListener('resize', place, false);
+                    return;
+                }
+                const box = button.getBoundingClientRect();
+                const width = button.ownerDocument.documentElement.clientWidth || view.innerWidth;
+                panel.style.position = 'fixed';
+                panel.style.top = (box.bottom + 6) + 'px';
+                panel.style.right = Math.max(12, width - box.right) + 'px';
+                panel.style.left = 'auto';
+            };
+            place();
+            view.addEventListener('scroll', place, true);
+            view.addEventListener('resize', place, false);
+        }
+
+        /**
+         * A list card's Display (Repositories, Types, Graphs, Namespaces): Wrap values sets the card's data-table-wrap,
+         * which the CSS reads (scroll: one line per value, the table scrolls sideways in .workbench-table-scroll and
+         * stays a table on phones).
+         */
+        function listTableDisplay(runtime: LitRuntime, model: PageModel): any {
+            const kind = model.viewId;
+            return tableDisplay(runtime, model, kind + '-display', { wrap: kind + '-wrap-values' },
+                (wrap: boolean, event: any) => {
+                    tablePresentation(kind).wrap = wrap;
+                    const card = event.currentTarget.closest('[data-table-wrap]');
+                    if (card) {
+                        card.setAttribute('data-table-wrap', wrap ? 'true' : 'false');
+                    }
+                });
+        }
+
+        function listTableWrap(model: PageModel): string {
+            return tablePresentation(model.viewId).wrap ? 'true' : 'false';
         }
 
         function tableRows(runtime: LitRuntime, model: PageModel, context: ViewContext,
@@ -931,10 +1044,18 @@ module workbench {
             count?: number;
             /** The page row of a table row (data-workbench-row-index); the table row itself when absent. */
             rowIndex?: (index: number) => number;
+            /**
+             * A table row's whole statement [subject, predicate, object, graph] for the N-Quads layout, when the table
+             * shows only some of its terms (Explore's role groups); else its subject, predicate, object and context.
+             */
+            statement?: (index: number) => any[];
             namespaces: { prefix: string; name: string }[];
             /** Changes whenever the rows change; a table with another signature is built again. */
             signature: string;
         }
+
+        /** The terms of a statement in the N-Quads layout, by the names of the page's columns. */
+        const statementColumns = ['subject', 'predicate', 'object', 'context'];
 
         /** Statement columns are named as people say them; the graph column is the Graph. */
         const statementColumnLabels: { [name: string]: string } = {
@@ -975,14 +1096,22 @@ module workbench {
                 host.className = 'query-result-layout query-result-embedded workbench-result-table';
                 host.setAttribute('data-workbench-result-table', spec.key);
                 const rows = spec.rows;
-                const source = {
+                const source: any = {
                     rowCount: () => rows ? rows.length : spec.count || 0,
                     variables: () => spec.columns,
                     read: (start: number, count: number) => rows
                         ? Promise.resolve(rows.slice(start, start + count)) : spec.store.read(start, count),
-                    namespaces: () => spec.namespaces
+                    namespaces: () => spec.namespaces,
+                    statements: () => true
                 };
+                if (spec.statement) {
+                    source.statement = (_values: any[], index: number) => spec.statement(index);
+                }
+                // The page's Display choices so far, so the next Explore resource or preview starts with them.
+                const presentation = tablePresentation(model.viewId);
                 const table = new stream.ResultTable(host, source, {
+                    layout: presentation.layout,
+                    wrap: presentation.wrap,
                     label: spec.label,
                     renderAllRows: true,
                     columnLabel: statementColumnLabel,
@@ -1042,6 +1171,28 @@ module workbench {
         function showPageResultDatatypes(model: PageModel, show: boolean): void {
             (pageResultTables.get(model) || []).forEach((entry: PageResultTable) => {
                 entry.table.setShowDatatypes(show);
+                if (entry.host.isConnected !== false) {
+                    entry.table.render().then(null, () => {});
+                }
+            });
+        }
+
+        /** Change the Layout or wrapping of every result table of a page (its Display pane) and of the ones it builds next. */
+        function setPageResultPresentation(model: PageModel, change: { layout?: string; wrap?: boolean }): void {
+            const presentation = tablePresentation(model.viewId);
+            if (typeof change.layout === 'string') {
+                presentation.layout = change.layout;
+            }
+            if (typeof change.wrap === 'boolean') {
+                presentation.wrap = change.wrap;
+            }
+            (pageResultTables.get(model) || []).forEach((entry: PageResultTable) => {
+                if (typeof change.layout === 'string') {
+                    entry.table.setLayout(presentation.layout);
+                }
+                if (typeof change.wrap === 'boolean') {
+                    entry.table.setWrap(presentation.wrap);
+                }
                 if (entry.host.isConnected !== false) {
                     entry.table.render().then(null, () => {});
                 }
@@ -1247,9 +1398,11 @@ module workbench {
                     </button>
                 </th>`;
             };
-            return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card">
+            return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card"
+                    data-table-wrap=${listTableWrap(model)}>
                 <div class="workbench-browse-card__header">
                     <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
+                    ${listTableDisplay(runtime, model)}
                     ${pageEnabled(context, 'create') ? h`<a class="workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create"
                         href="${urlFor(context, 'create')}">${icon(runtime, 'create')}<span>Create repository</span></a>` : ''}
                 </div>
@@ -1695,9 +1848,10 @@ module workbench {
                         }}>${icon(runtime, 'delete')}</button>` : ''}</td>
             </tr>`;
             return h`${state.errorInRow ? '' : errorCallout(runtime, model)}<section id="namespaces-results"
-                    class="workbench-island workbench-responsive-records workbench-browse-card">
+                    class="workbench-island workbench-responsive-records workbench-browse-card" data-table-wrap=${listTableWrap(model)}>
                 <div class="workbench-browse-card__header">
                     <h2>Namespaces</h2><span class="workbench-browse-card__count">${formatCount(String(rows.length), context)}</span>
+                    ${listTableDisplay(runtime, model)}
                     <div class="workbench-browse-card__tools">
                     <form class="workbench-browse-card__filter" role="search" @submit=${(event: any) => event.preventDefault()}>
                         <label class="workbench-visually-hidden" for="namespaces-filter">Filter prefixes or IRIs</label>
@@ -1719,7 +1873,7 @@ module workbench {
                         }}>${icon(runtime, 'add')}<span>Add namespace</span></button>` : ''}
                     </div>
                 </div>
-                <table class="data workbench-namespaces-table">
+                ${tableScroll(runtime, h`<table class="data workbench-namespaces-table">
                     <thead><tr><th scope="col">Prefix</th><th scope="col">Namespace</th>
                         <th scope="col"><span class="workbench-visually-hidden">Actions</span></th></tr></thead>
                     <tbody>
@@ -1728,7 +1882,7 @@ module workbench {
                         ${!visible.length && !state.adding ? h`<tr class="workbench-empty-row"><td class="workbench-empty-table-message" role="status" colspan="3">${
                             rows.length ? 'No namespaces match this filter.' : 'No namespaces.'}</td></tr>` : ''}
                     </tbody>
-                </table>
+                </table>`)}
             </section>`;
         }
 
@@ -1842,9 +1996,10 @@ module workbench {
             // The value attribute leaves a field that was typed into alone, so this page rendering again (its counts
             // arriving) keeps what is typed; bindRowWindows sets the field to the filter of each page opened.
             return h`${errorCallout(runtime, model)}<section id=${route + '-results'}
-                    class="workbench-island workbench-responsive-records workbench-browse-card">
+                    class="workbench-island workbench-responsive-records workbench-browse-card" data-table-wrap=${listTableWrap(model)}>
                 <div class="workbench-browse-card__header">
                     <h2>${list.title}</h2><span class="workbench-browse-card__count">${formatCount(String(counts.listed), context)}</span>
+                    ${listTableDisplay(runtime, model)}
                     <form class="workbench-browse-card__filter" action=${route} method="get" role="search">
                         <label class="workbench-visually-hidden" for="${inputId}">${'Filter ' + list.noun}</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input
@@ -1939,6 +2094,7 @@ module workbench {
                         columns,
                         rows: projectRows(model, rows, columns),
                         rowIndex: (position: number) => entries[position].index,
+                        statement: (position: number) => projectRows(model, [rows[position]], statementColumns)[0],
                         namespaces,
                         signature: columns.join(' ') + ':' + entries.map((entry: any) => entry.index).join(',')
                     })}
@@ -2294,7 +2450,8 @@ module workbench {
                 ownerClass: 'workbench-options workbench-form-subgroup'
             }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
                     ${limitSelect(runtime, 'limit_explore', context, String(resultLimit))}
-                </div><label class="workbench-check" for="explore-show-datatypes">
+                </div>${tableDisplayFields(runtime, model, { layout: 'explore-result-layout', wrap: 'explore-wrap-values' },
+                    (wrap: boolean) => setPageResultPresentation(model, { wrap }))}<label class="workbench-check" for="explore-show-datatypes">
                     <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked
                         @change=${(event: any) => showPageResultDatatypes(model, !!event.currentTarget.checked)} />
                     <span>Show datatypes</span></label>`);
@@ -2615,7 +2772,10 @@ module workbench {
                         class="export-file-name">${fileName}</code></span></button></div>
             </form>
             <section id="export-results" class="workbench-island export-card">
-                <div class="export-card__header"><h2>Preview statements</h2>
+                <div class="export-card__header"><div class="export-card__title"><h2>Preview statements</h2>
+                    ${tableDisplay(runtime, model, 'export-preview', { layout: 'export-preview-layout',
+                        wrap: 'export-preview-wrap-values' }, (wrap: boolean) => setPageResultPresentation(model, { wrap }),
+                        !rowCount(model))}</div>
                     <p class="workbench-page-meta">Shows the first statements of ${repositoryName} here. It does not change the
                         downloaded file.</p></div>
                 <form id="export-preview-form" class="export-preview__controls" action="export">
@@ -3267,7 +3427,10 @@ module workbench {
             <section id="remove-preview" class="workbench-island remove-preview"
                     aria-labelledby="remove-preview-heading" aria-busy=${preview.state === 'loading' ? 'true' : 'false'}
                     ?hidden=${preview.state === 'hidden'}>
-                <h2 id="remove-preview-heading">Statements to remove</h2>
+                <div class="remove-preview__header"><h2 id="remove-preview-heading">Statements to remove</h2>
+                    ${tableDisplay(runtime, model, 'remove-preview', { layout: 'remove-preview-layout',
+                        wrap: 'remove-preview-wrap-values' }, (wrap: boolean) => setPageResultPresentation(model, { wrap }),
+                        !preview.rows.length)}</div>
                 <p id="remove-preview-status" class="workbench-page-meta" role="status">${preview.state === 'hidden' ? ''
                     : removePreviewLabel(preview)}</p>
                 ${preview.rows.length ? resultTable(runtime, model, context, {
@@ -4658,7 +4821,8 @@ module workbench {
                 elements('[data-workbench-row-menu]').forEach((button: any) => {
                     const panel = button.nextElementSibling;
                     if (panel && button.getAttribute('data-workbench-popover-bound') !== 'true') {
-                        rowMenuDisposers.push(popover.bind(button, panel));
+                        rowMenuDisposers.push(popover.bind(button, panel,
+                            { onOpen: (opened: any) => placeRowMenu(button, opened) }));
                     }
                 });
             };
