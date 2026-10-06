@@ -213,6 +213,78 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void implicitReadsRespectIncludeInferredAfterSerializableReads() {
+		for (IsolationLevels defaultLevel : IsolationLevels.values()) {
+			if (defaultLevel != IsolationLevels.SERIALIZABLE) {
+				assertImplicitReadsRespectIncludeInferred(defaultLevel);
+			}
+		}
+	}
+
+	private void assertImplicitReadsRespectIncludeInferred(IsolationLevels defaultLevel) {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink() {
+			@Override
+			public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				observations.incrementAndGet();
+			}
+		});
+		Sail sail = createSail(sailStore, defaultLevel);
+		try {
+			for (SailSource source : List.of(sailStore.getExplicitSailSource(), sailStore.getInferredSailSource())) {
+				int beforeSerializableRead = observations.get();
+				try (SailDataset dataset = source.dataset(IsolationLevels.SERIALIZABLE);
+						var statements = dataset.getStatements(null, RDFS.LABEL, null)) {
+					assertFalse(statements.hasNext());
+				}
+				assertTrue(observations.get() > beforeSerializableRead,
+						"Each root must exercise its serializable observing sink");
+			}
+			int beforeImplicitReads = observations.get();
+			// The no-op backing fixture keeps seeded data in the roots while these datasets remain open.
+			try (SailDataset explicitGuard = sailStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					SailDataset inferredGuard = sailStore.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT);
+					SailConnection reader = sail.getConnection()) {
+				ValueFactory vf = sail.getValueFactory();
+				Statement explicit = vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral("explicit"));
+				Statement inferred = vf.createStatement(RDFS.CLASS, RDFS.LABEL, vf.createLiteral("inferred"));
+				try (SailSink writer = sailStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+					writer.approve(explicit.getSubject(), explicit.getPredicate(), explicit.getObject(), null);
+					writer.flush();
+				}
+				try (SailSink writer = sailStore.getInferredSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+					writer.approve(inferred.getSubject(), inferred.getPredicate(), inferred.getObject(), null);
+					writer.flush();
+				}
+				for (boolean includeInferred : new boolean[] { false, true }) {
+					List<Statement> expected = includeInferred ? List.of(explicit, inferred) : List.of(explicit);
+					try (var statements = reader.getStatements(null, RDFS.LABEL, null, includeInferred)) {
+						List<Statement> actual = new ArrayList<>();
+						statements.forEachRemaining(actual::add);
+						assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+					}
+					assertEquals(beforeImplicitReads, observations.get(), defaultLevel + ": getStatements");
+					try (var rows = reader.evaluate(new StatementPattern(new Var("s"), new Var("p", RDFS.LABEL),
+							new Var("o")), null, EmptyBindingSet.getInstance(), includeInferred)) {
+						List<Statement> actual = new ArrayList<>();
+						while (rows.hasNext()) {
+							var row = rows.next();
+							actual.add(vf.createStatement((Resource) row.getValue("s"), RDFS.LABEL, row.getValue("o")));
+						}
+						assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+					}
+					assertEquals(beforeImplicitReads, observations.get(), defaultLevel + ": evaluate");
+					assertFalse(reader.isActive());
+				}
+			}
+			assertEquals(beforeImplicitReads, observations.get(),
+					"Closing the root datasets must not flush implicit read observations: " + defaultLevel);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	public void implicitReadDoesNotObserveWhileSerializableOwnerIsOpen() {
 		List<Resource> observedSubjects = new ArrayList<>();
 		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink() {
