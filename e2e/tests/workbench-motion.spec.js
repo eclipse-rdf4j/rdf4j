@@ -349,30 +349,49 @@ test('query options animate reversibly while semantic state and focus update imm
 	// The result limit left Query settings (results stream whole and "Load more" continues them); the timeout is its
 	// first control now.
 	await panel.locator('#query-timeout').focus();
-	await page.evaluate(() => document.getElementById('query-options-toggle').click());
-	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-	await expect(toggle).toBeFocused();
-	const closingState = await panel.evaluate(element => ({
-		hidden: element.hidden,
-		inert: element.inert,
-		ariaHidden: element.getAttribute('aria-hidden'),
-		active: element.getAnimations({ subtree: false })
-			.some(animation => animation.playState === 'running')
-	}));
-	expect(closingState).toMatchObject({ hidden: false, inert: true, ariaHidden: 'true', active: true });
-	await expect.poll(() => hasVisibleIntermediateMotion(panel)).toBe(true);
-	const queryReverse = await panel.evaluate(element => {
-		const before = element.getBoundingClientRect().height;
-		document.getElementById('query-options-toggle').click();
-		const animation = element.getAnimations({ subtree: false })
-			.find(candidate => candidate.playState === 'running');
-		const frames = animation.effect.getKeyframes();
-		return {
-			before,
-			firstKeyframeHeight: parseFloat(frames[0].height),
-			currentHeight: element.getBoundingClientRect().height
+	// The 180 ms close is over within a few round trips from the test process on a busy machine, so the page closes
+	// the panel, records the state right after the click, and reverses the motion in the first frame that shows it
+	// part-way.
+	const { closingState, queryReverse } = await panel.evaluate(element => new Promise(resolve => {
+		const button = document.getElementById('query-options-toggle');
+		const running = () => element.getAnimations({ subtree: false })
+			.some(animation => animation.playState === 'running');
+		button.click();
+		const closing = {
+			expanded: button.getAttribute('aria-expanded'),
+			focused: document.activeElement === button,
+			hidden: element.hidden,
+			inert: element.inert,
+			ariaHidden: element.getAttribute('aria-hidden'),
+			active: running()
 		};
-	});
+		const deadline = performance.now() + 2000;
+		const sample = () => {
+			const before = element.getBoundingClientRect().height;
+			if (running() && before > 1 && before < element.scrollHeight - 1) {
+				button.click();
+				const animation = element.getAnimations({ subtree: false })
+					.find(candidate => candidate.playState === 'running');
+				resolve({
+					closingState: closing,
+					queryReverse: {
+						seenMidMotion: true,
+						before,
+						firstKeyframeHeight: parseFloat(animation.effect.getKeyframes()[0].height),
+						currentHeight: element.getBoundingClientRect().height
+					}
+				});
+			} else if (running() && performance.now() < deadline) {
+				requestAnimationFrame(sample);
+			} else {
+				resolve({ closingState: closing, queryReverse: { seenMidMotion: false, before } });
+			}
+		};
+		requestAnimationFrame(sample);
+	}));
+	expect(closingState).toMatchObject({ expanded: 'false', focused: true, hidden: false, inert: true,
+		ariaHidden: 'true', active: true });
+	expect(queryReverse, 'the close is visible part-way, where it reverses').toMatchObject({ seenMidMotion: true });
 	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(panel).toHaveAttribute('aria-hidden', 'false');
 	await expect.poll(() => panel.evaluate(element => element.inert)).toBe(false);

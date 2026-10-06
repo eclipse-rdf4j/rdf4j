@@ -32,6 +32,20 @@ function serverBaseUrl() {
     return (process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server').replace(/\/+$/, '');
 }
 
+/**
+ * The host name or address at which the RDF4J Server reaches this test process, for endpoints a spec serves itself
+ * (such as a SPARQL endpoint behind a SPARQLRepository). A server in a Docker container has a loopback of its own, so
+ * run.sh gives the container's gateway to the host in RDF4J_E2E_HOST_FROM_SERVER.
+ */
+function hostFromServer() {
+    return process.env.RDF4J_E2E_HOST_FROM_SERVER || '127.0.0.1';
+}
+
+/** The local address to listen on so that the server reaches a listener at hostFromServer(). */
+function listenAddressForServer() {
+    return hostFromServer() === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
+}
+
 /** Returns a repository id that no other spec run uses. */
 function uniqueRepositoryId(prefix) {
     return `${prefix}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -178,6 +192,8 @@ module.exports = {
     deleteRepository,
     evidencePath,
     evidenceScreenshots,
+    hostFromServer,
+    listenAddressForServer,
     memoryRepositoryConfiguration,
     openQueryPage,
     repositoryPageUrl,

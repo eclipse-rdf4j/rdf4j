@@ -271,7 +271,9 @@ test('Create Advanced reaches its natural closed box without a final frame jump'
 		// height still left is the part of the motion not yet run, and a motion that has run out has left nothing.
 		const remaining = previous.progress === null ? 0 : opened.height * (1 - previous.progress);
 		expect(Math.abs(previous.height - remaining), 'the last open frame lies on the closing motion').toBeLessThanOrEqual(1);
-		expect(finalFormStep).toBeLessThanOrEqual(1);
+		// The panel is in the form's flow (round-3 finding C2), so the form's end follows it frame by frame: its last
+		// step is at most the panel's own, with nothing more (no gap, margin or border left over when it is hidden).
+		expect(finalFormStep, 'the form moves no further than the closing panel').toBeLessThanOrEqual(finalPanelStep + 1);
 		expect(Math.abs(firstClosed.height - settled.height)).toBeLessThanOrEqual(0.1);
 		expect(Math.abs(firstClosed.formBottom - settled.formBottom)).toBeLessThanOrEqual(0.1);
 	}

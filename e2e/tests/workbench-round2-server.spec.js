@@ -11,6 +11,8 @@ const { test, expect } = require('@playwright/test');
 const {
     createSeededRepository,
     deleteRepository,
+    hostFromServer,
+    listenAddressForServer,
     serverBaseUrl,
     uniqueRepositoryId,
     waitForRoute,
@@ -263,16 +265,18 @@ test.describe('R8/R9 counts of a repository while another one is slow', () => {
     let blackHole;
 
     test.beforeAll(async ({ request }) => {
-        // A SPARQL endpoint that accepts connections and never answers: a slow or unreachable repository.
+        // A SPARQL endpoint that accepts connections and never answers: a slow or unreachable repository. It listens
+        // where the server reaches it: a server in a container that met a closed port on its own loopback would fail
+        // fast instead of hanging.
         blackHole = net.createServer(socket => {
             sockets.add(socket);
             socket.on('close', () => sockets.delete(socket));
             socket.on('error', () => {});
         });
-        await new Promise(resolve => blackHole.listen(0, '127.0.0.1', resolve));
+        await new Promise(resolve => blackHole.listen(0, listenAddressForServer(), resolve));
         const port = blackHole.address().port;
         await putRepository(request, slowId, `[ config:rep.type "openrdf:SPARQLRepository" ; `
-            + `config:sparql.queryEndpoint <http://127.0.0.1:${port}/sparql> ]`);
+            + `config:sparql.queryEndpoint <http://${hostFromServer()}:${port}/sparql> ]`);
         await createSeededRepository(request, SERVER, normalId, { graphs: ['bsbm', 'spl'] });
         const added = await request.post(`${SERVER}/repositories/${normalId}/statements`, {
             headers: { 'Content-Type': 'application/n-triples' },

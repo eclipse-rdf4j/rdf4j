@@ -173,6 +173,24 @@ start_docker_tomcat() {
   echo "Starting Docker/Tomcat RDF4J container"
   (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose up --force-recreate -d)
   DOCKER_STARTED="true"
+  export_host_from_server
+}
+
+# Specs that serve an endpoint to the server (a SPARQL endpoint behind a SPARQLRepository) need the address at which
+# the server reaches this host: inside the container 127.0.0.1 is the container itself.
+export_host_from_server() {
+  if [ -n "${RDF4J_E2E_HOST_FROM_SERVER:-}" ]; then
+    return
+  fi
+  local host=""
+  if [ "$(uname -s)" = "Linux" ]; then
+    local container_id
+    container_id="$(cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose ps -q rdf4j)"
+    host="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$container_id")"
+  fi
+  # Docker Desktop and OrbStack reach the host by name.
+  export RDF4J_E2E_HOST_FROM_SERVER="${host:-host.docker.internal}"
+  echo "RDF4J Server reaches this host at ${RDF4J_E2E_HOST_FROM_SERVER}"
 }
 
 run_playwright() {

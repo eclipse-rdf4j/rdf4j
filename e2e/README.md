@@ -31,6 +31,8 @@ The default runtime is `spring-boot`, so `./run.sh` keeps the original local beh
 
 If Playwright browsers are already installed locally, set `E2E_SKIP_PLAYWRIGHT_INSTALL=true` to skip the browser installer.
 
+Some specs serve an endpoint of their own to the server, such as a SPARQL endpoint that never answers. They give the server the address in `RDF4J_E2E_HOST_FROM_SERVER` (default `127.0.0.1`). For `docker-tomcat`, `run.sh` sets it to the container's gateway on Linux and to `host.docker.internal` elsewhere; set it yourself when the server runs in a container you started.
+
 To run the tests interactively use `npx playwright test --ui`
 
 ## HTTP compression
