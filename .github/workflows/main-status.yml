@@ -30,7 +30,7 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-jdk${{ matrix.jdk }}-maven-
     - name: Build
-      run: mvn -B -U -T 2C clean install -DskipTests
+      run: mvn -B -U -T 2C clean install -DskipTests -DskipITs
     - name: Run all tests
       run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B install -P-skipSlowTests -Dmaven.javadoc.skip=true
     - name: Publish Test Report

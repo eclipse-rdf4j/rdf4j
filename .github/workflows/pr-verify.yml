@@ -45,7 +45,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
-        run: mvn -B clean install -DskipTests
+        run: mvn -B clean install -DskipTests -DskipITs
 
 
   build:

@@ -415,9 +415,9 @@ step_compute_versions() {
 step_build_main_snapshot() {
   require_release_context
   ensure_on_branch main
-  echo "Running maven clean and install -DskipTests"
+  echo "Running maven clean and install with tests skipped"
   maven_clean_all
-  run_cmd "mvn install -DskipTests" mvn install -DskipTests
+  run_cmd "mvn install -DskipTests -DskipITs" mvn install -DskipTests -DskipITs
 }
 
 step_set_release_version_on_worktree() {
@@ -557,7 +557,7 @@ step_checkout_release_tag() {
 step_build_release_artifacts() {
   require_release_context
   run_cmd "mvn clean" mvn clean
-  run_cmd "mvn install -DskipTests -Djapicmp.skip" mvn install -DskipTests -Djapicmp.skip
+  run_cmd "mvn install -DskipTests -DskipITs -Djapicmp.skip" mvn install -DskipTests -DskipITs -Djapicmp.skip
   run_cmd "mvn package -Passembly -DskipTests -Djapicmp.skip" mvn package -Passembly -DskipTests -Djapicmp.skip
 }
 
