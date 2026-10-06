@@ -1063,6 +1063,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		} else if (active) {
 			// don't actually branch source
 			return store.getExplicitSailSource();
+		} else if (!level.isCompatibleWith(IsolationLevels.SERIALIZABLE)
+				&& store instanceof SnapshotSailStore snapshotStore) {
+			// These disposable read operations cannot commit and do not need serializable observations.
+			if (includeinferred == IncludeInferred.all) {
+				return new UnionSailSource(snapshotStore.forkReadOnly(true), snapshotStore.forkReadOnly(false));
+			}
+			return snapshotStore.forkReadOnly(includeinferred == IncludeInferred.inferredOnly);
 		} else if (includeinferred == IncludeInferred.all) {
 			// create a new branch for read operation
 			return new UnionSailSource(store.getInferredSailSource().fork(), store.getExplicitSailSource().fork());
