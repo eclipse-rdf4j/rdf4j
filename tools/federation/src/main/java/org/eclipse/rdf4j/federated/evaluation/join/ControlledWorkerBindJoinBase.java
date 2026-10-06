@@ -86,6 +86,9 @@ public abstract class ControlledWorkerBindJoinBase extends JoinExecutorBase<Bind
 
 			// determine the bind join block size
 			nBindings = getNextBindJoinSize(nBindingsCfg, totalBindings);
+			if (nBindings <= 0) {
+				throw new QueryEvaluationException("Bound join block size must be positive but was " + nBindings);
+			}
 
 			bindings = new ArrayList<>(nBindings);
 
@@ -100,6 +103,9 @@ public abstract class ControlledWorkerBindJoinBase extends JoinExecutorBase<Bind
 			}
 
 			totalBindings += count;
+			if (count == 0) {
+				break;
+			}
 
 			currentPhaser.register();
 			scheduler.schedule(taskCreator.getTask(new PhaserHandlingParallelExecutor(this, currentPhaser), bindings));
