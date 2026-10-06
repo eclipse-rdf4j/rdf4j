@@ -2742,7 +2742,8 @@ body.workbench-body .workbench-kv__row > dd code {
 	}
 }
 
-body.workbench-body .workbench-page-surface p {
+/* Prose paragraphs; a field's help line is spaced by its field, not by a paragraph margin. */
+body.workbench-body .workbench-page-surface p:not(.workbench-field__help) {
 	margin: 0 0 12px;
 }
 

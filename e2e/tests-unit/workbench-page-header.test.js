@@ -53,22 +53,22 @@ function render(viewId, context, extra) {
 
 /** The copy the layout preview shows under each title; one line that says what the page is for. */
 const descriptions = {
-    query: 'Write a SPARQL query, run it against this repository, and save it if you\'ll need it again.',
-    'saved-queries': 'Queries saved for this repository. Run, edit or delete them from here.',
-    explore: 'Enter a resource to see every statement that mentions it, then click any value to keep exploring.',
-    summary: 'Where this repository is stored, how much data it holds and how it is configured.',
-    namespaces: 'Prefixes let you write short names like foaf:Person instead of full IRIs in queries and results.',
-    contexts: 'Named graphs in this repository and their statement counts. Explore or clear a graph from its row.',
-    types: 'The classes used in this repository and how many resources belong to each. Click a type to explore it.',
-    add: 'Load RDF from a file, a web address or pasted text. Pick a target graph to keep the new data separate.',
-    export: 'Download the whole repository as an RDF file, or preview the first statements before you do.',
-    update: 'Change the data in this repository with SPARQL Update operations such as INSERT DATA and DELETE WHERE.',
-    remove: 'Remove specific statements by matching their subject, predicate, object or graph.',
-    clear: 'Remove all statements from this repository, or only those in one graph. The repository itself stays.',
-    create: 'Pick a store type, then set the repository\'s ID, title and options on the next step.',
-    delete: 'Deleting a repository removes it and all of its data from the server. This can\'t be undone.',
-    server: 'Enter the address of the RDF4J Server you want the Workbench to use.',
-    information: 'Version, Java and memory details for this Workbench, handy when you report a problem.'
+    query: 'Run SPARQL queries against this repository.',
+    'saved-queries': 'Run the queries saved for this repository again.',
+    explore: 'Look up a resource and see every statement it appears in.',
+    summary: 'See where this repository is stored, how much data it holds and how it is configured.',
+    namespaces: 'Manage the prefixes this repository uses to shorten IRIs in queries and results.',
+    contexts: 'See the named graphs in this repository and how many statements each holds.',
+    types: 'See the classes used in this repository and how many resources belong to each.',
+    add: 'Load RDF data into this repository.',
+    export: 'Download all the data in this repository as an RDF file.',
+    update: 'Change the data in this repository with SPARQL Update.',
+    remove: 'Remove the statements that match a subject, predicate, object or graph.',
+    clear: 'Remove all statements from this repository, or from one of its graphs.',
+    create: 'Set up a new repository on this server.',
+    delete: 'Permanently delete a repository and all of its data from the server.',
+    server: 'Choose which RDF4J Server this Workbench connects to.',
+    information: 'Check the Workbench version and the Java runtime, operating system and memory it runs on.'
 };
 
 test('every page renders a header with its sidebar icon, title and one-line description', () => {
@@ -97,10 +97,10 @@ test('the page header icon is the same icon the sidebar shows for that page', ()
 test('the Repositories description names the connected server', () => {
     const markup = render('repositories', { repositoryId: 'NONE', workbench: { server: 'http://127.0.0.1:18833/rdf4j-server' } });
     assert.ok(markup.includes('<p class="workbench-page-header__description">Every repository on 127.0.0.1:18833. '
-        + 'Open one to query and browse its data.</p>'), 'the description should name the server host and port');
+        + 'Open one to work with its data.</p>'), 'the description should name the server host and port');
     const noServer = render('repositories', { repositoryId: 'NONE' });
     assert.ok(noServer.includes('<p class="workbench-page-header__description">Every repository on this server. '
-        + 'Open one to query and browse its data.</p>'), 'without a server address the description stays generic');
+        + 'Open one to work with its data.</p>'), 'without a server address the description stays generic');
 });
 
 test('the repository-not-found page shows no icon tile or description', () => {
