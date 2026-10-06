@@ -118,8 +118,9 @@ test('on a phone the compact bar with the menu button is unchanged', async ({ pa
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
 	const bar = await page.locator('#workbench-contextbar').boundingBox();
-	// The bar spans the page; a classic scrollbar (Linux) takes its width off the 390px viewport.
-	const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+	// The bar spans the page. With classic scrollbars (Linux) the root's stable scrollbar gutter takes 15px off the
+	// 390px viewport; the body's width leaves it out, while documentElement.clientWidth still reports 390.
+	const pageWidth = await page.evaluate(() => document.body.getBoundingClientRect().width);
 	expect(bar.width, 'the bar spans the page').toBeGreaterThanOrEqual(pageWidth - 10);
 	expect(bar.height).toBeLessThanOrEqual(60);
 	await expect(page.locator('#workbench-menu-button')).toBeVisible();
