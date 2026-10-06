@@ -180,6 +180,17 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 		}
 	}
 
+	@Override
+	protected Resource createImplicitReifier() throws RDFParseException {
+		if (isAllowBlankNodes()) {
+			return super.createImplicitReifier();
+		} else {
+			throw new RDFParseException(
+					"blank nodes not allowed in data block: a reifier or annotation without an explicit "
+							+ "identifier implicitly creates a blank node");
+		}
+	}
+
 	/**
 	 * @return Returns the allowBlankNodes.
 	 */

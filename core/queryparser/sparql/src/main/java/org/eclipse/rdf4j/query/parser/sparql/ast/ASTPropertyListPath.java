@@ -16,6 +16,8 @@ public class ASTPropertyListPath extends SimpleNode {
 
 	private boolean annotation = false;
 
+	private boolean hasReifier = false;
+
 	public ASTPropertyListPath(int id) {
 		super(id);
 	}
@@ -44,6 +46,17 @@ public class ASTPropertyListPath extends SimpleNode {
 
 	public void setAnnotation(boolean annotation) {
 		this.annotation = annotation;
+	}
+
+	/**
+	 * @return {@code true} if a '~' reifier was present, with or without an explicit identifier.
+	 */
+	public boolean hasReifier() {
+		return hasReifier || getReifier() != null;
+	}
+
+	public void setHasReifier(boolean hasReifier) {
+		this.hasReifier = hasReifier;
 	}
 
 	public Object getReifier() {

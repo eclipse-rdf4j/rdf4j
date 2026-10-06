@@ -1066,17 +1066,7 @@ public class SyntaxTreeBuilderTokenManager implements SyntaxTreeBuilderConstants
 		return switch (curChar) {
 		case 67, 99 -> jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x800000L, active2, 0L);
 		case 69, 101 -> jjMoveStringLiteralDfa10_0(active0, 0x8000000000000000L, active1, 0L, active2, 0L);
-		case 82 -> {
-			if ((active1 & 0x800L) != 0L) {
-				jjmatchedKind = 75;
-				jjmatchedPos = 9;
-			} else if ((active2 & 0x200L) != 0L) {
-				jjmatchedKind = 137;
-				jjmatchedPos = 9;
-			}
-			yield jjMoveStringLiteralDfa10_0(active0, 0L, active1, 0x100000000000L, active2, 0L);
-		}
-		case 114 -> {
+		case 82, 114 -> {
 			if ((active1 & 0x800L) != 0L) {
 				jjmatchedKind = 75;
 				jjmatchedPos = 9;

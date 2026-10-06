@@ -132,25 +132,6 @@ public class SyntaxTreeBuilder {
 	    }
 	    return sb.toString();
 	}
-
-	private static void validateStringLiteral(String raw, int line, int col) throws ParseException {
-        // Codepoint escapes have already been resolved by UnicodeEscapeStream, which re-encodes any resolved character
-        // that is unsafe inside a literal as an ECHAR, so every remaining backslash must start an ECHAR. Each pair is
-        // consumed as a unit: the escaped character is never re-read as the start of another escape.
-        for (int j = 0; j < raw.length(); j++) {
-            if (raw.charAt(j) == '\\') {
-                if (j + 1 >= raw.length() || !isValidEscapeChar(raw.charAt(j + 1))) {
-                    throw new ParseException("Invalid escape sequence at line " + line + ", column " + col);
-                }
-                j++;
-            }
-        }
-    }
-
-    private static boolean isValidEscapeChar(char c) {
-        return c == 't' || c == 'b' || c == 'n' || c == 'r' || c == 'f'
-            || c == '\\' || c == '"' || c == '\'';
-    }
 }
 PARSER_END(SyntaxTreeBuilder)
 
@@ -863,7 +844,7 @@ void PropertyList() :
 {}
 {
 	Verb() ObjectList()
-        (<TILDE> ( IRIref() | BlankNode() | Var() )
+        (<TILDE> { jjtThis.setHasReifier(true); } [ IRIref() | BlankNode() | Var() ]
         |
         <ANNOTATION_OPEN>
             PropertyList() { ((ASTPropertyList)jjtree.peekNode()).setAnnotation(true); }
@@ -894,7 +875,7 @@ void PropertyListPath() :
 {}
 {
     (VerbPath() | VerbSimple()) ObjectListPath()
-        (<TILDE> ( IRIref() | BlankNode() )
+        (<TILDE> { jjtThis.setHasReifier(true); } [ IRIref() | BlankNode() | Var() ]
         |
         <ANNOTATION_OPEN>
             PropertyListPath() { ((ASTPropertyListPath)jjtree.peekNode()).setAnnotation(true); }
@@ -1144,7 +1125,7 @@ void ReifiedTriple() :
         ( LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
         [
             <TILDE>
-            ( IRIref() | BlankNode() | Var() )
+            [ IRIref() | BlankNode() | Var() ]
         ]
     <TRIPLE_CLOSE>
 }
@@ -1917,14 +1898,12 @@ void String() :
 	( t = <STRING_LITERAL1> | t= <STRING_LITERAL2> )
 	{
         String raw = _trimString(t.image, 1);
-        validateStringLiteral(raw, t.beginLine, t.beginColumn);
         jjtThis.setValue(raw);
     }
 |
 	( t = <STRING_LITERAL_LONG1> | t = <STRING_LITERAL_LONG2>)
 	{
         String raw = _trimString(t.image, 3);
-        validateStringLiteral(raw, t.beginLine, t.beginColumn);
         jjtThis.setValue(raw);
     }
 }
