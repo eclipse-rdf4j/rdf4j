@@ -4628,8 +4628,12 @@ body.query-result-embedded-body .CodeMirror-linenumber {
 	color: var(--workbench-editor-gutter-ink);
 }
 
+/* yasqe.min.css loads after this sheet and paints the cursor black with .yasqe .CodeMirror div.CodeMirror-cursor
+ * (0,3,1); the ink colour (light in the dark theme) needs a rule that outranks it. */
 body.workbench-body .CodeMirror-cursor,
-body.query-result-embedded-body .CodeMirror-cursor {
+body.workbench-body .yasqe .CodeMirror div.CodeMirror-cursor,
+body.query-result-embedded-body .CodeMirror-cursor,
+body.query-result-embedded-body .yasqe .CodeMirror div.CodeMirror-cursor {
 	border-left-color: var(--workbench-ink);
 }
 

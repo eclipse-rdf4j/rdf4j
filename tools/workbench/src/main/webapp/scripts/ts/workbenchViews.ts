@@ -951,9 +951,9 @@ module workbench {
         }
 
         /**
-         * A list card's Display (Repositories, Types, Graphs, Namespaces): Wrap values sets the card's data-table-wrap,
-         * which the CSS reads (scroll: one line per value, the table scrolls sideways in .workbench-table-scroll and
-         * stays a table on phones).
+         * A list card's Display (Types, Graphs, Namespaces; the Repositories list always wraps and has none): Wrap
+         * values sets the card's data-table-wrap, which the CSS reads (scroll: one line per value, the table scrolls
+         * sideways in .workbench-table-scroll and stays a table on phones).
          */
         function listTableDisplay(runtime: LitRuntime, model: PageModel): any {
             const kind = model.viewId;
@@ -1398,11 +1398,11 @@ module workbench {
                     </button>
                 </th>`;
             };
+            // The Repositories list has no Display control: it always wraps its values (data-table-wrap="true").
             return h`<section id="repositories-results" class="workbench-island workbench-responsive-records workbench-browse-card"
-                    data-table-wrap=${listTableWrap(model)}>
+                    data-table-wrap="true">
                 <div class="workbench-browse-card__header">
                     <h2>Repositories</h2><span class="workbench-browse-card__count">${formatCount(String(rowCount(model)), context)}</span>
-                    ${listTableDisplay(runtime, model)}
                     ${pageEnabled(context, 'create') ? h`<a class="workbench-action workbench-action--primary workbench-browse-card__action workbench-repository-create"
                         href="${urlFor(context, 'create')}">${icon(runtime, 'create')}<span>Create repository</span></a>` : ''}
                 </div>

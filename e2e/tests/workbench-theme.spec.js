@@ -94,6 +94,45 @@ test('Workbench follows system theme and remembers an explicit preference withou
     });
 });
 
+// The text cursor follows the theme: in the dark theme the editor's cursor (a border drawn by CodeMirror) and the
+// caret of a native field are light, like the text, not the black of yasqe.min.css.
+for (const view of ['query', 'update']) {
+    test(`the dark theme shows a light cursor in the ${view} editor`, async ({ page }) => {
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.goto(repositoryPageUrl(REPOSITORY_ID, view));
+        await waitForRoute(page, view);
+        const editor = page.locator('.CodeMirror').first();
+        await editor.waitFor({ state: 'visible' });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+        const colors = await editor.evaluate((element) => {
+            const cursor = element.querySelector('.CodeMirror-cursor');
+            const ink = getComputedStyle(document.documentElement).getPropertyValue('--workbench-ink').trim();
+            const probe = document.createElement('span');
+            probe.style.color = ink;
+            document.body.appendChild(probe);
+            const inkRgb = getComputedStyle(probe).color;
+            probe.remove();
+            return { cursor: cursor ? getComputedStyle(cursor).borderLeftColor : 'missing', ink: inkRgb };
+        });
+        expect(colors.cursor, 'the editor cursor is drawn in the ink colour').toBe(colors.ink);
+        expect(colors.cursor).not.toBe('rgb(0, 0, 0)');
+    });
+}
+
+test('the dark theme shows a light caret in native fields', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'explore'));
+    await waitForRoute(page, 'explore');
+    const field = page.locator('#explore-resource, input[name="resource"]').first();
+    await field.waitFor({ state: 'visible' });
+    const colors = await field.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { caret: style.caretColor, text: style.color };
+    });
+    expect(colors.caret).toBe(colors.text);
+    expect(colors.caret).not.toBe('rgb(0, 0, 0)');
+});
+
 test('uses the calculated blue palette and preserves the original RDF4J logo', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto(`${WORKBENCH_BASE_URL}/repositories`);

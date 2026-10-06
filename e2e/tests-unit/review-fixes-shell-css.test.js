@@ -109,3 +109,38 @@ test('A37: the navigation list has no whitespace of its own, so an empty menu ma
     assert.match(views, /<div id="navigation" class="workbench-nav"><ul class="maingroup">\$\{\s*navigation\([^}]*\)\}<\/ul>/,
         'nothing but the navigation items between <ul class="maingroup"> and </ul>');
 });
+
+/** CSS specificity of one selector as [ids, classes/attributes/pseudo-classes, elements/pseudo-elements]. */
+function specificity(selector) {
+    let rest = selector.replace(/::?[a-z-]+\([^)]*\)/g, (match) => match.startsWith('::') ? ' ::x' : ' .x');
+    const ids = (rest.match(/#[\w-]+/g) || []).length;
+    rest = rest.replace(/#[\w-]+/g, ' ');
+    const classes = (rest.match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+/g) || []).length;
+    rest = rest.replace(/\.[\w-]+|\[[^\]]*\]|::?[\w-]+/g, ' ');
+    const elements = (rest.match(/(^|[\s>+~])[a-z][\w-]*/gi) || []).length;
+    return [ids, classes, elements];
+}
+
+function outranks(left, right) {
+    for (let index = 0; index < 3; index++) {
+        if (left[index] !== right[index]) { return left[index] > right[index]; }
+    }
+    return false;
+}
+
+// The dark theme's editor cursor: yasqe.min.css (loaded after workbench-refresh.css) paints the CodeMirror cursor black
+// with `.yasqe .CodeMirror div.CodeMirror-cursor`, so the Workbench rule that colours it with the ink must outrank it
+// for the Workbench and the embedded result document.
+test('the editor cursor takes the ink colour with a rule that outranks yasqe.min.css in both documents', () => {
+    const refresh = css('workbench-refresh.css');
+    const yasqe = specificity('.yasqe .CodeMirror div.CodeMirror-cursor');
+    assert.deepEqual(yasqe, [0, 3, 1], 'the specificity helper reads yasqe\'s selector');
+    const winners = rules(refresh)
+        .filter((rule) => /border-left-color:\s*var\(--workbench-ink\)/.test(rule.body))
+        .flatMap(selectorsOf)
+        .filter((selector) => /CodeMirror-cursor$/.test(selector) && outranks(specificity(selector), yasqe));
+    for (const body of ['body.workbench-body', 'body.query-result-embedded-body']) {
+        assert.ok(winners.some((selector) => selector.startsWith(body + ' ')),
+            body + ': a cursor rule with the ink colour outranks yasqe (found: ' + JSON.stringify(winners) + ')');
+    }
+});
