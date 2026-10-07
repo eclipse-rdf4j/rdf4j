@@ -341,10 +341,10 @@ class InMemoryWorker {
             if (message.op === 'create') {
                 response.storeId = this.storeId;
             } else if (message.op === 'append') {
-                this.rows.push(...message.rows);
+                this.rows.push(...(message.text ? message.text.split('\n').map((line) => JSON.parse(line)) : []));
                 response.count = this.rows.length;
             } else if (message.op === 'read') {
-                response.rows = this.rows.slice(message.start, message.start + message.count);
+                response.text = JSON.stringify(this.rows.slice(message.start, message.start + message.count));
                 response.count = this.rows.length;
             } else if (message.op === 'count') {
                 response.count = this.rows.length;

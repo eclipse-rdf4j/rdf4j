@@ -246,7 +246,7 @@ namespace workbench {
          * to browser storage, or for good where browser storage cannot be used. More than that can exhaust the tab.
          */
         export var MEMORY_ROW_STORE_LIMIT = 1000000;
-        export var MEMORY_BYTE_LIMIT = 128 * 1024 * 1024;
+        export var MEMORY_BYTE_LIMIT = 256 * 1024 * 1024;
 
         /**
          * A row store keeps its rows in the page's memory until it holds more than this many rows (or SPILL_BYTE_LIMIT
@@ -1796,6 +1796,19 @@ namespace workbench {
             return bytes;
         }
 
+        /**
+         * The rows as text, each row written as JSON on a line of its own: how rows travel to the row-store worker and
+         * how it keeps them. JSON never writes a raw line feed (one inside a string becomes \n), so the lines are
+         * exactly the rows. One string is far cheaper for the browser to copy than the arrays and strings of the rows.
+         */
+        export function encodeRowBatch(rows: any[][]): string {
+            var lines = new Array(rows.length);
+            for (var index = 0; index < rows.length; index++) {
+                lines[index] = JSON.stringify(rows[index]);
+            }
+            return lines.join('\n');
+        }
+
         function estimateBatchBytes(batch: any[][]): number {
             var bytes = 0;
             for (var index = 0; index < batch.length; index++) {
@@ -1872,8 +1885,21 @@ namespace workbench {
             var memoryId = 'memory-' + (++memoryRowStoreCount);
             var rows: any[][] = [];
             var bytes = 0;
-            /** memory: no move yet; moving: a move runs; stored: the worker store holds every row; failed: memory only. */
+            /**
+             * memory: no move yet; moving: a move runs; stored: the rows live in the worker store, except those that
+             * still wait to be written; failed: memory only.
+             */
             var state = 'memory';
+            /** Stored: the rows the worker store holds. rows holds the rows after them, which wait to be written. */
+            var written = 0;
+            /** Stored: the end (a row count) and estimated bytes of each batch in rows, oldest first. */
+            var batches: Array<{ end: number; bytes: number }> = [];
+            /** Stored: the write in flight. It never rejects; a failure is kept in writeFailure. */
+            var writing: Promise<void> = null;
+            /** Stored: set while a truncate waits for the write in flight; no other write starts meanwhile. */
+            var writesHeld = false;
+            /** Stored: a write that failed. Later appends are refused with it; the rows taken stay readable. */
+            var writeFailure: any = null;
             var stored: RowStore = null;
             var failure: any = null;
             var retried = false;
@@ -1952,10 +1978,74 @@ namespace workbench {
                 }
                 truncatedTo = Infinity;
                 stored = store;
+                written = copied;
                 rows = [];
                 bytes = 0;
+                batches = [];
                 finishMove('stored');
                 return Promise.resolve();
+            }
+
+            /**
+             * Writes the rows that wait in memory to the worker store, one write at a time, each holding the batches
+             * that came meanwhile (up to SPILL_COPY_BATCH_ROWS rows, at least one batch). An append does not wait for
+             * it: the stream reads its next record while the worker writes, and rows leave memory once written.
+             */
+            function drain(): void {
+                if (state !== 'stored' || writing || writesHeld || writeFailure || disposed || !rows.length) {
+                    return;
+                }
+                var count = 0;
+                var chunkBytes = 0;
+                var taken = 0;
+                while (taken < batches.length) {
+                    var size = batches[taken].end - written - count;
+                    if (taken > 0 && count + size > SPILL_COPY_BATCH_ROWS) {
+                        break;
+                    }
+                    count += size;
+                    chunkBytes += batches[taken].bytes;
+                    taken++;
+                }
+                var target = stored;
+                writing = target.append(rows.slice(0, count)).then(function() {
+                    writing = null;
+                    if (disposed || stored !== target) {
+                        return;
+                    }
+                    rows.splice(0, count);
+                    batches.splice(0, taken);
+                    written += count;
+                    bytes -= chunkBytes;
+                    notifyMove(false);
+                    drain();
+                }, function(error: any) {
+                    writing = null;
+                    if (disposed) {
+                        return;
+                    }
+                    if (error && typeof error === 'object' && !error.code) {
+                        error.code = 'storage';
+                    }
+                    writeFailure = error;
+                    notifyMove(false);
+                });
+            }
+
+            /** Waits until a write completes, giving up when browser storage makes no progress for the timeout. */
+            function waitForWrite(batch: any[][]): Promise<void> {
+                return new Promise<void>(function(resolve, reject) {
+                    var listener = function() {
+                        cancelTimer();
+                        moveListeners = moveListeners.filter(function(candidate) { return candidate !== listener; });
+                        resolve();
+                    };
+                    var cancelTimer = startTimer(function() {
+                        moveListeners = moveListeners.filter(function(candidate) { return candidate !== listener; });
+                        reject(memoryFull(batch, 'Browser storage did not answer in time'));
+                    }, timeout);
+                    moveListeners.push(listener);
+                });
             }
 
             function startMove(): void {
@@ -2031,11 +2121,11 @@ namespace workbench {
                 });
             }
 
-            function memoryFull(batch: any[][]): Error {
+            function memoryFull(batch: any[][], reason?: string): Error {
                 var what = rows.length + batch.length > rowLimit
                     ? formatCount(rowLimit) + ' rows' : formatBytes(byteLimit) + ' of rows';
-                var why = failure && failure.timedOut ? 'Browser storage did not answer in time'
-                    : 'Browser storage is unavailable here';
+                var why = reason || (failure && failure.timedOut ? 'Browser storage did not answer in time'
+                    : 'Browser storage is unavailable here');
                 return storageError(why + ', so the Workbench keeps at most ' + what + ' in memory. Add a LIMIT to the '
                     + 'query, or use Download for the full result.');
             }
@@ -2045,12 +2135,23 @@ namespace workbench {
                     return Promise.reject(disposedError());
                 }
                 if (state === 'stored') {
-                    return stored.append(batch).then(null, function(error: any) {
-                        if (error && typeof error === 'object' && !error.code) {
-                            error.code = 'storage';
+                    if (writeFailure) {
+                        return Promise.reject(writeFailure);
+                    }
+                    if (!batch.length) {
+                        return Promise.resolve(written + rows.length);
+                    }
+                    // A batch larger than memory is still taken when nothing else waits: it is written next.
+                    if (!rows.length || rows.length + batch.length <= rowLimit && bytes + batchBytes <= byteLimit) {
+                        for (var index = 0; index < batch.length; index++) {
+                            rows.push(batch[index]);
                         }
-                        throw error;
-                    });
+                        bytes += batchBytes;
+                        batches.push({ end: written + rows.length, bytes: batchBytes });
+                        drain();
+                        return Promise.resolve(written + rows.length);
+                    }
+                    return waitForWrite(batch).then(function() { return appendNow(batch, batchBytes); });
                 }
                 if (rows.length + batch.length > spillRows || bytes + batchBytes > spillBytes) {
                     startMove();
@@ -2085,22 +2186,61 @@ namespace workbench {
                     if (!Array.isArray(batch)) {
                         return Promise.reject(new Error('Query rows must be provided as a batch.'));
                     }
-                    return serialized(() => appendNow(batch, state === 'stored' ? 0 : estimateBatchBytes(batch)));
+                    return serialized(() => appendNow(batch, estimateBatchBytes(batch)));
                 },
                 read: (start: number, count: number): Promise<any[][]> => serialized(() => {
                     checkWindow(start, count);
+                    var first = Math.floor(start);
+                    var end = first + Math.floor(count);
                     if (state === 'stored') {
-                        return stored.read(start, count);
+                        // Rows still waiting to be written are read from memory, taken now: the write in flight may
+                        // remove them from memory before the worker answers.
+                        var waiting = rows.slice(Math.max(0, first - written), Math.max(0, end - written));
+                        if (first >= written) {
+                            return waiting;
+                        }
+                        return stored.read(first, Math.min(end, written) - first).then(function(found: any[][]) {
+                            return waiting.length ? found.concat(waiting) : found;
+                        });
                     }
-                    return rows.slice(Math.floor(start), Math.floor(start) + Math.floor(count));
+                    return rows.slice(first, end);
                 }),
-                count: (): Promise<number> => serialized(() => state === 'stored' ? stored.count() : rows.length),
+                count: (): Promise<number> => serialized(() => state === 'stored' ? written + rows.length : rows.length),
                 truncate: (count: number): Promise<number> => serialized(() => {
                     if (!Number.isSafeInteger(count) || count < 0) {
                         throw new Error('A non-negative safe truncate count is required.');
                     }
                     if (state === 'stored') {
-                        return stored.truncate(count);
+                        if (count > written + rows.length) {
+                            throw new Error('The truncate count cannot exceed the stored row count.');
+                        }
+                        // The write in flight ends first (it may write rows the truncate cuts); no other starts.
+                        writesHeld = true;
+                        var resume = function() {
+                            writesHeld = false;
+                            drain();
+                        };
+                        return (writing || Promise.resolve()).then(function(): number | Promise<number> {
+                            if (count >= written) {
+                                rows.length = count - written;
+                                bytes = estimateBatchBytes(rows);
+                                batches = rows.length ? [{ end: count, bytes: bytes }] : [];
+                                return count;
+                            }
+                            rows = [];
+                            bytes = 0;
+                            batches = [];
+                            return stored.truncate(count).then(function(result: number) {
+                                written = result;
+                                return result;
+                            });
+                        }).then(function(result: number) {
+                            resume();
+                            return result;
+                        }, function(error: any) {
+                            resume();
+                            throw error;
+                        });
                     }
                     if (count > rows.length) {
                         throw new Error('The truncate count cannot exceed the stored row count.');
@@ -2119,6 +2259,7 @@ namespace workbench {
                     disposed = true;
                     rows = [];
                     bytes = 0;
+                    batches = [];
                     if (abandonMove) {
                         abandonMove();
                     }
@@ -2297,9 +2438,14 @@ namespace workbench {
                         if (!Array.isArray(rows)) {
                             return Promise.reject(new Error('Query rows must be provided as a batch.'));
                         }
-                        var batchBytes = estimateBatchBytes(rows);
-                        return send('append', { rows: rows }).then(result => {
-                            bytes += batchBytes;
+                        var text: string;
+                        try {
+                            text = encodeRowBatch(rows);
+                        } catch (error) {
+                            return Promise.reject(error);
+                        }
+                        return send('append', { text: text, rowCount: rows.length }).then(result => {
+                            bytes += text.length;
                             registerSoon();
                             return result.count;
                         });
@@ -2311,7 +2457,7 @@ namespace workbench {
                         return send('read', {
                             start: Math.floor(start),
                             count: Math.floor(count)
-                        }).then(result => result.rows || []);
+                        }).then(result => result.text ? JSON.parse(result.text) : []);
                     },
                     count: (): Promise<number> => send('count').then(result => result.count),
                     truncate: (count: number): Promise<number> => {

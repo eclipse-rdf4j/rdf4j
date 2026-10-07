@@ -17,7 +17,8 @@ const fs = require('node:fs');
 /** Each stored result is an IndexedDB database of its own (queryStream.ts ROW_STORE_DATABASE_PREFIX). */
 const DATABASE_PREFIX = 'rdf4j-workbench-row-store:';
 const BLOCK_SIZE = 1024;
-const TERM_VOLUME_LIMIT = 256 * 1024;
+/** The most text a block holds (UTF-16 code units of its rows' JSON), unless it holds a single longer row. */
+const BLOCK_CHARS = 256 * 1024;
 const INTEGER = 'http://www.w3.org/2001/XMLSchema#integer';
 
 function compactRows(count, first = 0, rich = false) {
@@ -45,21 +46,10 @@ function observeNativeStorage() {
 	}
 	counts = fresh();
 	function record(value) {
-		if (!value || !Array.isArray(value.values)) return;
+		if (!value || typeof value.text !== 'string') return;
 		counts.returnedPhysicalRecords += 1;
-		counts.returnedRecordWidths.push(value.values.length);
-		const stack = [value.values];
-		const encoder = new TextEncoder();
-		let textVolume = 0;
-		while (stack.length) {
-			const item = stack.pop();
-			if (typeof item === 'string') textVolume += encoder.encode(item).length;
-			else if (item && typeof item === 'object') {
-				if (Array.isArray(item)) stack.push(...item);
-				else for (const key of Object.keys(item)) stack.push(key, item[key]);
-			}
-		}
-		counts.returnedRecordTextVolumes.push(textVolume);
+		counts.returnedRecordWidths.push(value.count);
+		counts.returnedRecordTextVolumes.push(value.text.length);
 	}
 	const deleteDatabase = IDBFactory.prototype.deleteDatabase;
 	IDBFactory.prototype.deleteDatabase = function(...args) {
@@ -234,24 +224,10 @@ async function openStorageHarness(page, workbenchUrl) {
 					const metadata = stores.get(storeId);
 					const request = rows.getAll(IDBKeyRange.bound([storeId, 0], [storeId, Number.MAX_SAFE_INTEGER]));
 					const storeCount = stores.count();
-					function textVolume(value) {
-						const encoder = new TextEncoder();
-						const stack = [value];
-						let bytes = 0;
-						while (stack.length) {
-							const item = stack.pop();
-							if (typeof item === 'string') bytes += encoder.encode(item).length;
-							else if (item && typeof item === 'object') {
-								if (Array.isArray(item)) stack.push(...item);
-								else for (const key of Object.keys(item)) stack.push(key, item[key]);
-							}
-						}
-						return bytes;
-					}
 					transaction.oncomplete = () => resolve({ exists: true, metadata: metadata.result, version: db.version,
 						keyPaths: { stores: stores.keyPath, rows: rows.keyPath }, storeCount: storeCount.result,
-						recordCount: request.result.length, recordLengths: request.result.map(row => row.values.length),
-						recordTextVolumes: request.result.map(row => textVolume(row.values)),
+						recordCount: request.result.length, recordLengths: request.result.map(block => block.count),
+						recordTextVolumes: request.result.map(block => block.text.length),
 						keys: request.result.map(row => row.index) });
 					transaction.onerror = transaction.onabort = () => reject(transaction.error);
 				});
@@ -288,4 +264,10 @@ async function physical(page, storeId) {
 	return page.evaluate(id => window.__blockStorageHarness.physical(id), storeId);
 }
 
-module.exports = { BLOCK_SIZE, DATABASE_PREFIX, TERM_VOLUME_LIMIT, compactRows, openStorageHarness, call, observe, physical };
+/** Rows as the page sends them to the worker: each row written as JSON, one row per line. */
+function encodeRows(rows) {
+	return rows.map(row => JSON.stringify(row)).join('\n');
+}
+
+module.exports = { BLOCK_SIZE, BLOCK_CHARS, DATABASE_PREFIX, compactRows, encodeRows, openStorageHarness, call, observe,
+	physical };

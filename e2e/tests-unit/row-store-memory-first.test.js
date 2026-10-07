@@ -233,10 +233,10 @@ test('a move to browser storage that fails keeps the rows in memory, within the 
     await store.dispose();
 });
 
-test('memory holds at most 1,000,000 rows and 128 MB of estimated row size', async () => {
+test('memory holds at most 1,000,000 rows and 256 MB of estimated row size', async () => {
     const { api } = loadApi();
     assert.equal(api.MEMORY_ROW_STORE_LIMIT, 1000000);
-    assert.equal(api.MEMORY_BYTE_LIMIT, 128 * 1024 * 1024);
+    assert.equal(api.MEMORY_BYTE_LIMIT, 256 * 1024 * 1024);
     const { factory } = countingFactory(() => new UnavailableStorageWorker());
     const store = await api.createRowStore({ workerFactory: factory, spillRowLimit: 1, memoryByteLimit: 3000 });
     assert.equal(await store.append(rows(0, 2, 'x'.repeat(1000))), 2);

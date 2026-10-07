@@ -550,7 +550,7 @@ test('a Query page opened by Saved queries Edit whose scripts fail stays, saying
 });
 
 // R13: without Web Workers (or IndexedDB) the rows are kept in the page's memory; that store is bounded (by estimated
-// size, 128 MB), so a huge result cannot exhaust the tab, and the page says why it stopped, what to do instead, and
+// size, 256 MB), so a huge result cannot exhaust the tab, and the page says why it stopped, what to do instead, and
 // offers to reset browser storage.
 test('without browser storage a huge result stops at the in-memory bound and says so', async ({ page }) => {
 	test.setTimeout(120000);
@@ -566,8 +566,8 @@ test('without browser storage a huge result stops at the in-memory bound and say
 	const results = page.locator('#query-results');
 	await expect(results.locator('.query-result-status')).toHaveText(/^5 rows · complete/);
 
-	// 160,000 rows of about a kilobyte each: past the 128 MB the page keeps in memory.
-	const values = Array.from({ length: 400 }, (_, index) => index).join(' ');
+	// 360,000 rows of about a kilobyte each: past the 256 MB the page keeps in memory.
+	const values = Array.from({ length: 600 }, (_, index) => index).join(' ');
 	await setQueryEditor(page, `SELECT ?a ?b ?text WHERE { VALUES ?a { ${values} } VALUES ?b { ${values} } `
 		+ `BIND(CONCAT("${'x'.repeat(1000)}", STR(?a), "-", STR(?b)) AS ?text) }`);
 	let executions = 0;
@@ -580,8 +580,8 @@ test('without browser storage a huge result stops at the in-memory bound and say
 	await expect(status).toHaveText(/^Partial results: [\d,]+ rows kept before the browser failed/);
 	const kept = Number((await status.textContent()).match(/([\d,]+) rows/)[1].replace(/,/g, ''));
 	expect(kept).toBeGreaterThan(50000);
-	expect(kept).toBeLessThan(160000);
-	await expect(results).toContainText(/Browser storage is unavailable here, so the Workbench keeps at most 128 MB of rows in memory/);
+	expect(kept).toBeLessThan(360000);
+	await expect(results).toContainText(/Browser storage is unavailable here, so the Workbench keeps at most 256 MB of rows in memory/);
 	await expect(results).toContainText(/Add a LIMIT to the query, or use Download for the full result/);
 
 	// The error offers to reset browser storage; storage answers, so the query runs again (and stops again here).

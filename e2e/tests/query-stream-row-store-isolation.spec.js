@@ -47,8 +47,8 @@ async function holdWriteTransactions(page, names) {
 		request.onsuccess = () => {
 			const database = request.result;
 			const seed = database.transaction(['stores'], 'readwrite');
-			seed.objectStore('stores').put({ id: 'held', count: 0, format: 'blocks-v1', tailStart: 0, tailRows: 0,
-				tailVolume: 0 });
+			seed.objectStore('stores').put({ id: 'held', count: 0, format: 'blocks-v2', tailStart: 0, tailRows: 0,
+				tailChars: 0 });
 			seed.oncomplete = () => {
 				const held = database.transaction(['stores', 'rows'], 'readwrite');
 				const stores = held.objectStore('stores');

@@ -13,6 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MemoryWorker, loadApi } = require('./query-load-more-harness.js');
+const { loadWorker, fakeIndexedDB } = require('./row-store-worker-harness.js');
 
 const registryPrefix = 'rdf4j.workbench.row-store.v2:';
 
@@ -111,162 +112,6 @@ test('in-memory row stores are not marked for IndexedDB recovery', async () => {
     assert.equal(window.localStorage.length, 0);
 });
 
-function loadWorker(scopeOverrides = {}, globals = {}) {
-    const fs = require('node:fs');
-    const path = require('node:path');
-    const vm = require('node:vm');
-    const listeners = [];
-    const responses = [];
-    const scope = Object.assign({
-        addEventListener(type, listener) { if (type === 'message') listeners.push(listener); },
-        postMessage(response) { responses.push(response); }
-    }, scopeOverrides);
-    const workerPath = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts/queryStreamWorker.js');
-    vm.runInContext(fs.readFileSync(workerPath, 'utf8'), vm.createContext(Object.assign({ self: scope }, globals)),
-        { filename: workerPath });
-    return {
-        responses,
-        async send(message) {
-            listeners.forEach(listener => listener({ data: message }));
-            for (let count = 0; count < 200
-                    && !responses.some(response => response.requestId === message.requestId); count++) {
-                await new Promise(resolve => setImmediate(resolve));
-            }
-            return responses.filter(response => response.requestId === message.requestId).pop();
-        }
-    };
-}
-
-/**
- * A small in-memory IndexedDB factory with named databases: enough object-store, cursor and transaction behaviour for
- * the row-store worker, and deleteDatabase.
- */
-function fakeIndexedDB() {
-    const databases = new Map();
-    const compare = (a, b) => {
-        if (Array.isArray(a) && Array.isArray(b)) {
-            for (let index = 0; index < Math.min(a.length, b.length); index++) {
-                const result = compare(a[index], b[index]);
-                if (result) return result;
-            }
-            return a.length - b.length;
-        }
-        if (typeof a !== typeof b) return typeof a === 'number' ? -1 : 1;
-        return a < b ? -1 : a > b ? 1 : 0;
-    };
-    const isRange = (key) => key && typeof key === 'object' && !Array.isArray(key) && 'lower' in key;
-    const inRange = (key, range) => !range || (isRange(range)
-        ? compare(key, range.lower) >= 0 && compare(key, range.upper) <= 0 : compare(key, range) === 0);
-    const keyOf = (keyPath, value) => Array.isArray(keyPath) ? keyPath.map((name) => value[name]) : value[keyPath];
-    const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-    const connect = (objectStores) => ({
-        closed: false,
-        objectStoreNames: { contains: (name) => objectStores.has(name) },
-        createObjectStore(name, options) { objectStores.set(name, { keyPath: options.keyPath, records: [] }); },
-        close() { this.closed = true; },
-        transaction() {
-            const transaction = { pending: 0, done: false, aborted: false, error: null,
-                oncomplete: null, onerror: null, onabort: null };
-            const settle = () => setImmediate(() => {
-                if (transaction.pending === 0 && !transaction.done && !transaction.aborted) {
-                    transaction.done = true;
-                    if (transaction.oncomplete) transaction.oncomplete();
-                }
-            });
-            const request = (produce) => {
-                const result = { result: undefined, error: null, onsuccess: null };
-                transaction.pending++;
-                setImmediate(() => {
-                    result.result = produce();
-                    if (!transaction.aborted && result.onsuccess) result.onsuccess({ target: result });
-                    transaction.pending--;
-                    settle();
-                });
-                return result;
-            };
-            transaction.abort = () => {
-                transaction.aborted = true;
-                setImmediate(() => transaction.onabort && transaction.onabort());
-            };
-            transaction.objectStore = (name) => {
-                const store = objectStores.get(name);
-                const sorted = () => store.records.slice().sort((a, b) => compare(a.key, b.key));
-                const write = (value) => {
-                    const key = keyOf(store.keyPath, value);
-                    store.records = store.records.filter((record) => compare(record.key, key) !== 0);
-                    store.records.push({ key, value: clone(value) });
-                };
-                return {
-                    add: (value) => request(() => write(value)),
-                    put: (value) => request(() => write(value)),
-                    get: (key) => request(() => clone((store.records.find((record) => compare(record.key, key) === 0)
-                        || {}).value)),
-                    delete: (key) => request(() => {
-                        store.records = store.records.filter((record) => !inRange(record.key, key));
-                    }),
-                    openCursor(range, direction) {
-                        const result = { result: null, error: null, onsuccess: null };
-                        let position = 0;
-                        const step = () => {
-                            transaction.pending++;
-                            setImmediate(() => {
-                                const matching = sorted().filter((record) => inRange(record.key, range));
-                                if (direction === 'prev') matching.reverse();
-                                const record = matching[position];
-                                result.result = record ? {
-                                    key: record.key, value: clone(record.value),
-                                    continue() { position++; step(); },
-                                    update(value) { return request(() => write(value)); }
-                                } : null;
-                                if (!transaction.aborted && result.onsuccess) result.onsuccess({ target: result });
-                                transaction.pending--;
-                                settle();
-                            });
-                        };
-                        step();
-                        return result;
-                    }
-                };
-            };
-            settle();
-            return transaction;
-        }
-    });
-    const connections = [];
-    return {
-        databases,
-        connections,
-        indexedDB: {
-            open(name) {
-                const fresh = !databases.has(name);
-                if (fresh) databases.set(name, new Map());
-                const connection = connect(databases.get(name));
-                connection.name = name;
-                connections.push(connection);
-                const request = { result: connection, error: null };
-                setImmediate(() => {
-                    if (fresh && request.onupgradeneeded) request.onupgradeneeded();
-                    request.onsuccess();
-                });
-                return request;
-            },
-            deleteDatabase(name) {
-                const request = { error: null, onsuccess: null, onerror: null, onblocked: null };
-                setImmediate(() => {
-                    if (connections.some((connection) => connection.name === name && !connection.closed)) {
-                        if (request.onblocked) request.onblocked();
-                        return;
-                    }
-                    databases.delete(name);
-                    if (request.onsuccess) request.onsuccess();
-                });
-                return request;
-            }
-        },
-        IDBKeyRange: { bound: (lower, upper) => ({ lower, upper }) }
-    };
-}
-
 test('the row-store worker reports unavailable IndexedDB as such, with a readable message', async () => {
     const worker = loadWorker();
     const response = await worker.send({ op: 'create', requestId: 1, storeId: 'rows-unavailable' });
@@ -299,8 +144,9 @@ test('the row-store worker keeps its store in a database of its own and deletes 
     assert.deepEqual([...storage.databases.keys()].sort(),
         ['rdf4j-workbench-row-store:rows-first', 'rdf4j-workbench-row-store:rows-second']);
     const rows = ['a', 'b', 'c'].map((value) => [{ kind: 'literal', value }]);
-    assert.equal((await send(first, { op: 'append', storeId: 'rows-first', rows })).count, 3);
-    assert.deepEqual([...(await send(first, { op: 'read', storeId: 'rows-first', start: 1, count: 5 })).rows]
+    const text = rows.map((row) => JSON.stringify(row)).join('\n');
+    assert.equal((await send(first, { op: 'append', storeId: 'rows-first', text, rowCount: 3 })).count, 3);
+    assert.deepEqual(JSON.parse((await send(first, { op: 'read', storeId: 'rows-first', start: 1, count: 5 })).text)
         .map((row) => row[0].value), ['b', 'c']);
     assert.equal((await send(first, { op: 'truncate', storeId: 'rows-first', count: 1 })).count, 1);
     assert.equal((await send(first, { op: 'count', storeId: 'rows-first' })).count, 1);
@@ -320,7 +166,7 @@ test('a row-store worker serves only the store it created', async () => {
     assert.equal((await send({ op: 'create' })).ok, false, 'a store needs its id');
     assert.equal((await send({ op: 'create', storeId: 'rows-own' })).ok, true);
     assert.equal((await send({ op: 'create', storeId: 'rows-other' })).ok, false);
-    assert.equal((await send({ op: 'append', storeId: 'rows-other', rows: [[null]] })).ok, false);
+    assert.equal((await send({ op: 'append', storeId: 'rows-other', text: '[null]', rowCount: 1 })).ok, false);
     assert.equal((await send({ op: 'dispose', storeId: 'rows-other' })).ok, false);
     assert.equal((await send({ op: 'sweep', storeId: 'rows-own', maxAge: 1 })).ok, false,
         'cleaning up other stores is left to the page');

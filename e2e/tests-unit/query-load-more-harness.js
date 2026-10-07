@@ -50,9 +50,10 @@ class MemoryWorker {
         queueMicrotask(() => {
             const response = { requestId: message.requestId, ok: true, storeId: this.storeId };
             if (message.op === 'append') {
-                this.rows.push(...message.rows);
+                // Rows travel as text, one JSON row per line (queryStream.ts encodeRowBatch).
+                this.rows.push(...(message.text ? message.text.split('\n').map((line) => JSON.parse(line)) : []));
             } else if (message.op === 'read') {
-                response.rows = this.rows.slice(message.start, message.start + message.count);
+                response.text = JSON.stringify(this.rows.slice(message.start, message.start + message.count));
             } else if (message.op === 'truncate') {
                 this.rows.length = message.count;
             } else if (message.op === 'dispose') {

@@ -64,9 +64,9 @@ async function plantAbandonedStore(page, id, time) {
 		request.onsuccess = () => {
 			const database = request.result;
 			const transaction = database.transaction(['stores', 'rows'], 'readwrite');
-			transaction.objectStore('stores').put({ id, count: 1, format: 'blocks-v1', tailStart: 0, tailRows: 1,
-				tailVolume: 20, touched: time });
-			transaction.objectStore('rows').put({ storeId: id, index: 0, values: [[null]], volumes: [11], volume: 20 });
+			transaction.objectStore('stores').put({ id, count: 1, format: 'blocks-v2', tailStart: 0, tailRows: 1,
+				tailChars: 6, touched: time });
+			transaction.objectStore('rows').put({ storeId: id, index: 0, count: 1, text: '[null]' });
 			transaction.oncomplete = () => {
 				database.close();
 				localStorage.setItem(registryPrefix + id, JSON.stringify({ created: time, used: time, bytes: 20 }));

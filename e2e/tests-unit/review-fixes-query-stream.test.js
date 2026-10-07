@@ -692,11 +692,13 @@ test('a browser-side failure after rows is reported as such and cancels the serv
         { type: 'head', version: 1 }, { type: 'view', id: 'tuple' }, { type: 'vars', values: ['value'] },
         { type: 'rows', values: [[{ kind: 'literal', value: '0' }]] },
         { type: 'rows', values: [[{ kind: 'literal', value: '1' }]] },
-        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 2,
-            'result-has-more': false, 'result-next-offset': 2 } }
+        { type: 'rows', values: [[{ kind: 'literal', value: '2' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 3,
+            'result-has-more': false, 'result-next-offset': 3 } }
     ];
     const current = execution({ controls: { 'batch-size': null }, responses: [records] });
-    // The harness's worker factory is replaced by one whose store fills up after the first rows.
+    // The harness's worker factory is replaced by one whose store fills up after the first rows. Rows are written
+    // behind the stream: the failed write of row 1 is noticed by the append of row 2.
     const { api } = current;
     const cancels = [];
     current.workbench.query = { cancelServerQuery: (id) => cancels.push(id) };
