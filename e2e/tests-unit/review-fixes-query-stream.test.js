@@ -312,7 +312,7 @@ test('a shelved query that finishes leaves the shown Query page\'s Cancel, reque
     const { MemoryWorker } = require('./query-load-more-harness.js');
     const render = (repositoryId) => workbench.queryPage.renderInto(document.body, {}, {
         executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
-        rowStoreOptions: { workerFactory: () => new MemoryWorker() }
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new MemoryWorker() }
     });
 
     const first = render('repo-a');
@@ -370,7 +370,7 @@ test('a query shelved while it runs leaves its results area idle for the next Qu
     const { MemoryWorker } = require('./query-load-more-harness.js');
     const render = (repositoryId) => workbench.queryPage.renderInto(document.body, {}, {
         executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
-        rowStoreOptions: { workerFactory: () => new MemoryWorker() }
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new MemoryWorker() }
     });
 
     const first = render('repo-a');
@@ -421,7 +421,7 @@ test('a running saved query survives its card scrolling out of the list window a
     }
     let visible = [];
     const root = { ownerDocument: document, querySelectorAll: () => visible };
-    const options = { fetcher, rowStoreOptions: { workerFactory: () => new MemoryWorker() } };
+    const options = { fetcher, rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new MemoryWorker() } };
 
     const first = card(0, 'People');
     visible = [first.form];
@@ -703,7 +703,7 @@ test('a browser-side failure after rows is reported as such and cancels the serv
     const requests = [];
     const controller = api.bindMainQueryForm(current.form, current.target, {
         maxDomRows: 8,
-        rowStoreOptions: { workerFactory: () => new QuotaWorker() },
+        rowStoreOptions: { spillRowLimit: 0, memoryRowLimit: 1, workerFactory: () => new QuotaWorker() },
         async fetcher(url, init) {
             requests.push(init);
             const { response } = require('./query-load-more-harness.js');
@@ -751,7 +751,7 @@ test('closing the tab cancels a shelved running query with one keepalive request
     document.body.appendChild(target);
     const dispose = workbench.queryPage.renderInto(document.body, {}, {
         executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId: 'repo-a',
-        rowStoreOptions: { workerFactory: () => new MemoryWorker() }
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new MemoryWorker() }
     });
     form.trigger('submit');
     await settle();
@@ -839,4 +839,113 @@ test('the first batch still has to report a total that agrees with its has-more'
     // R14: the server broke the protocol; the browser kept every row it was sent.
     assert.doesNotMatch(current.target.textContent, /browser could not keep|before the browser failed/);
     current.controller.dispose();
+});
+
+// The user's Safari: a storage failure leaves the user with partial results and nothing to do about it. The error
+// offers to reset browser storage, and runs the query again once storage answers.
+test('a browser storage failure offers to reset browser storage and runs the query again', async () => {
+    const { MemoryWorker, loadApi, response } = require('./query-load-more-harness.js');
+    class UnavailableWorker extends MemoryWorker {
+        postMessage(message) {
+            this.messages.push(message);
+            queueMicrotask(() => {
+                for (const callback of this.listeners.get('message') || []) {
+                    callback({ data: { requestId: message.requestId, ok: false, unavailable: true,
+                        error: 'IndexedDB is unavailable for Workbench query results.' } });
+                }
+            });
+        }
+    }
+    const { api, workbench, document } = loadApi();
+    workbench.query = { cancelServerQuery() {} };
+    const form = document.createElement('form');
+    form.setAttribute('action', '/repositories/owned/query');
+    const query = document.createElement('input');
+    query.name = 'query';
+    query.value = 'SELECT ?value WHERE { VALUES ?value { 0 1 2 } }';
+    form.appendChild(query);
+    const target = document.createElement('section');
+    target.id = 'query-results';
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const records = [
+        { type: 'head', version: 1 }, { type: 'view', id: 'tuple' }, { type: 'vars', values: ['value'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: '0' }]] },
+        { type: 'rows', values: [[{ kind: 'literal', value: '1' }]] },
+        { type: 'rows', values: [[{ kind: 'literal', value: '2' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 3,
+            'result-has-more': false, 'result-next-offset': 3 } }
+    ];
+    const requests = [];
+    const resets = [];
+    api.resetRowStorage = async () => {
+        resets.push(true);
+        return { deleted: ['rows-old'], kept: [], legacyDeleted: true, olderPages: 1, storageAnswers: true };
+    };
+    const controller = api.bindMainQueryForm(form, target, {
+        maxDomRows: 8,
+        rowStoreOptions: { spillRowLimit: 1, memoryRowLimit: 2, workerFactory: () => new UnavailableWorker() },
+        async fetcher(url, init) {
+            requests.push(init);
+            return response(records);
+        }
+    });
+    controller.submit();
+    await settle();
+    const callout = target.querySelector('.ERROR');
+    assert.match(callout.textContent, /Browser storage is unavailable here/);
+    const reset = callout.querySelector('.query-result-error__reset');
+    assert.ok(reset, 'the storage error offers a reset');
+    assert.equal(reset.textContent.trim(), 'Reset browser storage');
+    reset.click();
+    await settle();
+    assert.equal(resets.length, 1);
+    assert.equal(requests.length, 2, 'the query runs again once storage answers');
+    controller.dispose();
+});
+
+test('a reset that cannot reach browser storage says what to do instead of running the query again', async () => {
+    const { MemoryWorker, loadApi, response } = require('./query-load-more-harness.js');
+    const { api, workbench, document } = loadApi();
+    workbench.query = { cancelServerQuery() {} };
+    const form = document.createElement('form');
+    form.setAttribute('action', '/repositories/owned/query');
+    const query = document.createElement('input');
+    query.name = 'query';
+    query.value = 'SELECT ?value WHERE { VALUES ?value { 0 1 2 } }';
+    form.appendChild(query);
+    const target = document.createElement('section');
+    target.id = 'query-results';
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const records = [
+        { type: 'head', version: 1 }, { type: 'view', id: 'tuple' }, { type: 'vars', values: ['value'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: '0' }], [{ kind: 'literal', value: '1' }],
+            [{ kind: 'literal', value: '2' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 3,
+            'result-has-more': false, 'result-next-offset': 3 } }
+    ];
+    const requests = [];
+    api.resetRowStorage = async () => ({ deleted: [], kept: [], legacyDeleted: false, olderPages: 3,
+        storageAnswers: false });
+    const controller = api.bindMainQueryForm(form, target, {
+        maxDomRows: 8,
+        rowStoreOptions: { spillRowLimit: 0, memoryRowLimit: 1, workerFactory() {
+            throw new Error('Workers are blocked.');
+        } },
+        async fetcher(url, init) {
+            requests.push(init);
+            return response(records);
+        }
+    });
+    controller.submit();
+    await settle();
+    target.querySelector('.query-result-error__reset').click();
+    await settle();
+    assert.equal(requests.length, 1, 'the query is not run again');
+    const callout = target.querySelector('.ERROR').textContent;
+    assert.match(callout, /Browser storage still does not answer/);
+    assert.match(callout, /3 Workbench pages of an older version/);
+    assert.ok(MemoryWorker);
+    controller.dispose();
 });

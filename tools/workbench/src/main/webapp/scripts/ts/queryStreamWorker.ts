@@ -15,43 +15,12 @@
 
 interface QueryRowStoreMessage {
     requestId: number;
-    op: 'create' | 'append' | 'read' | 'count' | 'truncate' | 'dispose' | 'touch' | 'sweep';
+    op: 'create' | 'append' | 'read' | 'count' | 'truncate' | 'dispose';
+    /** The store, named by the page; a worker serves the one store it created. */
     storeId?: string;
     rows?: any[][];
     start?: number;
     count?: number;
-    /**
-     * sweep: stores untouched for longer than this many milliseconds are deleted, except those in keep and those whose
-     * Web Lock a live page holds.
-     */
-    maxAge?: number;
-    /** sweep: the age used instead where Web Locks are unavailable, so a live page cannot be told apart (longer). */
-    fallbackMaxAge?: number;
-    keep?: string[];
-}
-
-/** The Web Lock a page holds while one of its row stores is in use (queryStream.ts holdRowStoreLock). */
-var queryRowStoreLockPrefix = 'rdf4j-workbench-query-rows:';
-
-/**
- * The names of the Web Locks held or requested in this origin, or null where Web Locks are unavailable: a page holds
- * the lock of each row store it shows, also while it is frozen or asleep and touches nothing.
- */
-function queryRowStoreLockNames(): Promise<string[]> {
-    var locks = queryRowStoreScope && queryRowStoreScope.navigator && queryRowStoreScope.navigator.locks;
-    if (!locks || typeof locks.query !== 'function') {
-        return Promise.resolve(null);
-    }
-    try {
-        return Promise.resolve(locks.query()).then(function(snapshot: any): string[] {
-            return ((snapshot && snapshot.held) || []).concat((snapshot && snapshot.pending) || [])
-                .map(function(lock: any): string { return lock && lock.name; });
-        }, function(): string[] {
-            return null;
-        });
-    } catch (error) {
-        return Promise.resolve(null);
-    }
 }
 
 interface QueryRowStoreResponse {
@@ -72,6 +41,17 @@ interface QueryRowStoreDatabase extends IDBDatabase {
 var queryRowStoreScope: any = typeof self !== 'undefined' ? self : null;
 var queryRowStoreQueue: Promise<void> = Promise.resolve();
 var queryRowStoreDatabasePromise: Promise<QueryRowStoreDatabase> = null;
+/**
+ * Each store is an IndexedDB database of its own (queryStream.ts ROW_STORE_DATABASE_PREFIX), written only by the worker
+ * of the page that shows it: a tab the browser freezes in the middle of a transaction then holds up only its own store.
+ * Disposing deletes the whole database, which is quick and frees the disk space; deleting a large store record by
+ * record held every IndexedDB request of the origin up while it ran.
+ */
+var queryRowStoreDatabasePrefix = 'rdf4j-workbench-row-store:';
+/** The store this worker created; it serves no other. */
+var queryRowStoreId: string = null;
+/** Set once the store's database is deleted (disposed here or by cleanup): it must not be created again. */
+var queryRowStoreGone = false;
 var queryRowStoreBlockFormat = 'blocks-v1';
 var queryRowStoreBlockRows = 1024;
 var queryRowStoreBlockVolume = 256 * 1024;
@@ -79,9 +59,6 @@ var queryRowStoreBlockVolume = 256 * 1024;
 function queryRowStoreMetadataValid(store: any): boolean {
     if (!store || !Number.isSafeInteger(store.count) || store.count < 0) {
         return false;
-    }
-    if (typeof store.format === 'undefined') {
-        return true;
     }
     if (store.format !== queryRowStoreBlockFormat) {
         return false;
@@ -234,7 +211,7 @@ function queryRowStoreDatabase(): Promise<QueryRowStoreDatabase> {
     queryRowStoreDatabasePromise = new Promise((resolve, reject) => {
         var request: IDBOpenDBRequest;
         try {
-            request = queryRowStoreScope.indexedDB.open('rdf4j-workbench-query-results', 1);
+            request = queryRowStoreScope.indexedDB.open(queryRowStoreDatabasePrefix + queryRowStoreId, 1);
         } catch (error) {
             // Browsers refuse to open IndexedDB synchronously where it is turned off (e.g. SecurityError).
             queryRowStoreDatabasePromise = null;
@@ -252,9 +229,11 @@ function queryRowStoreDatabase(): Promise<QueryRowStoreDatabase> {
         };
         request.onsuccess = function() {
             var database = <QueryRowStoreDatabase>request.result;
+            // Only a deletion of this store's database changes its version: let it proceed, and keep the store gone.
             database.onversionchange = function() {
                 database.close();
                 queryRowStoreDatabasePromise = null;
+                queryRowStoreGone = true;
             };
             resolve(database);
         };
@@ -288,13 +267,59 @@ function queryRowStoreUnavailable(error: any): any {
     return { queryRowStoreUnavailable: true, cause: error };
 }
 
+/** Closes this worker's connection and deletes the store's database. */
+function queryRowStoreDelete(message: QueryRowStoreMessage): Promise<QueryRowStoreResponse> {
+    var opened = queryRowStoreDatabasePromise;
+    queryRowStoreDatabasePromise = null;
+    queryRowStoreGone = true;
+    return (opened ? opened.then(database => { database.close(); }, () => {}) : Promise.resolve()).then(() =>
+        new Promise<QueryRowStoreResponse>((resolve, reject) => {
+            if (!queryRowStoreScope || !queryRowStoreScope.indexedDB) {
+                reject(new Error('IndexedDB is unavailable for Workbench query results.'));
+                return;
+            }
+            var request: IDBOpenDBRequest;
+            try {
+                request = queryRowStoreScope.indexedDB.deleteDatabase(queryRowStoreDatabasePrefix + message.storeId);
+            } catch (error) {
+                reject(error);
+                return;
+            }
+            request.onsuccess = function() {
+                resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, disposed: true });
+            };
+            request.onerror = function() {
+                reject(request.error || new Error('Unable to delete query result storage.'));
+            };
+            // On blocked another connection is still open: the deletion completes once it closes. The page stops
+            // waiting at its own time limit and leaves the store to cleanup meanwhile.
+        }));
+}
+
 function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreResponse> {
     if (!message || !isFinite(message.requestId) || Math.floor(message.requestId) !== message.requestId) {
         return Promise.reject(new Error('Invalid query row-store request.'));
     }
+    if (typeof message.storeId !== 'string' || !message.storeId) {
+        return Promise.reject(new Error('A row-store id is required.'));
+    }
+    if (message.op === 'create') {
+        if (queryRowStoreId !== null) {
+            return Promise.reject(new Error('This row-store worker already holds a store.'));
+        }
+        queryRowStoreId = message.storeId;
+    } else if (message.storeId !== queryRowStoreId) {
+        return Promise.reject(new Error('This row-store worker holds another store.'));
+    }
+    if (message.op === 'dispose') {
+        return queryRowStoreDelete(message);
+    }
+    if (queryRowStoreGone) {
+        return Promise.reject(new Error('The query result storage has been deleted.'));
+    }
     return queryRowStoreDatabase().then(null, error => Promise.reject(queryRowStoreUnavailable(error))).then(database => {
         if (message.op === 'create') {
-            var storeId = 'rows-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2);
+            var storeId = message.storeId;
             return new Promise<QueryRowStoreResponse>((resolve, reject) => {
                 var transaction = database.transaction(['stores'], 'readwrite');
                 transaction.objectStore('stores').add({ id: storeId, count: 0, format: queryRowStoreBlockFormat,
@@ -311,10 +336,6 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
             });
         }
 
-        if (!message.storeId) {
-            return Promise.reject(new Error('A row-store id is required.'));
-        }
-
         if (message.op === 'append') {
             if (!Array.isArray(message.rows)) {
                 return Promise.reject(new Error('A row batch is required.'));
@@ -322,7 +343,6 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
             return new Promise<QueryRowStoreResponse>((resolve, reject) => {
                 var transaction = database.transaction(['stores', 'rows'], 'readwrite');
                 var stores = transaction.objectStore('stores');
-                var rows = transaction.objectStore('rows');
                 var storeRequest = stores.get(message.storeId);
                 var nextCount: number;
                 storeRequest.onsuccess = function() {
@@ -339,16 +359,7 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
                     if (message.rows.length === 0) {
                         return;
                     }
-                    if (store.format === queryRowStoreBlockFormat) {
-                        queryRowStoreAppendBlocks(transaction, store, message.rows);
-                        return;
-                    }
-                    for (var index = 0; index < message.rows.length; index++) {
-                        rows.add({ storeId: message.storeId, index: store.count + index, values: message.rows[index] });
-                    }
-                    store.count = nextCount;
-                    store.touched = Date.now();
-                    stores.put(store);
+                    queryRowStoreAppendBlocks(transaction, store, message.rows);
                 };
                 transaction.oncomplete = function() {
                     resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, count: nextCount });
@@ -388,9 +399,7 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
                         store.touched = Date.now();
                         stores.put(store);
                     }
-                    if (store.format !== queryRowStoreBlockFormat) {
-                        finish();
-                    } else if (message.count === 0) {
+                    if (message.count === 0) {
                         store.tailStart = 0;
                         store.tailRows = 0;
                         store.tailVolume = 0;
@@ -455,19 +464,6 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
                     if (start >= end) {
                         return;
                     }
-                    if (store.format !== queryRowStoreBlockFormat) {
-                        var flatRequest = objectStore.openCursor(queryRowStoreScope.IDBKeyRange.bound(
-                            [message.storeId, start], [message.storeId, end - 1]));
-                        flatRequest.onsuccess = function() {
-                            var cursor = flatRequest.result;
-                            if (cursor) {
-                                values.push(cursor.value.values);
-                                cursor.continue();
-                            }
-                        };
-                        return;
-                    }
-
                     function accept(block: any): boolean {
                         if (!queryRowStoreBlockValid(block)) {
                             return false;
@@ -544,96 +540,6 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
                     reject(transaction.error || request.error || new Error('Unable to count query result rows.'));
                 };
             });
-        }
-
-        if (message.op === 'dispose') {
-            return new Promise<QueryRowStoreResponse>((resolve, reject) => {
-                var transaction = database.transaction(['stores', 'rows'], 'readwrite');
-                transaction.objectStore('stores').delete(message.storeId);
-                var range = queryRowStoreScope.IDBKeyRange.bound(
-                    [message.storeId, 0], [message.storeId, 9007199254740991]);
-                var request = transaction.objectStore('rows').delete(range);
-                transaction.oncomplete = function() {
-                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, disposed: true });
-                };
-                transaction.onerror = function() {
-                    reject(transaction.error || request.error || new Error('Unable to dispose query result rows.'));
-                };
-                transaction.onabort = function() {
-                    reject(transaction.error || request.error || new Error('Unable to dispose query result rows.'));
-                };
-            });
-        }
-
-        if (message.op === 'touch') {
-            // The page that owns this store is alive: keep the store out of the sweep below.
-            return new Promise<QueryRowStoreResponse>((resolve, reject) => {
-                var transaction = database.transaction(['stores'], 'readwrite');
-                var stores = transaction.objectStore('stores');
-                var request = stores.get(message.storeId);
-                request.onsuccess = function() {
-                    var store = request.result;
-                    if (store) {
-                        store.touched = Date.now();
-                        stores.put(store);
-                    }
-                };
-                transaction.oncomplete = function() {
-                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId });
-                };
-                transaction.onerror = transaction.onabort = function() {
-                    reject(transaction.error || request.error || new Error('Unable to touch query result rows.'));
-                };
-            });
-        }
-
-        if (message.op === 'sweep') {
-            // Stores whose page ended without a destructive pagehide (a crash, a discarded tab, an evicted
-            // back/forward cache entry) are never disposed by it: delete the ones nobody touched for maxAge.
-            var maxAge = Number(message.maxAge);
-            if (!isFinite(maxAge) || maxAge <= 0) {
-                return Promise.reject(new Error('A positive sweep age is required.'));
-            }
-            var keep = Array.isArray(message.keep) ? message.keep : [];
-            var fallbackMaxAge = Number(message.fallbackMaxAge);
-            return queryRowStoreLockNames().then(lockNames => new Promise<QueryRowStoreResponse>((resolve, reject) => {
-                // With Web Locks a store of a live page is known (its lock is held) and an old unlocked store was left
-                // by a page that ended; without them only a much longer age tells a forgotten store apart.
-                var age = lockNames || !isFinite(fallbackMaxAge) || fallbackMaxAge < maxAge ? maxAge : fallbackMaxAge;
-                var now = Date.now();
-                var transaction = database.transaction(['stores', 'rows'], 'readwrite');
-                var stores = transaction.objectStore('stores');
-                var rows = transaction.objectStore('rows');
-                var swept = 0;
-                var request = stores.openCursor();
-                request.onsuccess = function() {
-                    var cursor = request.result;
-                    if (!cursor) {
-                        return;
-                    }
-                    var store = cursor.value;
-                    var locked = !!lockNames && lockNames.indexOf(queryRowStoreLockPrefix + (store && store.id)) >= 0;
-                    if (store && store.id !== message.storeId && keep.indexOf(store.id) < 0 && !locked) {
-                        if (!Number.isSafeInteger(store.touched)) {
-                            // Written before stores kept their age: it starts aging now.
-                            store.touched = now;
-                            cursor.update(store);
-                        } else if (now - store.touched > age) {
-                            stores.delete(store.id);
-                            rows.delete(queryRowStoreScope.IDBKeyRange.bound(
-                                [store.id, 0], [store.id, 9007199254740991]));
-                            swept++;
-                        }
-                    }
-                    cursor.continue();
-                };
-                transaction.oncomplete = function() {
-                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, count: swept });
-                };
-                transaction.onerror = transaction.onabort = function() {
-                    reject(transaction.error || request.error || new Error('Unable to sweep query result storage.'));
-                };
-            }));
         }
 
         return Promise.reject(new Error('Unsupported query row-store operation.'));

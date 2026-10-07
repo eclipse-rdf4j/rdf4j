@@ -391,7 +391,7 @@ test('execution form binding is explicit and leaves raw downloads native', () =>
     };
 
     const dispose = queryStream.bindExecutionForms(root, {
-        rowStoreOptions: { workerFactory: () => new InMemoryWorker() }
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new InMemoryWorker() }
     });
     assert.equal(execution.listeners.get('submit').length, 1);
     assert.equal(rawDownload.listeners.get('submit'), undefined);
@@ -519,7 +519,7 @@ test('a bound execution form requests the default million-row batch into its dec
         querySelectorAll() { return [form]; }
     };
     const dispose = queryStream.bindExecutionForms(root, {
-        rowStoreOptions: { workerFactory: () => new InMemoryWorker() }
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => new InMemoryWorker() }
     });
     const submitEvent = form.trigger('submit');
     await new Promise(resolve => setImmediate(resolve));
@@ -796,7 +796,7 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
         const dispose = workbench.queryPage.renderInto(document.body, {}, {
             executionFormId: 'query-form',
             resultsMountId: 'query-results',
-            rowStoreOptions: { workerFactory: () => worker }
+            rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
         });
         form.trigger('submit');
         for (let attempt = 0; attempt < 30
@@ -812,8 +812,11 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
     const bfcachePage = await mountedResultPage();
     bfcachePage.window.trigger('pagehide', { persisted: true });
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(bfcachePage.queryStream.__testLocalValues.size, 0,
-        'a BFCache-owned result must not be marked for destructive cleanup');
+    const flaggedForCleanup = (values) => [...values.entries()]
+        .filter(([key, value]) => key.startsWith('rdf4j.workbench.row-store.v2:') && JSON.parse(value).dispose === true)
+        .map(([key]) => key);
+    assert.deepEqual(flaggedForCleanup(bfcachePage.queryStream.__testLocalValues), [],
+        'a BFCache-owned result must not be flagged for destructive cleanup');
     assert.equal(bfcachePage.worker.terminated, false,
         'a BFCache-owned view must keep its worker available for back navigation');
     assert.equal(bfcachePage.worker.rows.length, 1);
@@ -823,10 +826,11 @@ test('query page keeps BFCache-owned results and releases rows on destructive pa
 
     const leavingPage = await mountedResultPage();
     leavingPage.window.trigger('pagehide', { persisted: false });
+    const createdStore = leavingPage.worker.messages.find(message => message.op === 'create').storeId;
+    assert.deepEqual(flaggedForCleanup(leavingPage.queryStream.__testLocalValues),
+        ['rdf4j.workbench.row-store.v2:' + createdStore],
+        'destructive pagehide must synchronously flag the exact store id for cleanup');
     await new Promise(resolve => setImmediate(resolve));
-    const pendingCleanup = [...leavingPage.queryStream.__testLocalValues.keys()];
-    assert.deepEqual(pendingCleanup, ['rdf4j.workbench.query-results.pending-disposal.v1:test-store'],
-        'destructive pagehide must synchronously preserve the exact store ID for next-document recovery');
     assert.equal(leavingPage.worker.terminated, true,
         'a page leaving the session must complete the row-store dispose request');
     assert.deepEqual(leavingPage.worker.rows, []);
@@ -889,7 +893,7 @@ test('a repository\'s query result waits for its next Query page, which shows it
         document.body.appendChild(target);
         const dispose = workbench.queryPage.renderInto(document.body, model || {}, {
             executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
-            rowStoreOptions: { workerFactory: () => worker }
+            rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
         });
         return { form, query, timeout, target, dispose };
     }
@@ -989,7 +993,7 @@ test('a query out of sight runs on: "running", then "ready" until its Query page
         document.body.appendChild(target);
         const dispose = workbench.queryPage.renderInto(document.body, {}, {
             executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId,
-            rowStoreOptions: { workerFactory: () => worker }
+            rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
         });
         return { form, target, dispose };
     }
@@ -1106,7 +1110,7 @@ test('a running query is cancelled with a keepalive request when the page is lef
         const worker = new InMemoryWorker();
         workbench.queryPage.renderInto(document.body, {}, {
             executionFormId: 'query-form', resultsMountId: 'query-results',
-            rowStoreOptions: { workerFactory: () => worker }
+            rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
         });
         form.trigger('submit');
         for (let attempt = 0; attempt < 30 && !workbench.queryPage.hasActiveRequest(); attempt += 1) {
@@ -1188,7 +1192,7 @@ test('a suspended result renderer stops listening to the window and keeps its qu
     document.body.appendChild(target);
     const worker = new InMemoryWorker();
     workbench.queryPage.renderInto(document.body, {}, { executionFormId: 'query-form', resultsMountId: 'query-results',
-        rowStoreOptions: { workerFactory: () => worker } });
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker } });
     const beforeQuery = count();
     form.trigger('submit');
     for (let attempt = 0; attempt < 30 && !workbench.queryPage.hasActiveRequest(); attempt += 1) {

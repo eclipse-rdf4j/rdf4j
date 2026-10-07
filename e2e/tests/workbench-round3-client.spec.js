@@ -21,6 +21,7 @@ const {
 	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
+const { largeQuery, storedResults } = require('../row-store-helpers.js');
 
 // Round-3 findings of GH-6071 (exploratory real-browser crawl), client side.
 const REPOSITORY_ID = uniqueRepositoryId('workbench-round3-client');
@@ -43,26 +44,6 @@ async function openPane(page, toggleSelector) {
 		.filter((animation) => animation.playState === 'running').length)).toBe(0);
 	return panel;
 }
-
-/** Runs a function on the Workbench's row-store database (IndexedDB) of the page's origin. */
-async function rowStoreDatabase(page, operation, argument) {
-	return page.evaluate(([source, value]) => new Promise((resolve, reject) => {
-		const opened = indexedDB.open('rdf4j-workbench-query-results', 1);
-		opened.onerror = () => reject(opened.error);
-		opened.onsuccess = () => {
-			const database = opened.result;
-			// eslint-disable-next-line no-new-func
-			Promise.resolve(new Function('database', 'value', source)(database, value))
-				.then((result) => { database.close(); resolve(result); }, (error) => { database.close(); reject(error); });
-		};
-	}), [operation, argument]);
-}
-
-const READ_STORES = `return new Promise((resolve, reject) => {
-	const request = database.transaction(['stores']).objectStore('stores').getAll();
-	request.onsuccess = () => resolve(request.result.map((store) => ({ id: store.id, touched: store.touched })));
-	request.onerror = () => reject(request.error);
-});`;
 
 async function centreHit(locator) {
 	return locator.evaluate((element) => {
@@ -616,7 +597,7 @@ test('deleting a saved query leaves no delete parameter in the address', async (
 });
 
 // C31: leaving the Query page by a full page load starts no IndexedDB work that the unload aborts (Firefox warns about
-// every such transaction); the next page reclaims the result rows instead.
+// every such transaction); the page flags its stored result instead, and cleanup in the next page deletes it.
 test('a full page load after the Query page aborts no IndexedDB work and reclaims the rows', async ({ page }) => {
 	const warnings = [];
 	page.on('console', (message) => {
@@ -627,11 +608,13 @@ test('a full page load after the Query page aborts no IndexedDB work and reclaim
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
 	await waitForRoute(page, 'query');
-	await page.locator('.CodeMirror').first().evaluate((element) => element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 50'));
+	await page.locator('.CodeMirror').first().evaluate((element, query) => element.CodeMirror.setValue(query),
+		largeQuery());
 	await page.locator('#exec').click();
-	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^50 rows · complete/);
-	const storeIds = (await rowStoreDatabase(page, READ_STORES)).map((store) => store.id);
-	expect(storeIds.length).toBeGreaterThan(0);
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
+		{ timeout: 30000 });
+	const storeIds = (await storedResults(page)).databases;
+	expect(storeIds, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
 
 	await page.reload({ waitUntil: 'load' });
 	await waitForRoute(page, 'query');
@@ -641,8 +624,10 @@ test('a full page load after the Query page aborts no IndexedDB work and reclaim
 	await waitForRoute(page, 'query');
 	await page.waitForTimeout(500);
 	expect(warnings, 'no IndexedDB transaction aborted by a page load').toEqual([]);
-	await expect.poll(async () => (await rowStoreDatabase(page, READ_STORES)).filter((store) => storeIds.includes(store.id)).length,
-		{ message: 'the rows of the page that was left are reclaimed' }).toBe(0);
+	await expect.poll(async () => {
+		const stored = await storedResults(page);
+		return storeIds.filter((id) => stored.databases.includes(id) || id in stored.registry).length;
+	}, { message: 'the rows of the page that was left are reclaimed' }).toBe(0);
 });
 
 // C32a: the Repositories list and the repository switcher are in ID order.

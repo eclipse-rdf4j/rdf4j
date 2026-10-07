@@ -23,11 +23,10 @@ function loadWorkbench(sandboxExtras = {}) {
     return context.workbench;
 }
 
-/** A row store and NDJSON reader in memory; recovery of saved row stores is what each test makes of it. */
-function installStream(workbench, recover) {
+/** A row store and NDJSON reader in memory; cleanup of stored results is what each test makes of it. */
+function installStream(workbench, maintain) {
     workbench.queryStream = {
-        recoverPendingRowStores: recover,
-        watchPendingRowStores() {},
+        scheduleRowStoreMaintenance: maintain,
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
@@ -71,9 +70,9 @@ const contexts = { ok: true, records: [
     { type: 'rows', values: [[{ kind: 'iri', value: 'urn:g' }]] }, { type: 'end' }
 ] };
 
-test('A23: the page starts when saved query results cannot be recovered (for example without IndexedDB)', async () => {
+test('A23: the page starts when stored query results cannot be cleaned up (for example without IndexedDB)', async () => {
     const workbench = loadWorkbench();
-    installStream(workbench, () => Promise.reject(new Error('IndexedDB is unavailable')));
+    installStream(workbench, () => { throw new Error('IndexedDB is unavailable'); });
     const warnings = [];
     const quiet = { error: console.error, warn: console.warn };
     console.error = (...args) => warnings.push(args);
@@ -89,7 +88,7 @@ test('A23: the page starts when saved query results cannot be recovered (for exa
     }
     assert.equal(result.model.viewId, 'contexts', 'the page is shown');
     assert.ok(warnings.some((args) => args.some((arg) => String(arg && arg.message || arg).includes('IndexedDB'))),
-        'the console says why nothing was recovered');
+        'the console says why nothing was cleaned up');
 });
 
 test('A43: reloading a page (F5) brings it back to where it was scrolled, as Back does', async () => {

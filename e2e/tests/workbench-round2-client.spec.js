@@ -21,6 +21,8 @@ const {
 	uniqueRepositoryId,
 	waitForRoute
 } = require('./workbench-test-helpers.js');
+const { ageStoredResults, forgetLastCleanup, largeQuery, plantAbandonedStore, storedResults }
+	= require('../row-store-helpers.js');
 
 // Round-2 review of GH-6071: client regressions that the first review fixes introduced, checked in real browsers.
 const REPOSITORY_ID = uniqueRepositoryId('workbench-round2-client');
@@ -547,9 +549,11 @@ test('a Query page opened by Saved queries Edit whose scripts fail stays, saying
 	}
 });
 
-// R13: without Web Workers (or IndexedDB) the rows are kept in the page's memory; that store is bounded, so a huge
-// result cannot exhaust the tab, and the page says why it stopped and what to do instead.
+// R13: without Web Workers (or IndexedDB) the rows are kept in the page's memory; that store is bounded (by estimated
+// size, 128 MB), so a huge result cannot exhaust the tab, and the page says why it stopped, what to do instead, and
+// offers to reset browser storage.
 test('without browser storage a huge result stops at the in-memory bound and says so', async ({ page }) => {
+	test.setTimeout(120000);
 	await page.addInitScript(() => {
 		Object.defineProperty(window, 'Worker', { configurable: true, value: undefined });
 	});
@@ -562,17 +566,31 @@ test('without browser storage a huge result stops at the in-memory bound and say
 	const results = page.locator('#query-results');
 	await expect(results.locator('.query-result-status')).toHaveText(/^5 rows · complete/);
 
+	// 160,000 rows of about a kilobyte each: past the 128 MB the page keeps in memory.
 	const values = Array.from({ length: 400 }, (_, index) => index).join(' ');
-	await setQueryEditor(page, `SELECT ?a ?b WHERE { VALUES ?a { ${values} } VALUES ?b { ${values} } }`);
+	await setQueryEditor(page, `SELECT ?a ?b ?text WHERE { VALUES ?a { ${values} } VALUES ?b { ${values} } `
+		+ `BIND(CONCAT("${'x'.repeat(1000)}", STR(?a), "-", STR(?b)) AS ?text) }`);
+	let executions = 0;
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && request.url().endsWith('/query')) executions += 1;
+	});
 	await page.locator('#exec').click();
-	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 60000 });
+	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 90000 });
 	const status = results.locator('.query-result-status');
 	await expect(status).toHaveText(/^Partial results: [\d,]+ rows kept before the browser failed/);
 	const kept = Number((await status.textContent()).match(/([\d,]+) rows/)[1].replace(/,/g, ''));
-	expect(kept).toBeGreaterThan(90000);
-	expect(kept).toBeLessThanOrEqual(100000);
-	await expect(results).toContainText(/Browser storage is unavailable here, so the Workbench keeps at most 100,000 rows/);
+	expect(kept).toBeGreaterThan(50000);
+	expect(kept).toBeLessThan(160000);
+	await expect(results).toContainText(/Browser storage is unavailable here, so the Workbench keeps at most 128 MB of rows in memory/);
 	await expect(results).toContainText(/Add a LIMIT to the query, or use Download for the full result/);
+
+	// The error offers to reset browser storage; storage answers, so the query runs again (and stops again here).
+	const reset = results.getByRole('button', { name: 'Reset browser storage' });
+	await expect(reset).toBeVisible();
+	await reset.click();
+	await expect.poll(() => executions, { message: 'the query runs again after the reset' }).toBe(2);
+	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 90000 });
+	await expect(status).toHaveText(/^Partial results: [\d,]+ rows kept before the browser failed/);
 });
 
 // R15: a selector list with one selector a browser cannot parse is dropped whole. The reduced-motion rule must not mix
@@ -662,71 +680,38 @@ test('a user whose credentials encode with "+" is the signed-in user everywhere 
 	}
 });
 
-/** Runs a function on the Workbench's row-store database (IndexedDB) of the page's origin. */
-async function rowStoreDatabase(page, operation, argument) {
-	return page.evaluate(([source, value]) => new Promise((resolve, reject) => {
-		const opened = indexedDB.open('rdf4j-workbench-query-results', 1);
-		opened.onerror = () => reject(opened.error);
-		opened.onsuccess = () => {
-			const database = opened.result;
-			// eslint-disable-next-line no-new-func
-			Promise.resolve(new Function('database', 'value', source)(database, value))
-				.then((result) => { database.close(); resolve(result); }, (error) => { database.close(); reject(error); });
-		};
-	}), [operation, argument]);
-}
-
-const READ_STORES = `return new Promise((resolve, reject) => {
-	const request = database.transaction(['stores']).objectStore('stores').getAll();
-	request.onsuccess = () => resolve(request.result.map((store) => ({ id: store.id, touched: store.touched })));
-	request.onerror = () => reject(request.error);
-});`;
-
-const AGE_STORES = `return new Promise((resolve, reject) => {
-	const transaction = database.transaction(['stores'], 'readwrite');
-	const stores = transaction.objectStore('stores');
-	for (const id of value.ids) {
-		const request = stores.get(id);
-		request.onsuccess = () => { const store = request.result; store.touched = value.touched; stores.put(store); };
-	}
-	if (value.abandoned) {
-		stores.put({ id: value.abandoned, count: 0, format: 'blocks-v1', tailStart: 0, tailRows: 0, tailVolume: 0,
-			touched: value.touched });
-	}
-	transaction.oncomplete = () => resolve();
-	transaction.onerror = () => reject(transaction.error);
-});`;
-
-// R19: the row-store sweep deletes the stores of pages that ended without disposing them, by age. A tab that is frozen
-// or asleep does not touch its stores, but still shows their rows: a store whose page is alive (it holds the store's
-// Web Lock) is never swept, however old its last touch.
-test('the row-store sweep of another tab keeps the stores of a live page that has not touched them for days', async ({ page, context }) => {
+// R19: cleanup deletes the stored results of pages that ended without disposing them, by age. A tab that is frozen or
+// asleep shows its rows without touching them, but its page holds the Web Lock of each store it shows: such a store is
+// never deleted, however old.
+test('cleanup in another tab keeps the stored results of a live page, however old, and deletes abandoned ones', async ({ page, context }) => {
 	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
-	await setQueryEditor(page, 'SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 300');
+	await setQueryEditor(page, largeQuery());
 	await page.locator('#exec').click();
-	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^300 rows · complete/);
-	const live = (await rowStoreDatabase(page, READ_STORES)).map((store) => store.id);
-	expect(live.length).toBeGreaterThan(0);
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
+		{ timeout: 30000 });
+	const live = (await storedResults(page)).databases;
+	expect(live, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
 	const fourDaysAgo = Date.now() - 4 * 24 * 60 * 60 * 1000;
-	const abandoned = 'rows-abandoned-' + Date.now().toString(36);
-	await rowStoreDatabase(page, AGE_STORES, { ids: live, touched: fourDaysAgo, abandoned });
+	const abandoned = 'rows-' + fourDaysAgo.toString(36) + '-abandoned';
+	await plantAbandonedStore(page, abandoned, fourDaysAgo);
+	await ageStoredResults(page, live, fourDaysAgo);
+	await forgetLastCleanup(page);
 
-	// Another tab creates a store, and with it sweeps the stores nobody touched for three days.
+	// Another tab shows a page, and cleans up after it is shown.
 	const other = await context.newPage();
-	await openQueryPage(other, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
-	await setQueryEditor(other, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 3');
-	await other.locator('#exec').click();
-	await expect(other.locator('#query-results .query-result-status')).toHaveText(/^3 rows · complete/);
-	await expect.poll(async () => (await rowStoreDatabase(other, READ_STORES)).some((store) => store.id === abandoned),
-		{ message: 'the abandoned store is swept' }).toBe(false);
-
-	const left = (await rowStoreDatabase(other, READ_STORES)).map((store) => store.id);
+	await other.goto(`${workbenchBaseUrlForSpec()}/repositories/${REPOSITORY_ID}/summary`);
+	await waitForRoute(other, 'summary');
+	await expect.poll(async () => (await storedResults(other)).databases.includes(abandoned),
+		{ message: 'the abandoned store is deleted' }).toBe(false);
+	const left = await storedResults(other);
+	expect(left.registry[abandoned], 'and forgotten').toBeUndefined();
 	for (const id of live) {
-		expect(left, 'the live page\'s store is kept').toContain(id);
+		expect(left.databases, 'the live page\'s store is kept').toContain(id);
 	}
 	// The live page still reads its rows.
+	await page.bringToFront();
 	await page.keyboard.press('End');
-	await expect(page.locator('#query-results tbody tr[data-query-row-index="299"]')).toBeAttached();
+	await expect(page.locator('#query-results tbody tr[data-query-row-index="11999"]')).toBeAttached();
 	await other.close();
 });
 

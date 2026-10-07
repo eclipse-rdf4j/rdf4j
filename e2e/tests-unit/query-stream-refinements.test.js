@@ -483,7 +483,8 @@ test('worker row store appends in order, reads bounded windows, disposes, and re
     const worker = new InMemoryWorker();
     const store = await queryStream.createRowStore({
         workerUrl: '/scripts/queryStreamWorker.js',
-        workerFactory: () => worker
+        workerFactory: () => worker,
+        spillRowLimit: 0
     });
     const batch = Array.from({ length: 10000 }, (_, index) => [
         { kind: 'literal', value: String(index) }
@@ -509,125 +510,44 @@ test('worker row store appends in order, reads bounded windows, disposes, and re
         });
     };
     // Review fix B21: a store IndexedDB cannot create (here: a full quota) keeps the rows in memory instead.
-    const fallback = await queryStream.createRowStore({ workerFactory: () => failingWorker });
+    const fallback = await queryStream.createRowStore({ workerFactory: () => failingWorker, spillRowLimit: 0 });
+    assert.equal(await fallback.append([[null]]), 1);
     assert.equal(failingWorker.terminated, true, 'the failing worker is closed');
     assert.match(fallback.id, /^memory-/);
-    assert.equal(await fallback.append([[null]]), 1);
 });
 
-test('new same-tab row stores reclaim only stores marked by a destructive pagehide', async () => {
+test('a destructive pagehide flags the stores of the document for cleanup by their exact ids', async () => {
     const queryStream = loadQueryStreamApi();
     assert.equal(typeof queryStream.markCurrentRowStoresForRecovery, 'function',
-        'destructive navigation must persist a recovery marker before the worker can be interrupted');
+        'destructive navigation must flag its stores before the worker can be interrupted');
+    const registry = 'rdf4j.workbench.row-store.v2:';
+    const flagged = () => [...queryStream.__testLocalValues.entries()]
+        .filter(([key, value]) => key.startsWith(registry) && JSON.parse(value).dispose === true)
+        .map(([key]) => key.substring(registry.length));
 
-    const oldPageWorker = new InMemoryWorker();
-    oldPageWorker.storeId = 'old-page-store';
-    const oldPageStore = await queryStream.createRowStore({ workerFactory: () => oldPageWorker });
+    const oldPageStore = await queryStream.createRowStore({
+        workerFactory: () => new InMemoryWorker(), spillRowLimit: 0 });
     await oldPageStore.append([[{ kind: 'literal', value: 'old page row' }]]);
+    for (let index = 0; index < 100 && oldPageStore.inMemory; index++) await new Promise(resolve => setImmediate(resolve));
     queryStream.markCurrentRowStoresForRecovery({ persisted: true });
-    assert.equal(queryStream.__testLocalValues.size, 0,
-        'a BFCache pagehide must not write any durable deletion marker');
+    assert.deepEqual(flagged(), [], 'a BFCache pagehide must not flag a store for deletion');
     queryStream.markCurrentRowStoresForRecovery({ persisted: false });
-
-    const pending = [...queryStream.__testLocalValues.keys()];
-    assert.deepEqual(pending, ['rdf4j.workbench.query-results.pending-disposal.v1:old-page-store']);
-
-    const newPageWorker = new InMemoryWorker();
-    newPageWorker.storeId = 'new-page-store';
-    const newPageStore = await queryStream.createRowStore({ workerFactory: () => newPageWorker });
-    assert.ok(newPageWorker.messages.some(message => message.op === 'dispose'
-        && message.storeId === 'old-page-store'), 'recovery must delete the old store by its exact ID');
-    assert.equal(newPageStore.id, 'new-page-store');
-    assert.equal(queryStream.__testLocalValues.size, 0,
-        'successfully reclaimed IDs must not be deleted again by later documents');
+    assert.deepEqual(flagged(), [oldPageStore.id]);
 });
 
-test('a row store is marked for recovery on a destructive pagehide before any route owns it', async () => {
+test('a row store is flagged for cleanup on a destructive pagehide before any route owns it', async () => {
     // A page left while it is still loading has created its page-model store but mounted no route yet.
     const queryStream = loadQueryStreamApi();
-    const worker = new InMemoryWorker();
-    worker.storeId = 'loading-page-store';
-    await queryStream.createRowStore({ workerFactory: () => worker });
+    const store = await queryStream.createRowStore({ workerFactory: () => new InMemoryWorker(), spillRowLimit: 0 });
+    await store.append([[{ kind: 'literal', value: 'loading page row' }]]);
+    for (let index = 0; index < 100 && store.inMemory; index++) await new Promise(resolve => setImmediate(resolve));
+    const key = 'rdf4j.workbench.row-store.v2:' + store.id;
 
     queryStream.__testDispatchWindowEvent('pagehide', { persisted: true });
-    assert.equal(queryStream.__testLocalValues.size, 0, 'a BFCache pagehide keeps the store without a marker');
+    assert.equal(JSON.parse(queryStream.__testLocalValues.get(key)).dispose, undefined,
+        'a BFCache pagehide keeps the store unflagged');
     queryStream.__testDispatchWindowEvent('pagehide', { persisted: false });
-    assert.deepEqual([...queryStream.__testLocalValues.keys()],
-        ['rdf4j.workbench.query-results.pending-disposal.v1:loading-page-store']);
-});
-
-test('a booted page reclaims stores that a replaced document marks after it started', async () => {
-    // A browser can run the replaced document's pagehide after the next document has booted and recovered.
-    const queryStream = loadQueryStreamApi();
-    const prefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
-    const workers = [];
-    queryStream.watchPendingRowStores({ workerFactory: () => {
-        const worker = new InMemoryWorker();
-        workers.push(worker);
-        return worker;
-    } });
-
-    queryStream.__testDispatchWindowEvent('storage', { key: 'unrelated', newValue: 'x' });
-    queryStream.__testWindow.localStorage.setItem(`${prefix}late-store`, 'pending');
-    queryStream.__testDispatchWindowEvent('storage', { key: `${prefix}late-store`, newValue: 'pending' });
-    await new Promise(resolve => setImmediate(resolve));
-
-    assert.equal(workers.length, 1, 'only a recovery marker starts a recovery');
-    assert.deepEqual(workers[0].messages.map(message => [message.op, message.storeId]), [['dispose', 'late-store']]);
-    assert.equal(queryStream.__testLocalValues.size, 0, 'the reclaimed store is no longer marked');
-    queryStream.__testDispatchWindowEvent('storage', { key: `${prefix}late-store`, newValue: null });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(workers.length, 1, 'removing a marker reclaims nothing');
-});
-
-test('bootstrap reclaims persisted row stores before any route rows are loaded', async () => {
-    const queryStream = loadQueryStreamApi();
-    const prefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
-    queryStream.__testWindow.localStorage.setItem(`${prefix}closed-tab-store`, '1');
-    queryStream.__testWindow.localStorage.setItem(`${prefix}other-tab-store`, '2');
-    const workers = [];
-
-    await queryStream.recoverPendingRowStores({ workerFactory: () => {
-        const worker = new InMemoryWorker();
-        worker.storeId = 'temporary-bootstrap-store';
-        workers.push(worker);
-        return worker;
-    } });
-
-    assert.equal(workers.length, 1, 'bootstrap should use one worker only when a recovery marker exists');
-    assert.deepEqual(workers[0].messages.map(message => [message.op, message.storeId]), [
-        ['dispose', 'closed-tab-store'],
-        ['dispose', 'other-tab-store']
-    ], 'boot recovery should dispose exact stale IDs without creating a throwaway store');
-    assert.equal(queryStream.__testLocalValues.size, 0);
-
-    let workerCreated = false;
-    await queryStream.recoverPendingRowStores({ workerFactory: () => {
-        workerCreated = true;
-        return new InMemoryWorker();
-    } });
-    assert.equal(workerCreated, false, 'ordinary boot with no markers should not create an extra worker');
-});
-
-test('failed boot recovery preserves the marker for a later same-origin boot', async () => {
-    const queryStream = loadQueryStreamApi();
-    const key = 'rdf4j.workbench.query-results.pending-disposal.v1:store-after-quota-error';
-    queryStream.__testWindow.localStorage.setItem(key, 'pending');
-    const worker = new InMemoryWorker();
-    worker.postMessage = function(message) {
-        this.messages.push(message);
-        queueMicrotask(() => {
-            for (const listener of this.listeners.get('message') || []) {
-                listener({ data: { requestId: message.requestId, ok: false, error: 'QuotaExceededError' } });
-            }
-        });
-    };
-
-    await assert.rejects(queryStream.recoverPendingRowStores({ workerFactory: () => worker }),
-        /quota|QuotaExceededError/i);
-    assert.equal(queryStream.__testWindow.localStorage.getItem(key), 'pending',
-        'recovery markers are removed only after the worker confirms disposal');
-    assert.equal(worker.terminated, true);
+    assert.equal(JSON.parse(queryStream.__testLocalValues.get(key)).dispose, true);
 });
 
 test('variable-height virtualization uses measured row prefixes and stays bounded at scale', () => {

@@ -160,41 +160,93 @@ var workbench;
         queryStream.ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
         queryStream.COMPACT_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
         /**
-         * The most rows the in-memory fallback store keeps. The worker store keeps a million-row batch in IndexedDB; in
-         * the page's own memory that many rows can exhaust the tab.
+         * The most rows, and estimated bytes of rows, a store keeps in the page's memory: while the rows wait to move
+         * to browser storage, or for good where browser storage cannot be used. More than that can exhaust the tab.
          */
-        queryStream.MEMORY_ROW_STORE_LIMIT = 100000;
-        var rowStoreRecoveryKeyPrefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
+        queryStream.MEMORY_ROW_STORE_LIMIT = 1000000;
+        queryStream.MEMORY_BYTE_LIMIT = 128 * 1024 * 1024;
+        /**
+         * A row store keeps its rows in the page's memory until it holds more than this many rows (or SPILL_BYTE_LIMIT
+         * bytes), and only then moves them to browser storage: an ordinary page or query result never waits on
+         * IndexedDB, which Safari can leave held by a frozen background tab.
+         */
+        queryStream.SPILL_ROW_LIMIT = 10000;
+        queryStream.SPILL_BYTE_LIMIT = 32 * 1024 * 1024;
+        /**
+         * How long a store whose memory is full waits for browser storage to make progress. While memory has room the
+         * rows keep coming and nothing waits; browser storage busy with other tabs' work can take seconds to answer.
+         */
+        queryStream.STORAGE_TIMEOUT = 30000;
+        /** How long one IndexedDB call (deleting a database, listing them) may take before the page stops waiting. */
+        queryStream.STORAGE_CALL_TIMEOUT = 5000;
+        /**
+         * A row store that moved to browser storage (a "stored result") is an IndexedDB database of its own, named
+         * ROW_STORE_DATABASE_PREFIX + its id, written only by the worker of the page that shows it. It is listed in a
+         * localStorage registry under ROW_STORE_REGISTRY_PREFIX + its id, as JSON { created, used, bytes }, with
+         * "dispose": true once it should be deleted. Cleanup (maintainRowStores) reads the registry: it must not open
+         * the databases of other tabs, which a tab the browser froze mid-transaction can hold, and the storage estimate
+         * of the browser does not go down after a deletion in WebKit.
+         */
+        queryStream.ROW_STORE_DATABASE_PREFIX = 'rdf4j-workbench-row-store:';
+        queryStream.ROW_STORE_REGISTRY_PREFIX = 'rdf4j.workbench.row-store.v2:';
+        /** The Web Lock a page holds while it uses a stored result: cleanup never deletes a held store. */
+        var ROW_STORE_LOCK_PREFIX = 'rdf4j-workbench-row-store:';
+        /** Held by the one tab that cleans up at a time. */
+        var ROW_STORE_MAINTENANCE_LOCK = 'rdf4j-workbench-row-store-maintenance';
+        /** When cleanup last looked at every store, in any tab of the origin. */
+        var ROW_STORE_MAINTAINED_KEY = 'rdf4j.workbench.row-store.v2.maintained';
+        /** Before stores had databases of their own they shared this one, with these markers and Web Locks. */
+        var LEGACY_ROW_STORE_DATABASE = 'rdf4j-workbench-query-results';
+        var LEGACY_ROW_STORE_MARKER_PREFIX = 'rdf4j.workbench.query-results.pending-disposal.v1:';
+        var LEGACY_ROW_STORE_LOCK_PREFIX = 'rdf4j-workbench-query-rows:';
+        /** Stored results are kept below about this many bytes; above it cleanup deletes the least recently used. */
+        queryStream.ROW_STORE_CAP_BYTES = 50000000000;
+        /** The stored results of this document, flagged for cleanup when it is unloaded. */
         var currentDocumentRowStoreIds = [];
         /**
-         * Stores of pages that ended without a destructive pagehide (a crash, a discarded tab, an evicted back/forward
-         * cache entry) are swept by age: a page touches its open stores every half hour, and a new store deletes the
-         * ones nobody touched for three days, at most once an hour per page.
+         * A stored result no page holds is deleted once it has not been used for three days. Where Web Locks are
+         * unavailable a live page cannot be told apart, so a store goes only thirty days after its page last marked it
+         * used (every half hour while the page is visible). Cleanup looks at every store at most once an hour.
          */
         var rowStoreMaxAge = 3 * 24 * 60 * 60 * 1000;
-        /** Where Web Locks are unavailable a live page's store cannot be told apart: only much older ones are swept. */
         var rowStoreFallbackMaxAge = 30 * 24 * 60 * 60 * 1000;
         var rowStoreTouchInterval = 30 * 60 * 1000;
         var rowStoreSweepInterval = 60 * 60 * 1000;
-        var lastRowStoreSweep = null;
-        var liveRowStoreTouches = {};
+        /** A registry entry without a database is forgotten only after this long: its store may be being created. */
+        var rowStoreCreationGrace = 60 * 1000;
+        /** A store records its size in the registry at most this often. */
+        var rowStoreRegistryWriteInterval = 1000;
         var rowStoreHeartbeat = null;
-        /**
-         * Hold the Web Lock of a row store while this page uses it, so the sweep of another page (queryStreamWorker)
-         * keeps it even when this page is frozen or asleep and touches nothing; the browser releases the lock when the
-         * page ends. Returns the release.
-         */
-        function holdRowStoreLock(storeId) {
+        function newRowStoreId() {
+            return 'rows-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2);
+        }
+        /** The creation time a store id carries, or NaN. */
+        function rowStoreIdTime(id) {
+            var match = /^rows-([0-9a-z]+)-/.exec(id);
+            return match ? parseInt(match[1], 36) : NaN;
+        }
+        function browserLocks() {
             var browser = typeof navigator !== 'undefined' ? navigator
                 : typeof window !== 'undefined' ? window.navigator : null;
             var locks = browser ? browser.locks : null;
-            if (!storeId || !locks || typeof locks.request !== 'function') {
+            return locks && typeof locks.request === 'function' ? locks : null;
+        }
+        function isHiddenDocument(documentObject) {
+            return !!documentObject && documentObject.visibilityState === 'hidden';
+        }
+        /**
+         * Hold the Web Lock of a stored result while this page uses it, so cleanup in another tab keeps it even when
+         * this page is frozen or asleep; the browser releases the lock when the page ends. Returns the release.
+         */
+        function holdRowStoreLock(storeId) {
+            var locks = browserLocks();
+            if (!storeId || !locks) {
                 return function () { };
             }
             var released = false;
             var release = null;
             try {
-                Promise.resolve(locks.request('rdf4j-workbench-query-rows:' + storeId, { mode: 'exclusive' }, function () {
+                Promise.resolve(locks.request(ROW_STORE_LOCK_PREFIX + storeId, { mode: 'exclusive' }, function () {
                     return new Promise(function (resolve) {
                         if (released) {
                             resolve();
@@ -204,7 +256,7 @@ var workbench;
                         }
                     });
                 })).then(null, function () {
-                    // Without the lock the store is kept by its age, as before.
+                    // Without the lock the store is kept by its age.
                 });
             }
             catch (error) {
@@ -217,83 +269,127 @@ var workbench;
                 }
             };
         }
-        function startRowStoreHeartbeat() {
-            var view = typeof window !== 'undefined' ? window : null;
-            if (rowStoreHeartbeat !== null || !view || typeof view.setInterval !== 'function') {
-                return;
-            }
-            rowStoreHeartbeat = view.setInterval(function () {
-                var ids = Object.keys(liveRowStoreTouches);
-                if (!ids.length) {
-                    view.clearInterval(rowStoreHeartbeat);
-                    rowStoreHeartbeat = null;
-                    return;
-                }
-                ids.forEach(function (id) {
-                    liveRowStoreTouches[id]().then(null, function () {
-                        // A store that cannot be touched is still disposed by its page.
-                    });
-                });
-            }, rowStoreTouchInterval);
-        }
-        function rowStoreRecoveryStorage() {
+        function rowStoreRegistryStorage() {
             try {
-                return typeof window !== 'undefined' ? window.localStorage : null;
+                return typeof window !== 'undefined' ? window.localStorage || null : null;
             }
             catch (error) {
                 return null;
             }
         }
-        function pendingRowStoreRecoveryIds() {
-            var storage = rowStoreRecoveryStorage();
-            if (!storage || typeof storage.key !== 'function') {
-                return [];
-            }
+        function readRowStoreEntry(storage, id) {
             try {
-                var ids = [];
-                for (var index = 0; index < storage.length; index++) {
-                    var key = storage.key(index);
-                    if (typeof key === 'string' && key.indexOf(rowStoreRecoveryKeyPrefix) === 0) {
-                        var id = key.substring(rowStoreRecoveryKeyPrefix.length);
-                        if (id && ids.indexOf(id) < 0) {
-                            ids.push(id);
-                        }
-                    }
-                }
-                return ids;
+                var value = storage.getItem(queryStream.ROW_STORE_REGISTRY_PREFIX + id);
+                var entry = value === null || typeof value === 'undefined' ? null : JSON.parse(value);
+                return entry && typeof entry === 'object' ? entry : null;
             }
             catch (error) {
-                return [];
+                return null;
             }
         }
-        function removePendingRowStoreRecoveryIds(recoveredIds) {
-            var storage = rowStoreRecoveryStorage();
-            if (!storage || typeof storage.removeItem !== 'function') {
-                return;
+        /** False where the entry cannot be stored (storage full or turned off). */
+        function writeRowStoreEntry(storage, id, entry) {
+            try {
+                storage.setItem(queryStream.ROW_STORE_REGISTRY_PREFIX + id, JSON.stringify(entry));
+                return true;
             }
-            recoveredIds.forEach(function (id) {
-                try {
-                    storage.removeItem(rowStoreRecoveryKeyPrefix + id);
-                }
-                catch (error) {
-                    // A remaining marker is safe: the next same-origin boot can retry it.
-                }
+            catch (error) {
+                return false;
+            }
+        }
+        function removeRowStoreEntry(storage, id) {
+            try {
+                storage.removeItem(queryStream.ROW_STORE_REGISTRY_PREFIX + id);
+            }
+            catch (error) {
+                // An entry left behind is forgotten by cleanup once its database is gone.
+            }
+        }
+        /** Flags a store for cleanup to delete, keeping what the registry knows about it; false where it cannot. */
+        function flagRowStoreEntry(storage, id, now) {
+            if (!storage || !id) {
+                return false;
+            }
+            var entry = readRowStoreEntry(storage, id);
+            return writeRowStoreEntry(storage, id, {
+                created: entry && isFinite(entry.created) ? entry.created : now,
+                used: entry && isFinite(entry.used) ? entry.used : now,
+                bytes: entry && isFinite(entry.bytes) ? entry.bytes : 0,
+                dispose: true
             });
+        }
+        function flagRowStoreForCleanup(id) {
+            return flagRowStoreEntry(rowStoreRegistryStorage(), id, Date.now());
+        }
+        /** Every registry entry, by store id. */
+        function readRowStoreRegistry(storage) {
+            var entries = {};
+            try {
+                var keys = [];
+                for (var index = 0; index < storage.length; index++) {
+                    var key = storage.key(index);
+                    if (typeof key === 'string' && key.indexOf(queryStream.ROW_STORE_REGISTRY_PREFIX) === 0) {
+                        keys.push(key);
+                    }
+                }
+                keys.forEach(function (key) {
+                    var id = key.substring(queryStream.ROW_STORE_REGISTRY_PREFIX.length);
+                    var entry = id ? readRowStoreEntry(storage, id) : null;
+                    if (entry) {
+                        entries[id] = entry;
+                    }
+                });
+            }
+            catch (error) {
+                // Unreadable storage: nothing to clean up now.
+            }
+            return entries;
         }
         function forgetCurrentDocumentRowStore(id) {
             currentDocumentRowStoreIds = currentDocumentRowStoreIds.filter(function (candidate) {
                 return candidate !== id;
             });
         }
+        /**
+         * Marks this document's stored results used now: the heartbeat where Web Locks are unavailable, so cleanup
+         * keeps the stores of a live page. Only while the page is visible: a hidden tab touches no storage.
+         */
+        function touchCurrentRowStores(documentObject) {
+            var page = documentObject || (typeof document !== 'undefined' ? document : null);
+            var storage = rowStoreRegistryStorage();
+            if (isHiddenDocument(page) || !storage) {
+                return;
+            }
+            var now = Date.now();
+            currentDocumentRowStoreIds.forEach(function (id) {
+                var entry = readRowStoreEntry(storage, id);
+                if (entry && !entry.dispose) {
+                    entry.used = now;
+                    writeRowStoreEntry(storage, id, entry);
+                }
+            });
+        }
+        queryStream.touchCurrentRowStores = touchCurrentRowStores;
+        /** Where Web Locks are available a held lock tells cleanup the store is in use, and no heartbeat runs. */
+        function startRowStoreHeartbeat() {
+            var view = typeof window !== 'undefined' ? window : null;
+            if (browserLocks() || rowStoreHeartbeat !== null || !view || typeof view.setInterval !== 'function') {
+                return;
+            }
+            rowStoreHeartbeat = view.setInterval(function () {
+                if (!currentDocumentRowStoreIds.length) {
+                    view.clearInterval(rowStoreHeartbeat);
+                    rowStoreHeartbeat = null;
+                    return;
+                }
+                touchCurrentRowStores();
+            }, rowStoreTouchInterval);
+        }
         var rowStorePagehideListening = false;
         /**
-         * Marks this document's stores on its own pagehide, so a store is reclaimed even when the page is left before
-         * a route takes ownership of it (a page left while it is still loading).
-         */
-        /**
-         * True from a destructive pagehide (the document is being unloaded, not cached) until a pageshow: an IndexedDB
-         * transaction started now is aborted by the unload (Firefox warns about each, C31), so stores are marked for
-         * the next page to reclaim instead of being disposed. Listened to in the capture phase, before the pages' own
+         * True from a destructive pagehide (the document is being unloaded, not cached) until a pageshow: IndexedDB
+         * work started now is aborted by the unload (Firefox warns about each, C31), so stores are flagged for cleanup
+         * in the next visible page instead of being deleted. Listened to in the capture phase, before the pages' own
          * pagehide handlers dispose their results.
          */
         var documentUnloading = false;
@@ -307,20 +403,7 @@ var workbench;
                 documentUnloading = false;
             }, true);
         }
-        /** Mark one store for the next page of this origin to reclaim; false when the mark cannot be stored. */
-        function markRowStoreForRecovery(id) {
-            var storage = rowStoreRecoveryStorage();
-            if (!id || !storage || typeof storage.setItem !== 'function') {
-                return false;
-            }
-            try {
-                storage.setItem(rowStoreRecoveryKeyPrefix + id, 'pending');
-                return true;
-            }
-            catch (error) {
-                return false;
-            }
-        }
+        /** Flags this document's stores on its own pagehide, also a page left before a route took ownership of them. */
         function listenForRowStorePagehide() {
             if (rowStorePagehideListening || typeof window === 'undefined' || !window.addEventListener) {
                 return;
@@ -328,25 +411,13 @@ var workbench;
             rowStorePagehideListening = true;
             window.addEventListener('pagehide', markCurrentRowStoresForRecovery, false);
         }
-        /** Records this document's stores only when it is being destroyed, not cached. */
+        /** Flags this document's stored results for cleanup, only when it is being destroyed, not cached. */
         function markCurrentRowStoresForRecovery(event) {
             if (!event || event.persisted !== false) {
                 return;
             }
-            var storage = rowStoreRecoveryStorage();
-            if (!storage || typeof storage.setItem !== 'function') {
-                return;
-            }
             currentDocumentRowStoreIds.forEach(function (id) {
-                try {
-                    var key = rowStoreRecoveryKeyPrefix + id;
-                    if (storage.getItem(key) === null) {
-                        storage.setItem(key, 'pending');
-                    }
-                }
-                catch (error) {
-                    // Storage can be disabled; normal worker disposal remains the best-effort path.
-                }
+                flagRowStoreForCleanup(id);
             });
         }
         queryStream.markCurrentRowStoresForRecovery = markCurrentRowStoresForRecovery;
@@ -992,224 +1063,851 @@ var workbench;
             }
             return worker;
         }
-        /** Reclaims stores marked by a prior destructive pagehide, even on routes that create no row store. */
-        function recoverPendingRowStores(options) {
-            var recoveryIds = pendingRowStoreRecoveryIds();
-            if (recoveryIds.length === 0) {
-                return Promise.resolve();
+        function rowStoreMaintenanceEnvironment(options) {
+            var view = typeof window !== 'undefined' ? window : null;
+            var factory = null;
+            if ('indexedDB' in options) {
+                factory = options.indexedDB;
             }
-            var worker;
-            try {
-                worker = createRowStoreWorker(options || {});
+            else {
+                try {
+                    factory = view ? view.indexedDB || null : null;
+                }
+                catch (error) {
+                    // Browsers refuse IndexedDB where it is turned off (SecurityError).
+                }
             }
-            catch (error) {
-                // Without Web Workers there are no IndexedDB stores to reclaim; the markers wait for a later boot.
-                return Promise.resolve();
-            }
-            return new Promise(function (resolve, reject) {
-                var requestId = 0;
-                var remaining = recoveryIds.length;
-                var pending = {};
-                var finished = false;
-                function finish(error) {
-                    if (finished) {
-                        return;
-                    }
-                    finished = true;
-                    if (typeof worker.removeEventListener === 'function') {
-                        worker.removeEventListener('message', receive);
-                        worker.removeEventListener('error', onError);
-                    }
-                    else {
-                        worker.onmessage = null;
-                        worker.onerror = null;
-                    }
-                    if (typeof worker.terminate === 'function') {
-                        worker.terminate();
-                    }
-                    if (error) {
-                        reject(error);
-                    }
-                    else {
-                        resolve();
-                    }
-                }
-                function receive(event) {
-                    if (finished) {
-                        return;
-                    }
-                    var response = event && event.data;
-                    var key = response && String(response.requestId);
-                    var storeId = key && pending[key];
-                    if (!storeId) {
-                        return;
-                    }
-                    delete pending[key];
-                    if (!response.ok && response.unavailable) {
-                        // IndexedDB cannot be opened here (blocked site data, disabled storage): nothing to reclaim
-                        // now, and the markers wait for a later boot that has storage.
-                        finish();
-                        return;
-                    }
-                    if (!response.ok) {
-                        finish(new Error(response.error || 'Workbench query result recovery failed.'));
-                        return;
-                    }
-                    forgetCurrentDocumentRowStore(storeId);
-                    removePendingRowStoreRecoveryIds([storeId]);
-                    remaining--;
-                    if (remaining === 0) {
-                        finish();
-                    }
-                }
-                function onError(event) {
-                    var message = event && (event.message || event.error && event.error.message);
-                    finish(new Error(message || 'Workbench query result worker stopped unexpectedly.'));
-                }
-                if (typeof worker.addEventListener === 'function') {
-                    worker.addEventListener('message', receive);
-                    worker.addEventListener('error', onError);
-                }
-                else {
-                    worker.onmessage = receive;
-                    worker.onerror = onError;
-                }
-                recoveryIds.forEach(function (storeId) {
-                    if (finished) {
-                        return;
-                    }
-                    var id = String(++requestId);
-                    pending[id] = storeId;
-                    try {
-                        worker.postMessage({ op: 'dispose', requestId: requestId, storeId: storeId });
-                    }
-                    catch (error) {
-                        finish(error);
-                    }
-                });
+            return {
+                indexedDB: factory,
+                locks: 'locks' in options ? options.locks || null : browserLocks(),
+                storage: 'storage' in options ? options.storage : rowStoreRegistryStorage(),
+                document: options.document || (view ? view.document : null),
+                now: options.now || function () { return Date.now(); },
+                timeout: countOption(options.storageTimeout, queryStream.STORAGE_CALL_TIMEOUT),
+                capBytes: countOption(options.capBytes, queryStream.ROW_STORE_CAP_BYTES)
+            };
+        }
+        /** Settles like promise, or with fallback once ms have passed. */
+        function settleWithin(promise, ms, fallback) {
+            var cancel = function () { };
+            var expired = new Promise(function (resolve) {
+                cancel = startTimer(function () { resolve(fallback); }, ms);
+            });
+            return Promise.race([promise, expired]).then(function (value) {
+                cancel();
+                return value;
+            }, function () {
+                cancel();
+                return fallback;
             });
         }
-        queryStream.recoverPendingRowStores = recoverPendingRowStores;
-        var pendingRowStoreWatch = null;
-        /**
-         * Reclaims stores marked after this document booted. A browser can run the replaced document's pagehide
-         * after the next document has started (Chromium reloads), so its markers arrive as storage events.
-         */
-        function watchPendingRowStores(options) {
-            if (pendingRowStoreWatch || typeof window === 'undefined' || !window.addEventListener) {
-                return;
-            }
-            var watch = { running: false, again: false };
-            pendingRowStoreWatch = watch;
-            function recover() {
-                if (watch.running) {
-                    watch.again = true;
+        /** Deletes a database: true once it is gone, false when it fails, is blocked or takes longer than ms. */
+        function deleteDatabaseWithin(factory, name, ms) {
+            return settleWithin(new Promise(function (resolve) {
+                var request;
+                try {
+                    request = factory.deleteDatabase(name);
+                }
+                catch (error) {
+                    resolve(false);
                     return;
                 }
-                watch.running = true;
-                watch.again = false;
-                recoverPendingRowStores(options).then(null, function () {
-                    // A failed recovery keeps its markers for the next boot.
-                }).then(function () {
-                    watch.running = false;
-                    if (watch.again) {
-                        recover();
-                    }
+                request.onsuccess = function () { resolve(true); };
+                request.onerror = function () { resolve(false); };
+                // On blocked a connection is still open; the deletion completes when it closes, after this run.
+            }), ms, false);
+        }
+        /** The names of the origin's databases, or null where the browser cannot list them. */
+        function databaseNamesWithin(factory, ms) {
+            if (!factory || typeof factory.databases !== 'function') {
+                return Promise.resolve(null);
+            }
+            var listing;
+            try {
+                listing = Promise.resolve(factory.databases()).then(function (databases) {
+                    return (databases || []).map(function (database) { return database && database.name; });
                 });
             }
-            window.addEventListener('storage', function (event) {
-                if (event && typeof event.key === 'string' && event.key.indexOf(rowStoreRecoveryKeyPrefix) === 0
-                    && event.newValue !== null) {
-                    recover();
-                }
-            }, false);
+            catch (error) {
+                return Promise.resolve(null);
+            }
+            return settleWithin(listing, ms, null);
         }
-        queryStream.watchPendingRowStores = watchPendingRowStores;
+        /** The Web Locks held or requested in the origin (name, clientId), or null where they cannot be listed. */
+        function heldLocksWithin(locks, ms) {
+            if (!locks || typeof locks.query !== 'function') {
+                return Promise.resolve(null);
+            }
+            var listing;
+            try {
+                listing = Promise.resolve(locks.query()).then(function (snapshot) {
+                    return ((snapshot && snapshot.held) || []).concat((snapshot && snapshot.pending) || []);
+                });
+            }
+            catch (error) {
+                return Promise.resolve(null);
+            }
+            return settleWithin(listing, ms, null);
+        }
+        /** The names of the Web Locks held or requested in the origin, or null where they cannot be listed. */
+        function heldLockNamesWithin(locks, ms) {
+            return heldLocksWithin(locks, ms).then(function (held) {
+                return held === null ? null : held.map(function (lock) { return lock && lock.name; });
+            });
+        }
         /**
-         * Opens a row store: a dedicated worker with an IndexedDB-backed store, so only the requested `read` window
-         * is cloned back to the main thread. Where Web Workers or IndexedDB are unavailable (blocked site data,
-         * storage turned off, some web views, a full quota) the rows are kept in memory instead.
+         * Cleans up stored results: deletes those flagged for cleanup, those no page has used for a while, databases
+         * of stores nobody registered, and the least recently used ones while all of them hold more than the cap.
+         * Never deletes a store whose Web Lock a page holds. Runs only in a visible tab and in one tab at a time (Web
+         * Lock ROW_STORE_MAINTENANCE_LOCK): a hidden tab can be frozen at any moment, and IndexedDB work it started
+         * would then stay unfinished. Every IndexedDB call is bounded by the storage timeout.
+         */
+        function maintainRowStores(options) {
+            var environment = rowStoreMaintenanceEnvironment(options || {});
+            if (isHiddenDocument(environment.document)) {
+                return Promise.resolve({ deleted: [], skipped: 'hidden' });
+            }
+            if (!environment.storage || !environment.indexedDB) {
+                return Promise.resolve({ deleted: [], skipped: 'unavailable' });
+            }
+            var locks = environment.locks;
+            var result;
+            try {
+                result = !locks ? runRowStoreMaintenance(environment)
+                    : Promise.resolve(locks.request(ROW_STORE_MAINTENANCE_LOCK, { ifAvailable: true }, function (lock) {
+                        return lock ? runRowStoreMaintenance(environment)
+                            : { deleted: [], skipped: 'busy' };
+                    }));
+            }
+            catch (error) {
+                result = Promise.reject(error);
+            }
+            return result.then(null, function (error) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('Stored Workbench query results could not be cleaned up.', error);
+                }
+                return { deleted: [], skipped: 'unavailable' };
+            });
+        }
+        queryStream.maintainRowStores = maintainRowStores;
+        function runRowStoreMaintenance(environment) {
+            var report = { deleted: [] };
+            var storage = environment.storage;
+            var factory = environment.indexedDB;
+            return heldLockNamesWithin(environment.locks, environment.timeout).then(function (held) {
+                if (environment.locks && held === null) {
+                    // Which stores pages hold is unknown: delete nothing.
+                    report.skipped = 'unavailable';
+                    return report;
+                }
+                var heldNames = {};
+                (held || []).forEach(function (name) { heldNames[name] = true; });
+                var isHeld = function (id) { return heldNames[ROW_STORE_LOCK_PREFIX + id] === true; };
+                var legacyHeld = (held || []).some(function (name) {
+                    return typeof name === 'string' && name.indexOf(LEGACY_ROW_STORE_LOCK_PREFIX) === 0;
+                });
+                var now = environment.now();
+                var maintained = Number(storage.getItem(ROW_STORE_MAINTAINED_KEY));
+                var full = !(now - maintained < rowStoreSweepInterval);
+                var maxAge = held ? rowStoreMaxAge : rowStoreFallbackMaxAge;
+                try {
+                    for (var index = storage.length - 1; index >= 0; index--) {
+                        var key = storage.key(index);
+                        if (typeof key === 'string' && key.indexOf(LEGACY_ROW_STORE_MARKER_PREFIX) === 0) {
+                            storage.removeItem(key);
+                        }
+                    }
+                }
+                catch (error) {
+                    // Old markers left behind do nothing.
+                }
+                return databaseNamesWithin(factory, environment.timeout).then(function (names) {
+                    var existing = null;
+                    if (names) {
+                        existing = {};
+                        names.forEach(function (name) {
+                            if (typeof name === 'string' && name.indexOf(queryStream.ROW_STORE_DATABASE_PREFIX) === 0) {
+                                existing[name.substring(queryStream.ROW_STORE_DATABASE_PREFIX.length)] = true;
+                            }
+                        });
+                    }
+                    var legacy = !legacyHeld && (!names || names.indexOf(LEGACY_ROW_STORE_DATABASE) >= 0)
+                        ? deleteDatabaseWithin(factory, LEGACY_ROW_STORE_DATABASE, environment.timeout)
+                        : Promise.resolve(false);
+                    return legacy.then(function () {
+                        var registry = readRowStoreRegistry(storage);
+                        var doomed = [];
+                        var doom = function (id) {
+                            if (doomed.indexOf(id) < 0) {
+                                doomed.push(id);
+                            }
+                        };
+                        var lastUse = function (entry) {
+                            return isFinite(entry.used) ? entry.used : entry.created;
+                        };
+                        Object.keys(registry).forEach(function (id) {
+                            var entry = registry[id];
+                            if (isHeld(id)) {
+                                return;
+                            }
+                            if (entry.dispose) {
+                                doom(id);
+                            }
+                            else if (full && existing && !existing[id]
+                                && now - entry.created > rowStoreCreationGrace) {
+                                // Its database is gone (deleted elsewhere, or never created).
+                                removeRowStoreEntry(storage, id);
+                                delete registry[id];
+                            }
+                            else if (full && !(now - lastUse(entry) <= maxAge)) {
+                                doom(id);
+                            }
+                        });
+                        if (full && names) {
+                            names.forEach(function (name) {
+                                if (typeof name === 'string' && name.indexOf(ROW_STORE_PROBE_PREFIX) === 0) {
+                                    deleteDatabaseWithin(factory, name, environment.timeout);
+                                }
+                            });
+                        }
+                        if (full && existing) {
+                            Object.keys(existing).forEach(function (id) {
+                                if (!registry[id] && !isHeld(id) && now - rowStoreIdTime(id) > maxAge) {
+                                    doom(id);
+                                }
+                            });
+                        }
+                        var total = 0;
+                        var kept = Object.keys(registry).filter(function (id) { return doomed.indexOf(id) < 0; });
+                        kept.forEach(function (id) { total += Math.max(0, Number(registry[id].bytes) || 0); });
+                        if (total > environment.capBytes) {
+                            kept.filter(function (id) { return !isHeld(id); })
+                                .sort(function (a, b) { return lastUse(registry[a]) - lastUse(registry[b]); })
+                                .forEach(function (id) {
+                                if (total > environment.capBytes) {
+                                    doom(id);
+                                    total -= Math.max(0, Number(registry[id].bytes) || 0);
+                                }
+                            });
+                        }
+                        return deleteRowStores(environment, doomed, 0, report);
+                    }).then(function () {
+                        if (full && !isHiddenDocument(environment.document)) {
+                            try {
+                                storage.setItem(ROW_STORE_MAINTAINED_KEY, String(now));
+                            }
+                            catch (error) {
+                                // Without the timestamp the next run looks at every store again.
+                            }
+                        }
+                        return report;
+                    });
+                });
+            });
+        }
+        /** Deletes the stores one at a time, stopping when the tab is hidden; a store not deleted stays flagged. */
+        function deleteRowStores(environment, ids, index, report) {
+            if (index >= ids.length || isHiddenDocument(environment.document)) {
+                return Promise.resolve();
+            }
+            var id = ids[index];
+            return deleteDatabaseWithin(environment.indexedDB, queryStream.ROW_STORE_DATABASE_PREFIX + id, environment.timeout)
+                .then(function (deleted) {
+                if (deleted) {
+                    removeRowStoreEntry(environment.storage, id);
+                    report.deleted.push(id);
+                }
+                else {
+                    flagRowStoreEntry(environment.storage, id, environment.now());
+                }
+                return deleteRowStores(environment, ids, index + 1, report);
+            });
+        }
+        /** Databases a reset creates to check that browser storage answers; deleted again right away. */
+        var ROW_STORE_PROBE_PREFIX = 'rdf4j-workbench-storage-probe:';
+        /** Runs step for each item, one after the other. */
+        function eachInTurn(items, step) {
+            return items.reduce(function (previous, item) {
+                return previous.then(function () { return step(item); });
+            }, Promise.resolve()).then(function () { });
+        }
+        /** Whether a new database can be created and written to within ms; it is deleted again either way. */
+        function probeStorageWithin(factory, ms) {
+            var name = ROW_STORE_PROBE_PREFIX + newRowStoreId();
+            return settleWithin(new Promise(function (resolve) {
+                var request;
+                try {
+                    request = factory.open(name, 1);
+                }
+                catch (error) {
+                    resolve(false);
+                    return;
+                }
+                request.onupgradeneeded = function () {
+                    request.result.createObjectStore('probe');
+                };
+                request.onsuccess = function () {
+                    var database = request.result;
+                    try {
+                        var transaction = database.transaction(['probe'], 'readwrite');
+                        transaction.objectStore('probe').put(1, 'probe');
+                        transaction.oncomplete = function () {
+                            database.close();
+                            resolve(true);
+                        };
+                        transaction.onerror = transaction.onabort = function () {
+                            database.close();
+                            resolve(false);
+                        };
+                    }
+                    catch (error) {
+                        database.close();
+                        resolve(false);
+                    }
+                };
+                request.onerror = function () { resolve(false); };
+            }), ms, false).then(function (answers) {
+                return deleteDatabaseWithin(factory, name, ms).then(function () { return answers; });
+            });
+        }
+        /**
+         * Resets the Workbench's browser storage, for the button a storage error offers: deletes the old shared
+         * database (also while pages of an older Workbench use it; it is deleted once they let go), every stored
+         * result no open page holds, the old markers and the cleanup timestamp, and then checks that browser storage
+         * answers. Stores that open pages show are kept: each is a database of its own and holds no other page up.
+         * A tab that froze while it held browser storage lets go only when it wakes or is closed; the report says how
+         * many pages of an older Workbench hold it, so the page can say what to do.
+         */
+        function resetRowStorage(options) {
+            var environment = rowStoreMaintenanceEnvironment(options || {});
+            var report = { deleted: [], kept: [], legacyDeleted: false, olderPages: 0,
+                storageAnswers: false };
+            var storage = environment.storage;
+            var factory = environment.indexedDB;
+            if (!factory) {
+                return Promise.resolve(report);
+            }
+            return heldLocksWithin(environment.locks, environment.timeout).then(function (locks) {
+                var lockState = !environment.locks || locks !== null;
+                var heldNames = {};
+                var olderClients = {};
+                (locks || []).forEach(function (lock) {
+                    var name = lock && lock.name;
+                    if (typeof name !== 'string') {
+                        return;
+                    }
+                    heldNames[name] = true;
+                    if (name.indexOf(LEGACY_ROW_STORE_LOCK_PREFIX) === 0) {
+                        olderClients[lock.clientId || name] = true;
+                    }
+                });
+                report.olderPages = Object.keys(olderClients).length;
+                if (storage) {
+                    try {
+                        for (var index = storage.length - 1; index >= 0; index--) {
+                            var key = storage.key(index);
+                            if (typeof key === 'string' && key.indexOf(LEGACY_ROW_STORE_MARKER_PREFIX) === 0) {
+                                storage.removeItem(key);
+                            }
+                        }
+                        storage.removeItem(ROW_STORE_MAINTAINED_KEY);
+                    }
+                    catch (error) {
+                        // Old markers left behind do nothing.
+                    }
+                }
+                return deleteDatabaseWithin(factory, LEGACY_ROW_STORE_DATABASE, environment.timeout)
+                    .then(function (deleted) {
+                    report.legacyDeleted = deleted;
+                    return databaseNamesWithin(factory, environment.timeout);
+                }).then(function (names) {
+                    var ids = storage ? Object.keys(readRowStoreRegistry(storage)) : [];
+                    var probes = [];
+                    (names || []).forEach(function (name) {
+                        if (typeof name !== 'string') {
+                            return;
+                        }
+                        if (name.indexOf(queryStream.ROW_STORE_DATABASE_PREFIX) === 0) {
+                            var id = name.substring(queryStream.ROW_STORE_DATABASE_PREFIX.length);
+                            if (ids.indexOf(id) < 0) {
+                                ids.push(id);
+                            }
+                        }
+                        else if (name.indexOf(ROW_STORE_PROBE_PREFIX) === 0) {
+                            probes.push(name);
+                        }
+                    });
+                    return eachInTurn(ids, function (id) {
+                        if (!lockState || heldNames[ROW_STORE_LOCK_PREFIX + id]) {
+                            // A page shows it (or which pages hold what is unknown): keep it.
+                            report.kept.push(id);
+                            return Promise.resolve();
+                        }
+                        return deleteDatabaseWithin(factory, queryStream.ROW_STORE_DATABASE_PREFIX + id, environment.timeout)
+                            .then(function (deleted) {
+                            if (deleted) {
+                                if (storage) {
+                                    removeRowStoreEntry(storage, id);
+                                }
+                                report.deleted.push(id);
+                            }
+                            else if (storage) {
+                                flagRowStoreEntry(storage, id, environment.now());
+                            }
+                        });
+                    }).then(function () {
+                        return eachInTurn(probes, function (name) {
+                            return deleteDatabaseWithin(factory, name, environment.timeout);
+                        });
+                    });
+                }).then(function () {
+                    return probeStorageWithin(factory, environment.timeout);
+                }).then(function (answers) {
+                    report.storageAnswers = answers;
+                    return report;
+                });
+            });
+        }
+        queryStream.resetRowStorage = resetRowStorage;
+        var rowStoreMaintenanceCancel = null;
+        var rowStoreMaintenanceRunning = false;
+        var rowStoreMaintenanceAgain = false;
+        var rowStoreMaintenanceListening = false;
+        /**
+         * Cleans up stored results soon (after options.delay, default one second), and again whenever the page becomes
+         * visible or another tab flags a store for cleanup. The Workbench calls it once the page is shown: a page
+         * never waits for cleanup, which browser storage held by a frozen tab can stall.
+         */
+        function scheduleRowStoreMaintenance(options) {
+            var config = options || {};
+            listenForRowStoreMaintenance(config);
+            requestRowStoreMaintenance(config);
+        }
+        queryStream.scheduleRowStoreMaintenance = scheduleRowStoreMaintenance;
+        function requestRowStoreMaintenance(config) {
+            if (rowStoreMaintenanceRunning) {
+                rowStoreMaintenanceAgain = true;
+                return;
+            }
+            if (rowStoreMaintenanceCancel) {
+                return;
+            }
+            rowStoreMaintenanceCancel = startTimer(function () {
+                rowStoreMaintenanceCancel = null;
+                rowStoreMaintenanceRunning = true;
+                var finish = function () {
+                    rowStoreMaintenanceRunning = false;
+                    if (rowStoreMaintenanceAgain) {
+                        rowStoreMaintenanceAgain = false;
+                        requestRowStoreMaintenance(config);
+                    }
+                };
+                maintainRowStores(config).then(finish, finish);
+            }, countOption(config.delay, 1000));
+        }
+        function listenForRowStoreMaintenance(config) {
+            if (rowStoreMaintenanceListening) {
+                return;
+            }
+            rowStoreMaintenanceListening = true;
+            if (typeof window !== 'undefined' && window && typeof window.addEventListener === 'function') {
+                window.addEventListener('storage', function (event) {
+                    if (event && typeof event.key === 'string' && event.key.indexOf(queryStream.ROW_STORE_REGISTRY_PREFIX) === 0
+                        && typeof event.newValue === 'string' && event.newValue.indexOf('"dispose":true') >= 0) {
+                        requestRowStoreMaintenance(config);
+                    }
+                }, false);
+            }
+            var page = rowStoreMaintenanceEnvironment(config).document;
+            if (page && typeof page.addEventListener === 'function') {
+                page.addEventListener('visibilitychange', function () {
+                    if (!isHiddenDocument(page)) {
+                        requestRowStoreMaintenance(config);
+                    }
+                }, false);
+            }
+        }
+        /**
+         * Opens a row store. Its rows stay in the page's memory until they grow past the spill limits; then they move
+         * to a dedicated worker with an IndexedDB-backed store, so only the requested `read` window is cloned back to
+         * the main thread. Where the move fails or takes longer than the storage timeout (Web Workers or IndexedDB
+         * unavailable, a full quota, storage held by a frozen tab) the rows stay in memory, within the memory limit.
          */
         function createRowStore(options) {
-            var config = options || {};
-            return createWorkerRowStore(config).then(null, function (error) {
-                if (typeof console !== 'undefined' && console.warn) {
-                    console.warn('Workbench query results are kept in memory, at most ' + memoryRowLimit(config)
-                        + ' rows: browser storage is unavailable.', error);
-                }
-                return createMemoryRowStore(memoryRowLimit(config));
-            });
+            return Promise.resolve(createSpillingRowStore(options || {}));
         }
         queryStream.createRowStore = createRowStore;
         function memoryRowLimit(config) {
             var limit = config.memoryRowLimit;
             return Number.isSafeInteger(limit) && limit > 0 ? limit : queryStream.MEMORY_ROW_STORE_LIMIT;
         }
-        var memoryRowStoreCount = 0;
+        /** A non-negative whole-number option, or its default. */
+        function countOption(value, fallback) {
+            return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+        }
         /**
-         * A row store in this document's memory, with the worker store's interface and checks. It keeps at most
-         * limit rows: a batch that does not fit is refused with a message that says why and what to do instead.
+         * About the bytes a row takes in browser storage: its text, two bytes a character where a string goes beyond
+         * Latin-1, and a few bytes for each value, array and object around it.
          */
-        function createMemoryRowStore(limit) {
+        function estimateRowBytes(row) {
+            var pending = [row];
+            var bytes = 0;
+            while (pending.length) {
+                var value = pending.pop();
+                if (typeof value === 'string') {
+                    bytes += /[^\u0000-ÿ]/.test(value) ? value.length * 2 : value.length;
+                }
+                else if (Array.isArray(value)) {
+                    bytes += 8;
+                    for (var index = 0; index < value.length; index++) {
+                        pending.push(value[index]);
+                    }
+                }
+                else if (value && typeof value === 'object') {
+                    bytes += 16;
+                    for (var key in value) {
+                        if (Object.prototype.hasOwnProperty.call(value, key)) {
+                            bytes += key.length;
+                            pending.push(value[key]);
+                        }
+                    }
+                }
+                else {
+                    bytes += 8;
+                }
+            }
+            return bytes;
+        }
+        queryStream.estimateRowBytes = estimateRowBytes;
+        function estimateBatchBytes(batch) {
+            var bytes = 0;
+            for (var index = 0; index < batch.length; index++) {
+                bytes += estimateRowBytes(batch[index]);
+            }
+            return bytes;
+        }
+        function warnRowsKeptInMemory(limit, error) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('Workbench query results are kept in memory, at most ' + limit
+                    + ' rows: browser storage is unavailable.', error);
+            }
+        }
+        /**
+         * Calls back after ms milliseconds and returns the cancel. Where the page has no timers (some test sandboxes)
+         * nothing is called back.
+         */
+        function startTimer(callback, ms) {
+            var view = typeof window !== 'undefined' ? window : null;
+            if (view && typeof view.setTimeout === 'function' && typeof view.clearTimeout === 'function') {
+                var handle = view.setTimeout(callback, ms);
+                return function () { view.clearTimeout(handle); };
+            }
+            if (typeof setTimeout === 'function' && typeof clearTimeout === 'function') {
+                var timer = setTimeout(callback, ms);
+                return function () { clearTimeout(timer); };
+            }
+            return function () { };
+        }
+        /** Rows moved to a new worker store in batches of this size, so no single message holds them all. */
+        var SPILL_COPY_BATCH_ROWS = 5000;
+        var memoryRowStoreCount = 0;
+        function formatBytes(bytes) {
+            if (bytes < 1024) {
+                return bytes + ' bytes';
+            }
+            if (bytes < 1024 * 1024) {
+                return Math.round(bytes / 1024) + ' KB';
+            }
+            if (bytes < 1024 * 1024 * 1024) {
+                return Math.round(bytes / (1024 * 1024)) + ' MB';
+            }
+            return Math.round(bytes / (1024 * 1024 * 1024)) + ' GB';
+        }
+        /** An error of browser storage: the page offers to reset browser storage for it. */
+        function storageError(message) {
+            var error = new Error(message);
+            error.code = 'storage';
+            return error;
+        }
+        /**
+         * A row store that starts in the page's memory. Once an append takes it past spillRowLimit rows or
+         * spillByteLimit bytes it starts moving the rows to a worker store (an IndexedDB database of its own) in the
+         * background, and keeps taking rows in memory meanwhile: browser storage busy with other tabs' work can take
+         * seconds to answer, and nothing waits for it while memory has room. Memory stays the source of truth until
+         * a copy loop has brought the worker store in step with it (the rows that came meanwhile included, and a
+         * truncate applied); the store then switches in the same turn. Only an append that does not fit in memory
+         * (memoryRowLimit rows, memoryByteLimit bytes) waits for the move, as long as browser storage makes progress
+         * at least every storageTimeout. A database that fails is replaced by a fresh one once; where browser storage
+         * cannot be used the rows stay in memory, within its limits. Operations run in the order they are called.
+         */
+        function createSpillingRowStore(config) {
+            var rowLimit = memoryRowLimit(config);
+            var byteLimit = config.memoryByteLimit > 0 ? config.memoryByteLimit : queryStream.MEMORY_BYTE_LIMIT;
+            var spillRows = Math.min(countOption(config.spillRowLimit, queryStream.SPILL_ROW_LIMIT), rowLimit);
+            var spillBytes = Math.min(countOption(config.spillByteLimit, queryStream.SPILL_BYTE_LIMIT), byteLimit);
+            var timeout = countOption(config.storageTimeout, queryStream.STORAGE_TIMEOUT);
+            var memoryId = 'memory-' + (++memoryRowStoreCount);
             var rows = [];
+            var bytes = 0;
+            /** memory: no move yet; moving: a move runs; stored: the worker store holds every row; failed: memory only. */
+            var state = 'memory';
+            var stored = null;
+            var failure = null;
+            var retried = false;
+            var abandonMove = null;
+            /** The lowest row count a truncate left while the rows moved: the worker store must be cut back to it. */
+            var truncatedTo = Infinity;
+            /** Called when a move makes progress or ends; an append waiting for room listens. */
+            var moveListeners = [];
+            var chain = Promise.resolve();
+            var pendingOperations = 0;
             var disposed = false;
-            function whileOpen(operation) {
+            var disposePromise = null;
+            function disposedError() {
+                return new Error('The query row store has been disposed.');
+            }
+            /** Runs the operation now when none is pending, else after the pending ones, in the order called. */
+            function serialized(operation) {
+                var run = function () {
+                    if (disposed) {
+                        throw disposedError();
+                    }
+                    return operation();
+                };
+                var result;
+                if (pendingOperations === 0) {
+                    try {
+                        result = Promise.resolve(run());
+                    }
+                    catch (error) {
+                        result = Promise.reject(error);
+                    }
+                }
+                else {
+                    result = chain.then(run);
+                }
+                pendingOperations++;
+                chain = result.then(function () { }, function () { }).then(function () { pendingOperations--; });
+                return result;
+            }
+            function notifyMove(ended) {
+                moveListeners.slice().forEach(function (listener) { listener(ended); });
+            }
+            function finishMove(next, error) {
+                state = next;
+                abandonMove = null;
+                if (next === 'failed') {
+                    failure = error;
+                    if (!disposed) {
+                        warnRowsKeptInMemory(rowLimit, error);
+                    }
+                }
+                notifyMove(true);
+            }
+            /** Brings the worker store in step with memory, then switches to it in the same turn as the last check. */
+            function catchUp(store, copied, isCurrent) {
+                if (!isCurrent()) {
+                    return Promise.reject(new Error('The move to browser storage was given up.'));
+                }
+                if (truncatedTo < copied) {
+                    var cut = truncatedTo;
+                    truncatedTo = Infinity;
+                    return store.truncate(cut).then(function () {
+                        notifyMove(false);
+                        return catchUp(store, cut, isCurrent);
+                    });
+                }
+                if (copied < rows.length) {
+                    var end = Math.min(rows.length, copied + SPILL_COPY_BATCH_ROWS);
+                    return store.append(rows.slice(copied, end)).then(function () {
+                        notifyMove(false);
+                        return catchUp(store, end, isCurrent);
+                    });
+                }
+                truncatedTo = Infinity;
+                stored = store;
+                rows = [];
+                bytes = 0;
+                finishMove('stored');
+                return Promise.resolve();
+            }
+            function startMove() {
+                if (state !== 'memory' || disposed) {
+                    return;
+                }
+                state = 'moving';
+                truncatedTo = Infinity;
+                var given = false;
+                var abandonWorker = null;
+                var isCurrent = function () { return !given && !disposed; };
+                abandonMove = function () {
+                    given = true;
+                    if (abandonWorker) {
+                        abandonWorker();
+                    }
+                };
+                createWorkerRowStore(config, function (abandon) { abandonWorker = abandon; })
+                    .then(function (store) {
+                    notifyMove(false);
+                    return catchUp(store, 0, isCurrent);
+                })
+                    .then(null, function (error) {
+                    // The worker is closed and its database left to cleanup; a late answer is dropped.
+                    if (abandonWorker) {
+                        abandonWorker();
+                    }
+                    if (given || disposed) {
+                        return;
+                    }
+                    if (!retried && !(error && error.unavailable)) {
+                        // A database that fails (a corrupt one, say): try a fresh one once.
+                        retried = true;
+                        state = 'memory';
+                        startMove();
+                        return;
+                    }
+                    finishMove('failed', error);
+                });
+            }
+            /** Waits until the move ends, giving up when browser storage makes no progress for the storage timeout. */
+            function waitForMove() {
+                return new Promise(function (resolve) {
+                    var cancelTimer = function () { };
+                    var listener = function (ended) {
+                        if (ended) {
+                            cancelTimer();
+                            moveListeners = moveListeners.filter(function (candidate) { return candidate !== listener; });
+                            resolve();
+                        }
+                        else {
+                            restart();
+                        }
+                    };
+                    var restart = function () {
+                        cancelTimer();
+                        cancelTimer = startTimer(function () {
+                            if (state !== 'moving') {
+                                return;
+                            }
+                            var abandon = abandonMove;
+                            if (abandon) {
+                                abandon();
+                            }
+                            var error = new Error('Browser storage did not answer within '
+                                + Math.round(timeout / 1000) + ' s.');
+                            error.timedOut = true;
+                            finishMove('failed', error);
+                        }, timeout);
+                    };
+                    moveListeners.push(listener);
+                    restart();
+                });
+            }
+            function memoryFull(batch) {
+                var what = rows.length + batch.length > rowLimit
+                    ? formatCount(rowLimit) + ' rows' : formatBytes(byteLimit) + ' of rows';
+                var why = failure && failure.timedOut ? 'Browser storage did not answer in time'
+                    : 'Browser storage is unavailable here';
+                return storageError(why + ', so the Workbench keeps at most ' + what + ' in memory. Add a LIMIT to the '
+                    + 'query, or use Download for the full result.');
+            }
+            function appendNow(batch, batchBytes) {
                 if (disposed) {
-                    return Promise.reject(new Error('The query row store has been disposed.'));
+                    return Promise.reject(disposedError());
                 }
-                try {
-                    return Promise.resolve(operation());
+                if (state === 'stored') {
+                    return stored.append(batch).then(null, function (error) {
+                        if (error && typeof error === 'object' && !error.code) {
+                            error.code = 'storage';
+                        }
+                        throw error;
+                    });
                 }
-                catch (error) {
-                    return Promise.reject(error);
+                if (rows.length + batch.length > spillRows || bytes + batchBytes > spillBytes) {
+                    startMove();
+                }
+                if (rows.length + batch.length <= rowLimit && bytes + batchBytes <= byteLimit) {
+                    for (var index = 0; index < batch.length; index++) {
+                        rows.push(batch[index]);
+                    }
+                    bytes += batchBytes;
+                    return Promise.resolve(rows.length);
+                }
+                if (state === 'moving') {
+                    return waitForMove().then(function () { return appendNow(batch, batchBytes); });
+                }
+                return Promise.reject(memoryFull(batch));
+            }
+            function checkWindow(start, count) {
+                if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
+                    throw new Error('A non-negative row window is required.');
                 }
             }
             return {
-                id: 'memory-' + (++memoryRowStoreCount),
-                inMemory: true,
+                get id() {
+                    return stored ? stored.id : memoryId;
+                },
+                get inMemory() {
+                    return state !== 'stored';
+                },
                 append: function (batch) {
                     if (!Array.isArray(batch)) {
                         return Promise.reject(new Error('Query rows must be provided as a batch.'));
                     }
-                    if (!disposed && rows.length + batch.length > limit) {
-                        return Promise.reject(new Error('Browser storage is unavailable here, so the Workbench keeps at most '
-                            + formatCount(limit) + ' rows in memory. Add a LIMIT to the query, '
-                            + 'or use Download for the full result.'));
-                    }
-                    return whileOpen(function () {
-                        for (var index = 0; index < batch.length; index++) {
-                            rows.push(batch[index]);
-                        }
-                        return rows.length;
-                    });
+                    return serialized(function () { return appendNow(batch, state === 'stored' ? 0 : estimateBatchBytes(batch)); });
                 },
-                read: function (start, count) {
-                    if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
-                        return Promise.reject(new Error('A non-negative row window is required.'));
+                read: function (start, count) { return serialized(function () {
+                    checkWindow(start, count);
+                    if (state === 'stored') {
+                        return stored.read(start, count);
                     }
-                    return whileOpen(function () { return rows.slice(Math.floor(start), Math.floor(start) + Math.floor(count)); });
-                },
-                count: function () { return whileOpen(function () { return rows.length; }); },
-                truncate: function (count) {
+                    return rows.slice(Math.floor(start), Math.floor(start) + Math.floor(count));
+                }); },
+                count: function () { return serialized(function () { return state === 'stored' ? stored.count() : rows.length; }); },
+                truncate: function (count) { return serialized(function () {
                     if (!Number.isSafeInteger(count) || count < 0) {
-                        return Promise.reject(new Error('A non-negative safe truncate count is required.'));
+                        throw new Error('A non-negative safe truncate count is required.');
                     }
-                    return whileOpen(function () {
-                        if (count > rows.length) {
-                            throw new Error('The truncate count cannot exceed the stored row count.');
-                        }
-                        rows.length = count;
-                        return count;
-                    });
-                },
+                    if (state === 'stored') {
+                        return stored.truncate(count);
+                    }
+                    if (count > rows.length) {
+                        throw new Error('The truncate count cannot exceed the stored row count.');
+                    }
+                    rows.length = count;
+                    bytes = estimateBatchBytes(rows);
+                    if (state === 'moving') {
+                        truncatedTo = Math.min(truncatedTo, count);
+                    }
+                    return count;
+                }); },
                 dispose: function () {
+                    if (disposed) {
+                        return disposePromise;
+                    }
                     disposed = true;
                     rows = [];
-                    return Promise.resolve();
+                    bytes = 0;
+                    if (abandonMove) {
+                        abandonMove();
+                    }
+                    notifyMove(true);
+                    disposePromise = stored ? stored.dispose() : Promise.resolve();
+                    return disposePromise;
                 }
             };
         }
-        function createWorkerRowStore(config) {
+        /**
+         * Opens a stored result: a worker that keeps the rows in an IndexedDB database of their own. The page names the
+         * store, registers it and takes its Web Lock before the worker creates it, so cleanup can always find it and
+         * never deletes it while this page holds it. Disposing deletes the database, waiting at most the storage
+         * timeout; a deletion not confirmed by then is left to cleanup.
+         *
+         * onAbandon receives a function that gives the store up without waiting on its worker: the worker is closed,
+         * the requests it still owes are rejected, and the store is flagged for cleanup (its database may exist). A
+         * move to browser storage that takes too long uses it.
+         */
+        function createWorkerRowStore(config, onAbandon) {
             var worker;
             try {
                 worker = createRowStoreWorker(config);
@@ -1217,11 +1915,65 @@ var workbench;
             catch (error) {
                 return Promise.reject(error);
             }
+            var timeout = Math.min(countOption(config.storageTimeout, queryStream.STORAGE_TIMEOUT), queryStream.STORAGE_CALL_TIMEOUT);
             var requestId = 0;
             var pending = {};
-            var storeId = '';
+            var storeId = newRowStoreId();
             var disposed = false;
             var disposePromise = null;
+            var releaseLock = function () { };
+            var registry = rowStoreRegistryStorage();
+            var created = Date.now();
+            var bytes = 0;
+            var lastRegistryWrite = 0;
+            var cancelRegistryWrite = null;
+            function register() {
+                if (cancelRegistryWrite) {
+                    cancelRegistryWrite();
+                    cancelRegistryWrite = null;
+                }
+                if (registry && !disposed) {
+                    lastRegistryWrite = Date.now();
+                    writeRowStoreEntry(registry, storeId, { created: created, used: lastRegistryWrite, bytes: bytes });
+                }
+            }
+            /** Records the store's size at most once a second, and once more after the last change. */
+            function registerSoon() {
+                if (Date.now() - lastRegistryWrite >= rowStoreRegistryWriteInterval) {
+                    register();
+                }
+                else if (!cancelRegistryWrite) {
+                    cancelRegistryWrite = startTimer(function () {
+                        cancelRegistryWrite = null;
+                        register();
+                    }, rowStoreRegistryWriteInterval);
+                }
+            }
+            /** Stops tracking the store: flagged for cleanup, or (deleted, or never created) out of the registry. */
+            function forget(flag) {
+                if (cancelRegistryWrite) {
+                    cancelRegistryWrite();
+                    cancelRegistryWrite = null;
+                }
+                forgetCurrentDocumentRowStore(storeId);
+                if (flag) {
+                    flagRowStoreForCleanup(storeId);
+                }
+                else if (registry) {
+                    removeRowStoreEntry(registry, storeId);
+                }
+            }
+            if (onAbandon) {
+                onAbandon(function () {
+                    if (disposed) {
+                        return;
+                    }
+                    disposed = true;
+                    forget(true);
+                    releaseLock();
+                    closeWorker();
+                });
+            }
             function rejectPending(error) {
                 Object.keys(pending).forEach(function (id) {
                     pending[id].reject(error);
@@ -1236,7 +1988,10 @@ var workbench;
                 }
                 delete pending[String(response.requestId)];
                 if (!response.ok) {
-                    operation.reject(new Error(response.error || 'Workbench query result storage failed.'));
+                    var error = new Error(response.error || 'Workbench query result storage failed.');
+                    // IndexedDB could not be opened at all: no database was created.
+                    error.unavailable = !!response.unavailable;
+                    operation.reject(error);
                 }
                 else {
                     operation.resolve(response);
@@ -1297,43 +2052,24 @@ var workbench;
                     }
                 });
             }
-            var recoveryIds = pendingRowStoreRecoveryIds();
-            var recoverPriorStores = Promise.all(recoveryIds.map(function (id) {
-                return send('dispose', { storeId: id }).then(function () {
-                    forgetCurrentDocumentRowStore(id);
-                    removePendingRowStoreRecoveryIds([id]);
-                });
-            }));
-            return recoverPriorStores.then(function () {
-                return send('create');
-            }).then(function (response) {
-                if (!response.storeId) {
-                    closeWorker();
-                    throw new Error('The query result worker did not create a row store.');
-                }
-                storeId = response.storeId;
-                if (currentDocumentRowStoreIds.indexOf(storeId) < 0) {
-                    currentDocumentRowStoreIds.push(storeId);
-                }
-                listenForRowStorePagehide();
-                liveRowStoreTouches[storeId] = function () { return send('touch'); };
-                var releaseLock = holdRowStoreLock(storeId);
-                startRowStoreHeartbeat();
-                var now = Date.now();
-                if (lastRowStoreSweep === null || now - lastRowStoreSweep >= rowStoreSweepInterval) {
-                    lastRowStoreSweep = now;
-                    send('sweep', { maxAge: rowStoreMaxAge, fallbackMaxAge: rowStoreFallbackMaxAge,
-                        keep: currentDocumentRowStoreIds.slice() }).then(null, function () {
-                        // A failed sweep leaves the stale stores for the next one.
-                    });
-                }
+            currentDocumentRowStoreIds.push(storeId);
+            listenForRowStorePagehide();
+            register();
+            releaseLock = holdRowStoreLock(storeId);
+            startRowStoreHeartbeat();
+            return send('create').then(function () {
                 var rowStore = {
                     id: storeId,
                     append: function (rows) {
                         if (!Array.isArray(rows)) {
                             return Promise.reject(new Error('Query rows must be provided as a batch.'));
                         }
-                        return send('append', { rows: rows }).then(function (result) { return result.count; });
+                        var batchBytes = estimateBatchBytes(rows);
+                        return send('append', { rows: rows }).then(function (result) {
+                            bytes += batchBytes;
+                            registerSoon();
+                            return result.count;
+                        });
                     },
                     read: function (start, count) {
                         if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
@@ -1353,7 +2089,11 @@ var workbench;
                             if (count > current.count) {
                                 throw new Error('The truncate count cannot exceed the stored row count.');
                             }
-                            return send('truncate', { count: count }).then(function (result) { return result.count; });
+                            return send('truncate', { count: count }).then(function (result) {
+                                bytes = current.count > 0 ? Math.round(bytes * result.count / current.count) : 0;
+                                registerSoon();
+                                return result.count;
+                            });
                         });
                     },
                     dispose: function () {
@@ -1361,30 +2101,33 @@ var workbench;
                             return disposePromise || Promise.resolve();
                         }
                         disposed = true;
-                        function cleanup(abandonPending) {
-                            forgetCurrentDocumentRowStore(storeId);
-                            delete liveRowStoreTouches[storeId];
+                        if (documentUnloading && flagRowStoreForCleanup(storeId)) {
+                            // The unload would abort the deletion: cleanup in the next visible page deletes the store
+                            // (C31). The requests still waiting go with the document.
+                            forget(true);
                             releaseLock();
-                            closeWorker(abandonPending);
-                        }
-                        if (documentUnloading && markRowStoreForRecovery(storeId)) {
-                            // The unload would abort the deletion: the next page reclaims the store (C31). The
-                            // requests still waiting go with the document.
-                            cleanup(true);
+                            closeWorker(true);
                             disposePromise = Promise.resolve();
                             return disposePromise;
                         }
-                        disposePromise = send('dispose').then(function () {
-                            cleanup();
-                        }, function (error) {
-                            cleanup();
-                            throw error;
+                        disposePromise = settleWithin(send('dispose').then(function () { return true; }), timeout, false)
+                            .then(function (deleted) {
+                            // Not confirmed in time (another connection open, storage held up): cleanup deletes it.
+                            forget(!deleted);
+                            releaseLock();
+                            closeWorker();
                         });
                         return disposePromise;
                     }
                 };
                 return rowStore;
             }).then(null, function (error) {
+                if (!disposed) {
+                    disposed = true;
+                    // The database may exist unless IndexedDB could not be opened at all.
+                    forget(!(error && error.unavailable));
+                    releaseLock();
+                }
                 closeWorker();
                 throw error;
             });
@@ -2924,6 +3667,13 @@ var workbench;
                 var text = createElement(this.document, 'span', 'query-result-error__message');
                 text.textContent = location ? firstSentence(message) : message;
                 body.appendChild(text);
+                if (error && error.code === 'storage') {
+                    var resetActions = createElement(this.document, 'div', 'query-result-error__actions');
+                    var reset = this.createButton('Reset browser storage', function () { return _this.resetStorage(reset, text); });
+                    reset.className = 'query-result-error__reset workbench-action workbench-action--secondary';
+                    resetActions.appendChild(reset);
+                    body.appendChild(resetActions);
+                }
                 if (!location) {
                     this.reportedErrorLocation = '';
                     return;
@@ -2970,6 +3720,48 @@ var workbench;
                 empty.appendChild(text);
                 return empty;
             };
+            /**
+             * The reset a browser storage error offers (resetRowStorage): runs the query again once browser storage
+             * answers, or says what is still holding it.
+             */
+            QueryResultRenderer.prototype.resetStorage = function (button, text) {
+                var _this = this;
+                var stream = workbench.queryStream;
+                if (!stream || typeof stream.resetRowStorage !== 'function') {
+                    return;
+                }
+                button.disabled = true;
+                button.textContent = 'Resetting browser storage…';
+                var done = function (message) {
+                    text.textContent = message;
+                    button.disabled = false;
+                    button.textContent = 'Reset browser storage';
+                };
+                Promise.resolve(stream.resetRowStorage()).then(function (report) {
+                    if (_this.disposed) {
+                        return;
+                    }
+                    var older = report.olderPages > 0 ? ' ' + report.olderPages
+                        + (report.olderPages === 1 ? ' Workbench page of an older version still holds'
+                            : ' Workbench pages of an older version still hold')
+                        + ' the old browser storage: reload or close them.' : '';
+                    if (report.storageAnswers && _this.options.onRetry) {
+                        text.textContent = 'Browser storage is reset.' + older + ' Running the query again…';
+                        _this.options.onRetry();
+                    }
+                    else if (report.storageAnswers) {
+                        done('Browser storage is reset.' + older + ' Run the query again.');
+                    }
+                    else {
+                        done('Browser storage still does not answer.' + older + ' Another tab may be holding it: switch '
+                            + 'to or close the other Workbench tabs, or restart the browser, then run the query again.');
+                    }
+                }, function (error) {
+                    if (!_this.disposed) {
+                        done('Browser storage could not be reset: ' + (error && error.message || error));
+                    }
+                });
+            };
             QueryResultRenderer.prototype.errorMessageForDisplay = function () {
                 var error = this.state.error;
                 if (!error) {
@@ -2981,7 +3773,7 @@ var workbench;
                 if (error.code === 'timeout' || error.code === 'cancelled' || error.code === 'circuit-breaker') {
                     return error.message;
                 }
-                if (error.code === 'client') {
+                if (error.code === 'client' || error.code === 'storage') {
                     return 'The browser could not keep the results: ' + error.message
                         + (this.state.rowCount > 0 ? ' The visible results are incomplete.' : '');
                 }
@@ -3021,7 +3813,7 @@ var workbench;
                             + ' retained before the server stopped the query.'
                         : 'The server stopped the query because of memory pressure.';
                 }
-                if (error && error.code === 'client') {
+                if (error && (error.code === 'client' || error.code === 'storage')) {
                     return rows > 0
                         ? 'Partial results: ' + rows + (rows === 1 ? ' row' : ' rows')
                             + ' kept before the browser failed.'
@@ -5470,7 +6262,7 @@ var workbench;
                     if (generation !== requestGeneration || disposed) {
                         return;
                     }
-                    if (error && error.code === 'client' && activeId === id) {
+                    if (error && (error.code === 'client' || error.code === 'storage') && activeId === id) {
                         // The server still runs the query and sends rows nobody reads any more.
                         if (abortController && typeof abortController.abort === 'function') {
                             abortController.abort();
@@ -5520,7 +6312,8 @@ var workbench;
                     downloadFormatsByView: config.downloadFormatsByView,
                     downloadLimits: config.downloadLimits,
                     onLoadMore: function () { return loadMore(); },
-                    onCancel: function () { return cancel(true); }
+                    onCancel: function () { return cancel(true); },
+                    onRetry: function () { submit(); }
                 });
                 target.hidden = false;
                 showResultTab(target);

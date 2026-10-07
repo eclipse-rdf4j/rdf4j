@@ -163,7 +163,9 @@ function execution(options = {}) {
     const controller = api.bindMainQueryForm(form, target, {
         maxDomRows: options.maxDomRows || 8,
         features: options.features,
-        rowStoreOptions: { workerFactory() { const worker = new MemoryWorker(); workers.push(worker); return worker; } },
+        // spillRowLimit 0: these tests exercise the worker-backed store from the first row.
+        rowStoreOptions: { spillRowLimit: 0,
+            workerFactory() { const worker = new MemoryWorker(); workers.push(worker); return worker; } },
         async fetcher(url, init) {
             requests.push({ url, init });
             const next = responses.shift();

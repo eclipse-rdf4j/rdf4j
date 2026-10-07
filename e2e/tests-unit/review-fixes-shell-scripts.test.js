@@ -78,7 +78,7 @@ test('A21: the shared runtime scripts are requested together (their order kept b
     vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchApp.js'), 'utf8'), context, { filename: 'workbenchApp.js' });
     workbench.views = { render() {} };
     workbench.routes = { get() {} };
-    workbench.queryStream = { recoverPendingRowStores: () => Promise.resolve(), watchPendingRowStores() {},
+    workbench.queryStream = { scheduleRowStoreMaintenance() {},
         consumeNdjsonResponse() {}, createRowStore() {} };
     const mount = { getAttribute: (name) => (name === 'data-workbench-base-path' ? '/wb' : ''), setAttribute() {} };
     const boot = workbench.app.bootstrap(mount);

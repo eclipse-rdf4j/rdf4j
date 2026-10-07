@@ -1081,7 +1081,7 @@ module workbench {
         }
 
         /** Fetch, combine, and render an eligible HTML shell exactly once. */
-        function bootstrapAfterRecovery(mount: any, dependencies: any, basePath: string): Promise<any> {
+        function bootstrapPage(mount: any, dependencies: any, basePath: string): Promise<any> {
             if (attribute(mount, 'data-workbench-fetch-page-model') !== 'true') {
                 return Promise.resolve({ status: 'skipped' });
             }
@@ -1183,22 +1183,32 @@ module workbench {
             });
         }
 
+        /**
+         * Starts cleanup of stored query results once the page is shown, without waiting for it: browser storage can be
+         * held by a frozen background tab (Safari), and a page that waited for it stayed blank. Cleanup is best-effort:
+         * without it (no IndexedDB, a broken store) the Workbench still works.
+         */
+        function scheduleRowStoreCleanup(): void {
+            try {
+                queryStream().scheduleRowStoreMaintenance();
+            } catch (error) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('Stored Workbench query results could not be cleaned up.', error);
+                }
+            }
+        }
+
         export function bootstrap(mount: any, dependencies?: any): Promise<any> {
             const basePath = basePathFor(mount);
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
-                // Recovering results saved by an earlier page is best-effort: without it (no IndexedDB, a broken
-                // store) the Workbench still starts.
-                .then(() => Promise.resolve().then(() => queryStream().recoverPendingRowStores()).then(null,
-                    (error: any) => {
-                        if (typeof console !== 'undefined' && console.warn) {
-                            console.warn('Saved Workbench query results could not be recovered.', error);
-                        }
-                    }))
-                .then(() => {
-                    queryStream().watchPendingRowStores();
-                    return bootstrapAfterRecovery(mount, dependencies, basePath);
+                .then(() => bootstrapPage(mount, dependencies, basePath).then((result) => {
+                    scheduleRowStoreCleanup();
+                    return result;
                 }, (error: any) => {
+                    scheduleRowStoreCleanup();
+                    throw error;
+                }), (error: any) => {
                     if (attribute(mount, 'data-workbench-fetch-page-model') === 'true') {
                         renderFailure(mount, error);
                     }

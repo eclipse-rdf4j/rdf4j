@@ -14,7 +14,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { MemoryWorker, loadApi } = require('./query-load-more-harness.js');
 
-const recoveryPrefix = 'rdf4j.workbench.query-results.pending-disposal.v1:';
+const registryPrefix = 'rdf4j.workbench.row-store.v2:';
 
 /** A worker whose IndexedDB cannot be opened: it answers every request like queryStreamWorker does then. */
 class UnavailableStorageWorker extends MemoryWorker {
@@ -26,6 +26,12 @@ class UnavailableStorageWorker extends MemoryWorker {
             for (const callback of this.listeners.get('message') || []) callback({ data: response });
         });
     }
+}
+
+/** Waits until a store has moved its rows to browser storage (or gave up), and the worker answered. */
+async function moved(store, rounds = 100) {
+    for (let index = 0; index < rounds && store.inMemory; index++) await new Promise((resolve) => setImmediate(resolve));
+    for (let index = 0; index < 5; index++) await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function exerciseStore(store) {
@@ -55,15 +61,19 @@ test('createRowStore falls back to an in-memory store when Web Workers are unava
 test('createRowStore falls back to an in-memory store when the worker cannot open IndexedDB', async () => {
     const { api } = loadApi();
     const worker = new UnavailableStorageWorker();
-    const store = await api.createRowStore({ workerFactory: () => worker });
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0 });
+    assert.equal(await store.append([[null]]), 1, 'the row stays in memory');
+    await moved(store);
     assert.equal(worker.terminated, true, 'the unusable worker is closed');
+    assert.equal(await store.truncate(0), 0);
     await exerciseStore(store);
     assert.equal(worker.messages.length, 1, 'the in-memory store does not talk to the worker');
 });
 
 test('createRowStore falls back to an in-memory store when the worker factory throws or the worker dies', async () => {
     const { api } = loadApi();
-    const thrown = await api.createRowStore({ workerFactory() { throw new Error('Workers are blocked.'); } });
+    const thrown = await api.createRowStore({ workerFactory() { throw new Error('Workers are blocked.'); },
+        spillRowLimit: 0 });
     await exerciseStore(thrown);
 
     const dying = new MemoryWorker();
@@ -72,15 +82,18 @@ test('createRowStore falls back to an in-memory store when the worker factory th
             for (const callback of this.listeners.get('error') || []) callback({ message: 'Script blocked.' });
         });
     };
-    const died = await api.createRowStore({ workerFactory: () => dying });
+    const died = await api.createRowStore({ workerFactory: () => dying, spillRowLimit: 0 });
+    assert.equal(await died.append([[null]]), 1);
+    await moved(died);
     assert.equal(dying.terminated, true);
+    assert.equal(await died.truncate(0), 0);
     await exerciseStore(died);
 });
 
 // Round 2 (R13): the in-memory fallback is bounded, so a million-row batch cannot exhaust the tab, and it says so.
 test('the in-memory fallback store keeps at most its row limit and says why it refuses more', async () => {
     const { api } = loadApi();
-    assert.equal(api.MEMORY_ROW_STORE_LIMIT, 100000);
+    assert.equal(api.MEMORY_ROW_STORE_LIMIT, 1000000);
     const store = await api.createRowStore({ memoryRowLimit: 3 });
     assert.equal(store.inMemory, true, 'the store says it lives in memory');
     assert.equal(await store.append([[null], [null]]), 2);
@@ -96,14 +109,6 @@ test('in-memory row stores are not marked for IndexedDB recovery', async () => {
     await api.createRowStore();
     api.markCurrentRowStoresForRecovery({ persisted: false });
     assert.equal(window.localStorage.length, 0);
-});
-
-test('recoverPendingRowStores resolves and keeps its markers when Workers are unavailable', async () => {
-    const { api, window } = loadApi();
-    window.localStorage.setItem(recoveryPrefix + 'old-store', 'pending');
-    await api.recoverPendingRowStores();
-    assert.equal(window.localStorage.getItem(recoveryPrefix + 'old-store'), 'pending',
-        'a later boot with storage can still reclaim it');
 });
 
 function loadWorker(scopeOverrides = {}, globals = {}) {
@@ -132,9 +137,12 @@ function loadWorker(scopeOverrides = {}, globals = {}) {
     };
 }
 
-/** A small in-memory IndexedDB: enough object-store, cursor and transaction behaviour for the row-store worker. */
+/**
+ * A small in-memory IndexedDB factory with named databases: enough object-store, cursor and transaction behaviour for
+ * the row-store worker, and deleteDatabase.
+ */
 function fakeIndexedDB() {
-    const objectStores = new Map();
+    const databases = new Map();
     const compare = (a, b) => {
         if (Array.isArray(a) && Array.isArray(b)) {
             for (let index = 0; index < Math.min(a.length, b.length); index++) {
@@ -151,10 +159,11 @@ function fakeIndexedDB() {
         ? compare(key, range.lower) >= 0 && compare(key, range.upper) <= 0 : compare(key, range) === 0);
     const keyOf = (keyPath, value) => Array.isArray(keyPath) ? keyPath.map((name) => value[name]) : value[keyPath];
     const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-    const database = {
+    const connect = (objectStores) => ({
+        closed: false,
         objectStoreNames: { contains: (name) => objectStores.has(name) },
         createObjectStore(name, options) { objectStores.set(name, { keyPath: options.keyPath, records: [] }); },
-        close() {},
+        close() { this.closed = true; },
         transaction() {
             const transaction = { pending: 0, done: false, aborted: false, error: null,
                 oncomplete: null, onerror: null, onabort: null };
@@ -222,15 +231,34 @@ function fakeIndexedDB() {
             settle();
             return transaction;
         }
-    };
+    });
+    const connections = [];
     return {
-        objectStores,
+        databases,
+        connections,
         indexedDB: {
-            open() {
-                const request = { result: database, error: null };
+            open(name) {
+                const fresh = !databases.has(name);
+                if (fresh) databases.set(name, new Map());
+                const connection = connect(databases.get(name));
+                connection.name = name;
+                connections.push(connection);
+                const request = { result: connection, error: null };
                 setImmediate(() => {
-                    if (!objectStores.size && request.onupgradeneeded) request.onupgradeneeded();
+                    if (fresh && request.onupgradeneeded) request.onupgradeneeded();
                     request.onsuccess();
+                });
+                return request;
+            },
+            deleteDatabase(name) {
+                const request = { error: null, onsuccess: null, onerror: null, onblocked: null };
+                setImmediate(() => {
+                    if (connections.some((connection) => connection.name === name && !connection.closed)) {
+                        if (request.onblocked) request.onblocked();
+                        return;
+                    }
+                    databases.delete(name);
+                    if (request.onsuccess) request.onsuccess();
                 });
                 return request;
             }
@@ -241,107 +269,63 @@ function fakeIndexedDB() {
 
 test('the row-store worker reports unavailable IndexedDB as such, with a readable message', async () => {
     const worker = loadWorker();
-    const response = await worker.send({ op: 'create', requestId: 1 });
+    const response = await worker.send({ op: 'create', requestId: 1, storeId: 'rows-unavailable' });
     assert.equal(response.ok, false);
     assert.equal(response.unavailable, true);
     assert.equal(response.error, 'IndexedDB is unavailable for Workbench query results.');
 
     const blocked = loadWorker({ indexedDB: { open() { throw Object.assign(new Error('The operation is insecure.'),
         { name: 'SecurityError' }); } } });
-    const refused = await blocked.send({ op: 'create', requestId: 2 });
+    const refused = await blocked.send({ op: 'create', requestId: 2, storeId: 'rows-refused' });
     assert.equal(refused.ok, false);
     assert.equal(refused.unavailable, true, 'a browser that refuses to open IndexedDB makes storage unavailable');
     // Review finding B25: the message is shown, with the error name only where it says something.
     assert.equal(refused.error, 'SecurityError: The operation is insecure.');
 });
 
-test('recoverPendingRowStores resolves and keeps its markers when IndexedDB is unavailable', async () => {
-    const { api, window } = loadApi();
-    window.localStorage.setItem(recoveryPrefix + 'old-store', 'pending');
-    const worker = new UnavailableStorageWorker();
-    await api.recoverPendingRowStores({ workerFactory: () => worker });
-    assert.equal(worker.terminated, true);
-    assert.equal(window.localStorage.getItem(recoveryPrefix + 'old-store'), 'pending');
+// Each stored result is its own database: a tab the browser froze while it wrote its own result can hold up only that
+// result, never another tab's (Safari froze background tabs mid-transaction and held every Workbench page up).
+test('the row-store worker keeps its store in a database of its own and deletes that database on dispose', async () => {
+    const storage = fakeIndexedDB();
+    const scope = { indexedDB: storage.indexedDB, IDBKeyRange: storage.IDBKeyRange };
+    const first = loadWorker(scope);
+    const second = loadWorker(scope);
+    let requestId = 0;
+    const send = (worker, message) => worker.send(Object.assign({ requestId: ++requestId }, message));
+    const created = await send(first, { op: 'create', storeId: 'rows-first' });
+    assert.equal(created.ok, true, created.error);
+    assert.equal(created.storeId, 'rows-first');
+    assert.equal((await send(second, { op: 'create', storeId: 'rows-second' })).ok, true);
+    assert.deepEqual([...storage.databases.keys()].sort(),
+        ['rdf4j-workbench-row-store:rows-first', 'rdf4j-workbench-row-store:rows-second']);
+    const rows = ['a', 'b', 'c'].map((value) => [{ kind: 'literal', value }]);
+    assert.equal((await send(first, { op: 'append', storeId: 'rows-first', rows })).count, 3);
+    assert.deepEqual([...(await send(first, { op: 'read', storeId: 'rows-first', start: 1, count: 5 })).rows]
+        .map((row) => row[0].value), ['b', 'c']);
+    assert.equal((await send(first, { op: 'truncate', storeId: 'rows-first', count: 1 })).count, 1);
+    assert.equal((await send(first, { op: 'count', storeId: 'rows-first' })).count, 1);
+
+    const disposed = await send(first, { op: 'dispose', storeId: 'rows-first' });
+    assert.equal(disposed.ok, true, disposed.error);
+    assert.equal(disposed.disposed, true);
+    assert.deepEqual([...storage.databases.keys()], ['rdf4j-workbench-row-store:rows-second'],
+        'the disposed database is gone and the other store is untouched');
 });
 
-// Review finding B22: stores of documents that ended without a destructive pagehide (crash, discarded tab, evicted
-// back/forward cache) are reclaimed by age, never while their document still uses them.
-test('the row-store worker sweeps stores untouched for longer than the given age, and only those', async () => {
-    const day = 24 * 60 * 60 * 1000;
-    const clock = { now: Date.UTC(2026, 0, 1) };
+test('a row-store worker serves only the store it created', async () => {
     const storage = fakeIndexedDB();
-    const FixedDate = class extends Date { static now() { return clock.now; } };
-    const worker = loadWorker({ indexedDB: storage.indexedDB, IDBKeyRange: storage.IDBKeyRange }, { Date: FixedDate });
+    const worker = loadWorker({ indexedDB: storage.indexedDB, IDBKeyRange: storage.IDBKeyRange });
     let requestId = 0;
     const send = (message) => worker.send(Object.assign({ requestId: ++requestId }, message));
-
-    const orphan = (await send({ op: 'create' })).storeId;
-    assert.equal((await send({ op: 'append', storeId: orphan, rows: [[{ kind: 'literal', value: 'old' }]] })).ok, true);
-    clock.now += 3 * day;
-    const live = (await send({ op: 'create' })).storeId;
-    await send({ op: 'append', storeId: live, rows: [[{ kind: 'literal', value: 'live' }]] });
-    // A store written by an older Workbench has no age yet.
-    storage.objectStores.get('stores').records.push({ key: 'legacy', value: { id: 'legacy', count: 0 } });
-    clock.now += 1.5 * day;
-    const current = (await send({ op: 'create' })).storeId;
-
-    const swept = await send({ op: 'sweep', storeId: current, maxAge: 2 * day, keep: [current] });
-    assert.equal(swept.ok, true, swept.error);
-    assert.equal(swept.count, 1, 'only the orphan is older than two days');
-    const ids = storage.objectStores.get('stores').records.map((record) => record.key).sort();
-    assert.deepEqual(ids, [current, live, 'legacy'].sort());
-    assert.equal(storage.objectStores.get('rows').records.some((record) => record.key[0] === orphan), false,
-        'its rows are deleted with it');
-    assert.equal(storage.objectStores.get('rows').records.some((record) => record.key[0] === live), true);
-    assert.equal(storage.objectStores.get('stores').records.find((record) => record.key === 'legacy').value.touched,
-        clock.now, 'a store without an age starts aging now');
-
-    // A live document keeps its stores young.
-    clock.now += 1.9 * day;
-    assert.equal((await send({ op: 'touch', storeId: live })).ok, true);
-    clock.now += 0.5 * day;
-    const later = await send({ op: 'sweep', storeId: current, maxAge: 2 * day, keep: [current] });
-    assert.equal(later.count, 1, 'the never-touched legacy store goes; the touched one stays');
-    assert.deepEqual(storage.objectStores.get('stores').records.map((record) => record.key).sort(),
-        [current, live].sort());
-    assert.equal((await send({ op: 'sweep', storeId: current, maxAge: 0 })).ok, false, 'an age is required');
-});
-
-// Round 2 (R19): a frozen or sleeping tab touches nothing but still shows its rows; it holds the Web Lock of each of its
-// stores, and the sweep keeps every locked store. Without Web Locks only a much longer age tells a store apart.
-test('the row-store sweep keeps stores whose Web Lock is held, and falls back to a longer age without Web Locks', async () => {
-    const day = 24 * 60 * 60 * 1000;
-    const clock = { now: Date.UTC(2026, 0, 1) };
-    const FixedDate = class extends Date { static now() { return clock.now; } };
-    const held = new Set();
-    const storage = fakeIndexedDB();
-    const worker = loadWorker({ indexedDB: storage.indexedDB, IDBKeyRange: storage.IDBKeyRange,
-        navigator: { locks: { query: async () => ({ held: [...held].map((name) => ({ name, mode: 'exclusive' })),
-            pending: [] }) } } }, { Date: FixedDate });
-    let requestId = 0;
-    const send = (message) => worker.send(Object.assign({ requestId: ++requestId }, message));
-    const frozen = (await send({ op: 'create' })).storeId;
-    const ended = (await send({ op: 'create' })).storeId;
-    held.add('rdf4j-workbench-query-rows:' + frozen);
-    clock.now += 5 * day;
-    const current = (await send({ op: 'create' })).storeId;
-    const swept = await send({ op: 'sweep', storeId: current, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [current] });
-    assert.equal(swept.ok, true, swept.error);
-    assert.deepEqual(storage.objectStores.get('stores').records.map((record) => record.key).sort(), [current, frozen].sort(),
-        'the store of the page that ended goes; the locked store of the frozen page stays');
-
-    const noLocks = fakeIndexedDB();
-    const plain = loadWorker({ indexedDB: noLocks.indexedDB, IDBKeyRange: noLocks.IDBKeyRange }, { Date: FixedDate });
-    const sendPlain = (message) => plain.send(Object.assign({ requestId: ++requestId }, message));
-    const old = (await sendPlain({ op: 'create' })).storeId;
-    clock.now += 5 * day;
-    const now = (await sendPlain({ op: 'create' })).storeId;
-    const kept = await sendPlain({ op: 'sweep', storeId: now, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [now] });
-    assert.equal(kept.count, 0, 'without Web Locks a five-day-old store may belong to a frozen page');
-    clock.now += 30 * day;
-    const later = await sendPlain({ op: 'sweep', storeId: now, maxAge: 3 * day, fallbackMaxAge: 30 * day, keep: [now] });
-    assert.equal(later.count, 1, 'it goes after the fallback age');
-    assert.equal(noLocks.objectStores.get('stores').records.some((record) => record.key === old), false);
+    assert.equal((await send({ op: 'create' })).ok, false, 'a store needs its id');
+    assert.equal((await send({ op: 'create', storeId: 'rows-own' })).ok, true);
+    assert.equal((await send({ op: 'create', storeId: 'rows-other' })).ok, false);
+    assert.equal((await send({ op: 'append', storeId: 'rows-other', rows: [[null]] })).ok, false);
+    assert.equal((await send({ op: 'dispose', storeId: 'rows-other' })).ok, false);
+    assert.equal((await send({ op: 'sweep', storeId: 'rows-own', maxAge: 1 })).ok, false,
+        'cleaning up other stores is left to the page');
+    assert.equal((await send({ op: 'touch', storeId: 'rows-own' })).ok, false);
+    assert.equal((await send({ op: 'count', storeId: 'rows-own' })).count, 0);
 });
 
 test('a worker row store holds the Web Lock of its store until it is disposed', async () => {
@@ -353,9 +337,20 @@ test('a worker row store holds the Web Lock of its store until it is disposed', 
         return Promise.resolve(callback({ name })).then(() => { entry.released = true; });
     } };
     window.navigator = { locks: navigatorLocks };
-    const store = await api.createRowStore({ workerFactory: () => new MemoryWorker() });
+    const worker = new MemoryWorker();
+    const postMessage = worker.postMessage.bind(worker);
+    worker.postMessage = (message) => {
+        if (message.op === 'create') {
+            assert.equal(requests.length, 1, 'the lock is taken before the store is created');
+            assert.equal(requests[0].name, 'rdf4j-workbench-row-store:' + message.storeId);
+        }
+        postMessage(message);
+    };
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0 });
+    await store.append([[null]]);
+    await moved(store);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].name, 'rdf4j-workbench-query-rows:' + store.id);
+    assert.equal(requests[0].name, 'rdf4j-workbench-row-store:' + store.id);
     assert.equal(requests[0].options.mode, 'exclusive');
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(requests[0].released, false, 'held while the store is in use');
@@ -383,7 +378,9 @@ test('a row store disposed during a destructive pagehide abandons its pending re
         }
     }
     const worker = new SlowReadWorker();
-    const store = await api.createRowStore({ workerFactory: () => worker });
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0 });
+    await store.append([[null]]);
+    await moved(store);
     let outcome = 'pending';
     store.read(0, 1).then(() => { outcome = 'resolved'; }, (error) => { outcome = 'rejected: ' + error.message; });
     for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
@@ -391,8 +388,8 @@ test('a row store disposed during a destructive pagehide abandons its pending re
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(outcome, 'pending', 'the read is abandoned with its document');
     assert.equal(worker.terminated, true);
-    assert.equal(worker.messages.some((message) => message.op === 'dispose'), false, 'the next page reclaims the store');
-    assert.equal(window.localStorage.getItem(recoveryPrefix + store.id), 'pending');
+    assert.equal(worker.messages.some((message) => message.op === 'dispose'), false, 'cleanup reclaims the store');
+    assert.equal(JSON.parse(window.localStorage.getItem(registryPrefix + store.id)).dispose, true);
 });
 
 test('a row store disposed in a live page still rejects the requests its worker leaves unanswered', async () => {
@@ -406,23 +403,89 @@ test('a row store disposed in a live page still rejects the requests its worker 
             super.postMessage(message);
         }
     }
-    const store = await api.createRowStore({ workerFactory: () => new SlowReadWorker() });
+    const store = await api.createRowStore({ workerFactory: () => new SlowReadWorker(), spillRowLimit: 0 });
+    await store.append([[null]]);
+    await moved(store);
     const read = store.read(0, 1);
     await store.dispose();
     await assert.rejects(read, /worker was closed/);
 });
 
-test('creating a row store sweeps stale stores at most once an hour, keeping this document\'s stores', async () => {
-    const { api } = loadApi();
-    const workers = [];
-    const factory = () => { const worker = new MemoryWorker(); workers.push(worker); return worker; };
-    const first = await api.createRowStore({ workerFactory: factory });
-    await new Promise((resolve) => setImmediate(resolve));
-    const sweeps = workers[0].messages.filter((message) => message.op === 'sweep');
-    assert.equal(sweeps.length, 1);
-    assert.equal(sweeps[0].maxAge, 3 * 24 * 60 * 60 * 1000);
-    assert.deepEqual([...sweeps[0].keep], [first.id]);
-    await api.createRowStore({ workerFactory: factory });
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(workers[1].messages.some((message) => message.op === 'sweep'), false, 'not again within the hour');
+/** A worker that answers everything but dispose, as browser storage that cannot delete the database now. */
+class UndeletableWorker extends MemoryWorker {
+    postMessage(message) {
+        if (message.op === 'dispose') {
+            this.messages.push(message);
+            return;
+        }
+        super.postMessage(message);
+    }
+}
+
+// Cleanup finds stored results, and how much they hold, in a localStorage registry: it cannot open the databases of
+// other tabs safely, and the storage estimate of the browser does not go down after a deletion in WebKit.
+test('a stored result is registered with its size until it is disposed', async () => {
+    const { api, window } = loadApi();
+    const worker = new MemoryWorker();
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0 });
+    const before = Date.now();
+    await store.append([[{ kind: 'literal', value: 'x'.repeat(1000) }], [{ kind: 'literal', value: 'y' }]]);
+    await moved(store);
+    const created = worker.messages.find((message) => message.op === 'create');
+    assert.equal(created.storeId, store.id, 'the page names the store');
+    assert.match(store.id, /^rows-[0-9a-z]+-[0-9a-z]+$/);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const entry = JSON.parse(window.localStorage.getItem(registryPrefix + store.id));
+    assert.ok(entry.created >= before && entry.used >= entry.created);
+    assert.ok(entry.bytes > 1000, 'the registry knows about how much the store holds');
+    assert.equal(entry.dispose, undefined);
+    await store.dispose();
+    assert.equal(window.localStorage.getItem(registryPrefix + store.id), null);
+    assert.equal(worker.messages.some((message) => message.op === 'dispose'), true);
+});
+
+test('a disposal that browser storage does not confirm in time leaves the store flagged for cleanup', async () => {
+    const { api, window } = loadApi();
+    const worker = new UndeletableWorker();
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0, storageTimeout: 20 });
+    await store.append([[null]]);
+    await moved(store);
+    const started = Date.now();
+    await store.dispose();
+    assert.ok(Date.now() - started < 2000, 'the page does not wait on the deletion');
+    assert.equal(worker.terminated, true);
+    assert.equal(JSON.parse(window.localStorage.getItem(registryPrefix + store.id)).dispose, true);
+});
+
+test('a destructive pagehide flags the stored results of a document for cleanup; a cached one keeps them', async () => {
+    const listeners = new Map();
+    const { api, window } = loadApi({
+        addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }
+    });
+    const stored = await api.createRowStore({ workerFactory: () => new MemoryWorker(), spillRowLimit: 0 });
+    await stored.append([[null]]);
+    await moved(stored);
+    const inMemory = await api.createRowStore({ workerFactory: () => new MemoryWorker() });
+    await inMemory.append([[null]]);
+    for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: true });
+    assert.equal(JSON.parse(window.localStorage.getItem(registryPrefix + stored.id)).dispose, undefined);
+    for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
+    assert.equal(JSON.parse(window.localStorage.getItem(registryPrefix + stored.id)).dispose, true);
+    assert.equal(window.localStorage.length, 1, 'a result kept in memory has nothing to clean up');
+});
+
+test('a result that could not move to browser storage in time is flagged for cleanup', async () => {
+    const { api, window } = loadApi();
+    class SilentWorker extends MemoryWorker {
+        postMessage(message) { this.messages.push(message); }
+    }
+    const worker = new SilentWorker();
+    const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0, memoryRowLimit: 1,
+        storageTimeout: 20 });
+    assert.equal(await store.append([[null]]), 1);
+    await assert.rejects(store.append([[null]]), /did not answer in time/, 'a full memory waits, then gives up');
+    assert.equal(store.inMemory, true);
+    const id = worker.messages.find((message) => message.op === 'create').storeId;
+    assert.equal(JSON.parse(window.localStorage.getItem(registryPrefix + id)).dispose, true,
+        'its database may exist even though it never answered');
 });

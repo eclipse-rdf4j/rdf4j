@@ -46,8 +46,7 @@ function decodeEvents(source) {
 function installTestStreamRuntime(workbench) {
     const stores = [];
     workbench.queryStream = {
-        async recoverPendingRowStores() {},
-        watchPendingRowStores() {},
+        scheduleRowStoreMaintenance() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
@@ -1516,8 +1515,7 @@ test('page bootstrap consumes the shared incremental reader and keeps streamed r
         { type: 'end', metadata: { count: rows.length } }
     ];
     workbench.queryStream = {
-        async recoverPendingRowStores() {},
-        watchPendingRowStores() {},
+        scheduleRowStoreMaintenance() {},
         markCurrentRowStoresForRecovery() {},
         createRowStore: async () => ({
             async append(batch) { storedRows.push(...batch); return storedRows.length; },
@@ -1669,13 +1667,12 @@ test('page bootstrap preserves row-store resources through BFCache and releases 
     assert.equal(pagehideListeners.length, 0, 'the released page no longer needs its lifecycle listener');
 });
 
-test('page bootstrap recovers pending row stores before routing without creating a row store', async () => {
+test('page bootstrap starts cleaning up stored results on a page without a page model', async () => {
     const workbench = loadWorkbench();
     const stores = installTestStreamRuntime(workbench);
     const order = [];
     let fetchCount = 0;
-    workbench.queryStream.recoverPendingRowStores = async () => { order.push('recover'); };
-    workbench.queryStream.watchPendingRowStores = () => { order.push('watch'); };
+    workbench.queryStream.scheduleRowStoreMaintenance = () => { order.push('maintain'); };
     const mount = {
         getAttribute(name) {
             return {
@@ -1692,10 +1689,60 @@ test('page bootstrap recovers pending row stores before routing without creating
     });
 
     assert.equal(result.status, 'skipped');
-    assert.deepEqual(order, ['recover', 'watch'],
-        'startup recovery runs before route eligibility is considered, then stores marked later are watched for');
-    assert.equal(stores.length, 0, 'recovery works on a route that has not created a row store');
-    assert.equal(fetchCount, 0, 'recovery must not replay or fetch a non-GET route');
+    assert.deepEqual(order, ['maintain'], 'cleanup is scheduled on every page, after it is shown');
+    assert.equal(stores.length, 0, 'cleanup works on a route that has not created a row store');
+    assert.equal(fetchCount, 0, 'cleanup must not replay or fetch a non-GET route');
+});
+
+// Safari can leave IndexedDB held by a frozen background tab: cleaning up stored results then never finishes, and a
+// page that waited for it stayed blank. The page is shown first; cleanup is only scheduled after it.
+test('page bootstrap shows the page before it starts cleaning up stored query results', { timeout: 5000 }, async () => {
+    const workbench = loadWorkbench();
+    installTestStreamRuntime(workbench);
+    const order = [];
+    workbench.queryStream.scheduleRowStoreMaintenance = () => { order.push('maintain'); };
+    const document = {
+        location: { href: 'https://example.test/workbench/repositories/repo-1/contexts' },
+        body: { classList: { add() {} } },
+        documentElement: { setAttribute() {} },
+        readyState: 'complete',
+        getElementById() { return null; }
+    };
+    workbench.__testWindow.document = document;
+    workbench.__testWindow.localStorage = { getItem() { return null; }, setItem() {} };
+    workbench.__testWindow.matchMedia = () => ({ matches: false });
+    const mount = {
+        ownerDocument: document,
+        getAttribute(name) {
+            return {
+                'data-workbench-fetch-page-model': 'true',
+                'data-workbench-view': 'contexts',
+                'data-workbench-base-path': '/workbench',
+                'data-workbench-repository-id': 'repo-1'
+            }[name] || null;
+        }
+    };
+    const runtime = fakeRuntime();
+    const render = runtime.render;
+    runtime.render = (...args) => { order.push('render'); return render.apply(runtime, args); };
+
+    const result = await workbench.app.bootstrap(mount, {
+        fetch: () => {
+            order.push('fetch');
+            return Promise.resolve(pageResponse([
+                { type: 'head', version: 1 }, { type: 'view', id: 'contexts' }, { type: 'vars', values: ['context'] },
+                { type: 'rows', values: [[{ kind: 'iri', value: 'urn:graph' }]] }, { type: 'end' }
+            ]));
+        },
+        runtime,
+        skipScripts: true
+    });
+
+    assert.equal(result.status, 'rendered');
+    assert.equal(order[0], 'fetch');
+    assert.deepEqual(order.filter((step) => step === 'maintain'), ['maintain']);
+    assert.equal(order[order.length - 1], 'maintain', 'cleanup is scheduled after the page is rendered');
+    assert.ok(order.includes('render'));
 });
 
 test('page bootstrap restores same-entry scroll after streamed row-window binding', async () => {

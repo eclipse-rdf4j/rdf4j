@@ -50,8 +50,7 @@ function pageResponse(events) {
 /** An in-memory stand-in for the worker-backed row store and the NDJSON reader. */
 function installTestStream(workbench) {
     workbench.queryStream = {
-        async recoverPendingRowStores() {},
-        watchPendingRowStores() {},
+        scheduleRowStoreMaintenance() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
@@ -574,8 +573,7 @@ test('page decorations install each native disclosure once and release only what
 function streamOf(workbench, outcome) {
     const disposed = [];
     workbench.queryStream = {
-        async recoverPendingRowStores() {},
-        watchPendingRowStores() {},
+        scheduleRowStoreMaintenance() {},
         markCurrentRowStoresForRecovery() {},
         async createRowStore() {
             const rows = [];
