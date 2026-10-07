@@ -302,12 +302,14 @@ test('compare mode collapses and restores navigation without reserving an empty 
 	expect(closed.mainLeft).toBeLessThan(80);
 	expect(closed.documentOverflow).toBeLessThanOrEqual(0);
 	const sidebarToggle = page.locator('#query-sidebar-toggle');
-	// Reach the toggle by keyboard from the control before it: the control after it is the query editor, which keeps
-	// Shift+Tab for unindenting. WebKit moves Tab between buttons only with Alt.
+	// Reach the toggle by keyboard from the page heading: with the sidebar and its context block folded away, the
+	// toggle is the first control on the page, so there is no control before it to come back from (Shift+Tab from it
+	// leaves the page in Firefox), and the control after it is the query editor, which keeps Shift+Tab for
+	// unindenting. WebKit moves Tab between buttons only with Alt.
 	const nextControl = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
-	await sidebarToggle.focus();
-	await page.keyboard.press(`Shift+${nextControl}`);
+	await page.locator('#title_heading').focus();
 	await page.keyboard.press(nextControl);
+	await expect(sidebarToggle).toBeFocused();
 	const closedToggle = await compareToggleGeometry(sidebarToggle);
 	console.log(`COMPARE_SIDEBAR_TOGGLE_CLOSED ${JSON.stringify(closedToggle)}`);
 	expect(closedToggle.width).toBeGreaterThanOrEqual(36);
