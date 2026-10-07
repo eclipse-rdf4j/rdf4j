@@ -553,7 +553,8 @@ test('a Query page opened by Saved queries Edit whose scripts fail stays, saying
 // size, 256 MB), so a huge result cannot exhaust the tab, and the page says why it stopped, what to do instead, and
 // offers to reset browser storage.
 test('without browser storage a huge result stops at the in-memory bound and says so', async ({ page }) => {
-	test.setTimeout(120000);
+	// Two runs of the huge query: each can take well over a minute in a slow browser.
+	test.setTimeout(240000);
 	await page.addInitScript(() => {
 		Object.defineProperty(window, 'Worker', { configurable: true, value: undefined });
 	});
@@ -570,9 +571,22 @@ test('without browser storage a huge result stops at the in-memory bound and say
 	const values = Array.from({ length: 600 }, (_, index) => index).join(' ');
 	await setQueryEditor(page, `SELECT ?a ?b ?text WHERE { VALUES ?a { ${values} } VALUES ?b { ${values} } `
 		+ `BIND(CONCAT("${'x'.repeat(1000)}", STR(?a), "-", STR(?b)) AS ?text) }`);
+	// Count runs of the query apart from the requests that stop one: stopping a run sends action=cancel-query to the
+	// same endpoint, retried on every failure (GH-5904), a 404 for a query that already ended included.
 	let executions = 0;
+	let execution = null;
+	const cancelled = [];
 	page.on('request', (request) => {
-		if (request.method() === 'POST' && request.url().endsWith('/query')) executions += 1;
+		if (request.method() !== 'POST' || !request.url().endsWith('/query')) {
+			return;
+		}
+		const body = new URLSearchParams(request.postData() || '');
+		if (body.get('action') === 'exec') {
+			executions += 1;
+			execution = body.get('query-request-id');
+		} else if (body.get('action') === 'cancel-query') {
+			cancelled.push(body.get('query-request-id'));
+		}
 	});
 	await page.locator('#exec').click();
 	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 90000 });
@@ -589,6 +603,11 @@ test('without browser storage a huge result stops at the in-memory bound and say
 	await expect(reset).toBeVisible();
 	await reset.click();
 	await expect.poll(() => executions, { message: 'the query runs again after the reset' }).toBe(2);
+	// Until the second run ends the area still shows the first one's state: the run ends when the page stops it at the
+	// bound and asks the server to stop it too.
+	const rerun = execution;
+	await expect.poll(() => cancelled.includes(rerun), { timeout: 120000, message: 'the second run stops at the bound' })
+		.toBe(true);
 	await expect(results).toHaveAttribute('aria-busy', 'false', { timeout: 90000 });
 	await expect(status).toHaveText(/^Partial results: [\d,]+ rows kept before the browser failed/);
 });

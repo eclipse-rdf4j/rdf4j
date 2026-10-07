@@ -120,7 +120,7 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	const firstPageStorage = await readRowStoreSnapshot(page);
 
 	await runBatchedQuery(page);
-	const firstActiveStorage = await readRowStoreSnapshot(page);
+	const firstActiveStorage = await waitForStoredQueryRows(page, firstPageStorage, ROW_COUNT);
 	const firstExecutionStoreId = assertAddedQueryRows(firstPageStorage, firstActiveStorage, ROW_COUNT);
 	const baselineStoreIds = new Set(baselineStorage.storeRecords.map(store => store.id));
 	const firstPageOwnedStoreIds = firstActiveStorage.storeRecords
@@ -151,7 +151,7 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	}
 
 	await runBatchedQuery(page);
-	const secondActiveStorage = await readRowStoreSnapshot(page);
+	const secondActiveStorage = await waitForStoredQueryRows(page, afterReloadStorage, ROW_COUNT);
 	const secondExecutionStoreId = assertAddedQueryRows(afterReloadStorage, secondActiveStorage, ROW_COUNT);
 	const secondResult = await visibleQueryResult(page);
 	expect(secondResult.status).toMatch(/^20,?000 rows · complete/);
@@ -249,7 +249,7 @@ test('closing the query tab flags its stored result, and cleanup in a fresh same
 	await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
 	const before = await readRowStoreSnapshot(page);
 	await runBatchedQuery(page);
-	const active = await readRowStoreSnapshot(page);
+	const active = await waitForStoredQueryRows(page, before, ROW_COUNT);
 	const resultStoreId = assertAddedQueryRows(before, active, ROW_COUNT);
 	// Close the tab the way a user does: the page's unload handlers (pagehide) run. Playwright's default close
 	// skips them unless the page has subframes, which the Query page no longer has (M9.1).
@@ -413,7 +413,7 @@ test('a query result kept while another page is shown is released when a newer q
 	await waitForRoute(page, 'query');
 	const before = await readRowStoreSnapshot(page);
 	await runBatchedQuery(page);
-	const firstStorage = await readRowStoreSnapshot(page);
+	const firstStorage = await waitForStoredQueryRows(page, before, ROW_COUNT);
 	const firstStoreId = assertAddedQueryRows(before, firstStorage, ROW_COUNT);
 
 	await page.locator('#navigation').getByRole('link', { name: 'Summary', exact: true }).click();
@@ -425,7 +425,8 @@ test('a query result kept while another page is shown is released when a newer q
 	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/);
 
 	await runBatchedQuery(page);
-	const secondStorage = await waitForExecutionStoreReleased(page, before, [firstStoreId]);
+	await waitForExecutionStoreReleased(page, before, [firstStoreId]);
+	const secondStorage = await waitForStoredQueryRows(page, before, ROW_COUNT);
 	assertAddedQueryRows(before, secondStorage, ROW_COUNT);
 	expect((await readLifecycleState(page)).pagehide, 'the document is never hidden').toEqual([]);
 	expect(pageErrors).toEqual([]);
@@ -448,6 +449,20 @@ async function visibleQueryResult(page) {
 		resultLayoutCount: root.querySelectorAll('.query-result-layout').length,
 		busy: root.getAttribute('aria-busy')
 	}));
+}
+
+/**
+ * Waits until the rows of the execution are all in its own database and returns that snapshot. A large result moves to
+ * IndexedDB in the background, after the page has shown it complete, so a snapshot taken at once can hold part of it.
+ */
+async function waitForStoredQueryRows(page, before, expectedCount) {
+	const beforeIds = new Set(before.storeRecords.map(store => store.id));
+	let snapshot;
+	await expect.poll(async () => {
+		snapshot = await readRowStoreSnapshot(page);
+		return snapshot.storeRecords.filter(store => !beforeIds.has(store.id)).map(store => store.count);
+	}, { timeout: 30000, message: 'the result moves to a database of its own' }).toEqual([expectedCount]);
+	return snapshot;
 }
 
 function assertAddedQueryRows(before, after, expectedCount) {
