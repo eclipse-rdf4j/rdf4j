@@ -95,7 +95,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			super.meet(filter);
 			annotateFilter(filter);
-			if (filter.getArg()instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
+			if (filter.getArg() instanceof Filter childFilter && canMerge(filter, (Filter) filter.getArg())) {
 				filter.setCondition(mergeConditions(childFilter.getCondition(), filter.getCondition()));
 				filter.setArg(childFilter.getArg());
 				annotateFilter(filter);
@@ -265,7 +265,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			@Override
 			public void meet(Extension extension) {
 				for (ExtensionElem element : extension.getElements()) {
-					if (extensionName.equals(element.getName()) && element.getExpr()instanceof Var sourceVar) {
+					if (extensionName.equals(element.getName()) && element.getExpr() instanceof Var sourceVar) {
 						if (!sourceVar.hasValue() && sourceVar.getName() != null) {
 							sourceNames.add(sourceVar.getName());
 						}
@@ -448,7 +448,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private static boolean collectValuesVariableAnchorValues(ListMemberOperator list,
 			ValuesVariableAnchorCollector collector) {
 		List<ValueExpr> arguments = list.getArguments();
-		if (arguments.size() < 2 || !(arguments.get(0)instanceof Var filterVar)) {
+		if (arguments.size() < 2 || !(arguments.get(0) instanceof Var filterVar)) {
 			return false;
 		}
 		for (int i = 1; i < arguments.size(); i++) {

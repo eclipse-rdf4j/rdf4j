@@ -1413,7 +1413,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			@Override
 			public void meet(Filter node) {
 				if (filters.isEmpty()
-						&& node.getArg()instanceof StatementPattern statementPattern
+						&& node.getArg() instanceof StatementPattern statementPattern
 						&& statementPattern.getPredicateVar() != null
 						&& recordedOn.equals(statementPattern.getPredicateVar().getValue())
 						&& VarNameCollector.process(node.getCondition()).contains("date")) {

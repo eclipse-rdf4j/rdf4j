@@ -276,60 +276,72 @@ public class FederationManager {
 	 */
 	public synchronized void shutDown() throws FedXException {
 
+		// Restore interruption after worker schedulers have been stopped.
+		boolean interrupted = Thread.interrupted();
 		try {
-			log.info("Shutting down federation and all underlying repositories ...");
-			// Abort all running queries
-			federationContext.getQueryManager().shutdown();
-			executor.shutdown();
 			try {
-				executor.awaitTermination(30, TimeUnit.SECONDS);
-			} catch (InterruptedException e) {
-				log.warn("Failed to shutdown executor:" + e.getMessage());
-				log.debug("Details:", e);
-				Thread.currentThread().interrupt();
+				log.info("Shutting down federation and all underlying repositories ...");
+				// Abort all running queries
+				federationContext.getQueryManager().shutdown();
+				executor.shutdown();
+				try {
+					executor.awaitTermination(30, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					log.warn("Failed to shutdown executor:" + e.getMessage());
+					log.debug("Details:", e);
+					interrupted = true;
+				}
 			} finally {
 				executor.shutdownNow();
 			}
 		} finally {
 			try {
 				try {
-					joinScheduler.shutdown();
-				} catch (Exception e) {
-					log.warn("Failed to shutdown join scheduler: " + e.getMessage());
-					log.debug("Details: ", e);
+					interrupted = shutdownScheduler(joinScheduler, "join", interrupted);
 				} finally {
-					joinScheduler.abort();
+					try {
+						interrupted = shutdownScheduler(unionScheduler, "union", interrupted);
+					} finally {
+						try {
+							interrupted = shutdownScheduler(leftJoinScheduler, "left join", interrupted);
+						} finally {
+							federationContext.getFederatedServiceResolver().shutDown();
+						}
+					}
 				}
 			} finally {
-				try {
-					try {
-						unionScheduler.shutdown();
-					} catch (Exception e) {
-						log.warn("Failed to shutdown union scheduler: " + e.getMessage());
-						log.debug("Details: ", e);
-					} finally {
-						unionScheduler.abort();
-					}
-				} finally {
-					try {
-						try {
-							leftJoinScheduler.shutdown();
-						} catch (Exception e) {
-							log.warn("Failed to shutdown left join scheduler: " + e.getMessage());
-							log.debug("Details: ", e);
-						} finally {
-							leftJoinScheduler.abort();
-						}
-					} finally {
-						federationContext.getFederatedServiceResolver().shutDown();
-					}
-
+				if (interrupted) {
+					Thread.currentThread().interrupt();
 				}
-
 			}
-
 		}
 
+	}
+
+	private boolean shutdownScheduler(ControlledWorkerScheduler<BindingSet> scheduler, String name,
+			boolean interrupted) {
+		try {
+			scheduler.shutdown();
+		} catch (Exception e) {
+			log.warn("Failed to shutdown " + name + " scheduler: " + e.getMessage());
+			log.debug("Details: ", e);
+		} finally {
+			interrupted |= Thread.interrupted();
+		}
+
+		try {
+			scheduler.abort();
+		} catch (FedXRuntimeException e) {
+			if (!(e.getCause() instanceof InterruptedException)) {
+				throw e;
+			}
+			log.warn("Failed to abort " + name + " scheduler: " + e.getMessage());
+			log.debug("Details: ", e);
+			interrupted = true;
+		} finally {
+			interrupted |= Thread.interrupted();
+		}
+		return interrupted;
 	}
 
 	/**

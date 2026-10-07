@@ -113,9 +113,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
 				|| isPartOfSubQuery(filter)
-				|| !(filter.getArg()instanceof Join join)
+				|| !(filter.getArg() instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
-				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !(join.getRightArg() instanceof BindingSetAssignment assignment)
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;
 		}

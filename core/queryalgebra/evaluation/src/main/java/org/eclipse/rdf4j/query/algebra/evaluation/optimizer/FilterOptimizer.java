@@ -256,7 +256,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition()instanceof And and) {
+			if (filter.getCondition() instanceof And and) {
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
@@ -278,7 +278,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getArg()instanceof Filter childFilter && filter.getParentNode() != null) {
+			if (filter.getArg() instanceof Filter childFilter && filter.getParentNode() != null) {
 
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
