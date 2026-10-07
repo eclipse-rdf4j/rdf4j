@@ -192,7 +192,10 @@ public class WorkbenchServlet extends AbstractServlet {
 			handleUnauthorizedException(req, resp);
 		} catch (RepositoryConfigException | RepositoryException e) {
 			Optional<ValidationException> validation = ShaclValidationSummary.find(e);
-			if (validation.isPresent()) {
+			if (causedByUnauthorized(e)) {
+				// A remote manager reports a server that refuses the user (listing its repositories) this way.
+				handleUnauthorizedException(req, resp);
+			} else if (validation.isPresent()) {
 				Model model = validation.get().validationReportAsModel();
 				// One line per violation (focus node, path, value, what was expected), not the report's RDF.
 				String summary = ShaclValidationSummary.summarize(model, repositoryNamespaces(repoID));
@@ -229,6 +232,15 @@ public class WorkbenchServlet extends AbstractServlet {
 				throw e;
 			}
 		}
+	}
+
+	private static boolean causedByUnauthorized(Throwable error) {
+		for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
+			if (cause instanceof UnauthorizedException) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The namespaces of a repository, to write the names of a validation report with; none when unavailable. */

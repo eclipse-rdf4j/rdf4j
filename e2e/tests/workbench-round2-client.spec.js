@@ -417,7 +417,7 @@ async function infoWithoutMenu(page) {
 }
 
 // R7: an Info answer without menu rows (an unauthorized or failed Info) says nothing about which pages the policy hides:
-// the shell must keep the links that let the user sign in or pick another repository.
+// the shell must keep the links that let the user sign in (Connection) or pick another repository.
 test('a shell whose Info answer has no menu keeps the recovery links', async ({ page }) => {
 	await infoWithoutMenu(page);
 	await page.setViewportSize({ width: 1280, height: 900 });
@@ -425,15 +425,18 @@ test('a shell whose Info answer has no menu keeps the recovery links', async ({ 
 	await waitForRoute(page, 'summary');
 
 	await page.locator('#workbench-repository-switcher').click();
-	await expect(page.locator('#workbench-repository-popover')).toBeVisible();
-	await expect(page.locator('#workbench-repository-popover').getByRole('link', { name: /Change server or user/ })).toBeVisible();
-	await page.keyboard.press('Escape');
-
-	await page.locator('#workbench-repository-switcher').click();
 	const repositories = page.locator('#workbench-repository-popover');
 	await expect(repositories).toBeVisible();
 	await expect(repositories.getByRole('link', { name: 'All repositories' })).toBeVisible();
 	await expect(repositories.getByRole('link', { name: 'Create repository' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	const connection = page.locator('#navigation').getByRole('link', { name: 'Connection' });
+	await expect(page.locator('#navigation a[data-workbench-nav-href]')).toHaveCount(1);
+	await connection.click();
+	await waitForRoute(page, 'server');
+	await expect(page.locator('#content h1')).toHaveText('Connect to RDF4J Server');
+	await expect(page.locator('#navigation').getByRole('link', { name: 'Connection' })).toHaveAttribute('aria-current', 'page');
 });
 
 // R10: Explore takes its limit from the request only (its limit_explore parameter, else 100), never from the cookie a
@@ -665,9 +668,7 @@ test('a user whose credentials encode with "+" is the signed-in user everywhere 
 	let urn = null;
 	try {
 		await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
-		await page.locator('#workbench-repository-switcher').click();
-		await expect(page.locator('#workbench-repository-popover .workbench-popover__server')).toContainText(user);
-		await page.keyboard.press('Escape');
+		await expect(page.locator('#workbench-menu-sheet .workbench-menu-sheet__context')).toContainText(user);
 
 		await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 2');
 		await page.locator('#save-query-toggle').click();

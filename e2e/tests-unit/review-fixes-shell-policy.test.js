@@ -72,14 +72,31 @@ test('A25: with every page available the repository list links them all', () => 
     assert.match(markup, /Create repository/);
 });
 
-test('A25: the context bar does not offer Change server or Create repository when the policy hides them', () => {
+test('A25: the context bar does not offer Create repository when the policy hides it', () => {
     const wb = loadViews();
-    const markup = page(wb, { viewId: 'summary' }, context(['server', 'create']));
-    assert.doesNotMatch(markup, /Change server or user/);
+    const markup = page(wb, { viewId: 'summary' }, context(['create']));
     assert.doesNotMatch(markup, /NONE\/create[">]/);
     const visible = page(wb, { viewId: 'summary' }, context([]));
-    assert.match(visible, /Change server or user/);
     assert.match(visible, /NONE\/create[">]/);
+});
+
+/** The repository switcher's panel, from its opening tag to the menu button that follows the switcher. */
+function repositoryPopover(markup) {
+    const start = markup.indexOf('id="workbench-repository-popover"');
+    const end = markup.indexOf('id="workbench-menu-button"', start);
+    assert.ok(start >= 0 && end > start, 'the context bar renders the repository switcher panel');
+    return markup.slice(start, end);
+}
+
+test('the repository switcher panel names no server or user and links no server page', () => {
+    const wb = loadViews();
+    const popover = repositoryPopover(page(wb, { viewId: 'summary' }, context([])));
+    assert.doesNotMatch(popover, /workbench-popover__server/);
+    assert.doesNotMatch(popover, /Not signed in/);
+    assert.doesNotMatch(popover, /Change server or user/);
+    assert.doesNotMatch(popover, /NONE\/server/);
+    assert.match(popover, /All repositories/);
+    assert.match(popover, /Create repository/);
 });
 
 test('A25: Graphs offers Clear graph… only when the Clear page is available', () => {
@@ -195,14 +212,45 @@ test('A31: renaming a prefix onto one that exists is refused in the editor, whic
 });
 
 // Round 2 (R7): an Info answer whose menu is empty (a user the server does not authorize, a failed Info) says nothing
-// about hidden pages: the shell keeps the links that lead to signing in and to the other repositories.
+// about hidden pages: the shell keeps the links that lead to the other repositories, and a missing repository's page
+// still offers Change server.
 test('an empty Info menu hides no recovery link', () => {
     const wb = loadViews();
     const empty = { basePath: '/workbench', repositoryId: 'r', workbench: { menu: [] } };
     const markup = page(wb, { viewId: 'summary' }, empty);
-    assert.match(markup, /Change server or user/);
     assert.match(markup, /All repositories/);
     assert.match(markup, /Create repository/);
     const missing = { viewId: 'summary', error: { status: 404, code: 'repository-not-found', message: 'missing' } };
     assert.match(page(wb, missing, empty), />Change server</, 'the not-found page offers Change server');
+});
+
+/** The markup between an element's opening id and the next marker, to look at one region of the shell. */
+function region(markup, startMarker, endMarker) {
+    const start = markup.indexOf(startMarker);
+    const end = markup.indexOf(endMarker, start);
+    assert.ok(start >= 0 && end > start, startMarker + ' is rendered');
+    return markup.slice(start, end);
+}
+
+// Connection is how a user the server refuses signs in: without a menu from the Info answer (a refused user, a failed
+// Info) the sidebar and the phone menu still offer it.
+for (const [name, info] of [['an empty Info menu', { menu: [] }], ['no Info answer', {}]]) {
+    test(`with ${name} the sidebar and the phone menu still offer Connection`, () => {
+        const wb = loadViews();
+        for (const ctx of [{ basePath: '/workbench', repositoryId: 'r', workbench: info },
+            { basePath: '/workbench', repositoryId: 'NONE', workbench: info }]) {
+            const markup = page(wb, { viewId: 'summary' }, ctx);
+            for (const nav of [region(markup, 'id="navigation"', '</nav>'),
+                region(markup, 'id="workbench-menu-sheet-nav"', '</nav>')]) {
+                assert.match(nav, /href=\/workbench\/repositories\/NONE\/server data-workbench-nav-href=/, ctx.repositoryId);
+                assert.match(nav, /Connection\s*<\/a>/, ctx.repositoryId);
+            }
+        }
+    });
+}
+
+test('a menu from the Info answer is shown as it is, without an added Connection', () => {
+    const wb = loadViews();
+    const markup = page(wb, { viewId: 'summary' }, context(['server']));
+    assert.doesNotMatch(region(markup, 'id="navigation"', '</nav>'), /NONE\/server/);
 });

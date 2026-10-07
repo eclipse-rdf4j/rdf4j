@@ -20,7 +20,7 @@ test('repository landing shell owns full-width layout and loads server navigatio
 				const box = element.getBoundingClientRect();
 				return { x: box.x, y: box.y, width: box.width, height: box.height };
 			};
-			const server = document.querySelector('#workbench-repository-popover .workbench-popover__server code');
+			const server = document.querySelector('#workbench-menu-sheet .workbench-menu-sheet__context');
 			const createLink = Array.from(document.querySelectorAll('#navigation a[data-workbench-nav-href]'))
 				.find(anchor => new URL(anchor.href).pathname.replace(/\/+$/, '').endsWith('/create'));
 			return {
@@ -45,7 +45,7 @@ test('repository landing shell owns full-width layout and loads server navigatio
 	expect(observations.desktop.content?.width, 'desktop content should occupy the page area beside navigation').toBeGreaterThan(800);
 	expect(observations.desktop.groups, 'server-provided navigation groups should render').toBeGreaterThan(0);
 	expect(observations.desktop.createHref, 'the Create repository route should be reachable from navigation').toContain('/create');
-	expect(observations.desktop.server, 'server identity should come from the linked information model').not.toBe('None');
+	expect(observations.desktop.server, 'server identity should come from the linked information model').not.toContain('Server None');
 	expect(observations.mobile.content?.width, 'mobile content should use the viewport width').toBeGreaterThan(300);
 	expect(observations.mobile.groups, 'navigation groups should remain available on mobile').toBeGreaterThan(0);
 	expect(observations.mobile.createHref, 'Create should remain reachable from the mobile menu').toContain('/create');

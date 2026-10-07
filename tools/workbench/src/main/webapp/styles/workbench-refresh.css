@@ -1813,44 +1813,6 @@ body.workbench-body .workbench-popover__footer a:visited {
 	text-decoration: none;
 }
 
-/* The repository panel ends with the server and user, and the link that changes them. */
-body.workbench-body .workbench-popover__server {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	justify-content: space-between;
-	gap: 4px 12px;
-	margin: 8px -8px -8px;
-	padding: 8px 12px;
-	border-top: 1px solid var(--workbench-soft-rule);
-	background: var(--workbench-inset);
-	/* One pixel less than the panel's radius, so the strip tucks inside the panel's border at the corners. */
-	border-radius: 0 0 calc(var(--workbench-radius) - 1px) calc(var(--workbench-radius) - 1px);
-	color: var(--workbench-muted);
-	font-size: var(--workbench-control-font-size);
-}
-
-body.workbench-body .workbench-popover__server-text {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	min-width: 0;
-	margin: 0;
-}
-
-body.workbench-body .workbench-popover__server code {
-	color: var(--workbench-ink);
-	font-family: var(--workbench-code-font);
-	font-size: 12px;
-}
-
-body.workbench-body .workbench-popover__server a {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-weight: 600;
-}
-
 body.workbench-body .workbench-popover__footer a:hover {
 	background: var(--workbench-inset);
 	text-decoration: none;

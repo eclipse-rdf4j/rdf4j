@@ -591,7 +591,7 @@ test('shell rendering preserves a hydrated Info summary beside its linked-model 
         viewId: 'repositories', vars: [], rows: [], rowCount: 0, metadata: {}
     }, context, runtime)).join(' ');
 
-    assert.ok(output.includes('http://example.test/rdf4j-server'),
+    assert.ok(output.includes('example.test'),
         'the shared context should retain the server from the hydrated Info summary');
     assert.ok(output.includes('data-workbench-menu-group=') && output.includes('Repositories'),
         'the shared navigation should render the policy-provided Info group');
@@ -1019,15 +1019,18 @@ test('shared navigation keeps app assets and Workbench servlet routes on their c
     assert.ok(output.includes('/workbench/repositories/NONE/information'));
 });
 
-test('an explicitly empty policy-filtered menu does not fall back to visible routes', () => {
+test('an explicitly empty policy-filtered menu falls back to Connection only', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const template = workbench.views.pageTemplate({
         viewId: 'summary', vars: [], rows: [], metadata: {}
     }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: { menu: [] } }, runtime);
-    const output = collectTemplateText(template).join(' ');
+    const markup = flattenTemplateMarkup(template);
 
-    assert.equal((output.match(/data-workbench-nav-href/g) || []).length, 0);
+    // One Connection link each in the sidebar and in the phone menu sheet.
+    const links = markup.match(/data-workbench-nav-href=[^\s>]+/g) || [];
+    assert.equal(links.length, 2);
+    assert.ok(links.every((link) => link.includes('/workbench/repositories/NONE/server')), links.join(', '));
 });
 
 test('query route renders the existing streaming form and result targets', () => {
@@ -2107,7 +2110,7 @@ test('a page error renders an error callout inside the page surface', () => {
     assert.match(markup, /No values/);
 });
 
-test('a model without a menu renders an empty menu instead of a built-in fallback', () => {
+test('a model without a menu renders only Connection instead of a built-in fallback', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const errors = [];
@@ -2118,7 +2121,9 @@ test('a model without a menu renders an empty menu instead of a built-in fallbac
             viewId: 'server', vars: [], rows: [], metadata: {}
         }, { basePath: '/workbench', repositoryId: 'NONE', workbench: {} }, runtime);
         const output = collectTemplateText(template).join(' ');
-        assert.equal((output.match(/data-workbench-nav-href/g) || []).length, 0);
+        const links = flattenTemplateMarkup(template).match(/data-workbench-nav-href=[^\s>]+/g) || [];
+        assert.equal(links.length, 2, 'Connection only, in the sidebar and in the phone menu sheet');
+        assert.ok(links.every((link) => link.includes('/workbench/repositories/NONE/server')), links.join(', '));
         assert.ok(!output.includes('SPARQL Update'), 'the hard-coded fallback menu must not render');
     } finally {
         console.error = originalError;

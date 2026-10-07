@@ -113,5 +113,17 @@ test('the server page shows the same menu and server as every other page', async
 	const server = await groupLabels('/repositories/NONE/server');
 	expect(server).toEqual(repositories);
 	const serverUrl = WORKBENCH_BASE_URL.replace(/\/rdf4j-workbench$/, '/rdf4j-server');
-	await expect(page.locator('#workbench-repository-popover .workbench-popover__server code')).toHaveAttribute('title', serverUrl);
+	await expect(page.locator('#workbench-menu-sheet .workbench-menu-sheet__context')).toContainText(new URL(serverUrl).host);
+});
+
+test('Connection in the menu opens the Connection page when no repository is chosen', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	for (const path of ['/repositories/NONE/repositories', '/repositories/NONE/summary']) {
+		await page.goto(`${WORKBENCH_BASE_URL}${path}`);
+		const connection = page.locator('#navigation').getByRole('link', { name: 'Connection' });
+		await expect(connection, path).toBeVisible();
+		await connection.click();
+		await expect(page).toHaveURL(/\/repositories\/NONE\/server$/);
+		await expect(page.locator('#content h1')).toHaveText('Connect to RDF4J Server');
+	}
 });

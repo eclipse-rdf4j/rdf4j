@@ -93,10 +93,9 @@ test('opening the repository switcher widens the sidebar and shows its panel ins
 	expect(box.x + box.width, 'the panel ends inside the sidebar').toBeLessThanOrEqual(after.bar.right + 1);
 	expect(box.y + box.height).toBeLessThanOrEqual(900);
 	expect(after.content.x, 'the page moves over to make room').toBeGreaterThanOrEqual(after.bar.right);
-	// The panel names the server and the user, and links to the page that changes them.
-	await expect(panel.locator('.workbench-popover__server')).toContainText(new URL(serverBaseUrl()).host);
-	await expect(panel.locator('.workbench-popover__server')).toContainText('Not signed in');
-	await expect(panel.getByRole('link', { name: /Change server or user/ })).toBeVisible();
+	// The panel names no server or user, and links no page that changes them.
+	await expect(panel.locator('.workbench-popover__server')).toHaveCount(0);
+	await expect(panel.getByRole('link', { name: /Change server or user/ })).toHaveCount(0);
 	await page.keyboard.press('Escape');
 	await expect(panel).toBeHidden();
 	await expect.poll(width, { message: 'the sidebar narrows again' }).toBeLessThanOrEqual(before.bar.width + 1);

@@ -55,7 +55,7 @@ test('on a desktop the context block tops the sidebar and names the server and r
 	await expect(bar.locator('#workbench-repository-switcher')).toContainText(REPOSITORY_ID);
 });
 
-test('the repository panel, not a switcher of its own, names the server and the user', async ({ page }) => {
+test('the context bar has only the repository switcher, whose panel names no server or user', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'), { waitUntil: 'networkidle' });
 	const bar = page.locator('#workbench-contextbar');
@@ -65,8 +65,9 @@ test('the repository panel, not a switcher of its own, names the server and the 
 	await bar.locator('#workbench-repository-switcher').click();
 	const popover = page.locator('#workbench-repository-popover');
 	await expect(popover).toBeVisible();
-	await expect(popover.locator('.workbench-popover__server')).toContainText(new URL(serverBaseUrl()).host);
-	await expect(popover.locator('.workbench-popover__server')).toContainText('Not signed in');
+	await expect(popover.locator('.workbench-popover__server')).toHaveCount(0);
+	await expect(popover).not.toContainText('Not signed in');
+	await expect(popover.getByRole('link', { name: /Change server or user/ })).toHaveCount(0);
 });
 
 test('the repository switcher filters and chooses repositories', async ({ page }) => {

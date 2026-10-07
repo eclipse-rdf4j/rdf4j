@@ -483,8 +483,7 @@ test('a signed-in user name outside Latin-1 is shown as itself', async ({ page, 
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'));
 	await waitForRoute(page, 'summary');
-	await page.locator('#workbench-repository-switcher').click();
-	await expect(page.locator('#workbench-repository-popover .workbench-popover__server')).toContainText(user);
+	await expect(page.locator('#workbench-menu-sheet .workbench-menu-sheet__context')).toContainText(user);
 });
 
 // C8 (stale list): the server refuses an add whose prefix another page bound meanwhile, naming the namespace it is bound

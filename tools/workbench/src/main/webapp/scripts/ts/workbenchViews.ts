@@ -750,7 +750,6 @@ module workbench {
         function contextBar(context: ViewContext, active: string, runtime: LitRuntime): any {
             const h = runtime.html;
             const state = contextBarState(context);
-            const server = state.server;
             return h`<header id="workbench-contextbar" class="workbench-contextbar">
                 <a id="logo" class="workbench-brand" href=${urlFor(context, 'repositories')} aria-label="RDF4J Workbench home">
                     <img class="workbench-brand__light" src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
@@ -786,13 +785,6 @@ module workbench {
                                 icon(runtime, 'repository')}All repositories</a>` : ''}
                             ${pageEnabled(context, 'create') ? h`<a href=${urlFor(context, 'create')}>${
                                 icon(runtime, 'create')}Create repository</a>` : ''}
-                        </div>
-                        <div class="workbench-popover__server">
-                            <p class="workbench-popover__server-text">${icon(runtime, 'server')}<span>Server <code
-                                title=${server || runtime.nothing}>${server ? hostAndPort(server) : 'None'}</code> · ${
-                                state.user || 'Not signed in'}</span></p>
-                            ${pageEnabled(context, 'server') ? h`<a href=${urlFor(context, 'server')}>${
-                                icon(runtime, 'settings')}Change server or user…</a>` : ''}
                         </div>
                     </div>
                 </div>
@@ -832,11 +824,24 @@ module workbench {
             title?: string;
         }
 
+        /**
+         * The menu the sidebar and the phone menu show. Without a menu from the Info answer (a user the server refuses,
+         * a failed Info) they still offer Connection, where the user signs in or picks another server.
+         */
+        function shellMenuGroups(context: ViewContext): any[] {
+            const groups = menuEntries(context);
+            if (groups.some((group: any) => (group.items || []).length > 0)) {
+                return groups;
+            }
+            return [{ id: 'repositories', label: 'Server', icon: 'repository',
+                items: [{ id: 'server', label: shortTitles.server, icon: 'server', href: urlFor(context, 'server') }] }];
+        }
+
         /** Persistent shell around the outlet; `outlet` is the outlet node or, without a DOM, its template. */
         function shellTemplate(state: ShellState, runtime: LitRuntime, outlet: any): any {
             const h = runtime.html;
             const context = state.context;
-            const groups = menuEntries(context);
+            const groups = shellMenuGroups(context);
             return h`${contextBar(context, state.viewId, runtime)}
             <nav id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" aria-label="Workbench menu">
                 <div id="navigation" class="workbench-nav"><ul class="maingroup">${

@@ -532,6 +532,33 @@ public class WorkbenchServletTest {
 				.doesNotContain("\"id\":\"server\"");
 	}
 
+	/**
+	 * A remote repository manager reports a server that refuses the user as a RepositoryException caused by the 401
+	 * (while listing the repositories to find one). That is the unauthorized answer, inside the shell, not an error.
+	 */
+	@Test
+	void refusedRepositoryListingAnswersAsUnauthorized() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("NONE")).thenThrow(new RepositoryException(new UnauthorizedException()));
+		TestWorkbenchServlet servlet = initServlet(manager, "NONE");
+
+		MockHttpServletRequest info = request("/workbench/NONE/info", "/NONE/info");
+		info.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse infoResponse = new MockHttpServletResponse();
+		servlet.service(info, infoResponse);
+		assertThat(infoResponse.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(infoResponse.getContentType()).startsWith(WorkbenchPageProtocol.ACCEPT);
+		assertThat(infoResponse.getContentAsString()).contains("failed to authenticate", "\"type\":\"end\"");
+
+		MockHttpServletRequest navigation = request("/workbench/NONE/repositories", "/NONE/repositories");
+		navigation.addHeader("Accept", "text/html,application/xhtml+xml");
+		MockHttpServletResponse html = new MockHttpServletResponse();
+		servlet.service(navigation, html);
+		assertThat(html.getContentType()).startsWith("text/html");
+		assertThat(initialPageModel(html.getContentAsString()))
+				.contains("\"id\":\"repositories\"", "failed to authenticate", "\"type\":\"end\"");
+	}
+
 	private static String initialPageModel(String html) {
 		Matcher matcher = Pattern.compile("data-workbench-initial-model=\"([^\"]+)\"").matcher(html);
 		if (!matcher.find()) {
