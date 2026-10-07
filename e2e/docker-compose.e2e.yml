@@ -1,0 +1,9 @@
+# Settings the end-to-end tests add to ../docker/docker-compose.yml (see run.sh).
+services:
+  rdf4j:
+    environment:
+      # Further JVM options: run.sh lets the Workbench connect to the RDF4J Servers that specs stand in for.
+      - RDF4J_OPTS=${RDF4J_OPTS:-}
+    extra_hosts:
+      # Specs serve endpoints on the host; Docker Desktop and OrbStack know this name, Linux Docker needs it mapped.
+      - "host.docker.internal:host-gateway"

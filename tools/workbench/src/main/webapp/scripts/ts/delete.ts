@@ -6,24 +6,28 @@
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
 /**
- * Invoked by the "Delete" button on the form in delete.xsl. Checks with the
+ * Invoked by the "Delete" button on the rendered delete form. Checks with the
  * DeleteServlet whether the given ID has been proxied, giving a chance to back
  * out if it is.
  */
-function checkIsSafeToDelete(event: JQueryEventObject) {
+function checkIsSafeToDelete(event: JQueryEventObject, ownsPage?: () => boolean) {
 	event.preventDefault();
+	var form = <HTMLFormElement>$(event.target).closest('form').get(0);
+	var owner = workbench.captureFormOwner(form);
+	var owns = () => owner.isCurrent() && (!ownsPage || ownsPage());
+	if (!owns()) { return; }
 	var id = $('#id').val();
-	var submitForm = false;
 	var feedback = $('#delete-feedback');
 	$
 			.ajax({
 				dataType : 'json',
-				url : 'delete',
+				url : owner.url ? new URL('delete', owner.url).href : 'delete',
 				timeout : 5000,
 				data : {
 					checkSafe : id
 				},
 				error : function(jqXHR, textStatus, errorThrown) {
+					if (!owns()) { return; }
 					if (textStatus == 'timeout') {
 						feedback
 								.text('The server seems unresponsive. Delete request not sent.');
@@ -36,17 +40,23 @@ function checkIsSafeToDelete(event: JQueryEventObject) {
 					}
 				},
 				success : function(data) {
+					if (!owns()) { return; }
 					feedback.text('');
-					submitForm = data.safe;
-					if (!submitForm) {
-						submitForm = confirm('WARNING: You are about to delete a repository that has been proxied by another repository!');
+					var body = 'This permanently deletes ' + id + ' and all of its statements.';
+					if (!data.safe) {
+						body += ' Another repository proxies this one and stops working once it is deleted.';
 					}
-					if (submitForm) {
-						var form = <HTMLFormElement>$(event.target).closest('form').get(0);
-						if (form) {
-							form.submit();
+					workbench.confirmDialog.open({
+						title: 'Delete repository ' + id + '?',
+						body: body,
+						confirmLabel: 'Delete repository',
+						danger: true,
+						requireText: String(id)
+					}).then(function(submit: boolean) {
+						if (submit && owns()) {
+							workbench.submitForm(form);
 						}
-					}
+					});
 				}
 			});
 }

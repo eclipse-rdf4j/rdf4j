@@ -107,7 +107,7 @@ div.resource:hover > a.resourceURL {
 #header {
 	background-color: white;
 	border-style: none none solid none;
-	border-color: #da5800;
+	border-color: var(--workbench-primary);
 	border-width: 10px;
 	height: 80px;
 }
