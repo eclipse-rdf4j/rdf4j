@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
+import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
@@ -65,6 +66,7 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -559,6 +561,89 @@ public class WorkbenchServletTest {
 				.contains("\"id\":\"repositories\"", "failed to authenticate", "\"type\":\"end\"");
 	}
 
+	/**
+	 * Once a signed-in user opened a page, its servlet is kept: a refused user's request of that page then fails inside
+	 * the page (listing repositories), as a ServletException around the manager's RepositoryException around the 401.
+	 */
+	@Test
+	void refusalInsideAKeptPageAnswersAsUnauthorized() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager, "NONE");
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.toThrow = new ServletException(new RepositoryException(new UnauthorizedException()));
+		servlet.createdServlets.add(proxy);
+
+		MockHttpServletRequest pageData = request("/workbench/NONE/repositories", "/NONE/repositories");
+		pageData.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(pageData, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(response.getContentAsString())
+				.contains("\"id\":\"repositories\"", "failed to authenticate", "\"type\":\"end\"");
+	}
+
+	/** A page whose answer is already under way when it is refused ends that answer with the refusal as its error. */
+	@Test
+	void refusalAfterAPageSentItsBeginningEndsThatAnswer() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager, "NONE");
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.sentPageBeforeThrowing = true;
+		proxy.toThrow = new ServletException(new RepositoryException(new UnauthorizedException()));
+		servlet.createdServlets.add(proxy);
+
+		MockHttpServletRequest pageData = request("/workbench/NONE/repositories", "/NONE/repositories");
+		pageData.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(pageData, response);
+
+		String answer = response.getContentAsString();
+		assertThat(answer.split("\"type\":\"head\"", -1)).as(answer).hasSize(2);
+		assertThat(answer).as(answer)
+				.containsPattern(
+						"\\{[^\\n]*\"type\":\"error\"[^\\n]*\"status\":401[^\\n]*failed to authenticate[^\\n]*\\}\\s*$");
+	}
+
+	/** What a page wrote before its refusal is not sent: the answer is the unauthorized page model alone. */
+	@Test
+	void refusalAfterAPageBeganItsAnswerReplacesThatAnswer() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		TestWorkbenchServlet servlet = initServlet(manager, "NONE");
+		RecordingProxyRepositoryServlet proxy = new RecordingProxyRepositoryServlet();
+		proxy.writtenBeforeThrowing = "{\"type\":\"head\",\"version\":1}\n{\"type\":\"view\",\"id\":\"repositories\"}\n";
+		proxy.toThrow = new ServletException(new RepositoryException(new UnauthorizedException()));
+		servlet.createdServlets.add(proxy);
+
+		MockHttpServletRequest pageData = request("/workbench/NONE/repositories", "/NONE/repositories");
+		pageData.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(pageData, response);
+
+		String answer = response.getContentAsString();
+		assertThat(answer.split("\"type\":\"head\"", -1)).as(answer).hasSize(2);
+		assertThat(answer).contains("failed to authenticate", "\"type\":\"end\"");
+	}
+
+	/** A repository the server refuses to describe (its configuration) answers as unauthorized, not with an error. */
+	@Test
+	void refusedRepositoryConfigurationAnswersAsUnauthorized() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("secret"))
+				.thenThrow(new RepositoryConfigException(new RepositoryException(new UnauthorizedException())));
+		TestWorkbenchServlet servlet = initServlet(manager, "NONE");
+
+		MockHttpServletRequest pageData = request("/workbench/secret/summary", "/secret/summary");
+		pageData.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.service(pageData, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(response.getContentType()).startsWith(WorkbenchPageProtocol.ACCEPT);
+		assertThat(response.getContentAsString())
+				.contains("\"id\":\"summary\"", "failed to authenticate", "\"type\":\"end\"");
+	}
+
 	private static String initialPageModel(String html) {
 		Matcher matcher = Pattern.compile("data-workbench-initial-model=\"([^\"]+)\"").matcher(html);
 		if (!matcher.find()) {
@@ -818,6 +903,8 @@ public class WorkbenchServletTest {
 		private RepositoryInfo assignedInfo;
 		private Repository assignedRepository;
 		private Throwable toThrow;
+		private String writtenBeforeThrowing;
+		private boolean sentPageBeforeThrowing;
 
 		@Override
 		public void setRepositoryManager(RepositoryManager manager) {
@@ -844,6 +931,26 @@ public class WorkbenchServletTest {
 			serviceCount++;
 			lastServletPath = req.getServletPath();
 			lastPathInfo = req.getPathInfo();
+			if (sentPageBeforeThrowing) {
+				// As a page does that sends its view and links at once, so that the browser loads them meanwhile.
+				try {
+					WorkbenchPageResultWriter writer = new WorkbenchPageResultWriter(resp.getOutputStream());
+					req.setAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE, writer);
+					writer.view("repositories");
+					writer.startQueryResult(List.of("id"));
+					writer.flush();
+					resp.flushBuffer();
+				} catch (IOException | QueryResultHandlerException e) {
+					throw new ServletException(e);
+				}
+			}
+			if (writtenBeforeThrowing != null) {
+				try {
+					resp.getOutputStream().write(writtenBeforeThrowing.getBytes(StandardCharsets.UTF_8));
+				} catch (IOException e) {
+					throw new ServletException(e);
+				}
+			}
 			if (toThrow != null) {
 				if (toThrow instanceof ServletException) {
 					throw (ServletException) toThrow;

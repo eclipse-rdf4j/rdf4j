@@ -118,6 +118,9 @@ public final class WorkbenchHtmlShell {
 			writer.write(escape(repositoryId));
 			writer.write('"');
 		}
+		if (Boolean.TRUE.equals(request.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE))) {
+			writer.write(" data-workbench-server-fixed=\"true\"");
+		}
 		writer.write("></div><noscript>JavaScript is required to use the RDF4J Workbench.</noscript>");
 		writer.write("<script src=\"");
 		writer.write(escape(basePath));

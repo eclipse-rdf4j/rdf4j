@@ -134,6 +134,9 @@ public class WorkbenchGateway extends AbstractServlet {
 			WorkbenchPageProtocol.configureDynamicPageResponse(resp);
 		}
 		final String change = getChangeServerPath();
+		if (change == null) {
+			req.setAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE, Boolean.TRUE);
+		}
 		String pathInfo = req.getPathInfo();
 		if (change == null || !change.equals(pathInfo)) {
 			String effectiveRoute = pathInfo;

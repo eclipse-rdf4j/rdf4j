@@ -152,6 +152,8 @@ module workbench {
             locale?: string;
             /** The repository id of a URL whose repository does not exist (repository-not-found). */
             missingRepositoryId?: string;
+            /** True when the server is fixed by configuration: there is no Connection page to offer. */
+            serverFixed?: boolean;
         }
 
         // The outer template owns each region's Node; a separate Lit root owns its contents.
@@ -529,6 +531,9 @@ module workbench {
          * server does not authorize, a failed Info) must still offer the pages to sign in or pick another repository.
          */
         function pageEnabled(context: ViewContext, pageId: string): boolean {
+            if (pageId === 'server' && context.serverFixed) {
+                return false;
+            }
             const info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
             const known = ['menu', 'menuGroups', 'menuItems'].some((key: string) =>
                 Object.prototype.hasOwnProperty.call(info, key));
@@ -826,11 +831,15 @@ module workbench {
 
         /**
          * The menu the sidebar and the phone menu show. Without a menu from the Info answer (a user the server refuses,
-         * a failed Info) they still offer Connection, where the user signs in or picks another server.
+         * a failed Info) they still offer Connection, where the user signs in or picks another server, unless the
+         * server is fixed by configuration and there is no Connection page.
          */
         function shellMenuGroups(context: ViewContext): any[] {
-            const groups = menuEntries(context);
-            if (groups.some((group: any) => (group.items || []).length > 0)) {
+            const groups = menuEntries(context).map((group: any) => context.serverFixed
+                ? Object.assign({}, group, { items: (group.items || []).filter((item: any) =>
+                    text(item.id || item['menu-item-id']) !== 'server') })
+                : group);
+            if (groups.some((group: any) => (group.items || []).length > 0) || context.serverFixed) {
                 return groups;
             }
             return [{ id: 'repositories', label: 'Server', icon: 'repository',

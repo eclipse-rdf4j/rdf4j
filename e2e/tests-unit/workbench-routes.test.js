@@ -676,6 +676,29 @@ test('completeModel loads what a page needs before it is shown', async () => {
         'the error is shown even without the menu');
 });
 
+test('completeModel shows the Connection page without its Info, and no other page', async () => {
+    const workbench = loadWorkbench();
+    streamOf(workbench);
+    const failing = () => Promise.resolve({ ok: false, status: 500 });
+    const server = { viewId: 'server', links: ['info'], linked: {}, rowCount: 0, metadata: {} };
+    assert.equal(await workbench.app.completeModel(failing,
+        'https://example.test/workbench/repositories/NONE/server', server, '/workbench'), server,
+        'Connection is where a user whose server fails goes next');
+    assert.equal(server.error, undefined);
+
+    const summary = { viewId: 'summary', links: ['info'], linked: {}, rowCount: 0, metadata: {} };
+    await assert.rejects(workbench.app.completeModel(failing,
+        'https://example.test/workbench/repositories/repo-1/summary', summary, '/workbench'), /\(500\)/);
+
+    const controller = new AbortController();
+    controller.abort();
+    const abandoned = { viewId: 'server', links: ['info'], linked: {}, rowCount: 0, metadata: {} };
+    const aborting = () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    await assert.rejects(workbench.app.completeModel(aborting,
+        'https://example.test/workbench/repositories/NONE/server', abandoned, '/workbench', controller.signal),
+        (error) => error.name === 'AbortError', 'an abandoned navigation is not shown');
+});
+
 test('viewContext describes the page to the views', () => {
     const workbench = loadWorkbench();
     const mount = { getAttribute: (name) => (name === 'data-workbench-base-path' ? '/workbench/' : null) };
@@ -688,6 +711,11 @@ test('viewContext describes the page to the views', () => {
     assert.equal(context.missingRepositoryId, undefined);
     assert.equal(context.pageModel, model);
     assert.equal(context.runtime, 'runtime');
+    assert.equal(context.serverFixed, false);
+    const fixedMount = { getAttribute: (name) => ({ 'data-workbench-base-path': '/workbench',
+        'data-workbench-server-fixed': 'true' })[name] || null };
+    assert.equal(workbench.app.viewContext(fixedMount, model, 'https://example.test/workbench/repositories/r/summary',
+        'runtime').serverFixed, true, 'a Workbench whose server is fixed has no Connection page');
     assert.equal(context.executionFormId, 'query-form');
 
     const missing = workbench.app.viewContext(mount, { viewId: 'summary', error: { code: 'repository-not-found' } },

@@ -21,6 +21,9 @@ DOCKER_STARTED="false"
 SPRING_BOOT_DATA_DIR=""
 # One Playwright project (chromium, firefox or webkit) to install and run; all of them when unset.
 E2E_BROWSER="${E2E_BROWSER:-}"
+# Some specs stand in for RDF4J Servers of their own (one that refuses the user, one without repositories) at the host
+# where the server reaches this machine; the Workbench connects to them only when its accepted-server-prefixes allow it.
+ACCEPTED_SERVER_PREFIXES_PROPERTY="org.eclipse.rdf4j.workbench.accepted-server-prefixes"
 
 stop_spring_boot() {
   if [ -z "${SERVER_PID:-}" ]; then
@@ -67,7 +70,8 @@ stop_docker_tomcat() {
   fi
 
   echo "Stopping Docker/Tomcat RDF4J stack"
-  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose down -v) || true
+  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
+    down -v) || true
 }
 
 cleanup() {
@@ -158,10 +162,11 @@ start_spring_boot() {
   echo "Using RDF4J app data directory ${SPRING_BOOT_DATA_DIR}"
 
   echo "Starting RDF4J Server and Workbench with Spring Boot"
+  local accepted="/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER:-127.0.0.1}:"
   (
     cd "$ROOT_DIR"
     mvn -pl tools/server-boot spring-boot:run \
-      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR}"
+      -Dspring-boot.run.jvmArguments="-Dorg.eclipse.rdf4j.appdata.basedir=${SPRING_BOOT_DATA_DIR} '-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=${accepted}'"
   ) &
   SERVER_PID=$!
 }
@@ -170,27 +175,18 @@ start_docker_tomcat() {
   echo "Building Docker/Tomcat RDF4J image"
   (cd "$DOCKER_DIR" && APP_SERVER=tomcat ./build.sh)
 
-  echo "Starting Docker/Tomcat RDF4J container"
-  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose up --force-recreate -d)
-  DOCKER_STARTED="true"
-  export_host_from_server
-}
-
-# Specs that serve an endpoint to the server (a SPARQL endpoint behind a SPARQLRepository) need the address at which
-# the server reaches this host: inside the container 127.0.0.1 is the container itself.
-export_host_from_server() {
-  if [ -n "${RDF4J_E2E_HOST_FROM_SERVER:-}" ]; then
-    return
-  fi
-  local host=""
-  if [ "$(uname -s)" = "Linux" ]; then
-    local container_id
-    container_id="$(cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose ps -q rdf4j)"
-    host="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$container_id")"
-  fi
-  # Docker Desktop and OrbStack reach the host by name.
-  export RDF4J_E2E_HOST_FROM_SERVER="${host:-host.docker.internal}"
+  # Specs that serve an endpoint to the server (a SPARQL endpoint behind a SPARQLRepository, a stand-in RDF4J
+  # Server) need the address at which the server reaches this host: inside the container 127.0.0.1 is the container
+  # itself. docker-compose.e2e.yml names this host host.docker.internal also on Linux.
+  export RDF4J_E2E_HOST_FROM_SERVER="${RDF4J_E2E_HOST_FROM_SERVER:-host.docker.internal}"
   echo "RDF4J Server reaches this host at ${RDF4J_E2E_HOST_FROM_SERVER}"
+  # Tomcat's catalina.sh evaluates CATALINA_OPTS, to which the image adds RDF4J_OPTS: the quotes keep the list whole.
+  export RDF4J_OPTS="'-D${ACCEPTED_SERVER_PREFIXES_PROPERTY}=/rdf4j-server http://${RDF4J_E2E_HOST_FROM_SERVER}:'"
+
+  echo "Starting Docker/Tomcat RDF4J container"
+  (cd "$DOCKER_DIR" && APP_SERVER=tomcat docker compose -f docker-compose.yml -f "${E2E_DIR}/docker-compose.e2e.yml" \
+    up --force-recreate -d)
+  DOCKER_STARTED="true"
 }
 
 run_playwright() {

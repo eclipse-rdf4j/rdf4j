@@ -36,6 +36,12 @@ public final class WorkbenchPageProtocol {
 	public static final String PAGE_VIEW_ID_ATTRIBUTE = "org.eclipse.rdf4j.workbench.pageViewId";
 
 	/**
+	 * Request attribute ({@link Boolean#TRUE}) of a Workbench whose server is fixed by configuration: it has no
+	 * Connection page, so neither its menu nor its pages offer one.
+	 */
+	public static final String SERVER_FIXED_ATTRIBUTE = "org.eclipse.rdf4j.workbench.serverFixed";
+
+	/**
 	 * The response header with which a write servlet acknowledges a write sent in place (a page-data POST of Add,
 	 * Update, Clear or Remove), so that the router can tell it from a redirect by a gateway or a login proxy.
 	 */

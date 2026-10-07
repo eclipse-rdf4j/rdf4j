@@ -626,9 +626,19 @@ module workbench {
                 // it the error is shown all the same.
                 return linkedModels(fetcher, url, model, ['info'], signal).then(() => model, () => model);
             }
-            return linkedModels(fetcher, url, model, undefined, signal)
+            const linked = linkedModels(fetcher, url, model, undefined, signal);
+            // Connection needs no Info answer: a user whose server fails it goes there to sign in or change server.
+            return (model.viewId === 'server' ? linked.then(null, (error: any) => {
+                if (isAbortError(error)) {
+                    throw error;
+                }
+            }) : linked)
                 .then(() => prepareInitialRows(model))
                 .then(() => model);
+        }
+
+        function isAbortError(error: any): boolean {
+            return !!error && error.name === 'AbortError';
         }
 
         function scriptUrl(basePath: string, name: string): string {
@@ -1031,6 +1041,8 @@ module workbench {
                 repositoryId: notFound ? '' : (repositoryId === undefined ? repositoryIdFromUrl(url) : repositoryId),
                 missingRepositoryId: notFound ? repositoryIdFromUrl(url) : undefined,
                 workbench: model.workbench || {},
+                // A Workbench whose server is fixed by configuration has no Connection page.
+                serverFixed: attribute(mount, 'data-workbench-server-fixed') === 'true',
                 linked: model.linked,
                 pageModel: model,
                 runtime,
@@ -1116,8 +1128,15 @@ module workbench {
                     if (model.viewId !== viewId) {
                         throw invalid('shell view ' + viewId + ' does not match data view ' + model.viewId);
                     }
-                    // An error answer is shown inside the shell, as the router shows it (M8.1, M13.6).
-                    return completeModel(fetcher, currentUrl, model, basePath).then(() => {
+                    // An error answer is shown inside the shell, as the router shows it (M8.1, M13.6). So is a page
+                    // whose Info answer did not load: the shell's menu still offers Connection.
+                    return completeModel(fetcher, currentUrl, model, basePath).then(null, (error: any) => {
+                        if (isAbortError(error)) {
+                            throw error;
+                        }
+                        model.error = { status: 0, code: 'page-incomplete',
+                            message: error && error.message ? error.message : String(error) };
+                    }).then(() => {
                         if (!model.error) {
                             configureNamespaces(model);
                         }

@@ -60,6 +60,24 @@ class WorkbenchHtmlShellTest {
 		return document.substring(document.indexOf("<title>") + "<title>".length(), document.indexOf("</title>"));
 	}
 
+	/** The client leaves Connection out of every menu and page of a Workbench whose server is fixed. */
+	@Test
+	void marksAWorkbenchWhoseServerIsFixed() throws Exception {
+		assertThat(shellWithServerFixed(null)).doesNotContain("data-workbench-server-fixed");
+		assertThat(shellWithServerFixed(Boolean.TRUE)).contains(" data-workbench-server-fixed=\"true\"");
+	}
+
+	private static String shellWithServerFixed(Boolean fixed) throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		StringWriter body = new StringWriter();
+		when(request.getContextPath()).thenReturn("/rdf4j-workbench");
+		when(request.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE)).thenReturn(fixed);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		WorkbenchHtmlShell.write(request, response, mock(ServletConfig.class), "summary");
+		return body.toString();
+	}
+
 	@Test
 	void linksOnlyTheRedesignStylesheets() throws Exception {
 		HttpServletRequest request = mock(HttpServletRequest.class);

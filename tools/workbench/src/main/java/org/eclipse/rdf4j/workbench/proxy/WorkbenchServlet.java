@@ -72,6 +72,9 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WorkbenchServlet.class);
 
+	private static final String UNAUTHORIZED_MESSAGE = "The entered credentials entered either failed to authenticate "
+			+ "to the RDF4J server, or were unauthorized for the requested operation.";
+
 	private static final String DEFAULT_PATH = "default-path";
 
 	private static final String NO_REPOSITORY = "no-repository-id";
@@ -226,7 +229,8 @@ public class WorkbenchServlet extends AbstractServlet {
 				throw new ServletException(e);
 			}
 		} catch (ServletException e) {
-			if (e.getCause() instanceof UnauthorizedException) {
+			// A kept page that lists repositories reports the refusal around the manager's RepositoryException.
+			if (causedByUnauthorized(e)) {
 				handleUnauthorizedException(req, resp);
 			} else {
 				throw e;
@@ -267,6 +271,18 @@ public class WorkbenchServlet extends AbstractServlet {
 	 */
 	private void handleUnauthorizedException(final HttpServletRequest req, final HttpServletResponse resp)
 			throws IOException, QueryResultHandlerException {
+		Object begun = req.getAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE);
+		if (resp.isCommitted() && begun instanceof WorkbenchPageResultWriter pageWriter) {
+			// The page already sent the beginning of its answer (a page sends its view and links at once): the
+			// refusal ends that answer as the page's error.
+			pageWriter.error(HttpServletResponse.SC_UNAUTHORIZED, "unauthorized", UNAUTHORIZED_MESSAGE);
+			pageWriter.flush();
+			return;
+		}
+		if (!resp.isCommitted()) {
+			// A page refused after it began its answer does not send that beginning: the answer is the refusal alone.
+			resp.reset();
+		}
 		if (WorkbenchPageProtocol.requestsHtmlNavigation(req) || WorkbenchPageProtocol.requestsPageData(req)) {
 			writeUnauthorizedPageModel(req, resp);
 			return;
@@ -275,8 +291,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		// entry form again with error message.
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		builder.start("error-message");
-		builder.result(
-				"The entered credentials entered either failed to authenticate to the RDF4J server, or were unauthorized for the requested operation.");
+		builder.result(UNAUTHORIZED_MESSAGE);
 		builder.end();
 	}
 
@@ -289,8 +304,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		TupleResultBuilder builder = new TupleResultBuilder(pageWriter, SimpleValueFactory.getInstance());
 		builder.start("error-message")
 				.link(List.of("info"))
-				.result(
-						"The entered credentials entered either failed to authenticate to the RDF4J server, or were unauthorized for the requested operation.")
+				.result(UNAUTHORIZED_MESSAGE)
 				.end();
 		if (WorkbenchPageProtocol.requestsHtmlNavigation(request)) {
 			WorkbenchHtmlShell.writeInitialPageModel(request, response, config, viewId, pageData.toByteArray());

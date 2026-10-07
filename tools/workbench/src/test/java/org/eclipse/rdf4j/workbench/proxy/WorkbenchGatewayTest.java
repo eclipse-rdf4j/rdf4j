@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -85,6 +87,30 @@ class WorkbenchGatewayTest {
 				"default-server", "https://example.org/rdf4j-server",
 				LEGACY_TRANSFORMATIONS, "/transform"));
 		assertThat(fixed.isServerFixed()).isTrue();
+	}
+
+	/** The pages of a Workbench whose server is fixed learn that they have no Connection page to offer. */
+	@Test
+	void aFixedServerIsMarkedOnTheRequestsItPassesOn() throws Exception {
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer(anyString())).thenReturn(true);
+		TestWorkbenchGateway fixed = new TestWorkbenchGateway(new TestCookieHandler("9"), validator);
+		fixed.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://example.org/rdf4j-server",
+				"default-path", "/NONE/repositories"));
+		fixed.service(request("GET", "/workbench/NONE/repositories", "/NONE/repositories"), new CapturedResponse());
+		assertThat(fixed.createdServlets).hasSize(1);
+		assertThat(fixed.createdServlets.get(0).lastServerFixed).isEqualTo(Boolean.TRUE);
+
+		TestWorkbenchGateway changeable = new TestWorkbenchGateway(new TestCookieHandler("9"), validator);
+		changeable.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://example.org/rdf4j-server",
+				"change-server-path", "/NONE/server",
+				"default-path", "/NONE/repositories"));
+		changeable.service(request("GET", "/workbench/NONE/repositories", "/NONE/repositories"),
+				new CapturedResponse());
+		assertThat(changeable.createdServlets).hasSize(1);
+		assertThat(changeable.createdServlets.get(0).lastServerFixed).isNull();
 	}
 
 	@Test
@@ -1068,6 +1094,7 @@ class WorkbenchGatewayTest {
 
 	private static final class RecordingWorkbenchServlet extends WorkbenchServlet {
 		private int serviceCount;
+		private Object lastServerFixed;
 		private int resetCount;
 		private int destroyCount;
 		private final CountDownLatch enteredInit;
@@ -1096,6 +1123,7 @@ class WorkbenchGatewayTest {
 		@Override
 		public void service(HttpServletRequest req, HttpServletResponse resp) {
 			serviceCount++;
+			lastServerFixed = req.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE);
 		}
 
 		@Override

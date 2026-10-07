@@ -31,7 +31,9 @@ The default runtime is `spring-boot`, so `./run.sh` keeps the original local beh
 
 If Playwright browsers are already installed locally, set `E2E_SKIP_PLAYWRIGHT_INSTALL=true` to skip the browser installer.
 
-Some specs serve an endpoint of their own to the server, such as a SPARQL endpoint that never answers. They give the server the address in `RDF4J_E2E_HOST_FROM_SERVER` (default `127.0.0.1`). For `docker-tomcat`, `run.sh` sets it to the container's gateway on Linux and to `host.docker.internal` elsewhere; set it yourself when the server runs in a container you started.
+Some specs serve an endpoint of their own to the server, such as a SPARQL endpoint that never answers. They give the server the address in `RDF4J_E2E_HOST_FROM_SERVER` (default `127.0.0.1`). For `docker-tomcat`, `run.sh` sets it to `host.docker.internal`, which `docker-compose.e2e.yml` maps to this host also on Linux; set it yourself when the server runs in a container you started.
+
+Some specs also stand in for RDF4J Servers of their own (`tests/server-stand-in.js`: one that refuses the user, one without repositories) and point the Workbench at them. The Workbench connects only to servers its accepted-server-prefixes allow, so `run.sh` starts it with `-Dorg.eclipse.rdf4j.workbench.accepted-server-prefixes="/rdf4j-server http://<RDF4J_E2E_HOST_FROM_SERVER>:"`. Start a server of your own the same way to run those specs against it.
 
 To run the tests interactively use `npx playwright test --ui`
 

@@ -123,3 +123,66 @@ test('A43: reloading a page (F5) brings it back to where it was scrolled, as Bac
     await openPage('reload');
     assert.deepEqual(scrollCalls, [4200], 'the reloaded page is where it was left');
 });
+
+/** The markup of a template captured from the runtime, values in place. */
+function flat(template) {
+    if (Array.isArray(template)) { return template.map(flat).join(''); }
+    if (template && Array.isArray(template.strings)) {
+        return template.strings.map((part, index) => part
+            + (index < template.values.length ? flat(template.values[index]) : '')).join('');
+    }
+    return template == null || typeof template === 'function' ? '' : String(template);
+}
+
+/** A runtime that keeps what it renders. */
+function capturingRuntime() {
+    const rendered = [];
+    return { rendered, nothing: '', html(strings, ...values) { return { strings: Array.from(strings), values }; },
+        render(template) { rendered.push(flat(template)); } };
+}
+
+function pageWithInfo(view, vars, row) {
+    return { ok: true, records: [
+        { type: 'head', version: 1 }, { type: 'view', id: view }, { type: 'links', values: ['info'] },
+        { type: 'vars', values: vars }, { type: 'rows', values: [row] }, { type: 'end' }
+    ] };
+}
+
+/** Answers the page itself, and fails the Info request the way a server error (500) does. */
+function failingInfo(pageAnswer) {
+    return (url) => (/\/info(\?|$)/.test(url) ? Promise.resolve({ ok: false, status: 500 }) : Promise.resolve(pageAnswer));
+}
+
+// An Info answer that fails for another reason than a refused user (a server error, a dropped connection) leaves the
+// page inside the shell, whose menu still offers Connection, instead of a bare error.
+test('a page whose Info fails is an error inside the shell, whose menu offers Connection', async () => {
+    const workbench = loadWorkbench();
+    installStream(workbench, () => Promise.resolve());
+    const lit = capturingRuntime();
+    const result = await workbench.app.bootstrap(page(workbench, 'summary'), {
+        fetch: failingInfo(pageWithInfo('summary', ['id'], [{ kind: 'literal', value: 'repo-1' }])),
+        runtime: lit, skipScripts: true
+    });
+    assert.equal(result.status, 'rendered');
+    assert.equal(result.model.error.code, 'page-incomplete');
+    const markup = lit.rendered.join('');
+    assert.match(markup, /Unable to load this Workbench page\./);
+    assert.match(markup, /Unable to load Workbench page data \(500\)/);
+    assert.match(markup, /id="navigation"[\s\S]*href=\/workbench\/repositories\/NONE\/server data-workbench-nav-href=/);
+});
+
+test('the Connection page is shown in full when its Info fails', async () => {
+    const workbench = loadWorkbench();
+    installStream(workbench, () => Promise.resolve());
+    const lit = capturingRuntime();
+    const result = await workbench.app.bootstrap(page(workbench, 'server'), {
+        fetch: failingInfo(pageWithInfo('server', ['server'], [{ kind: 'literal', value: 'https://example.test/rdf4j-server' }])),
+        runtime: lit, skipScripts: true
+    });
+    assert.equal(result.status, 'rendered');
+    assert.equal(result.model.error, undefined);
+    const markup = lit.rendered.join('');
+    assert.match(markup, /id="server-form"/);
+    assert.match(markup, /value=https:\/\/example\.test\/rdf4j-server/);
+    assert.match(markup, /id="navigation"[\s\S]*href=\/workbench\/repositories\/NONE\/server data-workbench-nav-href=/);
+});

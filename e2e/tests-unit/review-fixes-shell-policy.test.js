@@ -254,3 +254,17 @@ test('a menu from the Info answer is shown as it is, without an added Connection
     const markup = page(wb, { viewId: 'summary' }, context(['server']));
     assert.doesNotMatch(region(markup, 'id="navigation"', '</nav>'), /NONE\/server/);
 });
+
+// A Workbench whose server is fixed by configuration has no Connection page: nothing links to one, not even the menu
+// a shell falls back to without an Info answer.
+test('a Workbench whose server is fixed offers Connection nowhere', () => {
+    const wb = loadViews();
+    const fixed = (info) => ({ basePath: '/workbench', repositoryId: 'r', serverFixed: true, workbench: info });
+    const listed = context([]).workbench;
+    for (const info of [listed, { menu: [] }, {}]) {
+        const markup = page(wb, { viewId: 'summary' }, fixed(info));
+        assert.doesNotMatch(markup, /NONE\/server/, JSON.stringify(Object.keys(info)));
+    }
+    const missing = { viewId: 'summary', error: { status: 404, code: 'repository-not-found', message: 'missing' } };
+    assert.doesNotMatch(page(wb, missing, fixed({ menu: [] })), />Change server</);
+});

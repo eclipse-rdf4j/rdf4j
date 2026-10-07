@@ -458,6 +458,9 @@ var workbench;
          * server does not authorize, a failed Info) must still offer the pages to sign in or pick another repository.
          */
         function pageEnabled(context, pageId) {
+            if (pageId === 'server' && context.serverFixed) {
+                return false;
+            }
             var info = normalizeWorkbench(context.workbench, context.linked && context.linked.info);
             var known = ['menu', 'menuGroups', 'menuItems'].some(function (key) {
                 return Object.prototype.hasOwnProperty.call(info, key);
@@ -656,11 +659,16 @@ var workbench;
         }
         /**
          * The menu the sidebar and the phone menu show. Without a menu from the Info answer (a user the server refuses,
-         * a failed Info) they still offer Connection, where the user signs in or picks another server.
+         * a failed Info) they still offer Connection, where the user signs in or picks another server, unless the
+         * server is fixed by configuration and there is no Connection page.
          */
         function shellMenuGroups(context) {
-            var groups = menuEntries(context);
-            if (groups.some(function (group) { return (group.items || []).length > 0; })) {
+            var groups = menuEntries(context).map(function (group) { return context.serverFixed
+                ? Object.assign({}, group, { items: (group.items || []).filter(function (item) {
+                        return text(item.id || item['menu-item-id']) !== 'server';
+                    }) })
+                : group; });
+            if (groups.some(function (group) { return (group.items || []).length > 0; }) || context.serverFixed) {
                 return groups;
             }
             return [{ id: 'repositories', label: 'Server', icon: 'repository',
