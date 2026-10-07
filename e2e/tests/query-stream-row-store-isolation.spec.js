@@ -23,6 +23,7 @@ const { DATABASE_PREFIX, largeQuery, storedResults } = require('../row-store-hel
 
 const REPOSITORY_ID = uniqueRepositoryId('row-store-isolation');
 const LEGACY_DATABASE = 'rdf4j-workbench-query-results';
+const LEGACY_LOCK_PREFIX = 'rdf4j-workbench-query-rows:';
 
 test.beforeAll(async ({ request }) => {
 	await createSeededRepository(request, serverBaseUrl(), REPOSITORY_ID, { graphs: [] });
@@ -70,6 +71,21 @@ async function holdWriteTransactions(page, names) {
 	}))), names);
 }
 
+/**
+ * Holds Web Locks for as long as the page lives, as a Workbench tab writing rows does: one per store it uses. A frozen
+ * tab keeps its locks, and cleanup in another tab never deletes a database whose lock is held. Without them cleanup
+ * would delete the databases this tab holds open, and in Firefox a deletion blocked by an open connection stalls every
+ * later IndexedDB request of the origin until that connection closes.
+ */
+async function holdStoreLocks(page, names) {
+	await page.evaluate((lockNames) => Promise.all(lockNames.map((name) => new Promise((resolve) => {
+		navigator.locks.request(name, () => {
+			resolve();
+			return new Promise(() => {});
+		});
+	}))), names);
+}
+
 /** Whether a read-only transaction on a database finishes within ms (false while a write transaction holds it). */
 async function readsWithin(page, name, ms) {
 	return page.evaluate(({ name, ms }) => new Promise((resolve) => {
@@ -89,6 +105,8 @@ test('pages and a large query result work while another tab holds write transact
 	await holder.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'));
 	await waitForRoute(holder, 'summary');
 	const otherStore = DATABASE_PREFIX + 'rows-' + Date.now().toString(36) + '-held-by-another-tab';
+	// An older Workbench locked rdf4j-workbench-query-rows:<store>; a store's lock is named like its database.
+	await holdStoreLocks(holder, [LEGACY_LOCK_PREFIX + 'held-by-another-tab', otherStore]);
 	await holdWriteTransactions(holder, [LEGACY_DATABASE, otherStore]);
 
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'summary'));
