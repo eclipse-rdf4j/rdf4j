@@ -282,11 +282,25 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
-		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
+		return dataset(level, true);
+	}
+
+	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
+		SailDataset dataset = new DelegatingSailDataset(
+				observe ? derivedFromSerializable(level) : derivedFromSnapshot(level)) {
 
 			@Override
 			public void close() throws SailException {
-				super.close();
+				try {
+					super.close();
+				} catch (RuntimeException | Error failure) {
+					SourceClosingSailDataset.closeAfterFailure(failure, this::releaseObserver);
+					throw failure;
+				}
+				releaseObserver();
+			}
+
+			private void releaseObserver() {
 				try {
 					semaphore.lock();
 					observers.remove(this);
@@ -309,6 +323,14 @@ class SailSourceBranch implements SailSource {
 	@Override
 	public SailSource fork() {
 		return new SailSourceBranch(this, modelFactory);
+	}
+
+	/**
+	 * Preserves this branch's backing snapshot and changeset overlays while bypassing its own observation layer.
+	 * Observing datasets already retained by a backing source are left intact.
+	 */
+	SailDataset datasetWithoutObservations(IsolationLevel level) {
+		return dataset(level, false);
 	}
 
 	@Override
