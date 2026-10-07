@@ -507,9 +507,9 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 			margin-bottom: var(--workbench-field-gap);
 		}
 
-		/* The help line sits directly under the control, with no gap of its own. */
+		/* The help line sits just under the control, as close as a label to its field. */
 		body.workbench-body .query-options-disclosure .query-timeout-field > .workbench-field__help {
-			margin-top: 0;
+			margin-top: var(--workbench-field-gap);
 		}
 
 		body.workbench-body .query-options-disclosure .workbench-disclosure__fields > :not(.query-timeout-field) {
