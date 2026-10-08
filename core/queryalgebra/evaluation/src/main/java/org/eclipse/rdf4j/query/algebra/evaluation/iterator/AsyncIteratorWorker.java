@@ -17,11 +17,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
 
 /** Tracks admitted asynchronous iterator work until the worker body has actually returned. */
 final class AsyncIteratorWorker {
-	private static final long CLOSE_GRACE_NANOS = TimeUnit.SECONDS.toNanos(10);
 	private final Object monitor = new Object();
 	private final ThreadLocal<Boolean> workerThread = new ThreadLocal<>();
 	private volatile boolean cancelled;
@@ -68,25 +66,25 @@ final class AsyncIteratorWorker {
 
 	void cancelAndAwait() {
 		cancel();
-		awaitWorkers(Long.MAX_VALUE);
+		awaitWorkers();
 	}
 
 	/**
-	 * Cancels admitted work and closes the source after that work has returned. A worker still active after a grace
-	 * period may be blocked in the source itself, where interruption is not observed, so the source is then closed to
-	 * unblock it before waiting for the worker to leave.
+	 * Cancels admitted work and immediately closes the source to release waits that do not observe interruption. The
+	 * source owns safe resource drain during concurrent consumption; external closers then wait for admitted work to
+	 * return, including its captured context cleanup.
 	 */
 	void cancelAndClose(Runnable closeSource) {
 		cancel();
-		boolean idle = false;
+		boolean interrupted = Thread.interrupted();
 		try {
-			idle = awaitWorkers(CLOSE_GRACE_NANOS);
+			closeSource.run();
 		} finally {
 			try {
-				closeSource.run();
+				awaitWorkers();
 			} finally {
-				if (!idle) {
-					awaitWorkers(Long.MAX_VALUE);
+				if (interrupted) {
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -103,35 +101,25 @@ final class AsyncIteratorWorker {
 		}
 	}
 
-	/** Returns whether all admitted work returned within the timeout; {@link Long#MAX_VALUE} waits without limit. */
-	private boolean awaitWorkers(long timeoutNanos) {
+	/** Waits until all admitted work has returned, preserving the closer's interrupt status. */
+	private void awaitWorkers() {
 		// A captured context may close this iterator while its worker is unwinding. Waiting from that
 		// worker would prevent it from returning; external closers still wait for all admitted work.
 		if (Boolean.TRUE.equals(workerThread.get())) {
-			return true;
+			return;
 		}
 		workerThread.remove();
 
 		boolean interrupted = Thread.interrupted();
-		long start = System.nanoTime();
 		try {
 			synchronized (monitor) {
 				while (activeWorkers > 0) {
 					try {
-						if (timeoutNanos == Long.MAX_VALUE) {
-							monitor.wait();
-						} else {
-							long remaining = timeoutNanos - (System.nanoTime() - start);
-							if (remaining <= 0) {
-								return false;
-							}
-							TimeUnit.NANOSECONDS.timedWait(monitor, remaining);
-						}
+						monitor.wait();
 					} catch (InterruptedException e) {
 						interrupted = true;
 					}
 				}
-				return true;
 			}
 		} finally {
 			if (interrupted) {

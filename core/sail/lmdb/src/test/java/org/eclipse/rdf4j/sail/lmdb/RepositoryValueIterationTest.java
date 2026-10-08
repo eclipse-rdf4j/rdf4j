@@ -26,7 +26,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -47,6 +51,73 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RepositoryValueIterationTest {
+
+	@Test
+	void timeoutCancelsSourceBeforeDrainingAnAdmittedValueScope(@TempDir File directory) throws Exception {
+		try (ObservedValues store = new ObservedValues(directory);
+				var workers = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(500)) {
+			ValueResolutionScope creator = store.openValueResolutionScope();
+			List<Value> values = seed(store, creator, 1);
+			long earlier = ((LmdbValue) values.getFirst()).getValueStoreRevision().getRevisionId();
+			rotate(store, creator);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch released = new CountDownLatch(1);
+			CountDownLatch cancelled = new CountDownLatch(1);
+			AtomicInteger drains = new AtomicInteger();
+			CloseableIteration<Value> source = new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					entered.countDown();
+					try {
+						assertTrue(released.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new QueryInterruptedException(e);
+					}
+					return false;
+				}
+
+				@Override
+				public Value next() {
+					throw new NoSuchElementException();
+				}
+
+				@Override
+				public void close() {
+					cancelled.countDown();
+				}
+			};
+			try (var exposed = new RepositoryValueIteration<>(source, SailResultValueExtractor.VALUES, store, null,
+					deadline, ignored -> drains.incrementAndGet());
+					var timed = new TimeLimitIteration<Value>(exposed, deadline) {
+						{
+							registerDeadline();
+						}
+
+						@Override
+						protected void throwInterruptedException() {
+							throw new QueryInterruptedException("test deadline expired");
+						}
+					}) {
+				creator.close();
+				var pulling = workers.submit(timed::hasNext);
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				try {
+					assertTrue(cancelled.await(2, TimeUnit.SECONDS), "timeout must promptly cancel the source");
+					assertEquals(0, drains.get(), "The active callback must retain its native value horizon");
+					assertFalse(store.unusedRevisionIds.contains(earlier));
+				} finally {
+					released.countDown();
+				}
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> pulling.get(5, TimeUnit.SECONDS));
+				assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				assertEquals(1, drains.get());
+				assertTrue(store.unusedRevisionIds.contains(earlier));
+			}
+		}
+	}
 
 	@Test
 	void closeReturnsBeforeAnAdmittedCallbackAndDrainsAfterItsExit(@TempDir File directory) throws Exception {

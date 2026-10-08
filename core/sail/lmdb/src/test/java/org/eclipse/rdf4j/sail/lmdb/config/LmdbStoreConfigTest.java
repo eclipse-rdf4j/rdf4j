@@ -211,8 +211,8 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
-	void bulkOperationSizeDefaultsTo256() {
-		assertThat(invokeIntGetter(new LmdbStoreConfig(), "getBulkOperationSize")).isEqualTo(256);
+	void bulkOperationSizeDefaultsTo1024() {
+		assertThat(invokeIntGetter(new LmdbStoreConfig(), "getBulkOperationSize")).isEqualTo(1024);
 	}
 
 	@Test

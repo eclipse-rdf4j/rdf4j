@@ -441,7 +441,7 @@ class SailQueryExecutionTimeoutTest {
 
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
-	void timeoutDefersDelegateCleanupUntilActiveNextAndRemoveReturn() throws Exception {
+	void timeoutCancelsDelegateBeforeActiveNextAndRemoveDrain() throws Exception {
 		for (DelegateOperation operation : List.of(DelegateOperation.NEXT, DelegateOperation.REMOVE)) {
 			QueryExecutionDeadline deadline = QueryExecutionDeadline.start(500);
 			CountDownLatch deadlineExpired = new CountDownLatch(1);
@@ -453,6 +453,7 @@ class SailQueryExecutionTimeoutTest {
 			try {
 				assertThat(delegate.entered.await(3, TimeUnit.SECONDS)).isTrue();
 				assertThat(deadlineExpired.await(3, TimeUnit.SECONDS)).isTrue();
+				assertThat(delegate.closeEntered.await(2, TimeUnit.SECONDS)).isTrue();
 				assertThat(delegate.closed).isFalse();
 
 				delegate.release.countDown();
@@ -517,7 +518,7 @@ class SailQueryExecutionTimeoutTest {
 
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
-	void timeoutDoesNotCloseDelegateWhileHasNextIsActive() throws Exception {
+	void timeoutCancelsDelegateWhileRetainingItsActiveResources() throws Exception {
 		CountDownLatch deadlineExpired = new CountDownLatch(1);
 		AtomicReference<QueryExecutionDeadline> deadlineRef = new AtomicReference<>();
 		BlockingIteration iteration = new BlockingIteration();
@@ -546,6 +547,7 @@ class SailQueryExecutionTimeoutTest {
 		try {
 			assertThat(iteration.entered.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(deadlineExpired.await(3, TimeUnit.SECONDS)).isTrue();
+			assertThat(iteration.closeEntered.await(2, TimeUnit.SECONDS)).isTrue();
 			assertThat(iteration.closed).isFalse();
 
 			iteration.release.countDown();
@@ -603,6 +605,8 @@ class SailQueryExecutionTimeoutTest {
 		private final CountDownLatch closeEntered = new CountDownLatch(1);
 		private final AtomicBoolean closed = new AtomicBoolean();
 		private final AtomicInteger closeCalls = new AtomicInteger();
+		private final AtomicBoolean active = new AtomicBoolean();
+		private final AtomicBoolean closeRequested = new AtomicBoolean();
 		private CountDownLatch closeGate;
 
 		private void blockClose(CountDownLatch closeGate) {
@@ -611,6 +615,7 @@ class SailQueryExecutionTimeoutTest {
 
 		@Override
 		public boolean hasNext() {
+			active.set(true);
 			entered.countDown();
 			try {
 				if (!release.await(8, TimeUnit.SECONDS)) {
@@ -619,6 +624,9 @@ class SailQueryExecutionTimeoutTest {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new QueryInterruptedException("iteration interrupted by test cleanup", e);
+			} finally {
+				active.set(false);
+				drainResourcesIfIdle();
 			}
 			return true;
 		}
@@ -631,6 +639,7 @@ class SailQueryExecutionTimeoutTest {
 		@Override
 		protected void handleClose() {
 			closeCalls.incrementAndGet();
+			closeRequested.set(true);
 			closeEntered.countDown();
 			if (closeGate != null) {
 				try {
@@ -642,8 +651,15 @@ class SailQueryExecutionTimeoutTest {
 					throw new QueryInterruptedException("delegate close interrupted by test cleanup", e);
 				}
 			}
-			closed.set(true);
-			closedLatch.countDown();
+			drainResourcesIfIdle();
+		}
+
+		private void drainResourcesIfIdle() {
+			// Sources own resource lifetime, so cancellation can reach a wait without destroying active state.
+			if (closeRequested.get() && !active.get()) {
+				closed.set(true);
+				closedLatch.countDown();
+			}
 		}
 	}
 
@@ -693,6 +709,9 @@ class SailQueryExecutionTimeoutTest {
 		private final CountDownLatch closedLatch = new CountDownLatch(1);
 		private final AtomicBoolean closed = new AtomicBoolean();
 		private final AtomicInteger closeCalls = new AtomicInteger();
+		private final CountDownLatch closeEntered = new CountDownLatch(1);
+		private final AtomicBoolean active = new AtomicBoolean();
+		private final AtomicBoolean closeRequested = new AtomicBoolean();
 
 		private BlockingCallIteration(DelegateOperation operation) {
 			this.operation = operation;
@@ -721,6 +740,7 @@ class SailQueryExecutionTimeoutTest {
 		}
 
 		private void awaitRelease() {
+			active.set(true);
 			entered.countDown();
 			try {
 				if (!release.await(8, TimeUnit.SECONDS)) {
@@ -729,14 +749,25 @@ class SailQueryExecutionTimeoutTest {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new QueryInterruptedException("delegate operation interrupted by test cleanup", e);
+			} finally {
+				active.set(false);
+				drainResourcesIfIdle();
 			}
 		}
 
 		@Override
 		protected void handleClose() {
 			closeCalls.incrementAndGet();
-			closed.set(true);
-			closedLatch.countDown();
+			closeRequested.set(true);
+			closeEntered.countDown();
+			drainResourcesIfIdle();
+		}
+
+		private void drainResourcesIfIdle() {
+			if (closeRequested.get() && !active.get()) {
+				closed.set(true);
+				closedLatch.countDown();
+			}
 		}
 	}
 }

@@ -96,12 +96,16 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				result = super.hasNext();
+				if (Thread.currentThread().isInterrupted()) {
+					result = false;
+				} else {
+					result = wrappedIter.hasNext();
+				}
 			}
 		} catch (NoSuchElementException e) {
 			failure = e;
 			checkInterrupted(e);
-			close();
+			closeWithinDeadline();
 			throw e;
 		} catch (RuntimeException e) {
 			failure = e;
@@ -114,6 +118,10 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			endDelegateCall(failure);
 		}
 		checkInterrupted();
+		if (!result) {
+			// Timeout cleanup may still be waiting for the active source call to exit. Observe it before closing.
+			closeWithinDeadline();
+		}
 		return result;
 	}
 
@@ -132,12 +140,17 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				result = super.next();
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					throw new NoSuchElementException("The iteration has been interrupted.");
+				}
+				// Let this wrapper observe the source failure before any automatic close can replace it.
+				result = wrappedIter.next();
 			}
 		} catch (NoSuchElementException e) {
 			failure = e;
 			checkInterrupted(e);
-			close();
+			closeWithinDeadline();
 			throw e;
 		} catch (RuntimeException e) {
 			failure = e;
@@ -167,12 +180,16 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				super.remove();
+				if (Thread.currentThread().isInterrupted()) {
+					close();
+					throw new IllegalStateException("The iteration has been interrupted.");
+				}
+				wrappedIter.remove();
 			}
 		} catch (IllegalStateException e) {
 			failure = e;
 			checkInterrupted(e);
-			close();
+			closeWithinDeadline();
 			throw e;
 		} catch (RuntimeException e) {
 			failure = e;
@@ -185,6 +202,12 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			endDelegateCall(failure);
 		}
 		checkInterrupted();
+	}
+
+	private void closeWithinDeadline() {
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			close();
+		}
 	}
 
 	@Override
@@ -328,7 +351,10 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	}
 
 	private boolean claimDelegateCloseIfIdle() {
-		if (closeRequested && (activeCalls == 0 || !deferCloseDuringActiveCall) && !delegateCloseStarted) {
+		// Timeout close is also a cancellation signal: an active source wait may require close to return.
+		// Sources that own native resources must protect their drain from concurrent consumption.
+		if (closeRequested && (activeCalls == 0 || timeoutCloseRequested || !deferCloseDuringActiveCall)
+				&& !delegateCloseStarted) {
 			delegateCloseStarted = true;
 			return true;
 		}

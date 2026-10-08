@@ -42,22 +42,22 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 512;
+	public static final int VALUE_CACHE_SIZE = 16 * 1024;
 
 	/**
 	 * The default value id cache size.
 	 */
-	public static final int VALUE_ID_CACHE_SIZE = 128;
+	public static final int VALUE_ID_CACHE_SIZE = 16 * 1024;
 
 	/**
 	 * The default namespace cache size.
 	 */
-	public static final int NAMESPACE_CACHE_SIZE = 64;
+	public static final int NAMESPACE_CACHE_SIZE = 512;
 
 	/**
 	 * The default size of aligned bulk write batches.
 	 */
-	public static final int BULK_OPERATION_SIZE = 256;
+	public static final int BULK_OPERATION_SIZE = 1024;
 
 	public static final long OPTIMIZER_SAMPLING_MAX_MILLIS = 2L;
 
