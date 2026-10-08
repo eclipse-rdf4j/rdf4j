@@ -28,8 +28,11 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -530,12 +533,18 @@ class AdaptiveReplayIntegrationTest {
 		Object owner = new Object();
 		SailSource source = store.getBackingStore().getExplicitSailSource(owner);
 		try {
-			try (SailSink abandoned = source.sink(IsolationLevels.NONE)) {
+			// This regression targets native ValueStore rollback cleanup. NONE batches remain pending until the
+			// publication path materializes them; pending NONE namespace cleanup is covered separately.
+			try (SailSink abandoned = source.sink(IsolationLevels.SNAPSHOT)) {
 				abandoned.approve(Values.iri("urn:abandoned"), Values.iri("urn:predicate"),
 						Values.literal("abandoned"), null);
 				abandoned.setNamespace("abandoned", "urn:abandoned:");
 				store.values.failNextCacheCleanup = true;
-				assertThrows(SailException.class, () -> store.getBackingStore().rollback(owner));
+				SailException rollbackFailure = assertThrows(SailException.class,
+						() -> store.getBackingStore().rollback(owner));
+				assertEquals("injected dictionary cleanup failure", rollbackFailure.getCause().getMessage());
+				assertFalse(store.values.failNextCacheCleanup,
+						"the failed rollback must reach the injected ValueStore cache-cleanup hook");
 			}
 			SailSource independent = store.getBackingStore().getExplicitSailSource(new Object());
 			try (SailSink committed = independent.sink(IsolationLevels.NONE)) {
@@ -550,6 +559,63 @@ class AdaptiveReplayIntegrationTest {
 			}
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void noneDictionaryRollbackCleanupFailureCannotPublishAbandonedNamespacesInAnotherWrite(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStoreConfig config = largeConfig().setBulkOperationSize(1);
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(dataDir.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		Object owner = new Object();
+		SailSource source = store.getBackingStore().getExplicitSailSource(owner);
+		IRI abandonedSubject = Values.iri("urn:none-abandoned");
+		IRI committedSubject = Values.iri("urn:none-committed");
+		IRI predicate = Values.iri("urn:predicate");
+		try {
+			int startsBefore = store.values.nativeWriteTransactionsStarted;
+			try (SailSink abandoned = source.sink(IsolationLevels.NONE)) {
+				abandoned.approve(abandonedSubject, predicate, Values.literal("abandoned"), null);
+				assertTrue(store.values.nativeWriteTransactionsStarted > startsBefore,
+						"the full one-row NONE batch must start an unpublished native dictionary writer");
+				abandoned.setNamespace("abandoned", "urn:abandoned:");
+				store.values.failNextCacheCleanup = true;
+				SailException rollbackFailure = assertThrows(SailException.class,
+						() -> store.getBackingStore().rollback(owner));
+				assertEquals("injected dictionary cleanup failure", rollbackFailure.getCause().getMessage());
+				assertFalse(store.values.failNextCacheCleanup,
+						"the NONE rollback must reach the injected ValueStore cache-cleanup hook");
+			}
+
+			SailSource independent = store.getBackingStore().getExplicitSailSource(new Object());
+			try (SailSink committed = independent.sink(IsolationLevels.NONE)) {
+				committed.approve(committedSubject, predicate, Values.literal("committed"), null);
+				committed.flush();
+			}
+			try (var reader = repository.getConnection()) {
+				assertEquals(1, reader.size());
+				assertTrue(reader.hasStatement(committedSubject, predicate, Values.literal("committed"), true));
+				assertFalse(reader.hasStatement(abandonedSubject, predicate, Values.literal("abandoned"), true));
+				assertEquals(null, reader.getNamespace("abandoned"),
+						"a cleanup failure must discard the abandoned NONE namespace delta");
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		LmdbStore reopened = new LmdbStore(dataDir.toFile(), config);
+		SailRepository reopenedRepository = new SailRepository(reopened);
+		reopenedRepository.init();
+		try (var reader = reopenedRepository.getConnection()) {
+			assertEquals(1, reader.size());
+			assertTrue(reader.hasStatement(committedSubject, predicate, Values.literal("committed"), true));
+			assertFalse(reader.hasStatement(abandonedSubject, predicate, Values.literal("abandoned"), true));
+			assertEquals(null, reader.getNamespace("abandoned"),
+					"no abandoned NONE content or namespace may survive reopening");
+		} finally {
+			reopenedRepository.shutDown();
 		}
 	}
 
@@ -970,6 +1036,67 @@ class AdaptiveReplayIntegrationTest {
 	}
 
 	@Test
+	void partialAlignedArrayReplaysExactlyItsValidPrefixAfterCommitCapacityFailure() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setTripleDBSize(1L << 20)
+				.setValueDBSize(1L << 20);
+		int count = 37;
+		long[] subjects = new long[64];
+		long[] predicates = new long[64];
+		long[] objects = new long[64];
+		long[] contexts = new long[64];
+		List<Integer> addedIndices = new ArrayList<>();
+		int partialAlignedSortPasses = -1;
+		int scalarStoreCalls = -1;
+
+		try (PairedStores stores = new PairedStores(directory, config)) {
+			stores.begin();
+			long predicate = stores.values.storeValue(Values.iri("urn:partial-aligned:predicate"));
+			long context = stores.values.storeValue(Values.iri("urn:partial-aligned:context"));
+			for (int i = 0; i < count; i++) {
+				subjects[i] = stores.values.storeValue(Values.iri("urn:partial-aligned:subject:" + i));
+				predicates[i] = predicate;
+				objects[i] = stores.values.storeValue(Values.literal("partial aligned object " + i));
+				contexts[i] = context;
+			}
+			for (int i = count; i < subjects.length; i++) {
+				// These tail entries are outside the valid prefix and must never be stored or reported to the callback.
+				subjects[i] = 900_000L + i;
+				predicates[i] = 900_001L;
+				objects[i] = 900_002L;
+				contexts[i] = 900_003L;
+			}
+
+			stores.triples.storeTriplesAligned(subjects, predicates, objects, contexts, count, true, addedIndices::add);
+			stores.triples.failNextCommit = true;
+			long mapSizeBeforeFailure = tripleMapSize(stores.triples);
+			stores.commit();
+
+			assertEquals(1, stores.triples.injectedCommitFailures,
+					"the native writer handle must be consumed by exactly one injected MAP_FULL");
+			assertTrue(tripleMapSize(stores.triples) > mapSizeBeforeFailure,
+					"the capacity failure must cause a real triple-map growth episode");
+			assertEquals(count, addedIndices.size(), "each accepted row must notify the callback exactly once");
+			for (int i = 0; i < count; i++) {
+				assertEquals(i, addedIndices.get(i), "the callback must preserve each valid-prefix index");
+			}
+			assertExactAlignedRows(stores.triples, subjects, predicates, objects, contexts, count);
+			partialAlignedSortPasses = stores.triples.partialAlignedSecondarySortPasses;
+			scalarStoreCalls = stores.triples.scalarStoreCalls;
+		}
+
+		try (PairedStores reopened = new PairedStores(directory, config)) {
+			assertExactAlignedRows(reopened.triples, subjects, predicates, objects, contexts, count);
+			assertEquals(0, replayFiles(reopened.triplesDirectory),
+					"a successful partial-array replay must retire its transaction journal");
+		}
+
+		assertTrue(partialAlignedSortPasses > 0,
+				"the valid prefix must use the native aligned secondary-index path");
+		assertEquals(0, scalarStoreCalls, "the valid prefix must not fall back to scalar journal writes");
+	}
+
+	@Test
 	void nativeMapFullClassificationAndDisabledGrowthRemainUnchanged() throws Exception {
 		IOException classified = assertThrows(LmdbUtil.MapFullException.class, () -> LmdbUtil.E(MDB_MAP_FULL));
 		assertEquals(mdb_strerror(MDB_MAP_FULL), classified.getMessage());
@@ -1085,6 +1212,36 @@ class AdaptiveReplayIntegrationTest {
 		}
 	}
 
+	private static void assertExactAlignedRows(TripleStore triples, long[] subjects, long[] predicates,
+			long[] objects, long[] contexts, int count) throws Exception {
+		boolean[] found = new boolean[count];
+		int foundCount = 0;
+		try (var txn = triples.getTxnManager().createReadTxn();
+				var records = triples.getTriples(txn, -1, -1, -1, -1, true)) {
+			long[] record;
+			while ((record = records.next()) != null) {
+				int index = -1;
+				for (int i = 0; i < count; i++) {
+					if (subjects[i] == record[0]) {
+						index = i;
+						break;
+					}
+				}
+				assertTrue(index >= 0, "unexpected or out-of-prefix subject was committed: " + record[0]);
+				assertFalse(found[index], "a valid-prefix row was committed more than once at index " + index);
+				assertEquals(predicates[index], record[1], "predicate mismatch at valid-prefix index " + index);
+				assertEquals(objects[index], record[2], "object mismatch at valid-prefix index " + index);
+				assertEquals(contexts[index], record[3], "context mismatch at valid-prefix index " + index);
+				found[index] = true;
+				foundCount++;
+			}
+		}
+		assertEquals(count, foundCount, "every valid-prefix row must survive native capacity recovery exactly once");
+		for (int i = 0; i < count; i++) {
+			assertTrue(found[i], "valid-prefix row is missing at index " + i);
+		}
+	}
+
 	private static final class PairedStores implements AutoCloseable {
 		final FaultyValueStore values;
 		final FaultyTripleStore triples;
@@ -1190,6 +1347,9 @@ class AdaptiveReplayIntegrationTest {
 
 	private static final class FaultyTripleStore extends TripleStore {
 		private volatile boolean failNextCommit;
+		private int injectedCommitFailures;
+		private int partialAlignedSecondarySortPasses;
+		private int scalarStoreCalls;
 		private volatile Runnable replayValidation;
 		private volatile Runnable successfulRetryValidation;
 		private volatile AtomicReference<Thread> bulkWorker;
@@ -1201,6 +1361,21 @@ class AdaptiveReplayIntegrationTest {
 		FaultyTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config, ValueStore values)
 				throws IOException {
 			super(directory, properties, config, values);
+		}
+
+		@Override
+		public boolean storeTriple(long subject, long predicate, long object, long context, boolean explicit)
+				throws IOException {
+			scalarStoreCalls++;
+			return super.storeTriple(subject, predicate, object, context, explicit);
+		}
+
+		@Override
+		void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subjects,
+				long[] predicates, long[] objects, long[] contexts) {
+			partialAlignedSecondarySortPasses++;
+			super.sortStatementIndicesByLeadingField(statementIndices, length, index, subjects, predicates, objects,
+					contexts);
 		}
 
 		@Override
@@ -1230,6 +1405,7 @@ class AdaptiveReplayIntegrationTest {
 		int commitWriteTransaction(long transaction) {
 			if (failNextCommit) {
 				failNextCommit = false;
+				injectedCommitFailures++;
 				// Match native commit: the handle has been consumed even though it returned MAP_FULL.
 				mdb_txn_abort(transaction);
 				return MDB_MAP_FULL;
@@ -1271,6 +1447,7 @@ class AdaptiveReplayIntegrationTest {
 		private int abortCallsAfterFailedCommit;
 		private boolean failNextCacheCleanup;
 		private boolean failNextAbortCleanup;
+		private int nativeWriteTransactionsStarted;
 		private Value failStartupValue;
 		private CountDownLatch delayedStartEntered;
 		private CountDownLatch resumeDelayedStartOnRollback;
@@ -1286,6 +1463,7 @@ class AdaptiveReplayIntegrationTest {
 		@Override
 		public void startTransaction(boolean resize) throws IOException {
 			super.startTransaction(resize);
+			nativeWriteTransactionsStarted++;
 			if (failStartupValue != null) {
 				Value failedValue = failStartupValue;
 				failStartupValue = null;

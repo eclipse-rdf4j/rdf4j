@@ -59,6 +59,7 @@ class LmdbEmptyCacheClearTest {
 		repository.init();
 		try (RepositoryConnection writer = repository.getConnection();
 				RepositoryConnection observer = repository.getConnection()) {
+			ensureScratchFactoryInitialized(store, writer);
 			long cacheBefore = committedTransactionId(store.cache);
 			int commitCallsBefore = store.operations.commitCalls.get();
 			writer.begin();
@@ -97,6 +98,7 @@ class LmdbEmptyCacheClearTest {
 		repository.init();
 		try (RepositoryConnection writer = repository.getConnection();
 				RepositoryConnection observer = repository.getConnection()) {
+			ensureScratchFactoryInitialized(store, writer);
 			long cacheBefore = committedTransactionId(store.cache);
 			writer.begin();
 			writer.add(SUBJECT, PREDICATE, OBJECT);
@@ -211,6 +213,17 @@ class LmdbEmptyCacheClearTest {
 			E(mdb_env_info(factory.env, info));
 			return info.me_last_txnid();
 		}
+	}
+
+	private static void ensureScratchFactoryInitialized(CountingCacheStore store, RepositoryConnection writer)
+			throws Exception {
+		if (store.cache == null) {
+			writer.begin(IsolationLevels.SNAPSHOT);
+			writer.add(VF.createIRI("urn:empty-cache:scratch-factory-initializer"), PREDICATE,
+					VF.createLiteral("initialized outside the measured cache window"));
+			writer.commit();
+		}
+		assertNotNull(store.cache, "the first ordinary shared-root writer must initialize the scratch factory");
 	}
 
 	private static final class CountingCacheStore extends LmdbStore {

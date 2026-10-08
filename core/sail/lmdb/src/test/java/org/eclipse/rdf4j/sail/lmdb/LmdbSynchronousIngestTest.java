@@ -88,11 +88,77 @@ class LmdbSynchronousIngestTest {
 				assertEquals(1, fixture.events.starts.size());
 				assertSame(producer, fixture.events.starts.getFirst(),
 						"a supplied set fitting one configured operation must keep the native writer on its producer");
-				assertEquals(List.of(producer, producer), fixture.events.scalarWrites);
+				assertTrue(fixture.events.scalarWrites.isEmpty(),
+						"a multi-row prepared set must use the aligned native entry point");
+				assertEquals(1, fixture.events.alignedWrites.size());
+				AlignedWrite aligned = fixture.events.alignedWrites.getFirst();
+				assertEquals(2, aligned.count);
+				assertSame(producer, aligned.thread,
+						"the single aligned submission must remain on the producer thread");
 				assertEquals(List.of(producer), fixture.events.commits);
 				assertVisible(observer, statements);
 				assertEquals("urn:sync-ingest:single:", observer.getNamespace("single"));
 			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	@org.junit.jupiter.api.Timeout(value = 180, unit = TimeUnit.SECONDS)
+	void noneCapacityRecoveryPublishesPairedChunksAcrossDurabilityAndWriterModes(boolean forceSync,
+			boolean multiThreading, @TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setForceSync(forceSync)
+				.setSketchEstimatorEnabled(false)
+				.setBulkOperationSize(256)
+				.setTripleDBSize(1L << 20)
+				.setValueDBSize(1L << 20)
+				.setMapGrowthThreshold(0.5d)
+				.setMapGrowthReadDrainTimeoutMillis(0L);
+		Set<Statement> input = statements("none-mode-" + forceSync + "-" + multiThreading, 16_384);
+		try (Fixture fixture = new Fixture(directory, config)) {
+			fixture.store.getBackingStore().enableMultiThreading = multiThreading;
+			fixture.events.expectSuccessfulTripleCommits(1);
+			fixture.events.failTripleCommit.set(true);
+			Thread producer = Thread.currentThread();
+			try (RepositoryConnection writer = fixture.repository.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				for (Statement statement : input) {
+					writer.add(statement);
+				}
+				assertTrue(fixture.events.awaitSuccessfulTripleCommits(45, TimeUnit.SECONDS),
+						"NONE ingestion must publish a recovered native chunk before final connection commit");
+				assertTrue(writer.isActive(), "paired native recovery must leave the public NONE transaction active");
+				assertFalse(fixture.events.failTripleCommit.get(),
+						"the injected TripleStore capacity failure must be consumed");
+				assertEquals(1, fixture.events.injectedNativeCommitFailures.get(),
+						"the test must recover exactly one consumed native MAP_FULL");
+				assertTrue(fixture.store.getBackingStore().noneIngestionMetrics().capacityReplays() > 0,
+						"the injected failure must exercise bounded NONE capacity recovery");
+				assertTrue(fixture.store.getBackingStore().noneIngestionMetrics().checkpoints() > 0,
+						"recovered native chunks must checkpoint before final commit");
+				assertTrue(containsSuccessfulPublicationPair(fixture.events.successfulPublicationOrder),
+						"the dictionary must commit before a successful TripleStore chunk");
+				assertFalse(fixture.events.successfulTripleCommitThreads.isEmpty(),
+						"the test must observe the actual thread that published a native chunk");
+				Thread nativeWriter = fixture.events.successfulTripleCommitThreads.getFirst();
+				if (multiThreading) {
+					assertNotSame(producer, nativeWriter,
+							"enabled per-store multi-threading must publish NONE chunks on its native worker");
+				} else {
+					assertSame(producer, nativeWriter,
+							"disabled per-store multi-threading must publish NONE chunks on the producer thread");
+				}
+				writer.commit();
+			}
+			try (RepositoryConnection observer = fixture.repository.getConnection()) {
+				assertVisible(observer, input);
+			}
+		}
+
+		try (Fixture reopened = new Fixture(directory, config);
+				RepositoryConnection observer = reopened.repository.getConnection()) {
+			assertVisible(observer, input);
 		}
 	}
 
@@ -102,8 +168,12 @@ class LmdbSynchronousIngestTest {
 			throws Exception {
 		try (Fixture fixture = new Fixture(directory, route == MutationRoute.DISABLED_BULK ? 0 : 4)) {
 			fixture.store.getBackingStore().enableMultiThreading = false;
-			AssertionError original = new AssertionError("injected after real scalar mutation");
-			fixture.events.mutationFailure.set(original);
+			AssertionError original = new AssertionError("injected after real native mutation");
+			if (route == MutationRoute.BULK) {
+				fixture.events.alignedFailure.set(original);
+			} else {
+				fixture.events.mutationFailure.set(original);
+			}
 			Set<Statement> abandoned = statements("abandoned", 2);
 			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				sink.setNamespace("abandoned", "urn:abandoned:");
@@ -167,7 +237,7 @@ class LmdbSynchronousIngestTest {
 			fixture.store.getBackingStore().enableMultiThreading = false;
 			IOException original = new IOException("injected after real scalar mutation");
 			AssertionError cleanup = new AssertionError("injected after consuming dictionary abort");
-			fixture.events.mutationFailure.set(original);
+			fixture.events.alignedFailure.set(original);
 			fixture.events.valueAbortFailure.set(cleanup);
 			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				SailException failure = assertThrows(SailException.class,
@@ -224,11 +294,10 @@ class LmdbSynchronousIngestTest {
 				sink.flush();
 			}
 			assertWriter(fixture.events, producer, bulkSize > 0 && count <= bulkSize);
-			assertEquals(bulkSize == 0 ? 0 : count / bulkSize, fixture.events.alignedWrites.size());
-			for (AlignedWrite write : fixture.events.alignedWrites) {
-				assertEquals(bulkSize, write.count);
-				assertEquals(bulkSize, write.capacity, "this candidate retains configured buffer capacity");
-			}
+			List<Integer> expectedBatchCounts = expectedBatchCounts(bulkSize, count);
+			assertAlignedBatchDispatch(fixture.events, bulkSize, expectedBatchCounts, true);
+			assertEquals(expectedScalarWriteCount(bulkSize, expectedBatchCounts, count),
+					fixture.events.scalarWrites.size());
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertVisible(observer, input);
 				assertEquals(count, observer.size());
@@ -269,13 +338,11 @@ class LmdbSynchronousIngestTest {
 				changed.get(10, TimeUnit.SECONDS);
 				assertEquals(1, supplied.sizeQueries.get(), "one original size query fixes physical execution mode");
 				assertWriter(fixture.events, Thread.currentThread(), initialCount <= bulkSize);
-				assertEquals(actualCount / bulkSize, fixture.events.alignedWrites.size());
-				assertEquals(bulkSize == 1 ? actualCount : actualCount % bulkSize, fixture.events.scalarWrites.size(),
-						"the aligned native entry point delegates one-row batches to scalar writes");
-				for (AlignedWrite aligned : fixture.events.alignedWrites) {
-					assertEquals(bulkSize, aligned.count, "only configured B may select aligned native work");
-					assertEquals(bulkSize, aligned.capacity);
-				}
+				List<Integer> expectedBatchCounts = expectedBatchCounts(bulkSize, actualCount);
+				assertAlignedBatchDispatch(fixture.events, bulkSize, expectedBatchCounts, false);
+				assertEquals(expectedScalarWriteCount(bulkSize, expectedBatchCounts, actualCount),
+						fixture.events.scalarWrites.size(),
+						"only valid one-row aligned submissions delegate to scalar writes");
 				for (int i = 0; i < fixture.events.alignedBuffers.size(); i++) {
 					for (int previous = 0; previous < i; previous++) {
 						assertNotSame(fixture.events.alignedBuffers.get(previous), fixture.events.alignedBuffers.get(i),
@@ -344,8 +411,10 @@ class LmdbSynchronousIngestTest {
 				changed.get(10, TimeUnit.SECONDS);
 				assertEquals(1, supplied.sizeQueries.get());
 				assertWriter(fixture.events, Thread.currentThread(), initialCount <= 4);
-				assertEquals(actualCount / 4, fixture.events.alignedWrites.size());
-				assertEquals(actualCount % 4, fixture.events.scalarWrites.size());
+				List<Integer> expectedBatchCounts = expectedBatchCounts(4, actualCount);
+				assertAlignedBatchDispatch(fixture.events, 4, expectedBatchCounts, false);
+				assertEquals(expectedScalarWriteCount(4, expectedBatchCounts, actualCount),
+						fixture.events.scalarWrites.size());
 				assertEquals((double) ((actualCount + 1) / 2),
 						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
 				assertEquals((double) (actualCount / 2),
@@ -514,7 +583,7 @@ class LmdbSynchronousIngestTest {
 				sink.setNamespace("abandoned", "urn:abandoned:");
 				if (later == Call.REMOVE) {
 					fixture.events.removalFailure.set(original);
-				} else if (later == Call.LARGE) {
+				} else if (later == Call.LARGE || later == Call.SMALL) {
 					fixture.events.alignedFailure.set(original);
 				} else {
 					fixture.events.mutationFailure.set(original);
@@ -536,7 +605,7 @@ class LmdbSynchronousIngestTest {
 		try (Fixture fixture = new Fixture(directory, 4)) {
 			IOException original = new IOException("operation failure after real native write");
 			AssertionError cleanup = new AssertionError("cleanup failure after real triple rollback");
-			fixture.events.mutationFailure.set(original);
+			fixture.events.alignedFailure.set(original);
 			fixture.events.tripleRollbackFailure.set(cleanup);
 			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				SailException thrown = assertThrows(SailException.class,
@@ -1190,6 +1259,27 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	private static List<Integer> expectedBatchCounts(int bulkSize, int actualCount) {
+		if (bulkSize <= 0 || actualCount <= 0) {
+			return List.of();
+		}
+		List<Integer> counts = new ArrayList<>();
+		int remainingActual = actualCount;
+		while (remainingActual > 0) {
+			int count = Math.min(bulkSize, remainingActual);
+			counts.add(count);
+			remainingActual -= count;
+		}
+		return List.copyOf(counts);
+	}
+
+	private static int expectedScalarWriteCount(int bulkSize, List<Integer> batchCounts, int actualCount) {
+		if (bulkSize <= 0) {
+			return actualCount;
+		}
+		return (int) batchCounts.stream().filter(count -> count == 1).count();
+	}
+
 	private static void write(Fixture fixture, Set<Statement> input) {
 		try (RepositoryConnection writer = fixture.repository.getConnection()) {
 			writer.begin();
@@ -1216,6 +1306,38 @@ class LmdbSynchronousIngestTest {
 			assertSame(writer, thread);
 		}
 		assertEquals(List.of(writer), events.commits);
+	}
+
+	private static void assertAlignedBatchDispatch(Events events, int bulkSize, List<Integer> expectedCounts,
+			boolean exactPartialCapacity) {
+		List<AlignedWrite> writes = List.copyOf(events.alignedWrites);
+		assertEquals(expectedCounts, writes.stream().map(write -> write.count).toList(),
+				"native aligned submissions must preserve the ordered valid row counts");
+		if (bulkSize <= 0) {
+			assertTrue(writes.isEmpty(), "disabled bulk mode must use the legacy scalar path");
+			return;
+		}
+		for (AlignedWrite write : writes) {
+			assertTrue(write.count <= write.capacity,
+					"an aligned submission cannot exceed its valid ID-array capacity");
+			assertTrue(write.capacity <= bulkSize,
+					"a prepared batch cannot allocate beyond the configured bulk size");
+			if (write.count == bulkSize) {
+				assertEquals(bulkSize, write.capacity, "a full aligned batch uses the configured capacity");
+			} else if (exactPartialCapacity) {
+				assertEquals(write.count, write.capacity,
+						"a correctly sized supplied set gives its natural tail its exact capacity");
+			}
+		}
+	}
+
+	private static boolean containsSuccessfulPublicationPair(List<String> publicationOrder) {
+		for (int index = 0; index + 1 < publicationOrder.size(); index++) {
+			if (publicationOrder.get(index).equals("values") && publicationOrder.get(index + 1).equals("triples")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private record AlignedWrite(int count, int capacity, Thread thread) {
@@ -1366,6 +1488,9 @@ class LmdbSynchronousIngestTest {
 		private final List<Thread> removals = Collections.synchronizedList(new ArrayList<>());
 		private final List<TxnReplayPolicy.Decision> decisions = Collections.synchronizedList(new ArrayList<>());
 		private final List<String> publicationOrder = Collections.synchronizedList(new ArrayList<>());
+		private final List<String> successfulPublicationOrder = Collections.synchronizedList(new ArrayList<>());
+		private final List<Thread> successfulTripleCommitThreads = Collections.synchronizedList(new ArrayList<>());
+		private volatile CountDownLatch successfulTripleCommits = new CountDownLatch(0);
 		private final AtomicInteger valueAborts = new AtomicInteger();
 		private final AtomicInteger valueRollbacks = new AtomicInteger();
 		private final AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
@@ -1387,6 +1512,7 @@ class LmdbSynchronousIngestTest {
 		private final AtomicBoolean wrapCapacityError = new AtomicBoolean();
 		private final AtomicBoolean failValueCommit = new AtomicBoolean();
 		private final AtomicBoolean failTripleCommit = new AtomicBoolean();
+		private final AtomicInteger injectedNativeCommitFailures = new AtomicInteger();
 		private final AtomicReference<AssertionError> commitFailureError = new AtomicReference<>();
 		private final AtomicBoolean interruptAfterValueCommit = new AtomicBoolean();
 		private final AtomicLong consumedValueHandle = new AtomicLong();
@@ -1401,6 +1527,18 @@ class LmdbSynchronousIngestTest {
 			removals.clear();
 			decisions.clear();
 			publicationOrder.clear();
+			successfulPublicationOrder.clear();
+			successfulTripleCommitThreads.clear();
+			injectedNativeCommitFailures.set(0);
+			successfulTripleCommits = new CountDownLatch(0);
+		}
+
+		private void expectSuccessfulTripleCommits(int count) {
+			successfulTripleCommits = new CountDownLatch(count);
+		}
+
+		private boolean awaitSuccessfulTripleCommits(long timeout, TimeUnit unit) throws InterruptedException {
+			return successfulTripleCommits.await(timeout, unit);
 		}
 	}
 
@@ -1532,6 +1670,9 @@ class LmdbSynchronousIngestTest {
 				throw failure;
 			}
 			if (events != null) {
+				events.successfulPublicationOrder.add("triples");
+				events.successfulTripleCommitThreads.add(Thread.currentThread());
+				events.successfulTripleCommits.countDown();
 				throwFailure(events.tripleCommitError.getAndSet(null));
 			}
 		}
@@ -1563,6 +1704,7 @@ class LmdbSynchronousIngestTest {
 				events.publicationOrder.add("triples");
 				if (events.failTripleCommit.getAndSet(false)) {
 					mdb_txn_abort(transaction);
+					events.injectedNativeCommitFailures.incrementAndGet();
 					return MDB_MAP_FULL;
 				}
 			}
@@ -1611,6 +1753,7 @@ class LmdbSynchronousIngestTest {
 			}
 			if (events != null) {
 				events.publicationOrder.add("values");
+				events.successfulPublicationOrder.add("values");
 				throwFailure(events.valueCommitError.getAndSet(null));
 				if (events.interruptAfterValueCommit.getAndSet(false)) {
 					Thread.currentThread().interrupt();

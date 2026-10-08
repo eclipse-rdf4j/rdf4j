@@ -176,6 +176,49 @@ class LmdbEmergencyProjectedDemandTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void ownerBoundInternalNoneSinkKeepsTheStrongerSnapshotNativeTransaction(@TempDir Path dataDir) throws Exception {
+		InspectableLmdbStore store = new InspectableLmdbStore(dataDir.toFile(), smallMapConfig());
+		try {
+			store.init();
+			LmdbSailStore backing = store.getBackingStore();
+			backing.enableMultiThreading = false;
+			ValueStore valueStore = store.capturedValueStore();
+			TripleStore tripleStore = store.capturedTripleStore();
+			LmdbSailStore.NoneIngestionMetrics metricsBefore = backing.noneIngestionMetrics();
+			long valueGenerationBefore = valueStore.nativeCommitGeneration();
+			long tripleGenerationBefore = tripleStore.getNativeCommitGeneration();
+			Statement planned = dictionaryBatch("stronger-owner-internal-none", 0, 1, 32).getFirst();
+
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				SailSource source = backing.getExplicitSailSource(connection);
+				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
+					sink.approve(planned.getSubject(), planned.getPredicate(), planned.getObject(),
+							planned.getContext());
+					sink.flush();
+				}
+
+				assertEquals(metricsBefore.checkpoints(), backing.noneIngestionMetrics().checkpoints(),
+						"an internal NONE sink owned by a SNAPSHOT connection must use the legacy writer path");
+				assertEquals(metricsBefore.capacityReplays(), backing.noneIngestionMetrics().capacityReplays(),
+						"the stronger owner must not be charged for NONE capacity replay");
+				assertEquals(valueGenerationBefore + 1, valueStore.nativeCommitGeneration(),
+						"the stronger owner's dictionary write must advance exactly one native generation");
+				assertEquals(tripleGenerationBefore + 1, tripleStore.getNativeCommitGeneration(),
+						"the stronger owner's triple write must advance exactly one native generation");
+				connection.commit();
+			}
+
+			assertCompletePublication(store, List.of(planned));
+			assertEquals(metricsBefore.checkpoints(), backing.noneIngestionMetrics().checkpoints(),
+					"committing the stronger owner's row must not create NONE checkpoint accounting");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void forecastBoundToACompletedNativeGenerationCannotInflateTheNextEmergencyResize(@TempDir Path dataDir)
 			throws Exception {
@@ -489,7 +532,7 @@ class LmdbEmergencyProjectedDemandTest {
 
 			try (SailClosable owner = backing.enterWriterOwner(publishingOwner);
 					SailClosable forecast = source.beginWritePreflight(completeEstimate, publishingOwner);
-					SailSink sink = source.sink(IsolationLevels.NONE)) {
+					SailSink sink = source.sink(IsolationLevels.SNAPSHOT)) {
 				sink.approve(planned.get(0).getSubject(), planned.get(0).getPredicate(), planned.get(0).getObject(),
 						null);
 				assertTrue(backing.growthMetricsSnapshot().emergencyAttempts() > before.emergencyAttempts(),
@@ -507,7 +550,7 @@ class LmdbEmergencyProjectedDemandTest {
 			assertCompletePublication(store, planned);
 			long completedGenerationMapBytes = valueStore.mapSizeBytes();
 			long completedGenerationResizes = backing.growthMetricsSnapshot().valueStoreResizes();
-			try (SailSink nextGeneration = source.sink(IsolationLevels.NONE)) {
+			try (SailSink nextGeneration = source.sink(IsolationLevels.SNAPSHOT)) {
 				Statement statement = dictionaryBatch("completed-generation", 0, 1, 32).getFirst();
 				nextGeneration.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), null);
 				nextGeneration.flush();

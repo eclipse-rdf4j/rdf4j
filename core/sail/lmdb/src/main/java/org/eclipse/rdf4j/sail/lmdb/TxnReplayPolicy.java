@@ -150,6 +150,8 @@ final class TxnReplayPolicy {
 	/** One immutable admission decision; a shared failure poisons both native writers. */
 	static final class Decision {
 		final boolean track;
+		/** NONE retains a bounded native chunk in memory instead of an atomic transaction journal. */
+		final boolean checkpoint;
 		final boolean observe;
 		final long tripleHighWater;
 		final long valueHighWater;
@@ -159,12 +161,22 @@ final class TxnReplayPolicy {
 
 		Decision(TxnReplayPolicy policy, boolean track, boolean observe, long tripleHighWater, long valueHighWater,
 				long valueMutationGeneration) {
+			this(policy, track, false, observe, tripleHighWater, valueHighWater, valueMutationGeneration);
+		}
+
+		private Decision(TxnReplayPolicy policy, boolean track, boolean checkpoint, boolean observe,
+				long tripleHighWater, long valueHighWater, long valueMutationGeneration) {
 			this.policy = policy;
 			this.track = track;
+			this.checkpoint = checkpoint;
 			this.observe = observe;
 			this.tripleHighWater = tripleHighWater;
 			this.valueHighWater = valueHighWater;
 			this.valueMutationGeneration = valueMutationGeneration;
+		}
+
+		Decision forNativeCheckpoints() {
+			return new Decision(policy, false, true, false, tripleHighWater, valueHighWater, valueMutationGeneration);
 		}
 
 		void check() throws LmdbTransactionRetryException {

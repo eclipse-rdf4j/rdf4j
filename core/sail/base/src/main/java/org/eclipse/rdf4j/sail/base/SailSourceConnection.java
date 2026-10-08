@@ -515,6 +515,15 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return withDatasetAcquisition(level, () -> source.dataset(level));
 	}
 
+	/** Internal mutation probes/scans may use a current-writer view without changing caller read snapshots. */
+	protected SailDataset acquireMutationDataset(SailSource source, IsolationLevel level) throws SailException {
+		return withDatasetAcquisition(level, () -> source.dataset(level), true);
+	}
+
+	protected SailClosable beginMutationDatasetAcquisition(IsolationLevel level) throws SailException {
+		return beginDatasetAcquisition(level);
+	}
+
 	@FunctionalInterface
 	private interface DatasetAcquisitionOperation<T> {
 		T acquire() throws SailException;
@@ -522,9 +531,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private <T> T withDatasetAcquisition(IsolationLevel level, DatasetAcquisitionOperation<T> operation)
 			throws SailException {
+		return withDatasetAcquisition(level, operation, false);
+	}
+
+	private <T> T withDatasetAcquisition(IsolationLevel level, DatasetAcquisitionOperation<T> operation,
+			boolean mutation) throws SailException {
 		int retries = 0;
 		while (true) {
-			SailClosable admission = beginDatasetAcquisition(level);
+			SailClosable admission = mutation ? beginMutationDatasetAcquisition(level) : beginDatasetAcquisition(level);
 			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
 			SailSource.RetryableDatasetAcquisitionException retryFailure = null;
 			try (admission) {
@@ -578,7 +592,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			explicitOnlyDataset = explicitDataset;
 			inferredOnlySink = inferredSink;
 			return null;
-		});
+		}, true);
 	}
 
 	private static Throwable closeResource(Throwable failure, SailClosable resource) {
@@ -902,7 +916,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				} else {
 					source = branch(IncludeInferred.explicitOnly);
 				}
-				datasets.put(op, acquireDataset(source, level));
+				datasets.put(op, acquireMutationDataset(source, level));
 				explicitSinks.put(op, source.sink(level));
 			}
 		}
@@ -920,7 +934,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				// Pure insertion consumes no read view. A listener needs the dataset to preserve duplicate
 				// notifications.
 				if (hasConnectionListeners() && !datasets.containsKey(null)) {
-					datasets.put(null, acquireDataset(source, getIsolationLevel()));
+					datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
 				}
 				if (!explicitSinks.containsKey(null)) {
 					explicitSinks.put(null, source.sink(getIsolationLevel()));
@@ -944,7 +958,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			if (op == null && !datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, acquireDataset(source, getIsolationLevel()));
+				datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
 				if (!explicitSinks.containsKey(null)) {
 					explicitSinks.put(null, source.sink(getIsolationLevel()));
 				}
@@ -1165,7 +1179,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			if (!datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, acquireDataset(source, getIsolationLevel()));
+				datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
 				if (!explicitSinks.containsKey(null)) {
 					explicitSinks.put(null, source.sink(getIsolationLevel()));
 				}

@@ -576,7 +576,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:rollback:p");
 		var o = vf.createIRI("urn:rollback:o");
 
-		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc").setBulkOperationSize(1));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -603,12 +603,59 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			assertFalse(estimator.isReadyNonBlocking(),
 					"Rollback must discard eager non-isolated estimator state");
-			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
-					0.0d,
-					"Rolled-back statement must not remain visible to estimator sketches");
+			assertEquals(1L, estimator.rebuild(), "an explicit rebuild must scan only the committed seed row");
+			assertTrue(estimator.isReadyNonBlocking(), "the explicit rebuild must restore estimator readiness");
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+					0.0d, "the rebuilt estimator must retain only the committed seed row");
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertFalse(conn.hasStatement(s, p, o, false),
 						"Rolled-back statement must not remain visible in the store");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void noneIsolationRollbackKeepsReadyEstimatorWhenPendingRowNeverPublishes(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var seed = vf.createIRI("urn:pending-rollback:seed");
+		var s = vf.createIRI("urn:pending-rollback:s");
+		var p = vf.createIRI("urn:pending-rollback:p");
+		var o = vf.createIRI("urn:pending-rollback:o");
+
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(seed, p, vf.createIRI("urn:pending-rollback:seed-o"));
+				conn.commit();
+			}
+			estimator.stop();
+			estimator.rebuild();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			assertTrue(estimator.isReadyNonBlocking());
+			long checkpointsBefore = backingStore.noneIngestionMetrics().checkpoints();
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(s, p, o);
+				assertEquals(checkpointsBefore, backingStore.noneIngestionMetrics().checkpoints(),
+						"a single default-bulk row must stay in the pending batch");
+				conn.rollback();
+			}
+
+			assertTrue(estimator.isReadyNonBlocking(),
+					"discarding an unpublished pending row must not invalidate the ready estimator");
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+					0.0d, "the ready estimator must contain only the committed seed row");
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				assertFalse(conn.hasStatement(s, p, o, false),
+						"the rolled-back pending row must not become visible in the store");
 			}
 		} finally {
 			store.shutDown();

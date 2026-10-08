@@ -454,6 +454,8 @@ class LmdbAsyncHandoffTest {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(false);
 			backing = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), config,
 					false, (dir, props, cfg) -> new ValueStore(dir, props, cfg) {
+						private boolean resolvingBatch;
+
 						@Override
 						public void commit() throws IOException {
 							super.commit();
@@ -463,10 +465,29 @@ class LmdbAsyncHandoffTest {
 						@Override
 						public long storeValue(Value value) throws IOException {
 							long id = super.storeValue(value);
+							if (!resolvingBatch) {
+								recordSubject(value, id);
+							}
+							return id;
+						}
+
+						@Override
+						void storeValues(Value[] values, long[] ids, int count) throws IOException {
+							resolvingBatch = true;
+							try {
+								super.storeValues(values, ids, count);
+							} finally {
+								resolvingBatch = false;
+							}
+							for (int i = 0; i < count; i++) {
+								recordSubject(values[i], ids[i]);
+							}
+						}
+
+						private void recordSubject(Value value, long id) {
 							if (value instanceof IRI && value.stringValue().startsWith("urn:async-handoff:subject:")) {
 								submittedSubjects.add(id);
 							}
-							return id;
 						}
 					}, (dir, props, cfg, values) -> {
 						ControlledTripleStore result = new ControlledTripleStore(dir, props, cfg, values);

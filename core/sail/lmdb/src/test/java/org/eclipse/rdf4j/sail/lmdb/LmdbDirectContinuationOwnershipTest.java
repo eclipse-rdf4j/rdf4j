@@ -254,8 +254,8 @@ class LmdbDirectContinuationOwnershipTest {
 			Statement triggerCompanion = statement("trigger-companion");
 			Statement suffix = statement("suffix");
 			Statement aliasStatement = statement("alias");
-			originalSink = source.sink(IsolationLevels.NONE);
-			aliasSink = source.sink(IsolationLevels.NONE);
+			originalSink = source.sink(IsolationLevels.SNAPSHOT);
+			aliasSink = source.sink(IsolationLevels.SNAPSHOT);
 			SailSink writerSink = originalSink;
 			writer = ownerExecutor.submit(() -> {
 				writerThread.set(Thread.currentThread());

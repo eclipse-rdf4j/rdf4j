@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -81,6 +82,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private final long[] originalQuad;
 
 	private boolean fetchNext = false;
+	private long[] resumeExclusive;
 
 	private final StampedLongAdderLockManager txnLockManager;
 
@@ -178,6 +180,20 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	/** Internal bounded mutation scans resume by key after closing their native cursor between pages. */
+	void resumeAfter(long[] lastQuad) {
+		if (fetchNext || closed) {
+			throw new IllegalStateException("A bounded scan must set its continuation before reading");
+		}
+		if (minKeyBuf == null) {
+			minKeyBuf = pool.getKeyBuffer();
+		}
+		minKeyBuf.clear();
+		index.toKey(minKeyBuf, lastQuad[0], lastQuad[1], lastQuad[2], lastQuad[3]);
+		minKeyBuf.flip();
+		resumeExclusive = lastQuad;
+	}
+
 	@Override
 	public long[] next() {
 		long readStamp;
@@ -259,6 +275,12 @@ class LmdbRecordIterator implements RecordIterator {
 					} else {
 						// Matching value found
 						index.keyToQuad(keyData.mv_data(), originalQuad, quad);
+						if (resumeExclusive != null && Arrays.equals(quad, resumeExclusive)) {
+							resumeExclusive = null;
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+							continue;
+						}
+						resumeExclusive = null;
 						sourceRowsMatchedActual++;
 						// fetch next value
 						fetchNext = true;

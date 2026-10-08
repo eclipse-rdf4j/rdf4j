@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +31,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -71,7 +79,8 @@ class LmdbConstructorCleanupTest {
 
 	@ParameterizedTest
 	@ValueSource(ints = { 1, 2 })
-	void closesPersistentSetFactoryWhenNamedSetCreationFails(int failedSet, @TempDir Path directory) throws Exception {
+	void closesPersistentSetFactoryWhenFirstWriterCreatesNamedSet(int failedSet, @TempDir Path directory)
+			throws Exception {
 		Path storeDirectory = Files.createDirectory(directory.resolve("store"));
 		AtomicReference<FailingPersistentSetFactory> factoryReference = new AtomicReference<>();
 		IOException injectedFailure = new IOException("injected failure creating named set " + failedSet);
@@ -82,17 +91,38 @@ class LmdbConstructorCleanupTest {
 			return created;
 		};
 
-		IOException failure = assertThrows(IOException.class,
-				() -> new LmdbSailStore(storeDirectory.toFile(), new StoreProperties(storeDirectory.toFile()), config(),
-						false, ValueStore::new, TripleStore::new, factory, LmdbFilterSelectivityStats::new));
+		try (LmdbSailStore backing = new LmdbSailStore(storeDirectory.toFile(),
+				new StoreProperties(storeDirectory.toFile()), config(), false, ValueStore::new, TripleStore::new,
+				factory, LmdbFilterSelectivityStats::new)) {
+			assertNull(factoryReference.get(),
+					"the optional factory must remain unopened before a writer mutates data");
+			Throwable failure = assertThrows(Throwable.class, () -> {
+				try (SailSink sink = backing.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT)) {
+					sink.approve(SimpleValueFactory.getInstance().createIRI("urn:constructor-cleanup:subject"),
+							SimpleValueFactory.getInstance().createIRI("urn:constructor-cleanup:predicate"),
+							SimpleValueFactory.getInstance().createLiteral("first writer"), null);
+					sink.flush();
+				}
+			}, "the first shared-root mutation must surface named-set creation failure " + failedSet);
 
-		assertAll(
-				() -> assertSame(injectedFailure, failure,
-						"named-set failure must remain primary for set " + failedSet),
-				() -> assertTrue(factoryReference.get().closed.get(),
-						"the set factory must close after named-set failure " + failedSet),
-				() -> assertEquals(0, countSetDirectories(storeDirectory),
-						"temporary set environment must be removed for set " + failedSet));
+			assertAll(
+					() -> assertTrue(containsCauseReference(failure, injectedFailure),
+							"the exact named-set failure must remain in the cause chain for set " + failedSet),
+					() -> assertTrue(factoryReference.get().closed.get(),
+							"the set factory must close after named-set failure " + failedSet),
+					() -> assertEquals(0, countSetDirectories(storeDirectory),
+							"temporary set environment must be removed for set " + failedSet));
+		}
+
+		LmdbStore reopened = new LmdbStore(storeDirectory.toFile(), config());
+		reopened.init();
+		try (SailConnection connection = reopened.getConnection();
+				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
+						false)) {
+			assertFalse(statements.hasNext(), "a failed first write must leave the store reopenable and empty");
+		} finally {
+			reopened.shutDown();
+		}
 	}
 
 	@Test
@@ -139,9 +169,19 @@ class LmdbConstructorCleanupTest {
 						"the value environment must close after estimator setup fails"),
 				() -> assertTrue(tripleStoreClosed.get(),
 						"the triple environment must close after estimator setup fails"),
-				() -> assertTrue(factoryReference.get().closed.get(), "the persistent-set environment must close"),
+				() -> assertNull(factoryReference.get(),
+						"the optional persistent-set factory must not be created during estimator initialization"),
 				() -> assertEquals(0, countSetDirectories(storeDirectory),
 						"temporary set environment must be removed after estimator setup fails"));
+	}
+
+	private static boolean containsCauseReference(Throwable failure, Throwable expected) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause == expected) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static LmdbStoreConfig config() {

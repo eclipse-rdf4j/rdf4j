@@ -744,6 +744,83 @@ class LmdbStoreFlushReproductionTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void sinkFromFinishedNoneAttemptCannotMutateTheSameConnectionsSnapshotAttempt(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailSink finishedNoneSink = null;
+		SailSink currentSnapshotSink = null;
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<Throwable> staleMutation = null;
+		IRI staleSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:stale-none");
+		IRI snapshotSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:snapshot");
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			finishedNoneSink = store.getBackingStore().getExplicitSailSource(connection).sink(IsolationLevels.NONE);
+			connection.commit();
+
+			connection.begin(IsolationLevels.SNAPSHOT);
+			LmdbSailStore backing = store.getBackingStore();
+			LmdbSailStore.NoneIngestionMetrics metricsBefore = backing.noneIngestionMetrics();
+			currentSnapshotSink = backing.getExplicitSailSource(connection).sink(IsolationLevels.SNAPSHOT);
+			SailSink staleNoneSink = finishedNoneSink;
+
+			staleMutation = executor.submit(() -> {
+				try {
+					staleNoneSink.approve(staleSubject, PREDICATE,
+							SimpleValueFactory.getInstance().createLiteral("stale"), null);
+					return null;
+				} catch (Throwable failure) {
+					return failure;
+				}
+			});
+			Throwable staleFailure = staleMutation.get(2, TimeUnit.SECONDS);
+			assertTrue(staleFailure instanceof SailConflictException,
+					"a sink from a finished NONE attempt must promptly reject mutation during its owner's later SNAPSHOT "
+							+ "attempt; got=" + staleFailure);
+			assertEquals(metricsBefore.checkpoints(), backing.noneIngestionMetrics().checkpoints(),
+					"the rejected stale mutation must not create a NONE checkpoint");
+			assertEquals(0, countBackingStore(store),
+					"the rejected stale mutation must not publish before the stronger owner commits");
+
+			finishedNoneSink.close();
+			finishedNoneSink = null;
+			currentSnapshotSink.approve(snapshotSubject, PREDICATE,
+					SimpleValueFactory.getInstance().createLiteral("snapshot"), null);
+			currentSnapshotSink.flush();
+			currentSnapshotSink.close();
+			currentSnapshotSink = null;
+			connection.commit();
+
+			assertEquals(metricsBefore.checkpoints(), backing.noneIngestionMetrics().checkpoints(),
+					"the stronger transaction must stay on its ordinary publication path");
+			assertEquals(1, countBackingStore(store),
+					"the active SNAPSHOT sink must publish its row without the stale NONE row");
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
+				assertTrue(statements.hasNext(), "the active SNAPSHOT sink's row must be present");
+				assertEquals(snapshotSubject, statements.next().getSubject(),
+						"only the active SNAPSHOT sink's row must be published");
+				assertFalse(statements.hasNext(), "the stale NONE row must not contaminate the stronger attempt");
+			}
+		} finally {
+			if (staleMutation != null) {
+				staleMutation.cancel(true);
+			}
+			if (currentSnapshotSink != null) {
+				currentSnapshotSink.close();
+			}
+			if (finishedNoneSink != null) {
+				finishedNoneSink.close();
+			}
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void closingUnflushedSinkRollsBackItsCurrentGeneration(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir);
 		store.init();
@@ -1005,7 +1082,9 @@ class LmdbStoreFlushReproductionTest {
 		CountDownLatch admissionStarted = new CountDownLatch(1);
 		AtomicReference<Thread> admissionThread = new AtomicReference<>();
 		Future<List<TripleTerm>> admittedTerms = null;
-		SailSink sink = source.sink(IsolationLevels.NONE);
+		// Keep this fixture on the legacy atomic checkpoint path; NONE chunk/overlay recovery is covered by the
+		// dedicated NONE streaming integration tests.
+		SailSink sink = source.sink(IsolationLevels.SNAPSHOT);
 		try {
 			try (SailClosable owner = store.getBackingStore().enterWriterOwner(connectionOwner)) {
 				sink.approve(subject, PREDICATE, term, null);
@@ -1168,7 +1247,7 @@ class LmdbStoreFlushReproductionTest {
 				connection.begin(IsolationLevels.NONE);
 				try (SailSink sink = store.getBackingStore()
 						.getExplicitSailSource(connection)
-						.sink(IsolationLevels.NONE)) {
+						.sink(IsolationLevels.SNAPSHOT)) {
 					sink.clearNamespaces();
 					sink.setNamespace("checkpoint", "urn:issue:6070:checkpoint:");
 					sink.setNamespace("removed", "urn:issue:6070:checkpoint:temporary:");
@@ -1229,6 +1308,110 @@ class LmdbStoreFlushReproductionTest {
 					store.shutDown();
 				}
 			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void preparedNoneNamespaceOverlayIsOwnerLocalAndRollsBack(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		Statement retained = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:overlay:retained"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("retained"));
+		Statement removed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:overlay:removed"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("removed"));
+		Statement added = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:overlay:added"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("added"));
+		Set<Statement> committedStatements = Set.of(retained, removed);
+		try {
+			store.init();
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.NONE);
+				seed.setNamespace("retained", "urn:issue:6070:overlay:retained:");
+				seed.setNamespace("removed", "urn:issue:6070:overlay:removed:");
+				seed.setNamespace("cleared", "urn:issue:6070:overlay:cleared:");
+				for (Statement statement : committedStatements) {
+					seed.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							statement.getContext());
+				}
+				seed.commit();
+			}
+
+			Object otherOwner = new Object();
+			SailSource otherSource = store.getBackingStore().getExplicitSailSource(otherOwner);
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				try (SailSink sink = store.getBackingStore().getExplicitSailSource(writer).sink(IsolationLevels.NONE)) {
+					sink.clearNamespaces();
+					sink.setNamespace("checkpoint", "urn:issue:6070:overlay:checkpoint:");
+					sink.setNamespace("removed", "urn:issue:6070:overlay:temporary:");
+					sink.removeNamespace("removed");
+					sink.deprecate(removed);
+					sink.approve(added);
+
+					assertEquals("urn:issue:6070:overlay:checkpoint:", writer.getNamespace("checkpoint"),
+							"the NONE owner must see its staged namespace addition");
+					assertNull(writer.getNamespace("removed"),
+							"the NONE owner must see its staged namespace removal");
+					Set<String> ownerPrefixes = new HashSet<>();
+					try (CloseableIteration<? extends Namespace> namespaces = writer.getNamespaces()) {
+						while (namespaces.hasNext()) {
+							ownerPrefixes.add(namespaces.next().getPrefix());
+						}
+					}
+					assertEquals(Set.of("checkpoint"), ownerPrefixes,
+							"the NONE owner's overlay must apply clear, remove, and add operations exactly");
+
+					try (SailClosable owner = store.getBackingStore().enterWriterOwner(otherOwner);
+							SailDataset dataset = otherSource.dataset(IsolationLevels.SNAPSHOT_READ)) {
+						assertEquals("urn:issue:6070:overlay:retained:", dataset.getNamespace("retained"));
+						assertEquals("urn:issue:6070:overlay:removed:", dataset.getNamespace("removed"));
+						assertEquals("urn:issue:6070:overlay:cleared:", dataset.getNamespace("cleared"));
+						assertNull(dataset.getNamespace("checkpoint"),
+								"another owner must not observe staged NONE namespace additions");
+						Set<String> otherPrefixes = new HashSet<>();
+						try (CloseableIteration<? extends Namespace> namespaces = dataset.getNamespaces()) {
+							while (namespaces.hasNext()) {
+								otherPrefixes.add(namespaces.next().getPrefix());
+							}
+						}
+						assertEquals(Set.of("retained", "removed", "cleared"), otherPrefixes,
+								"another owner must see the complete committed namespace set, without staged clear/remove/add");
+						assertEquals(committedStatements, readStatements(dataset),
+								"another owner must see the committed statement set, before the NONE rollback");
+					}
+					writer.rollback();
+				}
+			}
+
+			assertEquals(committedStatements, readBackingStatements(store),
+					"rollback must preserve the original statements and discard the staged add/remove");
+			assertEquals("urn:issue:6070:overlay:retained:", readBackingNamespace(store, "retained"));
+			assertEquals("urn:issue:6070:overlay:removed:", readBackingNamespace(store, "removed"));
+			assertEquals("urn:issue:6070:overlay:cleared:", readBackingNamespace(store, "cleared"));
+			assertNull(readBackingNamespace(store, "checkpoint"),
+					"rollback must discard staged namespace clear/remove/add operations");
+		} finally {
+			store.shutDown();
+		}
+
+		LmdbStore reopened = newStore(dataDir);
+		reopened.init();
+		try {
+			assertEquals(committedStatements, readBackingStatements(reopened),
+					"rollback must leave the original statement set after reopening");
+			assertEquals("urn:issue:6070:overlay:retained:", readBackingNamespace(reopened, "retained"));
+			assertEquals("urn:issue:6070:overlay:removed:", readBackingNamespace(reopened, "removed"));
+			assertEquals("urn:issue:6070:overlay:cleared:", readBackingNamespace(reopened, "cleared"));
+			assertNull(readBackingNamespace(reopened, "checkpoint"),
+					"none of the rolled-back namespace operations may survive reopening");
+		} finally {
+			reopened.shutDown();
 		}
 	}
 
@@ -1446,6 +1629,32 @@ class LmdbStoreFlushReproductionTest {
 				count++;
 			}
 			return count;
+		}
+	}
+
+	private static Set<Statement> readStatements(SailDataset dataset) throws Exception {
+		Set<Statement> result = new HashSet<>();
+		try (CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
+			while (statements.hasNext()) {
+				result.add(statements.next());
+			}
+		}
+		return result;
+	}
+
+	private static Set<Statement> readBackingStatements(LmdbStore store) throws Exception {
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
+			return readStatements(dataset);
+		}
+	}
+
+	private static String readBackingNamespace(LmdbStore store, String prefix) throws Exception {
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
+			return dataset.getNamespace(prefix);
 		}
 	}
 

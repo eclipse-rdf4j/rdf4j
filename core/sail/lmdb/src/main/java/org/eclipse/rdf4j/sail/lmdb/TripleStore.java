@@ -1655,6 +1655,9 @@ class TripleStore implements Closeable {
 			requestMapGrowth(estimatedWriteBytes, false);
 		}
 		if (requiresResize(estimatedWriteBytes)) {
+			if (replayDecision != null && replayDecision.checkpoint) {
+				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
+			}
 			requestMapGrowth(estimatedWriteBytes, true);
 			if (!usesReplayJournal()) {
 				growForTransactionRetry(estimatedWriteBytes, null);
@@ -1714,6 +1717,9 @@ class TripleStore implements Closeable {
 
 	/** Grows capacity for a complete caller retry; a missing prefix can never be replayed. */
 	private void growForTransactionRetry(long requiredBytes, Throwable cause) throws IOException {
+		if (replayDecision != null && replayDecision.checkpoint) {
+			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, cause);
+		}
 		LmdbTransactionRetryException retry = replayDecision == null
 				? new LmdbTransactionRetryException("TripleStore", cause)
 				: replayDecision.capacityFailure("TripleStore", cause);
@@ -2076,7 +2082,7 @@ class TripleStore implements Closeable {
 		if (writeTxn == 0) {
 			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
 		}
-		if (usesReplayJournal() && count > 1 && count == subj.length) {
+		if (usesReplayJournal() && count > 1) {
 			storeTriplesAlignedWithJournal(subj, pred, obj, context, count, explicit, addedIndexConsumer);
 			return;
 		}
@@ -2145,7 +2151,7 @@ class TripleStore implements Closeable {
 			return;
 		}
 		boolean[] addedFlags = addedResults == null ? new boolean[count] : addedResults;
-		if (count == 1 || count < subj.length) {
+		if (count == 1) {
 			storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 			return;
 		}
@@ -2160,10 +2166,17 @@ class TripleStore implements Closeable {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			int[] sortedIndices = new int[count];
+			int[] inputOrder = new int[count];
+			for (int i = 0; i < count; i++) {
+				inputOrder[i] = i;
+			}
+			// Native writes follow the primary index; callbacks, duplicate selection and replay retain input indexes.
+			sortStatementIndicesByLeadingField(inputOrder, count, mainIndex, subj, pred, obj, context);
 			boolean[] promotedFromImplicit = new boolean[count];
 			LongIntHashMap contextIncrements = new LongIntHashMap();
 
-			for (int i = 0; i < count; i++) {
+			for (int position = 0; position < count; position++) {
+				int i = inputOrder[position];
 				if (shouldFallBackFromAlignedWrite()) {
 					throw new MapFullException();
 				}
@@ -2511,11 +2524,70 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/** Capture a bounded native continuation and close its query cursor before any mutation/checkpoint. */
+	long[][] collectNativeChunkRemovals(long subj, long pred, long obj, long context, boolean explicit, int limit)
+			throws IOException {
+		return collectNativeChunkQuads(subj, pred, obj, context, explicit, limit, null);
+	}
+
+	long[][] collectNativeChunkQuads(long subj, long pred, long obj, long context, boolean explicit, int limit,
+			long[] after) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0 || replayDecision == null || !replayDecision.checkpoint) {
+			throw new IllegalStateException("Bounded removals require the NONE native checkpoint writer");
+		}
+		List<long[]> quads = new ArrayList<>(limit);
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		try (LmdbRecordIterator iterator = new LmdbRecordIterator(index,
+				index.getPatternScore(subj, pred, obj, context) > 0, subj, pred, obj, context, explicit,
+				txnManager.createTxn(writeTxn))) {
+			if (after != null) {
+				iterator.resumeAfter(after);
+			}
+			long[] quad;
+			while (quads.size() < limit && (quad = iterator.next()) != null) {
+				quads.add(quad.clone());
+			}
+		}
+		return quads.toArray(long[][]::new);
+	}
+
+	void removeNativeChunkQuads(long[][] quads, boolean explicit, IntConsumer handler) throws IOException {
+		for (int i = 0; i < quads.length; i++) {
+			long[] quad = quads[i];
+			if (quad == null) {
+				continue;
+			}
+			prepareForMutation(estimateTripleMutationBytes(quad[0], quad[1], quad[2], quad[3]));
+			boolean removed;
+			try {
+				removed = removeQuadDirect(quad[0], quad[1], quad[2], quad[3], explicit);
+			} catch (MapFullException capacity) {
+				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, capacity);
+			}
+			if (!removed) {
+				continue;
+			}
+			nativeMutation = true;
+			tripleMutation = true;
+			handler.accept(i);
+		}
+	}
+
 	private boolean removeQuadDirect(long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			MDBVal keyValue = MDBVal.calloc(stack);
+			MDBVal ignored = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			TripleIndex first = indexes.getFirst();
+			first.toKey(keyBuf, subj, pred, obj, context);
+			keyValue.mv_data(keyBuf.flip());
+			int existing = mdb_get(writeTxn, first.getDB(explicit), keyValue, ignored);
+			if (existing == MDB_NOTFOUND) {
+				return false;
+			}
+			E(existing);
 			for (TripleIndex index : indexes) {
 				keyBuf.clear();
 				index.toKey(keyBuf, subj, pred, obj, context);
@@ -2661,6 +2733,9 @@ class TripleStore implements Closeable {
 							}
 							if (result != MDB_MAP_FULL || !autoGrow) {
 								E(result);
+							}
+							if (replayDecision != null && replayDecision.checkpoint) {
+								throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
 							}
 							resizeAndReplay(-1, null);
 						}

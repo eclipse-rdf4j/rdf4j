@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -56,6 +57,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -881,6 +883,67 @@ class SnapshotPositiveLookupCacheTest {
 			try (View view = fixture.openView()) {
 				assertEquals(id, fixture.values.getId(view.snapshot, input));
 				view.close();
+				assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,128", "true,128", "false,65536", "true,65536" })
+	void closeDuringCallerCaptureOrMemoValidationRejectsLateResult(boolean memoized, int capacity,
+			@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, false, capacity)) {
+			IRI expected = VF.createIRI("urn:snapshot-cache:close-race");
+			long id = fixture.store(expected);
+			try (View view = fixture.openView(); ExecutorService executor = Executors.newSingleThreadExecutor()) {
+				AtomicBoolean blocked = new AtomicBoolean();
+				CountDownLatch entered = new CountDownLatch(1);
+				CountDownLatch released = new CountDownLatch(1);
+				IRI input = new AbstractIRI() {
+					private void awaitRelease() {
+						assertFalse(Thread.holdsLock(view.snapshot.txnRef()),
+								"Caller capture and memo validation must remain outside the native monitor");
+						if (blocked.get()) {
+							entered.countDown();
+							try {
+								assertTrue(released.await(10, TimeUnit.SECONDS));
+							} catch (InterruptedException failure) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError(failure);
+							}
+						}
+					}
+
+					@Override
+					public String getNamespace() {
+						awaitRelease();
+						return expected.getNamespace();
+					}
+
+					@Override
+					public String getLocalName() {
+						return expected.getLocalName();
+					}
+
+					@Override
+					public String stringValue() {
+						awaitRelease();
+						return expected.stringValue();
+					}
+				};
+				if (memoized) {
+					assertEquals(id, fixture.values.getId(view.snapshot, input));
+				}
+				blocked.set(true);
+				Future<?> late = executor.submit(() -> assertThrows(IOException.class,
+						() -> fixture.values.getId(view.snapshot, input)));
+				try {
+					assertTrue(entered.await(10, TimeUnit.SECONDS));
+					view.close();
+				} finally {
+					released.countDown();
+				}
+				late.get(10, TimeUnit.SECONDS);
 				assertThrows(IOException.class, () -> fixture.values.getId(view.snapshot, input));
 			}
 		}

@@ -19,13 +19,18 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -50,6 +55,8 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -60,15 +67,28 @@ import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.DecimalLiteral;
+import org.eclipse.rdf4j.model.impl.GenericStatement;
+import org.eclipse.rdf4j.model.impl.IntegerLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -219,6 +239,8 @@ class LmdbSailStore implements SailStore {
 		private ReadView reservedEpoch;
 		private volatile boolean closed;
 		private boolean writing;
+		/** Only NONE may yield physical writers after publishing a complete paired chunk. */
+		private boolean nativeCheckpointParked;
 		private volatile boolean completed;
 		private boolean failed;
 
@@ -930,7 +952,7 @@ class LmdbSailStore implements SailStore {
 				return true;
 			}
 			for (ReadAttemptLease attempt : transactions.values()) {
-				if (attempt.writing && !attempt.completed && !attempt.failed) {
+				if (attempt.writing && !attempt.nativeCheckpointParked && !attempt.completed && !attempt.failed) {
 					return true;
 				}
 			}
@@ -943,6 +965,19 @@ class LmdbSailStore implements SailStore {
 				ReadAttemptLease attempt = transactions.get(owner);
 				if (attempt != null) {
 					attempt.failed = true;
+				}
+				changed.signalAll();
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		private void parkCheckpointWriter(Object owner, boolean parked) {
+			lock.lock();
+			try {
+				ReadAttemptLease attempt = transactions.get(owner);
+				if (attempt != null) {
+					attempt.nativeCheckpointParked = parked;
 				}
 				changed.signalAll();
 			} finally {
@@ -1516,6 +1551,39 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private ReadViewLease reservedEpochLease(ReadAttemptLease attempt) {
+			if (attempt == null) {
+				return null;
+			}
+			lock.lock();
+			try {
+				// Growth callbacks need identity only; admission here would wait for their own growth episode.
+				return attempt.closed || attempt.reservedEpoch == null ? null : attempt.reservedEpoch.growthLease;
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		private void retireReservedEpoch(ReadAttemptLease attempt, Set<ReadViewLease> affectedViews) {
+			ReadView reserved = null;
+			lock.lock();
+			try {
+				if (attempt != null && attempt.reservedEpoch != null
+						&& affectedViews.contains(attempt.reservedEpoch.growthLease)) {
+					// Transfer exactly the attempt's owner reference; delayed cleanup must not release a newer epoch.
+					reserved = attempt.reservedEpoch;
+					attempt.reservedEpoch = null;
+				}
+			} finally {
+				lock.unlock();
+			}
+			if (reserved != null) {
+				try (ReadView retirement = reserved) {
+					retirement.abandonUnobserved();
+				}
+			}
+		}
+
 		private void reserveParkedSnapshots(GrowthEpisode requestedEpisode) {
 			while (true) {
 				List<ReadAttemptLease> parked;
@@ -1866,8 +1934,9 @@ class LmdbSailStore implements SailStore {
 		private boolean ownedBy(ReadViewLease lease, Object owner) {
 			ReadAttemptLease dependency = lease.writerDependency;
 			if (dependency != null) {
-				return !dependency.completed && !dependency.failed && (dependency.writing
-						|| lease.nativeOwner == owner && transactions.get(owner) == dependency);
+				return !dependency.completed && !dependency.failed && !dependency.nativeCheckpointParked
+						&& (dependency.writing
+								|| lease.nativeOwner == owner && transactions.get(owner) == dependency);
 			}
 			return lease.nativeOwner != null && lease.nativeOwner == owner;
 		}
@@ -2191,7 +2260,11 @@ class LmdbSailStore implements SailStore {
 		private static final long serialVersionUID = 1L;
 
 		private NativeContinuationAdmissionException() {
-			super("The LMDB writer is suspended for capacity recovery; retry the operation");
+			this("The LMDB writer is suspended for capacity recovery; retry the operation");
+		}
+
+		private NativeContinuationAdmissionException(String message) {
+			super(message);
 		}
 	}
 
@@ -2211,7 +2284,53 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private PersistentSetFactory<Long> setFactory;
-	private PersistentSet<Long> unusedIds, nextUnusedIds;
+	private final PersistentSetFactoryFactory setFactoryFactory;
+	private Set<Long> unusedIds = new HashSet<>(), nextUnusedIds = new HashSet<>();
+
+	/** Scratch storage is optional: NONE never opens a temporary LMDB environment. */
+	private void ensurePersistentSets() throws IOException {
+		if (setFactory != null) {
+			return;
+		}
+		PersistentSetFactory<Long> created = setFactoryFactory.create(dataDir);
+		try {
+			Function<Long, byte[]> encode = element -> {
+				ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				return buffer.putLong(element).array();
+			};
+			Function<ByteBuffer, Long> decode = buffer -> buffer.order(ByteOrder.BIG_ENDIAN).getLong();
+			Set<Long> first = created.createSet("unusedIds", encode, decode);
+			Set<Long> second = created.createSet("nextUnusedIds", encode, decode);
+			unusedIds = first;
+			nextUnusedIds = second;
+			setFactory = created;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				created.close();
+			} catch (IOException | RuntimeException | Error cleanup) {
+				retainRollbackFailure(failure, cleanup);
+			}
+			throw failure;
+		}
+	}
+
+	private Set<Long> mutationUnusedIds() {
+		NoneWriteState state = noneWriteState;
+		return state != null && state.owner == storeTransactionOwner
+				&& storeReplayDecision != null && storeReplayDecision.checkpoint ? state.retiredIds : unusedIds;
+	}
+
+	private void recordNoneMutation(boolean added) {
+		NoneWriteState state = noneWriteState;
+		if (state != null && state.owner == storeTransactionOwner
+				&& storeReplayDecision != null && storeReplayDecision.checkpoint) {
+			if (added) {
+				state.statementsAdded = true;
+			} else {
+				state.statementsRemoved = true;
+			}
+		}
+	}
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
@@ -2265,6 +2384,8 @@ class LmdbSailStore implements SailStore {
 			T result = null;
 			if (tail != head) {
 				result = elements[head];
+				// Release the payload before publishing this slot as available to the producer.
+				elements[head] = null;
 				head = (head + 1) % elements.length;
 			}
 			return result;
@@ -2321,6 +2442,7 @@ class LmdbSailStore implements SailStore {
 			if (!explicit) {
 				mayHaveInferred = true;
 			}
+			Set<Long> unusedIds = mutationUnusedIds();
 			if (!unusedIds.isEmpty()) {
 				// these ids are used again
 				unusedIds.remove(s);
@@ -2329,10 +2451,93 @@ class LmdbSailStore implements SailStore {
 				unusedIds.remove(c);
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
+			if (added) {
+				recordNoneMutation(true);
+			}
 			if (added && explicit && estimatorCallback != null) {
 				Statement st = valueStore.createStatement(subj, pred, obj, context);
 				estimatorCallback.accept(st);
 			}
+		}
+	}
+
+	private record PendingTriple(Resource subject, IRI predicate, Value object) {
+	}
+
+	/** Owns lexical rows until their actual count is known; native arrays are allocated only for prepared work. */
+	private final class PendingNoneBatch {
+		private final boolean explicit;
+		private final int limit;
+		private Statement[] statements = new Statement[1];
+		private int size;
+		private Consumer<Statement> estimatorCallback;
+		// Only mutation probes need this index; a no-listener load never allocates it.
+		private Map<PendingTriple, Map<Resource, Statement>> pendingLookup;
+
+		PendingNoneBatch(boolean explicit, int limit) {
+			this.explicit = explicit;
+			this.limit = limit;
+		}
+
+		static long initialStorageBytes() {
+			return BulkAddQuadsOperation.estimatedStorageBytes(1);
+		}
+
+		long estimatedStorageBytes(int rows) {
+			// Reserve compact native storage at admission, before preparation allocates it. This also covers
+			// the smaller lexical accumulator, whose reference-array capacity is at most twice its used rows.
+			return BulkAddQuadsOperation.estimatedStorageBytes(rows);
+		}
+
+		void add(Statement statement) {
+			if (size == statements.length) {
+				statements = Arrays.copyOf(statements, Math.min(limit, statements.length * 2));
+			}
+			statements[size++] = statement;
+			if (pendingLookup != null) {
+				indexPendingStatement(statement);
+			}
+		}
+
+		BulkAddQuadsOperation prepare() {
+			Statement[] owned = statements.length == size ? statements : Arrays.copyOf(statements, size);
+			statements = null;
+			pendingLookup = null;
+			BulkAddQuadsOperation prepared = new BulkAddQuadsOperation(explicit, size, owned);
+			prepared.size = size;
+			prepared.estimatorCallback = estimatorCallback;
+			return prepared;
+		}
+
+		private void indexPendingStatement(Statement statement) {
+			PendingTriple identity = new PendingTriple(statement.getSubject(), statement.getPredicate(),
+					statement.getObject());
+			pendingLookup.computeIfAbsent(identity, ignored -> new LinkedHashMap<>())
+					.putIfAbsent(statement.getContext(), statement);
+		}
+
+		List<Statement> pendingMatches(Resource subject, IRI predicate, Value object, Resource[] contexts) {
+			if (pendingLookup == null) {
+				pendingLookup = new HashMap<>();
+				for (int i = 0; i < size; i++) {
+					indexPendingStatement(statements[i]);
+				}
+			}
+			Map<Resource, Statement> matching = pendingLookup.get(new PendingTriple(subject, predicate, object));
+			if (matching == null) {
+				return List.of();
+			}
+			if (contexts.length == 1) {
+				Statement statement = matching.get(contexts[0]);
+				return statement == null ? List.of() : List.of(statement);
+			}
+			List<Statement> result = new ArrayList<>();
+			for (Statement statement : matching.values()) {
+				if (matchesMutationContext(statement.getContext(), contexts)) {
+					result.add(statement);
+				}
+			}
+			return result;
 		}
 	}
 
@@ -2348,14 +2553,29 @@ class LmdbSailStore implements SailStore {
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit, int capacity) {
-			assert capacity > 0 && capacity <= bulkOperationSize;
+			this(explicit, capacity, new Statement[capacity]);
+		}
+
+		BulkAddQuadsOperation(boolean explicit, int capacity, Statement[] statements) {
+			assert capacity > 0 && capacity <= Math.max(1, bulkOperationSize);
+			assert statements.length == capacity;
 			this.explicit = explicit;
 			this.capacity = capacity;
 			this.subjects = new long[capacity];
 			this.predicates = new long[capacity];
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
-			this.statements = new Statement[capacity];
+			this.statements = statements;
+		}
+
+		long estimatedStorageBytes() {
+			return estimatedStorageBytes(capacity);
+		}
+
+		static long estimatedStorageBytes(int capacity) {
+			// Five conservative array headers, operation/callback/control objects and four long arrays plus
+			// uncompressed statement references. Submitted NONE capacity equals its actual row count.
+			return 5L * 32L + 160L + 5L * Long.BYTES * capacity;
 		}
 
 		BulkAddQuadsOperation withConfiguredCapacity() {
@@ -2392,6 +2612,7 @@ class LmdbSailStore implements SailStore {
 			if (!explicit) {
 				mayHaveInferred = true;
 			}
+			Set<Long> unusedIds = mutationUnusedIds();
 			if (!unusedIds.isEmpty()) {
 				for (int i = 0; i < size; i++) {
 					unusedIds.remove(subjects[i]);
@@ -2400,18 +2621,9 @@ class LmdbSailStore implements SailStore {
 					unusedIds.remove(contexts[i]);
 				}
 			}
-			if (size < bulkOperationSize) {
-				for (int i = 0; i < size; i++) {
-					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
-							explicit);
-					if (added && explicit && estimatorCallback != null) {
-						estimatorCallback.accept(statements[i]);
-					}
-				}
-				return;
-			}
 			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
 					statementIndex -> {
+						recordNoneMutation(true);
 						if (explicit && estimatorCallback != null) {
 							estimatorCallback.accept(statements[statementIndex]);
 						}
@@ -2419,11 +2631,184 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private final class NoneRemoveOperation implements Operation {
+		private final Statement[] identities;
+		private final long[][] quads;
+		private final boolean explicit;
+		private final LmdbSailSink sink;
+
+		NoneRemoveOperation(Statement[] identities, long[][] quads, boolean explicit, LmdbSailSink sink) {
+			this.identities = identities;
+			this.quads = quads;
+			this.explicit = explicit;
+			this.sink = sink;
+		}
+
+		void resolve() throws IOException {
+			for (int i = 0; i < identities.length; i++) {
+				Statement statement = identities[i];
+				long s = valueStore.getId(statement.getSubject());
+				long p = valueStore.getId(statement.getPredicate());
+				long o = valueStore.getId(statement.getObject());
+				long c = statement.getContext() == null ? 0L : valueStore.getId(statement.getContext());
+				if (s == LmdbValue.UNKNOWN_ID || p == LmdbValue.UNKNOWN_ID || o == LmdbValue.UNKNOWN_ID
+						|| c == LmdbValue.UNKNOWN_ID) {
+					quads[i] = null;
+				} else {
+					if (quads[i] == null) {
+						quads[i] = new long[4];
+					}
+					quads[i][0] = s;
+					quads[i][1] = p;
+					quads[i][2] = o;
+					quads[i][3] = c;
+				}
+			}
+		}
+
+		@Override
+		public void execute() throws IOException {
+			tripleStore.removeNativeChunkQuads(quads, explicit, index -> {
+				recordNoneMutation(false);
+				if (explicit) {
+					sink.queueEstimatorRemove(identities[index]);
+				}
+				Set<Long> retiredIds = mutationUnusedIds();
+				for (long id : quads[index]) {
+					if (id != 0L && !ValueIds.isInlined(id)) {
+						retiredIds.add(id);
+					}
+				}
+			});
+		}
+	}
+
+	/** One bounded, recoverable native chunk belonging to a public NONE writer. */
+	private final class NoneWriteState {
+		static final int MAX_CHUNK_ROWS = 262_144;
+		static final long MAX_CHUNK_BYTES = 64L << 20;
+		final Object owner;
+		final LmdbStoreConnection.WriteAttempt writeAttempt;
+		final List<Operation> work = new ArrayList<>();
+		final Set<LmdbSailSink> sinks = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Set<Long> retiredIds = new HashSet<>();
+		PendingNoneBatch pending;
+		LmdbSailSink pendingSink;
+		LmdbSailSink controller;
+		Map<String, String> namespaceAttempt;
+		long bytes;
+		long retainedBytes;
+		long tripleBytes;
+		long pendingBytes;
+		long nativeGeneration;
+		int rows;
+		boolean publicationRequested;
+		boolean parked;
+		Thread continuationCaller;
+		boolean recovering;
+		boolean dictionaryCommitted;
+		boolean containsAdds;
+		boolean statementsAdded;
+		boolean statementsRemoved;
+
+		NoneWriteState(Object owner, LmdbStoreConnection.WriteAttempt writeAttempt) {
+			this.owner = owner;
+			this.writeAttempt = writeAttempt;
+		}
+
+		LmdbSailSink continuationController() {
+			assert sinkStoreAccessLock.isHeldByCurrentThread();
+			if (controller == null || !sinks.contains(controller) || controller.closed) {
+				if (sinks.isEmpty()) {
+					throw new NativeContinuationAdmissionException("LMDB NONE chunk has no live participant");
+				}
+				controller = sinks.iterator().next();
+			}
+			return controller;
+		}
+
+		void published() {
+			work.clear();
+			nativeGeneration = 0L;
+			publicationRequested = false;
+			bytes = 0L;
+			retainedBytes = 0L;
+			tripleBytes = 0L;
+			rows = 0;
+			dictionaryCommitted = false;
+			containsAdds = false;
+			statementsAdded = false;
+			statementsRemoved = false;
+			retiredIds.clear();
+			namespaceAttempt = null;
+		}
+	}
+
+	// Logical chunks survive yielding the physical writer to another admitted transaction.
+	private final Map<Object, NoneWriteState> noneWriteStates = new IdentityHashMap<>();
+	/** Fast admission path: only a parked continuation requires the state-map ownership check. */
+	private volatile int parkedNoneWriters;
+	// Only the currently admitted native owner is visible to asynchronous mutation callbacks.
+	private NoneWriteState noneWriteState;
+	private long noneCheckpoints;
+	private long noneCapacityReplays;
+	private long nonePeakRetainedBytes;
+	private int nonePeakRetainedRows;
+
+	record NoneIngestionMetrics(long checkpoints, long capacityReplays, long peakRetainedBytes, int peakRetainedRows) {
+	}
+
+	NoneIngestionMetrics noneIngestionMetrics() {
+		sinkStoreAccessLock.lock();
+		try {
+			return new NoneIngestionMetrics(noneCheckpoints, noneCapacityReplays, nonePeakRetainedBytes,
+					nonePeakRetainedRows);
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private void recordNoneRetention(NoneWriteState state) {
+		nonePeakRetainedBytes = Math.max(nonePeakRetainedBytes,
+				LmdbUtil.saturatedAdd(state.retainedBytes, state.pendingBytes));
+		nonePeakRetainedRows = Math.max(nonePeakRetainedRows,
+				state.rows + (state.pending == null ? 0 : state.pending.size));
+	}
+
+	private final ThreadLocal<Object> noneMutationReadOwner = new ThreadLocal<>();
+
+	SailClosable enterNoneMutationRead(Object owner) {
+		Object previous = noneMutationReadOwner.get();
+		noneMutationReadOwner.set(owner);
+		return () -> {
+			if (previous == null) {
+				noneMutationReadOwner.remove();
+			} else {
+				noneMutationReadOwner.set(previous);
+			}
+		};
+	}
+
 	/**
-	 * Super-class for operations that capture their finished state.
+	 * An operation publishes its terminal failure before publishing completion to its waiting caller.
 	 */
 	abstract static class StatefulOperation implements Operation {
-		volatile boolean finished = false;
+		volatile boolean finished;
+		Throwable failure;
+
+		@Override
+		public final void execute() throws Exception {
+			try {
+				executeCaptured();
+			} catch (Exception | Error e) {
+				failure = e;
+				throw e;
+			} finally {
+				finished = true;
+			}
+		}
+
+		abstract void executeCaptured() throws Exception;
 	}
 
 	private final class NamespaceSnapshotWriteOperation implements Operation {
@@ -2643,6 +3028,16 @@ class LmdbSailStore implements SailStore {
 		}
 		for (WriterLease lease : retired) {
 			mapGrowthCoordinator.releaseWriter(lease.owner);
+		}
+	}
+
+	private void retireCheckpointWriterLeases(Object owner) {
+		List<WriterLease> leases;
+		synchronized (writerOwnerMonitor) {
+			leases = activeWriterLeases.keySet().stream().filter(lease -> lease.owner == owner).toList();
+		}
+		for (WriterLease lease : leases) {
+			lease.close();
 		}
 	}
 
@@ -3036,6 +3431,14 @@ class LmdbSailStore implements SailStore {
 	ReadViewLease currentReadViewLease() {
 		ReadView current = activeReadView.get();
 		return current == null ? null : current.growthLease;
+	}
+
+	ReadViewLease reservedEpochLease(ReadAttemptLease attempt) {
+		return mapGrowthCoordinator.reservedEpochLease(attempt);
+	}
+
+	void retireReservedEpoch(ReadAttemptLease attempt, Set<ReadViewLease> affectedViews) {
+		mapGrowthCoordinator.retireReservedEpoch(attempt, affectedViews);
 	}
 
 	SailClosable enterCapturedReadViews(ReadAttemptLease attempt, long generation, List<ReadViewLease> capturedViews,
@@ -3474,6 +3877,23 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void awaitStatefulOperation(StatefulOperation operation) throws IOException {
+		awaitAsyncProgress(() -> operation.finished);
+		Throwable failure = operation.failure;
+		if (failure instanceof IOException ioFailure) {
+			throw ioFailure;
+		}
+		if (failure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new SailException("Unable to complete an asynchronous LMDB operation", failure);
+		}
+	}
+
 	private QueryExecutionDeadline checkedAsyncDeadline() {
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		if (deadline != null && deadline.isExpired()) {
@@ -3539,6 +3959,64 @@ class LmdbSailStore implements SailStore {
 		ensureNamespacePersistenceCertain();
 		checkWriterTransaction(owner);
 		return beginPublicationScope(owner);
+	}
+
+	/** Materialize a NONE batch before opening the final public publication/commit scope. */
+	void flushNonePending(Object owner) {
+		sinkStoreAccessLock.lock();
+		try {
+			NoneWriteState state = noneWriteStates.get(owner);
+			if (state != null && state.pending != null) {
+				LmdbSailSink sink = state.pendingSink;
+				try (SailWriteContinuation.Scope continuation = state.continuationController()
+						.beginNativeContinuation()) {
+					sink.flushNoneBatch();
+				}
+			}
+			if (state != null && state.controller != null
+					&& (storeTxnStarted.get() && storeTransactionOwner == owner
+							|| namespaceTransactionOwner == owner
+									&& !publishedNamespaces.equals(namespaceStore.snapshot()))
+					&& publicationContext.get() == null) {
+				LmdbSailSink controller = state.continuationController();
+				try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+					controller.checkpointNoneChunk();
+				}
+			}
+		} catch (IOException failure) {
+			throw new SailException(failure);
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	void discardNonePending(Object owner) {
+		sinkStoreAccessLock.lock();
+		try {
+			noneWriteStates.remove(owner);
+			if (noneWriteState != null && noneWriteState.owner == owner) {
+				noneWriteState = null;
+			}
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/** Called only after public publication and its final cleanup both completed successfully. */
+	void retireCompletedNoneAttempt(Object owner, LmdbStoreConnection.WriteAttempt writeAttempt) {
+		if (writeAttempt == null) {
+			return;
+		}
+		sinkStoreAccessLock.lock();
+		try {
+			NoneWriteState state = noneWriteStates.get(owner);
+			if (state != null && state.writeAttempt == writeAttempt && state.nativeGeneration == 0L
+					&& state.work.isEmpty() && state.pending == null && namespaceTransactionOwner != owner) {
+				discardNonePending(owner);
+			}
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
 	}
 
 	void checkWriterTransaction(Object owner) throws SailException {
@@ -3982,6 +4460,7 @@ class LmdbSailStore implements SailStore {
 			boolean ownerMatches = checkpointGeneration != 0L && storeTxnStarted.get()
 					&& storeTxnGeneration == checkpointGeneration && storeTransactionOwner == owner
 					&& (namespaceTransactionOwner == null || namespaceTransactionOwner == owner);
+			ownerMatches |= noneWriteStates.containsKey(owner) && namespaceTransactionOwner == owner;
 			if (!ownerMatches) {
 				return new CheckpointNamespaceSnapshot(false, Map.of());
 			}
@@ -4124,20 +4603,12 @@ class LmdbSailStore implements SailStore {
 		this.autoGrow = config.getAutoGrow();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.setFactoryFactory = setFactoryFactory;
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
 		try {
-			this.setFactory = setFactoryFactory.create(dataDir);
 			this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
 					: null;
-			Function<Long, byte[]> encode = element -> {
-				ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-				bb.putLong(element);
-				return bb.array();
-			};
-			Function<ByteBuffer, Long> decode = buffer -> buffer.order(ByteOrder.BIG_ENDIAN).getLong();
-			this.unusedIds = setFactory.createSet("unusedIds", encode, decode);
-			this.nextUnusedIds = setFactory.createSet("nextUnusedIds", encode, decode);
 			var valueStore = valueStoreFactory.create(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			valueStore.setResizeCheckpointListener(this::markDictionaryCheckpointPending);
@@ -4329,6 +4800,12 @@ class LmdbSailStore implements SailStore {
 			tripleStoreException = null;
 			asyncRollbackException = null;
 			discardEstimatorStateTouchedByOpenTransaction();
+			if (noneWriteState != null && noneWriteState.owner == storeTransactionOwner) {
+				noneWriteState.nativeGeneration = 0L;
+				noneWriteState.publicationRequested = false;
+				noneWriteState.statementsAdded = false;
+				noneWriteState.statementsRemoved = false;
+			}
 			storeTxnStarted.set(false);
 			mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 			storeTransactionOwner = null;
@@ -4458,9 +4935,11 @@ class LmdbSailStore implements SailStore {
 			boolean namespacesChanged = !previousNamespaces.equals(currentNamespaces);
 			boolean nativeCommitted = false;
 			long nativeCommitGenerationBefore = tripleStore.getNativeCommitGeneration();
+			long dictionaryCommitGenerationBefore = valueStore.nativeCommitGeneration();
 			try {
 				if (activeTransaction) {
 					drainAsyncOperations();
+					Set<Long> unusedIds = mutationUnusedIds();
 					if (namespacesChanged) {
 						stageNamespaceSnapshot(currentNamespaces);
 					}
@@ -4469,10 +4948,21 @@ class LmdbSailStore implements SailStore {
 					}
 					// Dictionary additions and retirement intents must be durable before the authoritative triples.
 					valueStore.commit();
+					if (noneWriteState != null && noneWriteState.owner == owner) {
+						noneWriteState.dictionaryCommitted = true;
+					}
 					markPublicationChanged();
 					unusedIds.clear();
 					commitTripleTransaction();
 					nativeCommitted = true;
+					if (noneWriteState != null && noneWriteState.owner == owner) {
+						noneCheckpoints++;
+						if (owner instanceof LmdbStoreConnection connection) {
+							connection.recordNoneCheckpoint(noneWriteState.statementsAdded,
+									noneWriteState.statementsRemoved);
+						}
+						noneWriteState.published();
+					}
 					storeTxnStarted.set(false);
 					mapGrowthCoordinator.retireProjectedWriter(storeTransactionOwner, storeTxnGeneration);
 					storeTransactionOwner = null;
@@ -4518,7 +5008,17 @@ class LmdbSailStore implements SailStore {
 				}
 				clearDictionaryCheckpointPending(transactionGeneration);
 				storeReplayDecision = null;
+				NoneWriteState completedNoneState = noneWriteStates.get(owner);
+				if (completedNoneState != null && completedNoneState.sinks.isEmpty()
+						&& completedNoneState.pending == null && !storeTxnStarted.get()
+						&& namespaceTransactionOwner != owner) {
+					discardNonePending(owner);
+				}
 			} catch (IOException | RuntimeException | Error e) {
+				if (noneWriteState != null && noneWriteState.owner == owner
+						&& valueStore.nativeCommitGeneration() > dictionaryCommitGenerationBefore) {
+					noneWriteState.dictionaryCommitted = true;
+				}
 				recordWriterCapacityFailure(owner, e);
 				boolean committed = nativeCommitted
 						|| tripleStore.getNativeCommitGeneration() > nativeCommitGenerationBefore;
@@ -4541,6 +5041,16 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				if (committed) {
+					if (noneWriteState != null && noneWriteState.owner == owner) {
+						if (!nativeCommitted) {
+							noneCheckpoints++;
+						}
+						if (owner instanceof LmdbStoreConnection connection) {
+							connection.recordNoneCheckpoint(noneWriteState.statementsAdded,
+									noneWriteState.statementsRemoved);
+						}
+						noneWriteState.published();
+					}
 					storeReplayDecision = null;
 					// Once the TripleStore commit returns, its namespace snapshot is authoritative. Preserve that state
 					// even
@@ -4637,17 +5147,20 @@ class LmdbSailStore implements SailStore {
 	private void processRetiredValueIds(long maxRevisionInclusive) throws IOException {
 		while (true) {
 			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(maxRevisionInclusive, 4096);
-			if (batch == null) {
+			if (batch == null || batch.isEmpty()) {
 				return;
 			}
 			try {
 				valueStore.startTransaction(true);
-				unusedIds.clear();
-				nextUnusedIds.clear();
-				unusedIds.addAll(batch.ids);
-				tripleStore.filterUsedIds(unusedIds);
-				handleRetiredIdsInValueStore();
+				Set<Long> roots = new HashSet<>(batch.ids);
+				Set<Long> frontier = new HashSet<>();
+				tripleStore.filterUsedIds(roots);
+				valueStore.gcIds(roots, frontier);
 				valueStore.removeRetiredIds(batch);
+				// Recursive RDF-star GC expands at most three children per root. Persist that bounded
+				// frontier in the same native commit; never retain the complete durable backlog on heap.
+				valueStore.recordRetiredIds(frontier,
+						Math.min(maxRevisionInclusive, tripleStore.getDataRevision()));
 				valueStore.commit();
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
@@ -4657,25 +5170,33 @@ class LmdbSailStore implements SailStore {
 						failure.addSuppressed(cleanup);
 					}
 				}
-				unusedIds.clear();
-				nextUnusedIds.clear();
 				throw failure;
-			}
-			if (!batch.moreRemaining) {
-				return;
 			}
 		}
 	}
 
 	/** Admits namespace import as complete startup work, with rollback before any capacity retry. */
 	private NamespaceStore recoverNamespaceStore() throws IOException {
-		long initialMapSize = tripleStore.mapSizeBytes();
+		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.TRIPLE_STORE);
 		while (true) {
 			Object owner = new Object();
-			if (autoGrow && tripleStore.requiresResizeForEstimatedWrite(0L)) {
+			long projectedUse = 0L;
+			boolean requiresResize = false;
+			if (autoGrow) {
+				TxnManager manager = tripleStore.getTxnManager();
+				long readStamp = manager.acquireReadBarrier();
+				try {
+					requiresResize = tripleStore.requiresResizeForEstimatedWrite(0L);
+					if (requiresResize) {
+						projectedUse = tripleStore.occupiedBytes();
+					}
+				} finally {
+					manager.lockManager().unlockRead(readStamp);
+				}
+			}
+			if (requiresResize) {
 				MapGrowthToken preflight;
-				try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner,
-						tripleStore.occupiedBytes(), 0L, true)) {
+				try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, projectedUse, 0L, true)) {
 					preflight = warning.token();
 				}
 				awaitGrowthEnd(preflight, QueryExecutionDeadline.current());
@@ -4708,14 +5229,24 @@ class LmdbSailStore implements SailStore {
 
 	/** Certifies a resized maintenance map after commit has published its actual allocated-page footprint. */
 	private void finishMaintenanceGrowth(Object owner, MapResizeKind kind, long initialMapSize) throws IOException {
-		long currentMapSize = kind == MapResizeKind.TRIPLE_STORE ? tripleStore.mapSizeBytes()
-				: valueStore.mapSizeBytes();
-		if (!autoGrow || currentMapSize <= initialMapSize
-				|| (kind == MapResizeKind.TRIPLE_STORE ? tripleStore.retainsGrowthReserve()
-						: valueStore.retainsGrowthReserve())) {
+		if (!autoGrow) {
 			return;
 		}
-		long occupied = kind == MapResizeKind.TRIPLE_STORE ? tripleStore.occupiedBytes() : valueStore.occupiedBytes();
+		long occupied;
+		TxnManager manager = mapResizeTxnManager(kind);
+		long readStamp = manager.acquireReadBarrier();
+		try {
+			long currentMapSize = kind == MapResizeKind.TRIPLE_STORE ? tripleStore.mapSizeBytes()
+					: valueStore.mapSizeBytes();
+			if (currentMapSize <= initialMapSize
+					|| (kind == MapResizeKind.TRIPLE_STORE ? tripleStore.retainsGrowthReserve()
+							: valueStore.retainsGrowthReserve())) {
+				return;
+			}
+			occupied = kind == MapResizeKind.TRIPLE_STORE ? tripleStore.occupiedBytes() : valueStore.occupiedBytes();
+		} finally {
+			manager.lockManager().unlockRead(readStamp);
+		}
 		// Native commit can allocate beyond preflight's estimate. Request the still-required reserve through the
 		// same projected-demand gate; normal checked sizing remains conservative and at least doubles the map.
 		long projected = LmdbUtil.saturatedAdd(occupied, LmdbUtil.MIN_FREE_SPACE);
@@ -4752,7 +5283,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
 	void recoverRetiredValueIds() throws IOException {
-		long initialMapSize = valueStore.mapSizeBytes();
+		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.VALUE_STORE);
 		while (true) {
 			Object owner = new Object();
 			preflightRetirementRecovery(owner);
@@ -4801,15 +5332,39 @@ class LmdbSailStore implements SailStore {
 		RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(Long.MAX_VALUE, 4096);
 		long estimate = ValueStore.estimateGcWriteBytes(batch == null ? 0 : batch.ids.size());
 		estimate = LmdbUtil.saturatedAdd(estimate, ValueStore.estimateGcWriteBytes(unusedIds.size()));
-		if (estimate == 0L || !valueStore.requiresResizeForEstimatedWrite(estimate)) {
+		if (estimate == 0L) {
 			return;
 		}
-		long projectedUse = LmdbUtil.saturatedAdd(valueStore.occupiedBytes(), estimate);
+		long projectedUse;
+		TxnManager manager = valueStore.getTxnManager();
+		long readStamp = manager.acquireReadBarrier();
+		try {
+			if (!valueStore.requiresResizeForEstimatedWrite(estimate)) {
+				return;
+			}
+			projectedUse = LmdbUtil.saturatedAdd(valueStore.occupiedBytes(), estimate);
+		} finally {
+			manager.lockManager().unlockRead(readStamp);
+		}
 		MapGrowthToken token;
 		try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, 0L, projectedUse, true)) {
 			token = warning.token();
 		}
 		awaitGrowthEnd(token, QueryExecutionDeadline.current());
+	}
+
+	private long mapSizeBytesWithNativeReadBarrier(MapResizeKind kind) throws IOException {
+		TxnManager manager = mapResizeTxnManager(kind);
+		long readStamp = manager.acquireReadBarrier();
+		try {
+			return kind == MapResizeKind.TRIPLE_STORE ? tripleStore.mapSizeBytes() : valueStore.mapSizeBytes();
+		} finally {
+			manager.lockManager().unlockRead(readStamp);
+		}
+	}
+
+	private TxnManager mapResizeTxnManager(MapResizeKind kind) {
+		return kind == MapResizeKind.TRIPLE_STORE ? tripleStore.getTxnManager() : valueStore.getTxnManager();
 	}
 
 	boolean hasRetiredValueIds() {
@@ -4822,7 +5377,7 @@ class LmdbSailStore implements SailStore {
 				valueStore.gcIds(unusedIds, nextUnusedIds);
 				unusedIds.clear();
 				if (!nextUnusedIds.isEmpty()) {
-					PersistentSet<Long> ids = unusedIds;
+					Set<Long> ids = unusedIds;
 					unusedIds = nextUnusedIds;
 					nextUnusedIds = ids;
 					tripleStore.filterUsedIds(unusedIds);
@@ -5355,12 +5910,20 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
-			return (LmdbSailDataset) datasetForReadView(explicit, level);
+		public SailDataset dataset(IsolationLevel level) throws SailException {
+			if (level == IsolationLevels.NONE && writerOwner != null
+					&& noneMutationReadOwner.get() == writerOwner) {
+				return new NoneMutationDataset(explicit, writerOwner);
+			}
+			return datasetForReadView(explicit, level);
 		}
 
 		@Override
 		public SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+			if (level == IsolationLevels.NONE && writerOwner != null && noneMutationReadOwner.get() == writerOwner) {
+				return () -> {
+				};
+			}
 			return LmdbSailStore.this.beginDatasetAdmission(level, null);
 		}
 
@@ -5568,16 +6131,27 @@ class LmdbSailStore implements SailStore {
 		 * current publication instead, because the auto-flush branch can reuse one sink across connections.
 		 */
 		private final Object fixedWriterOwner;
+		private final LmdbStoreConnection.WriteAttempt fixedWriteAttempt;
+		private NoneWriteState admittedNoneState;
+		private final boolean nativeCheckpoints;
 		private Object directWriterOwner;
 		private Object sinkTransactionOwner;
 		private long backingTransactionGeneration;
 		private WriterLease writerLease;
 		private volatile boolean estimatorTouchedInTransaction;
 		private volatile boolean flushRequested;
+		private volatile boolean closed;
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level, Object requestedWriterOwner) throws SailException {
 			this.explicit = explicit;
 			this.fixedWriterOwner = requestedWriterOwner;
+			this.fixedWriteAttempt = requestedWriterOwner instanceof LmdbStoreConnection connection
+					? connection.writeAttempt()
+					: null;
+			// A backing/internal sink(NONE) can still publish a stronger transaction's changeset.
+			this.nativeCheckpoints = requestedWriterOwner != null && level == IsolationLevels.NONE
+					&& (!(requestedWriterOwner instanceof LmdbStoreConnection)
+							|| fixedWriteAttempt != null && fixedWriteAttempt.isolation() == IsolationLevels.NONE);
 		}
 
 		private Object writerOwner() {
@@ -5602,9 +6176,9 @@ class LmdbSailStore implements SailStore {
 		 * users acquire a lease here, before taking the store access lock.
 		 */
 		private synchronized void acquireMutationLease() throws SailException {
-			if (mapGrowthCoordinator.shuttingDown) {
-				throw new SailException("LMDB store is shutting down");
-			}
+			// Reject admission before entering mutation cleanup: an unadmitted row cannot abort an earlier prefix.
+			checkPublicationAdmission(QueryExecutionDeadline.current());
+			checkWriteAttemptAdmission();
 			PublicationContext publication = publicationContext.get();
 			Object owner = writerOwner();
 			if (publication != null) {
@@ -5620,6 +6194,43 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private void checkWriteAttemptAdmission() {
+			if (closed) {
+				throw new NativeContinuationAdmissionException("LMDB sink is closed");
+			}
+			if (fixedWriterOwner instanceof LmdbStoreConnection connection
+					&& !connection.ownsWriteAttempt(fixedWriteAttempt)) {
+				throw new NativeContinuationAdmissionException(
+						"LMDB sink belongs to a completed logical transaction attempt");
+			}
+			checkNoneContinuationAdmission();
+		}
+
+		private void checkNoneContinuationAdmission() {
+			if (nativeCheckpoints && parkedNoneWriters != 0) {
+				sinkStoreAccessLock.lock();
+				try {
+					NoneWriteState state = noneWriteStates.get(writerOwner());
+					if (state != null && state.parked && state.continuationCaller != Thread.currentThread()) {
+						throw new NativeContinuationAdmissionException(
+								"LMDB NONE writer continuation is suspended on another thread");
+					}
+				} finally {
+					sinkStoreAccessLock.unlock();
+				}
+			}
+		}
+
+		private boolean ownsNoneState() {
+			sinkStoreAccessLock.lock();
+			try {
+				NoneWriteState state = noneWriteStates.get(writerOwner());
+				return state != null && state == admittedNoneState && state.sinks.contains(this);
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+
 		private synchronized void releaseMutationLease() {
 			WriterLease lease = writerLease;
 			writerLease = null;
@@ -5630,9 +6241,15 @@ class LmdbSailStore implements SailStore {
 
 		/** Registers the deterministic native suffix even when a direct or NONE sink has no buffered branch. */
 		private SailWriteContinuation.Scope beginNativeContinuation() {
+			// A lease can have queued behind the store lock before its owner parks or finishes an attempt.
+			checkWriteAttemptAdmission();
 			checkNativeContinuationAdmission();
 			return SailWriteContinuation.enter(sinkStoreAccessLock, () -> {
 				checkNativeContinuationAdmission();
+				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+				if (state != null && state.parked && !storeTxnStarted.get()) {
+					return;
+				}
 				if (!storeTxnStarted.get() || storeTransactionOwner != sinkTransactionOwner
 						|| storeTxnGeneration != backingTransactionGeneration) {
 					throw new IllegalStateException("A suspended LMDB sink must retain its exact native generation");
@@ -5640,6 +6257,10 @@ class LmdbSailStore implements SailStore {
 				suspendedNativeContinuation = new NativeContinuationSuspension(storeTransactionOwner,
 						storeTxnGeneration, Thread.currentThread());
 			}, () -> {
+				NoneWriteState state = nativeCheckpoints ? noneWriteStates.get(writerOwner()) : null;
+				if (state != null && state.parked) {
+					return;
+				}
 				NativeContinuationSuspension suspended = suspendedNativeContinuation;
 				if (suspended == null || suspended.caller() != Thread.currentThread()
 						|| suspended.owner() != storeTransactionOwner || suspended.generation() != storeTxnGeneration) {
@@ -5739,15 +6360,55 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
+			if (nativeCheckpoints && ownsNoneState() && parkedNoneWriters != 0) {
+				checkNoneContinuationAdmission();
+			}
 			NativeContinuationSuspension suspended = suspendedNativeContinuation;
 			if (ownsActiveBackingTransaction()
 					|| suspended != null && writerLease != null && writerLease.owner == suspended.owner()) {
 				checkNativeContinuationAdmission();
 			}
 			try {
-				if (ownsActiveBackingTransaction() && !flushRequested) {
-					discardEstimatorUpdatesIfTouched();
-					rollbackBackingTransaction();
+				boolean sharedNoneWork = false;
+				sinkStoreAccessLock.lock();
+				try {
+					NoneWriteState state = nativeCheckpoints ? admittedNoneState : null;
+					boolean currentState = state != null && noneWriteStates.get(state.owner) == state;
+					if (currentState) {
+						checkNoneContinuationAdmission();
+					}
+					// Revoke public admission without revoking the shared chunk's already captured operations.
+					closed = true;
+					if (state != null) {
+						state.sinks.remove(this);
+						sharedNoneWork = !state.sinks.isEmpty();
+						if (currentState && sharedNoneWork && state.controller == this) {
+							state.controller = state.sinks.iterator().next();
+						}
+						if (currentState && !sharedNoneWork && !state.publicationRequested) {
+							try {
+								if (noneWriteState == state && state.nativeGeneration != 0L) {
+									rollback(state.owner, state.nativeGeneration);
+								} else if (!storeTxnStarted.get() && namespaceTransactionOwner == state.owner
+										&& (!(state.owner instanceof LmdbStoreConnection connection)
+												|| connection.writeAttempt() == null
+												|| connection.writeAttempt() == state.writeAttempt)) {
+									rollback(state.owner);
+								}
+							} finally {
+								discardNonePending(writerOwner());
+								admittedNoneState = null;
+							}
+						} else if (!currentState) {
+							admittedNoneState = null;
+						}
+					}
+					if (!nativeCheckpoints && ownsActiveBackingTransaction() && !flushRequested && !sharedNoneWork) {
+						discardEstimatorUpdatesIfTouched();
+						rollbackBackingTransaction();
+					}
+				} finally {
+					sinkStoreAccessLock.unlock();
 				}
 			} finally {
 				try {
@@ -5764,6 +6425,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void prepare() throws SailException {
+			checkWriteAttemptAdmission();
+			if (nativeCheckpoints && ownsNoneState()) {
+				flushNonePending(writerOwner());
+			}
 			// serializable is not supported at this level
 		}
 
@@ -5780,7 +6445,7 @@ class LmdbSailStore implements SailStore {
 					unusedIds.clear();
 					if (!nextUnusedIds.isEmpty()) {
 						// swap sets
-						PersistentSet<Long> ids = unusedIds;
+						Set<Long> ids = unusedIds;
 						unusedIds = nextUnusedIds;
 						nextUnusedIds = ids;
 						filterUsedIdsInTripleStore();
@@ -5791,6 +6456,13 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void flush() throws SailException {
+			checkWriteAttemptAdmission();
+			if (nativeCheckpoints) {
+				if (!ownsNoneState()) {
+					return;
+				}
+				flushNonePending(writerOwner());
+			}
 			if (ownsActiveBackingTransaction()) {
 				checkNativeContinuationAdmission();
 			}
@@ -5802,12 +6474,15 @@ class LmdbSailStore implements SailStore {
 					if (storeTxnStarted.get() && storeTransactionOwner != owner) {
 						throw new SailException("LMDB sink cannot flush a transaction owned by another sink");
 					}
-					if (storeTxnStarted.get() && (backingTransactionGeneration == 0L
+					if (!nativeCheckpoints && storeTxnStarted.get() && (backingTransactionGeneration == 0L
 							|| storeTxnGeneration != backingTransactionGeneration)) {
 						return;
 					}
 					drainAsyncOperations();
 					flushRequested = true;
+					if (nativeCheckpoints) {
+						noneState().publicationRequested = true;
+					}
 					markPublicationCommitRequested();
 				} catch (RuntimeException | Error failure) {
 					markPublicationFailed();
@@ -5817,13 +6492,22 @@ class LmdbSailStore implements SailStore {
 				}
 			} finally {
 				releaseMutationLease();
+				if (nativeCheckpoints && !storeTxnStarted.get() && namespaceTransactionOwner != owner) {
+					discardNonePending(owner);
+				}
 			}
 		}
 
 		private void markNamespaceMutation() throws SailException {
+			checkWriteAttemptAdmission();
 			checkNativeContinuationAdmission();
 			checkPublicationAdmission(QueryExecutionDeadline.current());
 			ensureNamespacePersistenceCertain();
+			if (nativeCheckpoints) {
+				NoneWriteState state = admitNoneState();
+				state.publicationRequested = false;
+				state.controller = this;
+			}
 			prepareReplayDecision();
 			Object owner = writerOwner();
 			if (namespaceTransactionOwner != null && namespaceTransactionOwner != owner) {
@@ -5906,10 +6590,6 @@ class LmdbSailStore implements SailStore {
 				int remainingHint = approved.size();
 				startTransaction(remainingHint > bulkOperationSize);
 
-				HashMap<IRI, Long> predicateCache = new HashMap<>();
-				HashMap<Resource, Long> contextCache = new HashMap<>();
-				Resource previousSubject = null;
-				long previousSubjectId = LmdbValue.UNKNOWN_ID;
 				BulkAddQuadsOperation bulk = null;
 
 				for (Statement statement : approved) {
@@ -5923,63 +6603,22 @@ class LmdbSailStore implements SailStore {
 						bulk = bulk.withConfiguredCapacity();
 					}
 					last = statement;
-					Resource subj = statement.getSubject();
-					IRI pred = statement.getPredicate();
-					Value obj = statement.getObject();
-					Resource context = statement.getContext();
-
-					if (previousSubject != null) {
-						if (subj == previousSubject) {
-							bulk.add(previousSubjectId, 0, 0, 0);
-						} else {
-							if (previousSubject.equals(subj)) {
-								bulk.add(previousSubjectId, 0, 0, 0);
-							} else {
-								long subjectId = valueStore.storeValue(subj);
-								previousSubject = subj;
-								previousSubjectId = subjectId;
-								bulk.add(subjectId, 0, 0, 0);
-							}
-						}
-					} else {
-						long subjectId = valueStore.storeValue(subj);
-						previousSubject = subj;
-						previousSubjectId = subjectId;
-						bulk.add(subjectId, 0, 0, 0);
-					}
-
-					int batchIndex = bulk.size - 1;
-					bulk.statements[batchIndex] = valueStore.createStatement(subj, pred, obj, context);
-
-					Long predicateId = predicateCache.get(pred);
-					if (predicateId == null) {
-						predicateId = valueStore.storeValue(pred);
-						predicateCache.put(pred, predicateId);
-					}
-					bulk.predicates[batchIndex] = predicateId;
-
-					bulk.objects[batchIndex] = valueStore.storeValue(obj);
-					if (context == null) {
-						bulk.contexts[batchIndex] = 0;
-					} else {
-						Long contextId = contextCache.get(context);
-						if (contextId == null) {
-							contextId = valueStore.storeValue(context);
-							contextCache.put(context, contextId);
-						}
-						bulk.contexts[batchIndex] = contextId;
-					}
+					// Capture before requesting the next caller row; resolution can now be deferred to this batch.
+					bulk.statements[bulk.size] = captureMutationStatement(statement);
+					bulk.add(0, 0, 0, 0);
 
 					if (remainingHint > 0) {
 						remainingHint--;
 					}
 					if (bulk.isFull()) {
+						resolveBatchValues(bulk);
 						submitOperation(bulk);
 						bulk = null;
 					}
 				}
 
 				if (bulk != null && !bulk.isEmpty()) {
+					resolveBatchValues(bulk);
 					submitOperation(bulk);
 				}
 			} catch (IOException | RuntimeException | Error e) {
@@ -6006,6 +6645,22 @@ class LmdbSailStore implements SailStore {
 
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
 			if (approved.isEmpty()) {
+				return;
+			}
+			if (nativeCheckpoints) {
+				acquireMutationLease();
+				sinkStoreAccessLock.lock();
+				try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
+					for (Statement statement : approved) {
+						checkPublicationAdmission(QueryExecutionDeadline.current());
+						appendNoneStatement(statement);
+					}
+				} catch (IOException | RuntimeException | Error failure) {
+					rollbackAfterMutationFailure(failure);
+					throw failure instanceof SailException sail ? sail : new SailException(failure);
+				} finally {
+					sinkStoreAccessLock.unlock();
+				}
 				return;
 			}
 			if (bulkOperationSize > 0) {
@@ -6126,6 +6781,7 @@ class LmdbSailStore implements SailStore {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
 					throw new SailException("LMDB writer transaction is owned by another sink");
 				}
+				noneWriteState = nativeCheckpoints ? noneState() : null;
 				sinkTransactionOwner = owner;
 				flushRequested = false;
 				if (storeTxnStarted.compareAndSet(false, true)) {
@@ -6134,6 +6790,9 @@ class LmdbSailStore implements SailStore {
 					storeTxnGeneration++;
 					if (storeTxnGeneration == 0L) {
 						storeTxnGeneration++;
+					}
+					if (noneWriteState != null) {
+						noneWriteState.nativeGeneration = storeTxnGeneration;
 					}
 					// Own this generation before either native start or asynchronous submission can fail.
 					backingTransactionGeneration = storeTxnGeneration;
@@ -6273,8 +6932,18 @@ class LmdbSailStore implements SailStore {
 
 		private void prepareReplayDecision() throws SailException {
 			checkWriterTransaction(writerOwner());
+			if (!nativeCheckpoints) {
+				try {
+					ensurePersistentSets();
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
+			}
 			if (storeReplayDecision == null) {
 				storeReplayDecision = tripleStore.prepareReplayDecision();
+				if (nativeCheckpoints) {
+					storeReplayDecision = storeReplayDecision.forNativeCheckpoints();
+				}
 				valueStore.setReplayDecision(storeReplayDecision);
 			}
 			try {
@@ -6282,6 +6951,363 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException failure) {
 				throw new SailException(failure.getMessage(), failure);
 			}
+		}
+
+		/** Admission belongs to live public mutation/probe participants, never to retained batch execution. */
+		private NoneWriteState admitNoneState() {
+			checkWriteAttemptAdmission();
+			Object owner = writerOwner();
+			NoneWriteState state = noneWriteStates.get(owner);
+			if (state == null) {
+				state = new NoneWriteState(owner, fixedWriteAttempt);
+				noneWriteStates.put(owner, state);
+			} else if (state.writeAttempt != fixedWriteAttempt) {
+				throw new NativeContinuationAdmissionException(
+						"LMDB owner still retains a different logical NONE transaction attempt");
+			}
+			admittedNoneState = state;
+			state.sinks.add(this);
+			return state;
+		}
+
+		/** A closed participant can finish its captured batch without acquiring another live admission. */
+		private NoneWriteState noneState() {
+			NoneWriteState state = admittedNoneState;
+			if (state == null || noneWriteStates.get(state.owner) != state) {
+				throw new NativeContinuationAdmissionException("LMDB sink has no retained NONE write chunk");
+			}
+			return state;
+		}
+
+		private void appendNoneStatement(Statement statement) throws IOException {
+			appendCapturedNoneStatement(captureMutationStatement(statement));
+		}
+
+		private void appendNoneStatement(Resource subject, IRI predicate, Value object, Resource context)
+				throws IOException {
+			Statement captured = SimpleValueFactory.getInstance()
+					.createStatement(
+							(Resource) captureMutationValue(subject), (IRI) captureMutationValue(predicate),
+							captureMutationValue(object), (Resource) captureMutationValue(context));
+			appendCapturedNoneStatement(captured);
+		}
+
+		private void appendCapturedNoneStatement(Statement statement) throws IOException {
+			NoneWriteState state = admitNoneState();
+			state.publicationRequested = false;
+			state.controller = this;
+			long retainedBytes = ValueStore.estimatedRetainedBytes(statement);
+			long addedStorage = state.pending == null || state.pending.explicit != explicit
+					? PendingNoneBatch.initialStorageBytes()
+					: state.pending.estimatedStorageBytes(state.pending.size + 1)
+							- state.pending.estimatedStorageBytes(state.pending.size);
+			if (LmdbUtil.saturatedAdd(state.retainedBytes,
+					LmdbUtil.saturatedAdd(state.pendingBytes,
+							LmdbUtil.saturatedAdd(retainedBytes, addedStorage))) > NoneWriteState.MAX_CHUNK_BYTES
+					&& (state.rows > 0 || state.pending != null)) {
+				if (state.pending != null) {
+					state.pendingSink.flushNoneBatch();
+				}
+				if (storeTxnStarted.get()) {
+					checkpointNoneChunk();
+				}
+			}
+			if (state.pending != null && (state.pending.explicit != explicit
+					|| LmdbUtil.saturatedAdd(state.pendingBytes, retainedBytes) > NoneWriteState.MAX_CHUNK_BYTES)) {
+				state.pendingSink.flushNoneBatch();
+			}
+			if (state.pending == null) {
+				state.pending = new PendingNoneBatch(explicit,
+						Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS)));
+				state.pending.estimatorCallback = this::queueEstimatorAdd;
+				state.pendingSink = this;
+				state.pendingBytes = state.pending.estimatedStorageBytes(0);
+			}
+			PendingNoneBatch batch = state.pending;
+			long previousStorage = batch.estimatedStorageBytes(batch.size);
+			batch.add(statement);
+			long storageGrowth = batch.estimatedStorageBytes(batch.size) - previousStorage;
+			state.pendingBytes = LmdbUtil.saturatedAdd(state.pendingBytes,
+					LmdbUtil.saturatedAdd(retainedBytes, storageGrowth));
+			recordNoneRetention(state);
+			if (batch.size == batch.limit || state.pendingBytes >= NoneWriteState.MAX_CHUNK_BYTES) {
+				flushNoneBatch();
+			}
+		}
+
+		private void resolveBatchValues(BulkAddQuadsOperation batch) throws IOException {
+			// Deduplicate every term position inside this operation, never across chunks or public transactions.
+			int capacity = Math.multiplyExact(batch.size, 4);
+			Value[] values = new Value[capacity];
+			long[] ids = new long[capacity];
+			int[] positions = new int[capacity];
+			ObjectIntHashMap<Value> indexes = new ObjectIntHashMap<>();
+			int valueCount = 0;
+			for (int i = 0; i < batch.size; i++) {
+				Statement statement = batch.statements[i];
+				for (int field = 0; field < 4; field++) {
+					Value value = switch (field) {
+					case 0 -> statement.getSubject();
+					case 1 -> statement.getPredicate();
+					case 2 -> statement.getObject();
+					default -> statement.getContext();
+					};
+					int index = -1;
+					if (value != null) {
+						index = indexes.getIfAbsent(value, -1);
+						if (index < 0) {
+							index = valueCount++;
+							indexes.put(value, index);
+							values[index] = value;
+						}
+					}
+					positions[4 * i + field] = index;
+				}
+			}
+			valueStore.storeValues(values, ids, valueCount);
+			for (int i = 0; i < batch.size; i++) {
+				batch.subjects[i] = ids[positions[4 * i]];
+				batch.predicates[i] = ids[positions[4 * i + 1]];
+				batch.objects[i] = ids[positions[4 * i + 2]];
+				int contextIndex = positions[4 * i + 3];
+				batch.contexts[i] = contextIndex < 0 ? 0 : ids[contextIndex];
+			}
+		}
+
+		private void flushNoneBatch() throws IOException {
+			NoneWriteState state = noneState();
+			PendingNoneBatch pending = state.pending;
+			if (pending == null || pending.size == 0) {
+				return;
+			}
+			state.pending = null;
+			state.pendingSink = null;
+			// Transfer the same owned lexical rows into compact primitive work; the probe index is not retained.
+			long retainedBytes = state.pendingBytes - pending.estimatedStorageBytes(pending.size);
+			state.pendingBytes = 0L;
+			BulkAddQuadsOperation batch = pending.prepare();
+			retainedBytes = LmdbUtil.saturatedAdd(retainedBytes, batch.estimatedStorageBytes());
+			List<Statement> statements = Arrays.asList(batch.statements).subList(0, batch.size);
+			long valueEstimate = valueStore.estimateWriteBytes(statements);
+			long tripleEstimate = tripleStore.estimateWriteBytes(statements);
+			long bytes = LmdbUtil.saturatedAdd(valueEstimate, tripleEstimate);
+			// Reserve deferred native bookkeeping separately from batch payload. A chunk's size is bounded
+			// even when the maps are large enough that a percentage alone would allow unbounded dirty pages.
+			long commitReserve = LmdbUtil.saturatedAdd(LmdbUtil.MIN_FREE_SPACE, state.rows * 64L);
+			if (storeTxnStarted.get() && (state.rows + batch.size > NoneWriteState.MAX_CHUNK_ROWS
+					|| LmdbUtil.saturatedAdd(state.retainedBytes, retainedBytes) > NoneWriteState.MAX_CHUNK_BYTES
+					|| LmdbUtil.saturatedAdd(state.bytes, bytes) > NoneWriteState.MAX_CHUNK_BYTES
+					|| valueStore.nativeChunkNeedsCheckpoint(LmdbUtil.saturatedAdd(valueEstimate, commitReserve))
+					|| tripleStore.requiresResizeForEstimatedWrite(LmdbUtil.saturatedAdd(state.tripleBytes,
+							LmdbUtil.saturatedAdd(tripleEstimate, commitReserve))))) {
+				checkpointNoneChunk();
+			}
+			if (!storeTxnStarted.get()) {
+				growNoneMaps(valueEstimate, tripleEstimate, null);
+			}
+			state.work.add(batch);
+			state.containsAdds = true;
+			state.rows += batch.size;
+			state.retainedBytes = LmdbUtil.saturatedAdd(state.retainedBytes, retainedBytes);
+			recordNoneRetention(state);
+			state.bytes = LmdbUtil.saturatedAdd(state.bytes, bytes);
+			state.tripleBytes = LmdbUtil.saturatedAdd(state.tripleBytes, tripleEstimate);
+			try {
+				startTransaction(true);
+				resolveBatchValues(batch);
+				submitOperation(batch);
+			} catch (IOException | RuntimeException failure) {
+				if (!recoverNoneCapacity(failure)) {
+					throw failure;
+				}
+			}
+			if (state.rows >= NoneWriteState.MAX_CHUNK_ROWS || state.retainedBytes >= NoneWriteState.MAX_CHUNK_BYTES
+					|| state.bytes >= NoneWriteState.MAX_CHUNK_BYTES) {
+				// One input larger than the budget is unavoidable, but never shares a retained native chunk.
+				checkpointNoneChunk();
+			}
+		}
+
+		private void checkpointNoneChunk() throws IOException {
+			NoneWriteState state = noneState();
+			captureNoneNamespaces(state);
+			try {
+				try (SailClosable publication = beginPublicationScope(writerOwner())) {
+					markPublicationCommitRequested();
+				}
+			} catch (RuntimeException failure) {
+				if (!recoverNoneCapacity(failure)) {
+					throw failure;
+				}
+				checkpointNoneChunk();
+			}
+			// Namespace-only chunks use the dedicated TripleStore path and no active dictionary writer.
+			if (!storeTxnStarted.get() && namespaceTransactionOwner != state.owner) {
+				state.published();
+				backingTransactionGeneration = 0L;
+			}
+		}
+
+		private boolean recoverNoneCapacity(Throwable failure) throws IOException {
+			NoneWriteState state = noneState();
+			LmdbNativeChunkFullException capacity = nativeChunkFailure(failure);
+			if (capacity == null || !autoGrow || hasCausalCleanupFailure(failure)) {
+				return false;
+			}
+			boolean dictionaryCommitted = state.dictionaryCommitted;
+			noneCapacityReplays++;
+			captureNoneNamespaces(state);
+			state.recovering = true;
+			try {
+				rollback(writerOwner());
+				backingTransactionGeneration = 0L;
+				while (true) {
+					growNoneMaps(0L, 0L, capacity.environment);
+					state.retiredIds.clear();
+					if (state.work.isEmpty()) {
+						// A namespace-only chunk stays on its dedicated TripleStore publication path.
+						prepareReplayDecision();
+					} else {
+						startTransaction(state.containsAdds);
+					}
+					if (state.namespaceAttempt != null && !state.namespaceAttempt.isEmpty()) {
+						Map<String, String> namespaces = new HashMap<>(publishedNamespaces);
+						state.namespaceAttempt.forEach((prefix, name) -> {
+							if (name == null) {
+								namespaces.remove(prefix);
+							} else {
+								namespaces.put(prefix, name);
+							}
+						});
+						namespaceStore.restore(namespaces);
+						namespaceTransactionOwner = state.owner;
+					}
+					try {
+						for (Operation operation : state.work) {
+							if (operation instanceof BulkAddQuadsOperation batch) {
+								// A parked recovery permits another writer to reclaim/reuse numeric IDs. Resolving
+								// live mappings again does not repeat refcounts; only missing mappings are created.
+								resolveBatchValues(batch);
+							} else if (operation instanceof NoneRemoveOperation removal) {
+								removal.resolve();
+							}
+							submitOperation(operation);
+						}
+						drainAsyncOperations();
+						state.dictionaryCommitted = dictionaryCommitted;
+						return true;
+					} catch (IOException | RuntimeException retryFailure) {
+						LmdbNativeChunkFullException next = nativeChunkFailure(retryFailure);
+						if (next == null || hasCausalCleanupFailure(retryFailure)) {
+							throw retryFailure;
+						}
+						capacity = next;
+						rollback(writerOwner());
+					}
+				}
+			} catch (IOException | RuntimeException | Error recoveryFailure) {
+				retainRollbackFailure(failure, recoveryFailure);
+				if (failure instanceof IOException io) {
+					throw io;
+				}
+				if (failure instanceof RuntimeException runtime) {
+					throw runtime;
+				}
+				throw new SailException(failure);
+			} finally {
+				state.recovering = false;
+			}
+		}
+
+		private void captureNoneNamespaces(NoneWriteState state) {
+			if (namespaceTransactionOwner != state.owner) {
+				return;
+			}
+			Map<String, String> current = namespaceStore.snapshot();
+			Map<String, String> delta = new HashMap<>();
+			current.forEach((prefix, name) -> {
+				if (!Objects.equals(name, publishedNamespaces.get(prefix))) {
+					delta.put(prefix, name);
+				}
+			});
+			publishedNamespaces.forEach((prefix, name) -> {
+				if (!current.containsKey(prefix)) {
+					delta.put(prefix, null);
+				}
+			});
+			state.namespaceAttempt = delta;
+		}
+
+		private boolean hasCausalCleanupFailure(Throwable failure) {
+			for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+				if (cause.getSuppressed().length != 0) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private LmdbNativeChunkFullException nativeChunkFailure(Throwable failure) {
+			for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+				if (cause instanceof LmdbNativeChunkFullException capacity) {
+					return capacity;
+				}
+				if (cause instanceof LmdbUtil.MapFullException) {
+					return new LmdbNativeChunkFullException(MapResizeKind.VALUE_STORE, cause);
+				}
+			}
+			return null;
+		}
+
+		private void growNoneMaps(long valueEstimate, long tripleEstimate, MapResizeKind forced) throws IOException {
+			boolean values = forced == MapResizeKind.VALUE_STORE
+					|| valueStore.requiresResizeForEstimatedWrite(LmdbUtil.saturatedAdd(valueEstimate,
+							LmdbUtil.MIN_FREE_SPACE));
+			boolean triples = forced == MapResizeKind.TRIPLE_STORE
+					|| tripleStore.requiresResizeForEstimatedWrite(LmdbUtil.saturatedAdd(tripleEstimate,
+							LmdbUtil.MIN_FREE_SPACE));
+			if (!autoGrow || !values && !triples) {
+				return;
+			}
+			NoneWriteState state = noneState();
+			if (namespaceTransactionOwner == state.owner && !publishedNamespaces.equals(namespaceStore.snapshot())) {
+				checkpointNoneChunk();
+			}
+			// Native metadata belongs to the current mapping. Capture it before parking releases the writer's
+			// physical ownership and permits the growth driver to unmap that environment.
+			long tripleDemand = triples ? forced == MapResizeKind.TRIPLE_STORE ? tripleStore.mapSizeBytes()
+					: LmdbUtil.saturatedAdd(tripleStore.occupiedBytes(),
+							LmdbUtil.saturatedAdd(tripleEstimate, LmdbUtil.MIN_FREE_SPACE))
+					: 0L;
+			long valueDemand = values ? forced == MapResizeKind.VALUE_STORE ? valueStore.mapSizeBytes()
+					: LmdbUtil.saturatedAdd(valueStore.occupiedBytes(),
+							LmdbUtil.saturatedAdd(valueEstimate, LmdbUtil.MIN_FREE_SPACE))
+					: 0L;
+			LmdbSailSink controller = state.continuationController();
+			state.continuationCaller = Thread.currentThread();
+			state.parked = true;
+			parkedNoneWriters++;
+			try {
+				mapGrowthCoordinator.parkCheckpointWriter(state.owner, true);
+				retireCheckpointWriterLeases(state.owner);
+				try (SailWriteContinuation.Suspension suspension = SailWriteContinuation.suspend(sinkStoreAccessLock)) {
+					MapGrowthToken token;
+					try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(state.owner, tripleDemand,
+							valueDemand, true)) {
+						token = warning.token();
+					}
+					awaitGrowthEnd(token, QueryExecutionDeadline.current());
+					// Reacquire physical ownership before restoring Java locks needed by competing publications.
+					controller.acquireMutationLease();
+				}
+			} finally {
+				state.parked = false;
+				state.continuationCaller = null;
+				parkedNoneWriters--;
+				mapGrowthCoordinator.parkCheckpointWriter(state.owner, false);
+			}
+			// Reservations of both explicit and inferred sinks were yielded at the committed boundary.
+			// Another admitted writer may have completed while this logical NONE transaction was parked.
 		}
 
 		private boolean ownsActiveBackingTransaction() {
@@ -6306,6 +7332,10 @@ class LmdbSailStore implements SailStore {
 			acquireMutationLease();
 			sinkStoreAccessLock.lock();
 			try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
+				if (nativeCheckpoints) {
+					appendNoneStatement(subj, pred, obj, context);
+					return;
+				}
 				startTransaction(true);
 
 				AddQuadOperation q = new AddQuadOperation();
@@ -6383,6 +7413,9 @@ class LmdbSailStore implements SailStore {
 			acquireMutationLease();
 			sinkStoreAccessLock.lock();
 			try (SailWriteContinuation.Scope continuation = beginNativeContinuation()) {
+				if (nativeCheckpoints) {
+					return removeNoneStatements(subj, pred, obj, explicit, contexts);
+				}
 				startTransaction(false);
 				final long subjID;
 				if (subj != null) {
@@ -6433,17 +7466,13 @@ class LmdbSailStore implements SailStore {
 					long[] removeCount = new long[1];
 					StatefulOperation removeOp = new StatefulOperation() {
 						@Override
-						public void execute() throws Exception {
-							try {
-								removeCount[0] = removeStatements(subjID, predID, objID, explicit, contextIds);
-							} finally {
-								finished = true;
-							}
+						void executeCaptured() throws IOException {
+							removeCount[0] = removeStatements(subjID, predID, objID, explicit, contextIds);
 						}
 					};
 
 					enqueueAsync(removeOp);
-					awaitAsyncProgress(() -> removeOp.finished);
+					awaitStatefulOperation(removeOp);
 					return removeCount[0];
 				} else {
 					return removeStatements(subjID, predID, objID, explicit, contextIds);
@@ -6470,6 +7499,118 @@ class LmdbSailStore implements SailStore {
 			return valueStore.createStatement(subj, pred, obj, ctx);
 		}
 
+		private long removeNoneStatements(Resource subject, IRI predicate, Value object, boolean explicit,
+				Resource[] contexts) throws IOException {
+			NoneWriteState state = admitNoneState();
+			state.publicationRequested = false;
+			state.controller = this;
+			if (state.pending != null) {
+				state.pendingSink.flushNoneBatch();
+			}
+			// Capture removals after the ordered native prefix; additions and removals share the bounded chunk.
+			long removed = 0L;
+			int limit = Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS));
+			for (int contextIndex = 0; contextIndex < Math.max(1, contexts.length); contextIndex++) {
+				while (true) {
+					if (!storeTxnStarted.get()) {
+						growNoneMaps(ValueStore.estimateGcWriteBytes(4 * limit), limit * 1024L, null);
+						startTransaction(false);
+					}
+					// IDs can be reclaimed/reused after publication. Resolve the original RDF pattern afresh
+					// after every checkpoint; only the internal bounded native suffix is ever repeated.
+					long s = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(subject);
+					long p = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(predicate);
+					long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
+					Resource context = contexts.length == 0 ? null : contexts[contextIndex];
+					long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
+							: context == null ? 0L : valueStore.getId(context);
+					if (subject != null && s == LmdbValue.UNKNOWN_ID || predicate != null && p == LmdbValue.UNKNOWN_ID
+							|| object != null && o == LmdbValue.UNKNOWN_ID
+							|| contexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID) {
+						break;
+					}
+					long[][] quads;
+					try {
+						quads = collectNoneQuads(s, p, o, c, explicit, limit, null);
+					} catch (IOException | RuntimeException failure) {
+						// Capture drains the same ordered native work as mutation and publication. A queued
+						// capacity failure replays that work before this unexecuted private capture is retried.
+						if (!recoverNoneCapacity(failure)) {
+							throw failure;
+						}
+						// Parking can change dictionary associations; resolve the lexical pattern again.
+						continue;
+					}
+					if (quads.length == 0) {
+						break;
+					}
+					List<Statement> identities = new ArrayList<>();
+					long retainedBytes = 0L;
+					for (long[] quad : quads) {
+						Statement statement = captureMutationStatement(quadToStatement(quad));
+						identities.add(statement);
+						retainedBytes = LmdbUtil.saturatedAdd(retainedBytes,
+								LmdbUtil.saturatedAdd(512L, ValueStore.estimatedRetainedBytes(statement)));
+						if (LmdbUtil.saturatedAdd(state.retainedBytes,
+								retainedBytes) >= NoneWriteState.MAX_CHUNK_BYTES) {
+							break;
+						}
+					}
+					if (storeTxnStarted.get() && state.rows > 0
+							&& LmdbUtil.saturatedAdd(state.retainedBytes,
+									retainedBytes) > NoneWriteState.MAX_CHUNK_BYTES) {
+						checkpointNoneChunk();
+						growNoneMaps(ValueStore.estimateGcWriteBytes(identities.size() * 4), identities.size() * 1024L,
+								null);
+						startTransaction(false);
+					}
+					NoneRemoveOperation operation = new NoneRemoveOperation(identities.toArray(Statement[]::new),
+							Arrays.copyOf(quads, identities.size()), explicit, this);
+					operation.resolve();
+					state.work.add(operation);
+					state.rows += identities.size();
+					state.bytes += identities.size() * 128L;
+					state.retainedBytes = LmdbUtil.saturatedAdd(state.retainedBytes, retainedBytes);
+					recordNoneRetention(state);
+					try {
+						submitOperation(operation);
+					} catch (IOException | RuntimeException failure) {
+						if (!recoverNoneCapacity(failure)) {
+							throw failure;
+						}
+					}
+					removed += identities.size();
+					long reserve = LmdbUtil.saturatedAdd(LmdbUtil.MIN_FREE_SPACE, state.rows * 64L);
+					if (state.rows + limit > NoneWriteState.MAX_CHUNK_ROWS
+							|| state.bytes + limit * 128L > NoneWriteState.MAX_CHUNK_BYTES
+							|| state.retainedBytes >= NoneWriteState.MAX_CHUNK_BYTES
+							|| valueStore.nativeChunkNeedsCheckpoint(
+									ValueStore.estimateGcWriteBytes(state.retiredIds.size()))
+							|| tripleStore.requiresResizeForEstimatedWrite(reserve + state.rows * 1024L)) {
+						checkpointNoneChunk();
+					}
+				}
+			}
+			return removed;
+		}
+
+		private long[][] collectNoneQuads(long s, long p, long o, long c, boolean explicit, int limit,
+				long[] after) throws IOException {
+			if (!multiThreadingActive) {
+				return tripleStore.collectNativeChunkQuads(s, p, o, c, explicit, limit, after);
+			}
+			long[][][] result = new long[1][][];
+			StatefulOperation capture = new StatefulOperation() {
+				@Override
+				void executeCaptured() throws IOException {
+					result[0] = tripleStore.collectNativeChunkQuads(s, p, o, c, explicit, limit, after);
+				}
+			};
+			enqueueAsync(capture);
+			awaitStatefulOperation(capture);
+			return result[0];
+		}
+
 		@Override
 		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 			return removeStatements(subj, pred, obj, explicit, contexts) > 0;
@@ -6479,6 +7620,244 @@ class LmdbSailStore implements SailStore {
 		public boolean supportsDeprecateByQuery() {
 			return true;
 		}
+	}
+
+	/** Private mutation scans read the current writer, retaining only a bounded materialized page. */
+	private final class NoneMutationDataset implements SailDataset {
+		private final LmdbSailSink controller;
+		private boolean closed;
+
+		NoneMutationDataset(boolean explicit, Object owner) {
+			controller = new LmdbSailSink(explicit, IsolationLevels.NONE, owner);
+		}
+
+		@Override
+		public void close() {
+			closed = true;
+			sinkStoreAccessLock.lock();
+			try {
+				NoneWriteState state = noneWriteStates.get(controller.writerOwner());
+				if (state != null) {
+					state.sinks.remove(controller);
+				}
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+			// A dataset is never the owner of an unflushed mutation sink's logical work.
+			controller.releaseMutationLease();
+		}
+
+		@Override
+		public CloseableIteration<? extends Namespace> getNamespaces() {
+			List<Namespace> namespaces = new ArrayList<>();
+			namespaceStore.snapshot().forEach((prefix, name) -> namespaces.add(new SimpleNamespace(prefix, name)));
+			return new CloseableIteratorIteration<>(namespaces.iterator());
+		}
+
+		@Override
+		public String getNamespace(String prefix) {
+			return namespaceStore.snapshot().get(prefix);
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() {
+			throw new SailException("Context enumeration requires a caller read dataset");
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			if (closed) {
+				throw new SailException("Mutation dataset is closed");
+			}
+			boolean boundProbe = subject != null && predicate != null && object != null;
+			List<Statement> pendingMatches = new ArrayList<>();
+			if (boundProbe) {
+				sinkStoreAccessLock.lock();
+				try {
+					NoneWriteState state = noneWriteStates.get(controller.writerOwner());
+					PendingNoneBatch pending = state == null ? null : state.pending;
+					if (pending != null && pending.explicit == controller.explicit) {
+						pendingMatches.addAll(pending.pendingMatches(subject, predicate, object, contexts));
+					}
+				} finally {
+					sinkStoreAccessLock.unlock();
+				}
+			}
+			Set<Statement> pendingSeen = new HashSet<>(pendingMatches);
+			return new AbstractCloseableIteration<Statement>() {
+				private List<Statement> page = pendingMatches;
+				private int offset;
+				private int contextIndex;
+				private long[] after;
+
+				@Override
+				public boolean hasNext() {
+					while (!isClosed() && offset == page.size() && contextIndex < Math.max(1, contexts.length)) {
+						loadPage();
+					}
+					return !isClosed() && offset < page.size();
+				}
+
+				private void loadPage() {
+					boolean retry;
+					do {
+						retry = false;
+						long[] pageStart = after;
+						controller.acquireMutationLease();
+						sinkStoreAccessLock.lock();
+						try (SailWriteContinuation.Scope continuation = controller.beginNativeContinuation()) {
+							try {
+								NoneWriteState state = controller.admitNoneState();
+								if (!boundProbe && state.pending != null) {
+									state.pendingSink.flushNoneBatch();
+								}
+								state.controller = controller;
+								if (!storeTxnStarted.get()) {
+									controller.startTransaction(true);
+								}
+								long s = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(subject);
+								long p = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(predicate);
+								long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
+								Resource context = contexts.length == 0 ? null : contexts[contextIndex];
+								long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
+										: context == null ? 0L : valueStore.getId(context);
+								long[][] quads = new long[0][];
+								if (!(subject != null && s == LmdbValue.UNKNOWN_ID
+										|| predicate != null && p == LmdbValue.UNKNOWN_ID
+										|| object != null && o == LmdbValue.UNKNOWN_ID
+										|| contexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID)) {
+									quads = controller.collectNoneQuads(s, p, o, c, controller.explicit,
+											Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS)),
+											after);
+								}
+								List<Statement> next = new ArrayList<>();
+								long retainedBytes = 0L;
+								for (long[] quad : quads) {
+									Statement statement = captureMutationStatement(controller.quadToStatement(quad));
+									after = quad;
+									if (pendingSeen.contains(statement)) {
+										continue;
+									}
+									next.add(statement);
+									retainedBytes = LmdbUtil.saturatedAdd(retainedBytes,
+											ValueStore.estimatedRetainedBytes(statement));
+									if (retainedBytes >= NoneWriteState.MAX_CHUNK_BYTES) {
+										break;
+									}
+								}
+								page = next;
+								offset = 0;
+								if (quads.length == 0) {
+									contextIndex++;
+									after = null;
+								}
+							} catch (IOException | RuntimeException failure) {
+								if (!controller.recoverNoneCapacity(failure)) {
+									throw failure;
+								}
+								after = pageStart;
+								retry = true;
+							}
+						} catch (IOException failure) {
+							throw new SailException(failure);
+						} finally {
+							sinkStoreAccessLock.unlock();
+						}
+					} while (retry);
+				}
+
+				@Override
+				public Statement next() {
+					if (!hasNext()) {
+						throw new NoSuchElementException();
+					}
+					Statement result = page.get(offset);
+					page.set(offset++, null);
+					return result;
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				protected void handleClose() {
+					page = List.of();
+					pendingSeen.clear();
+				}
+			};
+		}
+	}
+
+	private static boolean matchesMutationContext(Resource context, Resource[] contexts) {
+		if (contexts.length == 0) {
+			return true;
+		}
+		for (Resource candidate : contexts) {
+			if (Objects.equals(candidate, context)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Own each deferred RDF identity once; no mutable caller value or native association enters retained work. */
+	private static Statement captureMutationStatement(Statement statement) {
+		Resource subject = (Resource) captureMutationValue(statement.getSubject());
+		IRI predicate = (IRI) captureMutationValue(statement.getPredicate());
+		Value object = captureMutationValue(statement.getObject());
+		Resource context = (Resource) captureMutationValue(statement.getContext());
+		if (statement.getClass() == GenericStatement.class && subject == statement.getSubject()
+				&& predicate == statement.getPredicate() && object == statement.getObject()
+				&& context == statement.getContext()) {
+			return statement;
+		}
+		return SimpleValueFactory.getInstance().createStatement(subject, predicate, object, context);
+	}
+
+	private static Value captureMutationValue(Value value) {
+		if (value == null) {
+			return null;
+		}
+		Class<?> type = value.getClass();
+		if (type == SimpleIRI.class || type == InternedIRI.class || type == SimpleBNode.class) {
+			return value;
+		}
+		SimpleValueFactory factory = SimpleValueFactory.getInstance();
+		if (value instanceof TripleTerm triple) {
+			Resource subject = (Resource) captureMutationValue(triple.getSubject());
+			IRI predicate = (IRI) captureMutationValue(triple.getPredicate());
+			Value object = captureMutationValue(triple.getObject());
+			if (type == SimpleTripleTerm.class && subject == triple.getSubject() && predicate == triple.getPredicate()
+					&& object == triple.getObject()) {
+				return triple;
+			}
+			return factory.createTripleTerm(subject, predicate, object);
+		}
+		if (value instanceof Literal literal) {
+			IRI datatype = (IRI) captureMutationValue(literal.getDatatype());
+			if ((type == SimpleLiteral.class || type == BooleanLiteral.class || type == IntegerLiteral.class
+					|| type == DecimalLiteral.class) && datatype == literal.getDatatype()) {
+				return literal;
+			}
+			String label = literal.getLabel();
+			Optional<String> language = literal.getLanguage();
+			if (language.isPresent()) {
+				Literal.BaseDirection direction = literal.getBaseDirection();
+				return direction == null ? factory.createLiteral(label, language.get())
+						: factory.createLiteral(label, language.get(), direction);
+			}
+			return factory.createLiteral(label, datatype);
+		}
+		if (value instanceof IRI iri) {
+			return factory.createIRI(iri.stringValue());
+		}
+		if (value instanceof BNode bnode) {
+			return factory.createBNode(bnode.getID());
+		}
+		throw new IllegalArgumentException("Unsupported RDF value: " + type.getName());
 	}
 
 	private final class LmdbSailDataset implements SailDataset {
