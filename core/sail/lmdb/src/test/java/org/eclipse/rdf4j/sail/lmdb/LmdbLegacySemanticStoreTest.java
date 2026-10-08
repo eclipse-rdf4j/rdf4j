@@ -453,8 +453,8 @@ class LmdbLegacySemanticStoreTest {
 		repository.shutDown();
 		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
 				inferred ? "spocspoc-inf" : "spocspoc"))
-				.as("aligned inserts must update the same writer index used by the later alias batch")
-				.isEqualTo(inferred ? 128 : 136);
+						.as("aligned inserts must update the same writer index used by the later alias batch")
+						.isEqualTo(inferred ? 128 : 136);
 		open(128);
 		try (var connection = repository.getConnection()) {
 			for (int index = 0; index < 128; index++) {

@@ -80,9 +80,9 @@ class TxnRecordCacheGrowthTest {
 		Process child = new ProcessBuilder(java, "-ea", "-XX:-CreateCoredumpOnCrash",
 				"-XX:ErrorFile=" + directory.resolve("hs_err_pid%p.log"), "-cp", System.getProperty("java.class.path"),
 				GrowthChild.class.getName(), directory.toString())
-				.redirectErrorStream(true)
-				.redirectOutput(output.toFile())
-				.start();
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
 		boolean completed = child.waitFor(60, TimeUnit.SECONDS);
 		if (!completed) {
 			child.destroyForcibly();

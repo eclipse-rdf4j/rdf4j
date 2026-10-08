@@ -31,7 +31,7 @@ final class LegacySemanticIndex<K, A> implements AutoCloseable {
 	private long nextNode;
 	private boolean closed;
 
-	private record Node<K, A>(K key, A alias, long previous, long next) implements Serializable {
+	private record Node<K, A> (K key, A alias, long previous, long next) implements Serializable {
 	}
 
 	LegacySemanticIndex() {

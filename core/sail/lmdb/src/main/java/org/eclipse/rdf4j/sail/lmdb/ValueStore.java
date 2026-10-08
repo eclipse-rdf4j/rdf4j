@@ -2437,31 +2437,20 @@ class ValueStore extends AbstractValueFactory {
 				return id;
 			}
 
-			long id = format.isLegacy() && LegacySemanticScope.containsLanguage(value)
-					? findLegacySemanticId(value)
-					: LmdbValue.UNKNOWN_ID;
-			if (id == LmdbValue.UNKNOWN_ID && inlineLiterals && value instanceof Literal) {
+			boolean legacySemantic = format.isLegacy() && LegacySemanticScope.containsLanguage(value);
+			long id = LmdbValue.UNKNOWN_ID;
+			if (inlineLiterals && value instanceof Literal) {
 				id = format.tryInline((Literal) value);
 			}
 
 			if (id == LmdbValue.UNKNOWN_ID) {
-				if (value.isTripleTerm()) {
-					TripleTerm tripleTerm = (TripleTerm) value;
-					long subjectId = getId(tripleTerm.getSubject(), create);
-					long predicateId = getId(tripleTerm.getPredicate(), create);
-					long objectId = getId(tripleTerm.getObject(), create);
-
-					if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
-							|| objectId == LmdbValue.UNKNOWN_ID) {
-						return LmdbValue.UNKNOWN_ID;
-					}
-					id = findTripleTermId(subjectId, predicateId, objectId, create);
-				} else {
-					// not inlined or ID not cached, search in index
-					byte[] data = value2data(value, create);
-					if (data != null) {
-						id = findId(data, create,
-								value instanceof Literal ? ((Literal) value).getCoreDatatype() : CoreDatatype.NONE);
+				// An exact physical owner is authoritative; RDF-equal legacy aliases are searched only when it is
+				// absent.
+				id = findPhysicalId(value, create && !legacySemantic);
+				if (id == LmdbValue.UNKNOWN_ID && legacySemantic) {
+					id = findLegacySemanticId(value);
+					if (id == LmdbValue.UNKNOWN_ID && create) {
+						id = findPhysicalId(value, true);
 					}
 				}
 			}
@@ -2501,6 +2490,28 @@ class ValueStore extends AbstractValueFactory {
 			revisionLock.unlockRead(stamp);
 		}
 		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private long findPhysicalId(Value value, boolean create) throws IOException {
+		if (value.isTripleTerm()) {
+			TripleTerm tripleTerm = (TripleTerm) value;
+			long subjectId = getId(tripleTerm.getSubject(), create);
+			long predicateId = getId(tripleTerm.getPredicate(), create);
+			long objectId = getId(tripleTerm.getObject(), create);
+
+			if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
+					|| objectId == LmdbValue.UNKNOWN_ID) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			return findTripleTermId(subjectId, predicateId, objectId, create);
+		}
+		// not inlined or ID not cached, search in index
+		byte[] data = value2data(value, create);
+		if (data == null) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return findId(data, create,
+				value instanceof Literal ? ((Literal) value).getCoreDatatype() : CoreDatatype.NONE);
 	}
 
 	/** Find a live RDF-equal owner without changing the byte-preserving legacy dictionary. */
